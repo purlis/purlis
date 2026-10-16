@@ -8,7 +8,7 @@ view takes it over at once, and Done or one fixed chord hands it back; the agent
 the person typed. The amendments above are left as accepted, and this note adds to them. Items
 1 to 7 are **decided in implementation, to be confirmed** (D-2014-1 to D-2014-11).
 
-1. **Session protocol 1.12, a minor.** `take_over` and `hand_back`, each answered `driving` with
+1. **Session protocol 1.14, a minor.** `take_over` and `hand_back`, each answered `driving` with
    who drives now; `browser_input`, one event of the person's (a mouse's or a key's) aimed at
    what a frame showed, refused `not_driving` unless the person drives and `input_missed` where
    the page has moved on; `size_browser`, the person's page size, refused `not_driving` too; and a
@@ -38,7 +38,7 @@ the person typed. The amendments above are left as accepted, and this note adds 
    confirmed.*
 5. **Input is aimed.** A browser view's frames name what they show, the page and its documents
    (a number that changes when the page or any frame inside it loads another document; a frame
-   format of its own, sent to 1.12 links), and each event of the person's names the frame it was
+   format of its own, sent to 1.14 links), and each event of the person's names the frame it was
    aimed at. The engine drops an event whose page has moved on in any of its frames, so input
    aimed at one frame's document never lands on another's; nothing is replayed. *D-2014-5,
    decided by the dispatcher.*

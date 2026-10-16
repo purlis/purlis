@@ -26,7 +26,7 @@
 //! nothing else returns it (not the window's link ending, not a crash of the window). While the
 //! person drives, every act is refused in [`A_BROWSER_THE_PERSON_DRIVES`]'s words and only their
 //! input reaches the browser; an act is carried out under the epoch of the lease it was checked
-//! against, so one the take-over overtook is cut by the engine. A view of a 1.12 link is sent
+//! against, so one the take-over overtook is cut by the engine. A view of a 1.14 link is sent
 //! frames that name what they show (`view::frames::AIMED_JPEG`), which the person's input names
 //! back.
 
@@ -159,7 +159,7 @@ enum Latest {
 }
 
 impl Latest {
-    /// The latest frame, framed as a view that `aims` (1.12) or one before it reads it.
+    /// The latest frame, framed as a view that `aims` (1.14) or one before it reads it.
     fn framed(&self, aims: bool) -> Option<Bytes> {
         match self {
             Latest::Frame(aim, image) if aims => Some(aimed(aim, image)),
@@ -245,7 +245,7 @@ impl Drop for Watching {
 }
 
 /// A browser as one view of it shows it: the latest frame, then each newer one, no more often
-/// than `every`; each naming what it shows when the view `aims` (1.12).
+/// than `every`; each naming what it shows when the view `aims` (1.14).
 struct BrowserSource {
     hub: Arc<Hub>,
     every: Duration,

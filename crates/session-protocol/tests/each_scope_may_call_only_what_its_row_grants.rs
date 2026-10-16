@@ -281,7 +281,13 @@ fn every_command() -> Vec<Command> {
             call_id: "c-1".into(),
             act: purlis_session_protocol::browsing::Act::Pages,
         },
-        // A browser the person takes over, drives and hands back: the window's alone (1.12).
+        // A window that comes back takes a held project's programs again, and a quit ends the
+        // host: the window's alone (1.13).
+        Command::ProgramsOf {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::Quit,
+        // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
         },
@@ -353,6 +359,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "board_moved",
             "board",
             "browse",
+            "programs_of",
+            "quit",
             "take_over",
             "browser_input",
             "size_browser",

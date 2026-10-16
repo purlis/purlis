@@ -55,7 +55,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::StreamExt;
@@ -64,8 +64,8 @@ use purlis_session_protocol::browsing::{Driver, Input};
 use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
-    self, Answer, Attached, Chat, Command, Exit, Launch, Peer, ProgramKind, Pushed, Readiness,
-    Refusal, SandboxTold, Since, StartProgram, ViewKind, ViewRole,
+    self, Answer, Attached, Chat, Command, Confined, Exit, HeldProgram, Launch, Peer, ProgramKind,
+    Pushed, Readiness, Refusal, SandboxTold, Since, StartProgram, ViewKind, ViewRole,
 };
 use purlis_session_protocol::version::Version;
 use purlis_session_protocol::view::{Attachment, Source, ViewId};
@@ -230,7 +230,7 @@ pub trait Running: Send + Sync + 'static {
     /// What a view of it attaches to.
     fn source(&self) -> Arc<dyn Source>;
     /// What a view of `kind` attaches to, as `role`, at most `rate` frames a second where it
-    /// says, its frames naming what they show where the view `aims` (1.12); `None` when it has
+    /// says, its frames naming what they show where the view `aims` (1.14); `None` when it has
     /// no view of that kind. A terminal's is its terminal view.
     fn view(
         &self,
@@ -406,6 +406,9 @@ impl Source for TerminalSource {
     }
 }
 
+/// The most windows that came back a host keeps as holding its chats, beside the first.
+const MOST_WINDOWS_KEPT: usize = 16;
+
 /// The most notices a subscriber's queue holds before it is let go of.
 const MOST_NOTICES_QUEUED: usize = 1024;
 
@@ -435,6 +438,11 @@ struct Inner {
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
     switch: Switch,
+    /// Set once the window has quit (#2006): whoever serves this host stops.
+    quit: tokio::sync::watch::Sender<bool>,
+    /// Told whenever a window links or goes, or a project is held or let go of: what the host's
+    /// life with a window that may come back waits on (`crate::lifetime`).
+    changed: tokio::sync::Notify,
 }
 
 #[derive(Default)]
@@ -463,6 +471,18 @@ struct State {
     window: Option<Window>,
     /// Each project being saved, at the place it is held: one saver each (#2002, #2178).
     saving: HashMap<HeldAt, Box<dyn Saving>>,
+    /// The window's links now (#2006): each `local-ui` link that subscribed or held a project.
+    windows: std::collections::HashSet<u64>,
+    /// A window has linked, or the one that started this host has gone: from then on, a host
+    /// with no window and nothing a window could come back for stops.
+    had_a_window: bool,
+    /// Since when no window has been linked, once one had.
+    windowless_since: Option<Instant>,
+    /// Each project kept or saved with no link holding it, and since when (#2006, #2262).
+    unheld_since: HashMap<HeldAt, Instant>,
+    /// Each process a window linked from to the host the window started, but the one that
+    /// started it: a window that came back holds the chats too (#2006).
+    came_back: Vec<u32>,
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
@@ -480,6 +500,8 @@ struct Confinement {
     project: String,
     owner: Owner,
     confining: Arc<dyn Confining>,
+    /// The plan it was started from, as the window sent it (#2006).
+    plan: session::ConfinePlan,
 }
 
 /// Whose a confinement is: the link that made it, until a start names it, then that program's.
@@ -580,6 +602,8 @@ struct Hosted {
     /// Where it started, where its start said: what its project's saver asks.
     cwd: Option<PathBuf>,
     ended: bool,
+    /// How it ended, once it has: what a window that comes back is told (#2006).
+    exit: Option<Exit>,
     /// The host's own act that is ending it, where one is ([`Stopped`]).
     stopping: Arc<Mutex<Option<Stopped>>>,
 }
@@ -686,6 +710,8 @@ impl Hosting {
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
                 switch,
+                quit: tokio::sync::watch::Sender::new(false),
+                changed: tokio::sync::Notify::new(),
             }),
         }
     }
@@ -734,6 +760,25 @@ impl Hosting {
     pub fn started_by(self, window: Option<Window>) -> Hosting {
         self.state().window = window;
         self
+    }
+
+    /// The window's scope was admitted from process `pid` (#2006): on a host a window started,
+    /// a window that comes back holds the chats as the first one did, so a peer below it is
+    /// inside one from now on. Whether it may be served: holders are only ever added, and past
+    /// [`MOST_WINDOWS_KEPT`] a window from yet another process is refused.
+    pub fn a_window_linked_from(&self, pid: u32) -> bool {
+        let mut state = self.state();
+        let Some(Window(first)) = state.window else {
+            return true;
+        };
+        if pid == first || state.came_back.contains(&pid) {
+            return true;
+        }
+        if state.came_back.len() >= MOST_WINDOWS_KEPT {
+            return false;
+        }
+        state.came_back.push(pid);
+        true
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
@@ -854,7 +899,7 @@ impl Hosting {
         let knows_drivers = version
             >= Version {
                 major: 1,
-                minor: 12,
+                minor: 14,
             };
         let state = self.state();
         let mut chats: Vec<Chat> = state
@@ -944,6 +989,12 @@ impl Hosting {
             return Err(no_such_project(&at.project));
         };
         *held.links.entry(link).or_default() += 1;
+        state.unheld_since.remove(&at);
+        if peer.scope() == Scope::LocalUi {
+            note_a_window(&mut state, link);
+        }
+        drop(state);
+        self.inner.changed.notify_one();
         Ok(Answer::Done)
     }
 
@@ -968,6 +1019,9 @@ impl Hosting {
         // Nobody holds it now: it is saved no more. A link that ended is not a let go
         // ([`Self::let_go_of_the_links`]), so a crashed window's project goes on saving.
         let saving = gone.is_some().then(|| state.saving.remove(&at)).flatten();
+        if gone.is_some() {
+            state.unheld_since.remove(&at);
+        }
         // Its hook channel stops outside the hold: a line it is handing on waits for the hold.
         drop(state);
         drop(gone);
@@ -983,6 +1037,7 @@ impl Hosting {
     /// ended included (#2194).
     fn let_go_of_the_links(&self, peer: &Peer) {
         let link = link_of(peer);
+        let mut no_window: Vec<Arc<dyn Channel>> = Vec::new();
         let gone: Vec<Held> = {
             let mut state = self.state();
             let held = std::mem::take(&mut state.projects);
@@ -995,15 +1050,35 @@ impl Hosting {
             let (kept, gone): (Vec<_>, Vec<_>) = held
                 .into_iter()
                 .map(|(at, mut held)| {
-                    held.links.remove(&link);
+                    // This link was the last that held it: its channel is told no window does.
+                    if held.links.remove(&link).is_some() && held.links.is_empty() {
+                        no_window.extend(held.channel.clone());
+                    }
                     (at, held)
                 })
                 .partition(|(at, held)| !held.links.is_empty() || unclosed.contains(at));
+            // Kept by no link from now, or saved by no link: each is let go of when its grace
+            // period passes, where the host waits for its window (#2006, #2262).
+            let now = Instant::now();
+            for (at, held) in &kept {
+                if held.links.is_empty() {
+                    state.unheld_since.entry(at.clone()).or_insert(now);
+                }
+            }
+            for (at, _) in &gone {
+                if state.saving.contains_key(at) {
+                    state.unheld_since.entry(at.clone()).or_insert(now);
+                }
+            }
             state.projects = kept.into_iter().collect();
             gone.into_iter().map(|(_, held)| held).collect()
         };
-        // Their hook channels stop outside the hold, as a let go's does.
+        // Their hook channels stop outside the hold, as a let go's does; the ones kept are told
+        // outside it too.
         drop(gone);
+        for channel in no_window {
+            channel.no_window();
+        }
     }
 
     /// Whether `start`, from `peer`, is let through the kill switch: nothing is while it is
@@ -1168,6 +1243,7 @@ impl Hosting {
                     .and_then(|launch| launch.cwd.as_ref())
                     .map(PathBuf::from),
                 ended: false,
+                exit: None,
                 stopping: Arc::clone(&stopping),
             },
         );
@@ -1200,6 +1276,7 @@ impl Hosting {
                 let mut state = hosting.state();
                 if let Some(hosted) = state.programs.get_mut(&ended) {
                     hosted.ended = true;
+                    hosted.exit = Some(exit.clone());
                 }
                 // A program's end is the moment its work is done: its project's saver hears it.
                 if let Some(saving) = state.saving.get(&at) {
@@ -1302,6 +1379,7 @@ impl Hosting {
                 // A browser writes no project's files: its project's saver does not wait for it.
                 cwd: None,
                 ended: false,
+                exit: None,
                 // A browser's end leaves nothing in the event log.
                 stopping: Arc::default(),
             },
@@ -1312,6 +1390,7 @@ impl Hosting {
         running.when_it_ends(Box::new(move |exit| {
             if let Some(hosted) = hosting.state().programs.get_mut(&ended) {
                 hosted.ended = true;
+                hosted.exit = Some(exit.clone());
             }
             // A fresh browser keeps nothing once it has ended.
             let _ = std::fs::remove_dir_all(&data);
@@ -1382,7 +1461,7 @@ impl Hosting {
             let aims = peer.version()
                 >= Version {
                     major: 1,
-                    minor: 12,
+                    minor: 14,
                 };
             let source = hosted
                 .running
@@ -1407,6 +1486,62 @@ impl Hosting {
             rows: size.rows,
             kind: Some(kind),
         }))
+    }
+
+    /// Every harness and shell `project` still has, running or ended, at the place the link
+    /// `peer` came on holds it, which it must (#2006): what a window that comes back takes back,
+    /// each with the place of the confinement it runs in.
+    fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let state = self.state();
+        let at = held_by(&state, project, link_of(peer))
+            .cloned()
+            .ok_or_else(|| no_such_project(project))?;
+        let mut programs: Vec<HeldProgram> = state
+            .programs
+            .iter()
+            .filter(|(_, hosted)| hosted.at == at && hosted.kind != ProgramKind::Browser)
+            .map(|(id, hosted)| HeldProgram {
+                program: id.clone(),
+                kind: hosted.kind,
+                number: hosted.number,
+                process: (!hosted.ended).then_some(hosted.process).flatten(),
+                run: hosted.run.clone(),
+                exit: hosted.exit.clone(),
+                confined: state
+                    .confinements
+                    .iter()
+                    .find(|(_, held)| held.owner == Owner::Program(id.clone()))
+                    .map(|(confinement, held)| Confined {
+                        confinement: confinement.clone(),
+                        ..held.confining.confined()
+                    }),
+                plan: state
+                    .confinements
+                    .values()
+                    .find(|held| held.owner == Owner::Program(id.clone()))
+                    .map(|held| held.plan.clone()),
+                cols: hosted.size.columns,
+                rows: hosted.size.rows,
+            })
+            .collect();
+        programs.sort_by_key(|program| program.number);
+        Ok(Answer::Programs(programs))
+    }
+
+    /// The window quit (#2006, ADR 0068 §2): every program ends as a quit would, all at once,
+    /// and the answer comes once they are gone; then whoever serves this host stops
+    /// ([`Self::until_it_quits`]).
+    async fn quit(&self) -> Answer {
+        let hosting = self.clone();
+        let _ = tokio::task::spawn_blocking(move || hosting.end_all()).await;
+        self.inner.quit.send_replace(true);
+        Answer::Done
+    }
+
+    /// Resolves once the window has quit: the host stops serving.
+    pub async fn until_it_quits(&self) {
+        let mut quit = self.inner.quit.subscribe();
+        let _ = quit.wait_for(|quit| *quit).await;
     }
 
     fn resize(&self, program: &str, size: Size) -> Result<Answer, Refusal> {
@@ -1527,6 +1662,7 @@ impl Hosting {
     async fn confine(&self, confine: session::Confine, peer: &Peer) -> Result<Answer, Refusal> {
         let id = confine.confinement.clone();
         let confine_project = confine.project.clone();
+        let plan = confine.plan.clone();
         let path = {
             let state = self.state();
             if state.confinements.contains_key(&id) {
@@ -1585,6 +1721,7 @@ impl Hosting {
                     project,
                     owner: Owner::Link(link_of(peer)),
                     confining,
+                    plan,
                 },
             );
         }
@@ -1642,6 +1779,13 @@ impl Hosting {
         }
         Answer::Done
     }
+}
+
+/// `link`, a `local-ui` link, is the window's (#2006): the host has a window now.
+fn note_a_window(state: &mut State, link: u64) {
+    state.windows.insert(link);
+    state.had_a_window = true;
+    state.windowless_since = None;
 }
 
 /// Takes every confinement whose owner `whose` says, out of `state`.
@@ -1854,10 +1998,13 @@ impl session::Host for Hosting {
                 }
                 Ok(Answer::Done)
             }
-            Command::Board { project } => Ok(Answer::Board(
-                self.held_channel(&project, peer)?
-                    .map_or(serde_json::Value::Null, |channel| channel.board()),
-            )),
+            Command::Board { project } => match self.held_channel(&project, peer)? {
+                Some(channel) => channel.board().map(Answer::Board).map_err(|why| Refusal {
+                    code: session::TOO_LARGE.into(),
+                    why,
+                }),
+                None => Ok(Answer::Board(serde_json::Value::Null)),
+            },
             Command::Confine(confine) => self.confine(*confine, peer).await,
             Command::LetGoOfConfinement { confinement } => {
                 Ok(self.let_go_of_confinement(&confinement).await)
@@ -1902,6 +2049,9 @@ impl session::Host for Hosting {
                 call_id,
                 act,
             } => self.browse(&program, call_id, act).await,
+            Command::ProgramsOf { project } => self.programs_of(&project, peer),
+            // Only the window's link reaches this: the grants refuse every other.
+            Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's
             // last input, a key on a read of the page), so off the runtime.
             Command::TakeOver { program } => {
@@ -1947,6 +2097,13 @@ impl session::Host for Hosting {
 
     async fn link_ended(&self, peer: &Peer) {
         self.let_go_of_the_links(peer);
+        {
+            let mut state = self.state();
+            if state.windows.remove(&link_of(peer)) && state.windows.is_empty() {
+                state.windowless_since = Some(Instant::now());
+            }
+        }
+        self.inner.changed.notify_one();
         // What the link confined that nothing runs in yet goes with it; what a program runs in
         // stays with the program (#1999).
         let link = link_of(peer);
@@ -1960,12 +2117,19 @@ impl session::Host for Hosting {
         peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
         let (told, notices) = mpsc::channel(MOST_NOTICES_QUEUED);
-        self.state().subscribers.push(Subscriber {
-            link: link_of(peer),
-            told,
-            confines: peer.scope().may(Power::Confine),
-            saves: peer.scope().may(Power::Save),
-        });
+        {
+            let mut state = self.state();
+            state.subscribers.push(Subscriber {
+                link: link_of(peer),
+                told,
+                confines: peer.scope().may(Power::Confine),
+                saves: peer.scope().may(Power::Save),
+            });
+            if peer.scope() == Scope::LocalUi {
+                note_a_window(&mut state, link_of(peer));
+            }
+        }
+        self.inner.changed.notify_one();
         Ok(notices)
     }
 }
@@ -1988,6 +2152,18 @@ impl Chats for Hosting {
             Some(Window(window)) => window,
             None => std::process::id(),
         })
+    }
+
+    /// The window that started this host, and each window that came back to it since (#2006):
+    /// a peer below any of them is inside a chat. Only ever more of them: a doubt refuses.
+    fn holders(&self) -> Vec<u32> {
+        let state = self.state();
+        match state.window {
+            Some(Window(window)) => std::iter::once(window)
+                .chain(state.came_back.iter().copied())
+                .collect(),
+            None => vec![std::process::id()],
+        }
     }
 }
 
@@ -2048,6 +2224,116 @@ fn not_started(why: String) -> Refusal {
     Refusal {
         code: session::NOT_STARTED.into(),
         why,
+    }
+}
+
+/// **What the host's life with a window that may come back reads and does** (#2006,
+/// `crate::lifetime`).
+impl Hosting {
+    /// The window that started this host has gone: from now on a host with no window linked
+    /// waits only as long as the grace period for one to come back.
+    pub(crate) fn its_starter_went(&self) {
+        let mut state = self.state();
+        state.had_a_window = true;
+        if state.windows.is_empty() && state.windowless_since.is_none() {
+            state.windowless_since = Some(Instant::now());
+        }
+    }
+
+    /// Whether this host has nothing more to wait for at `now`: no window is linked since one
+    /// was, and either nothing is left a window could come back for, or the grace period has
+    /// passed since the last one went.
+    pub(crate) fn nobody_to_come_back_for(&self, grace: Duration, now: Instant) -> bool {
+        let state = self.state();
+        let nothing_kept =
+            state.projects.is_empty() && state.saving.is_empty() && state.programs.is_empty();
+        let waited_out = state
+            .windowless_since
+            .is_some_and(|since| now.saturating_duration_since(since) >= grace);
+        state.windows.is_empty() && state.had_a_window && (nothing_kept || waited_out)
+    }
+
+    /// When the next grace period passes, if one is running: a project's no link holds, or the
+    /// host's own with no window.
+    pub(crate) fn next_grace_ends(&self, grace: Duration) -> Option<Instant> {
+        let state = self.state();
+        state
+            .unheld_since
+            .values()
+            .copied()
+            .chain(state.windowless_since)
+            .min()
+            .map(|since| since + grace)
+    }
+
+    /// Lets go of every project no link has held for `grace` by `now`, as a quit would (#2006,
+    /// #2262): its programs end all at once, running or ended, each kept as ended by a quit,
+    /// then its confinements, its saving, its hook channel and its board go. Waits for the
+    /// programs as [`Self::end_all`] does: off the runtime.
+    pub(crate) fn let_go_of_what_nobody_came_back_for(&self, grace: Duration, now: Instant) {
+        let (hosted, confinements, held, saving) = {
+            let mut state = self.state();
+            let due: Vec<HeldAt> = state
+                .unheld_since
+                .iter()
+                .filter(|(at, since)| {
+                    now.saturating_duration_since(**since) >= grace
+                        && state
+                            .projects
+                            .get(*at)
+                            .is_none_or(|held| held.links.is_empty())
+                })
+                .map(|(at, _)| at.clone())
+                .collect();
+            if due.is_empty() {
+                return;
+            }
+            for at in &due {
+                state.unheld_since.remove(at);
+            }
+            let ids: Vec<String> = state
+                .programs
+                .iter()
+                .filter(|(_, hosted)| due.contains(&hosted.at))
+                .map(|(id, _)| id.clone())
+                .collect();
+            let hosted: Vec<Hosted> = ids
+                .iter()
+                .filter_map(|id| state.programs.remove(id))
+                .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
+                .collect();
+            let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
+            state.closed.extend(processes);
+            let confinements = take_confinements(
+                &mut state,
+                |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
+            );
+            let held: Vec<Held> = due
+                .iter()
+                .filter_map(|at| state.projects.remove(at))
+                .collect();
+            let saving: Vec<Box<dyn Saving>> = due
+                .iter()
+                .filter_map(|at| state.saving.remove(at))
+                .collect();
+            (hosted, confinements, held, saving)
+        };
+        // Saving first, as at a quit: nothing starts a save of a project whose chats are ending.
+        drop(saving);
+        stop_together(
+            hosted
+                .iter()
+                .map(|hosted| Arc::clone(&hosted.running))
+                .collect(),
+        );
+        drop(confinements);
+        drop(held);
+        drop(hosted);
+    }
+
+    /// Resolves once something a window's coming back depends on has changed.
+    pub(crate) async fn changed(&self) {
+        self.inner.changed.notified().await;
     }
 }
 

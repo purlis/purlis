@@ -399,6 +399,20 @@ keeps each chat's end as a host crash's (ADR 0068 §3, amended for #2007). Never
 window. Not the run journal (ADR 0076), which holds each run's state.
 _Avoid_: run journal (that is ADR 0076's), host log, journal (unqualified)
 
+**Grace period** (of the session host):
+How long the window's session host keeps a window's chats after the window went without a quit
+(it crashed, or was killed): ten minutes. A window that starts within it **reattaches** every
+chat, on the screen it has now; a project no window holds again is let go of once its own grace
+period passes, its chats ended as a quit would, and the next start offers them for reopening
+(ADR 0068 §2, amended for #2006). A quit has none.
+_Avoid_: timeout, linger, keep-alive
+
+**Reattach** (a chat):
+What a window that comes back does with a chat the session host kept: it takes the chat back as
+one of its own, under its number, its conversation and its run, without starting it again. Not
+a reopen, which starts a chat's program again on its conversation.
+_Avoid_: resume (that is the harness's), restore, reconnect (that is the link's)
+
 **View** (of a hosted program):
 One client's live look at a hosted program, of a kind: a terminal view, or a **browser view**.
 It opens with a snapshot of the program as it is now and then follows it. One that falls behind

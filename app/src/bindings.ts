@@ -6994,6 +6994,11 @@ export type OpenChat = {
 	 *  its profile, its directory — or none (SI-8e).
 	 */
 	guessed: string | null,
+	/**
+	 *  Why what it was doing could not be taken from the session host as it was reattached
+	 *  (#2006), where it could not: its tab says so until the Notice is dismissed.
+	 */
+	untaken?: string | null,
 	/**  The harness profile it started on, where it started on one. */
 	profile: string | null,
 	/**  The persona it adopted. */

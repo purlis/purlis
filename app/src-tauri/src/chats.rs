@@ -176,6 +176,9 @@ pub struct Open {
     /// Why it runs with no sandbox where the floor could not be applied here (#2071, Q2): what
     /// its tab's sandbox mark says. `None` for any other chat.
     pub floorless: Option<String>,
+    /// Why what it was doing could not be taken from the session host as it was reattached
+    /// (#2006): its tab says so until the Notice is dismissed. `None` for any other chat.
+    pub untaken: Option<String>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -485,6 +488,9 @@ pub struct Chats {
     sessions: Box<dyn SessionHost>,
     /// Told as each chat starts, before its program does.
     starting: Mutex<Option<Starting>>,
+    /// Told as each chat put back is reattached in the session host, before anything else is
+    /// told of it (#2006).
+    reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
     /// Told, by number, what became of a start whose run was held ([`RunSaid::Held`]).
@@ -507,6 +513,9 @@ pub struct Chats {
     /// Why each chat that runs with no sandbox where the floor could not be applied does
     /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
     floorless: Mutex<HashMap<u32, String>>,
+    /// Why what each chat reattached was doing could not be taken from the session host, by
+    /// session (#2006): [`Open::untaken`].
+    untaken: Mutex<HashMap<u32, String>>,
     /// The older Claude Code a chat's late notes say it is on (#1699): marked said once the
     /// window takes them ([`Self::start_notes`]), not before.
     older_in_notes: Mutex<HashMap<u32, purlis_core::sandbox::ClaudeCodeVersion>>,
@@ -954,6 +963,7 @@ impl Chats {
             project,
             sessions: host,
             starting: Mutex::new(None),
+            reattached: Mutex::new(None),
             beginning: Mutex::new(None),
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
@@ -962,6 +972,7 @@ impl Chats {
             sizes: Mutex::new(HashMap::new()),
             replacing: Mutex::new(std::collections::HashSet::new()),
             floorless: Mutex::new(HashMap::new()),
+            untaken: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             let_go: Mutex::new(HashMap::new()),
@@ -1042,6 +1053,13 @@ impl Chats {
     /// needs in order to judge a report about it.
     pub fn when_one_starts(&self, tell: Starting) {
         *lock(&self.starting) = Some(tell);
+    }
+
+    /// Calls `tell` as each chat put back is reattached in the session host rather than
+    /// started (#2006), before anything else is told of it, with what the board needs to judge
+    /// a report about it where it does not know the chat yet.
+    pub fn when_one_is_reattached(&self, tell: Starting) {
+        *lock(&self.reattached) = Some(tell);
     }
 
     /// Calls `tell` as each chat starts, BEFORE its program does, with the run that start
@@ -1446,6 +1464,73 @@ impl Chats {
     /// last on its line, where its harness takes one (`handoff::first_message_argv`). A chat on
     /// no profile is started without it.
     fn start_recorded_told(
+        &self,
+        chat: &Chat,
+        size: Size,
+        why: Why,
+        told: Option<&str>,
+        opt_out: Option<purlis_core::sandbox::OptOut>,
+    ) -> Result<u32, String> {
+        let started = self.start_recorded_checked(chat, size, why, told, opt_out);
+        // **A chat the session host still runs is reattached, never refused** (D-2006-11): what
+        // would refuse its start now (its profile gone or no longer allowed, its sandbox or its
+        // line) refuses a start, and nothing starts here. It is taken back as its record has it.
+        match started {
+            Err(refused) if self.reattaches(chat, why) => {
+                tracing::info!(
+                    "purlis: chat {} is reattached as it runs; a start of it now would be \
+                     refused ({refused})",
+                    chat.name
+                );
+                self.reattach_as_recorded(chat, size, why)
+            }
+            started => started,
+        }
+    }
+
+    /// Whether `chat`, put back for `why`, is one the session host still runs from before this
+    /// window, and so is reattached (#2006).
+    fn reattaches(&self, chat: &Chat, why: Why) -> bool {
+        why == Why::Relaunch && chat.number.is_some_and(|number| self.left_running(number))
+    }
+
+    /// Whether chat `number` is still in the session host from before this window (#2006).
+    pub(crate) fn left_running(&self, number: u32) -> bool {
+        self.sessions.left_running(number)
+    }
+
+    /// Reattaches `chat` as its record has it, where what a start reads of it now refuses
+    /// (D-2006-11): its program and its words as recorded, its harness by its program, no
+    /// sandbox this window compiled, and the confinement it runs in.
+    fn reattach_as_recorded(&self, chat: &Chat, size: Size, why: Why) -> Result<u32, String> {
+        let how = match &chat.resume {
+            Some(id) => Reopened::Resumed(id.clone()),
+            None => Reopened::Fresh(purlis_core::reopen::Fresh::NoConversationRecorded),
+        };
+        self.open_it_as(
+            chat,
+            chat.program.clone(),
+            Vec::new(),
+            chat.args.clone(),
+            Vec::new(),
+            chat.harness(),
+            None,
+            chat.resume.as_ref().map(ToString::to_string),
+            how,
+            &Default::default(),
+            None,
+            None,
+            size,
+            false,
+            why,
+            None,
+            true,
+        )
+        .map(|(session, _)| session)
+    }
+
+    /// [`Self::start_recorded_told`], refused where what its start reads now refuses.
+    fn start_recorded_checked(
         &self,
         chat: &Chat,
         size: Size,
@@ -2630,6 +2715,12 @@ impl Chats {
         // its folder in the meantime is refused, and a folder that is going is no place to
         // start one (#1472).
         let _starting = self.going.starting_in(chat.cwd.as_deref())?;
+        // **A chat put back that the session host still runs, or ran, from before this window
+        // is reattached, not started again** (#2006): the window that started it went without a
+        // quit, and the host kept it. Everything the window keeps of a running chat is made as
+        // for a start; what a start begins (a run, its trust event, a first message, the
+        // credentials it is handed) is not, since nothing starts: it is the run it was.
+        let reattaching = self.reattaches(chat, why);
         // The persona it runs as is the one its environment names, which the core's start put
         // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
         // names none runs as the project's default.
@@ -2643,7 +2734,7 @@ impl Chats {
         // that does not open to it starts nothing, and leaves no event and no hook behind
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
-        let handed = match sign_in.filter(|s| !s.credentials.is_empty()) {
+        let handed = match sign_in.filter(|s| !reattaching && !s.credentials.is_empty()) {
             Some(sign_in) => purlis_core::profilesignin::read(
                 &purlis_core::secrets::Ctx::new(
                     &self.project,
@@ -2659,6 +2750,8 @@ impl Chats {
         // when no record holds one, on this device, and a chat put back or started again keeps
         // the one it had, with its origin device. Every start begins a run of its own.
         let identity = match &chat.identity.id {
+            // Reattached, it is the run it was (#2006).
+            Some(_) if reattaching && chat.identity.run.is_some() => chat.identity.clone(),
             Some(_) => purlis_core::reopen::Identity {
                 run: Some(minted()),
                 ..chat.identity.clone()
@@ -2679,12 +2772,17 @@ impl Chats {
         // What this start means for the sandbox's audit and its count (ADR 0067 §7): off where
         // it starts without the sandbox, back on where its last run did and this one does not,
         // and one more new chat towards the opt-out rate.
-        let (mut trust, counted) = purlis_core::sandbox::at_start(
-            unsandboxed,
-            sandbox.is_some(),
-            chat.unsandboxed,
-            why == Why::New,
-        );
+        let (mut trust, counted) = if reattaching {
+            // Nothing starts, so nothing changes for the sandbox's audit or its count.
+            (None, None)
+        } else {
+            purlis_core::sandbox::at_start(
+                unsandboxed,
+                sandbox.is_some(),
+                chat.unsandboxed,
+                why == Why::New,
+            )
+        };
         let mut late = Vec::new();
         // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
         // said once its tab shows it (#1699).
@@ -2718,6 +2816,7 @@ impl Chats {
         let settings_watched = match chat.cwd.as_deref() {
             Some(cwd)
                 if !limited
+                    && !reattaching
                     && sandbox.is_some()
                     && harness == Some(Harness::ClaudeCode)
                     && purlis_core::harness::claude::project::screen(Some(cwd))
@@ -2854,33 +2953,46 @@ impl Chats {
                 )
             });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
-        // in the session host, which holds it for as long as the chat runs (#1999).
+        // in the session host, which holds it for as long as the chat runs (#1999). A chat
+        // reattached runs in the one it ran in, heard by this window from now on (#2006).
+        // **What a chat reattached runs with** (D-2006-11): the sandbox it would start in now, where
+        // that is the plan its confinement in the host was started from; otherwise none, so its
+        // sandbox reads as one that changed while no window was there, and it is offered a
+        // restart on the sandbox of now as any chat a change left behind is (#1428).
+        let confines = match (reattaching, chat.number) {
+            (true, Some(number)) => {
+                let now = sandbox.and_then(purlis_core::sandbox::Applied::plan);
+                let then = self.sessions.ran_with(number);
+                (now == then)
+                    .then(|| sandbox.map(|applied| applied.confines().clone()))
+                    .flatten()
+            }
+            _ => sandbox.map(|applied| applied.confines().clone()),
+        };
+        let hearing = purlis_core::sandbox::plan::Hearing {
+            refusals,
+            more: Some(more_refused_by_the_proxy(
+                Arc::clone(&self.refused_more),
+                Arc::clone(&whose),
+            )),
+            reached: Some(reached),
+            asks,
+        };
         let mut confinement = match sandbox.and_then(purlis_core::sandbox::Applied::plan) {
-            Some(plan) => Some(
-                self.sessions
-                    .confine(
-                        &plan,
-                        purlis_core::sandbox::plan::Hearing {
-                            refusals,
-                            more: Some(more_refused_by_the_proxy(
-                                Arc::clone(&self.refused_more),
-                                Arc::clone(&whose),
-                            )),
-                            reached: Some(reached),
-                            asks,
-                        },
-                    )
-                    .map_err(|err| {
-                        purlis_core::sandbox::under_policy(
-                            &purlis_core::sandbox::policy::Locks::of(&self.project),
-                            format!(
-                                "{}, and purlis could not start what the sandbox needs beside \
+            _ if reattaching => chat
+                .number
+                .and_then(|number| self.sessions.confined_again(number, hearing))
+                .transpose()?,
+            Some(plan) => Some(self.sessions.confine(&plan, hearing).map_err(|err| {
+                purlis_core::sandbox::under_policy(
+                    &purlis_core::sandbox::policy::Locks::of(&self.project),
+                    format!(
+                        "{}, and purlis could not start what the sandbox needs beside \
                                  this chat ({err}), so nothing was started.",
-                                purlis_core::sandbox::LEAD
-                            ),
-                        )
-                    })?,
-            ),
+                        purlis_core::sandbox::LEAD
+                    ),
+                )
+            })?),
             None => None,
         };
         // Under a sandbox, the sandbox decides the line: a flag of the harness's own in the
@@ -2888,7 +3000,8 @@ impl Chats {
         // opens, and flags it rides on go last among the flags. A harness charter wraps runs as
         // the wrap's program, with its whole line after it (ADR 0067).
         let socket = self.sessions.reports_to();
-        let (program, all, wrapped) = match sandbox {
+        // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
+        let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {
             Some(applied) => {
                 let line = applied.line(
                     purlis_core::sandbox::Words {
@@ -2921,7 +3034,8 @@ impl Chats {
         env.extend(wrapped);
         // A cluster on this Mac the person pointed this chat's kubectl at (qw384b): its own
         // copy, in its own folder, named for it alone and ahead of any kubeconfig of theirs.
-        if let (Some(config), Some(confinement)) = (
+        if let (false, Some(config), Some(confinement)) = (
+            reattaching,
             identity.id.as_deref().and_then(|id| self.kubeconfig_of(id)),
             confinement.as_mut(),
         ) {
@@ -2955,9 +3069,39 @@ impl Chats {
         };
         // What the announcement below said, so a start that fails can take it back.
         let announced = std::sync::atomic::AtomicU32::new(0);
-        let session = self
-            .sessions
-            .open(
+        let announce = |session: u32| {
+            announced.store(session, std::sync::atomic::Ordering::SeqCst);
+            whose.store(session, std::sync::atomic::Ordering::SeqCst);
+            lock(&self.starting_as).insert(session, chat.persona.clone());
+            untold.tell_untold();
+            // A chat reattached is where it was: its state, its model and its run are as the
+            // host kept them (#2006).
+            if reattaching {
+                if let Some(reattached) = lock(&self.reattached).as_ref() {
+                    reattached(session, harness, conversation.clone());
+                }
+                return;
+            }
+            // A new program knows no model until its harness says (#1021).
+            lock(&self.models).remove(&session);
+            if let Some(starting) = lock(&self.starting).as_ref() {
+                starting(session, harness, conversation.clone());
+            }
+            if let Some(beginning) = lock(&self.beginning).as_ref()
+                && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
+            {
+                beginning(
+                    session,
+                    RunOf { chat, run },
+                    cause,
+                    &attributes,
+                    said.clone(),
+                );
+            }
+        };
+        let opened = match (reattaching, chat.number) {
+            (true, Some(number)) => self.sessions.reattach(number, &announce),
+            _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put
                 // back keeps the key its workspace pointer and session lock are under; a
                 // chat the operator just started has none yet (charter-app#90).
@@ -2985,42 +3129,22 @@ impl Chats {
                         .and_then(purlis_core::sandbox::Confinement::held_as)
                         .map(str::to_owned),
                 },
-                &|session| {
-                    announced.store(session, std::sync::atomic::Ordering::SeqCst);
-                    whose.store(session, std::sync::atomic::Ordering::SeqCst);
-                    lock(&self.starting_as).insert(session, chat.persona.clone());
-                    untold.tell_untold();
-                    // A new program knows no model until its harness says (#1021).
-                    lock(&self.models).remove(&session);
-                    if let Some(starting) = lock(&self.starting).as_ref() {
-                        starting(session, harness, conversation.clone());
-                    }
-                    if let Some(beginning) = lock(&self.beginning).as_ref()
-                        && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
-                    {
-                        beginning(
-                            session,
-                            RunOf { chat, run },
-                            cause,
-                            &attributes,
-                            said.clone(),
-                        );
-                    }
-                },
-            )
-            .inspect_err(|_| {
-                // The chat was announced and then did not start. Take it back, or the board
-                // holds one entry per failed start for the life of the app.
-                let announced = announced.load(std::sync::atomic::Ordering::SeqCst);
-                if announced > 0 {
-                    lock(&self.starting_as).remove(&announced);
-                }
-                if announced > 0
-                    && let Some(gone) = lock(&self.never_started).as_ref()
-                {
-                    gone(announced);
-                }
-            })?;
+                &announce,
+            ),
+        };
+        let session = opened.inspect_err(|_| {
+            // The chat was announced and then did not start. Take it back, or the board
+            // holds one entry per failed start for the life of the app.
+            let announced = announced.load(std::sync::atomic::Ordering::SeqCst);
+            if announced > 0 {
+                lock(&self.starting_as).remove(&announced);
+            }
+            if announced > 0
+                && let Some(gone) = lock(&self.never_started).as_ref()
+            {
+                gone(announced);
+            }
+        })?;
         // Under the id it was actually given, not the one it was recorded with: a chat
         // started fresh is under an id the app just chose, and that is what has to be
         // written down for the next launch to resume it.
@@ -3032,15 +3156,25 @@ impl Chats {
                 .and_then(|id| purlis_core::harness::SessionId::new(id).ok()),
             renamed_from: None,
             // What this run started under, for the next run's audit and the session record —
-            // never read as an opt-out by any start.
-            unsandboxed: unsandboxed.is_some(),
+            // never read as an opt-out by any start. A chat reattached runs as it started.
+            unsandboxed: if reattaching {
+                chat.unsandboxed
+            } else {
+                unsandboxed.is_some()
+            },
             identity,
             ..chat.clone()
         };
-        if !late.is_empty() {
+        // What a start says on its tab was said at the start it reattached to (#2006); what
+        // the host could not hand over of it is said instead.
+        match self.sessions.state_not_reattached().filter(|_| reattaching) {
+            Some(why) => lock(&self.untaken).insert(session, why),
+            None => lock(&self.untaken).remove(&session),
+        };
+        if !late.is_empty() && !reattaching {
             lock(&self.late_notes).insert(session, late);
         }
-        if let Some(version) = older_version {
+        if let Some(version) = older_version.filter(|_| !reattaching) {
             lock(&self.older_in_notes).insert(session, version);
         }
         let workspace = workspace_at_start(Some(&self.project), under.cwd.as_deref());
@@ -3056,7 +3190,7 @@ impl Chats {
                 declared: declared.cloned(),
                 workspace,
                 confinement,
-                confines: sandbox.map(|applied| applied.confines().clone()),
+                confines,
                 started_with: StartedWith {
                     held: chat.held.clone(),
                     grants: self.grants_of(chat),
@@ -3112,6 +3246,7 @@ impl Chats {
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
+        lock(&self.untaken).remove(&session);
         let gone = lock(&self.open).remove(&session);
         self.project_settings.forget(session);
         lock(&self.sizes).remove(&session);
@@ -4006,6 +4141,7 @@ impl Chats {
         let ordered = self.in_order();
         // Read out before `open` is held, as `order` is: no lock here is taken under another.
         let floorless = lock(&self.floorless).clone();
+        let untaken = lock(&self.untaken).clone();
         let open = lock(&self.open);
         let front = *lock(&self.front);
         ordered
@@ -4036,6 +4172,7 @@ impl Chats {
                     beside: chat.beside,
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
                     floorless: floorless.get(&session).cloned(),
+                    untaken: untaken.get(&session).cloned(),
                 })
             })
             .collect()
@@ -4293,6 +4430,12 @@ impl Chats {
         lock(&self.coming).extend(coming);
     }
 
+    /// Every chat of this project the session host still runs from before this window that no
+    /// chat put back reattached is closed (#2006): once a put back has settled.
+    pub(crate) fn close_what_was_not_reattached(&self) {
+        self.sessions.close_what_was_not_reattached();
+    }
+
     /// The second half of putting a record back: **starts** what
     /// [`Self::begin_put_back`] registered, a few at a time, the chat in front first, and
     /// answers once every one has been tried, with the ones that started.
@@ -4490,6 +4633,7 @@ impl Chats {
                 // How it is sandboxed is its start's to say.
                 sandbox: None,
                 floorless: None,
+                untaken: None,
             })
             .collect()
     }
@@ -10580,6 +10724,136 @@ pub(crate) mod tests {
         assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), before);
         assert!(chats.open_tab(session + 40).is_err(), "no chat, no tab");
         let _ = chats.close(session);
+    }
+
+    // ----- a chat the session host still runs is reattached (#2006) -----
+
+    /// What a launch's record holds of chat 3, put back on `host`, which still runs it.
+    fn left_running_in(plane: &std::path::Path, chat: Chat) -> Record {
+        Record {
+            chats: vec![Chat {
+                number: Some(3),
+                identity: purlis_core::reopen::Identity {
+                    id: Some(CHAT_ID.to_owned()),
+                    device: Some(DEVICE.to_owned()),
+                    run: Some(OLD_RUN.to_owned()),
+                    resumed_from: None,
+                },
+                cwd: Some(plane.to_path_buf()),
+                ..chat
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// D-2006-7: a chat put back that the session host still runs is reattached, and nothing a
+    /// start begins happens: no program starts (so no first message is typed and nothing is
+    /// handed to it), no run begins and the run it was is kept, no trust event or opt-out count
+    /// is written, and no start is held.
+    #[test]
+    fn a_chat_the_host_still_runs_is_reattached_and_nothing_a_start_begins_happens() {
+        let plane = a_sandboxed_plane();
+        let host = Pretend::default();
+        host.leaves_running(3, None);
+        let mut chats = restartable_chats_of(plane.path(), host.clone());
+        let begun = beginning(&mut chats);
+        let decided = Arc::new(Mutex::new(0_usize));
+        chats.when_the_sandbox_is_decided({
+            let decided = Arc::clone(&decided);
+            Box::new(move |_| {
+                *lock(&decided) += 1;
+                Ok(())
+            })
+        });
+        let held = Arc::new(Mutex::new(0_usize));
+        chats.when_a_held_start_is_settled({
+            let held = Arc::clone(&held);
+            Box::new(move |_, _| *lock(&held) += 1)
+        });
+
+        let open = chats.put_back(
+            &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+            SIZE,
+        );
+
+        assert_eq!(open.iter().map(|one| one.session).collect::<Vec<_>>(), [3]);
+        assert_eq!(host.reattached(), [3]);
+        assert!(host.openings().is_empty(), "nothing was started");
+        assert!(lock(&begun).is_empty(), "no run began");
+        assert_eq!(*lock(&decided), 0, "no trust event, no opt-out count");
+        assert_eq!(*lock(&held), 0, "no start held");
+        assert_eq!(
+            chats.record().chats[0].identity.run.as_deref(),
+            Some(OLD_RUN),
+            "the run it was"
+        );
+        assert!(chats.start_notes(3).is_empty());
+    }
+
+    /// D-2006-11: a chat the host still runs is reattached, never refused, though its start
+    /// now would be: its profile is gone. It is not closed.
+    #[test]
+    fn a_chat_the_host_still_runs_is_reattached_though_its_start_would_now_be_refused() {
+        let plane = a_sandboxed_plane();
+        let host = Pretend::default();
+        host.leaves_running(3, None);
+        let chats = restartable_chats_of(plane.path(), host.clone());
+
+        let open = chats.put_back(
+            &left_running_in(
+                plane.path(),
+                Chat {
+                    profile: Some("gone".to_owned()),
+                    ..a_resumable_chat_in(plane.path())
+                },
+            ),
+            SIZE,
+        );
+        chats.close_what_was_not_reattached();
+
+        assert_eq!(open.iter().map(|one| one.session).collect::<Vec<_>>(), [3]);
+        assert_eq!(host.reattached(), [3]);
+        assert!(host.closed_left().is_empty(), "it is not closed");
+        assert!(chats.would_not_start().is_empty());
+    }
+
+    /// D-2006-11: the sandbox narrowed while no window was there. The chat the host still runs
+    /// in the plan it was started with is reattached, not closed, and the narrowing reaches it
+    /// as it reaches any running chat a sandbox change left behind: it is offered a restart on
+    /// the sandbox of now (#1428).
+    #[test]
+    fn a_chat_whose_sandbox_narrowed_while_no_window_was_there_is_reattached_and_offered_a_restart()
+    {
+        use purlis_core::sandbox::egress::{PLAIN_PORTS, TUNNEL_PORTS};
+        use purlis_core::sandbox::plan::{Beside, Plan};
+        let plane = a_sandboxed_plane();
+        let host = Pretend::default();
+        // It ran reaching anything; the project's sandbox reaches less now.
+        host.leaves_running(
+            3,
+            Some(Plan {
+                reach: purlis_core::sandbox::reach::Reach::anything().written(),
+                tunnel_ports: TUNNEL_PORTS.to_vec(),
+                plain_ports: PLAIN_PORTS.to_vec(),
+                any_port: true,
+                beside: Beside::Wrapped,
+                given: Vec::new(),
+            }),
+        );
+        let chats = restartable_chats_of(plane.path(), host.clone());
+
+        chats.put_back(
+            &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+            SIZE,
+        );
+        chats.close_what_was_not_reattached();
+
+        assert_eq!(host.reattached(), [3]);
+        assert!(host.closed_left().is_empty(), "it is not closed");
+        assert_eq!(
+            older(&chats).expect("it is offered a restart").sessions(),
+            [3]
+        );
     }
 
     // ----- who a chat is beyond this clone, and its runs (ADR 0066, #834) -----

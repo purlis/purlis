@@ -41,7 +41,7 @@ import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
 /**
  * **The families of cause a dismissal is kept for**, each read from the core by a source that
  * settles it: a dormant pin (`plane_pins`' `missing`), what a relaunch did to a chat
- * (`opened_chats`), a doctor finding that stands as a Notice (`plane_doctor`, #1250), and a
+ * (`opened_chats`, a reattach whose state the session host could not hand over among it, #2006), a doctor finding that stands as a Notice (`plane_doctor`, #1250), and a
  * sandbox change that left chats behind (`chats_on_older_sandbox`, #1428), a remembered
  * project that is gone (`recent_planes`' `gone`, #1291: {@link GONE}), and a workspace's repo
  * left off its default branch or on a moved remote (`stale_clones`, #1985). A family is the
@@ -52,6 +52,7 @@ export const KEPT: ReadonlySet<string> = new Set([
   "chat-resumed",
   "chat-guessed",
   "chat-fresh",
+  "chat-untaken",
   "doctor-finding",
   "sandbox-changed",
   "project-gone",

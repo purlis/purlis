@@ -67,6 +67,13 @@ pub trait Chats: Send + Sync + 'static {
     fn holder(&self) -> Option<u32> {
         None
     }
+
+    /// Every process the chats run below that is not the host itself: the window that started
+    /// the host, and each window that came back to it since (#2006). A peer below any of them is
+    /// inside a chat, and none of them is. [`Chats::holder`] alone, by default.
+    fn holders(&self) -> Vec<u32> {
+        self.holder().into_iter().collect()
+    }
 }
 
 /// A host that holds no chats: no process is inside one.
@@ -86,15 +93,15 @@ pub(crate) async fn inside_a_chat<C: Chats>(
     chats: std::sync::Arc<C>,
 ) -> std::io::Result<Option<u32>> {
     let programs = chats.programs();
-    let holder = chats.holder();
-    if programs.is_empty() && holder.is_none() {
+    let holders = chats.holders();
+    if programs.is_empty() && holders.is_empty() {
         return Ok(None);
     }
     tokio::task::spawn_blocking(move || {
         inside_of(
             pid,
             &programs,
-            holder,
+            &holders,
             purlis_same_user::Parents::of,
             purlis_same_user::session_of,
         )
@@ -103,21 +110,21 @@ pub(crate) async fn inside_a_chat<C: Chats>(
     .map_err(std::io::Error::other)?
 }
 
-/// Which chat process `peer` runs inside: below the window that holds the chats (`holder`),
-/// when it is not the window itself, or inside one of the host's own `programs`. Both are
-/// `purlis_same_user::inside_a_chat`'s one check: the window is taken as one more chat's
+/// Which chat process `peer` runs inside: below a window that holds the chats (`holders`),
+/// when it is not that window itself, or inside one of the host's own `programs`. Both are
+/// `purlis_same_user::inside_a_chat`'s one check: each window is taken as one more chat's
 /// program, its session included, for every peer but the window. Every doubt is an error.
 pub(crate) fn inside_of(
     peer: u32,
     programs: &[u32],
-    holder: Option<u32>,
+    holders: &[u32],
     parent: impl Fn(u32) -> Option<u32>,
     session: impl Fn(u32) -> std::io::Result<u32>,
 ) -> std::io::Result<Option<u32>> {
-    if let Some(window) = holder.filter(|window| *window != peer)
-        && let Some(found) = purlis_same_user::inside_a_chat(peer, &[window], &parent, &session)?
-    {
-        return Ok(Some(found));
+    for window in holders.iter().copied().filter(|window| *window != peer) {
+        if let Some(found) = purlis_same_user::inside_a_chat(peer, &[window], &parent, &session)? {
+            return Ok(Some(found));
+        }
     }
     if programs.is_empty() {
         return Ok(None);

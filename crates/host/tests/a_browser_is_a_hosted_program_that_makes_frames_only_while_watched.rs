@@ -112,7 +112,7 @@ async fn frames_until(reader: &mut Reader, until: Instant) -> Vec<Vec<u8>> {
         };
         reader.ack(bytes.len()).await.unwrap();
         for frame in frames.push(&bytes).unwrap() {
-            // A 1.12 link's view is sent frames that name what they show (#2014).
+            // A 1.14 link's view is sent frames that name what they show (#2014).
             assert_eq!(frame.format, AIMED_JPEG);
             images.push(frame.aimed().expect("an aimed frame").1.to_vec());
         }

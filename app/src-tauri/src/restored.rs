@@ -70,7 +70,12 @@ pub(crate) struct Begun {
 /// (`Chats::begin_put_back`). It starts nothing, so it is quick however many there are.
 pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
     let records = dispatchrecord::list(held.root());
-    let launch = dispatchrestart::at_launch(held.root(), record, &records);
+    // A task the session host still runs from before this window is reattached, at work, and
+    // never ended for what it could be resumed by (#2006).
+    let launch = dispatchrestart::at_launch_beside(held.root(), record, &records, &|chat| {
+        chat.number
+            .is_some_and(|number| held.chats().left_running(number))
+    });
     for chat in &launch.not_resumed {
         tracing::info!(
             "purlis: task chat '{}' could not be told to carry on; it has ended, and the chat \

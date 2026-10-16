@@ -34,10 +34,12 @@
 //! window is one ([`Window`]); a peer that cannot prove a scope's credential is refused
 //! (`auth`). The host adds no check of its own and skips none.
 //!
-//! **When it ends.** The window's host ends when the window does: the window holds the other
-//! end of its standard input, and the host stops when that closes, whether the window quit,
-//! crashed or was killed ([`serve_for_the_window_if_asked`]). On the way out it removes its
-//! socket.
+//! **When it ends** (ADR 0068 §2, #2006). The window's host ends when the window quits
+//! (`quit`), ending every program as a quit. A window that goes without a word crashed or was
+//! killed: the host keeps its programs for the grace period ([`GRACE`]), so a window that starts
+//! within it takes them back, and ends them as a quit would once it passes. The window holds the
+//! other end of its standard input, which says when the window that started it has gone
+//! ([`serve_for_the_window_if_asked`]). On the way out it removes its socket.
 
 #[cfg(unix)]
 mod browsers;
@@ -51,6 +53,8 @@ mod hosting;
 mod hostrecord;
 #[cfg(unix)]
 mod killswitch;
+#[cfg(unix)]
+mod lifetime;
 #[cfg(unix)]
 mod recording;
 #[cfg(unix)]
@@ -78,6 +82,8 @@ pub use hosting::{
 pub use hostrecord::{HOST_RECORD, Started, this_boot};
 #[cfg(unix)]
 pub use killswitch::KILL_SWITCH;
+#[cfg(unix)]
+pub use lifetime::GRACE;
 /// The session protocol this host speaks, for a binary's [`Compose`].
 #[cfg(unix)]
 pub use purlis_session_protocol as protocol;
@@ -96,7 +102,9 @@ pub const SERVE_FOR_THE_WINDOW: &str = "purlis-serve-for-the-window";
 pub const READY: &str = "ready";
 
 /// When the window's binary was started as its session host ([`SERVE_FOR_THE_WINDOW`]), serve
-/// at the place `place` names until the window closes this process's standard input, holding
+/// at the place `place` names for as long as a window may come back to it (`crate::lifetime`:
+/// until the window quits, or the grace period passes with no window and nothing to wait for;
+/// the window that started it holds this process's standard input), holding
 /// its programs and projects in what `hosting` gives (which composes each start, hears each held
 /// project's hooks, starts each chat's confinement and starts its browsers), and give the code
 /// to exit with; otherwise `None`, before anything is read or opened. `hosting` is given the
@@ -115,14 +123,17 @@ pub fn serve_for_the_window_if_asked(
     }
     let window = Window(std::os::unix::process::parent_id());
     Some(match place() {
-        Some(place) => run(
-            &place,
-            Some(window),
+        Some(place) => {
             // The kill switch, as this host's last one left it, read before anyone is served
             // (ADR 0071): the window's binary keeps it in the place's credentials folder.
-            hosting(&place),
-            until_the_window_closes_its_end(),
-        ),
+            let hosting = hosting(&place);
+            let lives = hosting.clone();
+            run(&place, Some(window), hosting, async move {
+                lives
+                    .while_a_window_may_come_back(GRACE, until_the_window_closes_its_end())
+                    .await;
+            })
+        }
         None => {
             say("there is no home folder to keep the session host's credentials in");
             1
@@ -174,8 +185,8 @@ fn run(
     }
 }
 
-/// Resolves once this process's standard input reaches its end, or fails: the window holds the
-/// other end, and the kernel closes it however the window goes.
+/// Resolves once this process's standard input reaches its end, or fails: the window that
+/// started this host holds the other end, and the kernel closes it however the window goes.
 #[cfg(unix)]
 async fn until_the_window_closes_its_end() {
     use tokio::io::AsyncReadExt;

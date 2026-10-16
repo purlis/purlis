@@ -15,7 +15,7 @@
 //! **No act runs script.** Every act is one of the driver's own; text an agent writes reaches a
 //! page only as typed text or as a value to match, never as code.
 //!
-//! **One driver at a time** (1.12, #2014). The person takes a browser over from its view
+//! **One driver at a time** (1.14, #2014). The person takes a browser over from its view
 //! ([`crate::session::Command::TakeOver`]); while they drive, every act is refused and only their
 //! own input reaches the page ([`Input`]), each event naming what the frame it was aimed at showed
 //! ([`Aim`]). Only their hand-back ([`crate::session::Command::HandBack`]) returns the browser to
@@ -237,7 +237,7 @@ pub struct BrowserReach {
     pub open_web: bool,
 }
 
-/// Who drives a browser (1.12): the agent, through its acts, or the person who took it over.
+/// Who drives a browser (1.14): the agent, through its acts, or the person who took it over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Driver {
@@ -245,7 +245,7 @@ pub enum Driver {
     Person,
 }
 
-/// What a frame of a browser showed (1.12): its page (`p1`), and its documents, a number that
+/// What a frame of a browser showed (1.14): its page (`p1`), and its documents, a number that
 /// changes each time the page or any frame inside it loads another document. Input names the
 /// frame it was aimed at by it, and the browser drops input whose page has moved on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -254,7 +254,7 @@ pub struct Aim {
     pub document: u64,
 }
 
-/// What the person's mouse did (1.12).
+/// What the person's mouse did (1.14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MouseAction {
@@ -264,7 +264,7 @@ pub enum MouseAction {
     Wheel,
 }
 
-/// The mouse button a mouse event is about (1.12).
+/// The mouse button a mouse event is about (1.14).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Button {
@@ -275,7 +275,7 @@ pub enum Button {
     Right,
 }
 
-/// What the person's key did (1.12).
+/// What the person's key did (1.14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyAction {
@@ -283,7 +283,7 @@ pub enum KeyAction {
     Up,
 }
 
-/// One event of the person's, in a browser they drive (1.12): a mouse's or a key's, aimed at
+/// One event of the person's, in a browser they drive (1.14): a mouse's or a key's, aimed at
 /// what a frame showed. Points are CSS pixels of the page's viewport; `modifiers` are the keys
 /// held, as bits (Alt 1, Control 2, Meta 4, Shift 8).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

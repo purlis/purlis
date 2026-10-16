@@ -9,7 +9,7 @@
 //! it. So a view attached again after it fell behind starts on a whole frame, and a reader handed
 //! the stream in pieces of any size ([`Frames`]) tells where each frame ends.
 //!
-//! **An aimed frame** (1.12, [`AIMED_JPEG`]) says before its image what it shows: its page, as a
+//! **An aimed frame** (1.14, [`AIMED_JPEG`]) says before its image what it shows: its page, as a
 //! length byte and the page's id, and its documents, a big-endian `u64`. The person's input names
 //! the frame it was aimed at by them ([`crate::browsing::Aim`]), so input meant for a page that
 //! has since moved on is dropped rather than landing on another.
@@ -25,7 +25,7 @@ use crate::browsing::Aim;
 /// A JPEG image, as the engine's screencast makes it.
 pub const JPEG: u8 = 0x01;
 
-/// A JPEG image after what it shows (1.12): [`aimed`].
+/// A JPEG image after what it shows (1.14): [`aimed`].
 pub const AIMED_JPEG: u8 = 0x02;
 
 /// The longest frame a reader takes, format byte included: far more than a screen's JPEG.

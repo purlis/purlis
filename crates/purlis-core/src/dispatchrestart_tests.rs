@@ -267,6 +267,32 @@ fn a_task_with_no_conversation_to_resume_is_left_out_and_not_started_on_its_brie
     assert_eq!(launch.back.chats[0].shows, None);
 }
 
+/// #2006: a task the session host still runs from before the window went is the same program
+/// at work. It comes back whatever its record says it could be resumed by, is told nothing (it
+/// starts nothing, and forgot nothing), and its dispatch has not ended.
+#[test]
+fn a_task_the_session_host_still_runs_comes_back_as_it_is_and_is_told_nothing() {
+    let (_d, root) = project();
+    dispatched(&root);
+    let lost = Chat {
+        resume: None,
+        profile: None,
+        ..the_task()
+    };
+    for task in [lost, the_task()] {
+        let record = recorded(vec![the_steward(), task.clone()]);
+
+        let launch = at_launch_beside(&root, &record, &dispatchrecord::list(&root), &|chat| {
+            chat.number == Some(TASK)
+        });
+
+        assert_eq!(launch.back, record, "{task:?}");
+        assert!(launch.not_resumed.is_empty());
+        assert_eq!(launch.told(&task), None);
+        assert!(launch.is_a_listed_task(task.identity.id.as_deref().expect("an id")));
+    }
+}
+
 #[test]
 fn an_entry_the_dispatch_store_does_not_vouch_for_is_told_nothing() {
     let (_d, root) = project();

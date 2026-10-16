@@ -123,14 +123,21 @@ use crate::view::{Limits, Views};
 /// words or `browser_ended`; a browser's start may say what it reaches (`reach`,
 /// [`crate::browsing::BrowserReach`]).
 ///
-/// 1.12 added taking a browser over (#2014): `take_over` and `hand_back`, answered `driving`
+/// 1.13 added what a window that comes back to a host that outlived it needs (#2006):
+/// `programs_of`, answered `programs`, says each program a held project still has, running or
+/// ended, with what the window takes it back by; `quit` says the window is quitting, so the host
+/// ends every program as a quit and stops, where a link that ends without it is a crash the host
+/// waits out (ADR 0068 §2); and `board` is refused `too_large` where the kept board is more than
+/// one answer carries.
+///
+/// 1.14 added taking a browser over (#2014): `take_over` and `hand_back`, answered `driving`
 /// with who drives now; `browser_input`, one event of the person's aimed at what a frame showed
 /// ([`crate::browsing::Input`]), refused `not_driving` unless the person drives and
 /// `input_missed` where the page has moved on; `size_browser`; a listed browser's `driver`; and
 /// a browser view's frames name what they show ([`crate::view::frames::AIMED_JPEG`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 12,
+    minor: 14,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -187,12 +194,16 @@ pub const BROWSER_REFUSED: &str = "browser_refused";
 /// The browser an act was for has ended: stopped, closed, or its engine ended (1.11). Nothing
 /// was done; a new browser is opened for the next act.
 pub const BROWSER_ENDED: &str = "browser_ended";
-/// The person's input, or a size, for a browser they have not taken over (1.12): nothing reached
+/// The person's input, or a size, for a browser they have not taken over (1.14): nothing reached
 /// the page.
 pub const NOT_DRIVING: &str = "not_driving";
-/// The person's input was aimed at a page or document the browser no longer shows (1.12): it was
+/// The person's input was aimed at a page or document the browser no longer shows (1.14): it was
 /// dropped, and nothing reached the page.
 pub const INPUT_MISSED: &str = "input_missed";
+
+/// What the host would answer is more than one answer carries, for a reason its `why` gives
+/// (1.13): a held project's kept board too large to hand over whole.
+pub const TOO_LARGE: &str = "too_large";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -207,6 +218,7 @@ pub const REFUSALS: &[&str] = &[
     NOT_RECORDED,
     BROWSER_REFUSED,
     BROWSER_ENDED,
+    TOO_LARGE,
     NOT_DRIVING,
     INPUT_MISSED,
 ];
@@ -366,23 +378,32 @@ pub enum Command {
         call_id: String,
         act: crate::browsing::Act,
     },
-    /// The person takes browser `program` over (1.12, #2014): an act in flight answers that it
+    /// Every program a held project still has, running or ended, that no client has closed
+    /// (1.13): what a window that comes back to the host takes back. Answered
+    /// [`Answer::Programs`]. The window's alone ([`crate::grants::Power::Reattach`]).
+    ProgramsOf { project: String },
+    /// The window is quitting (1.13, ADR 0068 §2): the host ends every program it runs as a quit
+    /// would, answers once they are gone, and stops. A window's link that ends without it is a
+    /// crash, after which the host keeps its programs for the grace period. The window's alone
+    /// ([`crate::grants::Power::Quit`]).
+    Quit,
+    /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
     /// they hand it back. Answered [`Answer::Driving`]. The window's alone
     /// ([`crate::grants::Power::Browser`]).
     TakeOver { program: String },
-    /// The person hands browser `program` back (1.12): every reference dealt before it is void.
+    /// The person hands browser `program` back (1.14): every reference dealt before it is void.
     /// Answered [`Answer::Driving`].
     HandBack { program: String },
-    /// One event of the person's in a browser they drive (1.12): refused [`NOT_DRIVING`] unless
+    /// One event of the person's in a browser they drive (1.14): refused [`NOT_DRIVING`] unless
     /// they took it over, and [`INPUT_MISSED`] where the page no longer shows what the event was
     /// aimed at. Nothing is replayed: an event that does not reach the page is dropped.
     BrowserInput {
         program: String,
         input: crate::browsing::Input,
     },
-    /// The person sets the size of browser `program`'s pages, in CSS pixels (1.12): refused
+    /// The person sets the size of browser `program`'s pages, in CSS pixels (1.14): refused
     /// [`NOT_DRIVING`] unless they drive it.
     SizeBrowser {
         program: String,
@@ -743,6 +764,8 @@ pub enum Answer {
     Dealt { number: u32 },
     /// A held project's kept board, as the core says it: [`Command::Board`] (1.10).
     Board(serde_json::Value),
+    /// The programs a held project still has: [`Command::ProgramsOf`] (1.13).
+    Programs(Vec<HeldProgram>),
     /// Where the confinement it started is: [`Command::Confine`] (1.4).
     Confined(Confined),
     /// The hosts held connections gave up on before an Allow, which the chat is told to retry:
@@ -755,12 +778,43 @@ pub enum Answer {
     KillSwitch(KillSwitch),
     /// What a browser answered an act with: [`Command::Browse`] (1.11).
     Browsed(Box<crate::browsing::Browsed>),
-    /// Who drives a browser now: [`Command::TakeOver`] and [`Command::HandBack`] (1.12).
+    /// Who drives a browser now: [`Command::TakeOver`] and [`Command::HandBack`] (1.14).
     Driving { driver: crate::browsing::Driver },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
     Done,
+}
+
+/// One program a held project still has, as [`Command::ProgramsOf`] answers it (1.13): what a
+/// window that comes back takes it back by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldProgram {
+    /// Its id in the host.
+    pub program: String,
+    /// What kind of program it is: a harness or a shell.
+    pub kind: ProgramKind,
+    /// Its number in its project.
+    pub number: u32,
+    /// Its process, while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<u32>,
+    /// The run its start began (ADR 0066), where its start said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
+    /// How it ended, where it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<Exit>,
+    /// The confinement it runs in, and where that is, where it runs in one (1.4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confined: Option<Confined>,
+    /// The plan that confinement was started from, as the window that confined it sent it: what
+    /// a window that comes back compares with the plan it would make now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<ConfinePlan>,
+    /// The size its terminal is now.
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -812,7 +866,7 @@ pub struct Chat {
     /// to a link that speaks 1.6, so a client one version behind never takes one for a chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ProgramKind>,
-    /// Who drives it, where it is a browser (1.12): the person from their take-over to their
+    /// Who drives it, where it is a browser (1.14): the person from their take-over to their
     /// hand-back, so a window that comes back draws the browser as still theirs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver: Option<crate::browsing::Driver>,
@@ -976,6 +1030,8 @@ wire_words!(Command {
     MidTurn => "mid_turn",
     Record => "record",
     Browse => "browse",
+    ProgramsOf => "programs_of",
+    Quit => "quit",
     TakeOver => "take_over",
     HandBack => "hand_back",
     BrowserInput => "browser_input",
@@ -1020,6 +1076,8 @@ impl Command {
             | Command::HandBack { .. }
             | Command::BrowserInput { .. }
             | Command::SizeBrowser { .. } => Power::Browser,
+            Command::ProgramsOf { .. } => Power::Reattach,
+            Command::Quit => Power::Quit,
         }
     }
 }
@@ -1032,6 +1090,7 @@ wire_words!(Answer {
     Readiness => "readiness",
     Dealt => "dealt",
     Board => "board",
+    Programs => "programs",
     Confined => "confined",
     ReachChanged => "reach_changed",
     Reach => "reach",
@@ -1458,7 +1517,8 @@ impl Lane {
             | Command::StopAll
             | Command::Rearm
             | Command::KillSwitch
-            | Command::MidTurn { .. } => None,
+            | Command::MidTurn { .. }
+            | Command::Quit => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -1484,9 +1544,10 @@ impl Lane {
             Command::Record { .. } => Some(Lane::Record),
             // A board's moves are made in the order the window made them, and a read of it
             // follows every move sent before it.
-            Command::BoardMoved { project, .. } | Command::Board { project } => {
-                Some(Lane::Board(project.clone()))
-            }
+            // And what a window takes back follows them too (1.13).
+            Command::BoardMoved { project, .. }
+            | Command::Board { project }
+            | Command::ProgramsOf { project } => Some(Lane::Board(project.clone())),
             Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
             // The person's take-over, input and hand-back keep their order with each other and
             // with the browser's views, never waiting behind an act in flight, which the
@@ -1965,6 +2026,25 @@ impl Client {
         }
     }
 
+    /// Every program `project` still has, running or ended, as a window that comes back takes
+    /// them back (1.13).
+    pub async fn programs_of(&self, project: &str) -> Result<Vec<HeldProgram>, CallError> {
+        match self
+            .call(Command::ProgramsOf {
+                project: project.into(),
+            })
+            .await?
+        {
+            Answer::Programs(programs) => Ok(programs),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// The window is quitting: the host ends every program as a quit and stops (1.13).
+    pub async fn quit(&self) -> Result<(), CallError> {
+        self.done(Command::Quit).await
+    }
+
     /// Throw the kill switch: every program the host runs ends, and none starts until the
     /// window re-arms (1.5).
     pub async fn stop_all(&self) -> Result<KillSwitch, CallError> {
@@ -2062,7 +2142,7 @@ impl Client {
         }
     }
 
-    /// The person takes browser `program` over (1.12): who drives it now.
+    /// The person takes browser `program` over (1.14): who drives it now.
     pub async fn take_over(&self, program: &str) -> Result<crate::browsing::Driver, CallError> {
         self.driving(Command::TakeOver {
             program: program.into(),
@@ -2070,7 +2150,7 @@ impl Client {
         .await
     }
 
-    /// The person hands browser `program` back (1.12): who drives it now.
+    /// The person hands browser `program` back (1.14): who drives it now.
     pub async fn hand_back(&self, program: &str) -> Result<crate::browsing::Driver, CallError> {
         self.driving(Command::HandBack {
             program: program.into(),
@@ -2085,7 +2165,7 @@ impl Client {
         }
     }
 
-    /// One event of the person's in browser `program`, which they drive (1.12).
+    /// One event of the person's in browser `program`, which they drive (1.14).
     pub async fn browser_input(
         &self,
         program: &str,
@@ -2098,7 +2178,7 @@ impl Client {
         .await
     }
 
-    /// The person sets the size of browser `program`'s pages, in CSS pixels (1.12).
+    /// The person sets the size of browser `program`'s pages, in CSS pixels (1.14).
     pub async fn size_browser(
         &self,
         program: &str,

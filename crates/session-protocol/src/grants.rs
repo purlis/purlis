@@ -36,7 +36,9 @@
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | `board_moved`, `board` (1.10) | yes | | | | | |
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
-//! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.12) | yes | | | | | |
+//! | `programs_of` (1.13) | yes | | | | | |
+//! | `quit` (1.13) | yes | | | | | |
+//! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -80,6 +82,11 @@
 //!   #2194). The kept board is what the window draws Needs you from, and its moves are the
 //!   window's decisions on the lines it heard and the person's acts (an Ignore, an answer, a
 //!   close). Only `local-ui` sends either; a relayed `remote-link` does not.
+//! - **Taking a project's programs back, and quitting the host, are the window's alone** (1.13,
+//!   #2006). What `programs_of` answers is how the window takes each chat back, the place of
+//!   its confinement among it, which only the window confines; and `quit` ends every program
+//!   and the host with them, which is the person's act of quitting purlis. A stop needs no
+//!   human, so every other scope still has `stop` and `stop_all`.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
@@ -88,7 +95,7 @@
 //!   person what a chat's browser may reach, starts it with that reach, and hands on each of
 //!   the chat's acts with `browse`. No other scope sends an act, `remote-link` included: a
 //!   relayed hold does not carry a chat's browser.
-//! - **A browser is taken over, driven and handed back in the window alone** (1.12, #2014). What
+//! - **A browser is taken over, driven and handed back in the window alone** (1.14, #2014). What
 //!   the person types into a page is theirs, and only the window, where they see the page, sends
 //!   it. No other scope takes a browser over or hands it back, `remote-link` included.
 //! - **Saving a held project is the window's alone** (1.7): the project's commits and pushes
@@ -165,7 +172,7 @@ pub enum Power {
     Rearm,
     /// `start_program` and `attach_view` of the kind `browser` (1.6): a browser started as the
     /// person, and what it shows; `take_over`, `hand_back`, `browser_input` and `size_browser`
-    /// (1.12), the person driving it; and `browse` (1.11), an act of a chat's browser, which the
+    /// (1.14), the person driving it; and `browse` (1.11), an act of a chat's browser, which the
     /// window hands on once it has decided the chat may have one.
     Browser,
     /// `record` (1.8): a write in the event log the host holds.
@@ -175,6 +182,11 @@ pub enum Power {
     /// `board_moved` and `board` (1.10): what a held project's kept board holds, and the
     /// window's moves of it.
     Board,
+    /// `programs_of` (1.13): a held project's programs, with what a window takes each back by,
+    /// its confinement's place among them.
+    Reattach,
+    /// `quit` (1.13): the host ends every program and stops.
+    Quit,
 }
 
 impl Scope {
@@ -257,6 +269,18 @@ mod tests {
     fn only_the_window_reads_or_moves_a_projects_board() {
         for scope in Scope::ALL {
             assert_eq!(scope.may(Power::Board), scope == Scope::LocalUi, "{scope}");
+        }
+    }
+
+    #[test]
+    fn only_the_window_takes_back_a_projects_programs_or_quits_its_host() {
+        for scope in Scope::ALL {
+            assert_eq!(
+                scope.may(Power::Reattach),
+                scope == Scope::LocalUi,
+                "{scope}"
+            );
+            assert_eq!(scope.may(Power::Quit), scope == Scope::LocalUi, "{scope}");
         }
     }
 
