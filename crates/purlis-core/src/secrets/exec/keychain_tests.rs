@@ -64,6 +64,7 @@ fn three_values() -> Request {
             "-c".into(),
             "printf '%s|%s|%s' \"$A\" \"$B\" \"$C\"".into(),
         ],
+        argv0: None,
     }
 }
 

@@ -184,6 +184,10 @@ pub struct ExecArgs {
     /// --dotenv — use --stream for those.
     #[arg(long = "exec")]
     exec_mode: bool,
+    /// The name the command is started under (its argv[0]), where that is not its first word:
+    /// a persona tool's script passes the name the tool was declared as (#1977).
+    #[arg(long, value_name = "NAME", hide = true)]
+    argv0: Option<String>,
     /// Command to run; put it after `--`, e.g. -- kubectl get pods.
     #[arg(num_args = 0.., trailing_var_arg = true)]
     command: Vec<String>,
@@ -335,6 +339,7 @@ fn request(vault: String, exec: ExecArgs, graft: Option<Vec<String>>) -> Request
         stream: exec.stream_mode,
         exec: exec.exec_mode,
         command: graft.unwrap_or(exec.command),
+        argv0: exec.argv0,
     }
 }
 

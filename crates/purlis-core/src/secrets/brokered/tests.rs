@@ -3931,3 +3931,107 @@ fn only_a_marked_secret_exec_is_tried_again_through_the_app() {
         }
     }
 }
+
+/// `asker`, whose chat's start armed the tool `name` of `vault` handing `X=TOKEN`, found as
+/// `program`: a tool declared under a name its program's file does not have (#1977).
+fn armed_as(mut asker: Asker, name: &str, vault: &str, program: &Path) -> Asker {
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    asker
+        .confines
+        .as_mut()
+        .expect("sandboxed")
+        .tools
+        .push(Ready {
+            tool: Tool::one(name, vault, "X", Handed::Env, "TOKEN"),
+            program: program.to_path_buf(),
+        });
+    asker
+}
+
+#[test]
+fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
+    let Some(xz) = crate::secrets::exec::tests::xz() else {
+        let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
+        return;
+    };
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let file = crate::secrets::exec::tests::packed(&xz, &root.join("work"), "unpacked\n");
+    // `unxz` is a link to xz: the chat runs the program the link resolves to, by its path.
+    let asker = armed_as(asker(&root, Some("devops")), "unxz", "team", &xz);
+    let mut want = wanted(
+        &root,
+        "team",
+        vec![
+            xz.display().to_string(),
+            "-c".into(),
+            file.display().to_string(),
+        ],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    // `xz -c` would pack it again: started as `unxz`, the same program unpacks.
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    assert!(frames.contains(&Frame::Exit(0)), "{frames:?}");
+}
+
+/// [`a_tool_declared_under_another_name_runs_its_program_under_that_name`] in the run's
+/// sandbox, applied for real where this machine can apply one: macOS's `gunzip` is also its
+/// `zcat`, which writes what it unpacks to standard output.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
+    let can_apply = crate::forklock::status(
+        std::process::Command::new(crate::sandbox::backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]),
+    )
+    .is_ok_and(|s| s.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let packed = crate::forklock::spawn(
+        std::process::Command::new("/usr/bin/gzip")
+            .arg("-c")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped()),
+    )
+    .and_then(|mut child| {
+        child.stdin.take().unwrap().write_all(b"unpacked\n")?;
+        child.wait_with_output()
+    })
+    .unwrap();
+    let file = root.join("work/packed.gz");
+    std::fs::write(&file, packed.stdout).unwrap();
+    let asker = armed_as(
+        asker(&root, Some("devops")),
+        "zcat",
+        "team",
+        Path::new("/usr/bin/gunzip"),
+    );
+    let mut want = wanted(
+        &root,
+        "team",
+        vec!["/usr/bin/gunzip".into(), file.display().to_string()],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_wrapped(&asker, want, reader, Box::new(wire.clone()), Wrap::Seatbelt);
+    let text = String::from_utf8(wire.0.lock().unwrap().clone()).unwrap();
+    let frames: Vec<Frame> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    // As `gunzip` it would unpack beside the file and say nothing.
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    assert!(file.exists(), "the packed file is left as it was");
+}
