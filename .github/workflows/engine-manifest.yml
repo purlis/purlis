@@ -1,0 +1,208 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: engine manifest
+
+# The browser engine's manifest (#2073; ADR 0042, amended 2026-10-16): each day, Chrome for
+# Testing's last-known-good stable version and the SHA-256 of each platform's archive, in the
+# shape `crates/browser-engine` trusts (`engine-pin.json`), signed keyless with cosign through
+# this workflow's own GitHub OIDC identity and published with its Sigstore bundle as the two
+# assets of the `engine-manifest` prerelease:
+#
+#   https://github.com/purlis/purlis/releases/download/engine-manifest/engine-manifest.json
+#   https://github.com/purlis/purlis/releases/download/engine-manifest/engine-manifest.json.sigstore.json
+#
+# A session host takes a manifest only when its bundle verifies, offline, against the Sigstore
+# trusted root the build ships, from a certificate GitHub's token issuer gave to THIS file on
+# `refs/heads/main` of purlis/purlis (`purlis_browser_engine::sigstore`). No signing key exists
+# anywhere: renaming or moving this file changes the identity every build trusts.
+#
+# Two ways in, both on `main` only:
+#
+#   the daily schedule  -> a manifest issued now. The same version issued later keeps an engine
+#                          that is still current from being refused for its age (21 days).
+#   a push to `main`    -> touching this file or the tool that makes the manifest, so a change
+#                          to either publishes at once instead of the next morning.
+#
+# No cache is restored or saved. `sign` can mint an OIDC token and cannot write to the
+# repository; `publish` can write release assets and cannot mint a token; `notice` can write
+# issues and nothing else.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/engine-manifest.yml
+      - tools/engine-manifest.mjs
+
+# One publish at a time, never cancelled once started: a cancelled publish can leave a new
+# bundle beside an old manifest, which every host refuses until the next one.
+concurrency:
+  group: engine-manifest
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  sign:
+    name: make and sign the manifest
+    if: github.repository == 'purlis/purlis' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # `id-token` is for cosign's keyless signature, through Sigstore's public-good instance.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: The manifest, from Chrome for Testing's last-known-good versions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          node tools/engine-manifest.mjs "$RUNNER_TEMP/out/engine-manifest.json"
+          cat "$RUNNER_TEMP/out/engine-manifest.json"
+
+      # Keyless: the certificate names this workflow on `main`, and the signature's entry goes
+      # in Sigstore's public transparency log, its inclusion proof into the bundle.
+      - name: Sign it
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle "$RUNNER_TEMP/out/engine-manifest.json.sigstore.json" \
+            "$RUNNER_TEMP/out/engine-manifest.json"
+
+      # Against the trusted root the builds ship, not one fetched now, and as exactly the
+      # identity they accept: a bundle they would refuse is never published.
+      - name: It verifies as the builds will verify it
+        env:
+          IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/engine-manifest.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --trusted-root crates/browser-engine/sigstore-trusted-root.json \
+            --bundle "$RUNNER_TEMP/out/engine-manifest.json.sigstore.json" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$RUNNER_TEMP/out/engine-manifest.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: engine-manifest
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: publish it beside its bundle
+    needs: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The only job that writes to the repository, and what it writes is two release assets, and
+    # once the prerelease that holds them.
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: engine-manifest
+          path: ${{ runner.temp }}/out
+
+      # A PRERELEASE, never marked latest, so GitHub's `latest` pointer, which stable machines'
+      # updater follows, can never resolve to it. Made by the first run; any run after that
+      # finds it and checks it is still a prerelease.
+      - name: The engine-manifest prerelease exists
+        run: |
+          set -euo pipefail
+          if pre=$(gh release view engine-manifest --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease 2>/dev/null); then
+            if [ "$pre" != "true" ]; then
+              echo "::error::the release named 'engine-manifest' is not a prerelease, so GitHub's 'latest' pointer could resolve to it. Mark it a prerelease: gh release edit engine-manifest --prerelease"
+              exit 1
+            fi
+          else
+            gh release create engine-manifest --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Browser engine manifest" \
+              --notes "The browser engine's manifest, signed each day by .github/workflows/engine-manifest.yml with Sigstore. Not a release of purlis."
+          fi
+
+      # The bundle first and the manifest last, as the dev channel's manifest goes last
+      # (`tools/replace-release-assets.sh` says how and why by name).
+      - name: Replace the bundle, then the manifest
+        run: |
+          set -euo pipefail
+          tools/replace-release-assets.sh engine-manifest \
+            "$RUNNER_TEMP/out/engine-manifest.json.sigstore.json" \
+            "$RUNNER_TEMP/out/engine-manifest.json"
+          version=$(jq -r .version "$RUNNER_TEMP/out/engine-manifest.json")
+          issued=$(jq -r .issued "$RUNNER_TEMP/out/engine-manifest.json")
+          echo "### Engine manifest: Chrome for Testing $version, issued $issued" >> "$GITHUB_STEP_SUMMARY"
+
+  # A scheduled run's red X is on a page nobody opens; an issue is in the repo. One issue, found
+  # by its exact title among every open issue and rewritten each red day, never a second one,
+  # and closed by the first day that publishes (as `release.yml`'s profile guard does). Hosts
+  # keep their engine while no manifest is published, and it ages towards its refusal at 21
+  # days, so a red day matters.
+  notice:
+    name: say so where someone will see it
+    needs: [sign, publish]
+    if: always() && github.event_name == 'schedule' && github.repository == 'purlis/purlis'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the engine manifest's issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SIGN: ${{ needs.sign.result }}
+          PUBLISH: ${{ needs.publish.result }}
+        run: |
+          set -euo pipefail
+          TITLE='the browser engine manifest was not published'
+          gh api --paginate "repos/$GH_REPO/issues?state=open&per_page=100" \
+            --jq '.[] | select(.pull_request | not) | "\(.number) \(.title)"' > "$RUNNER_TEMP/issues.txt"
+          EXISTING="$(awk -v t="$TITLE" \
+            '{n=$1; $1=""; sub(/^ /,""); if ($0 == t) {print n; exit}}' "$RUNNER_TEMP/issues.txt")"
+          echo "sign=$SIGN publish=$PUBLISH issue=${EXISTING:-none}"
+          if [ "$SIGN" = success ] && [ "$PUBLISH" = success ]; then
+            if [ -n "$EXISTING" ]; then
+              gh issue close "$EXISTING" --comment "Published again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [ "$SIGN" != failure ] && [ "$PUBLISH" != failure ]; then
+            echo "### The run did not finish (sign: $SIGN, publish: $PUBLISH); its issue is left as it is" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          BODY_FILE="$RUNNER_TEMP/body.md"
+          {
+            echo "Last run: $RUN_URL (sign: $SIGN, publish: $PUBLISH)"
+            echo
+            echo "The daily browser engine manifest (\`.github/workflows/engine-manifest.yml\`)"
+            echo "was not published. Session hosts keep the engine they have, which is refused"
+            echo "21 days after the newest manifest they took was issued, unless a person allows"
+            echo "an outdated engine in Settings. This issue closes itself on the first day that"
+            echo "publishes."
+          } > "$BODY_FILE"
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body-file "$BODY_FILE"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE"
+          fi
