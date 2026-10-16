@@ -1206,6 +1206,8 @@ name = "purlis-cluster-operator"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "http",
+ "http-body-util",
  "k8s-openapi",
  "kube",
  "schemars",
@@ -1214,6 +1216,7 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
