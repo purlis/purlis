@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792183048996,
+  "lastUpdate": 1792187076806,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14574,6 +14574,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8762965,
             "unit": "ms",
             "extra": "median of 5 runs: 101.181, 101.320, 101.876, 101.925, 102.378 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4f8bf82f7efd056f4a15504d5ed871e284301459",
+          "message": "Themes: ADRs, glossary and the reserved themes/ folder (#2350)\n\n* Themes: ADRs, glossary and the reserved themes/ folder\n\nADR 0097 (a theme is bounded data and may set every token) supersedes\nADR 0094's rule; ADR 0098 (a theme folder needs no approval; an\nextension's capabilities do) amends the approval model of ADRs 0041 and\n0053, each recorded in its amendments folder. CONTEXT.md defines the\nfifteen theme words. The plane format reserves themes/ at the plane\nroot and in every workspace, and purlis doctor's new themes row names\nwhat sits there that is not a theme folder.\n\nCloses #2314. Part of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Themes: review fixes, and consent surfaces themeable under hard floors\n\nADR 0097 records the operator's ruling of 2026-10-17: every token in the\npublished vocabulary may be set by any theme, component tokens and the\nconsent surfaces and state marks included, with the engine's hard\nfloors holding for them; a consent surface's wording, icons and\nplacement stay purlis's. A new 0041 amendment records it. ADR 0098 and\nthe amendments say which ticket builds each rule and that today's rule\nholds until then. The glossary defines instead of describing behaviour,\nthe plane format's themes/ entries use the file's Status and Git\nbullets, and purlis doctor names a linked themes/ as a link.\n\nPart of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Themes: the consent floors hold for every theme\n\nADR 0097, ADR 0098 and the 2026-10-17 amendment of ADR 0041 record the\noperator's ruling of 2026-10-17: when a theme's consent-surface or\nstate-mark colours break a consent floor, the engine draws purlis's own\nvalues for those tokens with a Notice naming the floor, and the rest of\nthe theme draws as written. ADR 0097 §6 becomes \"What holds whatever a\ntheme says\", and the plane format says purlis reads only theme folders\nunder themes/.\n\nPart of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T01:43:13+04:00",
+          "tree_id": "600f23730119e9747ec1fe67e175577aada44cb4",
+          "url": "https://github.com/purlis/purlis/commit/4f8bf82f7efd056f4a15504d5ed871e284301459"
+        },
+        "date": 1792187074578,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6067795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.564, 0.602, 0.607, 0.614, 0.624 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1386745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.930, 16.027, 16.139, 16.148, 16.495 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.453743,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.032, 101.113, 101.454, 102.580, 103.009 ms"
           }
         ]
       }
