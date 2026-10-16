@@ -1,0 +1,237 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! The wrap itself: the supervisor's start, and the chat's.
+//!
+//! `purlis _sandbox --profile <piece>… -- <program> <args>…` is the supervisor. It reads the
+//! profile, holds itself to it with Landlock, and starts `purlis _sandbox --chat <socket> --
+//! <program> <args>…`: the chat's side, which applies its own Landlock layer and the seccomp
+//! filters to itself, hands the supervisor the filter's listener over `<socket>`, and becomes
+//! the program. The supervisor then serves the chat's calls until the chat ends, and ends with
+//! its status.
+
+mod filter;
+mod layers;
+mod notify;
+mod supervisor;
+mod walk;
+
+use std::io::{IoSlice, IoSliceMut};
+use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::unix::process::CommandExt;
+use std::process::{Command, ExitCode};
+use std::sync::Arc;
+
+use nix::sys::signal::{SigSet, SigmaskHow, Signal, kill, pthread_sigmask};
+use nix::sys::socket::{
+    AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags, SockFlag, SockType, recvmsg,
+    sendmsg, socketpair,
+};
+use nix::sys::wait::WaitStatus;
+use nix::unistd::Pid;
+
+pub use layers::abi;
+
+use crate::profile::Profile;
+
+/// The word that starts the chat's side, after [`crate::COMMAND`].
+const CHAT: &str = "--chat";
+
+/// How many calls the supervisor serves at once: a call that waits (a pipe opened for reading
+/// before anything writes it) holds one, never the rest.
+const SERVERS: usize = 16;
+
+/// The status a wrap ends with when it could not start the chat.
+const NOT_STARTED: u8 = 126;
+
+/// `purlis _sandbox`, given the words after it.
+pub fn entry(words: &[String]) -> ExitCode {
+    if words.first().map(String::as_str) == Some(CHAT) {
+        return chat_side(&words[1..]);
+    }
+    let Some((profile, program)) = crate::read_line(words) else {
+        return refuse("the sandbox was started without a profile and a program");
+    };
+    match supervise(&profile, &program) {
+        Ok(code) => code,
+        Err(why) => refuse(&why),
+    }
+}
+
+fn refuse(why: &str) -> ExitCode {
+    eprintln!("purlis: {why}, so nothing was started.");
+    ExitCode::from(NOT_STARTED)
+}
+
+fn supervise(profile: &str, program: &[String]) -> Result<ExitCode, String> {
+    let profile = Profile::parse(profile).map_err(|why| why.to_string())?;
+    let abi = abi();
+    if abi < crate::MIN_ABI {
+        return Err(format!(
+            "this Linux kernel's Landlock is version {abi}, and purlis's sandbox needs version {} (Linux 6.12 or later)",
+            crate::MIN_ABI
+        ));
+    }
+    notify::check_sizes().map_err(|why| why.to_string())?;
+    // A process of the chat whose parent ends is the supervisor's, so it stays below it.
+    nix::sys::prctl::set_child_subreaper(true)
+        .map_err(|why| format!("the wrap could not keep the chat's processes: {why}"))?;
+    layers::supervisor(&profile.reach())
+        .map_err(|why| format!("Landlock could not be applied to the wrap: {why}"))?;
+
+    let (ours, theirs) = socketpair(
+        AddressFamily::Unix,
+        SockType::Stream,
+        None,
+        SockFlag::empty(),
+    )
+    .map_err(|why| why.to_string())?;
+    nix::fcntl::fcntl(
+        &ours,
+        nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC),
+    )
+    .map_err(|why| why.to_string())?;
+    let me = std::env::current_exe().map_err(|why| why.to_string())?;
+    let child = Command::new(me)
+        .arg(crate::COMMAND)
+        .arg(CHAT)
+        .arg(theirs.as_raw_fd().to_string())
+        .arg(crate::END)
+        .args(program)
+        .spawn()
+        .map_err(|why| why.to_string())?;
+    drop(theirs);
+    // The supervisor makes files with the mode the chat asked for, less the chat's own mask,
+    // so its own is none; set after the chat started, which keeps the mask it was given.
+    nix::sys::stat::umask(nix::sys::stat::Mode::empty());
+
+    // Signals the terminal sends reach the chat's group itself; an ending asked of the wrap is
+    // passed on to the chat.
+    let mut held = SigSet::empty();
+    for signal in [
+        Signal::SIGINT,
+        Signal::SIGQUIT,
+        Signal::SIGTERM,
+        Signal::SIGHUP,
+    ] {
+        held.add(signal);
+    }
+    pthread_sigmask(SigmaskHow::SIG_BLOCK, Some(&held), None).map_err(|why| why.to_string())?;
+    let pid = Pid::from_raw(i32::try_from(child.id()).unwrap_or(0));
+    std::thread::spawn(move || {
+        while let Ok(signal) = held.wait() {
+            if matches!(signal, Signal::SIGTERM | Signal::SIGHUP) {
+                let _ = kill(pid, signal);
+            }
+        }
+    });
+
+    if let Some(listener) = received(&ours) {
+        match supervisor::Supervisor::new(listener, profile) {
+            Ok(supervisor) => {
+                let supervisor = Arc::new(supervisor);
+                for _ in 0..SERVERS {
+                    let supervisor = Arc::clone(&supervisor);
+                    std::thread::spawn(move || supervisor.serve());
+                }
+            }
+            Err(why) => {
+                let _ = kill(pid, Signal::SIGKILL);
+                return Err(why.to_string());
+            }
+        }
+    }
+    // Every process of the chat whose parent ended is the supervisor's to reap; the chat's
+    // own ending is its status.
+    drop(child);
+    loop {
+        match nix::sys::wait::waitpid(None, None) {
+            Ok(WaitStatus::Exited(at, code)) if at == pid => {
+                return Ok(ExitCode::from(u8::try_from(code).unwrap_or(1)));
+            }
+            Ok(WaitStatus::Signaled(at, signal, _)) if at == pid => {
+                return Ok(ExitCode::from(
+                    u8::try_from(128 + signal as i32).unwrap_or(1),
+                ));
+            }
+            Ok(_) | Err(nix::errno::Errno::EINTR) => {}
+            Err(why) => return Err(why.to_string()),
+        }
+    }
+}
+
+/// The listener the chat's side sends, or `None` where it ended first.
+fn received(socket: &OwnedFd) -> Option<OwnedFd> {
+    let mut byte = [0u8; 1];
+    let mut space = nix::cmsg_space!([std::os::fd::RawFd; 1]);
+    let mut iov = [IoSliceMut::new(&mut byte)];
+    let message = recvmsg::<()>(
+        socket.as_raw_fd(),
+        &mut iov,
+        Some(&mut space),
+        MsgFlags::MSG_CMSG_CLOEXEC,
+    )
+    .ok()?;
+    for control in message.cmsgs().ok()? {
+        if let ControlMessageOwned::ScmRights(fds) = control
+            && let Some(fd) = fds.first()
+        {
+            return adopt(*fd);
+        }
+    }
+    None
+}
+
+/// The descriptor `fd`, just received with `SCM_RIGHTS`, as one this process owns.
+fn adopt(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
+    notify::adopt(fd).ok()
+}
+
+/// The chat's side: its own layer and filters, the listener to the supervisor, then the
+/// program.
+fn chat_side(words: &[String]) -> ExitCode {
+    let (Some(socket), Some(end)) = (words.first(), words.get(1)) else {
+        return refuse("the sandbox's chat side was started without its socket");
+    };
+    if end != crate::END || words.len() < 3 {
+        return refuse("the sandbox's chat side was started without a program");
+    }
+    let program = &words[2..];
+    match restrict_and_hand_over(socket) {
+        Ok(()) => {
+            let why = Command::new(&program[0]).args(&program[1..]).exec();
+            eprintln!("purlis: {} could not be started: {why}", program[0]);
+            ExitCode::from(127)
+        }
+        Err(why) => refuse(&why),
+    }
+}
+
+fn restrict_and_hand_over(socket: &str) -> Result<(), String> {
+    let socket: std::os::fd::RawFd = socket.parse().map_err(|_| "a socket number".to_owned())?;
+    let socket = notify::adopt(socket).map_err(|why| why.to_string())?;
+    // Ended with the supervisor, so the chat never outlives what serves its calls.
+    nix::sys::prctl::set_pdeathsig(Signal::SIGKILL)
+        .map_err(|why| format!("the chat could not be tied to the wrap: {why}"))?;
+    layers::chat().map_err(|why| format!("Landlock could not be applied to the chat: {why}"))?;
+    // The supervised filter first: the refusing ones refuse a listener, the chat's own among
+    // them. A refusal outranks a notification whichever filter says it.
+    let listener = notify::install(&filter::supervised()?)
+        .map_err(|why| format!("the chat's supervised filter could not be applied: {why}"))?;
+    for program in filter::refused()? {
+        seccompiler::apply_filter(&program)
+            .map_err(|why| format!("the chat's seccomp filter could not be applied: {why}"))?;
+    }
+    let fds = [listener.as_raw_fd()];
+    sendmsg::<()>(
+        socket.as_raw_fd(),
+        &[IoSlice::new(&[0])],
+        &[ControlMessage::ScmRights(&fds)],
+        MsgFlags::empty(),
+        None,
+    )
+    .map_err(|why| why.to_string())?;
+    drop(listener);
+    drop(socket);
+    Ok(())
+}

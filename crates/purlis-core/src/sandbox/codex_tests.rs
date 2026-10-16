@@ -51,6 +51,7 @@ fn line_in(
             hook_socket: None,
             confinement: Some(confinement),
             no_opt_out: false,
+            purlis: None,
         },
     )
 }
@@ -106,27 +107,20 @@ fn a_codex_chat_in_a_sandboxed_plane_starts_inside_charters_wrap_on_macos() {
 }
 
 #[test]
-fn on_linux_a_codex_chat_is_refused_until_charter_can_wrap_it_there() {
+fn on_linux_a_codex_chat_runs_inside_purlis_s_own_wrap() {
     let plane = plane_saying(ON);
     let home = tempfile::tempdir().expect("a home");
-    let refused =
-        codex_start(plane.path(), &machine_at(home.path(), Os::Linux)).expect_err("refused");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::Linux))
+        .expect("starts")
+        .expect("sandboxed");
+    let Form::Codex(wrap) = applied.form() else {
+        panic!("compiled for Codex: {:?}", applied.form());
+    };
+    assert_eq!(wrap.os, Os::Linux);
+    assert_eq!(never_on(Harness::Codex, Os::Linux), None);
     assert_eq!(
-        refused,
-        NotStarted::Uncompilable(Uncompilable {
-            harness: Harness::Codex,
-            unheld: Unheld::Wrap(Os::Linux),
-        })
-    );
-    assert!(
-        refused
-            .to_string()
-            .contains("purlis runs Codex inside a sandbox of its own, which it can apply on macOS but not yet on Linux, so it was not started"),
-        "{refused}"
-    );
-    assert_eq!(
-        never_on(Harness::Codex, Os::Linux).as_deref(),
-        Some("purlis can wrap it on macOS only, so far")
+        never_on(Harness::Codex, Os::Other).as_deref(),
+        Some("purlis can wrap it on macOS and Linux only, so far")
     );
 }
 
@@ -598,6 +592,7 @@ fn started_in(plane: &Path, home: &Path, armed: &[String]) -> PathBuf {
                 hook_socket: None,
                 confinement: Some(&confinement),
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect("starts");
@@ -778,6 +773,7 @@ fn a_wrapped_codex_chat_with_no_confinement_is_refused() {
                 hook_socket: None,
                 confinement: None,
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect_err("refused");
@@ -808,6 +804,7 @@ fn line_reporting_on(
                 hook_socket: socket,
                 confinement: Some(confinement),
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect("starts")

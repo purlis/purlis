@@ -1,0 +1,879 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The supervisor: each call the filter hands it, judged and then performed by it.**
+//!
+//! A call is read from the chat's memory once, into the supervisor's own memory; the path or
+//! address in it is walked or parsed there ([`super::walk`]); what the walk arrived at is
+//! judged by the profile; and the supervisor makes the call itself on what it holds, then hands
+//! the chat the result: the number, the error, or the descriptor it opened or connected. The
+//! kernel never goes on with the chat's own call, so what the chat changes in its memory after
+//! the supervisor read it changes nothing.
+//!
+//! Calls that change names (making, moving, linking, removing, a mode) are made one at a time,
+//! so no other call of the chat's moves a folder between one being judged and made.
+
+use std::ffi::OsStr;
+use std::io::IoSliceMut;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use nix::errno::Errno;
+use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, RenameFlags, openat, renameat2};
+use nix::sys::socket::{
+    AddressFamily, SockFlag, SockType, SockaddrIn, SockaddrIn6, UnixAddr, connect, setsockopt,
+    socket, sockopt,
+};
+use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmodat, mkdirat, mknodat};
+use nix::sys::uio::{RemoteIoVec, process_vm_readv};
+use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
+
+use super::notify;
+use super::walk::{self, Chat, Found, World, named, named_in};
+use crate::profile::{FileOp, Kind, Op, Profile, Remote};
+
+/// What a call is answered with.
+enum Answer {
+    /// Its result.
+    Value(i64),
+    /// Its error.
+    Error(Errno),
+    /// A descriptor the supervisor opened, put in at the chat's lowest free number, which is
+    /// the call's result.
+    Opened { fd: OwnedFd, cloexec: bool },
+    /// A socket the supervisor connected, put in place of the chat's own descriptor `at`; the
+    /// call's result is zero.
+    Connected { fd: OwnedFd, at: u32, cloexec: bool },
+    /// The call is gone: its process ended or the call was interrupted. Answered with
+    /// `EINTR` in case it is not.
+    Gone,
+}
+
+impl From<Errno> for Answer {
+    fn from(why: Errno) -> Self {
+        Answer::Error(why)
+    }
+}
+
+/// A refusal: the chat's sandbox does not allow it.
+const REFUSED: Errno = Errno::EACCES;
+
+/// The longest path a call may name, as the kernel's own limit.
+const PATH_MAX: usize = 4096;
+
+/// The supervisor of one wrapped chat.
+pub(super) struct Supervisor {
+    listener: OwnedFd,
+    profile: Profile,
+    world: World,
+    changing: Mutex<()>,
+}
+
+impl Supervisor {
+    pub(super) fn new(listener: OwnedFd, profile: Profile) -> Result<Supervisor, Errno> {
+        Ok(Supervisor {
+            listener,
+            profile,
+            world: World::new()?,
+            changing: Mutex::new(()),
+        })
+    }
+
+    /// Serves calls until the listener ends: when every process of the chat has gone.
+    pub(super) fn serve(&self) {
+        let listener = self.listener.as_fd();
+        loop {
+            let call = match notify::receive(listener) {
+                Ok(call) => call,
+                // The call went away while it was being received.
+                Err(why) if why.raw_os_error() == Some(libc::ENOENT) => continue,
+                Err(why) if why.raw_os_error() == Some(libc::EINTR) => continue,
+                Err(_) => return,
+            };
+            let answer = self.answer(&call);
+            if let Err(why) = self.send(listener, call.id, answer) {
+                // Never left unanswered: a call the supervisor could not complete fails with
+                // why, rather than leaving its thread waiting for ever.
+                let errno = why.raw_os_error().unwrap_or(libc::EIO);
+                let _ = notify::respond(listener, call.id, 0, errno);
+            }
+        }
+    }
+
+    fn send(&self, listener: BorrowedFd<'_>, id: u64, answer: Answer) -> std::io::Result<()> {
+        match answer {
+            Answer::Value(value) => notify::respond(listener, id, value, 0),
+            Answer::Error(why) => notify::respond(listener, id, 0, why as i32),
+            Answer::Opened { fd, cloexec } => {
+                notify::add_fd(listener, id, fd.as_fd(), None, cloexec, true).map(drop)
+            }
+            Answer::Connected { fd, at, cloexec } => {
+                notify::add_fd(listener, id, fd.as_fd(), Some(at), cloexec, false)?;
+                notify::respond(listener, id, 0, 0)
+            }
+            // Answered all the same: a call that is gone refuses the answer, and one that is not
+            // must never be left waiting.
+            Answer::Gone => notify::respond(listener, id, 0, libc::EINTR),
+        }
+    }
+
+    /// Whether the call `id` still waits, asked after its memory was read and before anything
+    /// is done, so a process that ended and a number used again are never acted for.
+    fn alive(&self, id: u64) -> bool {
+        notify::valid(self.listener.as_fd(), id)
+    }
+
+    fn answer(&self, call: &libc::seccomp_notif) -> Answer {
+        let tid = i32::try_from(call.pid).unwrap_or(0);
+        let Some(tgid) = walk::tgid(tid) else {
+            return Answer::Gone;
+        };
+        let chat = Chat {
+            tid,
+            tgid,
+            world: &self.world,
+        };
+        let a = call.data.args;
+        let int = |at: usize| a[at] as i32;
+        let nr = i64::from(call.data.nr);
+        let id = call.id;
+        let at = |at: usize| -> Result<Vec<u8>, Errno> { read_path(tid, a[at]) };
+        let out = (|| -> Result<Answer, Errno> {
+            match nr {
+                libc::SYS_openat => {
+                    let path = at(1)?;
+                    self.open(&chat, id, int(0), &path, int(2), a[3] as u32)
+                }
+                libc::SYS_mkdirat => {
+                    let path = at(1)?;
+                    self.make(&chat, id, int(0), &path, Kind::Directory, a[2] as u32, None)
+                }
+                libc::SYS_mknodat => {
+                    let path = at(1)?;
+                    self.mknod(&chat, id, int(0), &path, a[2] as u32)
+                }
+                libc::SYS_symlinkat => {
+                    let target = at(0)?;
+                    let path = at(2)?;
+                    self.make(&chat, id, int(1), &path, Kind::Symlink, 0, Some(&target))
+                }
+                libc::SYS_unlinkat => {
+                    let path = at(1)?;
+                    self.unlink(&chat, id, int(0), &path, int(2) & libc::AT_REMOVEDIR != 0)
+                }
+                libc::SYS_renameat2 => {
+                    let (from, to) = (at(1)?, at(3)?);
+                    self.rename(&chat, id, (int(0), &from), (int(2), &to), a[4] as u32)
+                }
+                libc::SYS_linkat => {
+                    let (from, to) = (at(1)?, at(3)?);
+                    self.link(&chat, id, (int(0), &from), (int(2), &to), int(4))
+                }
+                libc::SYS_truncate => {
+                    let path = at(0)?;
+                    self.truncate(&chat, id, &path, a[1] as i64)
+                }
+                libc::SYS_fchmod => self.fchmod(&chat, id, int(0), a[1] as u32),
+                libc::SYS_fchmodat => {
+                    let path = at(1)?;
+                    self.chmod(&chat, id, int(0), &path, a[2] as u32, 0)
+                }
+                super::filter::SYS_FCHMODAT2 => {
+                    let flags = int(3);
+                    if flags & libc::AT_EMPTY_PATH != 0
+                        && read_path(tid, a[1]).is_ok_and(|p| p.is_empty())
+                    {
+                        return self.fchmod(&chat, id, int(0), a[2] as u32);
+                    }
+                    let path = at(1)?;
+                    self.chmod(&chat, id, int(0), &path, a[2] as u32, flags)
+                }
+                libc::SYS_connect => self.connect(&chat, id, int(0), a[1], a[2] as usize),
+                #[cfg(target_arch = "x86_64")]
+                legacy => self.legacy(&chat, id, legacy, &a, tid),
+                #[cfg(not(target_arch = "x86_64"))]
+                libc::SYS_renameat => {
+                    let (from, to) = (at(1)?, at(3)?);
+                    self.rename(&chat, id, (int(0), &from), (int(2), &to), 0)
+                }
+                #[cfg(not(target_arch = "x86_64"))]
+                _ => Err(Errno::ENOSYS),
+            }
+        })();
+        out.unwrap_or_else(Answer::Error)
+    }
+
+    /// The x86-64 calls that name no folder: each is its `*at` form from the working folder.
+    #[cfg(target_arch = "x86_64")]
+    fn legacy(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        nr: i64,
+        a: &[u64; 6],
+        tid: i32,
+    ) -> Result<Answer, Errno> {
+        let here = libc::AT_FDCWD;
+        let at = |at: usize| read_path(tid, a[at]);
+        match nr {
+            libc::SYS_open => self.open(chat, id, here, &at(0)?, a[1] as i32, a[2] as u32),
+            libc::SYS_creat => self.open(
+                chat,
+                id,
+                here,
+                &at(0)?,
+                libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC,
+                a[1] as u32,
+            ),
+            libc::SYS_mkdir => {
+                self.make(chat, id, here, &at(0)?, Kind::Directory, a[1] as u32, None)
+            }
+            libc::SYS_mknod => self.mknod(chat, id, here, &at(0)?, a[1] as u32),
+            libc::SYS_symlink => {
+                let target = at(0)?;
+                self.make(chat, id, here, &at(1)?, Kind::Symlink, 0, Some(&target))
+            }
+            libc::SYS_unlink => self.unlink(chat, id, here, &at(0)?, false),
+            libc::SYS_rmdir => self.unlink(chat, id, here, &at(0)?, true),
+            libc::SYS_rename => {
+                let from = at(0)?;
+                self.rename(chat, id, (here, &from), (here, &at(1)?), 0)
+            }
+            libc::SYS_renameat => {
+                let (from, to) = (at(1)?, at(3)?);
+                self.rename(chat, id, (a[0] as i32, &from), (a[2] as i32, &to), 0)
+            }
+            libc::SYS_link => {
+                let from = at(0)?;
+                self.link(chat, id, (here, &from), (here, &at(1)?), 0)
+            }
+            libc::SYS_chmod => self.chmod(chat, id, here, &at(0)?, a[1] as u32, 0),
+            _ => Err(Errno::ENOSYS),
+        }
+    }
+
+    fn allows(&self, chat: &Chat<'_>, what: FileOp, path: &Path, kind: Kind) -> bool {
+        self.profile.allows(&Op::File { what, path, kind }) || linux_own(chat, what, path, kind)
+    }
+
+    fn judge(&self, chat: &Chat<'_>, ops: &[(FileOp, &Path, Kind)]) -> Result<(), Errno> {
+        if ops
+            .iter()
+            .all(|(what, path, kind)| self.allows(chat, *what, path, *kind))
+        {
+            Ok(())
+        } else {
+            Err(REFUSED)
+        }
+    }
+
+    fn open(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        dirfd: i32,
+        path: &[u8],
+        flags: i32,
+        mode: u32,
+    ) -> Result<Answer, Errno> {
+        let oflag = OFlag::from_bits_retain(flags);
+        let cloexec = oflag.contains(OFlag::O_CLOEXEC);
+        let access = flags & libc::O_ACCMODE;
+        let reads = access == libc::O_RDONLY || access == libc::O_RDWR;
+        let writes = access != libc::O_RDONLY || oflag.contains(OFlag::O_TRUNC);
+        let tmpfile = flags & libc::O_TMPFILE == libc::O_TMPFILE;
+        let create = oflag.contains(OFlag::O_CREAT) && !tmpfile;
+        let exclusive = create && oflag.contains(OFlag::O_EXCL);
+        let nofollow = oflag.contains(OFlag::O_NOFOLLOW);
+        let path_only = oflag.contains(OFlag::O_PATH);
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let changes = create || tmpfile;
+        let _held = changes.then(|| self.changing.lock());
+
+        if tmpfile {
+            let Found::There {
+                fd: folder, kind, ..
+            } = chat.walk(dirfd, path, true)?
+            else {
+                return Err(Errno::ENOENT);
+            };
+            if kind != Kind::Directory {
+                return Err(Errno::ENOTDIR);
+            }
+            let made = named(&folder)?.join(".tmpfile");
+            self.judge(
+                chat,
+                &[
+                    (FileOp::Create, &made, Kind::Regular),
+                    (FileOp::WriteData, &made, Kind::Regular),
+                ],
+            )?;
+            let fd = openat(
+                &folder,
+                ".",
+                oflag | OFlag::O_CLOEXEC,
+                Mode::from_bits_truncate(mode & !umask(chat.tid)),
+            )?;
+            return Ok(Answer::Opened { fd, cloexec });
+        }
+
+        match chat.walk(dirfd, path, !nofollow && !exclusive)? {
+            Found::There { fd, kind, entry } => {
+                if exclusive {
+                    return Err(Errno::EEXIST);
+                }
+                if kind == Kind::Symlink && !path_only {
+                    return Err(Errno::ELOOP);
+                }
+                if oflag.contains(OFlag::O_DIRECTORY)
+                    && kind != Kind::Directory
+                    && kind != Kind::Symlink
+                {
+                    return Err(Errno::ENOTDIR);
+                }
+                let at = match (&entry, kind) {
+                    (Some((folder, name)), Kind::Symlink) => named_in(folder, name)?,
+                    _ => named(&fd)?,
+                };
+                if path_only {
+                    // The kernel opens a path-only descriptor itself (`filter::supervised`), and
+                    // one cannot be handed over.
+                    return Err(Errno::EINVAL);
+                }
+                if writes && kind == Kind::Directory {
+                    return Err(Errno::EISDIR);
+                }
+                let mut ops = Vec::new();
+                if reads {
+                    ops.push((FileOp::ReadData, at.as_path(), kind));
+                }
+                if writes {
+                    ops.push((FileOp::WriteData, at.as_path(), kind));
+                }
+                self.judge(chat, &ops)?;
+                let again = oflag & !(OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW)
+                    | OFlag::O_CLOEXEC
+                    | OFlag::O_NOCTTY;
+                let opened = nix::fcntl::open(
+                    format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str(),
+                    again,
+                    Mode::empty(),
+                )?;
+                Ok(Answer::Opened {
+                    fd: opened,
+                    cloexec,
+                })
+            }
+            Found::Missing { folder, name } => {
+                if !create {
+                    return Err(Errno::ENOENT);
+                }
+                let made = named_in(&folder, &name)?;
+                let mut ops = vec![
+                    (FileOp::Create, made.as_path(), Kind::Regular),
+                    (FileOp::WriteData, made.as_path(), Kind::Regular),
+                ];
+                if reads {
+                    ops.push((FileOp::ReadData, made.as_path(), Kind::Regular));
+                }
+                self.judge(chat, &ops)?;
+                let fd = openat(
+                    &folder,
+                    name.as_os_str(),
+                    oflag | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NOCTTY,
+                    Mode::from_bits_truncate(mode & 0o7777 & !umask(chat.tid)),
+                )?;
+                Ok(Answer::Opened { fd, cloexec })
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        dirfd: i32,
+        path: &[u8],
+        kind: Kind,
+        mode: u32,
+        target: Option<&[u8]>,
+    ) -> Result<Answer, Errno> {
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let Found::Missing { folder, name } = chat.walk(dirfd, path, false)? else {
+            return Err(Errno::EEXIST);
+        };
+        let made = named_in(&folder, &name)?;
+        self.judge(chat, &[(FileOp::Create, &made, kind)])?;
+        let mode = Mode::from_bits_truncate(mode & 0o7777 & !umask(chat.tid));
+        match target {
+            Some(target) => symlinkat(OsStr::from_bytes(target), &folder, name.as_os_str())?,
+            None => mkdirat(&folder, name.as_os_str(), mode)?,
+        }
+        Ok(Answer::Value(0))
+    }
+
+    fn mknod(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        dirfd: i32,
+        path: &[u8],
+        mode: u32,
+    ) -> Result<Answer, Errno> {
+        let (kind, flag) = match mode & libc::S_IFMT {
+            0 | libc::S_IFREG => (Kind::Regular, SFlag::S_IFREG),
+            libc::S_IFIFO => (Kind::Fifo, SFlag::S_IFIFO),
+            libc::S_IFSOCK => (Kind::Socket, SFlag::S_IFSOCK),
+            _ => return Err(Errno::EPERM),
+        };
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let Found::Missing { folder, name } = chat.walk(dirfd, path, false)? else {
+            return Err(Errno::EEXIST);
+        };
+        let made = named_in(&folder, &name)?;
+        self.judge(chat, &[(FileOp::Create, &made, kind)])?;
+        let perm = Mode::from_bits_truncate(mode & 0o7777 & !umask(chat.tid));
+        mknodat(&folder, name.as_os_str(), flag, perm, 0)?;
+        Ok(Answer::Value(0))
+    }
+
+    fn unlink(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        dirfd: i32,
+        path: &[u8],
+        folder_only: bool,
+    ) -> Result<Answer, Errno> {
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let Found::There { kind, entry, .. } = chat.walk(dirfd, path, false)? else {
+            return Err(Errno::ENOENT);
+        };
+        let Some((folder, name)) = entry else {
+            return Err(Errno::EBUSY);
+        };
+        match (folder_only, kind == Kind::Directory) {
+            (true, false) => return Err(Errno::ENOTDIR),
+            (false, true) => return Err(Errno::EISDIR),
+            _ => {}
+        }
+        let gone = named_in(&folder, &name)?;
+        self.judge(chat, &[(FileOp::Unlink, &gone, kind)])?;
+        let how = if folder_only {
+            UnlinkatFlags::RemoveDir
+        } else {
+            UnlinkatFlags::NoRemoveDir
+        };
+        unlinkat(&folder, name.as_os_str(), how)?;
+        Ok(Answer::Value(0))
+    }
+
+    fn rename(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        from: (i32, &[u8]),
+        to: (i32, &[u8]),
+        flags: u32,
+    ) -> Result<Answer, Errno> {
+        let flags = RenameFlags::from_bits(flags).ok_or(Errno::EINVAL)?;
+        if flags.contains(RenameFlags::RENAME_WHITEOUT) {
+            return Err(Errno::EPERM);
+        }
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let Found::There {
+            kind,
+            entry: Some((old_folder, old_name)),
+            ..
+        } = chat.walk(from.0, from.1, false)?
+        else {
+            return Err(Errno::ENOENT);
+        };
+        let old = named_in(&old_folder, &old_name)?;
+        let (new_folder, new_name, there) = match chat.walk(to.0, to.1, false)? {
+            Found::Missing { folder, name } => (folder, name, None),
+            Found::There {
+                kind,
+                entry: Some((folder, name)),
+                ..
+            } => (folder, name, Some(kind)),
+            Found::There { entry: None, .. } => return Err(Errno::EBUSY),
+        };
+        let new = named_in(&new_folder, &new_name)?;
+        let mut ops = vec![
+            (FileOp::Unlink, old.as_path(), kind),
+            (FileOp::Create, new.as_path(), kind),
+        ];
+        if let Some(there) = there {
+            ops.push((FileOp::Unlink, new.as_path(), there));
+            if flags.contains(RenameFlags::RENAME_EXCHANGE) {
+                ops.push((FileOp::Create, old.as_path(), there));
+            }
+        }
+        self.judge(chat, &ops)?;
+        renameat2(
+            &old_folder,
+            old_name.as_os_str(),
+            &new_folder,
+            new_name.as_os_str(),
+            flags,
+        )?;
+        Ok(Answer::Value(0))
+    }
+
+    fn link(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        from: (i32, &[u8]),
+        to: (i32, &[u8]),
+        flags: i32,
+    ) -> Result<Answer, Errno> {
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let (old, kind, old_path) = if flags & libc::AT_EMPTY_PATH != 0 && from.1.is_empty() {
+            let fd = chat.descriptor(from.0)?;
+            let kind = walk::kind_of(&fd)?;
+            let path = named(&fd)?;
+            (fd, kind, path)
+        } else {
+            match chat.walk(from.0, from.1, flags & libc::AT_SYMLINK_FOLLOW != 0)? {
+                Found::There { fd, kind, entry } => {
+                    let path = match (&entry, kind) {
+                        (Some((folder, name)), Kind::Symlink) => named_in(folder, name)?,
+                        _ => named(&fd)?,
+                    };
+                    (fd, kind, path)
+                }
+                Found::Missing { .. } => return Err(Errno::ENOENT),
+            }
+        };
+        if kind == Kind::Directory {
+            return Err(Errno::EPERM);
+        }
+        let Found::Missing { folder, name } = chat.walk(to.0, to.1, false)? else {
+            return Err(Errno::EEXIST);
+        };
+        let new = named_in(&folder, &name)?;
+        self.judge(
+            chat,
+            &[
+                (FileOp::WriteData, old_path.as_path(), kind),
+                (FileOp::Create, new.as_path(), kind),
+            ],
+        )?;
+        linkat(
+            AT_FDCWD,
+            format!("/proc/self/fd/{}", old.as_raw_fd()).as_str(),
+            &folder,
+            name.as_os_str(),
+            AtFlags::AT_SYMLINK_FOLLOW,
+        )?;
+        Ok(Answer::Value(0))
+    }
+
+    fn truncate(&self, chat: &Chat<'_>, id: u64, path: &[u8], len: i64) -> Result<Answer, Errno> {
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let Found::There { fd, kind, .. } = chat.walk(libc::AT_FDCWD, path, true)? else {
+            return Err(Errno::ENOENT);
+        };
+        match kind {
+            Kind::Directory => return Err(Errno::EISDIR),
+            Kind::Regular => {}
+            _ => return Err(Errno::EINVAL),
+        }
+        let at = named(&fd)?;
+        self.judge(chat, &[(FileOp::WriteData, &at, kind)])?;
+        let opened = nix::fcntl::open(
+            format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str(),
+            OFlag::O_WRONLY | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+            Mode::empty(),
+        )?;
+        nix::unistd::ftruncate(&opened, len)?;
+        Ok(Answer::Value(0))
+    }
+
+    fn chmod(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        dirfd: i32,
+        path: &[u8],
+        mode: u32,
+        flags: i32,
+    ) -> Result<Answer, Errno> {
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let follow = flags & libc::AT_SYMLINK_NOFOLLOW == 0;
+        let Found::There { fd, kind, .. } = chat.walk(dirfd, path, follow)? else {
+            return Err(Errno::ENOENT);
+        };
+        if kind == Kind::Symlink {
+            return Err(Errno::EOPNOTSUPP);
+        }
+        self.mode_of(chat, &fd, kind, mode)
+    }
+
+    fn fchmod(&self, chat: &Chat<'_>, id: u64, fd: i32, mode: u32) -> Result<Answer, Errno> {
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let held = chat.descriptor(fd)?;
+        let kind = walk::kind_of(&held)?;
+        self.mode_of(chat, &held, kind, mode)
+    }
+
+    fn mode_of(
+        &self,
+        chat: &Chat<'_>,
+        fd: &OwnedFd,
+        kind: Kind,
+        mode: u32,
+    ) -> Result<Answer, Errno> {
+        let at = named(fd)?;
+        // A pipe or a socket has no name to judge: its mode reaches no file.
+        if at.is_absolute() {
+            self.judge(chat, &[(FileOp::Mode, &at, kind)])?;
+        }
+        fchmodat(
+            AT_FDCWD,
+            format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str(),
+            Mode::from_bits_truncate(mode & 0o7777),
+            FchmodatFlags::FollowSymlink,
+        )?;
+        Ok(Answer::Value(0))
+    }
+
+    fn connect(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        fd: i32,
+        addr: u64,
+        len: usize,
+    ) -> Result<Answer, Errno> {
+        if len < 2 || len > std::mem::size_of::<libc::sockaddr_storage>() {
+            return Err(Errno::EINVAL);
+        }
+        let bytes = read_bytes(chat.tid, addr, len)?;
+        let family = i32::from(u16::from_ne_bytes([bytes[0], bytes[1]]));
+        let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
+        // The chat's descriptor's flags: whether it is non-blocking and closed on a start.
+        let flags = descriptor_flags(chat.tid, fd)?;
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let socket_fd = match family {
+            libc::AF_UNIX => {
+                let path = &bytes[2..];
+                if path.first().is_none_or(|first| *first == 0) {
+                    // An abstract or unnamed socket names no path.
+                    if !self.profile.allows(&Op::Connect(Remote::Unix(None))) {
+                        return Err(REFUSED);
+                    }
+                    return Err(REFUSED);
+                }
+                let end = path.iter().position(|c| *c == 0).unwrap_or(path.len());
+                let named = Path::new(OsStr::from_bytes(&path[..end]));
+                let absolute: PathBuf = if named.is_absolute() {
+                    named.to_path_buf()
+                } else {
+                    walk::named(chat.start(libc::AT_FDCWD)?)?.join(named)
+                };
+                if !self
+                    .profile
+                    .allows(&Op::Connect(Remote::Unix(Some(&absolute))))
+                {
+                    return Err(REFUSED);
+                }
+                let socket = socket(
+                    AddressFamily::Unix,
+                    SockType::Stream,
+                    SockFlag::SOCK_CLOEXEC,
+                    None,
+                )?;
+                connect(socket.as_raw_fd(), &UnixAddr::new(absolute.as_path())?)?;
+                socket
+            }
+            libc::AF_INET | libc::AF_INET6 => {
+                let remote = ip_of(&bytes)?;
+                if !self.profile.allows(&Op::Connect(Remote::Ip {
+                    ip: remote.ip(),
+                    port: remote.port(),
+                })) {
+                    return Err(REFUSED);
+                }
+                let (family, address): (AddressFamily, Box<dyn nix::sys::socket::SockaddrLike>) =
+                    match remote {
+                        SocketAddr::V4(v4) => (AddressFamily::Inet, Box::new(SockaddrIn::from(v4))),
+                        SocketAddr::V6(v6) => {
+                            (AddressFamily::Inet6, Box::new(SockaddrIn6::from(v6)))
+                        }
+                    };
+                let socket = socket(family, SockType::Stream, SockFlag::SOCK_CLOEXEC, None)?;
+                let _ = setsockopt(&socket, sockopt::TcpNoDelay, &true);
+                connect(socket.as_raw_fd(), address.as_ref())?;
+                socket
+            }
+            _ => return Err(REFUSED),
+        };
+        if flags & libc::O_NONBLOCK != 0 {
+            nix::fcntl::fcntl(&socket_fd, nix::fcntl::FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
+        }
+        Ok(Answer::Connected {
+            fd: socket_fd,
+            at,
+            cloexec: flags & libc::O_CLOEXEC != 0,
+        })
+    }
+}
+
+/// What purlis's own profile language has no word for on Linux, and every wrapped chat needs:
+/// its terminal and the system's character devices, POSIX semaphores (Seatbelt's
+/// `ipc-posix-sem`), and the files of its own processes in `/proc`. None is ever a path a
+/// denial class names.
+fn linux_own(chat: &Chat<'_>, what: FileOp, path: &Path, kind: Kind) -> bool {
+    const DEVICES: [&str; 7] = [
+        "/dev/null",
+        "/dev/zero",
+        "/dev/full",
+        "/dev/tty",
+        "/dev/ptmx",
+        "/dev/random",
+        "/dev/urandom",
+    ];
+    if kind == Kind::CharacterDevice
+        && matches!(what, FileOp::ReadData | FileOp::WriteData)
+        && (DEVICES.iter().any(|it| path == Path::new(it))
+            || path.parent() == Some(Path::new("/dev/pts")))
+    {
+        return true;
+    }
+    if path.parent() == Some(Path::new("/dev/shm"))
+        && kind == Kind::Regular
+        && path
+            .file_name()
+            .is_some_and(|name| name.as_bytes().starts_with(b"sem."))
+    {
+        return true;
+    }
+    if let Ok(rest) = path.strip_prefix("/proc")
+        && let Some(first) = rest.components().next()
+        && let Ok(pid) = first.as_os_str().to_string_lossy().parse::<i32>()
+        && matches!(what, FileOp::WriteData | FileOp::ReadData)
+    {
+        return chat.world.inside(pid);
+    }
+    false
+}
+
+/// The process's file mode creation mask.
+fn umask(tid: i32) -> u32 {
+    std::fs::read_to_string(format!("/proc/{tid}/status"))
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find_map(|line| line.strip_prefix("Umask:"))
+                .and_then(|it| u32::from_str_radix(it.trim(), 8).ok())
+        })
+        .unwrap_or(0o022)
+}
+
+/// The status flags of the chat's descriptor `fd`, with `O_CLOEXEC` for its close-on-start.
+fn descriptor_flags(tid: i32, fd: i32) -> Result<i32, Errno> {
+    let info =
+        std::fs::read_to_string(format!("/proc/{tid}/fdinfo/{fd}")).map_err(|_| Errno::EBADF)?;
+    info.lines()
+        .find_map(|line| line.strip_prefix("flags:"))
+        .and_then(|it| i32::from_str_radix(it.trim(), 8).ok())
+        .ok_or(Errno::EBADF)
+}
+
+fn ip_of(bytes: &[u8]) -> Result<SocketAddr, Errno> {
+    let family = i32::from(u16::from_ne_bytes([bytes[0], bytes[1]]));
+    let port = |at: usize| u16::from_be_bytes([bytes[at], bytes[at + 1]]);
+    match family {
+        libc::AF_INET if bytes.len() >= 8 => Ok(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(bytes[4], bytes[5], bytes[6], bytes[7])),
+            port(2),
+        )),
+        libc::AF_INET6 if bytes.len() >= 24 => {
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&bytes[8..24]);
+            Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(octets)), port(2)))
+        }
+        _ => Err(Errno::EINVAL),
+    }
+}
+
+/// `len` bytes of the chat's memory at `addr`, read into the supervisor's own.
+fn read_bytes(tid: i32, addr: u64, len: usize) -> Result<Vec<u8>, Errno> {
+    if addr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    let mut out = vec![0u8; len];
+    let got = process_vm_readv(
+        Pid::from_raw(tid),
+        &mut [IoSliceMut::new(&mut out)],
+        &[RemoteIoVec {
+            base: usize::try_from(addr).map_err(|_| Errno::EFAULT)?,
+            len,
+        }],
+    )
+    .map_err(|_| Errno::EFAULT)?;
+    if got != len {
+        return Err(Errno::EFAULT);
+    }
+    Ok(out)
+}
+
+/// The path at `addr` in the chat's memory, up to its end, read a page at a time so a path
+/// that ends just before memory that is not mapped is still read.
+fn read_path(tid: i32, addr: u64) -> Result<Vec<u8>, Errno> {
+    if addr == 0 {
+        return Err(Errno::EFAULT);
+    }
+    const PAGE: u64 = 4096;
+    let mut out = Vec::new();
+    let mut at = addr;
+    while out.len() <= PATH_MAX {
+        let len = usize::try_from(PAGE - at % PAGE).map_err(|_| Errno::EFAULT)?;
+        let chunk = read_bytes(tid, at, len)?;
+        if let Some(end) = chunk.iter().position(|c| *c == 0) {
+            out.extend_from_slice(&chunk[..end]);
+            if out.len() >= PATH_MAX {
+                return Err(Errno::ENAMETOOLONG);
+            }
+            return Ok(out);
+        }
+        out.extend_from_slice(&chunk);
+        at += len as u64;
+    }
+    Err(Errno::ENAMETOOLONG)
+}

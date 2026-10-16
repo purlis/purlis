@@ -3859,7 +3859,37 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
     }
 }
 
+/// `purlis _sandbox …`, run, where this command is that; `None` for every other command.
+fn sandbox_wrap() -> Option<ExitCode> {
+    let mut words = std::env::args_os().skip(1);
+    if words.next()? != purlis_linux_sandbox::COMMAND {
+        return None;
+    }
+    let Ok(words) = words
+        .map(std::ffi::OsString::into_string)
+        .collect::<Result<Vec<String>, _>>()
+    else {
+        eprintln!(
+            "purlis: the sandbox was started with words that are not text, so nothing was started."
+        );
+        return Some(ExitCode::from(126));
+    };
+    #[cfg(target_os = "linux")]
+    return Some(purlis_linux_sandbox::entry(&words));
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = words;
+        eprintln!("purlis: this sandbox is purlis's own on Linux, so nothing was started.");
+        Some(ExitCode::from(126))
+    }
+}
+
 fn main() -> ExitCode {
+    // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
+    // the hidden `purlis _sandbox`, never in help and not a public command line.
+    if let Some(code) = sandbox_wrap() {
+        return code;
+    }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed
     // must refuse the tool call, not allow it (#349).
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {

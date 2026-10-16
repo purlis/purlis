@@ -1075,11 +1075,17 @@ impl Os {
     }
 
     /// The word a run's `sandbox` attribute names this system's backend by (ADR 0066, #868):
-    /// Seatbelt on macOS and bubblewrap on Linux, the mechanisms [`backend::missing`] asks for.
-    /// `None` where purlis has none, or does not know which.
-    pub fn backend_word(self) -> Option<&'static str> {
+    /// Seatbelt on macOS; on Linux, Claude Code's own bubblewrap, or `landlock` for purlis's own
+    /// wrap of a harness it holds whole (Codex, opencode; #1040). `None` where purlis has none,
+    /// or does not know which.
+    pub fn backend_word(self, harness: Option<Harness>) -> Option<&'static str> {
         match self {
             Self::MacOs => Some("seatbelt"),
+            Self::Linux
+                if harness.is_some_and(|it| it.adapter().sandbox_holds_what_it_starts()) =>
+            {
+                Some("landlock")
+            }
             Self::Linux => Some("bubblewrap"),
             Self::Windows | Self::Other => None,
         }
@@ -2788,11 +2794,17 @@ impl Compiled {
     /// confirmation (`secrets::keyring::OsStore`), whatever the chat's sandbox lets it
     /// reach. Charter's own wrap denies the service as well (V90b, [`seatbelt`]). Elsewhere the
     /// store keeps no rule of its own (the Secret Service answers any process of the session),
-    /// and no harness's sandbox has been measured keeping a chat off it, so the chat is refused
-    /// with the ways out (V90c).
+    /// so a chat is refused with the ways out (V90c) unless purlis's own wrap holds it: on Linux
+    /// the wrap reaches no socket of the session bus (#1040). Claude Code's own sandbox has
+    /// not been measured keeping a chat off it, so a Claude Code chat there is still refused.
     fn holds_every_service(&self, harness: Harness) -> Result<(), Uncompilable> {
+        // purlis's own wrap on Linux (#1040) reaches no unix socket but the chat's hook socket
+        // and what a person allowed it, so never the session bus the Secret Service answers on,
+        // and none of the kernel's key store.
+        let wrapped_on_linux =
+            self.os == Os::Linux && harness.adapter().sandbox_holds_what_it_starts();
         let unheld = self.denied.services.iter().find(|service| match service {
-            Service::CredentialStore => self.os != Os::MacOs,
+            Service::CredentialStore => self.os != Os::MacOs && !wrapped_on_linux,
         });
         match unheld {
             Some(service) => Err(Uncompilable {
@@ -3516,6 +3528,8 @@ pub struct At<'a> {
     /// (#1423). [`Applied::line`] sets it from the policy in force, and ends every refusal with
     /// the policy and who set it; a caller leaves it `false`.
     pub no_opt_out: bool,
+    /// purlis's own program, which a wrapped chat's line starts with on Linux (#1040).
+    pub purlis: Option<&'a Path>,
 }
 
 /// A chat's line under its sandbox: the program that runs, its arguments, and what its
@@ -3964,7 +3978,7 @@ fn never_with(compile: Option<Compiler>, held_back: Option<u32>, os: Os) -> Opti
         Err(Uncompilable {
             unheld: Unheld::Wrap(_),
             ..
-        }) => Some("purlis can wrap it on macOS only, so far".to_owned()),
+        }) => Some("purlis can wrap it on macOS and Linux only, so far".to_owned()),
         _ => None,
     }
 }
@@ -4651,11 +4665,11 @@ impl NotStarted {
                  started."
             ),
             Self::Uncompilable(it) => match it.unheld {
-                // The Linux wrap is #1040; the window's sentence names no issue (#1422).
+                // The window's sentence names no issue (#1422).
                 Unheld::Wrap(os) => format!(
                     "{lead}, and purlis runs {} inside a sandbox of its own, which it can apply \
-                     on macOS but not yet on {}, so it was not started. Start this chat on a {} \
-                     profile.",
+                     on macOS and Linux but not yet on {}, so it was not started. Start this \
+                     chat on a {} profile.",
                     it.harness.title(),
                     match os {
                         Os::Linux => "Linux",
@@ -4877,7 +4891,8 @@ fn for_start_at(
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing(machine.os, has) {
+    let wrapped = harness.adapter().sandbox_holds_what_it_starts();
+    if let Some(missing) = backend::missing_for(machine.os, wrapped, has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::granted(&policy, &plane, root, machine, persona, chat);
@@ -4926,7 +4941,8 @@ fn floor_for_start(
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing(machine.os, has) {
+    let wrapped = harness.adapter().sandbox_holds_what_it_starts();
+    if let Some(missing) = backend::missing_for(machine.os, wrapped, has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::floor(root, machine, chat);
@@ -5320,6 +5336,9 @@ pub fn floorless_said(why: &NotStarted) -> String {
         .unwrap_or(&said);
     let reason = reason
         .split_once(", so ")
+        .map_or(reason, |(reason, _)| reason);
+    let reason = reason
+        .split_once(". Nothing was started")
         .map_or(reason, |(reason, _)| reason)
         .trim_end_matches('.');
     format!(
@@ -5786,6 +5805,7 @@ pub mod signin;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
+pub mod wrapper;
 
 #[cfg(test)]
 mod asks_tests;

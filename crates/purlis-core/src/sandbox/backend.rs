@@ -13,6 +13,10 @@ use super::Os;
 /// Where macOS keeps Seatbelt's front end. Always there on a supported macOS.
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
+/// The word [`missing_for`] asks [`installed`] about for purlis's own wrap on Linux: not a
+/// program, the kernel's Landlock at [`purlis_linux_sandbox::MIN_ABI`] or later (#1040).
+pub const LANDLOCK: &str = "landlock";
+
 /// What this machine lacks for a sandbox.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Missing {
@@ -20,6 +24,9 @@ pub enum Missing {
     Programs { os: Os, absent: Vec<&'static str> },
     /// No backend exists for this operating system yet (Windows: M46, #565).
     NoBackend(Os),
+    /// This Linux kernel has no Landlock at [`purlis_linux_sandbox::MIN_ABI`], which purlis's
+    /// own wrap needs (#1040).
+    Landlock,
 }
 
 impl fmt::Display for Missing {
@@ -55,6 +62,12 @@ impl fmt::Display for Missing {
             Self::NoBackend(_) => {
                 f.write_str("purlis has no sandbox backend on this operating system")
             }
+            Self::Landlock => write!(
+                f,
+                "purlis's sandbox needs Landlock version {} (Linux 6.12 or later), and this \
+                 kernel does not have it",
+                purlis_linux_sandbox::MIN_ABI
+            ),
         }
     }
 }
@@ -74,6 +87,19 @@ pub fn missing(os: Os, has: &dyn Fn(&str) -> bool) -> Option<Missing> {
     };
     let absent: Vec<&'static str> = needs.iter().copied().filter(|it| !has(it)).collect();
     (!absent.is_empty()).then_some(Missing::Programs { os, absent })
+}
+
+/// What is missing on `os` for a sandbox to be applied to a chat whose harness is `wrapped`
+/// whole in purlis's own wrap (Codex and opencode), or `None` when nothing is.
+///
+/// On Linux purlis's own wrap is Landlock, a seccomp filter and the supervisor (#1040), which
+/// need the kernel's Landlock and no program; Claude Code's own sandbox needs what [`missing`]
+/// names. Elsewhere, as [`missing`].
+pub fn missing_for(os: Os, wrapped: bool, has: &dyn Fn(&str) -> bool) -> Option<Missing> {
+    if os == Os::Linux && wrapped {
+        return (!has(LANDLOCK)).then_some(Missing::Landlock);
+    }
+    missing(os, has)
 }
 
 /// SD-30's install action: the command that installs what `missing` names with the package
@@ -132,8 +158,15 @@ pub fn install_command(missing: &Missing, os_release: &str) -> Option<String> {
     Some(format!("{manager} {}", packages.join(" ")))
 }
 
-/// Whether `program` is installed on this machine, as [`missing`] asks it.
+/// Whether `program` is installed on this machine, as [`missing`] asks it; for [`LANDLOCK`],
+/// whether the kernel has the Landlock purlis's own wrap needs.
 pub fn installed(program: &str) -> bool {
+    if program == LANDLOCK {
+        #[cfg(target_os = "linux")]
+        return purlis_linux_sandbox::abi() >= purlis_linux_sandbox::MIN_ABI;
+        #[cfg(not(target_os = "linux"))]
+        return false;
+    }
     if program == "sandbox-exec" {
         return crate::programs::runnable(std::path::Path::new(SANDBOX_EXEC));
     }

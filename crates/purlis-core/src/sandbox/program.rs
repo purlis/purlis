@@ -534,7 +534,7 @@ fn answer_within(
     let failed = Unanswered::Failed;
     let (program, rest) = words.split_first().ok_or(failed)?;
     // D-88k: inside charter's own wrap, which writes nothing but its own temp directory and
-    // reaches no network. On macOS; the Linux wrap is #1040, and there it runs as before.
+    // reaches no network. On macOS; on Linux it runs as before until #2343.
     let tmp = tempfile::Builder::new()
         .prefix("charter-probe-")
         .tempdir()

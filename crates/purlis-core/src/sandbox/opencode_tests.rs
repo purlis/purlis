@@ -62,6 +62,7 @@ fn line_in(
             hook_socket: socket,
             confinement: Some(confinement),
             no_opt_out: false,
+            purlis: None,
         },
     )
 }
@@ -86,30 +87,110 @@ fn an_opencode_chat_in_a_sandboxed_plane_starts_wrapped_on_macos() {
 }
 
 #[test]
-fn on_linux_an_opencode_chat_is_refused_until_charter_can_wrap_it_there() {
+fn on_linux_an_opencode_chat_runs_inside_purlis_s_own_wrap() {
     let plane = plane_saying(ON);
-    let refused = for_start(
+    let applied = for_start(
         Harness::Opencode,
         plane.path(),
         &machine(Os::Linux),
         &|_| true,
     )
-    .expect_err("refused");
-    assert_eq!(
-        refused,
-        NotStarted::Uncompilable(Uncompilable {
-            harness: Harness::Opencode,
-            unheld: Unheld::Wrap(Os::Linux),
-        })
-    );
-    // Which harness it names instead is this machine's to say: on Linux, Claude Code.
+    .expect("starts")
+    .expect("sandboxed");
+    let Form::Opencode(wrap) = applied.form() else {
+        panic!("compiled for opencode: {:?}", applied.form());
+    };
+    assert_eq!(wrap.os, Os::Linux);
     assert!(
-        refused.to_string().starts_with(
-            "this project runs every chat sandboxed, and purlis runs opencode inside a sandbox of \
-             its own, which it can apply on macOS but not yet on Linux, so it was not started. \
-             Start this chat on a Claude Code"
-        ),
-        "{refused}"
+        !wrap
+            .denied
+            .iter()
+            .any(|denial| denial.path.ends_with("Library/Keychains")),
+        "no macOS keychain is named on Linux"
+    );
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let purlis = Path::new("/opt/purlis/bin/purlis");
+    let line = applied
+        .line(
+            Words {
+                program: "ocw".to_owned(),
+                command: words("work"),
+                armed: words("--port 0"),
+                charters: words("--session ses_1"),
+            },
+            &At {
+                cwd: Some(plane.path()),
+                hook_socket: None,
+                confinement: Some(&confinement),
+                no_opt_out: false,
+                purlis: Some(purlis),
+            },
+        )
+        .expect("starts");
+    assert_eq!(line.program, "/opt/purlis/bin/purlis");
+    assert_eq!(line.args[0], purlis_linux_sandbox::COMMAND);
+    let (profile, program) =
+        purlis_linux_sandbox::read_line(&line.args[1..]).expect("a wrap's line");
+    assert_eq!(program, words("ocw work --port 0 --session ses_1"));
+    // The supervisor reads the profile whole: nothing in it is a rule it would pass over.
+    let read = purlis_linux_sandbox::profile::Profile::parse(&profile).expect("read whole");
+    let reach = read.reach();
+    assert_eq!(reach.ports, confinement.proxy_ports());
+    assert!(!reach.any_host);
+}
+
+#[test]
+fn on_linux_a_wrapped_chat_with_no_purlis_program_to_start_it_with_is_refused() {
+    let plane = plane_saying(ON);
+    let applied = for_start(
+        Harness::Opencode,
+        plane.path(),
+        &machine(Os::Linux),
+        &|_| true,
+    )
+    .expect("starts")
+    .expect("sandboxed");
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let refused = line_in(&applied, plane.path(), None, &confinement).expect_err("refused");
+    assert!(refused.contains(super::wrapper::NO_PURLIS), "{refused}");
+    assert!(refused.contains("nothing was started"), "{refused}");
+}
+
+#[test]
+fn on_a_linux_kernel_without_landlock_6_an_opencode_chat_is_refused_with_the_version_it_needs() {
+    let plane = plane_saying(ON);
+    let refused = for_start(
+        Harness::Opencode,
+        plane.path(),
+        &machine(Os::Linux),
+        &|program| program != backend::LANDLOCK,
+    )
+    .expect_err("refused");
+    assert_eq!(refused, NotStarted::NoBackend(backend::Missing::Landlock));
+    assert_eq!(
+        refused.to_string(),
+        "this project runs every chat sandboxed, and this machine cannot apply the sandbox: \
+         purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), and this kernel does \
+         not have it. Nothing was started."
+    );
+    // Neither bubblewrap nor socat is asked for: the wrap needs no program.
+    assert!(
+        for_start(
+            Harness::Opencode,
+            plane.path(),
+            &machine(Os::Linux),
+            &|program| program == backend::LANDLOCK,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn on_a_system_purlis_cannot_wrap_on_an_opencode_chat_never_starts_sandboxed() {
+    let nothing = never_on(Harness::Opencode, Os::Other);
+    assert_eq!(
+        nothing.as_deref(),
+        Some("purlis can wrap it on macOS and Linux only, so far")
     );
 }
 
@@ -153,6 +234,7 @@ fn the_wrapped_line_runs_the_whole_harness_under_sandbox_exec() {
                 hook_socket: None,
                 confinement: Some(&confinement),
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect("starts");
@@ -526,6 +608,7 @@ fn a_wrapped_chat_with_no_directory_or_no_confinement_is_refused() {
                 hook_socket: None,
                 confinement: Some(&confinement),
                 no_opt_out: false,
+                purlis: None,
             }
         ),
         Err(FolderRefusal::Missing.said(&policy::Locks::none()))
@@ -538,6 +621,7 @@ fn a_wrapped_chat_with_no_directory_or_no_confinement_is_refused() {
                 hook_socket: None,
                 confinement: None,
                 no_opt_out: false,
+                purlis: None,
             }
         ),
         Err(
@@ -1156,6 +1240,7 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
                 hook_socket: None,
                 confinement: confinement.as_ref(),
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect("starts");

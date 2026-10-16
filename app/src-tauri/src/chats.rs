@@ -262,7 +262,7 @@ pub(crate) fn run_attributes(
         model: None,
         sandbox: if sandboxed {
             purlis_core::sandbox::Os::this()
-                .backend_word()
+                .backend_word(harness)
                 .map(str::to_owned)
         } else {
             none()
@@ -2978,6 +2978,9 @@ impl Chats {
                         hook_socket: socket.as_deref(),
                         confinement: confinement.as_ref(),
                         no_opt_out: false,
+                        // The `purlis` the app ships, which a wrapped chat's line starts with on
+                        // Linux (#1040).
+                        purlis: self.shipped.binary.as_deref(),
                     },
                 )?;
                 (line.program, line.args, line.env)
@@ -10899,7 +10902,7 @@ pub(crate) mod tests {
             ]
         };
         let backend = purlis_core::sandbox::Os::this()
-            .backend_word()
+            .backend_word(Some(Harness::ClaudeCode))
             .unwrap_or(UNKNOWN);
 
         assert_eq!(

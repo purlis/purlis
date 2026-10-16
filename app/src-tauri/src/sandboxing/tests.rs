@@ -1909,13 +1909,14 @@ fn a_widening_preset_is_told_once_and_not_again_once_read() {
 /// on this system, whatever the project.
 #[test]
 fn the_offer_names_each_harness_never_sandboxed_on_this_system() {
-    // #1123: charter wraps Codex as it wraps opencode, on macOS so far.
+    // #1123: charter wraps Codex as it wraps opencode, on macOS and, since #1040, on Linux.
     assert!(never_here(sandbox::Os::MacOs).is_empty());
+    assert!(never_here(sandbox::Os::Linux).is_empty());
     assert_eq!(
-        never_here(sandbox::Os::Linux),
+        never_here(sandbox::Os::Other),
         [
-            "Codex: purlis can wrap it on macOS only, so far",
-            "opencode: purlis can wrap it on macOS only, so far",
+            "Codex: purlis can wrap it on macOS and Linux only, so far",
+            "opencode: purlis can wrap it on macOS and Linux only, so far",
         ]
     );
 }

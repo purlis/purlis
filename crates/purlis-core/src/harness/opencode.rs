@@ -200,17 +200,15 @@ impl HarnessAdapter for Opencode {
             armed,
             charters,
         } = words;
-        Ok(crate::sandbox::Line {
-            program: crate::sandbox::backend::SANDBOX_EXEC.to_owned(),
-            args: [
-                vec!["-p".to_owned(), profile, program],
-                command,
-                armed,
-                charters,
-            ]
-            .concat(),
-            env,
-        })
+        let (program, args) = crate::sandbox::wrapper::line(
+            wrap.os,
+            at.purlis,
+            profile,
+            program,
+            [command, armed, charters].concat(),
+        )
+        .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+        Ok(crate::sandbox::Line { program, args, env })
     }
 }
 

@@ -181,8 +181,8 @@ const SANDBOXED: &str = "this project turns the sandbox on, and purlis cannot sa
 
 /// D-87h: a level-3 start goes through the same sandbox decision as a terminal start, and a
 /// sandboxed project refuses level 3 until charter can wrap a level-3 agent. opencode is wrapped
-/// on macOS only; elsewhere its sandboxed start is refused before this is asked.
-#[cfg(target_os = "macos")]
+/// on macOS and Linux; elsewhere its sandboxed start is refused before this is asked.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn a_sandboxed_chat_does_not_run_over_acp_and_starts_in_its_terminal() {
     purlis_core::unsteered!();

@@ -236,6 +236,7 @@ pub fn compose_ready(
                     hook_socket: socket.as_deref(),
                     confinement: confinement.as_ref(),
                     no_opt_out: false,
+                    purlis: kit.binary.as_deref(),
                 },
             )?;
             (line.program, line.args, line.env)
@@ -369,7 +370,9 @@ fn begun(
         provider: None,
         model: None,
         sandbox: if sandboxed {
-            crate::sandbox::Os::this().backend_word().map(str::to_owned)
+            crate::sandbox::Os::this()
+                .backend_word(ready.harness)
+                .map(str::to_owned)
         } else {
             none()
         },

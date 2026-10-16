@@ -223,18 +223,19 @@ fn a_person_may_still_start_a_chat_without_the_floor_and_it_is_audited() {
 #[test]
 fn where_the_floor_cannot_be_applied_the_chat_starts_as_before_and_says_why() {
     let (_dir, root) = project();
-    // Codex is wrapped on macOS only (#1040).
+    // A Linux kernel without the Landlock purlis's own wrap needs (#1040).
     let linux = Machine {
         os: Os::Linux,
         ..machine_with(Path::new("/opt/none"))
     };
-    match decide(Harness::Codex, &root, &linux, &|_| true, None, None) {
+    let no_landlock = |program: &str| program != backend::LANDLOCK;
+    match decide(Harness::Codex, &root, &linux, &no_landlock, None, None) {
         // Its reason alone: not the refusal's "nothing starts", which is not so here.
         Ok(Some(Decided::Floorless(why))) => assert_eq!(
             why,
             "This chat runs with no sandbox: purlis could not apply the floor here, because \
-             purlis runs Codex inside a sandbox of its own, which it can apply on macOS but not yet \
-             on Linux."
+             this machine cannot apply the sandbox: purlis's sandbox needs Landlock version 6 \
+             (Linux 6.12 or later), and this kernel does not have it."
         ),
         other => panic!("{other:?}"),
     }

@@ -140,7 +140,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   chat's choice, so a tool that can be told to run something else, or to send its credential
   somewhere, hands that value over. Masking matches a value's literal text only. Prefer `--file` to `--env` for a command that can read
   its credential from a file: an environment variable is readable by the same user through `ps
-  eww` while the command runs. Linux has no such sandbox yet (#1040), so there the app refuses.
+  eww` while the command runs. On Linux the app refuses for now: running it inside purlis's own Linux sandbox is #2342.
 - **A sandboxed chat never reads the keyring through the command** (#1638). Where the app
   does not take a sandboxed chat's `secret exec` (it is closed, or does not answer), a vault
   whose values come from the keyring (a `keyring` vault, or a 1Password vault whose token is
