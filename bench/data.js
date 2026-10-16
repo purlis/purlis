@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792151852122,
+  "lastUpdate": 1792153049965,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14070,6 +14070,48 @@ window.BENCHMARK_DATA = {
             "value": 104.209247,
             "unit": "ms",
             "extra": "median of 5 runs: 102.770, 104.105, 104.209, 104.434, 106.992 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dcb24fe68b14a96182d3923d983cc0c6f6698c08",
+          "message": "build(deps): Bump the web group in /app with 3 updates (#2267)\n\nBumps the web group in /app with 3 updates: [lucide-react](https://github.com/lucide-icons/lucide/tree/HEAD/packages/lucide-react), [react-resizable-panels](https://github.com/bvaughn/react-resizable-panels) and [@testing-library/user-event](https://github.com/testing-library/user-event).\n\n\nUpdates `lucide-react` from 1.55.0 to 1.56.0\n- [Release notes](https://github.com/lucide-icons/lucide/releases)\n- [Commits](https://github.com/lucide-icons/lucide/commits/1.56.0/packages/lucide-react)\n\nUpdates `react-resizable-panels` from 4.14.4 to 4.14.5\n- [Release notes](https://github.com/bvaughn/react-resizable-panels/releases)\n- [Changelog](https://github.com/bvaughn/react-resizable-panels/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/bvaughn/react-resizable-panels/compare/4.14.4...4.14.5)\n\nUpdates `@testing-library/user-event` from 14.6.7 to 14.6.8\n- [Release notes](https://github.com/testing-library/user-event/releases)\n- [Changelog](https://github.com/testing-library/user-event/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/testing-library/user-event/compare/v14.6.7...v14.6.8)\n\n---\nupdated-dependencies:\n- dependency-name: lucide-react\n  dependency-version: 1.56.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: react-resizable-panels\n  dependency-version: 4.14.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: \"@testing-library/user-event\"\n  dependency-version: 14.6.8\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-16T15:56:30+04:00",
+          "tree_id": "02cbfb993085ed44d81690819e814468dae4fff0",
+          "url": "https://github.com/purlis/purlis/commit/dcb24fe68b14a96182d3923d983cc0c6f6698c08"
+        },
+        "date": 1792153048443,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33611599999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.330, 0.336, 0.336, 0.337, 0.339 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.381011,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.336, 16.372, 16.381, 16.401, 16.663 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.736028,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.412, 101.444, 101.736, 101.773, 102.990 ms"
           }
         ]
       }
