@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792105644094,
+  "lastUpdate": 1792116721904,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13314,6 +13314,48 @@ window.BENCHMARK_DATA = {
             "value": 101.634401,
             "unit": "ms",
             "extra": "median of 5 runs: 101.143, 101.594, 101.634, 102.143, 102.898 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "44c8633c604aefd6d99ff919daf2adbba85bb4d6",
+          "message": "A project's Claude Code settings are screened again when they change (#2234)\n\n* A project's Claude Code settings are screened again when they change\n\nA sandboxed Claude Code chat that loads its project's own settings has\nthose files watched from before it starts, and screened again on every\nchange. A change that still passes changes nothing. One that no longer\npasses owes the chat a restart on its conversation, which the window\ndrives at once; the new run starts on the person's settings and purlis's,\nand its tab says which keys were not applied. Where the files cannot be\nwatched, the chat starts on the person's settings and purlis's from the\nfirst.\n\nADR 0067 amended (2026-10-16).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Listen for a chat's project settings change once per plane\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Screen a project's settings once a change has settled\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Restart without a window; the watch survives a folder made again\n\n- The core starts a chat whose project settings no longer pass again on\n  its conversation itself, at the size its terminal was last given, with\n  no window needed; an ask of the old run's is refused and a stop gives\n  way. A chat that cannot be started again is ended, and its tab says\n  why. The window only redraws.\n- Only changes to a settings folder or file are screened for, never\n  reads or opens; a run of changes is waited out for 500 ms at most.\n- A settings folder taken away and made again is listened to again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* End a chat with nothing to resume in its test without an ask its harness cannot raise\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start the restart test's chat on no profile, with a conversation to resume\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A chat's start answers the run that goes on; a restart ends the old run first\n\n- The first screen after a chat's program starts answers its start: on a\n  change, that run is ended and the chat is started once more on the\n  person's settings and purlis's, and the start answers that run.\n- A restart for changed project settings ends the old run before the new\n  one starts; that end is taken as no end of the chat.\n- A chat the person is stopping is ended, not started again.\n- A chat that cannot be started again is kept, with why, among the chats\n  that would not start, so a window that opens later shows it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a new conversation started once more under a new id\n\nClaude Code refuses `--session-id` for an id whose transcript exists\n(2.1.300), and a chat's first run may have begun one before it was\nstarted once more at its start. A new conversation is started again under\na new id, which the chat's record then names; a resumed conversation is\nresumed again under its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* End a replaced run's sub-agent runs in the event log\n\nA run ended so that its chat starts again at once still ends its\nsub-agents' runs, stopped as a close stops them (ADR 0076 §6). Tests: that\nend in the event log; a chat being stopped is ended and not started again;\na chat that cannot start again is kept with why among the chats that would\nnot start; a replaced run's end does not end its task's dispatch; and the\nold run ends before the new one starts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T06:10:35+04:00",
+          "tree_id": "9cef73bc3dbfba7a0ab0b22acd9f82179e0192d6",
+          "url": "https://github.com/purlis/purlis/commit/44c8633c604aefd6d99ff919daf2adbba85bb4d6"
+        },
+        "date": 1792116720682,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27862,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.271, 0.273, 0.279, 0.287, 0.288 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.493744999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.472, 16.489, 16.494, 16.542, 16.588 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6175345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.485, 100.739, 101.618, 101.837, 102.149 ms"
           }
         ]
       }
