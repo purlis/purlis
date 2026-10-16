@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use super::*;
 
@@ -311,5 +313,206 @@ fn every_move_the_window_tells_is_read_and_made_by_the_hosts_board() {
     assert_eq!(
         without_counts(host.whole()),
         without_counts(serde_json::to_value(window.kept()).expect("said")),
+    );
+}
+
+// ----- the supervisor and its breaker (#2007) ---------------------------------------------
+
+/// A host that ends at once, as one that crashes on its way up does, writing a line to its
+/// log and a line to `started` each time it is started.
+fn a_host_that_crashes_as_it_starts(
+    started: &Path,
+) -> impl Fn() -> Result<Command, String> + Send + Sync + use<> {
+    let started = started.to_path_buf();
+    move || {
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("echo once >> \"$1\"; echo 'purlisd: it went wrong' >&2; exit 1")
+            .arg("sh")
+            .arg(&started)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Ok(command)
+    }
+}
+
+/// A place of a host's own, in `home`.
+fn a_place(home: &Path) -> purlis_host::Place {
+    let run = home.join("run");
+    std::fs::create_dir_all(&run).unwrap();
+    std::fs::set_permissions(&run, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+    purlis_host::Place::at(run.join("purlisd.sock"), home.join("credentials"))
+}
+
+fn starts_in(started: &Path) -> usize {
+    std::fs::read_to_string(started)
+        .map(|said| said.lines().count())
+        .unwrap_or(0)
+}
+
+fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !done() {
+        assert!(Instant::now() < deadline, "{what} never happened");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_host_that_keeps_ending_is_started_again_until_three_exits_trip_the_breaker() {
+    let home = tempfile::tempdir().unwrap();
+    let started = home.path().join("started");
+    let host = SessionHost::default();
+    let failing = host.failing();
+
+    host.start_at(
+        a_place(home.path()),
+        a_host_that_crashes_as_it_starts(&started),
+    );
+
+    until("the breaker trips", || failing.now().is_some());
+    assert_eq!(
+        starts_in(&started),
+        breaker::EXITS,
+        "started once more after each exit"
+    );
+    let said = failing.now().unwrap();
+    assert_eq!((said.exits, said.within_minutes), (3, 5));
+    assert!(
+        said.said
+            .iter()
+            .any(|line| line == "purlisd: it went wrong"),
+        "{:?}",
+        said.said
+    );
+    let refused = host
+        .connection()
+        .wait(Duration::ZERO)
+        .err()
+        .unwrap_or_default();
+    assert!(refused.contains("stopped starting it again"), "{refused}");
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        starts_in(&started),
+        breaker::EXITS,
+        "started after the breaker tripped"
+    );
+    host.end();
+}
+
+#[test]
+fn try_again_starts_a_failing_host_once_more_with_the_count_started_over() {
+    let home = tempfile::tempdir().unwrap();
+    let started = home.path().join("started");
+    let host = SessionHost::default();
+    let failing = host.failing();
+    host.start_at(
+        a_place(home.path()),
+        a_host_that_crashes_as_it_starts(&started),
+    );
+    until("the breaker trips", || failing.now().is_some());
+
+    failing.try_again().expect("tried again");
+
+    until("it trips again", || {
+        starts_in(&started) == 2 * breaker::EXITS && failing.now().is_some()
+    });
+    host.end();
+}
+
+#[test]
+fn a_host_the_window_ends_is_never_started_again() {
+    let home = tempfile::tempdir().unwrap();
+    let started = home.path().join("started");
+    let host = SessionHost::default();
+    host.end();
+
+    host.start_at(
+        a_place(home.path()),
+        a_host_that_crashes_as_it_starts(&started),
+    );
+    std::thread::sleep(Duration::from_millis(500));
+
+    assert_eq!(starts_in(&started), 0);
+}
+
+#[test]
+fn a_host_that_found_another_serving_is_not_started_again() {
+    let home = tempfile::tempdir().unwrap();
+    let started = home.path().join("started");
+    let host = SessionHost::default();
+    let failing = host.failing();
+    let another_serves = {
+        let started = started.clone();
+        move || {
+            let mut command = Command::new("/bin/sh");
+            command
+                .arg("-c")
+                .arg("echo once >> \"$1\"; exit 3")
+                .arg("sh")
+                .arg(&started)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            Ok(command)
+        }
+    };
+
+    host.start_at(a_place(home.path()), another_serves);
+    until("it is seen to have ended", || {
+        host.connection()
+            .wait(Duration::ZERO)
+            .is_err_and(|why| why.contains("another"))
+    });
+    std::thread::sleep(Duration::from_millis(500));
+
+    assert_eq!(starts_in(&started), 1);
+    assert!(failing.now().is_none());
+    host.end();
+}
+
+#[test]
+fn a_host_started_as_the_window_ends_it_is_ended_and_not_left_running() {
+    // The window's end lands after the supervisor looked and before the host it is starting is
+    // held: the end finds nothing to end, so the start must end it.
+    let home = tempfile::tempdir().unwrap();
+    let pids = home.path().join("pids");
+    let host = SessionHost::default();
+    let ender = host.ender();
+    let starts = {
+        let pids = pids.clone();
+        move || {
+            ender();
+            let mut command = Command::new("/bin/sh");
+            command
+                .arg("-c")
+                .arg("echo $$ >> \"$1\"; echo ready; exec cat")
+                .arg("sh")
+                .arg(&pids)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            Ok(command)
+        }
+    };
+
+    host.start_at(a_place(home.path()), starts);
+
+    until("the host is started", || starts_in(&pids) == 1);
+    let pid: u32 = std::fs::read_to_string(&pids)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    until("the host it started is ended", || {
+        !purlis_core::process::alive(pid)
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        starts_in(&pids),
+        1,
+        "started again after the window ended it"
     );
 }

@@ -90,6 +90,8 @@ pub(crate) struct Target {
     pub log: PathBuf,
     /// The window's link to the host, on a host's target: what the host is asked directly.
     pub host: Option<Arc<Connection>>,
+    /// What kills the host outright, on a host process's target (#2007).
+    pub kill_the_host: Option<Arc<dyn Fn() + Send + Sync>>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
@@ -152,6 +154,7 @@ pub(crate) fn in_the_window() -> Target {
         savers_here: 1,
         log: data.path().to_path_buf(),
         host: None,
+        kill_the_host: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
 }
@@ -310,6 +313,7 @@ fn a_window_over(
         savers_here: 1,
         log,
         host: Some(connection),
+        kill_the_host: None,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -374,7 +378,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
         let inherited = inherited.clone();
         move || {
             let mut command = crate::sessionhost::command(&charter_app());
-            command.env_clear().envs(inherited);
+            command.env_clear().envs(inherited.iter().cloned());
             Ok(command)
         }
     });
@@ -384,6 +388,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
         .expect("the window connects to its host");
     let mut target = a_window_over(connection, inherited, log);
     target.savers_here = 0;
+    target.kill_the_host = Some(host.0.killer());
     // Ended before the folders it serves from go.
     target._keeps.insert(0, Box::new(host));
     target
@@ -1592,6 +1597,120 @@ mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart
             super::in_a_host_process_at,
         );
     }
+}
+
+/// **The session host killed outright** (#2007, ADR 0068 §3, FD-29's chaos test): with twenty
+/// chats in it, the host's process is killed as `kill -9` kills it. Within thirty seconds every
+/// chat has been told it ended with its host, and the window's supervisor has a new host
+/// serving. What the window then says of each is read from its board as the chat went: the one
+/// whose turn had ended, on a harness that resumes by id, is hibernated, and the rest, mid-turn,
+/// failed. Each then starts again in the new host, within a bound of its own. Resume itself, the
+/// chat's restart on its conversation, is the planes' test
+/// (`a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_its_conversation`).
+/// A host process's target only: there is a process to kill. The test ends the host it started
+/// (`Ends`), and the one it replaced ended its programs with its terminal.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
+    const CHATS: usize = 20;
+    let target = in_a_host_process();
+    // Before any chat starts: each is told its end as it starts.
+    let ends = told_of_ends(&target);
+    // One chat whose turn has ended in a conversation of its own, as its harness's own hook
+    // says.
+    let idle = a_chat_on_the_board(
+        &target,
+        &a_shell(&format!(
+            "printf '%s' '{{\"session_id\":\"0199a2f4-1c2b-7f00-8000-000000000007\",\
+             \"hook_event_name\":\"Stop\"}}' | PURLIS_HARNESS=claude '{}' hook stop; \
+             printf 'CHAT-IDLE-READY'; read line",
+            purlis()
+        )),
+    );
+    Pane::on(&target, idle).shows("CHAT-IDLE-READY");
+    until("the idle chat's turn has ended in its conversation", || {
+        let board = target.hooks.board();
+        board.state(idle) == purlis_core::state::State::Waiting
+            && board.conversation(idle).is_some()
+    });
+    let mut chats: Vec<u32> = vec![idle];
+    chats.extend((1..CHATS).map(|n| {
+        let id = target
+            .sessions
+            .open(
+                None,
+                &a_shell(&format!("printf 'CHAT-{n}-READY'; read line")),
+                &|_| {},
+            )
+            .expect("it starts");
+        Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
+        id
+    }));
+    let killed = Instant::now();
+
+    (target.kill_the_host.as_ref().expect("a host process"))();
+
+    let within = Duration::from_secs(30);
+    let host = target.host.as_ref().expect("the host's target");
+    while !(ends.lock().expect("the ends").len() == CHATS && host.wait(Duration::ZERO).is_ok()) {
+        assert!(
+            killed.elapsed() < within,
+            "after {within:?}, {} of {CHATS} chats were told they ended, and the host serves: {}",
+            ends.lock().expect("the ends").len(),
+            host.wait(Duration::ZERO).is_ok()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let left_in = |chat: u32| {
+        let (state, asking, has_a_conversation) = {
+            let board = target.hooks.board();
+            (
+                board.state(chat),
+                board.asking(chat),
+                board.conversation(chat).is_some(),
+            )
+        };
+        crate::hostlost::after_the_host(
+            state,
+            asking,
+            purlis_core::harness::Harness::ClaudeCode.resumes_by_id(),
+            has_a_conversation,
+        )
+    };
+    for chat in &chats {
+        assert!(
+            target.sessions.lost_with_its_host(*chat),
+            "chat {chat} did not end with its host"
+        );
+    }
+    assert_eq!(left_in(idle), Some(crate::hostlost::LeftIn::Hibernated));
+    for chat in &chats[1..] {
+        assert_eq!(
+            left_in(*chat),
+            Some(crate::hostlost::LeftIn::Failed),
+            "{chat}"
+        );
+    }
+    // Each starts again, in the host that took the old one's place.
+    let reopened = Instant::now();
+    for (n, chat) in chats.iter().enumerate() {
+        let again = target
+            .sessions
+            .open(
+                None,
+                &a_shell(&format!("printf 'CHAT-{n}-BACK'; read line")),
+                &|_| {},
+            )
+            .expect("it starts again");
+        Pane::on(&target, again).shows(&format!("CHAT-{n}-BACK"));
+        target.sessions.close(*chat).expect("the lost one closes");
+        target.sessions.close(again).expect("it closes");
+    }
+    assert!(
+        reopened.elapsed() < Duration::from_secs(60),
+        "twenty chats took {:?} to start again",
+        reopened.elapsed()
+    );
 }
 
 /// **The event log has one writer** (#2003): what a chat's hook says is written once, by the

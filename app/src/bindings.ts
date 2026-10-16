@@ -684,6 +684,37 @@ export const commands = {
 	 *  chat's restart: puts it away, and changes nothing else.
 	 */
 	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
+	/**
+	 *  Chat `session`, where its program ended with its session host and the person has not put
+	 *  it away.
+	 */
+	chatLostWithTheHost: (plane: PlaneId, session: number) => typedError<{
+	plane: PlaneId,
+	session: number,
+	/**  What its run was left in. */
+	left_in: LeftIn,
+	/**  It has a conversation to resume, so Resume puts it back. */
+	resumable: boolean,
+} | null, string>(__TAURI_INVOKE("chat_lost_with_the_host", { plane, session })),
+	/**
+	 *  **Dismiss** on the Notice, and what Resume does once it has asked for the chat's restart:
+	 *  puts it away, and changes nothing else.
+	 */
+	putAwayLostChat: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_lost_chat", { plane, session })),
+	/**  Whether the session host is failing, and what the window says of it. */
+	sessionHostFailing: () => __TAURI_INVOKE<{
+	/**  How many unexpected exits tripped the breaker. */
+	exits: number,
+	/**  Within how many minutes. */
+	within_minutes: number,
+	/**  The last lines the host wrote to its log, oldest first. */
+	said: string[],
+} | null>("session_host_failing"),
+	/**
+	 *  **Try again**: the supervisor starts the session host once more, its breaker's count
+	 *  started over.
+	 */
+	startTheSessionHostAgain: () => typedError<null, string>(__TAURI_INVOKE("start_the_session_host_again")),
 	/**  Task `session`'s quiet note for its tab, where it has one. */
 	taskQuiet: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("task_quiet", { plane, session })),
 	/**  Puts task `session`'s quiet note away: the task goes on, and a later stretch is noted again. */
@@ -5237,6 +5268,16 @@ export type FailedCheck = {
 	url: string | null,
 };
 
+/**  The session host is failing: the window's supervisor stopped starting it again. */
+export type Failing = {
+	/**  How many unexpected exits tripped the breaker. */
+	exits: number,
+	/**  Within how many minutes. */
+	within_minutes: number,
+	/**  The last lines the host wrote to its log, oldest first. */
+	said: string[],
+};
+
 /**  One path a branch changed. */
 export type FileChange = {
 	/**  Its path relative to the branch's folder. */
@@ -6263,6 +6304,13 @@ export type LeftBranch = {
 	deletable: boolean,
 };
 
+/**  What a host crash left a chat's run in (ADR 0076 §5). */
+export type LeftIn = 
+/**  It was in the middle of a turn, or stopped on an ask: that turn is lost. */
+"failed" | 
+/**  It was idle at a turn's end on a harness that resumes by id: nothing is lost. */
+"hibernated";
+
 /**
  *  An action the core left out of a subject's list, and why. Never dropped silently: the menu
  *  draws it as a row that cannot run, with `why` as its reason.
@@ -6346,6 +6394,16 @@ export type LocalModelRow = {
 	base_url: string,
 	/**  The harness that can use it with no account (`opencode`). */
 	harness: string,
+};
+
+/**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
+export type LostChat = {
+	plane: PlaneId,
+	session: number,
+	/**  What its run was left in. */
+	left_in: LeftIn,
+	/**  It has a conversation to resume, so Resume puts it back. */
+	resumable: boolean,
 };
 
 /**  A profile made or imported into, and what its import did. */

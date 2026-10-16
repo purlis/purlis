@@ -21,6 +21,8 @@ use std::path::Path;
 
 use purlis_session_protocol::session::Exit;
 
+use crate::hostrecord::Started;
+
 /// The host's own act that ended a program, where one did: the highest of them where several
 /// did, in this order (ADR 0076 §2, D-1084-1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -58,6 +60,16 @@ pub trait Record: Send + Sync + 'static {
     /// A program the host ran has ended ([`Ended`]): called once, as it ends, off the host's
     /// runtime.
     fn ended(&self, ended: &Ended<'_>);
+
+    /// **A program the last host ran was left running when that host ended without ending it**
+    /// (#2007): it was killed outright, or crashed. Its program is gone with that host's
+    /// terminal, or has just been ended ([`crate::Run::end_what_was_left`]), and what its end
+    /// leaves is kept here, as a crash's (ADR 0076: `host-crash`). Called once for each, before
+    /// this host serves anyone, in the order they started. Nothing, for a binary that keeps no
+    /// event log.
+    fn left_by_its_last_host(&self, left: &Started) {
+        let _ = left;
+    }
 }
 
 /// A host whose binary keeps no event log: every `record` is refused with a sentence, and a

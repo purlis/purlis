@@ -911,6 +911,246 @@ fn a_host_before_held_trust_events_is_sent_the_trust_event_first_and_no_start_ta
     );
 }
 
+// ----- a host killed outright, and the one that replaces it (#2007) --------------------------
+
+/// One session host on in-memory links, whose serving of every link can be ended as a kill
+/// ends it.
+struct OneHost {
+    link: Arc<HostLink>,
+    dial: Dial,
+    runs: StandIns,
+    savers: Savers,
+    serving: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+}
+
+impl OneHost {
+    /// The host is killed outright: it serves nothing more, and its end of every link is gone.
+    fn killed(&self) {
+        for serving in self.serving.lock().unwrap().drain(..) {
+            serving.abort();
+        }
+    }
+}
+
+/// A `local-ui` link to `hosting` over an in-memory stream, whose serving is kept in `serving`.
+async fn a_served_link(
+    hosting: Hosting,
+    serving: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+) -> Result<HostLink, String> {
+    use purlis_session_protocol::auth::{Credentials, Scope};
+    use purlis_session_protocol::link;
+    static HELD: std::sync::LazyLock<Credentials> =
+        std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
+    let (a, b) = tokio::io::duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let served = served.map_err(|why| why.to_string())?;
+    let task = tokio::spawn(async move {
+        let _ = session::serve(served, hosting, None).await;
+    });
+    serving.lock().unwrap().push(task.abort_handle());
+    let client = client.map_err(|why| why.to_string())?;
+    HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
+}
+
+/// A host started on `runtime`, as the window's supervisor starts one: the window's link to
+/// it, and one more for each project root.
+fn a_host_on(runtime: &tokio::runtime::Runtime) -> OneHost {
+    let runs = StandIns::default();
+    let savers = Savers::default();
+    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone())
+        .saving_with(savers.clone());
+    let serving: Arc<Mutex<Vec<tokio::task::AbortHandle>>> = Arc::default();
+    let link = Arc::new(
+        runtime
+            .block_on(a_served_link(hosting.clone(), Arc::clone(&serving)))
+            .unwrap(),
+    );
+    let dial: Dial = {
+        let (handle, serving) = (runtime.handle().clone(), Arc::clone(&serving));
+        Arc::new(move |within| {
+            open_within(
+                &handle,
+                within,
+                a_served_link(hosting.clone(), Arc::clone(&serving)),
+            )
+        })
+    };
+    OneHost {
+        link,
+        dial,
+        runs,
+        savers,
+        serving,
+    }
+}
+
+/// A project's chats in a host that is killed and replaced as the test says.
+struct Supervised {
+    sessions: HostedSessions,
+    connection: Arc<Connection>,
+    first: OneHost,
+    root: std::path::PathBuf,
+    runtime: tokio::runtime::Runtime,
+    _dir: tempfile::TempDir,
+}
+
+impl Supervised {
+    /// The host that replaces the first, once the window has seen it go.
+    fn replaced(&self) -> OneHost {
+        let next = a_host_on(&self.runtime);
+        self.connection
+            .ready(Arc::clone(&next.link), Arc::clone(&next.dial));
+        next
+    }
+}
+
+fn supervised() -> Supervised {
+    let runtime = a_runtime();
+    let first = a_host_on(&runtime);
+    let connection = Arc::new(Connection::default());
+    connection.ready(Arc::clone(&first.link), Arc::clone(&first.dial));
+    let (dir, root) = a_project();
+    Supervised {
+        sessions: HostedSessions::new(Arc::clone(&connection), &root),
+        connection,
+        first,
+        root,
+        runtime,
+        _dir: dir,
+    }
+}
+
+#[test]
+fn every_chat_in_a_host_killed_outright_ends_with_it_and_says_so() {
+    let host = supervised();
+    let ends = Arc::new(Mutex::new(Vec::new()));
+    host.sessions.when_one_ends({
+        let ends = Arc::clone(&ends);
+        Arc::new(move |id, _exit| ends.lock().unwrap().push(id))
+    });
+    let chats: Vec<u32> = (0..20)
+        .map(|_| {
+            host.sessions
+                .open(None, &a_shell("true"), &|_| {})
+                .expect("it starts")
+        })
+        .collect();
+    let (sink, pane) = a_pane();
+    host.sessions.watch(chats[0], sink).expect("a view opens");
+    let killed = Instant::now();
+
+    host.first.killed();
+
+    until("every chat is told it ended", || {
+        ends.lock().unwrap().len() == chats.len()
+    });
+    assert!(killed.elapsed() < Duration::from_secs(30));
+    let mut ended = ends.lock().unwrap().clone();
+    ended.sort_unstable();
+    assert_eq!(ended, chats, "each chat once");
+    for chat in &chats {
+        assert!(
+            host.sessions.lost_with_its_host(*chat),
+            "chat {chat} did not end with its host"
+        );
+        assert_eq!(host.sessions.process_id(*chat), None);
+    }
+    until("its pane says it ended", || {
+        pane.lock().unwrap().ends_with(ENDED)
+    });
+    assert_eq!(host.sessions.running(), chats, "every tab stays");
+}
+
+#[test]
+fn a_chat_that_ended_by_itself_did_not_end_with_its_host() {
+    let host = supervised();
+    let id = host
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("it starts");
+    host.first.runs.last().ends(Exit::Code(0));
+    until("its end is heard", || {
+        host.sessions.process_id(id).is_none()
+    });
+
+    host.first.killed();
+    std::thread::sleep(Duration::from_millis(100));
+
+    assert!(!host.sessions.lost_with_its_host(id));
+}
+
+#[test]
+fn a_chat_lost_with_its_host_starts_again_in_the_host_that_replaces_it() {
+    let host = supervised();
+    let id = host
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("it starts");
+    host.first.killed();
+    until("it ended with its host", || {
+        host.sessions.lost_with_its_host(id)
+    });
+    host.connection.restarting();
+    let next = host.replaced();
+
+    // As Resume does: a new run of the chat starts, and then the one that was lost closes.
+    let again = host
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("it starts again");
+    host.sessions.close(id).expect("the lost one closes");
+
+    assert_eq!(next.runs.ran().len(), 1, "in the new host");
+    assert_eq!(host.sessions.running(), [again]);
+    assert!(!host.sessions.lost_with_its_host(again));
+    assert!(!host.sessions.lost_with_its_host(id), "kept past its close");
+    assert_eq!(host.sessions.process_id(again), Some(4242));
+}
+
+#[test]
+fn a_start_while_the_host_is_started_again_waits_for_the_new_one() {
+    let host = supervised();
+    host.first.killed();
+    host.connection.restarting();
+
+    let starting = std::thread::scope(|scope| {
+        let starting = scope.spawn(|| host.sessions.open(None, &a_shell("true"), &|_| {}));
+        std::thread::sleep(Duration::from_millis(200));
+        let next = host.replaced();
+        (starting.join().unwrap(), next)
+    });
+
+    let (started, next) = starting;
+    assert!(started.is_ok(), "{started:?}");
+    assert_eq!(next.runs.ran().len(), 1);
+}
+
+#[test]
+fn a_project_the_host_saved_is_saved_by_the_host_that_replaces_it() {
+    let host = supervised();
+    let _saving = host.sessions.keep_saving(&host.root, told_nothing());
+    until("the first host saves the project", || {
+        host.first.savers.running() == 1
+    });
+
+    host.first.killed();
+    host.connection.restarting();
+    let next = host.replaced();
+
+    until("the new host saves the project", || {
+        next.savers.running() == 1
+    });
+    assert_eq!(next.savers.started()[0].1, host.root);
+}
+
 fn a_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

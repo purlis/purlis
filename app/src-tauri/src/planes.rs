@@ -278,6 +278,9 @@ pub struct Held {
     proposals: crate::proposals::Proposals,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
     mcp_failures: Arc<crate::mcpfailed::Failures>,
+    /// The chats whose program ended with their session host, until the person answers
+    /// (#2007).
+    lost_with_the_host: Arc<crate::hostlost::Lost>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -546,6 +549,12 @@ impl Held {
     /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
     pub fn mcp_failures(&self) -> &crate::mcpfailed::Failures {
         &self.mcp_failures
+    }
+
+    /// The chats whose program ended with their session host, for the Notice on each pane
+    /// (#2007).
+    pub fn lost_with_the_host(&self) -> &crate::hostlost::Lost {
+        &self.lost_with_the_host
     }
 
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
@@ -1007,6 +1016,7 @@ impl Held {
         self.browsers.forget(self.browser_driver.as_ref(), session);
         self.proposals.forget(session);
         self.mcp_failures.forget(session);
+        self.lost_with_the_host.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
         let id = self
@@ -1953,6 +1963,8 @@ pub struct Planes {
     browsers_ended: crate::chatbrowsers::Teller,
     /// Where the chats' browsers run (#2013): the window's session host, once it is given.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
+    /// Told each chat whose program ended with its session host (#2007).
+    lost_with_the_host: crate::hostlost::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -2209,6 +2221,7 @@ impl Planes {
             mcp_failed: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
             browser_driver: None,
+            lost_with_the_host: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2443,6 +2456,13 @@ impl Planes {
     /// a plane this registry holds, so the window can say so on the chat's tab (qw381).
     pub fn telling_mcp_failures(mut self, failed: crate::mcpfailed::Teller) -> Self {
         self.mcp_failed = failed;
+        self
+    }
+
+    /// Tells `lost` each chat whose program ended with its session host, in a plane this
+    /// registry holds, so the window can say so on the chat's pane, with Resume (#2007).
+    pub fn telling_lost_chats(mut self, lost: crate::hostlost::Teller) -> Self {
+        self.lost_with_the_host = lost;
         self
     }
 
@@ -3664,6 +3684,8 @@ impl Planes {
         let started_on: StartedOn = Arc::default();
         // When each chat began to start, for its MCP servers' starts (qw381).
         let mcp_failures: Arc<crate::mcpfailed::Failures> = Arc::default();
+        // The chats whose program ends with their session host (#2007).
+        let lost_with_the_host: Arc<crate::hostlost::Lost> = Arc::default();
         {
             let board = hooks.shared_board();
             chats.when_one_starts(Box::new({
@@ -3731,11 +3753,48 @@ impl Planes {
             // The event log, and the key the hook channel records this project's chats under.
             let events = self.events.clone();
             let events_root = id.root().to_path_buf();
+            // Who hears of a chat whose program ended with its session host (#2007).
+            let lost = Arc::clone(&lost_with_the_host);
+            let tell_lost = Arc::clone(&self.lost_with_the_host);
             chats
                 .sessions()
                 .when_one_ends(Arc::new(move |session, exit| {
                     // A curation prompt still waiting is for a chat that is gone: never typed.
                     typed.forget(session);
+                    // **Its program ended with its session host** (#2007): what its run is left
+                    // in is read from the board as it was, before its end moves it, and said on
+                    // its pane with Resume. It did not end by itself: like a quit, it fails no
+                    // task, and a task chat reports when it is resumed.
+                    let lost_with = me
+                        .get()
+                        .and_then(std::sync::Weak::upgrade)
+                        .filter(|held| held.chats.sessions().lost_with_its_host(session));
+                    let with_the_host = lost_with.is_some();
+                    if let Some(held) = lost_with {
+                        let resumes_by_id = held
+                            .chats
+                            .harness(session)
+                            .is_some_and(purlis_core::harness::Harness::resumes_by_id);
+                        let (state, asking, resumable) = {
+                            let board = hooks::held_board(&board);
+                            (
+                                board.state(session),
+                                board.asking(session),
+                                board.conversation(session).is_some(),
+                            )
+                        };
+                        if let Some(left_in) =
+                            crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
+                        {
+                            lost.note(session, crate::hostlost::LostRun { left_in, resumable });
+                            tell_lost(crate::hostlost::LostChat {
+                                plane: plane.clone(),
+                                session,
+                                left_in,
+                                resumable,
+                            });
+                        }
+                    }
                     // A run ended so that the same chat starts again at once (ADR 0067 as
                     // amended 2026-10-16) has not ended the chat: what follows its place says
                     // so. Its sub-agents' runs still end with it, stopped as a close stops
@@ -3807,6 +3866,7 @@ impl Planes {
                         && !held.chats.ending()
                         && !every_agent.is_stopped()
                         && !held.stopping().is_stopping(session)
+                        && !with_the_host
                     {
                         crate::dispatched::moved(&held, session);
                         crate::handoff::its_program_ended(&held, session);
@@ -3880,6 +3940,7 @@ impl Planes {
             browser_driver: self.browser_driver.clone(),
             proposals: crate::proposals::Proposals::default(),
             mcp_failures,
+            lost_with_the_host,
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),

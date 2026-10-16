@@ -412,6 +412,13 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // A chat's failed MCP server starts, read and put away (qw381): in memory.
             "mcp_failures",
             "put_away_mcp_failure",
+            // A chat lost with its session host, read and put away (#2007): in memory.
+            "chat_lost_with_the_host",
+            "put_away_lost_chat",
+            // Whether the session host is failing, and Try again (#2007): in memory, and a
+            // wake of the supervisor's thread.
+            "session_host_failing",
+            "start_the_session_host_again",
             // A task's quiet note, read and put away (#1981): in memory.
             "task_quiet",
             "put_away_task_quiet",

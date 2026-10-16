@@ -397,6 +397,22 @@ impl Run {
         }
     }
 
+    /// **What a host crash leaves a run in that was in `state`** (ADR 0076 §5, FD-29), read off
+    /// the table [`Run::apply`] moves by: a busy run, or one stopped on an ask, fails; one idle
+    /// at a turn's end on a harness that resumes natively is hibernated; one with no process, or
+    /// one that has ended, is as it was. For a caller that keeps a run's state outside a `Run`:
+    /// the window's board, until it moves onto runs (#791).
+    pub fn after_a_host_crash(state: RunState, facts: Facts) -> RunState {
+        let mut run = Run {
+            state,
+            ..Run::requested(facts, &[])
+        };
+        match run.apply(Cause::HostCrash) {
+            Ok(Some(_)) => run.state,
+            Ok(None) | Err(_) => state,
+        }
+    }
+
     /// Where the run is.
     pub fn state(&self) -> RunState {
         self.state
@@ -1487,6 +1503,49 @@ mod tests {
                 Cause::HostCrash
             )
         );
+    }
+
+    #[test]
+    fn what_a_host_crash_leaves_a_run_in_is_read_off_the_same_table() {
+        let cannot_resume = Facts {
+            resumes_natively: false,
+            ..TWO
+        };
+        for (state, facts, after) in [
+            (RunState::Starting, TWO, RunState::Failed),
+            (RunState::Working, TWO, RunState::Failed),
+            (RunState::Paused, TWO, RunState::Failed),
+            (
+                RunState::InputRequired(Reason::Asked),
+                TWO,
+                RunState::Failed,
+            ),
+            (
+                RunState::InputRequired(Reason::TurnEnded),
+                TWO,
+                RunState::Hibernated,
+            ),
+            (
+                RunState::InputRequired(Reason::Ready),
+                TWO,
+                RunState::Hibernated,
+            ),
+            (
+                RunState::InputRequired(Reason::TurnEnded),
+                cannot_resume,
+                RunState::Failed,
+            ),
+            (RunState::Hibernated, TWO, RunState::Hibernated),
+            (RunState::Queued, TWO, RunState::Queued),
+            (RunState::Completed, TWO, RunState::Completed),
+        ] {
+            assert_eq!(
+                Run::after_a_host_crash(state, facts),
+                after,
+                "{state:?}, resumes natively: {}",
+                facts.resumes_natively
+            );
+        }
     }
 
     #[test]

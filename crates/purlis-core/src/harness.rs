@@ -126,6 +126,13 @@ impl Harness {
         crate::harness_declaration::of(self)
     }
 
+    /// Whether this harness picks a conversation back up by its id (its declaration's
+    /// `resumes_by_id`): what ADR 0076 §5 calls resuming natively, which lets an idle run be
+    /// hibernated rather than ended.
+    pub fn resumes_by_id(self) -> bool {
+        self.holds("resumes_by_id")
+    }
+
     /// Whether this harness's declaration answers `capability` yes.
     fn holds(self, capability: &str) -> bool {
         self.declared().capability(capability).holds()
@@ -637,6 +644,13 @@ mod tests {
                 "ide.7"
             ]
         );
+    }
+
+    #[test]
+    fn the_harnesses_purlis_ships_each_resume_by_id_as_their_declarations_say() {
+        for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
+            assert!(harness.resumes_by_id(), "{harness:?}");
+        }
     }
 
     #[test]

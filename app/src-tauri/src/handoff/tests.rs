@@ -2277,6 +2277,75 @@ fn a_task_whose_program_ends_without_a_report_is_recorded_as_failed_saying_so() 
 }
 
 #[test]
+fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_says_so() {
+    // #2007: the host was killed outright, so the task did not end by itself. As after a quit,
+    // its record runs on and it reports once resumed; its pane says how its run was left.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    host.program_ends_with_its_host(task);
+
+    let record = record_of(&held, task);
+    assert!(record.running(), "{record:?}");
+    assert_eq!(record.report, None);
+    assert_eq!(
+        held.lost_with_the_host().of(task),
+        Some(crate::hostlost::LostRun {
+            left_in: crate::hostlost::LeftIn::Failed,
+            resumable: true,
+        }),
+        "failed: it never said its turn ended; it has its conversation to resume"
+    );
+    let _ = held.close_chat(task);
+    assert_eq!(
+        held.lost_with_the_host().of(task),
+        None,
+        "gone with its tab"
+    );
+}
+
+#[test]
+fn a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_its_conversation() {
+    // #2007: idle at its turn's end, on a harness that resumes by id, nothing was lost. Resume
+    // is the pane's one click: the chat's restart on its conversation (ask, then restart).
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    the_board_hears(&held, steward, Event::UserPromptSubmit);
+    the_board_hears(&held, steward, Event::Stop);
+    let conversation = held.board().conversation(steward);
+    assert!(
+        conversation.is_some(),
+        "it started on a conversation of its own"
+    );
+
+    host.program_ends_with_its_host(steward);
+
+    assert_eq!(
+        held.lost_with_the_host().of(steward),
+        Some(crate::hostlost::LostRun {
+            left_in: crate::hostlost::LeftIn::Hibernated,
+            resumable: true,
+        })
+    );
+    held.chats().ask_restart(steward).expect("Resume asks");
+    let again = held
+        .restart_chat(steward, STARTING)
+        .expect("it starts again")
+        .expect("now, its turn having ended");
+    assert_eq!(host.asked().last().map(|(number, _)| *number), Some(again));
+    let resumed = host.openings().last().expect("its start").args.clone();
+    assert!(
+        resumed.iter().any(|arg| Some(arg) == conversation.as_ref()),
+        "not resumed on its conversation: {resumed:?}"
+    );
+}
+
+#[test]
 fn a_task_started_again_in_its_place_keeps_its_record_which_ends_with_its_report() {
     // A restart (for a sandbox grant, say) is the same chat going on: its dispatch's
     // record follows it by the chat's id, and is not ended by the old session's end.

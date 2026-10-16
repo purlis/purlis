@@ -15,6 +15,7 @@ import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { McpFailedNotice } from "./McpFailedNotice";
+import { HostLostNotice } from "./HostLostNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -430,6 +431,7 @@ export function ChatNotices({
         onShowInbox={onShowInbox}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
+      <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
       <TaskQuietNotice plane={plane} session={session} />
       {off > 0 && onShowInbox !== undefined && (
         <Notice

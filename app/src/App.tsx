@@ -45,6 +45,7 @@ import type { ForgeAsk } from "./ForgeQuestion";
 type RepoTried = { refused?: string; asksForge?: string };
 import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
+import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
@@ -2249,6 +2250,10 @@ function App() {
 
         {/* A launch without the session bus, and what that run has not got (charter#746). */}
         <SessionBusNotice chats={ending} />
+
+        {/* The session host stopped unexpectedly three times in five minutes, and the window's
+            supervisor stopped starting it again: Try again (#2007). */}
+        <HostFailingNotice />
 
         {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
         <VaultsWaitingNotice />

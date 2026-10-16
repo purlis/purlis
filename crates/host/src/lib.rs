@@ -48,6 +48,8 @@ mod hearing;
 #[cfg(unix)]
 mod hosting;
 #[cfg(unix)]
+mod hostrecord;
+#[cfg(unix)]
 mod killswitch;
 #[cfg(unix)]
 mod recording;
@@ -71,6 +73,8 @@ pub use hosting::{
     ASK_WITHIN, AskTheWindow, Compose, ComposesNothing, ENDS_WITHIN, FromTheWindow, Hosting,
     Looked, Poke, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
 };
+#[cfg(unix)]
+pub use hostrecord::{HOST_RECORD, Started, this_boot};
 #[cfg(unix)]
 pub use killswitch::KILL_SWITCH;
 /// The session protocol this host speaks, for a binary's [`Compose`].

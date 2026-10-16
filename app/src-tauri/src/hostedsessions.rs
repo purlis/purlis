@@ -100,6 +100,10 @@ const LINK_WITHIN: Duration = Duration::from_secs(30);
 /// How long a command waits for the host's answer.
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
+/// How a chat whose program ended with its session host is said to have ended: by the hang-up
+/// its terminal's close gives it (#2007).
+pub const ENDED_WITH_THE_HOST: &str = "Hangup";
+
 /// What a view is written before the screen of its next epoch: a full reset, so a pane drawn
 /// from a fresh snapshot after its view fell behind starts from blank, as the snapshot assumes.
 const RESET: &str = "\x1bc";
@@ -194,10 +198,25 @@ enum Linked {
 }
 
 impl Connection {
-    /// The link is ready, and `dial` opens another to the same host.
+    /// The link is ready, and `dial` opens another to the same host: the first, or the one to
+    /// a host started again after its last ended (#2007), whose projects are each held again
+    /// on a link of their own as they are next asked for.
     pub fn ready(&self, link: Arc<HostLink>, dial: Dial) {
         *lock(&self.dial) = Some(dial);
-        *lock(&self.state) = Linked::Ready(link);
+        let mut state = lock(&self.state);
+        // Another host: every project root is held on a link of its own to it, opened anew.
+        if !matches!(&*state, Linked::Ready(was) if was.id == link.id) {
+            lock(&self.projects).clear();
+        }
+        *state = Linked::Ready(link);
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    /// The host ended unexpectedly and is being started again (#2007): a start waits for the
+    /// new one, as the first start waits for the first.
+    pub fn restarting(&self) {
+        *lock(&self.state) = Linked::Making;
         self.changed.notify_all();
     }
 
@@ -336,7 +355,14 @@ struct Drawing {
 
 /// The window's link to its session host: the client its commands go through, the views the
 /// host opens on it, and word of each program's end. One for every project.
+///
+/// **A link that ends takes its programs with it** (#2007): the window never ends it but to
+/// quit, so a link that ends is a host that went, and every program the link was to be told the
+/// end of has ended with its terminal. Each is told so ([`Ending::WithTheHost`]), and every pane
+/// drawn from it is told its view ended.
 pub struct HostLink {
+    /// Which link this is, never another's: a project held on one is held again on the next.
+    id: u64,
     client: Arc<Client>,
     runtime: tokio::runtime::Handle,
     shared: Arc<Shared>,
@@ -350,6 +376,14 @@ impl Drop for HostLink {
     fn drop(&mut self) {
         self.hearing.abort();
     }
+}
+
+/// How a program the host ran ended, as the window is told it.
+pub(crate) enum Ending {
+    /// The host said it ended, and how.
+    Exited(Exit),
+    /// The link to its host ended first: the host went, and the program with it (#2007).
+    WithTheHost,
 }
 
 #[derive(Default)]
@@ -377,7 +411,7 @@ const A_REPLY_IS_AT_MOST: usize = purlis_session_protocol::link::MOST_CONTROL_FR
 type Turns = Arc<dyn Fn(&str) -> Option<Vec<String>> + Send + Sync>;
 
 /// Told once, as a program ends.
-type TellEnd = Box<dyn FnOnce(Exit) + Send>;
+type TellEnd = Box<dyn FnOnce(Ending) + Send>;
 
 #[derive(Default)]
 struct Views {
@@ -418,13 +452,19 @@ impl HostLink {
                 runtime: runtime.clone(),
             },
         );
+        let lost = Arc::clone(&shared);
         let hearing = runtime
             .spawn(async move {
                 hearing.await;
+                // Off the runtime: each end told reads and moves the window's board.
+                let _ = tokio::task::spawn_blocking(move || everything_ended_with_the_host(&lost))
+                    .await;
                 ended();
             })
             .abort_handle();
+        static LINKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Ok(HostLink {
+            id: LINKS.fetch_add(1, Ordering::Relaxed),
             client,
             runtime,
             shared,
@@ -566,6 +606,27 @@ impl HostLink {
     /// Hear the lines `project`'s hooks write with `relayed`, from now on.
     fn hear_project(&self, project: &str, relayed: Arc<Relayed>) {
         lock(&self.shared.hearing).insert(project.to_owned(), relayed);
+    }
+}
+
+/// **The link ended, and every program on it with its host** (#2007): each program still to be
+/// told its end is told it ended with the host, and every view drawn from the link ends, its
+/// pane told so.
+fn everything_ended_with_the_host(shared: &Shared) {
+    let ends: Vec<TellEnd> = lock(&shared.ends).drain().map(|(_, tell)| tell).collect();
+    for tell in ends {
+        tell(Ending::WithTheHost);
+    }
+    // Nothing more comes from a host that has gone: each pane is told now, once, and drawn
+    // into no more.
+    let views: Vec<u32> = {
+        let mut views = lock(&shared.views);
+        views.waiting.clear();
+        views.drawing.keys().copied().collect()
+    };
+    for view in views {
+        finish_view(shared, view);
+        lock(&shared.views).drawing.remove(&view);
     }
 }
 
@@ -785,7 +846,7 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
             Told::Pushed(Pushed::Ended { program, exit, .. }) => {
                 let tell = lock(&shared.ends).remove(&program);
                 if let Some(tell) = tell {
-                    tell(exit);
+                    tell(Ending::Exited(exit));
                 }
             }
             Told::Pushed(Pushed::Saving {
@@ -863,8 +924,9 @@ struct Program {
 pub struct HostedSessions {
     connection: Arc<Connection>,
     root: PathBuf,
-    /// The project's stable id, once the host holds it.
-    held: Arc<Mutex<Option<String>>>,
+    /// The project's stable id, once the host holds it, and the link it is held on: a host
+    /// started again holds it again (#2007).
+    held: Arc<Mutex<Option<Held>>>,
     /// What hears the lines the host hands on from the project's hook channel (#2000).
     relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     running: Arc<Mutex<HashMap<u32, Program>>>,
@@ -874,6 +936,16 @@ pub struct HostedSessions {
     opened: Arc<AtomicU32>,
     ended: Mutex<Option<Ends>>,
     kill_switch: Arc<crate::killswitch::KillSwitch>,
+    /// The chats whose program ended with their host, until each is started again or closed
+    /// (#2007).
+    lost: Arc<Mutex<std::collections::HashSet<u32>>>,
+}
+
+/// A project held on a link: its stable id, and which link.
+#[derive(Clone)]
+struct Held {
+    project: String,
+    on: u64,
 }
 
 impl HostedSessions {
@@ -888,6 +960,7 @@ impl HostedSessions {
             opened: Arc::default(),
             ended: Mutex::new(None),
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
+            lost: Arc::default(),
         }
     }
 
@@ -995,14 +1068,16 @@ impl HostedSessions {
 /// and after it the host is told the numbers `opened` has dealt (#2000).
 fn held_on(
     connection: &Connection,
-    held: &Mutex<Option<String>>,
+    held: &Mutex<Option<Held>>,
     relayed: &Mutex<Option<Arc<Relayed>>>,
     opened: &AtomicU32,
     root: &Path,
 ) -> Result<(Arc<HostLink>, String), String> {
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
-    if let Some(project) = &*held {
+    if let Some(Held { project, on }) = &*held
+        && *on == link.id
+    {
         return Ok((link, project.clone()));
     }
     let project = purlis_core::scaffold::planefile::ensure_project_id(root)
@@ -1045,14 +1120,17 @@ fn held_on(
         };
         relayed.keep_with(link.board_keeper(&project), kept);
     }
-    *held = Some(project.clone());
+    *held = Some(Held {
+        project: project.clone(),
+        on: link.id,
+    });
     Ok((link, project))
 }
 
 /// What holds a project on its own link to the host, for a thread of its own: [`held_on`]'s.
 struct Holding {
     connection: Arc<Connection>,
-    held: Arc<Mutex<Option<String>>>,
+    held: Arc<Mutex<Option<Held>>>,
     relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     opened: Arc<AtomicU32>,
     root: PathBuf,
@@ -1075,17 +1153,13 @@ struct Asked {
     stopped: bool,
     /// The host saves the project, on this link.
     saving: Option<(Arc<HostLink>, String)>,
+    /// The window's link to the host that was last asked, whatever it answered: a host started
+    /// again is asked once, on its own (#2007).
+    asked_on: Option<u64>,
 }
 
 impl SavedInTheHost {
     fn start(holding: Holding, told: crate::autosave::Told) -> SavedInTheHost {
-        let Holding {
-            connection,
-            held,
-            relayed,
-            opened,
-            root,
-        } = holding;
         let asked: Arc<Mutex<Asked>> = Arc::default();
         let (poke, poked) = std::sync::mpsc::channel();
         let asking = Arc::clone(&asked);
@@ -1094,59 +1168,36 @@ impl SavedInTheHost {
         let started = std::thread::Builder::new()
             .name("saved in the session host".into())
             .spawn(move || {
-                let (link, project) = match held_on(&connection, &held, &relayed, &opened, &root) {
-                    Ok(held) => held,
-                    Err(why) => {
-                        tracing::warn!(
-                            "purlis: {} is not saved by itself on this launch: {why}",
-                            root.display()
-                        );
-                        return;
-                    }
-                };
-                // The window reads the standing again as the host says it moved, as it did
-                // when its own worker said so.
-                lock(&link.shared.savings).insert(project.clone(), {
-                    let root = root.clone();
-                    Arc::new(move |looked| {
-                        purlis_core::planegit::touch(&root);
-                        told(looked);
-                    })
-                });
-                // And the host asks the window's board who is mid-turn.
-                lock(&link.shared.turns).insert(
-                    project.clone(),
-                    Arc::new(move |workspace: &str| {
-                        let ask = lock(&board).clone();
-                        ask.map(|ask| ask(workspace))
-                    }),
-                );
-                let mut asked = lock(&asking);
-                if asked.stopped {
-                    forget(&link, &project);
+                if !ask_to_save(&holding, &asking, &told, &board) {
                     return;
                 }
-                match link.call(Command::StartSaving {
-                    project: project.clone(),
-                }) {
-                    Ok(_) => asked.saving = Some((link, project)),
-                    Err(why) => {
-                        forget(&link, &project);
-                        tracing::warn!(
-                            "purlis: the session host does not save {}: {why}",
-                            root.display()
-                        );
-                    }
-                }
-                drop(asked);
                 // What the window pokes: a fetch is the host's to make. A chat's end the host
-                // hears for itself, as its program ends.
-                while let Ok(poke) = poked.recv() {
+                // hears for itself, as its program ends. And a host started again after its
+                // last ended is asked again, on its own link, as soon as it is there (#2007).
+                loop {
+                    let poke = match poked.recv_timeout(LOOK_FOR_A_NEW_HOST_EVERY) {
+                        Ok(poke) => Some(poke),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    };
                     let asked = lock(&asking);
                     if asked.stopped {
                         return;
                     }
-                    if let (crate::autosave::Poke::Fetch, Some((link, project))) =
+                    let on = asked.asked_on;
+                    let now = holding
+                        .connection
+                        .wait(Duration::ZERO)
+                        .ok()
+                        .map(|link| link.id);
+                    if now.is_some() && now != on {
+                        drop(asked);
+                        if !ask_to_save(&holding, &asking, &told, &board) {
+                            return;
+                        }
+                        continue;
+                    }
+                    if let (Some(crate::autosave::Poke::Fetch), Some((link, project))) =
                         (poke, &asked.saving)
                     {
                         link.send(Command::FetchProject {
@@ -1205,6 +1256,75 @@ impl SavedInTheHost {
         let _ = self.poke.send(crate::autosave::Poke::Fetch);
         answered
     }
+}
+
+/// How often a project the host saves looks for a host started again after its last ended.
+const LOOK_FOR_A_NEW_HOST_EVERY: Duration = Duration::from_millis(250);
+
+/// **Asks the host the link reaches now to save the project `holding` holds** (#2002), holding
+/// it there first: told what each look did, and asking the window's board who is mid-turn.
+/// Answers whether to go on, which is not once the saving was stopped.
+fn ask_to_save(
+    holding: &Holding,
+    asking: &Mutex<Asked>,
+    told: &crate::autosave::Told,
+    board: &Arc<Mutex<Option<crate::autosave::MidTurn>>>,
+) -> bool {
+    let Holding {
+        connection,
+        held,
+        relayed,
+        opened,
+        root,
+    } = holding;
+    let (link, project) = match held_on(connection, held, relayed, opened, root) {
+        Ok(held) => held,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: {} is not saved by itself on this launch: {why}",
+                root.display()
+            );
+            return true;
+        }
+    };
+    // The window reads the standing again as the host says it moved, as it did when its own
+    // worker said so.
+    lock(&link.shared.savings).insert(project.clone(), {
+        let (root, told) = (root.clone(), Arc::clone(told));
+        Arc::new(move |looked| {
+            purlis_core::planegit::touch(&root);
+            told(looked);
+        })
+    });
+    // And the host asks the window's board who is mid-turn.
+    let board = Arc::clone(board);
+    lock(&link.shared.turns).insert(
+        project.clone(),
+        Arc::new(move |workspace: &str| {
+            let ask = lock(&board).clone();
+            ask.map(|ask| ask(workspace))
+        }),
+    );
+    let mut asked = lock(asking);
+    if asked.stopped {
+        forget(&link, &project);
+        return false;
+    }
+    // By the window's own link: a host started again is a new one of those.
+    asked.asked_on = connection.wait(Duration::ZERO).ok().map(|window| window.id);
+    match link.call(Command::StartSaving {
+        project: project.clone(),
+    }) {
+        Ok(_) => asked.saving = Some((link, project)),
+        Err(why) => {
+            forget(&link, &project);
+            tracing::warn!(
+                "purlis: the session host does not save {}: {why}",
+                root.display()
+            );
+        }
+    }
+    true
 }
 
 /// Nobody on this window is told of `project`'s saving, or asked of its turns, any more.
@@ -1336,10 +1456,11 @@ impl SessionHost for HostedSessions {
         // No hook reports a program dying: the host says so, as the operating system told it.
         let tell = lock(&self.ended).clone();
         let running = Arc::clone(&self.running);
+        let lost = Arc::clone(&self.lost);
         let ended = program.clone();
         link.when_it_ends(
             &program,
-            Box::new(move |exit| {
+            Box::new(move |ending| {
                 // Only the program that ended: a chat closed and put back under its number is
                 // another program, which runs on.
                 match lock(&running).get_mut(&id) {
@@ -1349,14 +1470,19 @@ impl SessionHost for HostedSessions {
                 if let Some(relayed) = &relayed {
                     relayed.ended(id, pid);
                 }
+                let exit = match ending {
+                    Ending::Exited(Exit::Code(code)) => purlis_core::session::Exit::Code(code),
+                    Ending::Exited(Exit::Signal(signal)) => {
+                        purlis_core::session::Exit::Signal(signal)
+                    }
+                    // Its terminal closed with its host, which hangs its program up.
+                    Ending::WithTheHost => {
+                        lock(&lost).insert(id);
+                        purlis_core::session::Exit::Signal(ENDED_WITH_THE_HOST.to_owned())
+                    }
+                };
                 if let Some(tell) = &tell {
-                    tell(
-                        id,
-                        match exit {
-                            Exit::Code(code) => purlis_core::session::Exit::Code(code),
-                            Exit::Signal(signal) => purlis_core::session::Exit::Signal(signal),
-                        },
-                    );
+                    tell(id, exit);
                 }
             }),
         );
@@ -1368,6 +1494,7 @@ impl SessionHost for HostedSessions {
                 views: Vec::new(),
             },
         );
+        lock(&self.lost).remove(&id);
         // A stop that landed while this program was being started is carried out now.
         if !opening.operator_shell && self.kill_switch.is_stopped() {
             link.send(Command::Stop { chat: program });
@@ -1438,6 +1565,7 @@ impl SessionHost for HostedSessions {
             relayed.ended(id, None);
         }
         let program = lock(&self.running).remove(&id).ok_or_else(|| gone(id))?;
+        lock(&self.lost).remove(&id);
         if let Ok(link) = self.own_link(Duration::ZERO) {
             for view in &program.views {
                 link.undraw(*view);
@@ -1474,6 +1602,10 @@ impl SessionHost for HostedSessions {
 
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
+    }
+
+    fn lost_with_its_host(&self, id: u32) -> bool {
+        lock(&self.lost).contains(&id)
     }
 
     fn running(&self) -> Vec<u32> {
@@ -1515,8 +1647,10 @@ impl SessionHost for HostedSessions {
     /// is told now.
     fn already_dealt(&self, dealt: u32) {
         self.opened.fetch_max(dealt, Ordering::Relaxed);
-        let project = lock(&self.held).clone();
-        if let (Some(project), Ok(link)) = (project, self.own_link(Duration::ZERO)) {
+        let held = lock(&self.held).clone();
+        if let (Some(Held { project, on }), Ok(link)) = (held, self.own_link(Duration::ZERO))
+            && on == link.id
+        {
             link.send(Command::DealtAlready { project, dealt });
         }
     }

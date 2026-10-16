@@ -5496,6 +5496,7 @@ dependencies = [
  "purlis-same-user",
  "purlis-session-protocol",
  "purlis-terminal",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
