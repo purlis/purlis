@@ -5,8 +5,10 @@ back as failed or hibernated with a one-click Resume; three unexpected exits wit
 trip a breaker, and the window says so. Spec #1974's grill ruled the outcome on 2026-10-14 ("the
 host restarts under its supervisor, with a breaker after three unexpected exits in five minutes";
 "each chat shown as failed or hibernated with a one-click resume"), as §3 and FD-29 (#666) had.
-§2, §3 and the amendments above are left as accepted, and this note adds to them. Items 1 to 7 are
-**decided in implementation, to be confirmed** (D-2007-1 to D-2007-7).
+§2, §3 and the amendments above are left as accepted, and this note adds to them. Item 3 is
+**decided by the dispatcher**: the host record is the session host's own transient state on the
+machine, not a format anything else writes (D-2007-3). Items 1, 2 and 4 to 7 are **decided in
+implementation, to be confirmed** (D-2007-1, D-2007-2, D-2007-4 to D-2007-7).
 
 1. **The window is the supervisor, on every platform, for now.** §3 has the window supervise
    where no service manager may be used without registering a background item, and a systemd
@@ -39,12 +41,14 @@ host restarts under its supervisor, with a breaker after three unexpected exits 
    leaves is kept; each line is written through to disk before the start is answered. A host
    that ends every program as it stops empties it; the next host to take the lock reads what is
    left, and empties it, before it serves anyone. Once it passes 256 KiB it is written again
-   with only the programs still running, and one past 4 MiB is not read. Machine tier,
+   with only the programs still running, whole beside itself and renamed over it, so a write
+   that fails leaves it as it was; one past 4 MiB is not read, and a line that is not text is
+   passed over alone. Machine tier,
    device-bound and transient, as the rest of the folder is (`docs/plane-format.md`).
    *Rejected:* the event log (the device's audit, which a host reads back only from a cursor,
    and which keeps no process to end); ADR 0076's run journal (each run's state for the window,
    backed up, where this is the host's note of its processes); the socket's folder (the system
-   may empty a temporary folder); a database (one writer, a handful of lines). *D-2007-3.*
+   may empty a temporary folder); a database (one writer, a handful of lines). *D-2007-3, decided by the dispatcher.*
 4. **The next host settles what the last one left.** For each program the host record says was
    left running, it ends the program's process group where its leader is still the process that
    was started, by the kernel's word on when it started, in the same boot of the machine, and
@@ -56,7 +60,8 @@ host restarts under its supervisor, with a breaker after three unexpected exits 
    hears the link end, and each chat that ran in that host ends with it. Its run is left where
    the table puts a host crash (`Run::after_a_host_crash`): a chat mid-turn, starting, paused, or
    stopped on an ask has **failed**; one idle at a turn's end, on a harness that resumes
-   natively (its declaration's `resumes_by_id`, ADR 0076 §5), is **hibernated**. The chat's pane
+   natively (its declaration's `resumes_by_id`, ADR 0076 §5) and with a conversation to resume,
+   is **hibernated**; without one it has **failed**, since nothing can pick it up. The chat's pane
    says which, with **Resume** (its restart on its conversation, one click) where it has a
    conversation, and Dismiss. Read from the window's board because ADR 0076's run journal is not
    written yet; reading it from there, with or without a window, is #2289 and #2277. The board,

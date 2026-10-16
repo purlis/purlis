@@ -3784,7 +3784,7 @@ impl Planes {
                             )
                         };
                         if let Some(left_in) =
-                            crate::hostlost::after_the_host(state, asking, resumes_by_id)
+                            crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
                             lost.note(session, crate::hostlost::LostRun { left_in, resumable });
                             tell_lost(crate::hostlost::LostChat {

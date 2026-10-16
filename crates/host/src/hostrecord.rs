@@ -27,8 +27,9 @@
 //! A program with a `started` line and no `ended` one was left running. A host that ends as it
 //! should, having ended every program, empties the file; the next host empties it once it has
 //! read it. **It stays small**: once it is past [`REWRITTEN_PAST`] bytes it is written again
-//! whole with only the programs still running, and a file past [`READ_AT_MOST`] is not read. A
-//! line that cannot be read, a torn last one among them, is passed over: a line lost is a
+//! whole with only the programs still running, beside itself and renamed over it, so a write
+//! that fails leaves it as it was; a file past [`READ_AT_MOST`] is not read. A line that cannot
+//! be read, or is not text, a torn last one among them, is passed over alone: a line lost is a
 //! program the next host does not settle, never one it settles wrongly.
 //!
 //! The file is this user's alone (`0600`), never written or read through a link, and read only
@@ -112,6 +113,9 @@ pub(crate) struct HostRecord {
     path: PathBuf,
     /// How large the file grows before it is written again ([`REWRITTEN_PAST`]).
     rewritten_past: u64,
+    /// A test's: each writing again fails, as a full disk fails it.
+    #[cfg(test)]
+    fails_to_write_again: bool,
     kept: Mutex<Kept>,
 }
 
@@ -131,6 +135,8 @@ impl HostRecord {
         HostRecord {
             path: folder.join(HOST_RECORD),
             rewritten_past: REWRITTEN_PAST,
+            #[cfg(test)]
+            fails_to_write_again: false,
             kept: Mutex::default(),
         }
     }
@@ -141,7 +147,7 @@ impl HostRecord {
     /// host is writing it.
     pub(crate) fn take_over(&self) -> Vec<Started> {
         let left = match read_private(&self.path) {
-            Ok(text) => left_running(&text),
+            Ok(lines) => left_running(&lines),
             Err(why) if why.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(why) => {
                 crate::say(&format!(
@@ -186,9 +192,10 @@ impl HostRecord {
     fn write(&self, kept: &mut Kept, line: &Line) {
         if kept.bytes > self.rewritten_past {
             let running: Vec<Started> = kept.running.clone();
-            self.start_again(kept, &running);
-            // The line is in what was written again.
-            return;
+            if self.start_again(kept, &running) {
+                // The line is in what was written again.
+                return;
+            }
         }
         let Some(said) = said(line) else { return };
         if kept.file.is_none() {
@@ -220,31 +227,49 @@ impl HostRecord {
     }
 
     /// The file written again from nothing, with `running` noted started, and kept open to
-    /// append to.
-    fn start_again(&self, kept: &mut Kept, running: &[Started]) {
-        kept.file = None;
-        kept.bytes = 0;
+    /// append to. Written whole beside it first and renamed over it once on disk
+    /// (`purlis_same_user::PrivateDirectory::replace_file`), so a write that fails leaves the
+    /// file as it was, and it is appended to as before.
+    fn start_again(&self, kept: &mut Kept, running: &[Started]) -> bool {
         let mut whole = Vec::new();
         for started in running {
             if let Some(said) = said(&Line::Started(started.clone())) {
                 whole.extend_from_slice(&said);
             }
         }
-        let written = open(&self.path, true).and_then(|mut opened| {
-            opened.write_all(&whole)?;
-            opened.sync_data()?;
-            Ok(opened)
-        });
+        let written = self
+            .write_whole(&whole)
+            .and_then(|()| open(&self.path, false));
         match written {
             Ok(opened) => {
                 kept.bytes = whole.len() as u64;
                 kept.file = Some(opened);
+                true
             }
-            Err(why) => crate::say(&format!(
-                "the host record at {} could not be written again ({why})",
-                self.path.display()
-            )),
+            Err(why) => {
+                crate::say(&format!(
+                    "the host record at {} could not be written again ({why}); it is kept as \
+                     it was",
+                    self.path.display()
+                ));
+                false
+            }
         }
+    }
+
+    /// `whole` as the file, replacing it in one rename.
+    fn write_whole(&self, whole: &[u8]) -> std::io::Result<()> {
+        #[cfg(test)]
+        if self.fails_to_write_again {
+            return Err(std::io::Error::other("the disk is full"));
+        }
+        let (Some(folder), Some(name)) = (
+            self.path.parent(),
+            self.path.file_name().and_then(|name| name.to_str()),
+        ) else {
+            return Err(std::io::Error::other("the host record has no folder"));
+        };
+        purlis_same_user::PrivateDirectory::open(folder)?.replace_file(name, whole)
     }
 
     fn kept(&self) -> MutexGuard<'_, Kept> {
@@ -273,9 +298,10 @@ fn open(path: &Path, fresh: bool) -> std::io::Result<File> {
         .open(path)
 }
 
-/// The whole of `path`, read only when it is a regular file, not a link, owned by this user,
-/// that nobody else may read or write, and no longer than [`READ_AT_MOST`].
-fn read_private(path: &Path) -> std::io::Result<String> {
+/// Each line of `path` that is text, read only when it is a regular file, not a link, owned by
+/// this user, that nobody else may read or write, and no longer than [`READ_AT_MOST`]. A line
+/// that is not text, a torn last one among them, is passed over alone.
+fn read_private(path: &Path) -> std::io::Result<Vec<String>> {
     let refused = |why: &str| std::io::Error::other(format!("{} {why}", path.display()));
     let mut opened = File::options()
         .read(true)
@@ -291,21 +317,24 @@ fn read_private(path: &Path) -> std::io::Result<String> {
     if found.mode() & 0o077 != 0 {
         return Err(refused("may be read or written by others"));
     }
-    let mut text = String::new();
+    let mut bytes = Vec::new();
     (&mut opened)
         .take(READ_AT_MOST + 1)
-        .read_to_string(&mut text)?;
-    if text.len() as u64 > READ_AT_MOST {
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > READ_AT_MOST {
         return Err(refused("is larger than a host record is"));
     }
-    Ok(text)
+    Ok(bytes
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| String::from_utf8(line.to_vec()).ok())
+        .collect())
 }
 
-/// Every program `text` says started and does not say ended, in the order they started. A line
+/// Every program `lines` say started and do not say ended, in the order they started. A line
 /// that cannot be read is passed over.
-fn left_running(text: &str) -> Vec<Started> {
+fn left_running(lines: &[String]) -> Vec<Started> {
     let mut left: Vec<Started> = Vec::new();
-    for line in text.lines() {
+    for line in lines {
         match serde_json::from_str::<Line>(line) {
             Ok(Line::Started(started)) => {
                 left.retain(|one| one.program != started.program);
@@ -425,6 +454,46 @@ mod tests {
         assert_eq!(
             HostRecord::in_folder(folder.path()).take_over(),
             [started("a", 1)]
+        );
+    }
+
+    #[test]
+    fn a_line_that_is_not_text_is_passed_over_alone() {
+        let folder = tempfile::tempdir().unwrap();
+        let a = serde_json::to_string(&Line::Started(started("a", 1))).unwrap();
+        let b = serde_json::to_string(&Line::Started(started("b", 2))).unwrap();
+        let path = folder.path().join(HOST_RECORD);
+        let mut bytes = format!("{a}\n").into_bytes();
+        bytes.extend_from_slice(b"{\"started\":{\"program\":\"\xff\xfe\"}}\n");
+        bytes.extend_from_slice(format!("{b}\n").as_bytes());
+        bytes.extend_from_slice(&[0xe2, 0x82]);
+        std::fs::write(&path, bytes).unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+            .unwrap();
+
+        assert_eq!(
+            HostRecord::in_folder(folder.path()).take_over(),
+            [started("a", 1), started("b", 2)]
+        );
+    }
+
+    #[test]
+    fn a_writing_again_that_fails_leaves_the_record_as_it_was() {
+        let folder = tempfile::tempdir().unwrap();
+        let record = HostRecord {
+            rewritten_past: 1,
+            fails_to_write_again: true,
+            ..HostRecord::in_folder(folder.path())
+        };
+        record.started(started("a", 1));
+        record.started(started("b", 2));
+
+        record.ended("a");
+
+        assert_eq!(
+            HostRecord::in_folder(folder.path()).take_over(),
+            [started("b", 2)],
+            "what it had, and what was appended after"
         );
     }
 

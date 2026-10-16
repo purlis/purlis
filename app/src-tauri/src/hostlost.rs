@@ -53,9 +53,15 @@ pub struct LostChat {
 pub type Teller = std::sync::Arc<dyn Fn(LostChat) + Send + Sync + 'static>;
 
 /// What a host crash left a chat's run in, from what the board said of the chat as it went;
-/// `None` for a chat whose program had already ended. `resumes_by_id` is whether its harness
-/// picks a conversation back up by its id, which is what lets an idle run be hibernated.
-pub fn after_the_host(state: State, asking: bool, resumes_by_id: bool) -> Option<LeftIn> {
+/// `None` for a chat whose program had already ended. An idle run is hibernated only where it
+/// can be picked up again: its harness resumes by id (`resumes_by_id`), and it has a
+/// conversation to resume (`has_a_conversation`).
+pub fn after_the_host(
+    state: State,
+    asking: bool,
+    resumes_by_id: bool,
+    has_a_conversation: bool,
+) -> Option<LeftIn> {
     let run = match state {
         State::Done | State::Failed => return None,
         State::Unknown => RunState::Starting,
@@ -66,7 +72,7 @@ pub fn after_the_host(state: State, asking: bool, resumes_by_id: bool) -> Option
     let facts = Facts {
         level: Level::Two,
         reports_start: true,
-        resumes_natively: resumes_by_id,
+        resumes_natively: resumes_by_id && has_a_conversation,
     };
     Some(match Run::after_a_host_crash(run, facts) {
         RunState::Hibernated => LeftIn::Hibernated,
@@ -145,20 +151,20 @@ mod tests {
     #[test]
     fn a_chat_mid_turn_or_on_an_ask_fails_with_its_host_and_an_idle_one_hibernates() {
         assert_eq!(
-            after_the_host(State::Running, false, true),
+            after_the_host(State::Running, false, true, true),
             Some(LeftIn::Failed)
         );
         assert_eq!(
-            after_the_host(State::Unknown, false, true),
+            after_the_host(State::Unknown, false, true, true),
             Some(LeftIn::Failed)
         );
         assert_eq!(
-            after_the_host(State::Waiting, true, true),
+            after_the_host(State::Waiting, true, true, true),
             Some(LeftIn::Failed),
             "the ask is lost"
         );
         assert_eq!(
-            after_the_host(State::Waiting, false, true),
+            after_the_host(State::Waiting, false, true, true),
             Some(LeftIn::Hibernated)
         );
     }
@@ -166,15 +172,24 @@ mod tests {
     #[test]
     fn an_idle_chat_on_a_harness_that_cannot_resume_by_id_fails_with_its_host() {
         assert_eq!(
-            after_the_host(State::Waiting, false, false),
+            after_the_host(State::Waiting, false, false, true),
             Some(LeftIn::Failed)
         );
     }
 
     #[test]
+    fn an_idle_chat_with_no_conversation_to_resume_fails_with_its_host() {
+        assert_eq!(
+            after_the_host(State::Waiting, false, true, false),
+            Some(LeftIn::Failed),
+            "nothing to pick back up"
+        );
+    }
+
+    #[test]
     fn a_chat_whose_program_had_already_ended_is_not_lost_with_its_host() {
-        assert_eq!(after_the_host(State::Done, false, true), None);
-        assert_eq!(after_the_host(State::Failed, false, true), None);
+        assert_eq!(after_the_host(State::Done, false, true, true), None);
+        assert_eq!(after_the_host(State::Failed, false, true, true), None);
     }
 
     #[test]

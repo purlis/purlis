@@ -1609,17 +1609,22 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
     let target = in_a_host_process();
     // Before any chat starts: each is told its end as it starts.
     let ends = told_of_ends(&target);
-    // One chat whose turn has ended, as its harness's own hook says.
+    // One chat whose turn has ended in a conversation of its own, as its harness's own hook
+    // says.
     let idle = a_chat_on_the_board(
         &target,
         &a_shell(&format!(
-            "PURLIS_HARNESS=claude '{}' hook stop </dev/null; printf 'CHAT-IDLE-READY'; read line",
+            "printf '%s' '{{\"session_id\":\"0199a2f4-1c2b-7f00-8000-000000000007\",\
+             \"hook_event_name\":\"Stop\"}}' | PURLIS_HARNESS=claude '{}' hook stop; \
+             printf 'CHAT-IDLE-READY'; read line",
             purlis()
         )),
     );
     Pane::on(&target, idle).shows("CHAT-IDLE-READY");
-    until("the idle chat's turn has ended", || {
-        target.hooks.board().state(idle) == purlis_core::state::State::Waiting
+    until("the idle chat's turn has ended in its conversation", || {
+        let board = target.hooks.board();
+        board.state(idle) == purlis_core::state::State::Waiting
+            && board.conversation(idle).is_some()
     });
     let mut chats: Vec<u32> = vec![idle];
     chats.extend((1..CHATS).map(|n| {
@@ -1650,14 +1655,19 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
         std::thread::sleep(Duration::from_millis(50));
     }
     let left_in = |chat: u32| {
-        let (state, asking) = {
+        let (state, asking, has_a_conversation) = {
             let board = target.hooks.board();
-            (board.state(chat), board.asking(chat))
+            (
+                board.state(chat),
+                board.asking(chat),
+                board.conversation(chat).is_some(),
+            )
         };
         crate::hostlost::after_the_host(
             state,
             asking,
             purlis_core::harness::Harness::ClaudeCode.resumes_by_id(),
+            has_a_conversation,
         )
     };
     for chat in &chats {
