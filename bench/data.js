@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792180184217,
+  "lastUpdate": 1792183048996,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14532,6 +14532,48 @@ window.BENCHMARK_DATA = {
             "value": 102.866938,
             "unit": "ms",
             "extra": "median of 5 runs: 101.510, 102.201, 102.867, 102.995, 106.751 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0676ea937578a3b2ccc7c429ad2278659aac9882",
+          "message": "docs: the foundation record from the Figma file (#2348)\n\nThe designer's Purlis frame (file A5tZlp0AjLs1VeFN5TVgXW, frame 6:2),\nread on 2026-10-16 into docs/design/foundation/README.md: every colour,\ntext style, spacing value, size, radius, border and icon, each colour\nwith a proposed token. Work on the Purlis theme builds from this record\nand does not call Figma again. The fonts section records the operator's\ndecision of 2026-10-17 (IBM Plex Sans and JetBrains Mono, OFL, #2336);\nthe icons stay pending their licence decision.\n\nCloses #2335\nPart of #2313\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T00:36:11+04:00",
+          "tree_id": "d5ba61ec3cea3c9a8bd8f2ac53066ff7fcb4d259",
+          "url": "https://github.com/purlis/purlis/commit/0676ea937578a3b2ccc7c429ad2278659aac9882"
+        },
+        "date": 1792183047971,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46659399999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.457, 0.459, 0.467, 0.472, 0.480 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.288437000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.185, 16.206, 16.288, 16.320, 16.333 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8762965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.181, 101.320, 101.876, 101.925, 102.378 ms"
           }
         ]
       }
