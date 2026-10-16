@@ -58,6 +58,44 @@ fn entries() -> Vec<netlog::Entry> {
     netlog::entries(&purlis_core::machine::config_root().expect("a config root"))
 }
 
+/// A mock forge no other test in this process can share, and the calls listed to it (#1929).
+///
+/// `MockServer::start` lends a server from wiremock's process-wide pool, and a test that ends
+/// hands its server back: the next test to start one can get the same port, and with it the
+/// line the first test left under that address. A server from the builder is bound for this
+/// test alone, so no other test holds its port while it lives; and the lines already listed
+/// under its address when it starts, an earlier server's that the OS gave the same port, are
+/// not this test's.
+struct OwnServer {
+    server: MockServer,
+    authority: String,
+    before: usize,
+}
+
+impl OwnServer {
+    fn start(rt: &tokio::runtime::Runtime) -> OwnServer {
+        let server = rt.block_on(MockServer::builder().start());
+        let authority = server.uri().trim_start_matches("http://").to_string();
+        let before = Self::listed_to(&authority).count();
+        OwnServer {
+            server,
+            authority,
+            before,
+        }
+    }
+
+    fn listed_to(authority: &str) -> impl Iterator<Item = netlog::Entry> + '_ {
+        entries()
+            .into_iter()
+            .filter(move |e| e.via == Via::Https && e.host == authority)
+    }
+
+    /// The native calls listed to this server since it started, oldest first.
+    fn calls(&self) -> Vec<netlog::Entry> {
+        Self::listed_to(&self.authority).skip(self.before).collect()
+    }
+}
+
 /// A git network call to a remote given by its name, in a child and a log of its own (#1022).
 #[test]
 fn a_git_call_to_a_remote_by_name_is_listed_in_a_child_of_its_own() {
@@ -276,14 +314,15 @@ mod report {
             .enable_all()
             .build()
             .unwrap();
-        let server = rt.block_on(MockServer::start());
+        let own = OwnServer::start(&rt);
+        let server = &own.server;
         rt.block_on(async {
             Mock::given(method("GET"))
                 .and(path("/search/issues"))
                 .respond_with(ResponseTemplate::new(200).set_body_string(
                     r#"{"total_count": 0, "incomplete_results": false, "items": []}"#,
                 ))
-                .mount(&server)
+                .mount(server)
                 .await;
             Mock::given(method("POST"))
                 .and(path("/repos/purlis/purlis/issues"))
@@ -292,7 +331,7 @@ mod report {
                         "title": "The picker crashes", "state": "open", "labels": [],
                         "html_url": "https://github.com/purlis/purlis/issues/42"}"#,
                 ))
-                .mount(&server)
+                .mount(server)
                 .await;
         });
         let home = tempfile::tempdir().unwrap();
@@ -337,10 +376,9 @@ mod report {
         purlis_core::report::file(tracker.as_ref(), &caller, &draft).expect("filed");
         signin::take_back();
 
-        let authority = server.uri().trim_start_matches("http://").to_string();
-        let native: Vec<_> = entries()
+        let native: Vec<_> = own
+            .calls()
             .into_iter()
-            .filter(|e| e.via == Via::Https && e.host == authority)
             .map(|e| (e.feature, e.method))
             .collect();
         assert!(
@@ -462,11 +500,12 @@ mod listed {
             .enable_all()
             .build()
             .unwrap();
-        let server = rt.block_on(MockServer::start());
+        let own = OwnServer::start(&rt);
+        let server = &own.server;
         rt.block_on(
             Mock::given(any())
                 .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
-                .mount(&server),
+                .mount(server),
         );
         let resolver = Resolver::new(Kind::GitHub, "github.com")
             .at_root(ApiRoot::at(&server.uri()))
@@ -483,11 +522,7 @@ mod listed {
         let me = Caller::window().as_account(account());
         let _ = backend.owned(&me, &Owner::new("secret-org-name"));
 
-        let authority = server.uri().trim_start_matches("http://").to_string();
-        let native: Vec<_> = entries()
-            .into_iter()
-            .filter(|e| e.via == Via::Https && e.host == authority)
-            .collect();
+        let native = own.calls();
         assert!(
             !native.is_empty(),
             "the native call is not listed:\n{}",
@@ -521,11 +556,12 @@ mod listed {
             .enable_all()
             .build()
             .unwrap();
-        let server = rt.block_on(MockServer::start());
+        let own = OwnServer::start(&rt);
+        let server = &own.server;
         rt.block_on(
             Mock::given(any())
                 .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
-                .mount(&server),
+                .mount(server),
         );
         let account = Account {
             kind: Kind::GitLab,
@@ -547,11 +583,7 @@ mod listed {
         let me = Caller::window().as_account(account);
         let _ = backend.owned(&me, &Owner::new("secret-group/api"));
 
-        let authority = server.uri().trim_start_matches("http://").to_string();
-        let native: Vec<_> = entries()
-            .into_iter()
-            .filter(|e| e.via == Via::Https && e.host == authority)
-            .collect();
+        let native = own.calls();
         assert_eq!(native.len(), 1, "{native:?}\n{}", log_text());
         let one = &native[0];
         assert_eq!(
