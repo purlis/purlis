@@ -12,6 +12,13 @@
 //! input; the host stops when it closes, so a quit, a crash and a kill all end it. At a quit the
 //! window closes it and waits a moment for the host to go ([`SessionHost::end`]).
 //!
+//! **The window supervises it** (ADR 0068 §3, #2007): a host that ends without the window
+//! asking, or whose link to the window ends, is started again, until three such ends within
+//! five minutes trip the breaker ([`breaker`]); then the window says the host is failing, with
+//! its last lines and Try again (`crate::hostfailing`). Every chat the host ran ends with it and
+//! comes back as failed or hibernated with Resume (`crate::hostlost`), and the new host settles
+//! what the last one left from its run journal ([`Kept`]).
+//!
 //! **Its folder is made first, the host is started off the first paint.** The socket's folder
 //! is made this user's alone on the window's own start, before any chat can start, so every
 //! chat's sandbox denies a folder that is there; the host then starts on a thread of its own,
