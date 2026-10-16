@@ -11,10 +11,10 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: purlis-cluster-operator [doctor]
 
-  (no command)  run the operator, in the cluster
-  doctor        say what this cluster lacks for the operator, before installing it;
-                reads only, with your kubeconfig's current context, and exits 1
-                when anything is missing";
+  (no command)  run the cluster operator, in the cluster
+  doctor        say what this cluster lacks for the cluster operator, before
+                installing it; reads only, with your kubeconfig's current
+                context, and exits 1 when anything is missing";
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -48,20 +48,20 @@ async fn operate() -> ExitCode {
 
 async fn doctor() -> ExitCode {
     use purlis_cluster_operator::doctor;
-    let client = match kube::Client::try_default().await {
-        Ok(client) => client,
+    let cluster = match doctor::Kube::from_environment().await {
+        Ok(cluster) => cluster,
         Err(error) => {
             println!(
                 "{}",
-                doctor::Finding {
-                    lacks: format!("a kubeconfig doctor can use: {error}"),
-                    next: "point KUBECONFIG at the cluster's, or pick its context with kubectl config use-context, then run doctor again".to_owned(),
-                }
+                doctor::Finding::new(
+                    format!("a kubeconfig doctor can use: {error}"),
+                    "point KUBECONFIG at the cluster's, or pick its context with kubectl config use-context, then run doctor again",
+                )
             );
             return ExitCode::FAILURE;
         }
     };
-    let report = doctor::check(&doctor::Kube(client)).await;
+    let report = doctor::check(&cluster).await;
     println!("{report}");
     if report.lacks_anything() {
         ExitCode::FAILURE

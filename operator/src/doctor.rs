@@ -17,6 +17,7 @@ use k8s_openapi::api::authorization::v1::{
 };
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::api::{Api, PostParams};
+use kube::config::Kubeconfig;
 use std::fmt;
 use std::future::Future;
 
@@ -35,7 +36,7 @@ pub const UPSTREAM_DEFINITIONS: &[(&str, &str)] = &[
 pub const UPSTREAM_CONTROLLER: (&str, &str) = ("agent-sandbox-system", "agent-sandbox-controller");
 
 /// Every cluster-scoped kind the install applies, as (API group, resource): the admin needs to
-/// create and patch each (`kubectl apply --server-side`).
+/// create and patch each (`kubectl apply --server-side`), and [`ROLE_RIGHTS`] besides.
 pub const CLUSTER_SCOPED: &[(&str, &str)] = &[
     ("", "namespaces"),
     ("apiextensions.k8s.io", "customresourcedefinitions"),
@@ -54,6 +55,14 @@ pub const CLUSTER_SCOPED: &[(&str, &str)] = &[
 /// The verbs `kubectl apply --server-side` needs on an object it makes or changes.
 const APPLY: [&str; 2] = ["create", "patch"];
 
+/// What Kubernetes asks besides, of someone applying cluster roles and their bindings: `escalate`
+/// to write a cluster role granting rights they do not hold, `bind` to bind one. Without them the
+/// install's cluster roles are refused unless the admin already holds every right they grant.
+pub const ROLE_RIGHTS: &[(&str, &str, &str)] = &[
+    ("escalate", "rbac.authorization.k8s.io", "clusterroles"),
+    ("bind", "rbac.authorization.k8s.io", "clusterroles"),
+];
+
 /// The Kubernetes version the API server reports.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Version {
@@ -62,10 +71,19 @@ pub struct Version {
     pub git_version: String,
 }
 
+/// Upstream's controller ([`UPSTREAM_CONTROLLER`]), as its deployment shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Controller {
+    /// The images of its pod's containers.
+    pub images: Vec<String>,
+    /// How many of its replicas are ready.
+    pub ready: i32,
+}
+
 /// A question the cluster did not answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Unanswered {
-    /// The person running doctor may not read it.
+    /// The person running doctor may not ask it.
     Forbidden,
     /// Anything else: the API server unreachable, a credential refused, a body not understood.
     Failed(String),
@@ -73,6 +91,8 @@ pub enum Unanswered {
 
 /// What the checks ask of a cluster. Every question only reads.
 pub trait Cluster {
+    /// Which cluster is asked, as the person knows it: its context and API server.
+    fn asked(&self) -> String;
     /// The API server's Kubernetes version.
     fn version(&self) -> impl Future<Output = Result<Version, Unanswered>> + Send;
     /// The versions a custom resource definition serves, or `None` when there is no such
@@ -81,11 +101,8 @@ pub trait Cluster {
         &self,
         name: &str,
     ) -> impl Future<Output = Result<Option<Vec<String>>, Unanswered>> + Send;
-    /// The images of upstream's controller ([`UPSTREAM_CONTROLLER`]), or `None` when it is not
-    /// installed.
-    fn controller_images(
-        &self,
-    ) -> impl Future<Output = Result<Option<Vec<String>>, Unanswered>> + Send;
+    /// Upstream's controller, or `None` when it is not installed.
+    fn controller(&self) -> impl Future<Output = Result<Option<Controller>, Unanswered>> + Send;
     /// Whether the person running doctor may `verb` a cluster-scoped `resource` of `group`.
     fn may(
         &self,
@@ -100,6 +117,15 @@ pub trait Cluster {
 pub struct Finding {
     pub lacks: String,
     pub next: String,
+}
+
+impl Finding {
+    pub fn new(lacks: impl Into<String>, next: impl Into<String>) -> Self {
+        Finding {
+            lacks: lacks.into(),
+            next: next.into(),
+        }
+    }
 }
 
 impl fmt::Display for Finding {
@@ -122,10 +148,11 @@ impl Report {
     }
 
     fn lacks(&mut self, lacks: impl Into<String>, next: impl Into<String>) {
-        self.findings.push(Finding {
-            lacks: lacks.into(),
-            next: next.into(),
-        });
+        self.findings.push(Finding::new(lacks, next));
+    }
+
+    fn holds(&mut self, line: impl Into<String>) {
+        self.holds.push(line.into());
     }
 }
 
@@ -140,26 +167,22 @@ impl fmt::Display for Report {
         if self.findings.is_empty() {
             write!(
                 f,
-                "nothing missing: install the operator as docs/cluster-operator.md says"
+                "nothing missing: install the cluster operator as docs/cluster-operator.md says"
             )
         } else {
             write!(
                 f,
-                "{} missing: install the operator once doctor finds nothing missing",
+                "{} missing: install the cluster operator once doctor finds nothing missing",
                 self.findings.len()
             )
         }
     }
 }
 
-fn manifest() -> String {
-    format!("operator/vendor/agent-sandbox/{VERSION}/sandbox-with-extensions.yaml")
-}
-
+/// The one command that applies the pinned upstream release.
 fn apply_upstream() -> String {
     format!(
-        "apply it, step 1 of the install: kubectl apply --server-side -f {}",
-        manifest()
+        "kubectl apply --server-side -f operator/vendor/agent-sandbox/{VERSION}/sandbox-with-extensions.yaml"
     )
 }
 
@@ -173,6 +196,7 @@ fn ask_again(error: &str) -> String {
 /// Every check, in order: Kubernetes, upstream agent-sandbox, the rights to apply the install.
 pub async fn check(cluster: &impl Cluster) -> Report {
     let mut report = Report::default();
+    report.holds(format!("asked {}", cluster.asked()));
     match cluster.version().await {
         Ok(version) => kubernetes(&mut report, &version),
         Err(Unanswered::Forbidden) => report.lacks(
@@ -208,7 +232,7 @@ fn kubernetes(report: &mut Report, version: &Version) {
         leading_number(&version.minor),
     ) {
         (Some(has_major), Some(has_minor)) if (has_major, has_minor) >= MINIMUM => {
-            report.holds.push(format!("Kubernetes {shown}"));
+            report.holds(format!("Kubernetes {shown}"));
         }
         (Some(_), Some(_)) => report.lacks(
             format!("{wanted}: this cluster runs {shown}"),
@@ -250,8 +274,8 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
         }
     }
     let (namespace, name) = UPSTREAM_CONTROLLER;
-    let images = match cluster.controller_images().await {
-        Ok(images) => images,
+    let controller = match cluster.controller().await {
+        Ok(controller) => controller,
         Err(Unanswered::Forbidden) => {
             report.lacks(
                 format!("permission to read deployments in {namespace}, to see which release of upstream agent-sandbox runs"),
@@ -267,48 +291,59 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
             return;
         }
     };
-    let Some(images) = images else {
-        if present == 0 {
-            report.lacks(format!("{wanted}: not installed"), apply_upstream());
+    let has_controller = controller.is_some();
+    let Some(controller) = controller.filter(|_| absent.is_empty()) else {
+        let apply = format!("apply it, step 1 of the install: {}", apply_upstream());
+        if present == 0 && !has_controller {
+            report.lacks(format!("{wanted}: not installed"), apply);
         } else {
-            absent.push(format!("its controller, deployment {namespace}/{name}"));
+            if !has_controller {
+                absent.push(format!("its controller, deployment {namespace}/{name}"));
+            }
             report.lacks(
                 format!("{wanted}: installed in part, without {}", absent.join(", ")),
-                apply_upstream(),
+                apply,
             );
         }
         return;
     };
-    if !absent.is_empty() {
-        report.lacks(
-            format!("{wanted}: installed in part, without {}", absent.join(", ")),
-            apply_upstream(),
-        );
-        return;
-    }
-    let image = images
+    let image = controller
+        .images
         .iter()
         .find(|image| image.contains(name))
-        .or(images.first())
-        .cloned()
-        .unwrap_or_default();
-    match tag_of(&image) {
-        Some(tag) if tag == VERSION => report.holds.push(wanted),
-        Some(tag) => report.lacks(
-            format!("{wanted}: the cluster runs {tag}, and purlis is tested against {VERSION} only"),
+        .or(controller.images.first());
+    let release = match image.map(|image| (image, tag_of(image))) {
+        Some((_, Some(tag))) => tag,
+        Some((image, None)) => {
+            report.lacks(
+                format!("{wanted}: doctor cannot tell which release runs, since the controller's image \"{image}\" names no tag"),
+                format!("apply the pinned release, whose controller image is tagged {VERSION}: {}", apply_upstream()),
+            );
+            return;
+        }
+        None => {
+            report.lacks(
+                format!("{wanted}: doctor cannot tell which release runs, since deployment {namespace}/{name} names no image"),
+                format!("apply the pinned release, whose controller image is tagged {VERSION}: {}", apply_upstream()),
+            );
+            return;
+        }
+    };
+    if release != VERSION {
+        report.lacks(
+            format!("{wanted}: the cluster runs {release}, and purlis is tested against {VERSION} only"),
             format!(
-                "check with whoever installed {tag} that nothing else needs it, then apply the pinned release over it: \
-                 kubectl apply --server-side -f {}",
-                manifest()
+                "check with whoever installed {release} that nothing else needs it, then apply the pinned release over it: {}",
+                apply_upstream()
             ),
-        ),
-        None => report.lacks(
-            format!("{wanted}: doctor cannot tell which release runs, since the controller's image \"{image}\" names no tag"),
-            format!(
-                "apply the pinned release, whose controller image is tagged {VERSION}: kubectl apply --server-side -f {}",
-                manifest()
-            ),
-        ),
+        );
+    } else if controller.ready < 1 {
+        report.lacks(
+            format!("{wanted}: its controller, deployment {namespace}/{name}, has no ready replica"),
+            format!("see why with kubectl -n {namespace} describe deployment {name}, and run doctor again once it is ready"),
+        );
+    } else {
+        report.holds(wanted);
     }
 }
 
@@ -320,45 +355,104 @@ fn tag_of(image: &str) -> Option<&str> {
 }
 
 async fn rights(report: &mut Report, cluster: &impl Cluster) {
+    let applies = CLUSTER_SCOPED
+        .iter()
+        .flat_map(|&(group, resource)| APPLY.map(|verb| (verb, group, resource)));
     let mut denied = Vec::new();
-    for &(group, resource) in CLUSTER_SCOPED {
+    let mut roles_denied = Vec::new();
+    let mut unasked = Vec::new();
+    for (verb, group, resource) in applies.chain(ROLE_RIGHTS.iter().copied()) {
         let what = if group.is_empty() {
-            resource.to_owned()
+            format!("{verb} {resource}")
         } else {
-            format!("{resource}.{group}")
+            format!("{verb} {resource}.{group}")
         };
-        for verb in APPLY {
-            match cluster.may(verb, group, resource).await {
-                Ok(true) => {}
-                Ok(false) | Err(Unanswered::Forbidden) => denied.push(format!("{verb} {what}")),
-                Err(Unanswered::Failed(error)) => {
-                    report.lacks(
-                        format!("an answer to whether you may {verb} {what}"),
-                        ask_again(&error),
-                    );
-                    return;
-                }
+        match cluster.may(verb, group, resource).await {
+            Ok(true) => {}
+            Ok(false) if ROLE_RIGHTS.contains(&(verb, group, resource)) => roles_denied.push(what),
+            Ok(false) => denied.push(what),
+            Err(Unanswered::Forbidden) => unasked.push(what),
+            Err(Unanswered::Failed(error)) => {
+                report.lacks(
+                    format!("an answer to whether you may {what}"),
+                    ask_again(&error),
+                );
+                return;
             }
         }
     }
-    match denied.first() {
-        None => report
-            .holds
-            .push("you may apply the install's cluster-scoped definitions".to_owned()),
-        Some(first) => report.lacks(
+    if !unasked.is_empty() {
+        report.lacks(
             format!(
-                "permission to apply the install's cluster-scoped definitions: you may not {}",
-                denied.join(", ")
+                "permission to ask the cluster what you may do: you may not ask whether you may {}",
+                unasked.join(", ")
             ),
-            format!(
-                "run doctor as a cluster admin, or ask one for these rights; check each with kubectl auth can-i {first}"
-            ),
-        ),
+            "run doctor as a cluster admin, or ask one for create on selfsubjectaccessreviews.authorization.k8s.io (the system:basic-user role)",
+        );
     }
+    if denied.is_empty() && roles_denied.is_empty() {
+        if unasked.is_empty() {
+            report.holds("you may apply the install's cluster-scoped definitions");
+        }
+        return;
+    }
+    let mut lacks =
+        "permission to apply the install's cluster-scoped definitions: you may not".to_owned();
+    if !denied.is_empty() {
+        lacks.push(' ');
+        lacks.push_str(&denied.join(", "));
+    }
+    if !roles_denied.is_empty() {
+        if !denied.is_empty() {
+            lacks.push(',');
+        }
+        lacks.push(' ');
+        lacks.push_str(&roles_denied.join(", "));
+        lacks.push_str(", unless you already hold every right the install's cluster roles grant");
+    }
+    let first = denied
+        .first()
+        .or(roles_denied.first())
+        .cloned()
+        .unwrap_or_default();
+    report.lacks(
+        lacks,
+        format!(
+            "run doctor as a cluster admin, or ask one for these rights; check each with kubectl auth can-i {first}"
+        ),
+    );
 }
 
 /// The real cluster, through a kube client with the credentials of whoever runs doctor.
-pub struct Kube(pub kube::Client);
+pub struct Kube {
+    client: kube::Client,
+    asked: String,
+}
+
+impl Kube {
+    /// `client`, which asks the cluster the person knows as `asked`.
+    pub fn new(client: kube::Client, asked: impl Into<String>) -> Self {
+        Kube {
+            client,
+            asked: asked.into(),
+        }
+    }
+
+    /// The cluster of the person's kubeconfig (or the pod's own, in a cluster), as kubectl
+    /// picks it.
+    pub async fn from_environment() -> Result<Self, String> {
+        let config = kube::Config::infer()
+            .await
+            .map_err(|error| error.to_string())?;
+        let server = config.cluster_url.to_string();
+        let asked = match Kubeconfig::read().ok().and_then(|k| k.current_context) {
+            Some(context) => format!("context {context}, API server {server}"),
+            None => format!("API server {server}"),
+        };
+        let client = kube::Client::try_from(config).map_err(|error| error.to_string())?;
+        Ok(Kube::new(client, asked))
+    }
+}
 
 fn unanswered(error: kube::Error) -> Unanswered {
     match &error {
@@ -368,8 +462,12 @@ fn unanswered(error: kube::Error) -> Unanswered {
 }
 
 impl Cluster for Kube {
+    fn asked(&self) -> String {
+        self.asked.clone()
+    }
+
     async fn version(&self) -> Result<Version, Unanswered> {
-        let info = self.0.apiserver_version().await.map_err(unanswered)?;
+        let info = self.client.apiserver_version().await.map_err(unanswered)?;
         Ok(Version {
             major: info.major,
             minor: info.minor,
@@ -378,7 +476,7 @@ impl Cluster for Kube {
     }
 
     async fn definition(&self, name: &str) -> Result<Option<Vec<String>>, Unanswered> {
-        let definitions = Api::<CustomResourceDefinition>::all(self.0.clone());
+        let definitions = Api::<CustomResourceDefinition>::all(self.client.clone());
         let found = definitions.get_opt(name).await.map_err(unanswered)?;
         Ok(found.map(|definition| {
             definition
@@ -391,16 +489,20 @@ impl Cluster for Kube {
         }))
     }
 
-    async fn controller_images(&self) -> Result<Option<Vec<String>>, Unanswered> {
+    async fn controller(&self) -> Result<Option<Controller>, Unanswered> {
         let (namespace, name) = UPSTREAM_CONTROLLER;
-        let deployments = Api::<Deployment>::namespaced(self.0.clone(), namespace);
+        let deployments = Api::<Deployment>::namespaced(self.client.clone(), namespace);
         let found = deployments.get_opt(name).await.map_err(unanswered)?;
-        Ok(found.map(|deployment| {
-            deployment
+        Ok(found.map(|deployment| Controller {
+            ready: deployment
+                .status
+                .and_then(|status| status.ready_replicas)
+                .unwrap_or(0),
+            images: deployment
                 .spec
                 .and_then(|spec| spec.template.spec)
                 .map(|pod| pod.containers.into_iter().filter_map(|c| c.image).collect())
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }))
     }
 
@@ -417,7 +519,7 @@ impl Cluster for Kube {
             },
             ..SelfSubjectAccessReview::default()
         };
-        let reviews = Api::<SelfSubjectAccessReview>::all(self.0.clone());
+        let reviews = Api::<SelfSubjectAccessReview>::all(self.client.clone());
         let answered = reviews
             .create(&PostParams::default(), &review)
             .await

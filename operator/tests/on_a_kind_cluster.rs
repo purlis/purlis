@@ -463,8 +463,12 @@ async fn doctor_needs_only_reads_and_says_what_a_reader_may_not_apply() {
     )
     .await;
 
-    let as_reader = doctor::check(&doctor::Kube(acting_as("e2e-doctor").await)).await;
-    let as_admin = doctor::check(&doctor::Kube(client.clone())).await;
+    let as_reader = doctor::check(&doctor::Kube::new(
+        acting_as("e2e-doctor").await,
+        "kind, as e2e-doctor",
+    ))
+    .await;
+    let as_admin = doctor::check(&doctor::Kube::new(client.clone(), "kind")).await;
 
     let delete = DeleteParams::default();
     for (kind, plural) in [

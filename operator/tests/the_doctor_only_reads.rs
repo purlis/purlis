@@ -20,6 +20,8 @@ struct Server {
     upstream: Option<&'static str>,
     denied: Vec<&'static str>,
     forbidden_reads: bool,
+    /// A definition that has `v1beta1` but does not serve it.
+    unserved: Option<&'static str>,
     asked: Arc<Mutex<Vec<(Method, String)>>>,
 }
 
@@ -37,6 +39,7 @@ impl Server {
             upstream,
             denied: Vec::new(),
             forbidden_reads: false,
+            unserved: None,
             asked: Arc::default(),
         }
     }
@@ -62,7 +65,8 @@ impl Server {
                            "metadata": {"name": &p[CRDS.len()..]},
                            "spec": {"group": "agents.x-k8s.io", "scope": "Namespaced",
                                     "names": {"plural": "x", "kind": "X"},
-                                    "versions": [{"name": "v1beta1", "served": true, "storage": true}]}}),
+                                    "versions": [{"name": "v1beta1", "storage": true,
+                                              "served": self.unserved != Some(&p[CRDS.len()..])}]}}),
                 ),
             },
             (&Method::GET, CONTROLLER) => match self.upstream {
@@ -73,7 +77,8 @@ impl Server {
                            "metadata": {"name": "agent-sandbox-controller", "namespace": "agent-sandbox-system"},
                            "spec": {"selector": {}, "template": {"spec": {"containers": [
                                {"name": "agent-sandbox-controller",
-                                "image": format!("registry.k8s.io/agent-sandbox/agent-sandbox-controller:{tag}")}]}}}}),
+                                "image": format!("registry.k8s.io/agent-sandbox/agent-sandbox-controller:{tag}")}]}}},
+                           "status": {"readyReplicas": 1}}),
                 ),
             },
             (&Method::POST, REVIEWS) => {
@@ -126,7 +131,9 @@ impl Server {
             .enable_all()
             .build()
             .expect("a runtime")
-            .block_on(async { doctor::check(&doctor::Kube(self.client())).await })
+            .block_on(async {
+                doctor::check(&doctor::Kube::new(self.client(), "the test's API server")).await
+            })
     }
 }
 
@@ -188,5 +195,19 @@ fn a_refused_read_and_a_denied_review_are_findings() {
     assert!(
         lines.contains("patch clusterrolebindings.rbac.authorization.k8s.io"),
         "{lines}"
+    );
+}
+
+#[test]
+fn a_definition_that_has_the_version_but_does_not_serve_it_lacks_it() {
+    let mut server = Server::new(Some("v1.0.6"));
+    server.unserved = Some("sandboxclaims.extensions.agents.x-k8s.io");
+    let report = server.doctor();
+    assert_eq!(report.findings.len(), 1, "{report}");
+    assert!(
+        report.findings[0]
+            .to_string()
+            .contains("sandboxclaims.extensions.agents.x-k8s.io serving v1beta1"),
+        "{report}"
     );
 }

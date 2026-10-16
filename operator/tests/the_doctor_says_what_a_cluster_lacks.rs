@@ -8,7 +8,7 @@
 
 mod common;
 
-use purlis_cluster_operator::doctor::{self, Cluster, Unanswered, Version};
+use purlis_cluster_operator::doctor::{self, Cluster, Controller, Unanswered, Version};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A cluster as the doctor's checks see it: what its API server would answer.
@@ -18,11 +18,18 @@ struct Fake {
     /// Each definition there is, by name, with the versions it serves.
     definitions: BTreeMap<String, Vec<String>>,
     definitions_readable: bool,
-    /// The images of upstream's controller, when it is installed.
-    controller: Option<Vec<String>>,
+    /// Upstream's controller, when it is installed.
+    controller: Option<Controller>,
     controller_readable: bool,
     /// `verb resource.group` the person may not do.
     denied: BTreeSet<String>,
+    /// Whether the person may not even ask what they may do.
+    reviews_forbidden: bool,
+}
+
+/// A controller with one ready replica, running `images`.
+fn controller(images: Vec<String>) -> Option<Controller> {
+    Some(Controller { images, ready: 1 })
 }
 
 fn version(major: &str, minor: &str) -> Version {
@@ -42,9 +49,12 @@ fn bare() -> Fake {
         controller: None,
         controller_readable: true,
         denied: BTreeSet::new(),
+        reviews_forbidden: false,
     }
 }
 
+/// Written out here, not taken from the doctor: an independent account of what the vendored
+/// manifest installs, so a change to the doctor's own list is a change these tests read.
 const UPSTREAM_DEFINITIONS: [&str; 4] = [
     "sandboxes.agents.x-k8s.io",
     "sandboxtemplates.extensions.agents.x-k8s.io",
@@ -57,7 +67,7 @@ fn with_upstream(mut fake: Fake, tag: &str) -> Fake {
     for name in UPSTREAM_DEFINITIONS {
         fake.definitions.insert(name.into(), vec!["v1beta1".into()]);
     }
-    fake.controller = Some(vec![format!(
+    fake.controller = controller(vec![format!(
         "registry.k8s.io/agent-sandbox/agent-sandbox-controller:{tag}"
     )]);
     fake
@@ -68,6 +78,10 @@ fn ready() -> Fake {
 }
 
 impl Cluster for Fake {
+    fn asked(&self) -> String {
+        "the test's cluster".into()
+    }
+
     async fn version(&self) -> Result<Version, Unanswered> {
         self.version.clone()
     }
@@ -79,7 +93,7 @@ impl Cluster for Fake {
         Ok(self.definitions.get(name).cloned())
     }
 
-    async fn controller_images(&self) -> Result<Option<Vec<String>>, Unanswered> {
+    async fn controller(&self) -> Result<Option<Controller>, Unanswered> {
         if !self.controller_readable {
             return Err(Unanswered::Forbidden);
         }
@@ -87,6 +101,9 @@ impl Cluster for Fake {
     }
 
     async fn may(&self, verb: &str, group: &str, resource: &str) -> Result<bool, Unanswered> {
+        if self.reviews_forbidden {
+            return Err(Unanswered::Forbidden);
+        }
         let what = if group.is_empty() {
             format!("{verb} {resource}")
         } else {
@@ -211,7 +228,7 @@ fn upstream_definitions_without_its_controller_name_the_controller() {
 #[test]
 fn a_controller_named_by_digest_alone_is_one_it_cannot_tell_the_release_of() {
     let mut cluster = ready();
-    cluster.controller = Some(vec![
+    cluster.controller = controller(vec![
         "registry.k8s.io/agent-sandbox/agent-sandbox-controller@sha256:0123".into(),
     ]);
     let report = run(&cluster);
@@ -219,7 +236,7 @@ fn a_controller_named_by_digest_alone_is_one_it_cannot_tell_the_release_of() {
     assert!(line.contains("cannot tell"), "{line}");
 
     // A mirror's port is not a tag.
-    cluster.controller = Some(vec![
+    cluster.controller = controller(vec![
         "mirror.example:5000/agent-sandbox-controller@sha256:0123".into(),
     ]);
     let report = run(&cluster);
@@ -230,7 +247,7 @@ fn a_controller_named_by_digest_alone_is_one_it_cannot_tell_the_release_of() {
 #[test]
 fn a_controller_tagged_and_pinned_by_digest_is_read_by_its_tag() {
     let mut cluster = ready();
-    cluster.controller = Some(vec![
+    cluster.controller = controller(vec![
         "registry.k8s.io/agent-sandbox/agent-sandbox-controller:v1.0.6@sha256:0123".into(),
     ]);
     assert!(run(&cluster).findings.is_empty());
@@ -306,12 +323,13 @@ fn every_finding_is_one_line_naming_the_next_step() {
 #[test]
 fn it_asks_for_the_rights_to_every_cluster_scoped_kind_the_install_applies() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let manifests = [
-        root.join("vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml"),
-        root.join("deploy/crds.yaml"),
-        root.join("deploy/policy.yaml"),
-        root.join("deploy/operator.yaml"),
-    ];
+    let mut manifests: Vec<_> = std::fs::read_dir(root.join("deploy"))
+        .expect("deploy/")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "yaml"))
+        .collect();
+    assert!(!manifests.is_empty());
+    manifests.push(root.join("vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml"));
     // Which kinds Kubernetes keeps cluster-wide, from its API reference.
     let cluster_scoped: BTreeMap<&str, (&str, &str)> = [
         ("Namespace", ("", "namespaces")),
@@ -369,4 +387,90 @@ fn it_asks_for_the_rights_to_every_cluster_scoped_kind_the_install_applies() {
         .map(|&(group, resource)| (group.to_owned(), resource.to_owned()))
         .collect();
     assert_eq!(asked, wanted);
+}
+
+#[test]
+fn the_cluster_asked_is_named_first() {
+    let report = run(&ready());
+    assert_eq!(
+        report.to_string().lines().next(),
+        Some("ok: asked the test's cluster")
+    );
+}
+
+#[test]
+fn an_admin_who_may_not_escalate_cluster_roles_is_told_it_holds_only_with_every_right() {
+    let mut cluster = ready();
+    cluster
+        .denied
+        .insert("escalate clusterroles.rbac.authorization.k8s.io".into());
+    let report = run(&cluster);
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = finding(&report, "cluster-scoped").to_string();
+    assert!(
+        line.contains("escalate clusterroles.rbac.authorization.k8s.io"),
+        "{line}"
+    );
+    assert!(
+        line.contains("unless you already hold every right the install's cluster roles grant"),
+        "{line}"
+    );
+}
+
+#[test]
+fn an_admin_who_may_not_bind_cluster_roles_is_told_it_holds_only_with_every_right() {
+    let mut cluster = ready();
+    cluster
+        .denied
+        .insert("bind clusterroles.rbac.authorization.k8s.io".into());
+    let report = run(&cluster);
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = finding(&report, "cluster-scoped").to_string();
+    assert!(
+        line.contains("bind clusterroles.rbac.authorization.k8s.io"),
+        "{line}"
+    );
+    assert!(
+        line.contains("unless you already hold every right the install's cluster roles grant"),
+        "{line}"
+    );
+}
+
+#[test]
+fn an_admin_who_may_not_ask_is_told_so_not_that_they_may_not() {
+    let mut cluster = ready();
+    cluster.reviews_forbidden = true;
+    let report = run(&cluster);
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = report.findings[0].to_string();
+    assert!(
+        line.contains("may not ask whether you may create namespaces"),
+        "{line}"
+    );
+    assert!(!line.contains("cluster-scoped"), "{line}");
+}
+
+#[test]
+fn a_controller_with_no_ready_replica_is_a_finding() {
+    let mut cluster = ready();
+    if let Some(controller) = cluster.controller.as_mut() {
+        controller.ready = 0;
+    }
+    let report = run(&cluster);
+    let line = finding(&report, "agent-sandbox v1.0.6").to_string();
+    assert!(line.contains("no ready replica"), "{line}");
+    assert!(
+        line.contains("kubectl -n agent-sandbox-system describe"),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_controller_that_names_no_image_says_so_without_an_empty_name() {
+    let mut cluster = ready();
+    cluster.controller = controller(Vec::new());
+    let report = run(&cluster);
+    let line = finding(&report, "agent-sandbox v1.0.6").to_string();
+    assert!(line.contains("names no image"), "{line}");
+    assert!(!line.contains("\"\""), "{line}");
 }

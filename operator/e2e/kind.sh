@@ -5,7 +5,8 @@
 # The operator's end-to-end tests on a kind cluster (#2054): a cluster of the oldest Kubernetes
 # purlis supports, a registry beside it so images are named by digest as a Pool names them,
 # doctor before and after the pinned upstream agent-sandbox, purlis's definitions and the
-# operator, then `tests/on_a_kind_cluster.rs`. Everything it started is removed when it ends, unless KEEP=1.
+# operator, then `tests/on_a_kind_cluster.rs`. Everything it started is removed when it ends,
+# unless KEEP=1.
 #
 #   operator/e2e/kind.sh <runner image> <operator image>
 #

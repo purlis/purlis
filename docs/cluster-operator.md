@@ -63,7 +63,7 @@ to a digest, as below.
 
 ## Before you install: doctor
 
-`doctor` says what the cluster lacks for the operator, one line per finding, each with the next
+`doctor` says what the cluster lacks for the cluster operator, one line per finding, each with the next
 step. Run it as the admin who will install, with the cluster's context current in your
 kubeconfig:
 
@@ -71,26 +71,31 @@ kubeconfig:
 cargo run --manifest-path operator/Cargo.toml --release -- doctor
 ```
 
-It checks, in order:
+It names the cluster it asked (your context and its API server), then checks, in order:
 
 - **Kubernetes 1.36 or later**, from the version the API server reports.
 - **Upstream agent-sandbox v1.0.6**: its four definitions, each serving `v1beta1`, and its
   controller, `agent-sandbox-system/agent-sandbox-controller`, running the image tagged
-  `v1.0.6`. Not installed yet is a finding too, whose next step is step 1 below.
+  `v1.0.6` with a ready replica. Not installed yet is a finding too, whose next step is step 1
+  below.
 - **Your right to apply the install's cluster-scoped objects**: create and patch on
   namespaces, custom resource definitions, cluster roles and their bindings, and validating
-  admission policies and their bindings, as `kubectl auth can-i` asks it.
+  admission policies and their bindings, and `escalate` and `bind` on cluster roles, as
+  `kubectl auth can-i` asks it. Without `escalate` and `bind`, Kubernetes refuses the install's
+  cluster roles and their bindings unless you already hold every right the install's cluster
+  roles grant, so doctor reports them missing.
 
 It exits 1 when anything is missing and 0 when nothing is, so a script can gate the install on
 it. It only reads: it gets the version, the definitions and the controller's deployment, and asks
 the API server what you may do (`SelfSubjectAccessReview`), which the server answers and keeps
-nothing of. What you may not read is a finding naming the right to ask for.
+nothing of. What you may not read, or may not ask, is a finding naming the right to ask for.
 
 ```text
+ok: asked context kind-team, API server https://127.0.0.1:6443/
 ok: Kubernetes v1.36.4
 ok: you may apply the install's cluster-scoped definitions
 missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of the install: kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml.
-1 missing: install the operator once doctor finds nothing missing
+1 missing: install the cluster operator once doctor finds nothing missing
 ```
 
 ## Install
