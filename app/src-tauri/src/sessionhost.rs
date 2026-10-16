@@ -17,7 +17,7 @@
 //! five minutes trip the breaker ([`breaker`]); then the window says the host is failing, with
 //! its last lines and Try again (`crate::hostfailing`). Every chat the host ran ends with it and
 //! comes back as failed or hibernated with Resume (`crate::hostlost`), and the new host settles
-//! what the last one left from its run journal ([`Kept`]).
+//! what the last one left from its host record ([`Kept`]).
 //!
 //! **Its folder is made first, the host is started off the first paint.** The socket's folder
 //! is made this user's alone on the window's own start, before any chat can start, so every
@@ -580,6 +580,12 @@ impl Supervision {
         self.ending.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// The window is ending its host: nothing starts it again, and the supervisor is woken.
+    fn end_now(&self) {
+        self.ending.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.wake(|_| {});
+    }
+
     fn wake(&self, how: impl FnOnce(&mut Woken)) {
         how(&mut self.woken.lock().unwrap_or_else(PoisonError::into_inner));
         self.changed.notify_all();
@@ -694,10 +700,7 @@ impl SessionHost {
     /// Ends the host: nothing starts it again, its standard input is closed, it is given
     /// [`ENDS_WITHIN`] to go, and is killed if it has not. For the app's exit.
     pub fn end(&self) {
-        self.supervision
-            .ending
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        self.supervision.wake(|_| {});
+        self.supervision.end_now();
         end_held(&self.held);
     }
 
@@ -707,10 +710,7 @@ impl SessionHost {
         let held = Arc::clone(&self.held);
         let supervision = Arc::clone(&self.supervision);
         Arc::new(move || {
-            supervision
-                .ending
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-            supervision.wake(|_| {});
+            supervision.end_now();
             end_held(&held);
         })
     }
@@ -719,9 +719,15 @@ impl SessionHost {
 /// Ends the host `held` holds, if it still does: closes its standard input, waits
 /// [`ENDS_WITHIN`] for it to go, and kills it if it has not.
 fn end_held(held: &Mutex<Option<Held>>) {
-    let Some(mut held) = held.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+    let Some(held) = held.lock().unwrap_or_else(|e| e.into_inner()).take() else {
         return;
     };
+    end_one(held);
+}
+
+/// Ends `held`'s host: closes its standard input, waits [`ENDS_WITHIN`] for it to go, and kills
+/// it if it has not.
+fn end_one(mut held: Held) {
     drop(held.stdin.take());
     let deadline = Instant::now() + ENDS_WITHIN;
     while Instant::now() < deadline {
@@ -751,7 +757,7 @@ enum Started {
 /// An unexpected exit is any end the window did not ask for: the host crashed or was killed, it
 /// ended before it was ready, or the window's link to it ended, after which the host is ended
 /// first. Each chat that ran in it has ended with it (`crate::hostedsessions::HostLink`), and the
-/// next host settles what the last one left from its run journal.
+/// next host settles what the last one left from its host record.
 fn supervise(
     held: &Mutex<Option<Held>>,
     place: &purlis_host::Place,
@@ -827,6 +833,12 @@ fn supervise(
 fn wait_for_an_unexpected_end(held: &Mutex<Option<Held>>, supervision: &Supervision) {
     loop {
         let woken = supervision.rest();
+        // The window is ending its host: whatever is held here is ended now, even one the
+        // window's own end found nothing of.
+        if supervision.ending() {
+            end_held(held);
+            return;
+        }
         let mut held = held.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(host) = held.as_mut() else {
             // The window took it to end it.
@@ -884,7 +896,17 @@ fn start_here(
     let stdout = child.stdout.take();
     let stdin = child.stdin.take();
     let pid = child.id();
-    *held.lock().unwrap_or_else(|e| e.into_inner()) = Some(Held { child, stdin });
+    {
+        // Held under the same lock the window's end takes it by: a window that began ending
+        // while this host was starting found nothing to end, so the host is ended here.
+        let mut holding = held.lock().unwrap_or_else(|e| e.into_inner());
+        if supervision.ending() {
+            drop(holding);
+            end_one(Held { child, stdin });
+            return Started::Failed;
+        }
+        *holding = Some(Held { child, stdin });
+    }
 
     if !stdout.is_some_and(said_ready) {
         let code = wait_for_its_end(held, Instant::now() + ENDS_WITHIN);

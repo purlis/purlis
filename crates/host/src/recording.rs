@@ -21,7 +21,7 @@ use std::path::Path;
 
 use purlis_session_protocol::session::Exit;
 
-use crate::journal::Started;
+use crate::hostrecord::Started;
 
 /// The host's own act that ended a program, where one did: the highest of them where several
 /// did, in this order (ADR 0076 §2, D-1084-1).

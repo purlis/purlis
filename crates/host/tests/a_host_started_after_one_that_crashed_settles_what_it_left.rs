@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A session host that is killed outright ends nothing on its way out, so the next host to serve
-//! this user settles what it left (#2007, ADR 0068 §3): each program the run journal says was
+//! this user settles what it left (#2007, ADR 0068 §3): each program the host record says was
 //! started and never ended is told to the binary, which keeps its end as a crash's, and is ended
 //! by what runs programs, where its process is still the one that was started. A host that ends
 //! every program as it stops leaves nothing to settle. The programs are stand-ins, so none of
@@ -188,7 +188,7 @@ async fn a_host_that_ended_every_program_as_it_stopped_leaves_nothing_to_settle(
 }
 
 #[tokio::test]
-async fn a_host_kept_in_memory_writes_no_journal_and_settles_nothing() {
+async fn a_host_kept_in_memory_keeps_no_record_and_settles_nothing() {
     let project = tempfile::tempdir().unwrap();
     let kept = Kept::default();
     let hosting = Hosting::with(Echo, StandIns::default(), HearsNothing, ConfinesNothing)
@@ -205,9 +205,14 @@ async fn a_host_kept_in_memory_writes_no_journal_and_settles_nothing() {
     assert!(kept.left.lock().unwrap().is_empty());
 }
 
-/// What the last host wrote down of a program whose process is `process`, started when
-/// `started` says.
+/// What the last host noted of a program whose process is `process`, started when `started`
+/// says, in this boot of the machine.
 fn left_as(process: u32, started: Option<String>) -> Started {
+    left_in(process, started, purlis_host::this_boot())
+}
+
+/// [`left_as`], noted in the boot `boot`.
+fn left_in(process: u32, started: Option<String>, boot: Option<String>) -> Started {
     Started {
         program: "01J9PRGRM00000000000000000".to_owned(),
         project: PROJECT.to_owned(),
@@ -216,6 +221,7 @@ fn left_as(process: u32, started: Option<String>) -> Started {
         run: None,
         process: Some(process),
         process_started: started,
+        boot,
     }
 }
 
@@ -254,7 +260,7 @@ fn a_terminals_program_the_last_host_left_running_is_ended_with_its_group() {
 }
 
 #[test]
-fn a_process_that_is_not_the_one_the_last_host_started_is_left_alone() {
+fn a_process_that_is_not_the_one_the_last_host_started_in_this_boot_is_left_alone() {
     use purlis_host::Run as _;
     let mut program = a_program_with_a_child();
 
@@ -264,10 +270,17 @@ fn a_process_that_is_not_the_one_the_last_host_started_is_left_alone() {
     ));
     purlis_host::Terminals.end_what_was_left(&left_as(program.id(), None));
 
+    // Its start, as the kernel says it, but noted in another boot of the machine.
+    purlis_host::Terminals.end_what_was_left(&left_in(
+        program.id(),
+        purlis_same_user::Parents::started(program.id()),
+        Some("another boot".to_owned()),
+    ));
+
     let ended = ends_soon(&mut program);
     // Ended here whatever happened above, with its group: the test leaves nothing running.
     let group = nix::unistd::Pid::from_raw(i32::try_from(program.id()).unwrap());
     let _ = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL);
     let _ = program.wait();
-    assert!(!ended, "a process the journal does not name was ended");
+    assert!(!ended, "a process the host record does not name was ended");
 }

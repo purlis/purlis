@@ -1,4 +1,4 @@
-# Amended for #2007, the supervisor, the breaker and the run journal, 2026-10-16
+# Amended for #2007, the supervisor, the breaker and the host record, 2026-10-16
 
 When the session host is killed outright, the window starts it again, and every chat it ran comes
 back as failed or hibernated with a one-click Resume; three unexpected exits within five minutes
@@ -29,30 +29,39 @@ host restarts under its supervisor, with a breaker after three unexpected exits 
    a count kept on disk would hold a host stopped across the update that fixes it. *Rejected:*
    persisting the breaker; a back-off between starts (the limit already ends a loop, and a chat
    waits for the next host as it waits for the first). *D-2007-2.*
-3. **The run journal: JSON Lines in the host's own folder.** `<config>/purlisd/journal.jsonl`,
-   beside the kill switch and the credentials, which every chat's sandbox denies (ADR 0067 §5):
-   a `started` line as each program starts (its id in the host, its project's id and path, its
-   number, its run, its process and when the kernel says that process started) and an `ended`
-   line once what its end leaves is kept; each line written through to disk before the start is
-   answered. A host that ends every program as it stops empties it; the next host to take the
-   lock reads what is left, and empties it, before it serves anyone. Machine tier, device-bound
-   (`docs/plane-format.md`). *Rejected:* the event log (the device's audit, which a host reads
-   back only from a cursor, and which keeps no process to end); the socket's folder (the system
+3. **The host record: JSON Lines in the host's own folder.** `<config>/purlisd/hosts.jsonl`,
+   beside the kill switch and the credentials, which every chat's sandbox denies (ADR 0067 §5).
+   It is the session host's own state, which nothing else writes or reads, and not ADR 0076's
+   run journal (`<config>/runs/journal.json`, each run's state, decided and not yet written:
+   #2289). It has a `started` line as each program starts (its id in the host, its project's id
+   and path, its number, its run, its process, when the kernel says that process started, and
+   the boot of the machine where the system names one) and an `ended` line once what its end
+   leaves is kept; each line is written through to disk before the start is answered. A host
+   that ends every program as it stops empties it; the next host to take the lock reads what is
+   left, and empties it, before it serves anyone. Once it passes 256 KiB it is written again
+   with only the programs still running, and one past 4 MiB is not read. Machine tier,
+   device-bound and transient, as the rest of the folder is (`docs/plane-format.md`).
+   *Rejected:* the event log (the device's audit, which a host reads back only from a cursor,
+   and which keeps no process to end); ADR 0076's run journal (each run's state for the window,
+   backed up, where this is the host's note of its processes); the socket's folder (the system
    may empty a temporary folder); a database (one writer, a handful of lines). *D-2007-3.*
-4. **The next host settles what the last one left.** For each program the journal says was left
-   running, it ends the program's process group where its leader is still the process that was
-   started, by the kernel's word on when it started, and leaves any other process alone; then the
+4. **The next host settles what the last one left.** For each program the host record says was
+   left running, it ends the program's process group where its leader is still the process that
+   was started, by the kernel's word on when it started, in the same boot of the machine, and
+   leaves any other process alone; then the
    binary keeps the end as a host crash's: what the chat's hooks spooled is recorded, and its
    sub-agents' runs end `failed` for `host-crash` (ADR 0076 §5, §6). A host that ended as it
    should leaves nothing to settle. *D-2007-4.*
 5. **Failed or hibernated is ADR 0076's table, read from the board as the chat went.** The window
    hears the link end, and each chat that ran in that host ends with it. Its run is left where
    the table puts a host crash (`Run::after_a_host_crash`): a chat mid-turn, starting, paused, or
-   stopped on an ask has **failed**; one idle at a turn's end, with a conversation to resume, is
-   **hibernated**. Whether it can be resumed natively is read as whether it has a conversation
-   to resume, which is what Resume needs. The chat's pane says which, with **Resume** (its
-   restart on its conversation, one click) and Dismiss. The board, until it moves onto runs
-   (#791), reads such a chat as a program that ended by a signal. *D-2007-5.*
+   stopped on an ask has **failed**; one idle at a turn's end, on a harness that resumes
+   natively (its declaration's `resumes_by_id`, ADR 0076 §5), is **hibernated**. The chat's pane
+   says which, with **Resume** (its restart on its conversation, one click) where it has a
+   conversation, and Dismiss. Read from the window's board because ADR 0076's run journal is not
+   written yet; reading it from there, with or without a window, is #2289 and #2277. The board,
+   until it moves onto runs (#791), reads such a chat as a program that ended by a signal (#2278).
+   A chat on a harness-native host is re-attached rather than resumed (§3): #2290. *D-2007-5.*
 6. **A chat that ended with its host did not end by itself.** As after a quit (D-1443-10),
    nothing tells its asking chat that a task failed, and a task chat reports once it is resumed.
    *D-2007-6.*

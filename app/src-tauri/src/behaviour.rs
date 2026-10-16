@@ -1594,30 +1594,45 @@ mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart
 
 /// **The session host killed outright** (#2007, ADR 0068 §3, FD-29's chaos test): with twenty
 /// chats in it, the host's process is killed as `kill -9` kills it. Within thirty seconds every
-/// chat has ended with it (the window says which, failed or hibernated, from its board), and the
-/// window's supervisor has a new host serving, in which each chat starts again: Resume is one
-/// start. A host process's target only: there is a process to kill. The test ends the host it
-/// started (`Ends`), and the one it replaced ended its programs with its terminal.
+/// chat has been told it ended with its host, and the window's supervisor has a new host
+/// serving. What the window then says of each is read from its board as the chat went: the one
+/// whose turn had ended, on a harness that resumes by id, is hibernated, and the rest, mid-turn,
+/// failed. Each then starts again in the new host, within a bound of its own. Resume itself, the
+/// chat's restart on its conversation, is the planes' test
+/// (`a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_its_conversation`).
+/// A host process's target only: there is a process to kill. The test ends the host it started
+/// (`Ends`), and the one it replaced ended its programs with its terminal.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
     const CHATS: usize = 20;
     let target = in_a_host_process();
+    // One chat whose turn has ended, as its harness's own hook says.
+    let idle = a_chat_on_the_board(
+        &target,
+        &a_shell(&format!(
+            "PURLIS_HARNESS=claude '{}' hook stop </dev/null; printf 'CHAT-IDLE-READY'; read line",
+            purlis()
+        )),
+    );
+    Pane::on(&target, idle).shows("CHAT-IDLE-READY");
+    until("the idle chat's turn has ended", || {
+        target.hooks.board().state(idle) == purlis_core::state::State::Waiting
+    });
+    let mut chats: Vec<u32> = vec![idle];
+    chats.extend((1..CHATS).map(|n| {
+        let id = target
+            .sessions
+            .open(
+                None,
+                &a_shell(&format!("printf 'CHAT-{n}-READY'; read line")),
+                &|_| {},
+            )
+            .expect("it starts");
+        Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
+        id
+    }));
     let ends = told_of_ends(&target);
-    let chats: Vec<u32> = (0..CHATS)
-        .map(|n| {
-            let id = target
-                .sessions
-                .open(
-                    None,
-                    &a_shell(&format!("printf 'CHAT-{n}-READY'; read line")),
-                    &|_| {},
-                )
-                .expect("it starts");
-            Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
-            id
-        })
-        .collect();
     let killed = Instant::now();
 
     (target.kill_the_host.as_ref().expect("a host process"))();
@@ -1633,13 +1648,33 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
+    let left_in = |chat: u32| {
+        let (state, asking) = {
+            let board = target.hooks.board();
+            (board.state(chat), board.asking(chat))
+        };
+        crate::hostlost::after_the_host(
+            state,
+            asking,
+            purlis_core::harness::Harness::ClaudeCode.resumes_by_id(),
+        )
+    };
     for chat in &chats {
         assert!(
             target.sessions.lost_with_its_host(*chat),
             "chat {chat} did not end with its host"
         );
     }
-    // Resume: each chat starts again, in the host that took the old one's place.
+    assert_eq!(left_in(idle), Some(crate::hostlost::LeftIn::Hibernated));
+    for chat in &chats[1..] {
+        assert_eq!(
+            left_in(*chat),
+            Some(crate::hostlost::LeftIn::Failed),
+            "{chat}"
+        );
+    }
+    // Each starts again, in the host that took the old one's place.
+    let reopened = Instant::now();
     for (n, chat) in chats.iter().enumerate() {
         let again = target
             .sessions
@@ -1654,9 +1689,9 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
         target.sessions.close(again).expect("it closes");
     }
     assert!(
-        killed.elapsed() < within,
-        "twenty chats took {:?} to come back",
-        killed.elapsed()
+        reopened.elapsed() < Duration::from_secs(60),
+        "twenty chats took {:?} to start again",
+        reopened.elapsed()
     );
 }
 

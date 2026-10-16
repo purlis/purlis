@@ -48,7 +48,7 @@ mod hearing;
 #[cfg(unix)]
 mod hosting;
 #[cfg(unix)]
-mod journal;
+mod hostrecord;
 #[cfg(unix)]
 mod killswitch;
 #[cfg(unix)]
@@ -74,7 +74,7 @@ pub use hosting::{
     Looked, Poke, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
 };
 #[cfg(unix)]
-pub use journal::{JOURNAL, Started};
+pub use hostrecord::{HOST_RECORD, Started, this_boot};
 #[cfg(unix)]
 pub use killswitch::KILL_SWITCH;
 /// The session protocol this host speaks, for a binary's [`Compose`].

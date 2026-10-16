@@ -472,3 +472,47 @@ fn a_host_that_found_another_serving_is_not_started_again() {
     assert!(failing.now().is_none());
     host.end();
 }
+
+#[test]
+fn a_host_started_as_the_window_ends_it_is_ended_and_not_left_running() {
+    // The window's end lands after the supervisor looked and before the host it is starting is
+    // held: the end finds nothing to end, so the start must end it.
+    let home = tempfile::tempdir().unwrap();
+    let pids = home.path().join("pids");
+    let host = SessionHost::default();
+    let ender = host.ender();
+    let starts = {
+        let pids = pids.clone();
+        move || {
+            ender();
+            let mut command = Command::new("/bin/sh");
+            command
+                .arg("-c")
+                .arg("echo $$ >> \"$1\"; echo ready; exec cat")
+                .arg("sh")
+                .arg(&pids)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            Ok(command)
+        }
+    };
+
+    host.start_at(a_place(home.path()), starts);
+
+    until("the host is started", || starts_in(&pids) == 1);
+    let pid: u32 = std::fs::read_to_string(&pids)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    until("the host it started is ended", || {
+        !purlis_core::process::alive(pid)
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        starts_in(&pids),
+        1,
+        "started again after the window ended it"
+    );
+}

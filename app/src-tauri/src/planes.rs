@@ -3765,11 +3765,16 @@ impl Planes {
                     // in is read from the board as it was, before its end moves it, and said on
                     // its pane with Resume. It did not end by itself: like a quit, it fails no
                     // task, and a task chat reports when it is resumed.
-                    let with_the_host = me
+                    let lost_with = me
                         .get()
                         .and_then(std::sync::Weak::upgrade)
-                        .is_some_and(|held| held.chats.sessions().lost_with_its_host(session));
-                    if with_the_host {
+                        .filter(|held| held.chats.sessions().lost_with_its_host(session));
+                    let with_the_host = lost_with.is_some();
+                    if let Some(held) = lost_with {
+                        let resumes_by_id = held
+                            .chats
+                            .harness(session)
+                            .is_some_and(purlis_core::harness::Harness::resumes_by_id);
                         let (state, asking, resumable) = {
                             let board = hooks::held_board(&board);
                             (
@@ -3778,14 +3783,14 @@ impl Planes {
                                 board.conversation(session).is_some(),
                             )
                         };
-                        if let Some(hibernated) =
-                            crate::hostlost::after_the_host(state, asking, resumable)
+                        if let Some(left_in) =
+                            crate::hostlost::after_the_host(state, asking, resumes_by_id)
                         {
-                            lost.note(session, hibernated, resumable);
+                            lost.note(session, crate::hostlost::LostRun { left_in, resumable });
                             tell_lost(crate::hostlost::LostChat {
                                 plane: plane.clone(),
                                 session,
-                                hibernated,
+                                left_in,
                                 resumable,
                             });
                         }

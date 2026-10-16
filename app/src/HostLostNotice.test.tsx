@@ -21,8 +21,8 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-const FAILED: LostChat = { plane: PLANE, session: 7, hibernated: false, resumable: true };
-const HIBERNATED: LostChat = { ...FAILED, hibernated: true };
+const FAILED: LostChat = { plane: PLANE, session: 7, left_in: "failed", resumable: true };
+const HIBERNATED: LostChat = { ...FAILED, left_in: "hibernated" };
 const NO_CONVERSATION: LostChat = { ...FAILED, resumable: false };
 
 /** A core holding `held` for chat 7. */

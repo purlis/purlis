@@ -43,9 +43,10 @@ export function HostLostNotice({
       .finally(read);
   };
 
-  const said = lost.hibernated
-    ? `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
-    : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
+  const said =
+    lost.left_in === "hibernated"
+      ? `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
+      : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
   const next = lost.resumable
     ? " Resume starts it again on its conversation."
     : " It named no conversation to resume, so start a new chat to go on.";
@@ -89,7 +90,11 @@ function useLost(plane: PlaneId, session: number): { lost: LostChat | null; read
       .chatLostWithTheHost(plane, session)
       .then((answer) => {
         if (answer.status === "ok")
-          setLost(typeof answer.data?.hibernated === "boolean" ? answer.data : null);
+          setLost(
+            answer.data?.left_in === "failed" || answer.data?.left_in === "hibernated"
+              ? answer.data
+              : null,
+          );
       })
       .catch(() => {});
   }, [plane, session]);

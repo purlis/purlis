@@ -74,7 +74,7 @@ use tokio::sync::mpsc;
 use crate::browsers::{Browser, Browsers, NoBrowsers};
 use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
-use crate::journal::{Journal, Started};
+use crate::hostrecord::{HostRecord, Started};
 use crate::killswitch::Switch;
 use crate::recording::{Ended, Record, RecordsNothing, Stopped};
 use crate::serving::Window;
@@ -209,7 +209,7 @@ impl Save for SavesNothing {
 pub trait Run: Send + Sync + 'static {
     fn run(&self, spec: Spec) -> Result<Arc<dyn Running>, String>;
 
-    /// **Ends what a program the last host ran left behind** (#2007), as that host's run journal
+    /// **Ends what a program the last host ran left behind** (#2007), as that host's host record
     /// wrote it down: its process group, where its process is still the one that was started.
     /// Called before this host serves anyone, for each program the last host left running.
     /// Nothing, for what runs no process of its own.
@@ -247,7 +247,7 @@ pub trait Running: Send + Sync + 'static {
     fn stop(&self);
     /// Its process, while it runs.
     fn process(&self) -> Option<u32>;
-    /// When its process started, as the kernel says it, where it says: what the run journal
+    /// When its process started, as the kernel says it, where it says: what the host record
     /// tells it apart from a later process given the same number by (#2007).
     fn process_started(&self) -> Option<String> {
         self.process().and_then(purlis_same_user::Parents::started)
@@ -283,12 +283,19 @@ impl Run for Terminals {
     /// A terminal's program leads a session of its own, so its process group's id is its pid,
     /// and the group holds what it started that did not leave on purpose. The group is killed
     /// only while its leader is the very process that was started, by the kernel's word on when
-    /// it started: a number that has since gone to another process is left alone, and so is a
-    /// leader the kernel cannot say anything of.
+    /// it started, in this boot of the machine: a number that has since gone to another process
+    /// is left alone, and so is a leader the kernel cannot say anything of, and anything noted
+    /// in another boot.
     fn end_what_was_left(&self, left: &Started) {
         let (Some(process), Some(started)) = (left.process, left.process_started.as_deref()) else {
             return;
         };
+        if !crate::hostrecord::of_this_boot(
+            left.boot.as_deref(),
+            crate::hostrecord::this_boot().as_deref(),
+        ) {
+            return;
+        }
         if process <= 1 || purlis_same_user::Parents::started(process).as_deref() != Some(started) {
             return;
         }
@@ -384,7 +391,7 @@ struct Inner {
     /// Where each program is written down as it starts and as it ends, so the next host
     /// settles what this one leaves running if it is killed outright (#2007): in the host's own
     /// folder, for a host kept there; none for a host kept in memory only (a test's).
-    journal: Option<Journal>,
+    host_record: Option<HostRecord>,
     state: Mutex<State>,
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
@@ -533,7 +540,7 @@ impl Hosting {
     }
 
     /// [`Hosting::with`], with its kill switch kept in `folder`, its own, and read from there
-    /// now (ADR 0071), and its run journal kept there (#2007): what the window's host runs.
+    /// now (ADR 0071), and its host record kept there (#2007): what the window's host runs.
     pub fn kept(
         folder: &Path,
         compose: impl Compose,
@@ -547,7 +554,7 @@ impl Hosting {
             hear,
             confine,
             Switch::kept_in(folder),
-            Some(Journal::in_folder(folder)),
+            Some(HostRecord::in_folder(folder)),
         )
     }
 
@@ -557,7 +564,7 @@ impl Hosting {
         hear: impl Hear,
         confine: impl Confine,
         switch: Switch,
-        journal: Option<Journal>,
+        host_record: Option<HostRecord>,
     ) -> Hosting {
         Hosting {
             inner: Arc::new(Inner {
@@ -568,7 +575,7 @@ impl Hosting {
                 hear: Box::new(hear),
                 browsers: Box::new(NoBrowsers),
                 record: OnceLock::new(),
-                journal,
+                host_record,
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
                 switch,
@@ -1064,8 +1071,8 @@ impl Hosting {
         );
         // Written down before the start is answered, so a host killed from here on leaves it
         // for the next to settle (#2007).
-        if let Some(journal) = &self.inner.journal {
-            journal.started(Started {
+        if let Some(host_record) = &self.inner.host_record {
+            host_record.started(Started {
                 program: program.clone(),
                 project: start.project.clone(),
                 project_path: path.clone(),
@@ -1073,6 +1080,7 @@ impl Hosting {
                 run: start.run.clone(),
                 process,
                 process_started: running.process_started(),
+                boot: crate::hostrecord::this_boot(),
             });
         }
         // A stop thrown while this one was being started: it is listed by now, so either the
@@ -1117,8 +1125,8 @@ impl Hosting {
                 channel.ended_with_no_window(number, &exit);
             }
             // Only once its end is kept: a host killed before then leaves it to be settled.
-            if let Some(journal) = &hosting.inner.journal {
-                journal.ended(&ended);
+            if let Some(host_record) = &hosting.inner.host_record {
+                host_record.ended(&ended);
             }
             hosting.tell(&Pushed::Ended {
                 program: ended,
@@ -1954,22 +1962,22 @@ impl Hosting {
         drop(confinements);
         // Every program was ended as the host stopped, whether or not its end was told in
         // time: there is nothing for the next host to settle (#2007).
-        if let Some(journal) = &self.inner.journal {
-            journal.empty();
+        if let Some(host_record) = &self.inner.host_record {
+            host_record.empty();
         }
     }
 
     /// **Settles what the last host left running** (#2007, ADR 0068 §3), and answers how many
-    /// programs that was. The run journal is read and forgotten; each program it says that host
+    /// programs that was. The host record is read and forgotten; each program it says that host
     /// started and never ended is ended by what runs programs where its process is still the
     /// one started ([`Run::end_what_was_left`]), and told to the binary, which keeps its end as
     /// a crash's ([`Record::left_by_its_last_host`]). Called once, as the host starts serving,
     /// under its lock and before anyone is served. Nothing for a host kept in memory only.
     pub fn take_over_from_the_last_host(&self) -> usize {
-        let Some(journal) = &self.inner.journal else {
+        let Some(host_record) = &self.inner.host_record else {
             return 0;
         };
-        let left = journal.take_over();
+        let left = host_record.take_over();
         if !left.is_empty() {
             crate::say(&format!(
                 "the last session host ended without ending {} of its programs; each is \

@@ -47,7 +47,8 @@ describe("the session host failing Notice", () => {
     expect(await notice()).toHaveTextContent(
       "purlis's session host stopped unexpectedly 3 times in 5 minutes, so purlis stopped starting it again. No chat starts until it runs.",
     );
-    expect(screen.getByText(/could not bind its socket/)).toBeInTheDocument();
+    expect(screen.getByText("Its last log lines")).toBeInTheDocument();
+    expect(screen.getByText(/could not bind its socket/)).not.toBeVisible();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 

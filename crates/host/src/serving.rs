@@ -90,7 +90,7 @@ pub async fn serve(
         .map_err(unsafe_at("make its folder this user's alone", folder))?;
     let _lock = lock(place)?;
     // What the last host left running, settled before anyone is served (#2007): its lock is
-    // ours now, so it is not writing its journal any more.
+    // ours now, so it is not writing its host record any more.
     let settling = hosting.clone();
     let _ = tokio::task::spawn_blocking(move || settling.take_over_from_the_last_host()).await;
     let listener = bind(&place.socket)?;

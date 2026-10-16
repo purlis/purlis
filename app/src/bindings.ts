@@ -691,11 +691,8 @@ export const commands = {
 	chatLostWithTheHost: (plane: PlaneId, session: number) => typedError<{
 	plane: PlaneId,
 	session: number,
-	/**
-	 *  Its run is hibernated: it was idle at a turn's end, and nothing was lost. Otherwise it
-	 *  failed, and the turn it was in is lost.
-	 */
-	hibernated: boolean,
+	/**  What its run was left in. */
+	left_in: LeftIn,
 	/**  It has a conversation to resume, so Resume puts it back. */
 	resumable: boolean,
 } | null, string>(__TAURI_INVOKE("chat_lost_with_the_host", { plane, session })),
@@ -6307,6 +6304,13 @@ export type LeftBranch = {
 	deletable: boolean,
 };
 
+/**  What a host crash left a chat's run in (ADR 0076 §5). */
+export type LeftIn = 
+/**  It was in the middle of a turn, or stopped on an ask: that turn is lost. */
+"failed" | 
+/**  It was idle at a turn's end on a harness that resumes by id: nothing is lost. */
+"hibernated";
+
 /**
  *  An action the core left out of a subject's list, and why. Never dropped silently: the menu
  *  draws it as a row that cannot run, with `why` as its reason.
@@ -6396,11 +6400,8 @@ export type LocalModelRow = {
 export type LostChat = {
 	plane: PlaneId,
 	session: number,
-	/**
-	 *  Its run is hibernated: it was idle at a turn's end, and nothing was lost. Otherwise it
-	 *  failed, and the turn it was in is lost.
-	 */
-	hibernated: boolean,
+	/**  What its run was left in. */
+	left_in: LeftIn,
 	/**  It has a conversation to resume, so Resume puts it back. */
 	resumable: boolean,
 };
