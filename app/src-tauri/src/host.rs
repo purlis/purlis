@@ -363,6 +363,8 @@ pub(crate) mod pretend {
         switch: Mutex<Option<Arc<crate::killswitch::KillSwitch>>>,
         asked: Mutex<Vec<(u32, String)>>,
         openings: Mutex<Vec<Opening>>,
+        /// The sessions running as each opening was asked for, in the order asked.
+        running_when_opened: Mutex<Vec<Vec<u32>>>,
         socket: Mutex<Option<std::path::PathBuf>>,
         running: Mutex<Vec<u32>>,
         typed: Mutex<Vec<(u32, Vec<u8>)>>,
@@ -409,6 +411,11 @@ pub(crate) mod pretend {
         /// Every session it was asked to start, by number and program.
         pub fn asked(&self) -> Vec<(u32, String)> {
             lock(&self.seen.asked).clone()
+        }
+
+        /// The sessions running as each start was asked for, in the order asked.
+        pub fn running_when_opened(&self) -> Vec<Vec<u32>> {
+            lock(&self.seen.running_when_opened).clone()
         }
 
         /// Everything it was asked to start, whole, in the order it was asked.
@@ -527,6 +534,8 @@ pub(crate) mod pretend {
             let mut asked = lock(&self.seen.asked);
             asked.push((id, program));
             lock(&self.seen.openings).push(opening.clone());
+            let running_now = lock(&self.seen.running).clone();
+            lock(&self.seen.running_when_opened).push(running_now);
             lock(&self.seen.running).push(id);
             drop(asked);
             Ok(id)

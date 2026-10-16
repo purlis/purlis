@@ -2791,3 +2791,86 @@ fn a_log_sealed_while_a_consumer_is_behind_keeps_what_it_has_not_taken() {
         "taken, and older than the retention: deleted at the next seal"
     );
 }
+
+/// What `dir`'s log says, by kind and run, in order.
+fn kinds_and_runs(dir: &Path) -> Vec<(String, Option<String>)> {
+    read(dir)
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind, e.run))
+        .collect()
+}
+
+#[test]
+fn a_run_held_for_its_start_is_written_once_when_it_begins() {
+    // A start the host may still take back (#2250): its run is said once it goes on.
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    let of = RunOf {
+        chat: CHAT,
+        run: RUN,
+    };
+
+    host.begin_held(plane, 4, of, Began::Start, &Attributes::default());
+    assert!(read(dir.path()).unwrap().is_empty(), "nothing yet");
+
+    host.begun(plane, 4).unwrap();
+    host.begun(plane, 4).unwrap();
+    let events = read(dir.path()).unwrap();
+    assert_eq!(events.len(), 1, "one run.started: {events:#?}");
+    assert_eq!(events[0].kind, "run.started");
+    assert_eq!(events[0].run.as_deref(), Some(RUN));
+    assert_eq!(events[0].body["cause"], "start");
+}
+
+#[test]
+fn a_held_run_taken_back_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+    );
+
+    assert!(read(dir.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_line_of_a_held_run_comes_after_its_run_started() {
+    // ADR 0066: a run's first event is its `run.started`, whatever reaches the log first.
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+    );
+    host.report(plane, &report(4, SessionStart), Followed::No)
+        .unwrap();
+    host.begun(plane, 4).unwrap();
+
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [
+            ("run.started".to_owned(), Some(RUN.to_owned())),
+            ("hook.sessionstart".to_owned(), Some(RUN.to_owned())),
+        ]
+    );
+}

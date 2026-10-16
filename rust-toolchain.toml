@@ -6,5 +6,5 @@
 # every local `cargo`. Dependabot proposes each bump, and it lands in a train like any change.
 # `rust-version` in Cargo.toml is the oldest compiler charter builds with, and is separate.
 [toolchain]
-channel = "1.99.0"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
