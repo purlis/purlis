@@ -39,11 +39,11 @@ fn binding(time: &str, policy: &str, actions: &[&str]) -> ValidatingAdmissionPol
             creation_timestamp: Some(at(time)),
             ..ObjectMeta::default()
         },
-        spec: Some(ValidatingAdmissionPolicyBindingSpec {
-            policy_name: Some(policy.into()),
-            validation_actions: Some(actions.iter().map(|a| (*a).to_owned()).collect()),
+        spec: ValidatingAdmissionPolicyBindingSpec {
+            policy_name: policy.into(),
+            validation_actions: actions.iter().map(|a| (*a).to_owned()).collect(),
             ..ValidatingAdmissionPolicyBindingSpec::default()
-        }),
+        },
     }
 }
 

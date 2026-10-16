@@ -29,14 +29,8 @@ pub enum Admission {
 
 /// Whether `binding` puts purlis's policy in force: it binds that policy, and denies.
 fn in_force(binding: &ValidatingAdmissionPolicyBinding) -> bool {
-    let Some(spec) = &binding.spec else {
-        return false;
-    };
-    spec.policy_name.as_deref() == Some(POLICY)
-        && spec
-            .validation_actions
-            .as_ref()
-            .is_some_and(|actions| actions.iter().any(|a| a == "Deny"))
+    let spec = &binding.spec;
+    spec.policy_name == POLICY && spec.validation_actions.iter().any(|a| a == "Deny")
 }
 
 /// Whether `claim` was admitted under the policy, given its binding as the cluster holds it.
