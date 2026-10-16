@@ -361,6 +361,7 @@ import type {
   ExtensionView,
   Offered,
   PanelView,
+  Rescreened,
   RowAction,
   SavedRecord,
   Shown,
@@ -5134,6 +5135,60 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, chatRestarted],
   );
+  /**
+   * **A chat the core started again, or ended, because its project's Claude Code settings no
+   * longer pass** (ADR 0067 as amended 2026-10-16): the core has done it already, whatever this
+   * window was doing, and the window only redraws, as after its own restart. Filtered on the
+   * plane, as `chat-moved` is.
+   */
+  const redrawRescreened = useRef<(told: Rescreened) => void>(() => undefined);
+  useEffect(() => {
+    redrawRescreened.current = (told: Rescreened) => {
+      setOwedRestarts((owed) => owed.filter((one) => one !== told.session));
+      setRestartNotYet((was) => withoutKey(was, told.session));
+      if (told.chat !== null) {
+        const chat = told.chat;
+        setRestartTrouble((was) => withoutKey(was, told.session));
+        chatRestarted(told.session, chat);
+        if (told.notices.length > 0)
+          setStartNotes((was) => ({
+            ...was,
+            [chat.session]: { notes: told.notices, agentsMd: [] },
+          }));
+      } else if (told.ended !== null) {
+        const why = told.ended;
+        setRestartTrouble((was) => ({ ...was, [told.session]: why }));
+        // The core keeps it among the chats that would not start, with why and a Retry.
+        void commands
+          .chatsThatWouldNotStart(plane)
+          .then((trouble) => {
+            if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+          })
+          .catch(() => undefined);
+      }
+    };
+  }, [chatRestarted, plane]);
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<Rescreened>("chat-project-settings-changed", (event) => {
+          const told = event.payload;
+          if (gone || told.plane !== plane) return;
+          redrawRescreened.current(told);
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane]);
   // **Only at the chat's next pause between turns** (#1342, #1986): mid-turn it would lose
   // what it was doing; a harness that reports no state is never restarted behind the person's
   // back, and its pane offers Restart now instead. A chat whose program ended first is
