@@ -11,9 +11,11 @@ switch. Every other item is **decided in implementation, to be confirmed** (D-20
 D-2000-9).
 
 1. **The window still decides what a line moves; the host feeds it.** The host owns the socket,
-   the tokens and the admission. The window decides what each line the host hands on moves
-   (item 5). The board and Needs you are kept in the host too, in step with the window's: the
-   amendment for #2194 replaces what this item said of them. *D-2000-1, to be confirmed.*
+   the tokens and the admission. The board, Needs you and the asks are still the window's, and
+   are moved by the lines the host hands on (item 5). Moving the live board into the host is
+   #2194, with the event log, the end of a program and dispatch answers (#2003). *D-2000-1, to
+   be confirmed.*
+   See the [amendment for #2194](2026-10-16-amended-for-2194-the-board-is-kept-in-the-session-host.md).
 2. **The host binds each held project's hook socket with the window's own listener and checks.**
    As it first holds a project, it binds the socket at the path `hooks::socket_for` names, with
    `hookwire::Listener`. It lets the socket go once nothing holds the project. Every check on a

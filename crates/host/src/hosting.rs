@@ -21,8 +21,9 @@
 //!
 //! **Each held project's board is kept here too** (#2194): the window tells the channel each
 //! move it makes (`board_moved`) and reads the board whole as it holds the project (`board`).
-//! A project a program still runs in outlives the link that held it, with its channel and its
-//! board, so its chats are heard while no window is there.
+//! A project outlives the link that held it, with its channel and its board, while it has a
+//! program the window has not closed, running or ended: its chats are heard while no window is
+//! there, and a window that comes back reads how each one ended.
 //!
 //! **Every hosted program is inside a chat to the admission check.** The holder the check is
 //! given is the window, when the window started this host, or the host itself: a hosted
@@ -747,15 +748,17 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    /// A link ended: its holds go with it. A project a program still runs in is kept with its
-    /// hook channel and its board, held by no link, so its chats are heard and a window that
-    /// holds it again reads them as they are (#2194).
+    /// A link ended: its holds go with it. A project that has a program the window has not
+    /// closed, running or ended, is kept with its hook channel and its board, held by no link, so
+    /// its chats are heard and a window that holds it again reads them as they are, how each
+    /// ended included (#2194).
     fn let_go_of_the_links(&self, peer: &Peer) {
         let link = link_of(peer);
         let gone: Vec<Held> = {
             let mut state = self.state();
             let held = std::mem::take(&mut state.projects);
-            let running: std::collections::HashSet<String> = state
+            // Every program not yet closed, running or ended: closing is what takes one out.
+            let unclosed: std::collections::HashSet<String> = state
                 .programs
                 .values()
                 .map(|hosted| hosted.project.clone())
@@ -766,7 +769,7 @@ impl Hosting {
                     held.links.remove(&link);
                     (project, held)
                 })
-                .partition(|(project, held)| !held.links.is_empty() || running.contains(project));
+                .partition(|(project, held)| !held.links.is_empty() || unclosed.contains(project));
             state.projects = kept.into_iter().collect();
             gone.into_iter().map(|(_, held)| held).collect()
         };
@@ -1345,7 +1348,7 @@ impl Hosting {
 }
 
 /// Held project `project`, where a link holds it: nothing starts, is dealt or is confined in a
-/// project kept only for the programs that run in it (#2194).
+/// project kept only for the programs in it the window has not closed (#2194).
 fn held_by_a_link<'a>(state: &'a State, project: &str) -> Option<&'a Held> {
     state
         .projects

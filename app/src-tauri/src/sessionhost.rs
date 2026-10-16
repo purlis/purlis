@@ -123,7 +123,7 @@ pub fn launched(
 /// **It keeps the project's board** (#2194, [`KeptBoard`]), which outlives the window.
 pub struct HookChannels;
 
-/// **A held project's board, kept in the session host** (#2194,
+/// **A held project's kept board, in the session host** (#2194, CONTEXT.md,
 /// `purlis_core::state::kept`).
 ///
 /// The window makes each move on its own copy and tells this one ([`KeptBoard::moved`]), so
@@ -155,17 +155,21 @@ impl KeptBoard {
         })
     }
 
-    /// The window made `moved` of chat `number` on its own board. One this host cannot read
-    /// moves nothing, and is said in the log.
-    pub fn moved(&self, number: u32, moved: serde_json::Value) {
+    /// The window made `moved` of chat `number` on its own board: whether this host read it.
+    /// One it cannot read moves nothing, and is said in the log.
+    pub fn moved(&self, number: u32, moved: serde_json::Value) -> bool {
         match serde_json::from_value::<purlis_core::state::Move>(moved) {
             Ok(moved) => {
                 self.board().make(number, moved);
+                true
             }
-            Err(why) => purlis_host_says(&format!(
-                "a move of chat {number} the window made could not be read, so the board kept \
-                 here did not make it: {why}"
-            )),
+            Err(why) => {
+                purlis_host_says(&format!(
+                    "a move of chat {number} the window made could not be read, so the board \
+                     kept here did not make it: {why}"
+                ));
+                false
+            }
         }
     }
 

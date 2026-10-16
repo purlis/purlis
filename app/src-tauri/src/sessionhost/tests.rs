@@ -113,7 +113,203 @@ fn a_program_that_ends_with_no_window_is_told_to_the_hosts_board_with_its_code()
 fn a_move_the_host_cannot_read_moves_nothing() {
     let board = KeptBoard::default();
 
-    board.moved(1, serde_json::json!({"move": "something else"}));
+    assert!(!board.moved(1, serde_json::json!({"move": "something else"})));
 
     assert!(as_a_window_takes(&board).chats().next().is_none());
+}
+
+/// One of every move a board makes, each named by its place here. The match names every
+/// variant with no catch-all, so a move added to the core does not compile until it is placed,
+/// and the test below fails until it is in [`one_of_every_move`].
+fn place_of(moved: &purlis_core::state::Move) -> usize {
+    use purlis_core::state::Move;
+    match moved {
+        Move::Opened { .. } => 0,
+        Move::Reported { .. } => 1,
+        Move::Rested => 2,
+        Move::TaskFailed { .. } => 3,
+        Move::FailuresSeen => 4,
+        Move::FailureCleared { .. } => 5,
+        Move::ChildHeard { .. } => 6,
+        Move::Ignored => 7,
+        Move::Answered => 8,
+        Move::AnsweredBy { .. } => 9,
+        Move::ToolSaidBy { .. } => 10,
+        Move::ChildToolSaidBy { .. } => 11,
+        Move::Exited { .. } => 12,
+        Move::ReportedBack { .. } => 13,
+        Move::StoppedBelow { .. } => 14,
+        Move::Needs { .. } => 15,
+        Move::ReportedToItsAsker => 16,
+        Move::CommitRefused { .. } => 17,
+        Move::Closed => 18,
+    }
+}
+
+/// How many places [`place_of`] names.
+const EVERY_MOVE: usize = 19;
+
+/// One of every move, in an order in which each moves something a reader can see: chat 1 takes
+/// them all, and chat 2 is opened only to be closed.
+fn one_of_every_move() -> Vec<(u32, purlis_core::state::Move)> {
+    use purlis_core::doing::{Kind, Said};
+    use purlis_core::harness::hooked::Asker;
+    use purlis_core::hookwire::{Conversation, Speaker};
+    use purlis_core::state::{Event, FailedTask, HowFailed, Move, Need, Waits};
+    let speaker = Speaker {
+        pid: None,
+        conversation: Conversation::Unknown,
+    };
+    let began = Said::Began {
+        kind: Kind::Command,
+        name: Some("cargo".into()),
+    };
+    vec![
+        (
+            1,
+            Move::Opened {
+                reports_its_process: false,
+                conversation: Some("0199a2f4-1c2b-7f00-8000-000000000001".into()),
+            },
+        ),
+        (
+            2,
+            Move::Opened {
+                reports_its_process: true,
+                conversation: None,
+            },
+        ),
+        (
+            1,
+            Move::Reported {
+                report: a_report(1, Event::UserPromptSubmit),
+                waits: Waits::default(),
+            },
+        ),
+        (
+            1,
+            Move::ToolSaidBy {
+                speaker: speaker.clone(),
+                said: began.clone(),
+            },
+        ),
+        (
+            1,
+            Move::ChildHeard {
+                agent: "helper-1".into(),
+            },
+        ),
+        (
+            1,
+            Move::ChildToolSaidBy {
+                agent: "helper-1".into(),
+                speaker,
+                said: began,
+            },
+        ),
+        (
+            1,
+            Move::Reported {
+                report: a_report(1, Event::Notification),
+                waits: Waits::default(),
+            },
+        ),
+        (1, Move::AnsweredBy { asker: Asker::Chat }),
+        (
+            1,
+            Move::Reported {
+                report: a_report(1, Event::Notification),
+                waits: Waits::default(),
+            },
+        ),
+        (1, Move::Answered),
+        (
+            1,
+            Move::Reported {
+                report: a_report(1, Event::Stop),
+                waits: Waits {
+                    tasks: 1,
+                    ..Waits::default()
+                },
+            },
+        ),
+        (
+            1,
+            Move::ReportedBack {
+                from: "the task".into(),
+            },
+        ),
+        (
+            1,
+            Move::StoppedBelow {
+                from: "another task".into(),
+            },
+        ),
+        (
+            1,
+            Move::TaskFailed {
+                failed: FailedTask::new("task-1", "the task", HowFailed::Failed, "it broke"),
+            },
+        ),
+        (1, Move::FailuresSeen),
+        (
+            1,
+            Move::FailureCleared {
+                id: "task-1".into(),
+            },
+        ),
+        (
+            1,
+            Move::CommitRefused {
+                what: "a key in config.toml".into(),
+            },
+        ),
+        (
+            1,
+            Move::Needs {
+                need: Need::RootUpdateRefused,
+            },
+        ),
+        (1, Move::ReportedToItsAsker),
+        (1, Move::Ignored),
+        (1, Move::Rested),
+        (1, Move::Exited { code: Some(0) }),
+        (2, Move::Closed),
+    ]
+}
+
+/// A whole board as JSON, without when each chat last moved: that is each process's own count.
+fn without_counts(mut whole: serde_json::Value) -> serde_json::Value {
+    if let Some(chats) = whole
+        .get_mut("chats")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for chat in chats.values_mut() {
+            if let Some(chat) = chat.as_object_mut() {
+                chat.remove("moved_at");
+            }
+        }
+    }
+    whole
+}
+
+#[test]
+fn every_move_the_window_tells_is_read_and_made_by_the_hosts_board() {
+    let moves = one_of_every_move();
+    let placed: std::collections::BTreeSet<usize> =
+        moves.iter().map(|(_, moved)| place_of(moved)).collect();
+    assert_eq!(placed.len(), EVERY_MOVE, "one of every move is told");
+
+    let host = KeptBoard::default();
+    let mut window = purlis_core::state::Board::new();
+    for (chat, moved) in moves {
+        let said = serde_json::to_value(&moved).expect("a move is said as JSON");
+        assert!(host.moved(chat, said), "the host reads {moved:?}");
+        window.make(chat, moved);
+    }
+
+    assert_eq!(
+        without_counts(host.whole()),
+        without_counts(serde_json::to_value(window.kept()).expect("said")),
+    );
 }

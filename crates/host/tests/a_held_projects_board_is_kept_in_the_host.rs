@@ -4,9 +4,9 @@
 //! A held project's board is kept in the session host (#2194), spoken to over the session
 //! protocol on an in-memory link: the window tells the host each move it makes on its own copy
 //! (`board_moved`), in order, and reads the host's board whole (`board`). The project and its
-//! board outlive a window whose link ends while a program of the project runs, so a window that
-//! holds it again reads every chat as the host kept it, and a program that ends with no window
-//! there is told to the board. The board itself is a stand-in here; the real one is the core's
+//! board outlive a window whose link ends while the project has a program the window has not
+//! closed, running or ended, so a window that holds it again reads every chat as the host kept
+//! it, and a program that ends with no window there is told to the board. The board itself is a stand-in here; the real one is the core's
 //! (`purlis_core::state::kept`), and the window and the host together are the app's behaviour
 //! suite, on CI.
 
@@ -334,4 +334,48 @@ async fn a_link_that_does_not_hold_the_project_neither_moves_nor_reads_its_board
         );
     }
     assert_eq!(window.board().await.unwrap(), json!({"moves": []}));
+}
+
+#[tokio::test]
+async fn a_project_whose_program_ended_but_was_not_closed_is_kept_after_its_link_ends() {
+    let host = a_host();
+    {
+        let window = host.holding().await;
+        window.starts().await;
+        window.moves(1, json!({"move": "opened"})).await;
+        host.runs.last().ends(Exit::Code(0));
+        window.moves(1, json!({"move": "exited", "code": 0})).await;
+    }
+    host.until_no_window_holds_it().await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(
+        host.kept.said(),
+        [format!("open {PROJECT}")],
+        "the channel stays: a window that comes back reads how the program ended"
+    );
+    let back = host.holding().await;
+    assert_eq!(
+        back.board().await.unwrap(),
+        json!({"moves": [
+            {"chat": 1, "moved": {"move": "opened"}},
+            {"chat": 1, "moved": {"move": "exited", "code": 0}},
+        ]})
+    );
+}
+
+#[tokio::test]
+async fn a_project_whose_programs_were_all_closed_is_let_go_of_with_the_last_link_that_held_it() {
+    let host = a_host();
+    {
+        let window = host.holding().await;
+        let program = window.starts().await;
+        host.runs.last().ends(Exit::Code(0));
+        window.client.close(&program).await.expect("it is closed");
+    }
+    let deadline = Instant::now() + PATIENCE;
+    while host.kept.said().last().map(String::as_str) != Some("closed") {
+        assert!(Instant::now() < deadline, "the channel was never closed");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }

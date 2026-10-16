@@ -73,10 +73,10 @@
 //!   0078 §4, ADR 0068 amended 2026-10-15). It is refused from every other scope before the
 //!   host hears of it, `remote-link` included: an opt-out is asked again on the device a chat
 //!   moves to. What a relayed start runs is what the runner's trusted peer composed.
-//! - **A held project's board is read and moved by the window's own link alone** (1.10,
-//!   #2194). The board is what the window draws Needs you from, and its moves are the window's
-//!   decisions on the lines it heard and the person's acts (an Ignore, an answer, a close).
-//!   Only `local-ui` sends either; a relayed `remote-link` does not.
+//! - **A held project's kept board is read and moved by the window's own link alone** (1.10,
+//!   #2194). The kept board is what the window draws Needs you from, and its moves are the
+//!   window's decisions on the lines it heard and the person's acts (an Ignore, an answer, a
+//!   close). Only `local-ui` sends either; a relayed `remote-link` does not.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
@@ -153,8 +153,8 @@ pub enum Power {
     Browser,
     /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
     OptOut,
-    /// `board_moved` and `board` (1.10): what a held project's board holds, and the window's
-    /// moves of it.
+    /// `board_moved` and `board` (1.10): what a held project's kept board holds, and the
+    /// window's moves of it.
     Board,
 }
 

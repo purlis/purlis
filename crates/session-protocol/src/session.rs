@@ -106,9 +106,9 @@ use crate::view::{Limits, Views};
 /// project's auto-save did; and the host's question to the window of who is mid-turn in a
 /// workspace (`who_is_mid_turn`), which the window answers (`mid_turn`).
 ///
-/// 1.10 added the board kept in the host (#2194): `board_moved` tells the host each move the
-/// window made on a held project's board, and `board`, answered `board`, reads the board the
-/// host keeps, whole. 1.8 and 1.9 are held for changes not yet merged.
+/// 1.10 added the kept board (#2194, CONTEXT.md): `board_moved` tells the host each move the
+/// window made on its copy of a held project's chats and Needs you, and `board`, answered
+/// `board`, reads the host's kept board whole. 1.8 and 1.9 are held for changes not yet merged.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 10,
@@ -278,15 +278,15 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         chats: Option<Vec<String>>,
     },
-    /// A move the window made of chat `chat` on a held project's board, for the board the host
-    /// keeps to make too, in the order the window made them (1.10): `moved` is the move as the
-    /// board says it. Answered once made.
+    /// A move the window made of chat `chat` on its copy of a held project's kept board, for the
+    /// host to make on the kept board too, in the order the window made them (1.10): `moved` is
+    /// the move as the core says it. Answered once made.
     BoardMoved {
         project: String,
         chat: u32,
         moved: serde_json::Value,
     },
-    /// The board the host keeps for a held project, whole (1.10): answered [`Answer::Board`].
+    /// A held project's kept board, whole (1.10): answered [`Answer::Board`].
     Board { project: String },
     /// Start a chat's confinement, its proxy and what runs beside it, from the window's plan
     /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
@@ -660,8 +660,7 @@ pub enum Answer {
     Readiness(Readiness),
     /// The number dealt: [`Command::Deal`] (1.3).
     Dealt { number: u32 },
-    /// The board the host keeps for a held project, as the board says it: [`Command::Board`]
-    /// (1.10).
+    /// A held project's kept board, as the core says it: [`Command::Board`] (1.10).
     Board(serde_json::Value),
     /// Where the confinement it started is: [`Command::Confine`] (1.4).
     Confined(Confined),
@@ -1331,7 +1330,7 @@ enum Lane {
     /// The commands about one project's saving (1.7): a stop is never overtaken by the start
     /// before it.
     Saving(String),
-    /// The moves and reads of one held project's board, by the project (1.10).
+    /// The moves and reads of one held project's kept board, by the project (1.10).
     Board(String),
 }
 
