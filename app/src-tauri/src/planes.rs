@@ -834,6 +834,9 @@ impl Held {
             read,
         } = reopening;
         let back = crate::restored::finish(self, begun, size, read).len();
+        // What the session host still runs of this project from before this window and no
+        // chat put back reattached ends now, so nothing runs with no tab (#2006).
+        self.chats.close_what_was_not_reattached();
         if wanted > 0 {
             tracing::info!(
                 "purlis: plane {}, {back} of {wanted} chats back",
@@ -3698,6 +3701,23 @@ impl Planes {
                     hooks::held_board(&board).opened(session, harness, conversation);
                     // Read before the lock is taken: a stamp is a read of several files.
                     let stamp = Stamp::of(&root);
+                    lock_started(&started_on).insert(session, stamp);
+                }
+            }));
+            // A chat reattached in the session host is on the board the host kept (#2006): it
+            // is opened there only where that board did not come.
+            chats.when_one_is_reattached(Box::new({
+                let board = Arc::clone(&board);
+                let started_on = Arc::clone(&started_on);
+                let root = root.clone();
+                move |session, harness, conversation| {
+                    let stamp = Stamp::of(&root);
+                    {
+                        let mut board = hooks::held_board(&board);
+                        if !board.chats().any(|chat| chat == session) {
+                            board.opened(session, harness, conversation);
+                        }
+                    }
                     lock_started(&started_on).insert(session, stamp);
                 }
             }));

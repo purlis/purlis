@@ -36,6 +36,8 @@
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
 //! | `board_moved`, `board` (1.10) | yes | | | | | |
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
+//! | `programs_of` (1.13) | yes | | | | | |
+//! | `quit` (1.13) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -79,6 +81,11 @@
 //!   #2194). The kept board is what the window draws Needs you from, and its moves are the
 //!   window's decisions on the lines it heard and the person's acts (an Ignore, an answer, a
 //!   close). Only `local-ui` sends either; a relayed `remote-link` does not.
+//! - **Taking a project's programs back, and quitting the host, are the window's alone** (1.13,
+//!   #2006). What `programs_of` answers is how the window takes each chat back, the place of
+//!   its confinement among it, which only the window confines; and `quit` ends every program
+//!   and the host with them, which is the person's act of quitting purlis. A stop needs no
+//!   human, so every other scope still has `stop` and `stop_all`.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
@@ -170,6 +177,11 @@ pub enum Power {
     /// `board_moved` and `board` (1.10): what a held project's kept board holds, and the
     /// window's moves of it.
     Board,
+    /// `programs_of` (1.13): a held project's programs, with what a window takes each back by,
+    /// its confinement's place among them.
+    Reattach,
+    /// `quit` (1.13): the host ends every program and stops.
+    Quit,
 }
 
 impl Scope {
@@ -252,6 +264,18 @@ mod tests {
     fn only_the_window_reads_or_moves_a_projects_board() {
         for scope in Scope::ALL {
             assert_eq!(scope.may(Power::Board), scope == Scope::LocalUi, "{scope}");
+        }
+    }
+
+    #[test]
+    fn only_the_window_takes_back_a_projects_programs_or_quits_its_host() {
+        for scope in Scope::ALL {
+            assert_eq!(
+                scope.may(Power::Reattach),
+                scope == Scope::LocalUi,
+                "{scope}"
+            );
+            assert_eq!(scope.may(Power::Quit), scope == Scope::LocalUi, "{scope}");
         }
     }
 

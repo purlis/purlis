@@ -185,6 +185,47 @@ fn after_a_restart_a_working_task_is_still_under_its_session_and_its_report_arri
     );
 }
 
+/// #2006: the window went without a quit, and the session host still runs the steward chat and
+/// its task. The window that comes back reattaches both, though the task's harness named no
+/// conversation a start could carry it on with: nothing is started, nothing is closed, and the
+/// task's dispatch is still running.
+#[test]
+fn a_task_the_host_still_runs_is_reattached_and_its_dispatch_stays_open() {
+    let (plane, host, planes, _id, held, steward, task) = a_steward_and_a_working_task();
+    let mut at_quit = quits(&held);
+    for chat in &mut at_quit.chats {
+        if chat.number == Some(task) {
+            chat.resume = None;
+        }
+    }
+    let relaunched = Pretend::default();
+    relaunched.leaves_running(steward, None);
+    relaunched.leaves_running(task, None);
+    let planes_again = planes_on(&relaunched);
+
+    let (_again, held, opened) = reopens(
+        &plane,
+        (host.clone(), planes, held),
+        &planes_again,
+        Ok(at_quit),
+        Choice::ReopenAll,
+    );
+
+    let mut numbers: Vec<u32> = opened.iter().map(|open| open.session).collect();
+    numbers.sort_unstable();
+    assert_eq!(numbers, [steward, task]);
+    let mut reattached = relaunched.reattached();
+    reattached.sort_unstable();
+    assert_eq!(reattached, [steward, task]);
+    assert!(relaunched.asked().is_empty(), "nothing was started");
+    assert!(relaunched.closed_left().is_empty(), "nothing was closed");
+    assert!(record_of(&held, task).running(), "its dispatch goes on");
+    assert!(
+        held.chats().handed_from(task).is_some(),
+        "still the steward's task"
+    );
+}
+
 #[test]
 fn a_task_brought_back_by_a_launch_is_as_old_as_its_dispatch_record_says() {
     // #1463: the ledger that says a task's age is in memory, and a relaunch empties it. The

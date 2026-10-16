@@ -290,3 +290,77 @@ async fn a_host_that_stops_ends_every_program_it_runs() {
     assert_eq!(runs.ran().len(), 2);
     assert!(runs.ran().iter().all(|(_, run)| run.seen().stopped));
 }
+
+/// The window quits (#2006): the host ends every program as a quit, answers, stops serving and
+/// removes its socket, with nothing else to tell it to stop.
+#[tokio::test]
+async fn a_quit_from_the_window_ends_every_program_and_the_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let runs = purlis_host::standin::StandIns::default();
+    let (ready, is_ready) = oneshot::channel::<()>();
+    let host = tokio::spawn({
+        let place = place.clone();
+        let hosting = Hosting::running_with(True, runs.clone());
+        async move {
+            serve(
+                &place,
+                Some(this_process()),
+                hosting,
+                move || {
+                    let _ = ready.send(());
+                },
+                std::future::pending(),
+            )
+            .await
+        }
+    });
+    is_ready.await.expect("the host became ready");
+    let credential = Credential::read(&place.credentials, Scope::LocalUi).unwrap();
+    let link = connect(&place, Scope::LocalUi, &credential).await.unwrap();
+    let (client, _views, _events) = session::Client::new(link);
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    client
+        .hold_project("01J9PRJCT00000000000000000", project.to_str().unwrap())
+        .await
+        .unwrap();
+    client
+        .start_program(session::StartProgram::of(
+            "01J9PRJCT00000000000000000",
+            session::ProgramKind::Shell,
+        ))
+        .await
+        .unwrap();
+
+    client.quit().await.expect("the quit is answered");
+
+    tokio::time::timeout(std::time::Duration::from_secs(10), host)
+        .await
+        .expect("the host stops")
+        .unwrap()
+        .expect("the host ended cleanly");
+    assert!(runs.ran().iter().all(|(_, run)| run.seen().stopped));
+    assert!(!place.socket.exists(), "the socket outlived its host");
+}
+
+/// A peer that is not the window may not quit the host: the grants refuse it, and the host goes
+/// on (#2006).
+#[tokio::test]
+async fn only_the_window_quits_the_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (_stop, host) = hosting(&place, None).await;
+    let credential = Credential::read(&place.credentials, Scope::Terminal).unwrap();
+    let link = connect(&place, Scope::Terminal, &credential).await.unwrap();
+    let (client, _views, _events) = session::Client::new(link);
+
+    let refused = client.quit().await.unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED)
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!host.is_finished(), "the host goes on");
+}

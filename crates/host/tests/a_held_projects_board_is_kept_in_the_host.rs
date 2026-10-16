@@ -39,6 +39,8 @@ struct Kept {
     said: Arc<Mutex<Vec<String>>>,
     moves: Arc<Mutex<Vec<Value>>>,
     hand_on: Arc<Mutex<Option<HandOn>>>,
+    /// Its board is more than one answer carries, for this reason.
+    too_large: Arc<Mutex<Option<String>>>,
 }
 
 impl Kept {
@@ -99,13 +101,20 @@ impl Channel for KeepingChannel {
             .push(json!({"chat": number, "moved": moved}));
     }
 
-    fn board(&self) -> Value {
-        json!({ "moves": *self.0.moves.lock().unwrap() })
+    fn board(&self) -> Result<Value, String> {
+        match self.0.too_large.lock().unwrap().clone() {
+            Some(why) => Err(why),
+            None => Ok(json!({ "moves": *self.0.moves.lock().unwrap() })),
+        }
     }
 
     fn ended_with_no_window(&self, number: u32, exit: &Exit) {
         self.0
             .say(format!("{number} ended with no window: {exit:?}"));
+    }
+
+    fn no_window(&self) {
+        self.0.say("no window".into());
     }
 }
 
@@ -278,6 +287,7 @@ async fn a_window_back_after_its_link_ended_reads_the_board_as_the_host_kept_it(
         host.kept.said(),
         [
             format!("open {PROJECT}"),
+            "no window".to_owned(),
             "1 ended with no window: Code(3)".to_owned()
         ],
         "one channel, kept open while the window was gone"
@@ -351,7 +361,7 @@ async fn a_project_whose_program_ended_but_was_not_closed_is_kept_after_its_link
 
     assert_eq!(
         host.kept.said(),
-        [format!("open {PROJECT}")],
+        [format!("open {PROJECT}"), "no window".to_owned()],
         "the channel stays: a window that comes back reads how the program ended"
     );
     let back = host.holding().await;
@@ -376,6 +386,43 @@ async fn a_project_whose_programs_were_all_closed_is_let_go_of_with_the_last_lin
     let deadline = Instant::now() + PATIENCE;
     while host.kept.said().last().map(String::as_str) != Some("closed") {
         assert!(Instant::now() < deadline, "the channel was never closed");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// A kept board too large to hand over is refused in words (#2006), so the window can say so
+/// rather than start from its own copy unawares.
+#[tokio::test]
+async fn a_board_too_large_to_hand_over_is_refused_saying_so() {
+    let host = a_host();
+    let window = host.holding().await;
+    *host.kept.too_large.lock().unwrap() = Some("it is 70000 bytes".into());
+
+    let refused = window.board().await.unwrap_err();
+
+    let refusal = refused.refusal().expect("a refusal");
+    assert_eq!(refusal.code, session::TOO_LARGE);
+    assert!(refusal.why.contains("70000 bytes"), "{}", refusal.why);
+}
+
+/// The window's link ends while lines it was handed wait for its reply (#2006): the channel is
+/// told no window holds the project now, so the lines are heard by the board it keeps. A link
+/// that ends while another still holds the project tells it nothing.
+#[tokio::test]
+async fn a_channel_is_told_once_no_window_holds_its_project() {
+    let host = a_host();
+    let staying = host.holding().await;
+    staying.starts().await;
+    drop(host.holding().await);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(host.kept.said(), [format!("open {PROJECT}")]);
+
+    drop(staying);
+    host.until_no_window_holds_it().await;
+
+    let deadline = Instant::now() + PATIENCE;
+    while host.kept.said().last().map(String::as_str) != Some("no window") {
+        assert!(Instant::now() < deadline, "the channel was never told");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }

@@ -1224,8 +1224,8 @@ export const PlaneView = memo(function PlaneView({
    *  said at the launch, then what this window has told it since (#1486, #1489). The one
    *  mechanism: whatever was not put back is said to it as gone. */
   const lastShownSaid = useRef<ReadonlyMap<number, PaneSaid>>(new Map());
-  /** Settles the notes a relaunch says about its chats (`resumed`, `guessed`, `fresh`) against
-   *  the chats the core put back. */
+  /** Settles the notes a relaunch says about its chats (`resumed`, `guessed`, `fresh`,
+   *  `untaken`) against the chats the core put back. */
   const settleChatNotes = useCallback(
     (open: readonly OpenChat[]) => {
       for (const family of CHAT_NOTES) {
@@ -7841,6 +7841,18 @@ export const PlaneView = memo(function PlaneView({
           <strong>{frontTab.name}</strong> was resumed where it left off
         </Notice>
       )}
+      {/* A chat reattached in the session host whose state the host could not hand over
+          (#2006): what the window shows of it is right again from its next report. Why is in
+          the log, not here. */}
+      {frontTab && frontChat?.untaken && !dismissed.has(`chat-untaken:${frontChat.session}`) && (
+        <Notice
+          cause={`chat-untaken:${frontChat.session}`}
+          onDismiss={() => dismiss(`chat-untaken:${frontChat.session}`)}
+        >
+          <strong>{frontTab.name}</strong> is back, but purlis could not bring back what it was
+          doing while the window was closed. Its state here is right again from its next report.
+        </Notice>
+      )}
       {/* What a Resume from a session record had to guess because the record could not say
           it — its profile, its directory (SI-8e) — said beside what happened, never instead. */}
       {frontTab && frontChat?.guessed && !dismissed.has(`chat-guessed:${frontChat.session}`) && (
@@ -9214,7 +9226,7 @@ function withoutKey<T>(record: Readonly<Record<number, T>>, key: number): Record
 const NOT_YET = "It is waiting on a permission prompt, so it restarts once that is answered.";
 
 /** The notes a relaunch or a Resume says about a chat, by the family of their cause. */
-const CHAT_NOTES = ["chat-resumed", "chat-guessed", "chat-fresh"] as const;
+const CHAT_NOTES = ["chat-resumed", "chat-guessed", "chat-fresh", "chat-untaken"] as const;
 
 /**
  * **The cause of one note about a chat**, or none when the chat has nothing to say of that kind.
@@ -9231,6 +9243,7 @@ function chatNote(family: (typeof CHAT_NOTES)[number], chat: OpenChat): string |
   if (family === "chat-resumed")
     return chat.resumed ? `chat-resumed:${chat.session}:${chat.resumed}` : undefined;
   if (family === "chat-guessed") return chat.guessed ? `chat-guessed:${chat.session}` : undefined;
+  if (family === "chat-untaken") return chat.untaken ? `chat-untaken:${chat.session}` : undefined;
   return chat.fresh ? `chat-fresh:${chat.session}` : undefined;
 }
 

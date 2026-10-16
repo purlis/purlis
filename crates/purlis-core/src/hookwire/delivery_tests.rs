@@ -396,6 +396,7 @@ fn a_line_the_host_took_late_while_the_window_heard_it_and_its_hook_spooled_is_r
                 })
             },
             heard_from: Box::new(|_| {}),
+            unheard: Box::new(|_| {}),
         },
     );
     *host.lock().unwrap() = Some(Arc::clone(&relaying));

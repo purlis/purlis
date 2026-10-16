@@ -330,6 +330,46 @@ fn a_window_over(
 /// built everywhere, so a change that breaks it is seen on every machine.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn in_a_host_process_at(home: &Path) -> Target {
+    let HostHome {
+        place,
+        inherited,
+        log,
+    } = a_host_home(home);
+    // Held to be ended from here on, so a host that never says it is ready is ended too when
+    // the wait below fails the test.
+    let host = Ends(crate::sessionhost::SessionHost::default());
+    host.0.start_at(place, {
+        let inherited = inherited.clone();
+        move || {
+            let mut command = crate::sessionhost::command(&charter_app());
+            command.env_clear().envs(inherited.iter().cloned());
+            Ok(command)
+        }
+    });
+    let connection = host.0.connection();
+    connection
+        .wait(PATIENCE)
+        .expect("the window connects to its host");
+    let mut target = a_window_over(connection, inherited, log);
+    target.savers_here = 0;
+    target.kill_the_host = Some(host.0.killer());
+    // Ended before the folders it serves from go.
+    target._keeps.insert(0, Box::new(host));
+    target
+}
+
+/// Where a session host process of a test's serves from, and what it is started with: its
+/// config home, data home and runtime directory in `home`, and a `PATH` that leads with a
+/// folder the test's own does not.
+struct HostHome {
+    place: purlis_host::Place,
+    inherited: Vec<(OsString, OsString)>,
+    /// Where it keeps the device's event log.
+    log: PathBuf,
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn a_host_home(home: &Path) -> HostHome {
     use std::os::unix::fs::PermissionsExt;
     let (run, config, data) = (home.join("run"), home.join("config"), home.join("data"));
     for folder in [&run, &config, &data] {
@@ -371,27 +411,11 @@ fn in_a_host_process_at(home: &Path) -> Target {
         purlis_core::hostsocket::socket_for(Some(run.as_os_str())),
         purlis_core::machine::charterd(&config),
     );
-    // Held to be ended from here on, so a host that never says it is ready is ended too when
-    // the wait below fails the test.
-    let host = Ends(crate::sessionhost::SessionHost::default());
-    host.0.start_at(place, {
-        let inherited = inherited.clone();
-        move || {
-            let mut command = crate::sessionhost::command(&charter_app());
-            command.env_clear().envs(inherited.iter().cloned());
-            Ok(command)
-        }
-    });
-    let connection = host.0.connection();
-    connection
-        .wait(PATIENCE)
-        .expect("the window connects to its host");
-    let mut target = a_window_over(connection, inherited, log);
-    target.savers_here = 0;
-    target.kill_the_host = Some(host.0.killer());
-    // Ended before the folders it serves from go.
-    target._keeps.insert(0, Box::new(host));
-    target
+    HostHome {
+        place,
+        inherited,
+        log,
+    }
 }
 
 /// [`in_a_host_process_at`] in a folder of its own.
@@ -499,12 +523,17 @@ struct Pane {
 
 impl Pane {
     fn on(target: &Target, id: u32) -> Pane {
+        Pane::of(target.sessions.as_ref(), id)
+    }
+
+    /// A pane of chat `id`, which `sessions` runs.
+    fn of(sessions: &dyn SessionHost, id: u32) -> Pane {
         let seen = Arc::new(Mutex::new(String::new()));
         let sink: Sink = {
             let seen = Arc::clone(&seen);
             Box::new(move |text: String| seen.lock().expect("the pane").push_str(&text))
         };
-        target.sessions.watch(id, sink).expect("a view opens");
+        sessions.watch(id, sink).expect("a view opens");
         Pane { seen }
     }
 
@@ -1404,7 +1433,7 @@ static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
 
 /// A `local-ui` link to `hosting` through a stream a test can cut, the cut kept in `cuts`.
-async fn a_cuttable_link(
+pub(crate) async fn a_cuttable_link(
     hosting: purlis_host::Hosting,
     cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
 ) -> Result<HostLink, String> {
@@ -1580,6 +1609,247 @@ fn a_window_killed_and_back_reads_every_chats_state_and_needs_you_as_the_host_ke
     drop(board);
     assert!(back.told_it_needs_you(ended_its_turn));
     assert!(back.told_it_needs_you(speaks_while_away));
+}
+
+// ---------------------------------------------------------------------------------------
+// a window killed and started again reattaches every chat (#2006, #646)
+// ---------------------------------------------------------------------------------------
+
+/// How many chats the reattach is measured with (#646, spec #1974's measured claim).
+const TWENTY: usize = 20;
+
+/// Twenty chats started by a window, each writing before the window goes and again once
+/// `speak` exists, with nobody attached, then touching its number in `spoke`, then echoing a
+/// line typed to it. Their numbers, in order.
+fn twenty_chats_in(sessions: &dyn SessionHost, speak: &Path, spoke: &Path) -> Vec<u32> {
+    let script = format!(
+        "printf 'chat %s before.' \"$PURLIS_SESSION_ID\"; \
+         while [ ! -e '{speak}' ]; do sleep 0.1; done; \
+         printf ' while away.'; touch '{spoke}'/\"$PURLIS_SESSION_ID\"; \
+         read line; printf ' got %s.' \"$line\"; read line",
+        speak = speak.display(),
+        spoke = spoke.display(),
+    );
+    let numbers: Vec<u32> = (0..TWENTY)
+        .map(|_| {
+            sessions
+                .open(None, &a_shell(&script), &|_| {})
+                .expect("it starts")
+        })
+        .collect();
+    for id in &numbers {
+        Pane::of(sessions, *id).shows(&format!("chat {id} before."));
+    }
+    numbers
+}
+
+/// The window is gone: each chat writes again with nobody attached.
+fn they_speak_while_no_window_is_there(speak: &Path, spoke: &Path) {
+    std::fs::write(speak, "").expect("the chats are told to speak");
+    until("every chat spoke with no window there", || {
+        std::fs::read_dir(spoke).map_or(0, Iterator::count) == TWENTY
+    });
+}
+
+/// **Every chat comes back with nothing lost**: the window that came back reattaches each, under
+/// its own number, without starting it again; its pane draws what it wrote before the window
+/// went and while it was gone; and what is typed to it reaches it.
+fn every_chat_comes_back_with_nothing_lost(back: &dyn SessionHost, numbers: &[u32]) {
+    let started = Instant::now();
+    for id in numbers {
+        assert!(back.left_running(*id), "chat {id} is in the host");
+        assert_eq!(back.reattach(*id, &|_| {}), Ok(*id));
+    }
+    for id in numbers {
+        let pane = Pane::of(back, *id);
+        pane.shows(&format!("chat {id} before. while away."));
+        back.input(*id, b"hello\n").expect("typed to it");
+        pane.shows(" got hello.");
+    }
+    assert_eq!(back.running(), numbers, "every tab, and no other");
+    assert!(
+        started.elapsed() < Duration::from_secs(30),
+        "twenty chats came back in {:?}",
+        started.elapsed()
+    );
+}
+
+/// **The host's own code, over in-memory links** (#2006): a window whose link is cut as a
+/// crash cuts it, and a window back on the same host.
+#[test]
+fn twenty_live_chats_reattach_after_the_window_is_killed_in_the_host() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let kept = tempfile::tempdir().expect("the host's folder");
+    let data = tempfile::tempdir().expect("the host's data");
+    let hosting = a_host(kept.path(), data.path());
+    let (_project, root) = a_project();
+    let signals = tempfile::tempdir().expect("a folder for the chats' signals");
+    let (speak, spoke) = (signals.path().join("speak"), signals.path().join("spoke"));
+    std::fs::create_dir(&spoke).expect("the folder each chat says it spoke in");
+
+    let first = AWindow::on(&hosting, &root, &runtime);
+    let numbers = twenty_chats_in(&first.sessions, &speak, &spoke);
+    first.cut();
+    std::mem::forget(first.sessions);
+    they_speak_while_no_window_is_there(&speak, &spoke);
+
+    let back = AWindow::on(&hosting, &root, &runtime);
+    every_chat_comes_back_with_nothing_lost(&back.sessions, &numbers);
+    back.sessions.end_all();
+}
+
+/// **A real host process** (#2006, #646): the window's binary started as its session host by a
+/// window that is then killed outright (its link and the host's standard input both gone, with
+/// no quit), and a window started again, which finds the host serving and reattaches to it. On
+/// Linux, as the host process's target is.
+#[cfg(target_os = "linux")]
+#[test]
+fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
+    let home = tempfile::tempdir().expect("the host's home");
+    let HostHome {
+        place, inherited, ..
+    } = a_host_home(home.path());
+    let (_project, root) = a_project();
+    let signals = tempfile::tempdir().expect("a folder for the chats' signals");
+    let (speak, spoke) = (signals.path().join("speak"), signals.path().join("spoke"));
+    std::fs::create_dir(&spoke).expect("the folder each chat says it spoke in");
+    let starts = {
+        let inherited = inherited.clone();
+        move || {
+            let mut command = crate::sessionhost::command(&charter_app());
+            command.env_clear().envs(inherited.iter().cloned());
+            Ok(command)
+        }
+    };
+
+    let first = KilledWindow::start(&place, &root, starts.clone());
+    let numbers = twenty_chats_in(&first.sessions, &speak, &spoke);
+    let first = first.killed();
+    they_speak_while_no_window_is_there(&speak, &spoke);
+
+    let back = Ends(crate::sessionhost::SessionHost::default());
+    purlis_core::hostsocket::make_the_folder(&place.socket).expect("the socket's folder");
+    back.0.start_at(place, starts);
+    let sessions = HostedSessions::new(back.0.connection(), &root);
+    every_chat_comes_back_with_nothing_lost(&sessions, &numbers);
+    // The window quits: the host ends every chat and stops, and so ends the first one's host.
+    drop(back);
+    first.ended_by_the_quit();
+}
+
+/// A window that starts the window's binary as its session host itself, as the window does,
+/// over a link a test can cut, and is then killed outright.
+#[cfg(target_os = "linux")]
+struct KilledWindow {
+    host: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    sessions: HostedSessions,
+    /// What cuts each of its links.
+    cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+    _runtime: tokio::runtime::Runtime,
+}
+
+#[cfg(target_os = "linux")]
+impl KilledWindow {
+    /// A window on the project at `root`, whose host `starts` starts at `place`.
+    fn start(
+        place: &purlis_host::Place,
+        root: &Path,
+        starts: impl FnOnce() -> Result<std::process::Command, String>,
+    ) -> KilledWindow {
+        use std::io::BufRead;
+        purlis_core::hostsocket::make_the_folder(&place.socket).expect("the socket's folder");
+        let mut host = purlis_core::forklock::spawn(&mut starts().expect("a command"))
+            .expect("the host starts");
+        let stdin = host.stdin.take();
+        let mut ready = String::new();
+        std::io::BufReader::new(host.stdout.take().expect("its output"))
+            .read_line(&mut ready)
+            .expect("it says it is ready");
+        assert_eq!(ready.trim_end(), purlis_host::READY);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let credential =
+            purlis_session_protocol::auth::Credential::read(&place.credentials, Scope::LocalUi)
+                .expect("the window's credential");
+        let cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>> = Arc::default();
+        let linked = {
+            let (socket, credential, cuts) = (place.socket.clone(), credential, Arc::clone(&cuts));
+            move || {
+                let (socket, credential, cuts) =
+                    (socket.clone(), credential.clone(), Arc::clone(&cuts));
+                async move {
+                    let stream = tokio::net::UnixStream::connect(&socket)
+                        .await
+                        .map_err(|why| why.to_string())?;
+                    let (windows_end, near) = tokio::io::duplex(1 << 20);
+                    let cut = tokio::spawn(async move {
+                        let (mut near, mut stream) = (near, stream);
+                        let _ = tokio::io::copy_bidirectional(&mut near, &mut stream).await;
+                    })
+                    .abort_handle();
+                    cuts.lock().expect("the cuts").push(cut);
+                    let linked =
+                        link::connect(windows_end, session::speaks(), Scope::LocalUi, &credential)
+                            .await
+                            .map_err(|why| why.to_string())?;
+                    HostLink::over(linked, tokio::runtime::Handle::current(), || {}).await
+                }
+            }
+        };
+        let link = runtime
+            .block_on(linked())
+            .expect("the window speaks to the host");
+        let dial: crate::hostedsessions::Dial = {
+            let handle = runtime.handle().clone();
+            Arc::new(move |within| crate::hostedsessions::open_within(&handle, within, linked()))
+        };
+        let connection = Arc::new(Connection::default());
+        connection.ready(Arc::new(link), dial);
+        KilledWindow {
+            host,
+            stdin,
+            sessions: HostedSessions::new(connection, root),
+            cuts,
+            _runtime: runtime,
+        }
+    }
+
+    /// Killed outright: its link and the host's standard input go, and nothing says goodbye.
+    fn killed(mut self) -> KilledWindow {
+        for cut in self.cuts.lock().expect("the cuts").iter() {
+            cut.abort();
+        }
+        drop(self.stdin.take());
+        self
+    }
+
+    /// The host this window started ended once the window that came back quit.
+    fn ended_by_the_quit(mut self) {
+        let deadline = Instant::now() + PATIENCE;
+        while !matches!(self.host.try_wait(), Ok(Some(_))) {
+            assert!(Instant::now() < deadline, "the host outlived the quit");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for KilledWindow {
+    fn drop(&mut self) {
+        // However the test ends: CI's orphan check fails a run that leaves a host alive.
+        if !matches!(self.host.try_wait(), Ok(Some(_))) {
+            let _ = self.host.kill();
+            let _ = self.host.wait();
+        }
+    }
 }
 
 mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart {
