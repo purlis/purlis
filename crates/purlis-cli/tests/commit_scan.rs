@@ -14,10 +14,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::{Mutex, mpsc};
-use std::time::Duration;
 
 use purlis_core::githooks::GitHooks;
-use purlis_core::hookwire::{CHAT_ENV, CommitRefused, Hearing, Listener, SOCKET_ENV, TOKEN_ENV};
+use purlis_core::hookwire::{
+    CHAT_ENV, CommitRefused, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, spool,
+};
 
 const CHARTER: &str = support::PURLIS;
 
@@ -32,6 +33,7 @@ fn key() -> String {
 struct Chat {
     _reading: purlis_core::hookwire::Reading,
     heard: mpsc::Receiver<CommitRefused>,
+    socket: PathBuf,
     env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     repo: PathBuf,
     dir: tempfile::TempDir,
@@ -79,6 +81,7 @@ impl Chat {
             repo,
             env,
             heard,
+            socket,
             _reading: reading,
         };
         chat.git(&["init", "-q", "-b", "main", "."]);
@@ -122,6 +125,48 @@ impl Chat {
         String::from_utf8_lossy(&self.git(&["rev-parse", "HEAD"]).stdout).into_owned()
     }
 
+    /// What the app was told of refusals, once the git that refused has returned: the lines its
+    /// hearer recorded live, and the lines the hook spooled beside the socket.
+    ///
+    /// **Nothing is waited for.** git returns once its hook has exited, and the hook exits only
+    /// once the app has said it recorded the line, which is after its hearer ran, or once the
+    /// line is durable in the chat's spool (`hookwire::deliver`, FD-30). On a loaded machine the
+    /// app can be slower than the hook waits (`A_NOTICE_TAKES_AT_MOST`, 250 ms), and the line is
+    /// then the spool's: a test that listened on the live channel alone waited for a line that
+    /// was never coming (#2255).
+    ///
+    /// A line can be in both: the hook stopped waiting and spooled it, and the app, only slow,
+    /// recorded it too. The app's drain knows that copy by its delivery and records it once, so
+    /// here it is counted once.
+    fn told(&self) -> Vec<CommitRefused> {
+        let mut told: Vec<CommitRefused> = self.heard.try_iter().collect();
+        spool::drain(&spool::dir_for(&self.socket), &mut |item| {
+            if let spool::Drained::Line {
+                line: spool::Spooled::Refused(refused),
+                ..
+            } = item
+            {
+                told.push(refused);
+            }
+            Ok(())
+        })
+        .expect("the spool drains");
+        let mut once = Vec::new();
+        for refused in told {
+            if !once.contains(&refused) {
+                once.push(refused);
+            }
+        }
+        once
+    }
+
+    /// The one refusal the app was told of ([`Chat::told`]).
+    fn refused(&self) -> CommitRefused {
+        let mut told = self.told();
+        assert_eq!(told.len(), 1, "one refusal, live or spooled: {told:?}");
+        told.remove(0)
+    }
+
     /// The repository's own hook `name`, which writes a mark when git runs it.
     fn own_hook(&self, name: &str) -> PathBuf {
         let mark = self.dir.path().join(format!("{name} ran"));
@@ -161,7 +206,7 @@ fn a_planted_key_and_email_are_refused_before_commit_on_a_repo_outside_the_plane
         "{said}"
     );
 
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert_eq!(heard.chat, 7);
     assert!(heard.commit_refused.contains("config.py:1"), "{heard:?}");
     assert!(heard.commit_refused.contains("and 1 more"), "{heard:?}");
@@ -184,7 +229,7 @@ fn a_credential_in_a_commits_own_message_is_refused_before_commit() {
     let said = String::from_utf8_lossy(&ran.stderr);
     assert!(said.contains("the commit message:3"), "{said}");
     assert!(!said.contains(&key()), "{said}");
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert!(
         heard.commit_refused.contains("the commit message:3"),
         "{heard:?}"
@@ -314,7 +359,7 @@ fn a_planted_iban_id_and_vendor_token_are_refused_and_never_shown() {
             "the refusal showed a value: {said}"
         );
     }
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     for value in [&iban, &cpf, &token] {
         assert!(!heard.commit_refused.contains(value.as_str()), "{heard:?}");
     }
@@ -347,7 +392,8 @@ fn a_clean_commit_goes_through_and_the_repositorys_own_hooks_still_run() {
     assert!(ran.status.success(), "{ran:?}");
     assert!(pre.exists(), "the repository's own pre-commit ran");
     assert!(msg.exists(), "the repository's own commit-msg ran");
-    assert!(chat.heard.recv_timeout(Duration::from_millis(300)).is_err());
+    let told = chat.told();
+    assert!(told.is_empty(), "{told:?}");
 }
 
 #[test]
@@ -412,7 +458,7 @@ fn a_chat_cannot_commit_an_allowlist_entry_for_its_own_finding() {
     assert_eq!(chat.head(), before);
     let said = String::from_utf8_lossy(&ran.stderr);
     assert!(said.contains("only a commit made outside a chat"), "{said}");
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert!(heard.commit_refused.contains("allowlist"), "{heard:?}");
 
     // Nor on its own, in a commit that finds nothing else.
@@ -511,7 +557,7 @@ fn a_planted_secret_the_commit_scan_never_saw_is_refused_before_push() {
     assert!(said.contains("ghp_****"), "{said}");
     assert!(!said.contains(&key()), "{said}");
 
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert_eq!(heard.chat, 7);
     assert!(
         heard.commit_refused.starts_with("push refused in"),
@@ -617,7 +663,7 @@ fn a_chat_cannot_push_an_allowlist_change_even_one_the_operator_committed() {
         said.contains("The operator pushes an allowlist change themselves"),
         "{said}"
     );
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert!(
         heard.commit_refused.starts_with("push refused in")
             && heard.commit_refused.contains("allowlist"),

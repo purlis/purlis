@@ -49,30 +49,44 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
-  # TEMPORARY probe for #2255, removed before ready: commit_scan's tests 50 times beside four
-  # CPU burners per core.
+  # TEMPORARY probe for #2255, removed before ready: commit_scan's tests 30 times while the
+  # "rust tests (part 2 of 2)" partition runs over and over beside them, plus a CPU burner per core.
   flaky-probe-2255:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tauri's Linux build dependencies, and the sandbox's programs
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+          packages: bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: false
-      - run: cargo test -p purlis-cli --locked --test commit_scan --no-run
-      - name: Loop under load
+      - run: mkdir -p app/dist
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      - run: cargo nextest run --workspace --locked --no-run
+      - name: Loop under the partition's load
         run: |
           pids=()
-          for _ in $(seq $(( $(nproc) * 4 ))); do (while :; do :; done) & pids+=($!); done
+          for _ in $(seq $(nproc)); do (while :; do :; done) & pids+=($!); done
+          (while :; do cargo nextest run --workspace --locked --profile ci --partition count:2/2 > partition.log 2>&1; done) & pids+=($!)
+          sleep 30
           failed=0
-          for i in $(seq 50); do
-            if ! cargo test -p purlis-cli --locked --test commit_scan -q -- --test-threads=16 > run.log 2>&1; then
-              failed=$((failed + 1)); echo "run $i FAILED"; grep -E "panicked|FAILED|Timeout" run.log | head -20
+          for i in $(seq 30); do
+            if ! cargo nextest run -p purlis-cli --locked --test commit_scan --no-fail-fast > run.log 2>&1; then
+              failed=$((failed + 1)); echo "run $i FAILED"; grep -E "FAIL|panicked|Timeout|one refusal" run.log | head -20
+            else
+              echo "run $i passed: $(grep -E 'Summary' run.log)"
             fi
           done
-          kill "${pids[@]}"
-          echo "failed runs: $failed of 50"
+          kill "${pids[@]}" || true
+          echo "failed runs: $failed of 30"
           test "$failed" -eq 0
   # The Rust suite in two parts on two runners, each building the tests and running half of
   # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
