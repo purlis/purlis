@@ -37,8 +37,9 @@
 
   /* The words' weights, line heights and monospace family (#1920): what a text role
      (`primitives/text.css`) is built from beside a size and a theme's colour. Three weights:
-     regular, medium and strong. A line height is a share of the text's own size, so it has no unit: `body` is the
-     window's (`:root` in `App.css`), `tight` a compact line's. */
+     regular, medium (a form's label) and strong. A line height is a share of the text's own
+     size, so it has no unit: `body` is the window's (`:root` in `App.css`), `tight` a compact
+     line's. */
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-strong: 600;
