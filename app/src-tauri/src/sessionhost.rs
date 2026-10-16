@@ -674,6 +674,18 @@ impl SessionHost {
         Arc::clone(&self.connection)
     }
 
+    /// What kills the host running now outright, as a crash or `kill -9` ends it, leaving the
+    /// window to see it go: the behaviour suite's crash test (#2007).
+    #[cfg(test)]
+    pub(crate) fn killer(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let held = Arc::clone(&self.held);
+        Arc::new(move || {
+            if let Some(host) = held.lock().unwrap_or_else(PoisonError::into_inner).as_mut() {
+                let _ = host.child.kill();
+            }
+        })
+    }
+
     /// What the window says while the host is failing, and its Try again (#2007).
     pub fn failing(&self) -> Arc<crate::hostfailing::HostFailing> {
         Arc::clone(&self.supervision.failing)

@@ -90,6 +90,8 @@ pub(crate) struct Target {
     pub log: PathBuf,
     /// The window's link to the host, on a host's target: what the host is asked directly.
     pub host: Option<Arc<Connection>>,
+    /// What kills the host outright, on a host process's target (#2007).
+    pub kill_the_host: Option<Arc<dyn Fn() + Send + Sync>>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
@@ -152,6 +154,7 @@ pub(crate) fn in_the_window() -> Target {
         savers_here: 1,
         log: data.path().to_path_buf(),
         host: None,
+        kill_the_host: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
 }
@@ -336,6 +339,7 @@ fn a_window_over(
         savers_here: 1,
         log,
         host: Some(connection),
+        kill_the_host: None,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -410,6 +414,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
         .expect("the window connects to its host");
     let mut target = a_window_over(connection, inherited, log);
     target.savers_here = 0;
+    target.kill_the_host = Some(host.0.killer());
     // Ended before the folders it serves from go.
     target._keeps.insert(0, Box::new(host));
     target
@@ -1585,6 +1590,74 @@ mod the_host_refuses_a_start_while_stopped_and_holds_the_stop_across_its_restart
             super::in_a_host_process_at,
         );
     }
+}
+
+/// **The session host killed outright** (#2007, ADR 0068 §3, FD-29's chaos test): with twenty
+/// chats in it, the host's process is killed as `kill -9` kills it. Within thirty seconds every
+/// chat has ended with it (the window says which, failed or hibernated, from its board), and the
+/// window's supervisor has a new host serving, in which each chat starts again: Resume is one
+/// start. A host process's target only: there is a process to kill. The test ends the host it
+/// started (`Ends`), and the one it replaced ended its programs with its terminal.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
+    const CHATS: usize = 20;
+    let target = in_a_host_process();
+    let ends = told_of_ends(&target);
+    let chats: Vec<u32> = (0..CHATS)
+        .map(|n| {
+            let id = target
+                .sessions
+                .open(
+                    None,
+                    &a_shell(&format!("printf 'CHAT-{n}-READY'; read line")),
+                    &|_| {},
+                )
+                .expect("it starts");
+            Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
+            id
+        })
+        .collect();
+    let killed = Instant::now();
+
+    (target.kill_the_host.as_ref().expect("a host process"))();
+
+    let within = Duration::from_secs(30);
+    let host = target.host.as_ref().expect("the host's target");
+    while !(ends.lock().expect("the ends").len() == CHATS && host.wait(Duration::ZERO).is_ok()) {
+        assert!(
+            killed.elapsed() < within,
+            "after {within:?}, {} of {CHATS} chats were told they ended, and the host serves: {}",
+            ends.lock().expect("the ends").len(),
+            host.wait(Duration::ZERO).is_ok()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    for chat in &chats {
+        assert!(
+            target.sessions.lost_with_its_host(*chat),
+            "chat {chat} did not end with its host"
+        );
+    }
+    // Resume: each chat starts again, in the host that took the old one's place.
+    for (n, chat) in chats.iter().enumerate() {
+        let again = target
+            .sessions
+            .open(
+                None,
+                &a_shell(&format!("printf 'CHAT-{n}-BACK'; read line")),
+                &|_| {},
+            )
+            .expect("it starts again");
+        Pane::on(&target, again).shows(&format!("CHAT-{n}-BACK"));
+        target.sessions.close(*chat).expect("the lost one closes");
+        target.sessions.close(again).expect("it closes");
+    }
+    assert!(
+        killed.elapsed() < within,
+        "twenty chats took {:?} to come back",
+        killed.elapsed()
+    );
 }
 
 /// **The event log has one writer** (#2003): what a chat's hook says is written once, by the
