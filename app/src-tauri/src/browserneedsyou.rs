@@ -167,7 +167,7 @@ impl NeedsYou {
     fn end_where(&self, gone: impl Fn(&Waiting) -> bool, now: u64) -> usize {
         let ended: Vec<Waiting> = {
             let mut waiting = self.lock();
-            let (ended, kept) = waiting.drain(..).partition(|one| gone(one));
+            let (ended, kept) = waiting.drain(..).partition(&gone);
             *waiting = kept;
             ended
         };

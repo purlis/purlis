@@ -259,8 +259,11 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
     let call = |asked: Browsing| {
         let browse = BrowseAsk {
             chat: 4,
-            browser: Some("b1".into())
-                .filter(|_| !matches!(asked, Browsing::Act(Act::Open { .. }))),
+            browser: if matches!(asked, Browsing::Act(Act::Open { .. })) {
+                None
+            } else {
+                Some("b1".into())
+            },
             call_id: format!(
                 "c-{}",
                 calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed)

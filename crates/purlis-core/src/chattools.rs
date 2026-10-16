@@ -584,8 +584,8 @@ pub static TOOLS: [Tool; 18] = [
                       harness's own prompt. Never ask for a password, token or other secret: \
                       a credential is used through `purlis secret`, never typed in. When a page \
                       in one of your browsers needs a person (a CAPTCHA, a second factor, a \
-                      consent page), name that browser in `browser`: purlis asks the person to \
-                      take it over and this returns at once. Leave that browser alone; you are \
+                      consent page), name that browser in `browser`: the person is asked to \
+                      take it over, and this returns at once. Leave that browser alone; you are \
                       told when they hand it back, and never what they did there.",
         schema: || {
             json!({

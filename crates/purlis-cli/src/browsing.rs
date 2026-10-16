@@ -69,10 +69,11 @@ fn the_person_was_asked(
     {
         return browsed.note.clone().ok_or_else(|| OLDER_APP.to_owned());
     }
-    match what_the_app_said(replied).0 {
-        Ok(_) => Err(OLDER_APP.to_owned()),
-        Err(why) => Err(why),
-    }
+    // Any other answer is the app's refusal in its own words, or an app too old to raise it.
+    Err(what_the_app_said(replied)
+        .0
+        .err()
+        .unwrap_or_else(|| OLDER_APP.to_owned()))
 }
 
 /// What the app's reply, or the failure to get one, tells the model.
