@@ -59,6 +59,9 @@ is a setting, reviewed like one.
   theme's hard-floor failures as findings.
 - **The consent surfaces and the state marks** are themeable under the engine's hard floors, and
   their wording, icons and placement are purlis's (ADR 0097 §6).
+- **The consent floors hold for every theme, whatever its source**: when a theme's consent-surface or state-mark colours
+  break a consent floor, the engine draws purlis's own values for those tokens, with a Notice
+  naming the floor; the rest of the theme draws as written.
 - **No theme reaches a secret, a permission, a hook or a harness setting.** ADR 0041's table
   stands.
 

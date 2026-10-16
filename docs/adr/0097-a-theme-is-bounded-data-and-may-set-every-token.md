@@ -49,7 +49,7 @@ person's own, a project's, a workspace's or an extension's.
 
 A value outside its type or its bound refuses the theme, which is drawn as Purlis with a Notice
 that says what is wrong. A contrast failure is a warning: the theme's author decides what is good
-enough for them.
+enough for them. The one exception is the consent floors (§6), which hold for every theme.
 
 ### 3. ADR 0041's four properties hold
 
@@ -81,9 +81,7 @@ One theme engine in the Rust core reads, validates, resolves, checks, imports an
 theme, and every surface calls it: the window, the CLI, the skill's specimen and a draft's hard
 floors. The window receives a resolved theme and its complaints and draws them.
 
-### 6. Hard floors and the person's settings are not a theme's
-
-Some things no theme decides:
+### 6. What holds whatever a theme says
 
 - **Hard floors**: primary text on every surface at 3:1 or more and a focus ring visible against
   its surfaces, plus the short list the engine keeps. A theme draft that breaks one is never
@@ -91,7 +89,12 @@ Some things no theme decides:
 - **The consent surfaces and the state marks are in the vocabulary, under hard floors of their
   own.** The consent surfaces are the asks, Allow and Keep blocked, and needs-you. Beside the
   general floors, the engine's list holds that an ask contrasts with its surface, that Allow is
-  distinguishable from Keep blocked, and that danger is distinguishable from primary.
+  distinguishable from Keep blocked, and that danger is distinguishable from primary. These are
+  the consent floors.
+- **The consent floors hold for every theme**: when a theme's consent-surface or state-mark colours
+  break a consent floor, the engine draws purlis's own values for those tokens, with a Notice
+  naming the floor; the rest of the theme draws as written.
+  Contrast between other tokens stays a warning.
 - **A consent surface's wording, icons and placement are purlis's**, and are not theme data. A
   theme colours a prompt; it cannot draw one.
 - **Density, text size, the font override and reduced motion** are the person's settings, and

@@ -1305,7 +1305,7 @@ enumerator that does not expect them has to guess.
   that theme's own fonts, icons, preview and licence beside it. The name is purlis's at the plane
   root; the theme format itself is the theme engine's, and its schema is published with it.
 - **Status:** **purlis only** (spec #2313, ADR 0097, ADR 0098). A reserved name: purlis reads
-  nothing else under it.
+  only theme folders under it.
 - **Tier:** Plane — committed by `purlis save`, so the team gets the project's themes.
 - **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
   draft, once the person keeps it. purlis creates none of it.
