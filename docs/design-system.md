@@ -873,7 +873,8 @@ window differ, the window was kept and the difference is recorded here for the m
 - **Counts and matches were weight 700** (five rules) and Settings' form labels 500 (two): no
   token names either. The geometry snap rule (#2313, 2026-10-17) takes a weight with no token to
   the nearest one, so the counts on the strips, the rail and the title bar's hand are
-  `--font-weight-strong` now (#2315); the rest move with their surfaces.
+  `--font-weight-strong` now (#2315), and Settings' two form labels, halfway between, take the
+  smaller, `--font-weight-regular` (#2317); the rest move with their surfaces.
 - **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
   It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
 - **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's
