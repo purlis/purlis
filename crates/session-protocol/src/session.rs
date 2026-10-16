@@ -113,7 +113,14 @@ use crate::view::{Limits, Views};
 /// 1.9 added to what `record` carries (#2252): a held run's `begin` may hold the start's trust
 /// event, written just before its `run.started`, and `taken_back` says a held start was put
 /// aside. A window sends a host before 1.9 the trust event on its own, and no `taken_back`.
-pub const VERSION: Version = Version { major: 1, minor: 9 };
+///
+/// 1.10 added the kept board (#2194, CONTEXT.md): `board_moved` tells the host each move the
+/// window made on its copy of a held project's chats and Needs you, and `board`, answered
+/// `board`, reads the host's kept board whole.
+pub const VERSION: Version = Version {
+    major: 1,
+    minor: 10,
+};
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -283,6 +290,16 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         chats: Option<Vec<String>>,
     },
+    /// A move the window made of chat `chat` on its copy of a held project's kept board, for the
+    /// host to make on the kept board too, in the order the window made them (1.10): `moved` is
+    /// the move as the core says it. Answered once made.
+    BoardMoved {
+        project: String,
+        chat: u32,
+        moved: serde_json::Value,
+    },
+    /// A held project's kept board, whole (1.10): answered [`Answer::Board`].
+    Board { project: String },
     /// Start a chat's confinement, its proxy and what runs beside it, from the window's plan
     /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
     /// Boxed: a plan lists every host a chat reaches.
@@ -660,6 +677,8 @@ pub enum Answer {
     Readiness(Readiness),
     /// The number dealt: [`Command::Deal`] (1.3).
     Dealt { number: u32 },
+    /// A held project's kept board, as the core says it: [`Command::Board`] (1.10).
+    Board(serde_json::Value),
     /// Where the confinement it started is: [`Command::Confine`] (1.4).
     Confined(Confined),
     /// The hosts held connections gave up on before an Allow, which the chat is told to retry:
@@ -869,6 +888,8 @@ wire_words!(Command {
     Deal => "deal",
     DealtAlready => "dealt_already",
     ReplyHeard => "reply_heard",
+    BoardMoved => "board_moved",
+    Board => "board",
     Confine => "confine",
     LetGoOfConfinement => "let_go_of_confinement",
     ChangeReach => "change_reach",
@@ -909,6 +930,7 @@ impl Command {
             | Command::FetchProject { .. }
             | Command::MidTurn { .. } => Power::Save,
             Command::ReplyHeard { .. } => Power::Heard,
+            Command::BoardMoved { .. } | Command::Board { .. } => Power::Board,
             Command::Confine(_)
             | Command::LetGoOfConfinement { .. }
             | Command::ChangeReach { .. }
@@ -926,6 +948,7 @@ wire_words!(Answer {
     ProgramStarted => "program_started",
     Readiness => "readiness",
     Dealt => "dealt",
+    Board => "board",
     Confined => "confined",
     ReachChanged => "reach_changed",
     Reach => "reach",
@@ -1328,6 +1351,8 @@ enum Lane {
     Saving(String),
     /// What the window asks the event log to write, in the order it asked (1.8).
     Record,
+    /// The moves and reads of one held project's kept board, by the project (1.10).
+    Board(String),
 }
 
 impl Lane {
@@ -1369,6 +1394,11 @@ impl Lane {
             | Command::FetchProject { project } => Some(Lane::Saving(project.clone())),
             // A run's start before what is written under it.
             Command::Record { .. } => Some(Lane::Record),
+            // A board's moves are made in the order the window made them, and a read of it
+            // follows every move sent before it.
+            Command::BoardMoved { project, .. } | Command::Board { project } => {
+                Some(Lane::Board(project.clone()))
+            }
         }
     }
 }

@@ -85,3 +85,6 @@
 {"call":{"id":43,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
 {"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}
 {"reply":{"re":81,"refused":{"code":"not_recorded","why":"the session host keeps no event log on this machine, so nothing was recorded"}}}
+{"call":{"id":44,"command":"board_moved","project":"01J9PRJCT00000000000000000","chat":7,"moved":{"move":"ignored"}}}
+{"call":{"id":45,"command":"board","project":"01J9PRJCT00000000000000000"}}
+{"reply":{"re":45,"ok":{"board":{"chats":{"7":{"moved_at":12,"chat":{"state":"waiting","needs_you":true}}}}}}}

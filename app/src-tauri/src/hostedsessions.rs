@@ -24,6 +24,11 @@
 //! window's own hearing ([`crate::hooks::Relayed`]), so the board, Needs you and the asks move
 //! as before; the reply goes back the same way. The token never reaches the window.
 //!
+//! **The host keeps each project's board** (#2194). As the window holds a project it takes the
+//! host's board whole, and tells the host each move it makes on its own from then on, so the
+//! host's board outlives the window and a window that holds the project again reads every chat's
+//! state and Needs you as the host kept them.
+//!
 //! **The host holds each chat's confinement** (#1999, `crate::hostedconfinement`): the window
 //! plans a chat's egress proxy from the sandbox it compiled, and the host starts and holds it,
 //! so it outlives the window's link.
@@ -449,6 +454,34 @@ impl HostLink {
         lock(&self.shared.ends).insert(program.to_owned(), tell);
     }
 
+    /// What tells the host each move the window makes on `project`'s board (#2194): sent at
+    /// once, behind the one before, under the board's hold, so the host makes them in the order
+    /// the window did. What the host refuses is logged.
+    fn board_keeper(&self, project: &str) -> purlis_core::state::Keeper {
+        let client = Arc::clone(&self.client);
+        let runtime = self.runtime.clone();
+        let project = project.to_owned();
+        Arc::new(move |chat, moved| {
+            let moved = match serde_json::to_value(moved) {
+                Ok(moved) => moved,
+                Err(why) => {
+                    tracing::warn!("purlis: a move of chat {chat} could not be said: {why}");
+                    return;
+                }
+            };
+            let sent = client.call_now(Command::BoardMoved {
+                project: project.clone(),
+                chat,
+                moved,
+            });
+            runtime.spawn(async move {
+                if let Err(why) = sent.await {
+                    tracing::warn!("purlis: the session host refused a move of its board: {why}");
+                }
+            });
+        })
+    }
+
     /// Hear the lines `project`'s hooks write with `relayed`, from now on.
     fn hear_project(&self, project: &str, relayed: Arc<Relayed>) {
         lock(&self.shared.hearing).insert(project.to_owned(), relayed);
@@ -792,6 +825,15 @@ impl HostedSessions {
         )
     }
 
+    /// Holds the project in the session host now, and takes the board the host keeps for it
+    /// (#2194): what a window that comes back does first, so every chat's state and Needs you
+    /// are as the host kept them. Only the tests hold one so until a window comes back to a
+    /// running host (#2006).
+    #[cfg(test)]
+    pub(crate) fn hold(&self) -> Result<(), String> {
+        self.link().map(|_| ())
+    }
+
     /// The next number the host deals in this project.
     fn dealt_by_the_host(&self) -> Result<u32, String> {
         let (link, project) = self.link()?;
@@ -893,6 +935,28 @@ fn held_on(
             project: project.clone(),
             dealt,
         })?;
+    }
+    // The board the host keeps, taken whole, and each move the window makes from now on told
+    // to it (#2194). A board the host does not answer is none: the window's own goes on, and is
+    // told from now on.
+    if let Some(relayed) = lock(relayed).clone() {
+        let kept = match link.call(Command::Board {
+            project: project.clone(),
+        }) {
+            Ok(Answer::Board(board)) if !board.is_null() => serde_json::from_value(board)
+                .inspect_err(|why| {
+                    tracing::warn!(
+                        "purlis: the board the session host keeps could not be read: {why}"
+                    );
+                })
+                .ok(),
+            Ok(_) => None,
+            Err(why) => {
+                tracing::warn!("purlis: the session host did not answer its board: {why}");
+                None
+            }
+        };
+        relayed.keep_with(link.board_keeper(&project), kept);
     }
     *held = Some(project.clone());
     Ok((link, project))

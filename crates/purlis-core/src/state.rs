@@ -10,13 +10,17 @@
 //! [`run`] is where a RUN's state lives (ADR 0076): nine states, each move naming one cause.
 
 pub mod children;
+pub mod kept;
 pub mod run;
+
+pub use kept::{Keeper, Kept, Move};
 
 use crate::harness::model::{Ask, Began, Item, Said, Session, Turn};
 use crate::hookwire::Conversation;
 
 /// A chat's state, as the sidebar draws it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum State {
     /// No state hook has ever reported. The harness carries none, or has not started.
     Unknown,
@@ -347,7 +351,8 @@ impl Event {
 ///
 /// **Where a new reason goes.** A chat waiting on a dispatch grant is the next one (#1437): a
 /// variant here, raised with [`Board::needs`], and a sentence for it in the window.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Need {
     /// The chat reported, and its report has nowhere to go: the chat that asked for it,
     /// `asker` as the person saw it, has gone. The report is kept for that chat's workspace.
@@ -364,7 +369,7 @@ pub enum Need {
 /// app's own records say at the moment its harness speaks: the tasks below it, and the chat
 /// that dispatched it. The board holds no lineage of its own, so whoever applies a report says
 /// ([`Board::reported_while`]); a report applied with nothing said waits on nothing.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Waits {
     /// How many tasks below it, at any depth, are still working, asking, or owing a report.
     pub tasks: u32,
@@ -390,7 +395,7 @@ impl Waits {
 /// V100-15): it failed, it ended without a report, or it did not start. A needs-you item on
 /// the asking chat that says which task and why, whatever that chat and its other tasks are
 /// doing. A task that finished as done, or was cancelled, is none: it changes a count.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FailedTask {
     /// What names this failure, and nothing else does: its dispatch record's id, which its
     /// finished row carries too, or a word of the app's own for a task that never had a
@@ -409,7 +414,8 @@ pub struct FailedTask {
 }
 
 /// How a task came to nothing ([`FailedTask`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HowFailed {
     /// It reported that it failed, or that it was blocked: it did not do the work.
     Failed,
@@ -490,7 +496,7 @@ pub fn raised(was: Standing, now: Standing) -> bool {
 }
 
 /// One chat's state, and everything that is allowed to move it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Chat {
     state: State,
     /// Whether the harness has asked for the operator, as opposed to merely not running.
@@ -563,7 +569,7 @@ pub struct Chat {
 
 /// Who asked the prompts a chat waits on (#1644): the chat itself, and each helper of its that
 /// asked and has not moved past its prompt.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct Askers {
     /// The chat itself asked.
     own: bool,
@@ -1242,6 +1248,8 @@ impl Default for Chat {
 #[derive(Debug, Default)]
 pub struct Board {
     chats: std::collections::BTreeMap<u32, Tracked>,
+    /// Who is told each move it makes, where another process keeps it too (#2194).
+    told: kept::Told,
 }
 
 /// How many times anything on any board in this process has moved. See [`Board::moved_at`].
@@ -1252,7 +1260,7 @@ pub struct Board {
 /// fifty times an hour ago would read above one that moved once just now.
 static MOVES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Tracked {
     /// The board's count at the last move a reader could see. See [`Board::moved_at`].
     moved_at: u32,
@@ -1446,6 +1454,20 @@ impl Board {
         harness: Option<crate::harness::Harness>,
         conversation: Option<String>,
     ) {
+        self.opened_reporting(
+            number,
+            harness.is_some_and(crate::harness::Harness::reports_its_process),
+            conversation,
+        );
+    }
+
+    /// [`Board::opened`], by what decides how its reports are judged: whether its harness
+    /// reports its own process.
+    fn opened_reporting(&mut self, number: u32, reports_pid: bool, conversation: Option<String>) {
+        self.tell(number, || Move::Opened {
+            reports_its_process: reports_pid,
+            conversation: conversation.clone(),
+        });
         let moved_at = self.moved();
         self.chats.insert(
             number,
@@ -1455,13 +1477,14 @@ impl Board {
                 conversation,
                 pid: None,
                 adopted: false,
-                reports_pid: harness.is_some_and(crate::harness::Harness::reports_its_process),
+                reports_pid,
             },
         );
     }
 
     /// The chat is gone from the app altogether — closed, not merely ended.
     pub fn closed(&mut self, number: u32) {
+        self.tell(number, || Move::Closed);
         self.chats.remove(&number);
     }
 
@@ -1506,6 +1529,10 @@ impl Board {
     /// lineage, so the one who applies the report reads it and says. A sub-agent's report is
     /// its chat's ask and never the end of its turn, so `waits` is not asked of it.
     pub fn reported_while(&mut self, report: &crate::hookwire::Report, waits: Waits) -> bool {
+        self.tell(report.chat, || Move::Reported {
+            report: report.clone(),
+            waits,
+        });
         let Some(tracked) = self.chats.get_mut(&report.chat) else {
             // A report for a chat the app does not have: one that was closed a moment ago,
             // or a stale environment in a process that outlived it.
@@ -1536,6 +1563,7 @@ impl Board {
     /// Answers whether anything a reader can see changed: nothing does for a chat the board
     /// does not have, or one no end of turn was held for.
     pub fn rested(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::Rested);
         let changed = self
             .chats
             .get_mut(&number)
@@ -1554,6 +1582,9 @@ impl Board {
     /// anything a reader can see changed: nothing does for a chat the board does not have, or
     /// one whose program is gone.
     pub fn task_failed(&mut self, number: u32, failed: FailedTask) -> bool {
+        self.tell(number, || Move::TaskFailed {
+            failed: failed.clone(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1583,6 +1614,7 @@ impl Board {
     /// **Not stamped as a move**, as an Ignore is not ([`Board::ignored`]): looking at a chat
     /// is not something the chat did.
     pub fn failures_seen(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::FailuresSeen);
         self.chats
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.failures_seen())
@@ -1591,6 +1623,7 @@ impl Board {
     /// The person looked at failure `id` of chat `number`, or cleared its row
     /// ([`Chat::failure_cleared`]). Not stamped as a move, as an Ignore is not.
     pub fn failure_cleared(&mut self, number: u32, id: &str) -> bool {
+        self.tell(number, || Move::FailureCleared { id: id.to_owned() });
         self.chats
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.failure_cleared(id))
@@ -1618,6 +1651,9 @@ impl Board {
     /// a sub-agent of a harness nested in the chat's shell can show as a child of the chat:
     /// a row that is wrong, never a state of the chat that is.
     pub fn child_heard(&mut self, number: u32, agent: &str) -> bool {
+        self.tell(number, || Move::ChildHeard {
+            agent: agent.to_owned(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1640,6 +1676,7 @@ impl Board {
     /// **Not stamped as a move.** [`Board::moved_at`] orders chats by what THEY last did
     /// (ADR 0039), and the operator dismissing a request is not something the chat did.
     pub fn ignored(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::Ignored);
         self.chats
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.ignored())
@@ -1648,6 +1685,7 @@ impl Board {
     /// The person answered chat `number`'s prompt in the window ([`Chat::answered`]). Answers
     /// whether anything a reader can see changed.
     pub fn answered(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::Answered);
         let changed = self
             .chats
             .get_mut(&number)
@@ -1658,6 +1696,9 @@ impl Board {
     /// The person answered, in the window, the prompt `asker` showed in chat `number`
     /// ([`Chat::answered_by`], #1644). Answers whether anything a reader can see changed.
     pub fn answered_by(&mut self, number: u32, asker: &crate::harness::hooked::Asker) -> bool {
+        self.tell(number, || Move::AnsweredBy {
+            asker: asker.clone(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1686,6 +1727,10 @@ impl Board {
         speaker: &crate::hookwire::Speaker,
         said: &crate::doing::Said,
     ) -> bool {
+        self.tell(number, || Move::ToolSaidBy {
+            speaker: speaker.clone(),
+            said: said.clone(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1704,6 +1749,11 @@ impl Board {
         speaker: &crate::hookwire::Speaker,
         said: &crate::doing::Said,
     ) -> bool {
+        self.tell(number, || Move::ChildToolSaidBy {
+            agent: agent.to_owned(),
+            speaker: speaker.clone(),
+            said: said.clone(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1714,6 +1764,7 @@ impl Board {
 
     /// The chat's program exited. Answers whether anything a reader can see changed.
     pub fn exited(&mut self, number: u32, code: Option<i32>) -> bool {
+        self.tell(number, || Move::Exited { code });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1847,6 +1898,9 @@ impl Board {
     /// Answers whether anything a reader can see changed: nothing does for a chat the board
     /// does not have, or one whose program is gone.
     pub fn reported_back(&mut self, number: u32, from: &str) -> bool {
+        self.tell(number, || Move::ReportedBack {
+            from: from.to_owned(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1858,6 +1912,9 @@ impl Board {
     /// a reader can see changed: nothing does for a chat the board does not have, or one whose
     /// program is gone.
     pub fn stopped_below(&mut self, number: u32, from: &str) -> bool {
+        self.tell(number, || Move::StoppedBelow {
+            from: from.to_owned(),
+        });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1877,6 +1934,7 @@ impl Board {
     /// anything a reader can see changed: nothing does for a chat the board does not have, or
     /// one whose program is gone.
     pub fn needs(&mut self, number: u32, need: Need) -> bool {
+        self.tell(number, || Move::Needs { need: need.clone() });
         let changed = self
             .chats
             .get_mut(&number)
@@ -1895,6 +1953,7 @@ impl Board {
     /// Chat `number`'s report reached the chat that asked for it
     /// ([`Chat::reported_to_its_asker`]). Nothing a reader can see changes.
     pub fn reported_to_its_asker(&mut self, number: u32) {
+        self.tell(number, || Move::ReportedToItsAsker);
         if let Some(tracked) = self.chats.get_mut(&number) {
             tracked.chat.reported_to_its_asker();
         }
@@ -1904,6 +1963,9 @@ impl Board {
     /// anything a reader can see changed: nothing does for a chat the board does not have, or
     /// one whose program is gone.
     pub fn commit_refused(&mut self, number: u32, what: &str) -> bool {
+        self.tell(number, || Move::CommitRefused {
+            what: what.to_owned(),
+        });
         let changed = self
             .chats
             .get_mut(&number)

@@ -15,6 +15,7 @@ D-2000-9).
    are moved by the lines the host hands on (item 5). Moving the live board into the host is
    #2194, with the event log, the end of a program and dispatch answers (#2003). *D-2000-1, to
    be confirmed.*
+   See the [amendment for #2194](2026-10-16-amended-for-2194-the-board-is-kept-in-the-session-host.md).
 2. **The host binds each held project's hook socket with the window's own listener and checks.**
    As it first holds a project, it binds the socket at the path `hooks::socket_for` names, with
    `hookwire::Listener`. It lets the socket go once nothing holds the project. Every check on a
