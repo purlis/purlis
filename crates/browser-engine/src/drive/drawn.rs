@@ -12,7 +12,7 @@
 //! - every frame whose document this read does not hold, unless it is read in a session of its
 //!   own.
 //!
-//! On a page whose site a text was kept out on (`opaque`), it also paints over every canvas,
+//! On a page whose site a text was kept out on ([`Drawn::pictured`]), it also paints over every canvas,
 //! image, video and embedded object, and every element drawn with an image or a paint script:
 //! what they show cannot be read, so they are painted whatever they show.
 //!
@@ -53,6 +53,11 @@ pub(crate) struct Drawn {
     /// Each element to paint over, then the elements it is in, innermost first, by the engine's
     /// ids: the first of them the engine can place is painted.
     pub paint: Vec<Vec<i64>>,
+    /// What cannot be read (a canvas, an image…), as [`Drawn::paint`]: painted on a page whose
+    /// site a text was kept out on.
+    pub pictured: Vec<Vec<i64>>,
+    /// The address of the first document read: what the page shows, whatever it was told.
+    pub address: Option<String>,
     /// Each frame element whose document this read does not hold, as [`Drawn::paint`]: painted
     /// unless that document is read in a session of its own.
     pub frames: Vec<Vec<i64>>,
@@ -64,8 +69,8 @@ pub(crate) struct Drawn {
 pub(crate) struct Unread(&'static str);
 
 /// What `answer` (of `DOMSnapshot.captureSnapshot`, with [`STYLES`]) draws that is to be painted
-/// over on a page that keeps `kept` out; with what cannot be read when `opaque`.
-pub(crate) fn drawn(answer: &Value, kept: &[&str], opaque: bool) -> Result<Drawn, Unread> {
+/// over on a page that keeps `kept` out.
+pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
     let strings: Vec<&str> = answer
         .get("strings")
         .and_then(Value::as_array)
@@ -83,8 +88,16 @@ pub(crate) fn drawn(answer: &Value, kept: &[&str], opaque: bool) -> Result<Drawn
         .collect();
     let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
     let mut out = Drawn::default();
+    if let Some(first) = documents.first() {
+        let at = first
+            .get("documentURL")
+            .and_then(Value::as_i64)
+            .and_then(|i| usize::try_from(i).ok())
+            .and_then(|i| strings.get(i));
+        out.address = at.map(|a| (*a).to_owned());
+    }
     for document in documents {
-        read_document(document, &strings, &kept, opaque, &mut out)?;
+        read_document(document, &strings, &kept, &mut out)?;
     }
     Ok(out)
 }
@@ -115,7 +128,6 @@ fn read_document(
     document: &Value,
     strings: &[&str],
     kept: &[&str],
-    opaque: bool,
     out: &mut Drawn,
 ) -> Result<(), Unread> {
     let nodes = document
@@ -234,8 +246,8 @@ fn read_document(
             || OPAQUE.contains(&name.as_str())
             || (name == "INPUT"
                 && attribute(&attributes[at], &string, "type")?.eq_ignore_ascii_case("image"));
-        if opaque && pictured {
-            paint(at, out);
+        if pictured {
+            out.pictured.push(chain(at));
         }
         if FRAMES.contains(&name.as_str()) && !contents.iter().any(|(i, _)| *i == at) {
             out.frames.push(chain(at));

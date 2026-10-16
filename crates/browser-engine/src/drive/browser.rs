@@ -296,17 +296,50 @@ impl State {
         }
     }
 
+    /// Whether a text was kept out anywhere in the browser.
+    fn kept_anything(&self) -> bool {
+        !self.kept_sites.is_empty() || self.kept_off_site
+    }
+
+    /// Whether a page showing `address` paints over what cannot be read: its site is one a text
+    /// was kept out on, or it has none while anything is kept out.
+    fn greys_at(&self, address: &str) -> bool {
+        self.kept_off_site
+            || match site(address) {
+                Some(site) => self.kept_sites.contains(&site),
+                None => self.kept_anything(),
+            }
+    }
+
     /// Whether screenshots of `target`'s page paint over what cannot be read (the person's
-    /// ruling of 2026-10-17): a text was kept out on its site, or it is on no site it can be
-    /// told by while anything is kept out.
+    /// ruling of 2026-10-17): it, or any page in the chain that opened it, is on a site a text
+    /// was kept out on; or a page in that chain is on no site and was opened by none it can
+    /// still tell, while anything is kept out.
     fn greys(&self, target: &str) -> bool {
-        if self.kept_sites.is_empty() && !self.kept_off_site {
+        if !self.kept_anything() {
             return false;
         }
-        match self.site_of(target) {
-            Some(site) => self.kept_off_site || self.kept_sites.contains(&site),
-            None => true,
+        if self.kept_off_site {
+            return true;
         }
+        let Some(mut at) = self.page(target) else {
+            return true;
+        };
+        for _ in 0..=self.pages.len() {
+            let own = site(&at.url);
+            if own.as_ref().is_some_and(|s| self.kept_sites.contains(s)) {
+                return true;
+            }
+            match at.opener.as_deref() {
+                None => return own.is_none(),
+                Some(opener) => match self.page(opener) {
+                    Some(by) => at = by,
+                    // The page that opened it is gone: what it was on cannot be told.
+                    None => return true,
+                },
+            }
+        }
+        true
     }
 
     fn page(&self, target: &str) -> Option<&Page> {
@@ -1833,7 +1866,7 @@ impl Browser {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             let greys = state.greys(target);
-            if page.scrubbed.is_empty() && !greys {
+            if page.scrubbed.is_empty() && !state.kept_anything() {
                 return Ok(());
             }
             let page_session = page.session.clone().ok_or(Refusal::Unknown)?;
@@ -1881,33 +1914,44 @@ impl Browser {
                 Some((parent.clone(), owner))
             })
             .collect();
-        for Root {
-            session,
-            boundaries,
-            ..
-        } in &roots
-        {
+        let mut reads = Vec::new();
+        for root in &roots {
             let answer = self
                 .devtools()
                 .call(
                     "DOMSnapshot.captureSnapshot",
                     json!({ "computedStyles": STYLES }),
-                    Some(session),
+                    Some(&root.session),
                 )
                 .map_err(|why| Refusal::Withheld(why.to_string()))?;
-            let found =
-                drawn(&answer, &kept, greys).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let found = drawn(&answer, &kept).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            reads.push((root, found));
+        }
+        // What the page shows is the top document read, whatever address the page was last
+        // told: a page that has not yet left a kept site's document still paints it over.
+        let opaque = greys || {
+            let state = lock(&self.inner.state);
+            let shown = reads
+                .iter()
+                .find(|(root, _)| root.parent.is_none())
+                .and_then(|(_, found)| found.address.clone())
+                .unwrap_or_default();
+            state.greys_at(&shown)
+        };
+        for (root, found) in reads {
+            let session = &root.session;
             let frames = found.frames.into_iter().filter(|chain| {
                 chain
                     .first()
                     .is_none_or(|own| !read_apart.contains(&(session.clone(), *own)))
             });
-            for chain in found.paint.into_iter().chain(frames) {
+            let pictured = found.pictured.into_iter().filter(|_| opaque);
+            for chain in found.paint.into_iter().chain(pictured).chain(frames) {
                 let Some(item) = chain.first().copied() else {
                     continue;
                 };
                 for backend in chain {
-                    if let Some(rect) = self.placed(placings, session, boundaries, backend)? {
+                    if let Some(rect) = self.placed(placings, session, &root.boundaries, backend)? {
                         boxes.insert((session.clone(), item), rect);
                         break;
                     }

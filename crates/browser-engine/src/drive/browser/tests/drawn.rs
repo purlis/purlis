@@ -22,6 +22,8 @@ const DOCUMENT_NODE: i64 = 9;
 /// them are laid out.
 struct Document {
     frame: String,
+    /// The address of the document, as the engine read it.
+    url: String,
     nodes: Vec<Node>,
 }
 
@@ -43,9 +45,21 @@ struct Node {
 }
 
 impl Document {
+    /// The document `frame` shows in the stand-in's frames page.
     fn new(frame: &str) -> Self {
+        let url = match frame {
+            "PAGE-1" => "http://fixture.test/frames.html",
+            "PAYMENT-FRAME" | "PAYMENT" => "http://other.test/pay.html",
+            _ => "http://fixture.test/new.html",
+        };
+        Self::at(frame, url)
+    }
+
+    /// A document of `frame` at `url`.
+    fn at(frame: &str, url: &str) -> Self {
         let mut document = Self {
             frame: frame.to_owned(),
+            url: url.to_owned(),
             nodes: Vec::new(),
         };
         document.push(Node {
@@ -106,6 +120,7 @@ impl Document {
             i64::try_from(at).unwrap()
         };
         let frame = index(&self.frame);
+        let url = index(&self.url);
         let mut nodes = json!({
             "parentIndex": [], "nodeType": [], "nodeName": [], "nodeValue": [],
             "backendNodeId": [], "attributes": [],
@@ -170,7 +185,7 @@ impl Document {
             }
         }
         json!({
-            "documents": [{"frameId": frame, "nodes": nodes, "layout": layout,
+            "documents": [{"frameId": frame, "documentURL": url, "nodes": nodes, "layout": layout,
                 "textBoxes": {"layoutIndex": [], "bounds": [], "start": [], "length": []}}],
             "strings": strings,
         })
@@ -605,9 +620,9 @@ fn a_page_opens(engine: &super::Engine, target: &str, url: &str, opener: Option<
     PageId::new("p2")
 }
 
-/// A canvas at (8, 8) on `target`'s page, and nothing else.
-fn a_canvas_on(engine: &super::Engine, target: &str) {
-    let mut page = Document::new(target);
+/// A canvas at (8, 8) on `target`'s page, its document at `url`, and nothing else.
+fn a_canvas_on(engine: &super::Engine, target: &str, url: &str) {
+    let mut page = Document::at(target, url);
     page.element(120, None, "CANVAS");
     draws(
         engine,
@@ -638,7 +653,7 @@ fn another_sites_canvas_and_images_are_not_painted_over() {
     let (browser, engine) = browser();
     keep_out_the_secret(&browser);
     let other = a_page_opens(&engine, "PAGE-8", "https://shop.example.com/", None);
-    a_canvas_on(&engine, "PAGE-8");
+    a_canvas_on(&engine, "PAGE-8", "https://shop.example.com/");
 
     let after = shot_of(&browser, &other, 1);
 
@@ -650,7 +665,7 @@ fn a_canvas_on_another_part_of_the_kept_site_is_painted_over() {
     let (browser, engine) = browser();
     keep_out_the_secret(&browser);
     let sub = a_page_opens(&engine, "PAGE-8", "http://www.fixture.test/next.html", None);
-    a_canvas_on(&engine, "PAGE-8");
+    a_canvas_on(&engine, "PAGE-8", "http://www.fixture.test/next.html");
 
     let after = shot_of(&browser, &sub, 1);
 
@@ -662,7 +677,7 @@ fn a_canvas_in_a_page_the_kept_page_opened_is_painted_over() {
     let (browser, engine) = browser();
     keep_out_the_secret(&browser);
     let popup = a_page_opens(&engine, "PAGE-8", "about:blank", Some("PAGE-1"));
-    a_canvas_on(&engine, "PAGE-8");
+    a_canvas_on(&engine, "PAGE-8", "about:blank");
 
     let after = shot_of(&browser, &popup, 1);
 
@@ -680,7 +695,7 @@ fn what_the_person_typed_is_painted_over_on_another_site_but_its_canvas_is_not()
     }
     browser.hand_back();
     let other = a_page_opens(&engine, "PAGE-8", "https://shop.example.com/", None);
-    let mut page = Document::new("PAGE-8");
+    let mut page = Document::at("PAGE-8", "https://shop.example.com/");
     page.element(120, None, "CANVAS");
     let echo = page.element(121, None, "SPAN");
     page.text(122, echo, "Searching for qzwv");
@@ -695,4 +710,47 @@ fn what_the_person_typed_is_painted_over_on_another_site_but_its_canvas_is_not()
 
     assert_eq!(pixel(&after, 0, 9), GREY, "what the person typed");
     assert_eq!(pixel(&after, 9, 9), WHITE, "another site's canvas");
+}
+
+#[test]
+fn a_page_opened_by_the_kept_page_on_another_site_is_painted_over() {
+    let (browser, engine) = browser();
+    keep_out_the_secret(&browser);
+    let popup = a_page_opens(
+        &engine,
+        "PAGE-8",
+        "https://pay.example.com/",
+        Some("PAGE-1"),
+    );
+    a_canvas_on(&engine, "PAGE-8", "https://pay.example.com/");
+
+    let after = shot_of(&browser, &popup, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}
+
+#[test]
+fn a_page_still_showing_the_kept_sites_document_is_painted_over_whatever_its_address_says() {
+    let (browser, engine) = browser();
+    keep_out_the_secret(&browser);
+    // The page was told it is on another site, but the document it shows is still the kept
+    // site's.
+    let page = a_page_opens(&engine, "PAGE-8", "https://shop.example.com/", None);
+    a_canvas_on(&engine, "PAGE-8", "http://fixture.test/frames.html");
+
+    let after = shot_of(&browser, &page, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}
+
+#[test]
+fn a_page_on_no_site_opened_by_none_is_painted_over_while_anything_is_kept() {
+    let (browser, engine) = browser();
+    keep_out_the_secret(&browser);
+    let blank = a_page_opens(&engine, "PAGE-8", "about:blank", None);
+    a_canvas_on(&engine, "PAGE-8", "about:blank");
+
+    let after = shot_of(&browser, &blank, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
 }

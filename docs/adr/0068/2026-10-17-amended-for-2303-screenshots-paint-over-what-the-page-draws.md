@@ -18,9 +18,10 @@ draws; nothing else changes, and the session protocol does not.
    text is kept out on a page, every canvas, image, video and embedded object, and every element
    drawn with an image or a paint script, is painted over, whether or not it shows a text kept
    out, on every page whose top-level site is that page's: its registrable domain by the public
-   suffix list, or for an IP address or `localhost` its host and port. A frame or a page opened
-   from such a page counts by that page's site, and a page whose site cannot be told is taken as
-   its opener's, or as kept when it has none. On other sites, kept text is still painted over
+   suffix list, or for an IP address or `localhost` its host, whatever the port. The site is the
+   one of the document the page shows, as the screenshot reads it. Every frame of such a page
+   counts, and so does every page opened from it, whatever its own site; a page whose site
+   cannot be told is taken as its opener's, or as kept when it has none. On other sites, kept text is still painted over
    wherever it is drawn. This is the person's ruling of 2026-10-17. *D-2303-2, ruled.*
 3. **Unsure means withheld.** A screenshot is withheld in words when its page cannot say what it
    lays out, or draws a reflection. *D-2303-3, to be confirmed.*
