@@ -1,9 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! What the person typed while driving, drawn by the page somewhere other than in its field, is
-//! painted over in every screenshot the agent gets (#2303): drawn into a canvas and an image
-//! made from it, shown in a copy the page hides from its tree, and drawn by the page's style.
+//! A text a page keeps out (what purlis filled and blanked, as for a login, and so what the
+//! person typed, which is kept out the same way), drawn by the page somewhere other than in its
+//! field, is painted over in every screenshot the agent gets (#2303): drawn into a canvas and an
+//! image made from it, shown in a copy the page hides from its tree, and drawn by the page's
+//! style.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -18,7 +20,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use common::site::started;
 use purlis_browser_engine::WebAddress;
-use purlis_browser_engine::drive::{Answer, Browser, Call, CallId, Content, PersonInput, Ref};
+use purlis_browser_engine::drive::{Answer, Browser, Call, CallId, Content, Field, Ref};
 
 fn next_id() -> CallId {
     static NEXT: AtomicU32 = AtomicU32::new(1);
@@ -59,26 +61,21 @@ fn open_at_the_field(browser: &Browser, path: &str) -> Ref {
     Ref::new(&line[start..end])
 }
 
-/// The person takes the browser over, types `text` into the field that has the focus, and
-/// hands it back.
-fn the_person_types(browser: &Browser, text: &str) {
-    browser.take_over();
-    let aim = browser.aim().expect("the browser has a page");
-    for letter in text.chars() {
-        for down in [true, false] {
-            browser
-                .person_input(&PersonInput::Key {
-                    aim: aim.clone(),
-                    down,
-                    key: letter.to_string(),
-                    code: format!("Key{}", letter.to_ascii_uppercase()),
-                    key_code: u32::from(letter.to_ascii_uppercase()),
-                    modifiers: 0,
-                })
-                .unwrap_or_else(|why| panic!("the person's key {letter}: {why}"));
-        }
-    }
-    browser.hand_back();
+/// `text` is typed into `field`, and the field blanked, as a login fills one: what it holds is
+/// kept out from then on.
+fn filled_and_blanked(browser: &Browser, field: Ref, text: &str) {
+    call(
+        browser,
+        Call::Type {
+            page: None,
+            fields: vec![Field {
+                into: Some(field.clone()),
+                text: text.into(),
+                replace: true,
+            }],
+        },
+    );
+    browser.blank(&field).unwrap();
 }
 
 /// How many pixels of a PNG are the fixture's pure red.
@@ -103,18 +100,17 @@ fn screenshot(browser: &Browser) -> Vec<u8> {
 }
 
 #[test]
-fn what_the_person_typed_drawn_into_a_canvas_and_an_image_is_painted_over() {
+fn a_kept_text_drawn_into_a_canvas_and_an_image_is_painted_over() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
     let field = open_at_the_field(&browser, "echo-drawn.html");
-    call(&browser, Call::Click { target: field });
     assert!(
         red_pixels(&screenshot(&browser)) > 1000,
         "the canvas and its image show before"
     );
 
-    the_person_types(&browser, "qzwvxk");
+    filled_and_blanked(&browser, field, "qzwvxk");
 
     assert_eq!(
         red_pixels(&screenshot(&browser)),
@@ -124,18 +120,17 @@ fn what_the_person_typed_drawn_into_a_canvas_and_an_image_is_painted_over() {
 }
 
 #[test]
-fn what_the_person_typed_shown_where_the_tree_does_not_show_it_is_painted_over() {
+fn a_kept_text_shown_where_the_tree_does_not_show_it_is_painted_over() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
     let field = open_at_the_field(&browser, "echo-hidden.html");
-    call(&browser, Call::Click { target: field });
     assert!(
         red_pixels(&screenshot(&browser)) > 200,
         "the copies show before"
     );
 
-    the_person_types(&browser, "qzwvxk");
+    filled_and_blanked(&browser, field, "qzwvxk");
 
     assert_eq!(
         red_pixels(&screenshot(&browser)),
