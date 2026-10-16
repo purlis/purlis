@@ -736,8 +736,10 @@ fn resolve(
             let since = if *exact {
                 a
             } else {
+                let no_history = || refused(format!("'{from}' and '{to}' share no history"));
                 repo.merge_base(a, b)
-                    .map_err(|_| refused(format!("'{from}' and '{to}' share no history")))?
+                    .map_err(|_| no_history())?
+                    .ok_or_else(no_history)?
                     .detach()
             };
             Ok((Some(since), At::Commit(b), Some(from.clone())))
@@ -797,7 +799,7 @@ fn default_base(
             named
         };
         // A candidate that shares no history with the branch is not its base: the next one may.
-        let Ok(fork) = repo.merge_base(at, tip) else {
+        let Ok(Some(fork)) = repo.merge_base(at, tip) else {
             continue;
         };
         return Some((fork.detach(), named));
@@ -1344,13 +1346,17 @@ fn untracked_walk(
                 worktree_root_is_repository,
             );
             // An untracked folder the walk could not read — no permission, gone since it was
-            // listed — would end the walk, and the status with it: it is held back the same way.
+            // listed, or a name this system cannot spell as a path — would end the walk, and the
+            // status with it: it is held back the same way.
             if recurse && untracked {
-                let folder = self.root.join(gix::path::from_bstr(&*entry.rela_path));
-                if !opens(&folder) {
+                let folder = gix::path::from_bstr(&*entry.rela_path)
+                    .ok()
+                    .map(|rela| self.root.join(rela))
+                    .filter(|folder| opens(folder));
+                let Some(folder) = folder else {
                     self.held_back.insert(entry.rela_path.to_string());
                     return false;
-                }
+                };
                 (self.entering)(&folder);
                 self.entered.push(folder);
             }

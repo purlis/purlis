@@ -3536,8 +3536,9 @@ impl Planes {
             let events = events.clone();
             // The key the hook channel records this project's chats under.
             let root = id.root().to_path_buf();
-            // A run its start may still put aside is held until the start goes on (#2250); a
-            // line of it that comes first is written after its `run.started`.
+            // A run its start may still put aside is held until the start goes on (#2250), with
+            // its start's trust event (#2252); a line of it that comes first is written after
+            // them.
             chats.when_a_run_begins(Box::new({
                 let (events, root) = (events.clone(), root.clone());
                 move |session, run, cause, attributes, said| {
@@ -3548,19 +3549,31 @@ impl Planes {
                         run: run.run.to_owned(),
                         cause,
                         attributes: attributes.clone(),
-                        held: said == crate::chats::RunSaid::Held,
+                        trust: match &said {
+                            crate::chats::RunSaid::Held(trust) => trust.clone().map(Box::new),
+                            crate::chats::RunSaid::Now => None,
+                        },
+                        held: said != crate::chats::RunSaid::Now,
                     });
                     if let Err(why) = begun {
                         tracing::warn!("purlis: a run was not written to the event log ({why})");
                     }
                 }
             }));
-            chats.when_a_held_run_goes_on(Box::new(move |session| {
-                let begun = events.record(purlis_core::eventlog::Entry::Begun {
-                    plane: root.clone(),
-                    number: session,
+            // A start put aside is taken back: its program's later lines are of no run (#2252).
+            chats.when_a_held_start_is_settled(Box::new(move |session, how| {
+                let plane = root.clone();
+                let settled = events.record(match how {
+                    crate::chats::HeldStart::GoesOn => purlis_core::eventlog::Entry::Begun {
+                        plane,
+                        number: session,
+                    },
+                    crate::chats::HeldStart::TakenBack => purlis_core::eventlog::Entry::TakenBack {
+                        plane,
+                        number: session,
+                    },
                 });
-                if let Err(why) = begun {
+                if let Err(why) = settled {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");
                 }
             }));

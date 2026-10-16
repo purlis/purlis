@@ -765,6 +765,56 @@ fn a_quit_that_the_host_does_not_answer_gives_up_on_it_by_the_deadline() {
     hosted.savers.finish_saving();
 }
 
+#[test]
+fn a_host_before_held_trust_events_is_sent_the_trust_event_first_and_no_start_taken_back() {
+    // #2252: a window and a host one version apart still record the sandbox coming back on,
+    // before the start's program runs, as every start's was.
+    use purlis_core::eventlog::{Attributes, Began, Entry, HeldTrust};
+    use purlis_session_protocol::version::Version;
+    let trust = HeldTrust::of(
+        &purlis_core::sandbox::Change::On,
+        Some(purlis_core::harness::Harness::ClaudeCode),
+        None,
+    );
+    let begin = |trust: Option<HeldTrust>| Entry::Begin {
+        plane: "/planes/one".into(),
+        number: 3,
+        chat: "01K6E8ZK6V4Q9T0N3M2B1C5D7E".into(),
+        run: "01K6E8ZK6V4Q9T0N3M2B1C5D7F".into(),
+        cause: Began::Start,
+        attributes: Attributes::default(),
+        held: true,
+        trust: trust.map(Box::new),
+    };
+    let taken_back = Entry::TakenBack {
+        plane: "/planes/one".into(),
+        number: 3,
+    };
+    let older = Version { major: 1, minor: 8 };
+
+    assert_eq!(
+        as_the_host_reads(&begin(Some(trust.clone())), older),
+        [
+            Entry::Trust {
+                chat: "01K6E8ZK6V4Q9T0N3M2B1C5D7E".into(),
+                run: "01K6E8ZK6V4Q9T0N3M2B1C5D7F".into(),
+                kind: "trust.sandbox.on".into(),
+                body: trust.body().clone(),
+            },
+            begin(None),
+        ]
+    );
+    assert!(as_the_host_reads(&taken_back, older).is_empty());
+    assert_eq!(
+        as_the_host_reads(&begin(Some(trust.clone())), session::VERSION),
+        [begin(Some(trust))]
+    );
+    assert_eq!(
+        as_the_host_reads(&taken_back, session::VERSION),
+        [taken_back]
+    );
+}
+
 fn a_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

@@ -106,14 +106,57 @@ pub fn record_in_the_host(
     connection: &Connection,
     entry: &purlis_core::eventlog::Entry,
 ) -> Result<(), String> {
-    let entry = serde_json::to_value(entry)
-        .map_err(|why| format!("the write could not be put in words for the host: {why}"))?;
-    match connection
-        .wait(LINK_WITHIN)?
-        .call(Command::Record { entry })?
-    {
-        Answer::Done => Ok(()),
-        other => Err(format!("the session host answered a write with {other:?}")),
+    let link = connection.wait(LINK_WITHIN)?;
+    for entry in as_the_host_reads(entry, link.version()) {
+        let entry = serde_json::to_value(&entry)
+            .map_err(|why| format!("the write could not be put in words for the host: {why}"))?;
+        match link.call(Command::Record { entry })? {
+            Answer::Done => {}
+            other => return Err(format!("the session host answered a write with {other:?}")),
+        }
+    }
+    Ok(())
+}
+
+/// The session protocol version whose host holds a start's trust event with its held run and
+/// is told a held start was taken back (#2252).
+const HOLDS_TRUST_WITH_A_RUN: purlis_session_protocol::version::Version =
+    purlis_session_protocol::version::Version { major: 1, minor: 9 };
+
+/// What `entry` is sent as, in order, to a host that agreed on `version`. A host before
+/// [`HOLDS_TRUST_WITH_A_RUN`] is sent a held start's trust event on its own, before the start's
+/// `Begin`, as every start's was, and is not told a start was taken back.
+pub(crate) fn as_the_host_reads(
+    entry: &purlis_core::eventlog::Entry,
+    version: purlis_session_protocol::version::Version,
+) -> Vec<purlis_core::eventlog::Entry> {
+    use purlis_core::eventlog::Entry;
+    if version >= HOLDS_TRUST_WITH_A_RUN {
+        return vec![entry.clone()];
+    }
+    match entry {
+        Entry::Begin {
+            trust: Some(trust),
+            chat,
+            run,
+            ..
+        } => {
+            let mut begin = entry.clone();
+            if let Entry::Begin { trust, .. } = &mut begin {
+                *trust = None;
+            }
+            vec![
+                Entry::Trust {
+                    chat: chat.clone(),
+                    run: run.clone(),
+                    kind: trust.kind().to_owned(),
+                    body: trust.body().clone(),
+                },
+                begin,
+            ]
+        }
+        Entry::TakenBack { .. } => Vec::new(),
+        _ => vec![entry.clone()],
     }
 }
 
@@ -340,6 +383,11 @@ struct Views {
 }
 
 impl HostLink {
+    /// The session protocol version the host agreed on.
+    pub fn version(&self) -> purlis_session_protocol::version::Version {
+        self.client.version()
+    }
+
     /// Speak the session protocol on `link`, which the host admitted as `local-ui`: subscribe
     /// to word of programs ending, and take every view the host opens. Run on `runtime`;
     /// `ended` is called once the link ends.
