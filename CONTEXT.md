@@ -385,6 +385,13 @@ host moves it by the lines the chats' hooks write. A window that holds the proje
 (ADR 0068, amended for #2194). Not the **Board** of work items, which is derived and never stored.
 _Avoid_: board (unqualified: that is the work items'), state store, snapshot
 
+**Run journal**:
+The session host's own list of the hosted programs it has started and not yet ended, kept on
+the device so that, when a host is killed outright, the next one ends what it left running and
+keeps each chat's end as a host crash's (ADR 0068 §3, amended for #2007). Never read by the
+window, and not the event log.
+_Avoid_: run log, crash log, journal (unqualified)
+
 **View** (of a hosted program):
 One client's live look at a hosted program, of a kind: a terminal view, or a **browser view**.
 It opens with a snapshot of the program as it is now and then follows it. One that falls behind
