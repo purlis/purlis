@@ -61,6 +61,38 @@ Claim says whether it is ready.
 a tag, until the published manifests name it by digest (#2281); install it with the image set
 to a digest, as below.
 
+## Before you install: doctor
+
+`doctor` says what the cluster lacks for the operator, one line per finding, each with the next
+step. Run it as the admin who will install, with the cluster's context current in your
+kubeconfig:
+
+```bash
+cargo run --manifest-path operator/Cargo.toml --release -- doctor
+```
+
+It checks, in order:
+
+- **Kubernetes 1.36 or later**, from the version the API server reports.
+- **Upstream agent-sandbox v1.0.6**: its four definitions, each serving `v1beta1`, and its
+  controller, `agent-sandbox-system/agent-sandbox-controller`, running the image tagged
+  `v1.0.6`. Not installed yet is a finding too, whose next step is step 1 below.
+- **Your right to apply the install's cluster-scoped objects**: create and patch on
+  namespaces, custom resource definitions, cluster roles and their bindings, and validating
+  admission policies and their bindings, as `kubectl auth can-i` asks it.
+
+It exits 1 when anything is missing and 0 when nothing is, so a script can gate the install on
+it. It only reads: it gets the version, the definitions and the controller's deployment, and asks
+the API server what you may do (`SelfSubjectAccessReview`), which the server answers and keeps
+nothing of. What you may not read is a finding naming the right to ask for.
+
+```text
+ok: Kubernetes v1.36.4
+ok: you may apply the install's cluster-scoped definitions
+missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of the install: kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml.
+1 missing: install the operator once doctor finds nothing missing
+```
+
 ## Install
 
 Three steps, in order. The definitions and their policy are a step of their own, so a
@@ -183,12 +215,14 @@ and memory included. Give cluster-admin and node access accordingly.
 ## Tests
 
 - `cargo test` in `operator/`: what a Claim asks of upstream, that every field the operator
-  writes is one the pinned upstream declares, and the install manifests (the definitions are
+  writes is one the pinned upstream declares, what doctor finds on clusters the tests describe
+  (and that it only reads), and the install manifests (the definitions are
   generated from the Rust types; regenerate them with
   `PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests`).
 - [`operator/e2e/kind.sh`](../operator/e2e/kind.sh) `<runner image> <operator image>`: a kind
-  cluster of Kubernetes 1.36 with a registry beside it, so images are named by digest; the
-  pinned upstream, purlis's definitions, the policy and the operator; then
+  cluster of Kubernetes 1.36 with a registry beside it, so images are named by digest; doctor,
+  which must name upstream agent-sandbox as missing; the pinned upstream, after which doctor
+  must find nothing missing; purlis's definitions, the policy and the operator; then
   `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows. It removes
   everything it started. `.github/workflows/operator.yml` runs it, with a runner image built
   from the same commit, on every pull request that changes `operator/` or `runner-image/`.

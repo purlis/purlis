@@ -428,3 +428,73 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     let _ = pools.delete("e2e-use", &delete).await;
     scratch.end().await;
 }
+
+/// Doctor (#2236) run by someone who may only read what it reads: it still answers every check,
+/// so it needs no right to change anything, and it says they may not apply the install.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn doctor_needs_only_reads_and_says_what_a_reader_may_not_apply() {
+    use purlis_cluster_operator::doctor;
+    let client = Client::try_default().await.expect("the cluster");
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-doctor-reads" },
+            "rules": [
+                { "apiGroups": ["apiextensions.k8s.io"], "resources": ["customresourcedefinitions"], "verbs": ["get"] },
+                { "apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get"] }
+            ]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRoleBinding",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": { "name": "e2e-doctor-reads" },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "e2e-doctor-reads" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-doctor" }]
+        }),
+    )
+    .await;
+
+    let as_reader = doctor::check(&doctor::Kube(acting_as("e2e-doctor").await)).await;
+    let as_admin = doctor::check(&doctor::Kube(client.clone())).await;
+
+    let delete = DeleteParams::default();
+    for (kind, plural) in [
+        ("ClusterRoleBinding", "clusterrolebindings"),
+        ("ClusterRole", "clusterroles"),
+    ] {
+        let resource = kube::api::ApiResource {
+            group: "rbac.authorization.k8s.io".into(),
+            version: "v1".into(),
+            api_version: "rbac.authorization.k8s.io/v1".into(),
+            kind: kind.into(),
+            plural: plural.into(),
+        };
+        let _ = Api::<kube::api::DynamicObject>::all_with(client.clone(), &resource)
+            .delete("e2e-doctor-reads", &delete)
+            .await;
+    }
+
+    assert!(!as_admin.lacks_anything(), "{as_admin}");
+    assert_eq!(as_reader.findings.len(), 1, "{as_reader}");
+    let line = as_reader.findings[0].to_string();
+    assert!(
+        line.contains("permission to apply the install's cluster-scoped definitions"),
+        "{line}"
+    );
+    assert!(
+        as_reader
+            .holds
+            .iter()
+            .any(|held| held == "upstream agent-sandbox v1.0.6"),
+        "{as_reader}"
+    );
+}
