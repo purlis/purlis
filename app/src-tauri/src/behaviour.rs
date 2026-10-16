@@ -213,7 +213,7 @@ fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
     };
     purlis_host::Hosting::kept(
         folder,
-        purlis_host::FromTheWindow(crate::sessionhost::launched),
+        crate::sessionhost::Composes::as_the_tests_ship(),
         purlis_host::Terminals,
         crate::sessionhost::HookChannels(kept.clone()),
         crate::hostedconfinement::ConfinesHere,
@@ -582,6 +582,110 @@ fn a_chat_starts_and_its_tab_draws_what_it_wrote(target: &Target) {
 
     Pane::on(target, id).shows("HARNESS-READY");
     target.sessions.close(id).expect("it closes");
+}
+
+/// **A chat named alone is composed by the host** (#2171): a start with no launch, by profile,
+/// persona, first message and the person's opt-out, runs the chat they describe, composed from
+/// the project's own files with the code the window's start runs. The window's own process
+/// composes no such start, and says so.
+fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Target) {
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let harness = stand_in::claude_code(
+        bin.path(),
+        "claude",
+        "#!/bin/sh\nprintf 'COMPOSED as %s:' \"$PURLIS_PERSONA\"\nprintf ' %s' \"$@\"\nprintf \
+         ' :END'\nread line\n",
+    );
+    a_profile(&target.root, "work", &harness);
+    if target.host.is_none() {
+        let refused = target
+            .sessions
+            .open_named(None, &named("hello", false), &|_| {})
+            .unwrap_err();
+        assert_eq!(refused, crate::host::NOT_COMPOSED_HERE);
+        return;
+    }
+
+    let id = target
+        .sessions
+        .open_named(None, &named("carry on with the plan", false), &|_| {})
+        .expect("it starts");
+    Pane::on(target, id).shows("COMPOSED as steward:");
+    Pane::on(target, id).shows("carry on with the plan :END");
+    target.sessions.close(id).expect("it closes");
+
+    // A profile this machine does not declare starts nothing.
+    let mut elsewhere = named("hello", false);
+    elsewhere.profile = Some("someone-elses".to_owned());
+    let refused = target
+        .sessions
+        .open_named(None, &elsewhere, &|_| {})
+        .unwrap_err();
+    assert!(refused.contains("someone-elses"), "{refused}");
+}
+
+/// **A person's opt-out of a chat the host composes is written in its event log before it
+/// starts** (#2171, ADR 0067 §7), under the chat's own run.
+fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(target: &Target) {
+    if target.host.is_none() {
+        return;
+    }
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let harness = stand_in::claude_code(
+        bin.path(),
+        "claude",
+        "#!/bin/sh\nprintf ' %s' \"$@\"\nprintf ' :END'\nread line\n",
+    );
+    a_profile(&target.root, "work", &harness);
+
+    let id = target
+        .sessions
+        .open_named(None, &named("without the sandbox", true), &|_| {})
+        .expect("it starts");
+
+    Pane::on(target, id).shows("without the sandbox :END");
+    let events = purlis_core::eventlog::read(&target.log).expect("the log reads");
+    assert!(
+        events.iter().any(|event| event.kind == "trust.sandbox.off"),
+        "{events:?}"
+    );
+    target.sessions.close(id).expect("it closes");
+}
+
+/// A chat named by the profile `work` and the persona `steward`, told `first_message`.
+fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
+    crate::host::Named {
+        profile: Some("work".to_owned()),
+        persona: Some("steward".to_owned()),
+        workspace: None,
+        resume: None,
+        first_message: Some(first_message.to_owned()),
+        without_sandbox,
+        size: SIZE,
+    }
+}
+
+/// The project at `root` has the persona `steward` and this machine the profile `name`, of
+/// Claude Code, running `program`, as the person approved it.
+fn a_profile(root: &Path, name: &str, program: &Path) {
+    let persona = root.join("personas").join("steward");
+    std::fs::create_dir_all(&persona).expect("its persona");
+    std::fs::write(persona.join("persona.md"), "# steward\n").expect("its persona");
+    std::fs::write(
+        root.join(purlis_core::profiles::LOCAL_FILE),
+        format!(
+            "[harness.{name}]\nkind = \"claude\"\ncommand = [{:?}]\n",
+            program.display().to_string()
+        ),
+    )
+    .expect("its profile");
+    let declared = purlis_core::profiles::current(root);
+    purlis_core::profiletrust::record_launched(
+        root,
+        name,
+        &purlis_core::profiletrust::fingerprint(declared.get(name).expect("declared")),
+    )
+    .expect("approved");
 }
 
 fn what_its_tab_types_reaches_it(target: &Target) {
@@ -2287,6 +2391,7 @@ macro_rules! on_every_target {
 
 on_every_target!(
     a_chat_starts_and_its_tab_draws_what_it_wrote,
+    a_chat_named_alone_is_composed_by_the_host_as_its_profile_says,
     what_its_tab_types_reaches_it,
     a_resize_reaches_its_terminal,
     a_chat_is_told_its_own_number,
@@ -2299,6 +2404,8 @@ on_every_target!(
     a_permission_ask_is_answered_from_the_window_on_every_harness,
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     the_event_log_has_one_writer_and_each_hook_line_is_written_once;
+    not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
+    an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("a sandboxed chat starts on a runner through the link in #2217"):
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,

@@ -2456,7 +2456,7 @@ fn a_start_whose_journal_the_log_already_held_whole_reads_no_log_back() {
 
 /// Every attribute `run.started`'s body carries (#868): ADR 0066's, as ADR 0087 amends them, with
 /// the chat and the parent run in the envelope.
-const RUN_ATTRIBUTES: [&str; 10] = [
+const RUN_ATTRIBUTES: [&str; 11] = [
     "cause",
     "device",
     "persona",
@@ -2467,6 +2467,7 @@ const RUN_ATTRIBUTES: [&str; 10] = [
     "model",
     "sandbox",
     "conversation",
+    "started_by",
 ];
 
 /// The `run.started` events in the log under `dir`, in order.
@@ -2510,6 +2511,7 @@ fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from
         model: None,
         sandbox: Some("seatbelt".to_owned()),
         conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
+        started_by: Some("terminal".to_owned()),
     };
     host.begin(
         plane,
@@ -2544,6 +2546,7 @@ fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from
                 "conversation",
                 "0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()
             ),
+            ("started_by", "terminal".to_owned()),
         ]
     );
     assert_eq!(started[0].chat.as_deref(), Some(CHAT));

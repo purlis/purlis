@@ -71,7 +71,7 @@ use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 
 use crate::hooks::Relayed;
-use crate::host::{Ends, Opening, Readiness, SessionHost, Sink, Watching};
+use crate::host::{Ends, Named, Opening, Readiness, SessionHost, Sink, Watching};
 use crate::sessions::{ENDED, STOPPED, Utf8Stream};
 
 /// The variable that turns the switch on: chats run in the session host. Read once, as the app
@@ -1503,6 +1503,51 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
     }
 }
 
+impl HostedSessions {
+    /// Starts `start` in the host as chat `id`, over `link`, and keeps it: what [`SessionHost::open`]
+    /// and [`SessionHost::open_named`] share once each has said what the start is.
+    fn started(
+        &self,
+        link: &Arc<HostLink>,
+        id: u32,
+        start: StartProgram,
+        operator_shell: bool,
+        announce: &dyn Fn(u32),
+    ) -> Result<u32, String> {
+        // Before the program exists, so its very first hook lands somewhere.
+        announce(id);
+        let started = match link.call(Command::StartProgram(Box::new(start))) {
+            // The host runs it under the number the window announced, or the window would key
+            // it under one its hooks do not carry: it is closed, and the start fails.
+            Ok(Answer::ProgramStarted {
+                program, number, ..
+            }) if number != Some(id) => {
+                link.send(Command::Close { program });
+                return Err(format!(
+                    "the session host started this chat as number {}, not {id}, so it was \
+                     closed; start it again",
+                    number.map_or_else(|| "none".to_owned(), |number| number.to_string())
+                ));
+            }
+            Ok(Answer::ProgramStarted {
+                program, process, ..
+            }) => (program, process),
+            Ok(other) => {
+                return Err(format!("the session host answered a start with {other:?}"));
+            }
+            Err(why) => return Err(why),
+        };
+        let (program, pid) = started;
+        self.runs(link, id, &program, pid);
+        lock(&self.lost).remove(&id);
+        // A stop that landed while this program was being started is carried out now.
+        if !operator_shell && self.kill_switch.is_stopped() {
+            link.send(Command::Stop { chat: program });
+        }
+        Ok(id)
+    }
+}
+
 /// Each call is documented once, on [`SessionHost`].
 impl SessionHost for HostedSessions {
     fn open(
@@ -1532,37 +1577,37 @@ impl SessionHost for HostedSessions {
             launch: Some(launch_of(opening, program)),
             ..StartProgram::of(project, kind_of(opening))
         };
-        // Before the program exists, so its very first hook lands somewhere.
-        announce(id);
-        let started = match link.call(Command::StartProgram(Box::new(start))) {
-            // The host runs it under the number the window announced, or the window would key
-            // it under one its hooks do not carry: it is closed, and the start fails.
-            Ok(Answer::ProgramStarted {
-                program, number, ..
-            }) if number != Some(id) => {
-                link.send(Command::Close { program });
-                return Err(format!(
-                    "the session host started this chat as number {}, not {id}, so it was \
-                     closed; start it again",
-                    number.map_or_else(|| "none".to_owned(), |number| number.to_string())
-                ));
-            }
-            Ok(Answer::ProgramStarted {
-                program, process, ..
-            }) => (program, process),
-            Ok(other) => {
-                return Err(format!("the session host answered a start with {other:?}"));
-            }
-            Err(why) => return Err(why),
-        };
-        let (program, pid) = started;
-        self.runs(&link, id, &program, pid);
-        lock(&self.lost).remove(&id);
-        // A stop that landed while this program was being started is carried out now.
-        if !opening.operator_shell && self.kill_switch.is_stopped() {
-            link.send(Command::Stop { chat: program });
+        self.started(&link, id, start, opening.operator_shell, announce)
+    }
+
+    fn open_named(
+        &self,
+        wanted: Option<u32>,
+        named: &Named,
+        announce: &dyn Fn(u32),
+    ) -> Result<u32, String> {
+        if self.kill_switch.is_stopped() {
+            return Err(STOPPED.to_owned());
         }
-        Ok(id)
+        let (link, project) = self.link()?;
+        let id = self.number_for(wanted)?;
+        // Its own chat and the run this start begins (ADR 0066), which its trust event is
+        // written under in the host.
+        let start = StartProgram {
+            number: Some(id),
+            cols: Some(named.size.columns),
+            rows: Some(named.size.rows),
+            program: Some(purlis_core::reopen::mint()),
+            run: Some(purlis_core::reopen::mint()),
+            persona: named.persona.clone(),
+            profile: named.profile.clone(),
+            workspace: named.workspace.clone(),
+            resume: named.resume.clone(),
+            first_message: named.first_message.clone(),
+            without_sandbox: named.without_sandbox,
+            ..StartProgram::of(project, ProgramKind::Harness)
+        };
+        self.started(&link, id, start, false, announce)
     }
 
     fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {

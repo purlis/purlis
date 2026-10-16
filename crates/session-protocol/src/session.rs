@@ -609,7 +609,8 @@ pub struct StartProgram {
     pub without_sandbox: bool,
     /// The window's own start, composed above its seam: given only by the window, on a
     /// `local-ui` link, or by its host relaying it over the link between hosts
-    /// ([`crate::grants::Power::Launch`]), until what composes it lives in the host (1.2).
+    /// ([`crate::grants::Power::Launch`]) (1.2). A start with none is composed by the host from
+    /// what the rest of it names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch: Option<Launch>,
     /// For a [`ProgramKind::Browser`], what it may reach (1.11): absent, nothing listed and

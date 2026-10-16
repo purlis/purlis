@@ -126,5 +126,47 @@ pub fn launched(
     ))
 }
 
+/// **A start's `launch`, as the session protocol carries it, started by its words** (#2174):
+/// [`launched`] of the launch's parts, numbered `number` and started at `size`, with `app` the
+/// starter's own environment. The one adapter from the protocol's launch to the core's
+/// composition, which every binary that hosts uses.
+pub fn from_launch(
+    app: impl IntoIterator<Item = (OsString, OsString)>,
+    launch: &purlis_session_protocol::session::Launch,
+    number: u32,
+    size: Size,
+) -> Result<Spec, String> {
+    launched(
+        app,
+        &Launched {
+            program: &launch.program,
+            args: &launch.args,
+            cwd: launch.cwd.as_deref(),
+            set: &launch.set,
+            strip: &launch.strip,
+            pass: &launch.pass,
+            declared: &launch.declared,
+            harness: launch.harness.as_deref(),
+            git_hooks: launch.git_hooks.as_deref(),
+            reporting: launch.reporting.as_ref().map(|reporting| Reporting {
+                socket: Path::new(&reporting.socket),
+                token: &reporting.token,
+            }),
+        },
+        number,
+        size,
+    )
+}
+
+/// [`from_launch`] against the environment this process was started with: what the host the
+/// window started, or `purlis serve`, starts a chat with, as the window would have (#1998).
+pub fn from_launch_here(
+    launch: &purlis_session_protocol::session::Launch,
+    number: u32,
+    size: Size,
+) -> Result<Spec, String> {
+    from_launch(std::env::vars_os(), launch, number, size)
+}
+
 #[cfg(test)]
 mod tests;

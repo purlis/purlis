@@ -25,71 +25,23 @@ use std::sync::Arc;
 
 use purlis_core::sandbox::asks::{self, Asks, Heard};
 use purlis_core::sandbox::hosts::Host;
-use purlis_core::sandbox::plan::{Asking, Beside, Hearing, Plan, Telling};
-use purlis_core::sandbox::reach::{By, Decision, Reach, by_of, layer_of};
+use purlis_core::sandbox::plan::{Asking, Hearing, Plan, Telling};
+use purlis_core::sandbox::reach::{By, Decision, by_of, layer_of};
 use purlis_core::sandbox::{Board, Confinement, HeldElsewhere, Placed, egress};
 use purlis_session_protocol::session::{
-    self, Answer, Command, ConfinePlan, Confined, Listed, ReachChange, ReachNow, SandboxTold,
+    Answer, Command, ConfinePlan, Confined, Listed, ReachChange, ReachNow, SandboxTold,
 };
 
 use crate::hostedsessions::HostLink;
 
-/// **A chat's plan, as the window hands it to the host.**
+/// **A chat's plan, as the window hands it to the host** ([`Plan::wired`]).
 pub fn wire(plan: &Plan) -> ConfinePlan {
-    ConfinePlan {
-        listed: plan
-            .reach
-            .listed
-            .iter()
-            .map(|(host, by)| Listed {
-                host: host.clone(),
-                layer: layer_of(*by),
-            })
-            .collect(),
-        never: plan.reach.never.clone(),
-        withdrawn: plan.reach.withdrawn.clone(),
-        anything: plan.reach.anything,
-        tunnel_ports: plan.tunnel_ports.clone(),
-        plain_ports: plan.plain_ports.clone(),
-        any_port: plan.any_port,
-        beside: match &plan.beside {
-            Beside::Wrapped => session::Beside::Wrapped,
-            Beside::ProxyOnly { routes } => session::Beside::ProxyOnly {
-                routes: routes.display().to_string(),
-            },
-        },
-        given: plan.given.clone(),
-    }
+    plan.wired()
 }
 
-/// **The plan the window handed the host, read back exactly**, or why it does not read: a host
-/// policy pins that is not a host is refused, never dropped.
+/// **The plan the window handed the host, read back exactly** ([`Plan::from_wire`]).
 pub fn plan_of(wired: &ConfinePlan) -> Result<Plan, String> {
-    let reach = purlis_core::sandbox::reach::Written {
-        listed: wired
-            .listed
-            .iter()
-            .map(|listed| (listed.host.clone(), by_of(listed.layer)))
-            .collect(),
-        never: wired.never.clone(),
-        withdrawn: wired.withdrawn.clone(),
-        anything: wired.anything,
-    };
-    // Read once here, so a plan that does not read is refused before anything starts.
-    Reach::from_written(&reach)?;
-    Ok(Plan {
-        reach,
-        tunnel_ports: wired.tunnel_ports.clone(),
-        plain_ports: wired.plain_ports.clone(),
-        any_port: wired.any_port,
-        beside: match &wired.beside {
-            session::Beside::Wrapped => Beside::Wrapped,
-            session::Beside::ProxyOnly { routes } => Beside::ProxyOnly {
-                routes: PathBuf::from(routes),
-            },
-        },
-        given: wired.given.clone(),
-    })
+    Plan::from_wire(wired)
 }
 
 /// **Starts each chat's confinement in the session host** (#1999): the window's binary's
@@ -436,15 +388,9 @@ fn change(link: &HostLink, id: &str, change: ReachChange) -> Result<Vec<String>,
     }
 }
 
-/// Where a confinement the host started is, as the core places one.
+/// Where a confinement the host started is, as the core places one ([`Placed::of_wire`]).
 pub fn placed(confined: &Confined) -> Placed {
-    Placed {
-        http: confined.http,
-        socks: confined.socks,
-        tmp: confined.tmp.as_ref().map(PathBuf::from),
-        routed: confined.routed.as_ref().map(PathBuf::from),
-        ssh: confined.ssh.as_ref().map(PathBuf::from),
-    }
+    Placed::of_wire(confined)
 }
 
 #[cfg(test)]

@@ -792,43 +792,45 @@ fn serve() -> ExitCode {
         u8::try_from(purlis_host::serve_alone(&place, |place| {
             purlis_core::browsers::given_to(purlis_host::Hosting::keeping_its_switch_in(
                 &place.credentials,
-                purlis_host::FromTheWindow(launched),
+                Composes(purlis_core::hoststart::Kit::found(
+                    std::env::current_exe().ok(),
+                    None,
+                )),
             ))
         }))
         .unwrap_or(1),
     )
 }
 
-/// A chat a window composed, as the window would start it: the core's composition, against the
-/// environment this host was started with (#1998).
+/// **How `purlis serve` composes each start** (#2174, #2171): a launch by its words, or, for a
+/// start with no launch, the launch the window would compose, from the project's own files
+/// ([`purlis_core::hoststart::spec`]), its hooks run by this `purlis`. It ships no plugin.
 #[cfg(unix)]
-fn launched(
-    launch: &purlis_host::protocol::session::Launch,
-    number: u32,
-    size: purlis_core::engine::Size,
-) -> Result<purlis_core::session::Spec, String> {
-    purlis_core::chatspec::launched(
-        std::env::vars_os(),
-        &purlis_core::chatspec::Launched {
-            program: &launch.program,
-            args: &launch.args,
-            cwd: launch.cwd.as_deref(),
-            set: &launch.set,
-            strip: &launch.strip,
-            pass: &launch.pass,
-            declared: &launch.declared,
-            harness: launch.harness.as_deref(),
-            git_hooks: launch.git_hooks.as_deref(),
-            reporting: launch.reporting.as_ref().map(|reporting| {
-                purlis_core::chatspec::Reporting {
-                    socket: std::path::Path::new(&reporting.socket),
-                    token: &reporting.token,
-                }
-            }),
-        },
-        number,
-        size,
-    )
+struct Composes(purlis_core::hoststart::Kit);
+
+#[cfg(unix)]
+impl purlis_host::Compose for Composes {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_core::session::Spec, String> {
+        let beside = starting.beside;
+        purlis_core::hoststart::spec(
+            &purlis_core::hoststart::Starting {
+                root: starting.project_path,
+                number: starting.number,
+                start: starting.start,
+                reporting: starting.reporting,
+                started_by: starting.started_by.word(),
+            },
+            starting.size,
+            &self.0,
+            &(
+                |plan: &purlis_host::protocol::session::ConfinePlan| beside.confine(plan),
+                |entry| beside.record(entry),
+            ),
+        )
+    }
 }
 
 /// What a command may do on a project that is read-only to this purlis (FR-24).

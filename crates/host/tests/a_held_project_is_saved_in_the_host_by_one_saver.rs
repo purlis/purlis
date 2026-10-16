@@ -34,6 +34,22 @@ fn place(folder: &tempfile::TempDir) -> std::path::PathBuf {
     std::fs::canonicalize(folder.path()).unwrap()
 }
 
+/// Runs a start's launch by its program.
+struct ItsLaunch;
+
+impl purlis_host::Compose for ItsLaunch {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_terminal::session::Spec, String> {
+        let launch: &Launch = starting.start.launch.as_ref().ok_or("no launch")?;
+        Ok(purlis_terminal::session::Spec::new(
+            &launch.program,
+            starting.size,
+        ))
+    }
+}
+
 struct Host {
     hosting: Hosting,
     savers: Savers,
@@ -43,13 +59,7 @@ struct Host {
 fn a_host() -> Host {
     let savers = Savers::default();
     Host {
-        hosting: Hosting::running_with(
-            purlis_host::FromTheWindow(|launch: &Launch, _, size| {
-                Ok(purlis_terminal::session::Spec::new(&launch.program, size))
-            }),
-            StandIns::default(),
-        )
-        .saving_with(savers.clone()),
+        hosting: Hosting::running_with(ItsLaunch, StandIns::default()).saving_with(savers.clone()),
         savers,
         project: tempfile::tempdir().unwrap(),
     }

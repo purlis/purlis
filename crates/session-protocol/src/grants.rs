@@ -47,9 +47,10 @@
 //!   no command that reads a value or writes a setting; both are the app's commands, which ride
 //!   only the UI RPC, and the UI RPC opens for `local-ui` only.
 //! - **A start's `launch` is the window's alone** (1.2). It is what the window composed above
-//!   its seam, the program, its words and its environment, while what composes a chat's start
-//!   still lives in the window (#1998). No other scope hands the host a program and an
-//!   environment to run; each starts by persona, profile and harness, which the host composes.
+//!   its seam, the program, its words and its environment. No other scope hands the host a
+//!   program and an environment to run; each starts by persona, profile and harness, which the
+//!   host composes from the project's own files and this machine's profiles, with the code the
+//!   window's start runs (#2171).
 //! - **`close` is a stop that also forgets**, and `readiness` a read like `list`: each goes
 //!   with the row it is like.
 //! - **A chat's confinement is the window's alone** (1.4). The window plans a chat's proxy from
@@ -68,8 +69,8 @@
 //!   `local-ui` client only. The runner's host cannot tell a relayed command from one its peer
 //!   composed, so a runner trusts its peer as it trusts the window: to compose the programs it
 //!   starts and their environment, and to answer its chats' asks. That is why a runner admits
-//!   one peer, the desktop that relays to it (`crate::hostlink::answer`). An interim, until the
-//!   host composes a start itself (#2171).
+//!   one peer, the desktop that relays to it (`crate::hostlink::answer`). An interim, until a
+//!   runner's chats are started by their names, which its host composes (#2171, #2217).
 //! - **A held project's hook lines are heard and answered by the window** (1.3), on its own
 //!   host or relayed. The host pushes each line to the links that hold the project, which only
 //!   `local-ui` and a relayed `remote-link` may, and only they reply: a reply can carry an ask's
