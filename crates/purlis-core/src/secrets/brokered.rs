@@ -2674,5 +2674,4 @@ impl Redactor {
 }
 
 #[cfg(all(test, unix))]
-#[path = "brokered_tests.rs"]
 mod tests;

@@ -671,9 +671,7 @@ impl Drop for Termination {
 }
 
 #[cfg(test)]
-#[path = "exec_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "exec_keychain_tests.rs"]
 mod keychain_tests;

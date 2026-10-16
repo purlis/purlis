@@ -1566,9 +1566,7 @@ pub fn purlis_binary_in(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf>
 
 // Shims are POSIX shell scripts, and the tests make runnable files with unix modes.
 #[cfg(all(test, unix))]
-#[path = "tools_tests.rs"]
 mod tests;
 
 #[cfg(all(test, unix))]
-#[path = "tools_login_tests.rs"]
 mod login_tests;
