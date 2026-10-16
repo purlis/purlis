@@ -14,12 +14,13 @@
 //!   signature: in a build, [`crate::sigstore::Sigstore`], which takes only a Sigstore bundle
 //!   made by the manifest workflow on `main` of purlis/purlis (#2073). It is taken only when it
 //!   supersedes the one in use ([`Manifest::supersedes`]): a later version, or the same version
-//!   issued later, never an earlier one (no step back).
+//!   issued later, never an earlier one (no step back); and only when it was issued after the
+//!   one in use, so the newest manifest a host has read decides.
 //!
-//! The one that supersedes the other is the one used. An archive runs only after its digest matched the
-//! trusted manifest's, before a byte of it was unpacked; an archive that does not match is
-//! deleted and nothing of it is kept. Chrome for Testing publishes no signature or digest of
-//! its own, so the pin is the only proof there is.
+//! Of the shipped manifest and a kept update, the one that supersedes the other is used. An
+//! archive runs only after its digest matched the trusted manifest's, before a byte of it was
+//! unpacked; an archive that does not match is deleted and nothing of it is kept. Chrome for
+//! Testing publishes no signature or digest of its own, so the pin is the only proof there is.
 //!
 //! **Fails closed.** A manifest whose bundle does not verify is refused, and the engine in use
 //! stays. A build that never receives one runs its own pinned engine. [`NoSigner`] verifies
@@ -43,7 +44,8 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -58,7 +60,10 @@ pub const PUBLISHED_MANIFEST: &str =
     "https://github.com/purlis/purlis/releases/download/engine-manifest/engine-manifest.json";
 
 /// The Sigstore bundle over [`PUBLISHED_MANIFEST`], published beside it.
-pub const PUBLISHED_BUNDLE: &str = "https://github.com/purlis/purlis/releases/download/engine-manifest/engine-manifest.json.sigstore.json";
+pub const PUBLISHED_BUNDLE: &str = concat!(
+    "https://github.com/purlis/purlis/releases/download/engine-manifest/",
+    "engine-manifest.json.sigstore.json"
+);
 
 /// The largest manifest or bundle read: either is a few kilobytes.
 pub const MAX_MANIFEST_BYTES: u64 = 1 << 20;
@@ -222,25 +227,169 @@ pub trait Fetch {
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>>;
 }
 
-/// Downloads over https, and only https, redirects included.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Https;
+/// What a download heard, for each request it made: its address, the status that came back
+/// (none when nothing did), whether the answer was read to its end, and how long that took.
+/// A redirect is a request of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hop<'a> {
+    /// The address asked.
+    pub url: &'a str,
+    /// The status that came back, if one did.
+    pub status: Option<u16>,
+    /// Whether the answer came back whole: a redirect or an error status read, or a body read
+    /// to its end.
+    pub answered: bool,
+    /// From the request to its last byte read.
+    pub took: Duration,
+}
+
+/// Told of each request a download makes ([`Https::listening`]).
+pub type Listener = Arc<dyn Fn(Hop<'_>) + Send + Sync>;
+
+/// The most redirects one download follows.
+pub const MAX_REDIRECTS: usize = 5;
+
+/// Downloads over https, and only https, redirects included, each request told to a
+/// [`Listener`] when there is one, and the whole of each request, its body included, bounded
+/// by a total time ([`Https::within`]), so a server that stops answering is given up on.
+#[derive(Clone)]
+pub struct Https {
+    total: Duration,
+    listener: Option<Listener>,
+}
+
+impl Https {
+    /// The longest an archive's download may take: an hour.
+    pub const ARCHIVE: Duration = Duration::from_secs(60 * 60);
+
+    /// Downloads each taking at most `total`, from the request to the body's last byte.
+    pub fn within(total: Duration) -> Self {
+        Self {
+            total,
+            listener: None,
+        }
+    }
+
+    /// The same downloads, each request told to `listener`.
+    pub fn listening(self, listener: Listener) -> Self {
+        Self {
+            listener: Some(listener),
+            ..self
+        }
+    }
+
+    fn hear(&self, hop: Hop<'_>) {
+        if let Some(listener) = &self.listener {
+            listener(hop);
+        }
+    }
+}
+
+impl Default for Https {
+    /// [`Https::ARCHIVE`], told to no one.
+    fn default() -> Self {
+        Self::within(Self::ARCHIVE)
+    }
+}
 
 impl Fetch for Https {
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .https_only(true)
             .timeout_connect(Some(Duration::from_secs(30)))
+            .timeout_global(Some(self.total))
+            .max_redirects(0)
+            .http_status_as_error(false)
             .build()
             .into();
-        let response = agent.get(url).call().map_err(io::Error::other)?;
-        Ok(Box::new(
-            response
+        let mut url = url.to_owned();
+        for _ in 0..=MAX_REDIRECTS {
+            let started = Instant::now();
+            let response = match agent.get(&url).call() {
+                Ok(response) => response,
+                Err(why) => {
+                    self.hear(Hop {
+                        url: &url,
+                        status: None,
+                        answered: false,
+                        took: started.elapsed(),
+                    });
+                    return Err(io::Error::other(why));
+                }
+            };
+            let status = response.status().as_u16();
+            if response.status().is_redirection() {
+                self.hear(Hop {
+                    url: &url,
+                    status: Some(status),
+                    answered: true,
+                    took: started.elapsed(),
+                });
+                url = response
+                    .headers()
+                    .get("location")
+                    .and_then(|to| to.to_str().ok())
+                    .filter(|to| to.starts_with("https://"))
+                    .ok_or_else(|| {
+                        io::Error::other(format!("{url} redirects to no https address"))
+                    })?
+                    .to_owned();
+                continue;
+            }
+            if !response.status().is_success() {
+                self.hear(Hop {
+                    url: &url,
+                    status: Some(status),
+                    answered: true,
+                    took: started.elapsed(),
+                });
+                return Err(io::Error::other(format!("{url} answered {status}")));
+            }
+            let body = response
                 .into_body()
                 .into_with_config()
                 .limit(MAX_ARCHIVE_BYTES)
-                .reader(),
-        ))
+                .reader();
+            return Ok(Box::new(Heard {
+                body,
+                heard: Some((self.clone(), url, status, started)),
+                whole: false,
+            }));
+        }
+        Err(io::Error::other(format!(
+            "more than {MAX_REDIRECTS} redirects from {url}"
+        )))
+    }
+}
+
+/// A body, told to the download's listener once it is dropped: answered only when it was read
+/// to its end.
+struct Heard<R> {
+    body: R,
+    heard: Option<(Https, String, u16, Instant)>,
+    whole: bool,
+}
+
+impl<R: Read> Read for Heard<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.body.read(buf)?;
+        if n == 0 && !buf.is_empty() {
+            self.whole = true;
+        }
+        Ok(n)
+    }
+}
+
+impl<R> Drop for Heard<R> {
+    fn drop(&mut self) {
+        if let Some((https, url, status, started)) = self.heard.take() {
+            https.hear(Hop {
+                url: &url,
+                status: Some(status),
+                answered: self.whole,
+                took: started.elapsed(),
+            });
+        }
     }
 }
 
@@ -365,8 +514,9 @@ pub enum Refused {
     /// A signed manifest that does not parse.
     #[error(transparent)]
     Manifest(#[from] BadManifest),
-    /// A signed manifest that does not supersede the one in use ([`Manifest::supersedes`]).
-    #[error("the engine update names {version}, which is not newer than the engine in use")]
+    /// A signed manifest that does not supersede the one in use ([`Manifest::supersedes`]), or
+    /// was issued no later than it.
+    #[error("the engine update names {version} and does not supersede the engine manifest in use")]
     Older {
         /// The update's version.
         version: String,
@@ -398,6 +548,10 @@ pub struct Engines {
     shipped: Manifest,
     signer: Box<dyn ManifestSignature>,
 }
+
+/// Held only while an engine is moved into place or an update is kept, never across a
+/// download, so a stalled download never holds up another browser's start.
+static SWAPPING: Mutex<()> = Mutex::new(());
 
 const UPDATE: &str = "update.json";
 const UPDATE_SIGNATURE: &str = "update.json.sigstore.json";
@@ -459,9 +613,9 @@ impl Engines {
         })
     }
 
-    /// Takes a newer manifest received with its signature ("Update now", or the background
-    /// check): verifies the signature, refuses one no newer than the manifest in use, installs
-    /// its engine, and keeps it as the manifest in use.
+    /// Takes a manifest received with its signature ("Update now", or the background check):
+    /// verifies the signature, refuses one that does not supersede the manifest in use or was
+    /// issued no later than it, installs its engine, and keeps it as the manifest in use.
     pub fn update(
         &self,
         manifest: &[u8],
@@ -475,12 +629,13 @@ impl Engines {
             .map_err(Refused::Signature)?;
         let update = Manifest::parse(manifest)?;
         let current = self.trusted();
-        if !update.supersedes(&current) {
+        if !update.supersedes(&current) || update.issued <= current.issued {
             return Err(Refused::Older {
                 version: update.version,
             });
         }
         let program = self.install(&update, fetch)?;
+        let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
         private_dir(&self.root).map_err(Refused::Store)?;
         write_replacing(&self.root.join(UPDATE_SIGNATURE), signature.as_bytes())?;
         write_replacing(&self.root.join(UPDATE), manifest)?;
@@ -502,11 +657,19 @@ impl Engines {
         fetch: &dyn Fetch,
         now: DateTime<Utc>,
     ) -> Result<Ready, Refused> {
+        let (manifest, bundle) = Self::published(fetch)?;
+        self.update(&manifest, &bundle, settings, fetch, now)
+    }
+
+    /// The newest published manifest and its bundle, read through `fetch`, unverified: what
+    /// [`Engines::update`] is given. Either file larger than [`MAX_MANIFEST_BYTES`] is refused
+    /// unread.
+    pub fn published(fetch: &dyn Fetch) -> Result<(Vec<u8>, String), Refused> {
         let manifest = read_small(fetch, PUBLISHED_MANIFEST)?;
         let bundle = read_small(fetch, PUBLISHED_BUNDLE)?;
         let bundle = String::from_utf8(bundle)
             .map_err(|_| Refused::Signature("the Sigstore bundle is not text".to_owned()))?;
-        self.update(&manifest, &bundle, settings, fetch, now)
+        Ok((manifest, bundle))
     }
 
     /// Whether an engine is installed here: the pinned engine has been used on this machine.
@@ -518,7 +681,8 @@ impl Engines {
         })
     }
 
-    /// The newer of the shipped manifest and a stored update that still verifies.
+    /// The manifest in use: a stored update that still verifies and supersedes the one this
+    /// build ships ([`Manifest::supersedes`]), or else the shipped one.
     fn trusted(&self) -> Manifest {
         let stored = fs::read(self.root.join(UPDATE)).ok().and_then(|text| {
             let signature = fs::read_to_string(self.root.join(UPDATE_SIGNATURE)).ok()?;
@@ -584,6 +748,14 @@ impl Engines {
                 )
             })
             .map_err(Refused::Store)?;
+        // The one step that touches the engines in place, one at a time in this process; every
+        // download and unpack before it is into a scratch name of its own. An engine another
+        // install finished meanwhile is kept, never replaced under a browser running it.
+        let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
+        if installed_digest(&home).as_deref() == Some(download.sha256.as_str()) && program.is_file()
+        {
+            return Ok(program);
+        }
         match fs::remove_dir_all(&home) {
             Ok(()) => {}
             Err(why) if why.kind() == io::ErrorKind::NotFound => {}
@@ -737,5 +909,71 @@ impl Drop for Scratch {
         } else {
             let _ = fs::remove_file(&self.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Read};
+    use std::sync::{Arc, Mutex};
+    use std::time::Instant;
+
+    use super::{Heard, Https};
+
+    /// Each request a listener hears, as `(url, status, answered)`.
+    /// What a listener heard: `(url, status, answered)` for each request.
+    type Hops = Arc<Mutex<Vec<(String, Option<u16>, bool)>>>;
+
+    fn listening() -> (Https, Hops) {
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&heard);
+        let https = Https::default().listening(Arc::new(move |hop| {
+            into.lock()
+                .unwrap()
+                .push((hop.url.to_owned(), hop.status, hop.answered));
+        }));
+        (https, heard)
+    }
+
+    fn body(https: &Https) -> Heard<Cursor<Vec<u8>>> {
+        Heard {
+            body: Cursor::new(b"the manifest".to_vec()),
+            heard: Some((
+                https.clone(),
+                "https://a.test/m".to_owned(),
+                200,
+                Instant::now(),
+            )),
+            whole: false,
+        }
+    }
+
+    #[test]
+    fn a_body_read_to_its_end_is_heard_as_answered_once_it_is_dropped() {
+        let (https, heard) = listening();
+        let mut whole = body(&https);
+        let mut text = String::new();
+        whole.read_to_string(&mut text).unwrap();
+        assert!(
+            heard.lock().unwrap().is_empty(),
+            "heard only once it is done with"
+        );
+        drop(whole);
+        assert_eq!(
+            *heard.lock().unwrap(),
+            [("https://a.test/m".to_owned(), Some(200), true)]
+        );
+    }
+
+    #[test]
+    fn a_body_left_unread_is_heard_as_not_answered() {
+        let (https, heard) = listening();
+        let mut part = body(&https);
+        part.read_exact(&mut [0_u8; 3]).unwrap();
+        drop(part);
+        assert_eq!(
+            *heard.lock().unwrap(),
+            [("https://a.test/m".to_owned(), Some(200), false)]
+        );
     }
 }

@@ -14,8 +14,12 @@
 //!   has been used on this machine, the host reads the newest published manifest and its
 //!   Sigstore bundle [`FIRST_CHECK`] after it starts and every [`CHECK_EVERY`] after, and a
 //!   browser that would start on an engine behind past its warning checks first. A manifest
-//!   is taken only when its bundle verifies; anything else leaves the engine in use as it is.
-//!   Every read is listed in the network log as the updater's ([`ListedFetch`], ADR 0083 §9).
+//!   is taken only when its bundle verifies; anything else leaves the engine in use as it is,
+//!   and a check that failed or was refused is written to the host's log. The manifest and
+//!   bundle are read within [`MANIFEST_READ`], before anything waits on another install. Every
+//!   request is listed in the network log, redirects included: the manifest's as the
+//!   updater's, an archive's as the browser engine's ([`manifest_reads`], [`archive_reads`],
+//!   ADR 0083 §9).
 //! - **Its keeper is this binary**, started again with [`KEEPER`]: the first thing each binary's
 //!   `main` does is [`keep_if_asked`], so the keeper runs before anything else of the program.
 //! - **This runs in the session host.** The window's host is the window's own binary, so with
@@ -32,13 +36,13 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{self, Browser, CallId, Limits, PageId, Ref};
 use purlis_browser_engine::install::{
-    Age, EngineSettings, Engines, Fetch, Https, Manifest, Platform, Ready, Refused,
+    Age, EngineSettings, Engines, Fetch, Hop, Https, Manifest, Platform, Ready, Refused,
 };
 use purlis_browser_engine::launch::{self, Launch, PAGE_SIZE};
 use purlis_browser_engine::process::{Engine, Keeper};
@@ -88,45 +92,67 @@ pub const FIRST_CHECK: Duration = Duration::from_secs(5 * 60);
 /// How often it checks again. The manifest workflow signs one a day.
 pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
-/// One install at a time in this process: the background check and a browser's start never
-/// unpack an engine into the same folder at once.
-static INSTALLING: Mutex<()> = Mutex::new(());
+/// The longest the published manifest and its bundle may take to read, each.
+pub const MANIFEST_READ: Duration = Duration::from_secs(60);
 
 /// **The background check** (#2073): when the pinned engine has been used on this machine,
-/// read the newest published manifest and its bundle and take it as
-/// [`Engines::update_from_published`] does. A machine that never used it reads nothing.
+/// read the newest published manifest and its bundle through `manifests`, and take it as
+/// [`Engines::update`] does, its archive downloaded through `archives`. A machine that never
+/// used it reads nothing.
 pub fn keep_current(
     engines: &Engines,
     settings: &EngineSettings,
-    fetch: &dyn Fetch,
+    manifests: &dyn Fetch,
+    archives: &dyn Fetch,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Option<Result<Ready, Refused>> {
     if !engines.in_use() {
         return None;
     }
-    Some(engines.update_from_published(settings, fetch, now))
+    Some(update(engines, settings, manifests, archives, now))
 }
 
-/// A download that lists each address it reads, and whether an answer came, with `record`:
-/// in the host, the network log's updater line (`netlog::updater_read`).
-pub struct ListedFetch<'a> {
-    inner: &'a dyn Fetch,
-    record: &'a dyn Fn(&str, bool, Duration),
+/// The published manifest read through `manifests`, then taken as [`Engines::update`] does.
+fn update(
+    engines: &Engines,
+    settings: &EngineSettings,
+    manifests: &dyn Fetch,
+    archives: &dyn Fetch,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Ready, Refused> {
+    let (manifest, bundle) = Engines::published(manifests)?;
+    engines.update(&manifest, &bundle, settings, archives, now)
 }
 
-impl<'a> ListedFetch<'a> {
-    /// `inner`, each read listed with `record`.
-    pub fn new(inner: &'a dyn Fetch, record: &'a dyn Fn(&str, bool, Duration)) -> Self {
-        ListedFetch { inner, record }
-    }
+/// The published manifest and its bundle are read within [`MANIFEST_READ`], each request
+/// listed in the network log as the updater's.
+pub fn manifest_reads() -> Https {
+    Https::within(MANIFEST_READ).listening(listed_as(crate::netlog::Feature::Updater))
 }
 
-impl Fetch for ListedFetch<'_> {
-    fn fetch(&self, url: &str) -> std::io::Result<Box<dyn std::io::Read + '_>> {
-        let started = Instant::now();
-        let got = self.inner.fetch(url);
-        (self.record)(url, got.is_ok(), started.elapsed());
-        got
+/// An engine's archive is read within [`Https::ARCHIVE`], each request listed in the network
+/// log as the browser engine's.
+pub fn archive_reads() -> Https {
+    Https::default().listening(listed_as(crate::netlog::Feature::BrowserEngine))
+}
+
+/// Each request a download makes, listed in the network log under `feature`.
+fn listed_as(feature: crate::netlog::Feature) -> Arc<dyn Fn(Hop<'_>) + Send + Sync> {
+    Arc::new(move |hop: Hop<'_>| {
+        crate::netlog::fetched(feature, hop.url, hop.status, hop.answered, hop.took);
+    })
+}
+
+/// A check of the engine that failed or was refused, in the host's log. One that found
+/// nothing newer says nothing.
+fn report(checked: &Result<Ready, Refused>) {
+    match checked {
+        Ok(ready) => tracing::info!(
+            version = ready.version().unwrap_or_default(),
+            "the browser engine was updated"
+        ),
+        Err(Refused::Older { .. }) => {}
+        Err(why) => tracing::warn!("the browser engine's update check did not update it: {why}"),
     }
 }
 
@@ -164,14 +190,16 @@ fn check_here() {
         return;
     };
     let engines = engines_here(&data, platform);
-    let fetch = ListedFetch::new(&Https, &crate::netlog::updater_read);
-    let _installing = INSTALLING.lock().unwrap_or_else(PoisonError::into_inner);
-    let _ = keep_current(
+    let checked = keep_current(
         &engines,
         &EngineSettings::default(),
-        &fetch,
+        &manifest_reads(),
+        &archive_reads(),
         chrono::Utc::now(),
     );
+    if let Some(checked) = checked {
+        report(&checked);
+    }
 }
 
 /// Starts each browser on the pinned engine, with this binary as its keeper.
@@ -250,18 +278,19 @@ impl Browsers for EngineBrowsers {
 /// background check has not run yet is not refused for an engine already superseded.
 fn prepared(engines: &Engines) -> Result<Ready, Refused> {
     let settings = EngineSettings::default();
-    let fetch = ListedFetch::new(&Https, &crate::netlog::updater_read);
+    let archives = archive_reads();
     let now = chrono::Utc::now();
-    let _installing = INSTALLING.lock().unwrap_or_else(PoisonError::into_inner);
-    let first = engines.prepare(&settings, &fetch, now);
+    let first = engines.prepare(&settings, &archives, now);
     let behind = match &first {
         Ok(ready) => matches!(ready.age(), Age::Behind { .. }),
         Err(refused) => matches!(refused, Refused::Outdated { .. }),
     };
-    if behind && let Ok(updated) = engines.update_from_published(&settings, &fetch, now) {
-        return Ok(updated);
+    if !behind {
+        return first;
     }
-    first
+    let checked = update(engines, &settings, &manifest_reads(), &archives, now);
+    report(&checked);
+    checked.or(first)
 }
 
 /// The most bytes a screenshot's PNG is carried as: with its base64 and the answer around it,

@@ -26,9 +26,10 @@ trusted as follows.
 
 ## What a bundle must prove
 
-`purlis_browser_engine::sigstore::Sigstore` verifies with Sigstore's own Rust verifier
-(`sigstore-verify`), and takes a manifest only when all of these hold:
+`purlis_browser_engine::sigstore::Sigstore` takes a manifest only when all of these hold:
 
+- the bundle is of the format `cosign sign-blob` makes (v0.3), and every log entry in it
+  carries its inclusion proof and a checkpoint (checked by purlis itself, before the rest);
 - the bundle's certificate chains to a certificate authority of the shipped root that was
   valid when it signed;
 - its identity and issuer are exactly the two above;
@@ -38,6 +39,15 @@ trusted as follows.
   logged, and the entry describes this signature.
 
 A bundle that fails any of them is refused, and the engine in use stays.
+
+**The verifier.** Sigstore's own Rust verifier, `sigstore-verify` (sigstore/sigstore-rust,
+Apache-2.0), pinned to one exact version since it is before 1.0, without its default
+cryptography backend (aws-lc, whose OpenSSL licence purlis's dependency policy does not
+allow) and without an HTTP client. Its cryptography is `ring`, which purlis's TLS already
+links, and RustCrypto's `p256` for the one check `ring` does not offer, an ECDSA signature over
+a digest, which is how Sigstore checks a signature over a file. Rejected: the older `sigstore`
+crate, with a much larger tree, and a verifier of purlis's own, which would be more
+security-critical code to keep.
 
 ## Where it is published, and how a host takes it
 
@@ -57,6 +67,14 @@ A bundle that fails any of them is refused, and the engine in use stays.
 - **What supersedes the manifest in use**: a later version, or the same version issued later,
   which says that version is still current, so a daily signature keeps an engine that is
   current from being refused for its age. A manifest naming an earlier version is never taken.
+- **The newest manifest read decides.** A received manifest is taken only when it was issued
+  after the one in use, whatever version it names. A manifest says which version is current
+  as of its issue time, so a host goes by the latest such statement it has read.
+- **Bounded reads, no shared wait.** The manifest and its bundle are each read within a
+  minute, an engine's archive within an hour, from the request to the last byte. A read never
+  holds what a browser's start waits on: only moving an engine into place and keeping an
+  update do, one at a time. A check that fails or is refused is written to the host's log,
+  and the engine in use stays.
 
 ## Rejected
 

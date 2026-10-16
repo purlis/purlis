@@ -219,7 +219,8 @@ use purlis_browser_engine::install::{
     Platform, Refused,
 };
 
-use super::{ListedFetch, keep_current};
+use super::keep_current;
+use crate::netlog::{Feature, Party};
 
 /// Serves only the published manifest, and remembers what it was asked for.
 #[derive(Default)]
@@ -253,6 +254,7 @@ fn a_machine_that_never_used_the_pinned_engine_is_never_checked_for_one() {
         &engines(&root.path().join("engines")),
         &EngineSettings::default(),
         &asked,
+        &asked,
         chrono::Utc::now(),
     );
     assert!(checked.is_none());
@@ -265,11 +267,12 @@ fn a_machine_with_the_pinned_engine_installed_reads_the_published_manifest_and_i
     let installed = root.path().join("155.0.8059.79-linux64");
     std::fs::create_dir_all(&installed).unwrap();
     std::fs::write(installed.join("installed.json"), r#"{"sha256":"ab"}"#).unwrap();
-    let asked = Asked::default();
+    let (manifests, archives) = (Asked::default(), Asked::default());
     let checked = keep_current(
         &engines(root.path()),
         &EngineSettings::default(),
-        &asked,
+        &manifests,
+        &archives,
         chrono::Utc::now(),
     );
     assert!(
@@ -277,26 +280,21 @@ fn a_machine_with_the_pinned_engine_installed_reads_the_published_manifest_and_i
         "{checked:?}"
     );
     assert_eq!(
-        *asked.0.borrow(),
+        *manifests.0.borrow(),
         [PUBLISHED_MANIFEST.to_owned(), PUBLISHED_BUNDLE.to_owned()]
     );
+    assert!(archives.0.borrow().is_empty());
 }
 
 #[test]
-fn every_read_of_the_engines_files_is_listed_with_whether_it_was_answered() {
-    let lines = RefCell::new(Vec::new());
-    let record = |url: &str, answered: bool, _: Duration| {
-        lines.borrow_mut().push((url.to_owned(), answered));
-    };
-    let asked = Asked::default();
-    let listed = ListedFetch::new(&asked, &record);
-    assert!(listed.fetch(PUBLISHED_MANIFEST).is_ok());
-    assert!(listed.fetch(PUBLISHED_BUNDLE).is_err());
+fn the_engines_archive_is_a_third_partys_and_the_manifest_is_purliss_own() {
+    assert_eq!(Feature::BrowserEngine.party(), Party::ThirdParty);
     assert_eq!(
-        *lines.borrow(),
-        [
-            (PUBLISHED_MANIFEST.to_owned(), true),
-            (PUBLISHED_BUNDLE.to_owned(), false)
-        ]
+        serde_json::to_value(Feature::BrowserEngine).unwrap(),
+        "browser-engine"
     );
+    let path = PUBLISHED_MANIFEST
+        .strip_prefix("https://github.com")
+        .unwrap();
+    assert!(crate::netlog::is_charters("github.com", path));
 }

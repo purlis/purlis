@@ -19,14 +19,18 @@
 //! For engine manifests that workflow is [`MANIFEST_WORKFLOW`]: `engine-manifest.yml` on `main`
 //! of purlis/purlis. There is no key to keep: the identity is the workflow's own.
 //!
-//! The verification is Sigstore's own Rust verifier (`sigstore-verify`); its cryptography is
-//! `ring`, the library purlis's TLS already uses ([`Ring`]).
+//! The proof of the log is asked of every bundle here, before Sigstore's verifier is: a
+//! bundle of the format `cosign sign-blob` makes (v0.3), whose every log entry carries its
+//! inclusion proof and a checkpoint. The rest is Sigstore's own Rust verifier
+//! (`sigstore-verify`), with this build's cryptography ([`Cryptography`]).
 
+use p256::ecdsa::signature::hazmat::PrehashVerifier;
+use ring::signature as ring_signature;
 use sigstore_verify::crypto::{
     CryptoProvider, Error as CryptoError, HashContext, SigningScheme, install_default_provider,
 };
 use sigstore_verify::trust_root::TrustedRoot;
-use sigstore_verify::types::{Bundle, HashAlgorithm, SignatureContent};
+use sigstore_verify::types::{Bundle, HashAlgorithm, MediaType, SignatureContent};
 use sigstore_verify::{IdentityMatcher, VerificationPolicy, Verifier};
 
 use crate::install::ManifestSignature;
@@ -83,7 +87,7 @@ impl Sigstore {
     pub fn trusting(root: &str, workflow: &Workflow<'_>) -> Result<Self, String> {
         // Installed once per process; a second install is refused and the first one stays,
         // which is this same provider.
-        let _ = install_default_provider(&RING);
+        let _ = install_default_provider(&CRYPTOGRAPHY);
         let root = TrustedRoot::from_json(root)
             .map_err(|why| format!("the Sigstore trusted root does not read: {why}"))?;
         let verifier = Verifier::new(&root)
@@ -107,6 +111,7 @@ impl ManifestSignature for Sigstore {
         if !matches!(bundle.content, SignatureContent::MessageSignature(_)) {
             return Err("the Sigstore bundle signs no manifest".to_owned());
         }
+        proves_its_log_entries(&bundle)?;
         let policy = VerificationPolicy::new(IdentityMatcher::Uri(self.identity.clone()), ISSUER);
         let result = self
             .verifier
@@ -123,12 +128,41 @@ impl ManifestSignature for Sigstore {
     }
 }
 
+/// A bundle of the v0.3 format, with at least one log entry, every one of them carrying its
+/// inclusion proof and a checkpoint, or why not.
+fn proves_its_log_entries(bundle: &Bundle) -> Result<(), String> {
+    if bundle.media_type != MediaType::Bundle0_3 {
+        return Err(format!(
+            "the Sigstore bundle is of the format {}, not {}",
+            bundle.media_type.as_str(),
+            MediaType::Bundle0_3.as_str()
+        ));
+    }
+    let entries = &bundle.verification_material.tlog_entries;
+    if entries.is_empty() {
+        return Err("the Sigstore bundle carries no log entry".to_owned());
+    }
+    let proven = entries.iter().all(|entry| {
+        entry
+            .inclusion_proof
+            .as_ref()
+            .is_some_and(|proof| proof.checkpoint.checkpoint().is_some())
+    });
+    if !proven {
+        return Err(
+            "a log entry of the Sigstore bundle carries no inclusion proof and checkpoint"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
 /// Sigstore's cryptography, done by `ring` (hashing, and signatures over whole messages) and
 /// RustCrypto's `p256` (an ECDSA signature over a digest). It makes no keys and signs nothing.
 #[derive(Debug)]
-pub struct Ring;
+pub struct Cryptography;
 
-static RING: Ring = Ring;
+static CRYPTOGRAPHY: Cryptography = Cryptography;
 
 struct Digesting(ring::digest::Context);
 
@@ -142,7 +176,7 @@ impl HashContext for Digesting {
     }
 }
 
-impl CryptoProvider for Ring {
+impl CryptoProvider for Cryptography {
     fn hash(&self, algorithm: HashAlgorithm) -> Result<Box<dyn HashContext>, CryptoError> {
         let algorithm = match algorithm {
             HashAlgorithm::Sha2256 => &ring::digest::SHA256,
@@ -164,19 +198,18 @@ impl CryptoProvider for Ring {
         data: &[u8],
         signature: &[u8],
     ) -> Result<(), CryptoError> {
-        use ring::signature as s;
-        let algorithm: &dyn s::VerificationAlgorithm = match scheme {
-            SigningScheme::EcdsaP256Sha256 => &s::ECDSA_P256_SHA256_ASN1,
-            SigningScheme::EcdsaP256Sha384 => &s::ECDSA_P256_SHA384_ASN1,
-            SigningScheme::EcdsaP384Sha256 => &s::ECDSA_P384_SHA256_ASN1,
-            SigningScheme::EcdsaP384Sha384 => &s::ECDSA_P384_SHA384_ASN1,
-            SigningScheme::Ed25519 => &s::ED25519,
-            SigningScheme::RsaPssSha256 => &s::RSA_PSS_2048_8192_SHA256,
-            SigningScheme::RsaPssSha384 => &s::RSA_PSS_2048_8192_SHA384,
-            SigningScheme::RsaPssSha512 => &s::RSA_PSS_2048_8192_SHA512,
-            SigningScheme::RsaPkcs1Sha256 => &s::RSA_PKCS1_2048_8192_SHA256,
-            SigningScheme::RsaPkcs1Sha384 => &s::RSA_PKCS1_2048_8192_SHA384,
-            SigningScheme::RsaPkcs1Sha512 => &s::RSA_PKCS1_2048_8192_SHA512,
+        let algorithm: &dyn ring_signature::VerificationAlgorithm = match scheme {
+            SigningScheme::EcdsaP256Sha256 => &ring_signature::ECDSA_P256_SHA256_ASN1,
+            SigningScheme::EcdsaP256Sha384 => &ring_signature::ECDSA_P256_SHA384_ASN1,
+            SigningScheme::EcdsaP384Sha256 => &ring_signature::ECDSA_P384_SHA256_ASN1,
+            SigningScheme::EcdsaP384Sha384 => &ring_signature::ECDSA_P384_SHA384_ASN1,
+            SigningScheme::Ed25519 => &ring_signature::ED25519,
+            SigningScheme::RsaPssSha256 => &ring_signature::RSA_PSS_2048_8192_SHA256,
+            SigningScheme::RsaPssSha384 => &ring_signature::RSA_PSS_2048_8192_SHA384,
+            SigningScheme::RsaPssSha512 => &ring_signature::RSA_PSS_2048_8192_SHA512,
+            SigningScheme::RsaPkcs1Sha256 => &ring_signature::RSA_PKCS1_2048_8192_SHA256,
+            SigningScheme::RsaPkcs1Sha384 => &ring_signature::RSA_PKCS1_2048_8192_SHA384,
+            SigningScheme::RsaPkcs1Sha512 => &ring_signature::RSA_PKCS1_2048_8192_SHA512,
             other => {
                 return Err(CryptoError::UnsupportedAlgorithm(format!(
                     "{} signatures are not verified here",
@@ -184,7 +217,7 @@ impl CryptoProvider for Ring {
                 )));
             }
         };
-        s::UnparsedPublicKey::new(algorithm, public_key)
+        ring_signature::UnparsedPublicKey::new(algorithm, public_key)
             .verify(data, signature)
             .map_err(|_| CryptoError::Verification(format!("{} signature invalid", scheme.name())))
     }
@@ -199,7 +232,6 @@ impl CryptoProvider for Ring {
         digest: &[u8],
         signature: &[u8],
     ) -> Result<(), CryptoError> {
-        use p256::ecdsa::signature::hazmat::PrehashVerifier;
         if !matches!(
             scheme,
             SigningScheme::EcdsaP256Sha256 | SigningScheme::EcdsaP256Sha384

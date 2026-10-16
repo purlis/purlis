@@ -128,16 +128,21 @@ jobs:
       - name: The engine-manifest prerelease exists
         run: |
           set -euo pipefail
-          if pre=$(gh release view engine-manifest --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease 2>/dev/null); then
+          if pre=$(gh release view engine-manifest --repo "$GITHUB_REPOSITORY" \
+            --json isPrerelease --jq .isPrerelease 2>/dev/null); then
             if [ "$pre" != "true" ]; then
-              echo "::error::the release named 'engine-manifest' is not a prerelease, so GitHub's 'latest' pointer could resolve to it. Mark it a prerelease: gh release edit engine-manifest --prerelease"
+              echo "::error::the release named 'engine-manifest' is not a prerelease, so" \
+                "GitHub's 'latest' pointer could resolve to it. Mark it a prerelease:" \
+                "gh release edit engine-manifest --prerelease"
               exit 1
             fi
           else
+            notes="The browser engine's manifest, signed each day by"
+            notes="$notes .github/workflows/engine-manifest.yml with Sigstore. Not a release of purlis."
             gh release create engine-manifest --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --prerelease --latest=false \
               --title "Browser engine manifest" \
-              --notes "The browser engine's manifest, signed each day by .github/workflows/engine-manifest.yml with Sigstore. Not a release of purlis."
+              --notes "$notes"
           fi
 
       # The bundle first and the manifest last, as the dev channel's manifest goes last
@@ -150,7 +155,8 @@ jobs:
             "$RUNNER_TEMP/out/engine-manifest.json"
           version=$(jq -r .version "$RUNNER_TEMP/out/engine-manifest.json")
           issued=$(jq -r .issued "$RUNNER_TEMP/out/engine-manifest.json")
-          echo "### Engine manifest: Chrome for Testing $version, issued $issued" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Engine manifest: Chrome for Testing $version, issued $issued" \
+            >> "$GITHUB_STEP_SUMMARY"
 
   # A scheduled run's red X is on a page nobody opens; an issue is in the repo. One issue, found
   # by its exact title among every open issue and rewritten each red day, never a second one,
@@ -188,7 +194,8 @@ jobs:
             exit 0
           fi
           if [ "$SIGN" != failure ] && [ "$PUBLISH" != failure ]; then
-            echo "### The run did not finish (sign: $SIGN, publish: $PUBLISH); its issue is left as it is" >> "$GITHUB_STEP_SUMMARY"
+            echo "### The run did not finish (sign: $SIGN, publish: $PUBLISH);" \
+              "its issue is left as it is" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           BODY_FILE="$RUNNER_TEMP/body.md"

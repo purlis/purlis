@@ -39,6 +39,11 @@ fn trusting(workflow: &Workflow<'_>) -> Sigstore {
     Sigstore::trusting(TRUSTED_ROOT, workflow).expect("the shipped root reads")
 }
 
+/// The first log entry's inclusion proof in `bundle`.
+fn first_proof(bundle: &mut Value) -> &mut Value {
+    &mut bundle["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]
+}
+
 fn bundle() -> Value {
     serde_json::from_str(BUNDLE).unwrap()
 }
@@ -128,11 +133,42 @@ fn a_bundle_with_no_log_entry_or_no_inclusion_proof_is_refused() {
     refused(&trusting(&GORELEASER), ARTIFACT, &unproven.to_string());
 }
 
+/// Whatever format a bundle names, it is taken only as `cosign sign-blob` makes it (v0.3) and
+/// only when every log entry in it carries its inclusion proof and a checkpoint.
+#[test]
+fn a_bundle_is_taken_only_in_the_v0_3_format_with_every_log_entry_proven() {
+    for format in [
+        "application/vnd.dev.sigstore.bundle+json;version=0.1",
+        "application/vnd.dev.sigstore.bundle+json;version=0.2",
+    ] {
+        let mut older = bundle();
+        older["mediaType"] = Value::String(format.to_owned());
+        refused(&trusting(&GORELEASER), ARTIFACT, &older.to_string());
+        older["verificationMaterial"]["tlogEntries"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("inclusionProof");
+        refused(&trusting(&GORELEASER), ARTIFACT, &older.to_string());
+    }
+
+    let mut second = bundle();
+    let entries = second["verificationMaterial"]["tlogEntries"]
+        .as_array_mut()
+        .unwrap();
+    let mut unproven = entries[0].clone();
+    unproven.as_object_mut().unwrap().remove("inclusionProof");
+    entries.push(unproven);
+    refused(&trusting(&GORELEASER), ARTIFACT, &second.to_string());
+
+    let mut no_checkpoint = bundle();
+    first_proof(&mut no_checkpoint)["checkpoint"]["envelope"] = Value::String(String::new());
+    refused(&trusting(&GORELEASER), ARTIFACT, &no_checkpoint.to_string());
+}
+
 #[test]
 fn a_bundle_whose_inclusion_proof_or_checkpoint_was_altered_is_refused() {
     let mut hashes = bundle();
-    let first =
-        &mut hashes["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["hashes"][0];
+    let first = &mut first_proof(&mut hashes)["hashes"][0];
     let mut bytes = first.as_str().unwrap().to_owned().into_bytes();
     bytes[0] = if bytes[0] == b'A' { b'B' } else { b'A' };
     *first = Value::String(String::from_utf8(bytes).unwrap());
@@ -140,8 +176,7 @@ fn a_bundle_whose_inclusion_proof_or_checkpoint_was_altered_is_refused() {
 
     // The log's signature on the checkpoint, its last line, with one character changed.
     let mut checkpoint = bundle();
-    let envelope = &mut checkpoint["verificationMaterial"]["tlogEntries"][0]["inclusionProof"]["checkpoint"]
-        ["envelope"];
+    let envelope = &mut first_proof(&mut checkpoint)["checkpoint"]["envelope"];
     let mut text = envelope.as_str().unwrap().as_bytes().to_vec();
     let at = text.iter().rposition(|&b| b == b' ').unwrap() + 12;
     text[at] = if text[at] == b'A' { b'B' } else { b'A' };

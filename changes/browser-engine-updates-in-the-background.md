@@ -4,5 +4,6 @@
   browser on this machine, the session host checks each day's signed manifest of Chrome for
   Testing in the background and takes a newer engine only when its Sigstore signature verifies
   as purlis's own manifest workflow on `main`. An engine still current is no longer refused for
-  its age. Each check is listed in the network log as an updater read. With no update ever
-  received, the engine your build pins keeps working.
+  its age. The network log lists each manifest read as the updater's and each engine download
+  as the browser engine's, redirects included. With no update ever received, the engine your
+  build pins keeps working.
