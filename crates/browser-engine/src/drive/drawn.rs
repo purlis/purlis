@@ -41,6 +41,9 @@ const OPAQUE: [&str; 7] = [
     "CANVAS", "IMG", "VIDEO", "EMBED", "OBJECT", "IMAGE", "FEIMAGE",
 ];
 
+/// The engine's number for an element node.
+const ELEMENT: i64 = 1;
+
 /// Elements that hold another document.
 const FRAMES: [&str; 3] = ["IFRAME", "FRAME", "FENCEDFRAME"];
 
@@ -100,6 +103,7 @@ fn read_document(
     };
     let parents = numbers(nodes, "parentIndex")?;
     let names = numbers(nodes, "nodeName")?;
+    let kinds = numbers(nodes, "nodeType")?;
     let values = numbers(nodes, "nodeValue")?;
     let backends = numbers(nodes, "backendNodeId")?;
     let attributes = nodes
@@ -107,9 +111,15 @@ fn read_document(
         .and_then(Value::as_array)
         .ok_or(Unread(line!()))?;
     let count = parents.len();
-    if [names.len(), values.len(), backends.len(), attributes.len()]
-        .iter()
-        .any(|n| *n != count)
+    if [
+        names.len(),
+        kinds.len(),
+        values.len(),
+        backends.len(),
+        attributes.len(),
+    ]
+    .iter()
+    .any(|n| *n != count)
     {
         return Err(Unread(line!()));
     }
@@ -169,6 +179,12 @@ fn read_document(
                     .map(str::to_ascii_lowercase)
             })
             .collect::<Result<_, _>>()?;
+        // The engine gives no styles for what is not an element (a text, the document): it
+        // draws them in the styles of the element they are in.
+        let style = match style.as_slice() {
+            [] if kinds[at] != ELEMENT => vec![String::new(); STYLES.len()],
+            _ => style,
+        };
         let [images @ .., reflected] = style.as_slice() else {
             return Err(Unread(line!()));
         };

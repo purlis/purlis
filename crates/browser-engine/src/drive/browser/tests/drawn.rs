@@ -147,8 +147,10 @@ impl Document {
                     "/text",
                     json!(text.as_deref().map_or(-1, &mut index)),
                 );
+                // As the engine does, only an element has styles.
                 let styles: Vec<i64> = STYLES
                     .iter()
+                    .filter(|_| node.kind == 1)
                     .map(|name| {
                         let value = styles
                             .iter()
