@@ -7,7 +7,9 @@ import { layoutPref } from "./layoutPref";
  * **How the Chats list is drawn** (#1499, V100-73): whether the sessions of one workspace
  * stand together. A row is one line (#1675), so how many lines it takes is no longer a choice:
  * a file that still says `lines` is read as if it did not, and says nothing of it. **And what pressing a task in it does**
- * (#1489, V100-74): shows it inside its session's tab, or opens it in a tab of its own.
+ * (#1489, V100-74): shows it inside its session's tab, or opens it in a tab of its own. **And
+ * where a chat's browser opens** (#2024, spec #2008): beside its chat, or only where the person
+ * opens it from its row or its tab.
  *
  * **Kept in the layout file, beside the text sizes and your editor** (`layout.json`,
  * `regions.ts`), under `chats`. It is how one person likes their window, on this machine: a
@@ -23,12 +25,16 @@ export type ChatsListPrefs = {
   /** Whether coming back to the window after a while away sums up what happened meanwhile
    *  (#1514, V100-73, "Away summary"), one Notice per project (`AwaySummary.tsx`). */
   away: boolean;
+  /** Whether a chat's new browser opens beside the chat, in its tab (#2024, "Open a chat's
+   *  browser beside it"), where otherwise its row and its tab's thumbnail open it. */
+  beside: boolean;
 };
 
 export const DEFAULT_CHATS_LIST: ChatsListPrefs = {
   grouped: false,
   tabbed: false,
   away: true,
+  beside: false,
 };
 
 /** The preferences as a layout document holds them, and what had to be put right. */
@@ -60,7 +66,11 @@ export function loadChatsList(raw: unknown): { prefs: ChatsListPrefs; said: stri
   if (typeof from.away === "boolean") away = from.away;
   else if (from.away !== undefined)
     said.push(`"chats.away" ${JSON.stringify(from.away)} is not true or false, so it is true`);
-  return { prefs: { grouped, tabbed, away }, said };
+  let beside = DEFAULT_CHATS_LIST.beside;
+  if (typeof from.beside === "boolean") beside = from.beside;
+  else if (from.beside !== undefined)
+    said.push(`"chats.beside" ${JSON.stringify(from.beside)} is not true or false, so it is false`);
+  return { prefs: { grouped, tabbed, away, beside }, said };
 }
 
 /** Whether `prefs` are the defaults, which the layout file leaves out. */
@@ -68,7 +78,8 @@ export function isDefaultChatsList(prefs: ChatsListPrefs): boolean {
   return (
     prefs.grouped === DEFAULT_CHATS_LIST.grouped &&
     prefs.tabbed === DEFAULT_CHATS_LIST.tabbed &&
-    prefs.away === DEFAULT_CHATS_LIST.away
+    prefs.away === DEFAULT_CHATS_LIST.away &&
+    prefs.beside === DEFAULT_CHATS_LIST.beside
   );
 }
 
@@ -81,7 +92,10 @@ export const CHATS_LIST = layoutPref<ChatsListPrefs, "chats">({
     return { value: prefs, said };
   },
   same: (one, other) =>
-    one.grouped === other.grouped && one.tabbed === other.tabbed && one.away === other.away,
+    one.grouped === other.grouped &&
+    one.tabbed === other.tabbed &&
+    one.away === other.away &&
+    one.beside === other.beside,
   written: (prefs) => (isDefaultChatsList(prefs) ? undefined : prefs),
   remedy: (where) => `fix ${where}, or change the Chats list in Settings, which rewrites it`,
   settings: "you.chats",

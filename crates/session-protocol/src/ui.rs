@@ -551,6 +551,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "hand_back_browser",
     "browser_input",
     "size_browser",
+    // A chat's browsers, listed to be watched (#2024): the window's alone, as watching is.
+    "chat_browsers",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -1180,6 +1182,22 @@ mod credential_tests {
         );
         assert!(window_only("clipboard_text"));
         assert!(!served_on_a_link("clipboard_text"));
+    }
+
+    #[test]
+    fn a_chats_browsers_are_listed_to_the_window_alone_and_never_on_a_link() {
+        // #2024: the list is for watching, and a browser is watched in the person's window.
+        let server = Server::new("0.0.0+test", ["rename_chat", "chat_browsers"], Nothing);
+        assert_eq!(
+            server
+                .methods
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["rename_chat"]
+        );
+        assert!(window_only("chat_browsers"));
+        assert!(!served_on_a_link("chat_browsers"));
     }
 
     #[test]

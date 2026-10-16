@@ -74,6 +74,7 @@ import { FinishedTasks } from "./FinishedTasks";
 import type { TaskFacts } from "./shownState";
 import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
+import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
 import { PersonaMark } from "./PersonaMark";
@@ -151,6 +152,9 @@ const NO_RESTARTS: Readonly<Record<number, string>> = {};
 const NONE_OPENED: ReadonlySet<number> = new Set();
 /** The chats of no tab. */
 const NO_ROWS: readonly ChatRow[] = [];
+
+/** A chat with no browser (#2024). */
+const NO_BROWSER_ROWS: readonly BrowserShown[] = [];
 
 /** No chat ids. */
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -277,6 +281,8 @@ export function ChatsSection({
   onEndTask,
   onEndConfirm,
   onChanges,
+  browsers,
+  onBrowser,
 }: {
   rows: readonly ChatRow[];
   /** The workspace in the strip, by the word a row says for where it works: the rows listed
@@ -330,6 +336,10 @@ export function ChatsSection({
   onEndConfirm?: (yes: boolean) => void;
   /** Opens what a finished task changed, in a tab of its own (#1511). */
   onChanges?: (task: FinishedTask) => void;
+  /** Each chat's browsers, by its number (#2024): rows under its own. */
+  browsers?: ReadonlyMap<number, readonly BrowserShown[]>;
+  /** A browser's row was pressed: open its view. No rows are drawn without it. */
+  onBrowser?: (shown: BrowserShown) => void;
 }) {
   const prefs = useChatsListPrefs();
   const chats = useChatsHere();
@@ -1051,6 +1061,17 @@ export function ChatsSection({
                       onAct={act}
                       pointedLast={pointedLast}
                     />,
+                    // **Its browsers** (#2024), right under it, before what runs under it: a
+                    // folded chat's are folded away with the rest.
+                    onBrowser !== undefined && !folded.has(row.session) && (
+                      <BrowserRows
+                        key={`browsers:${row.session}`}
+                        chat={row.name}
+                        level={row.level + 1}
+                        browsers={browsers?.get(row.session) ?? NO_BROWSER_ROWS}
+                        onOpen={onBrowser}
+                      />
+                    ),
                     // The finished tasks of each chat whose rows end here (#1485): this
                     // row's own, where no chat is drawn under it, then those of every chat
                     // above it that this row is the last one under. Under a filter, the ones
