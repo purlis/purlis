@@ -378,10 +378,11 @@ so you confirm it instead of choosing:
 browser = "open-web"     # or "project": this project's sites and its dev servers
 ```
 
-**Declaring never grants** (ADR 0073). The declared answer is drawn first and preselected on
-the Ask, and you still answer it; what you answer is what the browser reaches. Only the
-committed `charter.toml` declares a browser: a `browser` line in `persona.md`, which a chat may
-edit, declares nothing.
+**Declaring never grants** (ADR 0073). The Ask's answers keep their places whatever a persona
+declares; the declared reach's answer for this chat is marked "<persona> uses this", its Always
+beside it unmarked, and you still answer it; what you answer is what the browser reaches. Only
+the project's root `charter.toml`, which no sandboxed chat writes, declares a browser: a
+`browser` line in `persona.md`, which a chat may edit, declares nothing.
 
 **Always for this persona** holds for every chat opened as that persona in this project on this
 machine: their browsers open with no Ask. It is kept on this machine, where no chat writes, and

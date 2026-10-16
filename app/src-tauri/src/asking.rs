@@ -194,8 +194,9 @@ pub struct Offered {
     pub label: String,
     /// Whether choosing it lets the call run.
     pub allows: bool,
-    /// **The answer drawn first and marked as the one the source suggests** (#2241): a
-    /// persona's declared browser. Never an answer: only the person's press answers.
+    /// **The answer marked as the one the source suggests** (#2241): a persona's declared
+    /// browser. Marked in its place, never moved, and never an answer: only the person's press
+    /// answers. Absent (rather than `false`) wherever nothing is marked.
     #[specta(optional)]
     pub preselected: Option<bool>,
 }
@@ -806,9 +807,11 @@ fn browser_key(session: u32) -> String {
 ///
 /// **Always for this persona** (#2241) is offered beside each, for a chat that runs as a
 /// persona, unless an administrator's policy leaves out `you`, the scope it is kept at
-/// (`locks`). **A persona's declared browser** is drawn first and marked preselected, its
-/// Always where that is offered, and the line says what the persona declares: the person still
-/// answers (ADR 0073).
+/// (`locks`). **The answers never move**: This project's sites, Also the open web, each Always
+/// after them, Keep off last, whatever the persona declares, so a key always presses the same
+/// answer. **A persona's declared browser** marks its for-this-chat answer only, by its label
+/// ("<persona> uses this") and as `preselected`, its Always beside it unmarked, and the line says
+/// what the persona declares: the person still answers (ADR 0073).
 pub fn browser_posture(
     waits: &crate::chatbrowsers::Waits,
     locks: &purlis_core::sandbox::policy::Locks,
@@ -839,9 +842,29 @@ pub fn browser_posture(
         allows: true,
         preselected: None,
     };
+    // The declared reach's answer for this chat alone is marked, in place.
+    let marked = |reach: Browser, said: &str| match (persona, declared) {
+        (Some(persona), Some(declared)) if declared == reach => Offered {
+            preselected: Some(true),
+            ..offer(
+                match reach {
+                    Browser::Project => BROWSER_PROJECT,
+                    Browser::OpenWeb => BROWSER_OPEN_WEB,
+                },
+                format!("{said} ({persona} uses this)"),
+            )
+        },
+        _ => offer(
+            match reach {
+                Browser::Project => BROWSER_PROJECT,
+                Browser::OpenWeb => BROWSER_OPEN_WEB,
+            },
+            said.to_owned(),
+        ),
+    };
     let mut options = vec![
-        offer(BROWSER_PROJECT, "This project's sites".to_owned()),
-        offer(BROWSER_OPEN_WEB, "Also the open web".to_owned()),
+        marked(Browser::Project, "This project's sites"),
+        marked(Browser::OpenWeb, "Also the open web"),
     ];
     if let Some(persona) = always_for {
         options.push(offer(
@@ -852,20 +875,6 @@ pub fn browser_posture(
             BROWSER_OPEN_WEB_ALWAYS,
             format!("Also the open web, always for {persona}"),
         ));
-    }
-    // The declared answer first, marked: its Always where it is offered.
-    if let Some(declared) = declared.filter(|_| persona.is_some()) {
-        let id = match (declared, always_for.is_some()) {
-            (Browser::Project, false) => BROWSER_PROJECT,
-            (Browser::OpenWeb, false) => BROWSER_OPEN_WEB,
-            (Browser::Project, true) => BROWSER_PROJECT_ALWAYS,
-            (Browser::OpenWeb, true) => BROWSER_OPEN_WEB_ALWAYS,
-        };
-        if let Some(at) = options.iter().position(|one| one.id == id) {
-            let mut first = options.remove(at);
-            first.preselected = Some(true);
-            options.insert(0, first);
-        }
     }
     options.push(refuses(KEEP, "Keep off"));
     Shown {

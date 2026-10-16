@@ -5441,8 +5441,9 @@ export type Offered = {
 	/**  Whether choosing it lets the call run. */
 	allows: boolean,
 	/**
-	 *  **The answer drawn first and marked as the one the source suggests** (#2241): a
-	 *  persona's declared browser. Never an answer: only the person's press answers.
+	 *  **The answer marked as the one the source suggests** (#2241): a persona's declared
+	 *  browser. Marked in its place, never moved, and never an answer: only the person's press
+	 *  answers. Absent (rather than `false`) wherever nothing is marked.
 	 */
 	preselected?: boolean | null,
 };

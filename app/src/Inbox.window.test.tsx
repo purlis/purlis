@@ -365,22 +365,22 @@ describe("answering in place", () => {
     );
   });
 
-  it("draws a persona's declared browser first as the primary answer, and answers only on a press (#2241)", async () => {
+  it("marks a persona's declared browser in its place, and answers only on a press (#2241)", async () => {
     const calls = core();
     const browser: Shown = {
       session: 8,
       ask: "browser:8",
       says: "Wants a browser: what may it reach? Its persona qa declares the open web too",
       options: [
+        { id: "project", label: "This project's sites", allows: true },
         {
-          id: "open-web-always",
-          label: "Also the open web, always for qa",
+          id: "open-web",
+          label: "Also the open web (qa uses this)",
           allows: true,
           preselected: true,
         },
-        { id: "project", label: "This project's sites", allows: true },
-        { id: "open-web", label: "Also the open web", allows: true },
         { id: "project-always", label: "This project's sites, always for qa", allows: true },
+        { id: "open-web-always", label: "Also the open web, always for qa", allows: true },
         { id: "keep", label: "Keep off", allows: false },
       ],
       source: "browser",
@@ -388,13 +388,20 @@ describe("answering in place", () => {
       answer: { via: "browser" },
     };
     draw([browser]);
-    const declared = screen.getByRole("button", { name: "Also the open web, always for qa" });
-    expect(declared).toHaveClass("ui-button-primary");
-    expect(screen.getByRole("button", { name: "This project's sites" })).not.toHaveClass(
-      "ui-button-primary",
+    const answers = within(screen.getByRole("group", { name: "Answers to qa 8" })).getAllByRole(
+      "button",
     );
+    expect(answers.map((one) => one.textContent)).toEqual([
+      "This project's sites",
+      "Also the open web (qa uses this)",
+      "This project's sites, always for qa",
+      "Also the open web, always for qa",
+      "Keep off",
+    ]);
+    expect(answers[1]).toHaveClass("ui-button-primary");
+    expect(answers[3]).not.toHaveClass("ui-button-primary");
     expect(calls.some((one) => one.cmd === "allow_chat_browser")).toBe(false);
-    await userEvent.click(screen.getByRole("button", { name: "This project's sites" }));
+    await userEvent.click(answers[0]);
     await waitFor(() =>
       expect(calls.find((one) => one.cmd === "allow_chat_browser")?.args).toEqual({
         plane: PLANE,

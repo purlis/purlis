@@ -1212,30 +1212,57 @@ fn a_persona_chats_browser_ask_offers_always_for_this_persona_beside_each_reach(
 }
 
 #[test]
-fn a_persona_s_declared_browser_is_drawn_first_and_preselected_and_still_asked() {
-    // #2241, ADR 0073: the declaration preselects the answer, and the person answers.
+fn a_persona_s_declared_browser_is_marked_in_place_and_still_asked() {
+    // #2241, ADR 0073: the declaration marks its answer for this chat, by its label, and the
+    // person answers; its Always beside it is not marked.
     use purlis_core::sandbox::persona::Browser;
     let mut world = World::new();
     browser_waits(&mut world, "qa", Some(Browser::OpenWeb));
 
     let ask = world.asks().remove(0);
 
-    assert_eq!(ask.options[0].id, "open-web-always");
-    assert_eq!(ask.options[0].preselected, Some(true));
-    assert_eq!(
-        ask.options
-            .iter()
-            .filter(|one| one.preselected.is_some())
-            .count(),
-        1
-    );
-    assert_eq!(ask.options.len(), 5, "every answer is still offered");
+    let marked: Vec<(&str, &str)> = ask
+        .options
+        .iter()
+        .filter(|one| one.preselected == Some(true))
+        .map(|one| (one.id.as_str(), one.label.as_str()))
+        .collect();
+    assert_eq!(marked, [("open-web", "Also the open web (qa uses this)")]);
+    assert_eq!(ask.options[3].label, "Also the open web, always for qa");
     assert!(
         ask.says
             .ends_with("Its persona qa declares the open web too"),
         "{}",
         ask.says
     );
+}
+
+#[test]
+fn the_browser_asks_answers_keep_their_places_whatever_a_persona_declares() {
+    // #2241: the same key presses the same answer: the order, and the first answer (where the
+    // keyboard lands), never depend on what is declared.
+    use purlis_core::sandbox::persona::Browser;
+    let order = |declared: Option<Browser>| {
+        let mut world = World::new();
+        browser_waits(&mut world, "qa", declared);
+        ids(&world.asks().remove(0))
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let undeclared = order(None);
+    assert_eq!(
+        undeclared,
+        [
+            "project",
+            "open-web",
+            "project-always",
+            "open-web-always",
+            "keep"
+        ]
+    );
+    assert_eq!(order(Some(Browser::Project)), undeclared);
+    assert_eq!(order(Some(Browser::OpenWeb)), undeclared);
 }
 
 #[test]
@@ -1254,4 +1281,5 @@ fn an_administrators_policy_forbids_always_for_this_persona_on_the_browser_ask()
 
     assert_eq!(ids(&ask), ["project", "open-web", "keep"]);
     assert_eq!(ask.options[0].preselected, Some(true));
+    assert_eq!(ask.options[0].label, "This project's sites (qa uses this)");
 }

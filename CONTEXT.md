@@ -640,8 +640,8 @@ _Avoid_: browser automation, Playwright, DevTools (that is the **engine**'s)
 
 **Declared browser** (of a persona):
 What a persona says its chats' browser usually reaches, in its sandbox section
-(`browser = "project"` or `"open-web"`). It only preselects the answer of the browser's Ask; the
-person still answers it (ADR 0073: declaring never grants).
+(`browser = "project"` or `"open-web"`). It only marks an answer of the browser's Ask, in its place;
+the person still answers it (ADR 0073: declaring never grants).
 _Avoid_: browser grant, browser permission (it grants nothing)
 
 **Always for this persona**:

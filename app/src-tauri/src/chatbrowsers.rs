@@ -103,8 +103,9 @@ pub struct AsPersona {
     /// The persona whose grants the chat runs with (`purlis_core::start::runs_with`); none for
     /// a chat on no persona, which is never offered Always.
     pub persona: Option<String>,
-    /// What that persona declares its browser reaches, in the project's committed file: only
-    /// preselects the Ask's answer (ADR 0073), and is never an answer.
+    /// What that persona declares its browser reaches, in the project's root `charter.toml`,
+    /// which no sandboxed chat writes: only marks an answer of the Ask (ADR 0073), and is never
+    /// an answer.
     pub declared: Option<purlis_core::sandbox::persona::Browser>,
     /// **Always for this persona**, as this machine keeps it and policy leaves it in force:
     /// whether it reaches the open web too. None where none is.
@@ -294,15 +295,16 @@ impl ChatBrowsers {
     /// nothing; widened, the next browser reaches more and what runs runs on; narrowed, its
     /// browsers end and the next reaches less; gone (removed, or held by an administrator's
     /// policy), its browsers end and its next call asks again.
-    fn follow_always(&self, driver: Option<&Arc<dyn Driver>>, session: u32, now: &AsPersona) {
+    fn follow_always(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        session: u32,
+        now: &AsPersona,
+    ) -> Option<Ended> {
         let follows = {
             let mut chats = self.lock();
-            let Some(chat) = chats.get_mut(&session) else {
-                return;
-            };
-            let Some(on) = chat.rests_on.as_deref() else {
-                return;
-            };
+            let chat = chats.get_mut(&session)?;
+            let on = chat.rests_on.as_deref()?;
             let kept = now.always.filter(|_| now.persona.as_deref() == Some(on));
             match (chat.posture, kept) {
                 (Posture::Allowed { open_web }, Some(kept)) if kept == open_web => None,
@@ -316,9 +318,37 @@ impl ChatBrowsers {
                 _ => Some(Posture::Unasked),
             }
         };
-        if let Some(posture) = follows {
-            self.withdraw(driver, session, posture);
-        }
+        follows.map(|posture| self.withdraw(driver, session, posture))
+    }
+
+    /// **Always for `persona` was answered again, reaching the open web too with `open_web`**
+    /// (#2241): each chat it allowed follows it now, as [`Self::follow_always`] says, so a
+    /// narrower answer ends their browsers at once (D-2013-11). Answers each chat whose browsers
+    /// that ended.
+    pub fn always_changed(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        persona: &str,
+        open_web: bool,
+    ) -> Vec<(u32, Ended)> {
+        let resting: Vec<u32> = self
+            .lock()
+            .iter()
+            .filter(|(_, chat)| chat.rests_on.as_deref() == Some(persona))
+            .map(|(session, _)| *session)
+            .collect();
+        let now = AsPersona {
+            persona: Some(persona.to_owned()),
+            declared: None,
+            always: Some(open_web),
+        };
+        resting
+            .into_iter()
+            .filter_map(|session| {
+                self.follow_always(driver, session, &now)
+                    .map(|ended| (session, ended))
+            })
+            .collect()
     }
 
     fn answered(&self, session: u32, posture: Posture) -> bool {
@@ -708,7 +738,7 @@ fn persona_of(held: &crate::planes::Held, session: u32) -> Option<String> {
 }
 
 /// **Chat `session`'s persona, as its browser is decided** (#2241): the persona it runs with,
-/// what that persona declares in the project's committed file, and Always for it as this
+/// what that persona declares in the project's root `charter.toml`, and Always for it as this
 /// machine keeps it and policy leaves it in force. Nothing of it is read from a file a chat
 /// writes.
 fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
@@ -758,14 +788,17 @@ pub async fn allow_chat_browser(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     let network = planes.network().cloned();
+    let browsers_ended = Arc::clone(planes.browsers_ended());
     crate::off_the_window("allowing a chat's browser", move || {
         if always {
             allowed_always(
                 &held,
+                &plane,
                 session,
                 open_web,
                 &held.audit_then_record(network.as_ref()),
                 crate::sandboxing::now_secs(),
+                &*browsers_ended,
             )
         } else {
             allowed(&held, session, open_web)
@@ -827,10 +860,12 @@ pub fn always_said(persona: &str, open_web: bool) -> String {
 /// the Granted list; then every chat as that persona that waits is answered.
 pub fn allowed_always(
     held: &crate::planes::Held,
+    plane: &crate::planes::PlaneId,
     session: u32,
     open_web: bool,
     audit: crate::sandboxing::Audit<'_>,
     at: u64,
+    told: &dyn Fn(BrowsersEnded),
 ) -> Result<(), String> {
     use purlis_core::sandbox;
     if !held
@@ -875,6 +910,25 @@ pub fn allowed_always(
     ) {
         // The Allow stands, and is audited; only the Granted list's "when" is lost.
         tracing::warn!("purlis: Always for a persona's browser was kept without when ({why})");
+    }
+    // The chats it allowed before follow the new answer at once: a narrower one ends their
+    // browsers now (D-2013-11), and their tabs say so.
+    for (narrowed, Ended { ended, unended }) in
+        held.browsers()
+            .always_changed(held.browser_driver(), &persona, open_web)
+    {
+        let note = if unended > 0 {
+            NOT_ENDED_ON_ITS_TAB
+        } else if ended > 0 {
+            ENDED_ON_ITS_TAB
+        } else {
+            continue;
+        };
+        told(BrowsersEnded {
+            plane: plane.clone(),
+            session: narrowed,
+            note: note.to_owned(),
+        });
     }
     for answered in held.browsers().allow_always(&persona, open_web) {
         tell_allowed(

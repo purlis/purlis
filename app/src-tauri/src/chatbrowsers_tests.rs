@@ -700,3 +700,46 @@ fn always_that_changed_since_a_chats_browser_opened_is_followed_at_its_next_call
     assert!(refusal(answer).contains("asked the person"));
     assert_eq!(hosted.closed.lock().unwrap().len(), 2);
 }
+
+/// #2241, D-2013-11: Always answered again narrower ends the browsers of the chats it allowed at
+/// once, and the next opens on the narrower reach; answered again wider ends nothing.
+#[test]
+fn always_answered_again_narrower_ends_the_browsers_it_opened_at_once() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(true)),
+    );
+
+    assert!(
+        browsers
+            .always_changed(Some(&driver), "qa", true)
+            .is_empty(),
+        "the same answer ends nothing"
+    );
+    let ended = browsers.always_changed(Some(&driver), "qa", false);
+
+    assert_eq!(
+        ended,
+        [(
+            3,
+            Ended {
+                ended: 1,
+                unended: 0
+            }
+        )]
+    );
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert_eq!(browsers.posture(3), Posture::Allowed { open_web: false });
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(false)),
+    );
+    assert!(!hosted.started.lock().unwrap()[1].open_web);
+}

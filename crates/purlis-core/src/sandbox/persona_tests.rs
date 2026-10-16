@@ -903,8 +903,8 @@ fn a_browser_declaration_that_is_neither_word_is_refused_and_declares_nothing() 
     );
 }
 
-/// #2241 security: a persona declares its browser only in the project's committed file, which
-/// no sandboxed chat writes: what its `persona.md` says (a file a chat may edit) and what the
+/// #2241 security: a persona declares its browser only in the project's root `charter.toml`,
+/// which no sandboxed chat writes: what its `persona.md` says (a file a chat may edit) and what the
 /// person's local file says declare nothing.
 #[test]
 fn a_browser_written_where_a_chat_may_write_declares_nothing() {

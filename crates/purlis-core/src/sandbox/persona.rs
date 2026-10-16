@@ -89,14 +89,14 @@ pub struct Grants {
     pub hosts: Vec<Host>,
     /// The programs its chats run through a vault (#1407).
     pub tools: Vec<super::tools::Tool>,
-    /// **The browser it declares** (#2241): what its chats' browser Ask has preselected.
+    /// **The browser it declares** (#2241): the answer its chats' browser Ask marks.
     /// **It grants nothing** (ADR 0073): the person still answers the Ask.
     pub browser: Option<Browser>,
 }
 
 /// **What a persona declares its chats' browser usually reaches** (#2241, spec #2008 story 3):
-/// `browser = "project"` or `"open-web"` in its sandbox section. Only preselects the answer of
-/// the browser Ask; never an answer itself.
+/// `browser = "project"` or `"open-web"` in its sandbox section. Only marks an answer of the
+/// browser Ask, in its place; never an answer itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Browser {
     /// This project's sites and its dev servers.
@@ -127,8 +127,8 @@ impl Browser {
     }
 }
 
-/// **The browser `persona` declares** in the project read as `plane` (#2241): from its
-/// committed file, whether or not the project sandboxes its chats, since a chat's browser is
+/// **The browser `persona` declares** in the project read as `plane` (#2241): from the
+/// project's root `charter.toml`, which no sandboxed chat writes, whether or not the project sandboxes its chats, since a chat's browser is
 /// asked about either way. `None` where it declares none, or what it wrote was refused.
 pub fn declared_browser(plane: &super::Plane, persona: &str) -> Option<Browser> {
     let said = plane.said();
