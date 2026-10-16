@@ -8,9 +8,13 @@
 //! starts), so the host is the same program, with the same Keychain identity, and nothing
 //! prompts (ADR 0068 §1, amended 2026-10-14). One host serves every project open in the window.
 //!
-//! **It lives as long as the window.** The window holds the other end of the host's standard
-//! input; the host stops when it closes, so a quit, a crash and a kill all end it. At a quit the
-//! window closes it and waits a moment for the host to go ([`SessionHost::end`]).
+//! **It outlives a window that crashes, for the grace period** (ADR 0068 §2, #2006). A quit
+//! says so to the host (`quit`), which ends every chat as a quit and stops
+//! ([`SessionHost::end`]). A window that goes without a word crashed or was killed: the host
+//! keeps its chats for ten minutes, and the next window that starts finds it serving and
+//! reattaches to it, rather than starting another ([`ANOTHER_SERVES`]). The host runs in a
+//! process group of its own, so a signal to the window's group (an interrupt typed in the
+//! terminal purlis was started from) does not end it with the window.
 //!
 //! **The window supervises it** (ADR 0068 §3, #2007): a host that ends without the window
 //! asking, or whose link to the window ends, is started again, until three such ends within
@@ -56,6 +60,10 @@ const READY_WITHIN: Duration = Duration::from_secs(20);
 /// killed.
 const ENDS_WITHIN: Duration = Duration::from_secs(2);
 
+/// How long a quit waits for the host to say every chat has ended: the host gives its programs
+/// five seconds together (`purlis_host::ENDS_WITHIN`).
+const QUITS_WITHIN: Duration = Duration::from_secs(7);
+
 /// The exit code a host gives when another host of this user already serves on this device
 /// (`purlis_host::HostError::AlreadyServing`).
 const ANOTHER_SERVES: i32 = 3;
@@ -71,25 +79,35 @@ pub fn place() -> Option<purlis_host::Place> {
 }
 
 /// The command that starts `binary`, the window's own, as its session host: the host's
-/// standard input is the window's to hold, and what it says is read for the window's log.
+/// standard input is the window's to hold, and what it says is read for the window's log. It
+/// runs in a process group of its own, so it outlives a window that crashes (#2006).
 pub fn command(binary: &Path) -> Command {
+    use std::os::unix::process::CommandExt as _;
     let mut command = Command::new(binary);
     command
         .arg(purlis_host::SERVE_FOR_THE_WINDOW)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .process_group(0);
     command
 }
 
-/// What a host that did not become ready said by its exit, for the window's log.
-pub fn why_not_ready(code: Option<i32>) -> &'static str {
+/// What the window does with a host it started that did not become ready, by its exit.
+#[derive(Debug, PartialEq, Eq)]
+pub enum NotReady {
+    /// Another host of this user serves on this device: one a window that crashed left, within
+    /// its grace period. This window reattaches to it (#2006).
+    AnotherServes,
+    /// There is no host, for this reason.
+    Gone(&'static str),
+}
+
+/// What a host that did not become ready said by its exit.
+pub fn not_ready(code: Option<i32>) -> NotReady {
     match code {
-        Some(ANOTHER_SERVES) => {
-            "another session host already serves this user on this device; this window \
-             leaves it serving and does not connect to it"
-        }
-        _ => "the session host ended before it was ready",
+        Some(ANOTHER_SERVES) => NotReady::AnotherServes,
+        _ => NotReady::Gone("the session host ended before it was ready"),
     }
 }
 
@@ -345,8 +363,9 @@ impl KeptBoard {
     }
 
     /// The board, whole, for a window that holds the project. One larger than the link carries
-    /// is answered as none, and said in the log: the window then starts from its own.
-    pub fn whole(&self) -> serde_json::Value {
+    /// is refused in a sentence, which the window shows the person (#2006), and said in the log:
+    /// the window then starts from its own.
+    pub fn whole(&self) -> Result<serde_json::Value, String> {
         let kept = serde_json::to_value(self.board().kept()).unwrap_or(serde_json::Value::Null);
         let size = serde_json::to_vec(&kept).map_or(usize::MAX, |said| said.len());
         if size > A_BOARD_IS_AT_MOST {
@@ -354,9 +373,18 @@ impl KeptBoard {
                 "the board kept here is {size} bytes, more than the link carries \
                  ({A_BOARD_IS_AT_MOST}), so the window starts from its own"
             ));
-            return serde_json::Value::Null;
+            return Err(format!(
+                "the board the session host kept is {size} bytes, more than one answer carries \
+                 ({A_BOARD_IS_AT_MOST})"
+            ));
         }
-        kept
+        Ok(kept)
+    }
+
+    /// A line handed on whose window went before it replied (#2006): heard here, as one no
+    /// window took is.
+    fn unheard(&self, heard: &purlis_core::hookwire::relay::Heard) {
+        self.board().hear(heard);
     }
 
     /// Chat `number`'s program ended, `exit`, with no window there to say so.
@@ -420,6 +448,10 @@ impl purlis_host::Hear for HookChannels {
                     })
                 },
                 heard_from: Box::new(move |chat| spooled.heard_from(chat)),
+                unheard: {
+                    let board = board.clone();
+                    Box::new(move |heard| board.unheard(heard))
+                },
             },
         );
         let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
@@ -502,8 +534,14 @@ impl purlis_host::Channel for HookChannel {
         self.board.moved(number, moved);
     }
 
-    fn board(&self) -> serde_json::Value {
+    fn board(&self) -> Result<serde_json::Value, String> {
         self.board.whole()
+    }
+
+    /// The window went: what waits for its reply is let go of, and the board kept here hears
+    /// each report among it (#2006).
+    fn no_window(&self) {
+        self.relaying.let_go();
     }
 
     fn ended_with_no_window(&self, number: u32, exit: &session::Exit) {
@@ -541,7 +579,7 @@ pub struct SessionHost {
 
 struct Held {
     child: Child,
-    /// The host's standard input: closing it ends the host.
+    /// The host's standard input: closing it tells the host this window has gone.
     stdin: Option<ChildStdin>,
 }
 
@@ -698,20 +736,35 @@ impl SessionHost {
         Arc::clone(&self.supervision.failing)
     }
 
-    /// Ends the host: nothing starts it again, its standard input is closed, it is given
-    /// [`ENDS_WITHIN`] to go, and is killed if it has not. For the app's exit.
+    /// Ends the host at the app's quit: nothing starts it again, and it is told the window
+    /// quits, so it ends every chat as a quit and stops, waiting at most [`QUITS_WITHIN`] for its
+    /// answer (#2006). Then, for a host this window started, its standard input is closed, it is
+    /// given [`ENDS_WITHIN`] to go, and is killed if it has not. A host this window reattached to
+    /// that does not answer ends its chats when its grace period passes, as after a crash (ADR
+    /// 0068 §2).
     pub fn end(&self) {
         self.supervision.end_now();
+        if let Ok(link) = self.connection.wait(Duration::ZERO)
+            && let Err(why) = link.quit_within(QUITS_WITHIN)
+        {
+            tracing::warn!("purlis: the session host did not answer the quit: {why}");
+        }
         end_held(&self.held);
     }
 
-    /// What ends the host from elsewhere, as [`Self::end`] does: a quit that the host did not
-    /// answer in time ends it before the save at quit (#2002). Ending it twice ends it once.
+    /// What ends the host from elsewhere: a quit that the host did not answer in time ends it
+    /// before the save at quit (#2002). The host is told the window quits, without waiting,
+    /// so it ends every chat as a quit; then a host this window started is ended as
+    /// [`Self::end`] ends it. Ending it twice ends it once.
     pub fn ender(&self) -> Arc<dyn Fn() + Send + Sync> {
         let held = Arc::clone(&self.held);
         let supervision = Arc::clone(&self.supervision);
+        let connection = Arc::clone(&self.connection);
         Arc::new(move || {
             supervision.end_now();
+            if let Ok(link) = connection.wait(Duration::ZERO) {
+                link.send(purlis_session_protocol::session::Command::Quit);
+            }
             end_held(&held);
         })
     }
@@ -745,7 +798,7 @@ fn end_one(mut held: Held) {
 enum Started {
     /// It serves, and the window connects to it.
     Serving,
-    /// Another host of this user already serves: this window leaves it be.
+    /// Another host of this user already serves: this window reattached to it (#2006).
     AnotherServes,
     /// It did not start, or ended before it was ready.
     Failed,
@@ -771,7 +824,14 @@ fn supervise(
             return;
         }
         match start_here(held, place, starts, connection, supervision) {
-            Started::AnotherServes => return,
+            // A host a window that went left serving, which this window reattached to (#2006):
+            // it is not this window's to end, so its end is its link's; once that ends, a host
+            // is started again, which finds that one gone or reattaches to it again.
+            Started::AnotherServes => {
+                if !wait_for_its_link_to_end(supervision) {
+                    return;
+                }
+            }
             Started::Serving => wait_for_an_unexpected_end(held, supervision),
             Started::Failed => {}
         }
@@ -826,6 +886,20 @@ fn supervise(
             .reset();
         supervision.failing.not_failing();
         connection.restarting();
+    }
+}
+
+/// Waits until the link to a host this window reattached to ends (#2006): whether the window
+/// is still to supervise one, or is ending it.
+fn wait_for_its_link_to_end(supervision: &Supervision) -> bool {
+    loop {
+        let woken = supervision.rest();
+        if supervision.ending() {
+            return false;
+        }
+        if woken.link_lost {
+            return true;
+        }
     }
 }
 
@@ -911,10 +985,27 @@ fn start_here(
 
     if !stdout.is_some_and(said_ready) {
         let code = wait_for_its_end(held, Instant::now() + ENDS_WITHIN);
-        tracing::warn!("purlis: {} (process {pid})", why_not_ready(code));
-        connection.gone(why_not_ready(code));
-        if code == Some(ANOTHER_SERVES) {
-            return Started::AnotherServes;
+        match not_ready(code) {
+            // The host a window that went without a quit left serving: this window reattaches
+            // to it, and every chat it kept is put back where it is (#2006). It is not started
+            // again: it serves.
+            NotReady::AnotherServes => {
+                tracing::info!(
+                    "purlis: a session host already serves at {}; this window reattaches to it",
+                    place.socket.display()
+                );
+                connect(
+                    place.socket.clone(),
+                    place.credentials.clone(),
+                    Arc::clone(connection),
+                    Arc::clone(supervision),
+                );
+                return Started::AnotherServes;
+            }
+            NotReady::Gone(why) => {
+                tracing::warn!("purlis: {why} (process {pid})");
+                connection.gone(why);
+            }
         }
         // One that never said it was ready and still runs is ended: it is started again.
         if let Some(mut host) = held.lock().unwrap_or_else(|e| e.into_inner()).take() {

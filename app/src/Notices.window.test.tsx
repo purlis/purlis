@@ -49,7 +49,7 @@ type Asked = { cmd: string; args: unknown };
 function chat(
   session: number,
   name: string,
-  said: { resumed?: string; fresh?: string; guessed?: string } = {},
+  said: { resumed?: string; fresh?: string; guessed?: string; untaken?: string } = {},
 ) {
   return {
     session,
@@ -63,6 +63,7 @@ function chat(
     persona: null,
     unreported: null,
     guessed: said.guessed ?? null,
+    untaken: said.untaken ?? null,
     pinned: false,
   };
 }
@@ -301,6 +302,30 @@ describe("a dismissed Notice", () => {
     await findStripNamed("Workspaces");
     await settle();
     expect(screen.queryByText(/came back as a new chat/)).toBeNull();
+  });
+
+  it("about a chat reattached without its state says why, and stays dismissed while it does", async () => {
+    // #2006: the board the session host kept was more than it could hand over, so the chat
+    // came back with the window's own idea of what it was doing.
+    const untaken = [
+      chat(1, "one", {
+        untaken: "the board the session host kept is 70000 bytes, more than one answer carries",
+      }),
+    ];
+    const { asked } = core(untaken, { gone: [] });
+    render(<App />);
+    const note = await screen.findByText(/purlis could not bring back what it was doing/);
+    expect(noticeOf(note).textContent).not.toContain("bytes");
+    expect(noticeOf(note).getAttribute("data-cause")).toBe("chat-untaken:1");
+    await dismiss(note);
+    await waitFor(() => expect(keptLast(asked)).toEqual(["chat-untaken:1"]));
+
+    relaunch();
+    core(untaken, { gone: [] });
+    render(<App />);
+    await findStripNamed("Workspaces");
+    await settle();
+    expect(screen.queryByText(/could not bring back what it was doing/)).toBeNull();
   });
 
   it("about a chat is not let go by a launch that could not read the chats", async () => {

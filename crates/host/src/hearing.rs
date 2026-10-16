@@ -61,13 +61,18 @@ pub trait Channel: Send + Sync + 'static {
     /// The window made `moved` of chat `number` on its board: the board this channel keeps
     /// makes it too, after every move told before it. A channel that keeps no board ignores it.
     fn moved(&self, _number: u32, _moved: serde_json::Value) {}
-    /// The board this channel keeps, whole, as the board says it: `null` where it keeps none.
-    fn board(&self) -> serde_json::Value {
-        serde_json::Value::Null
+    /// The board this channel keeps, whole, as the board says it: `null` where it keeps none,
+    /// or why it cannot be handed over whole, in a sentence: one larger than an answer carries
+    /// (#2006).
+    fn board(&self) -> Result<serde_json::Value, String> {
+        Ok(serde_json::Value::Null)
     }
     /// Chat `number`'s program ended, `exit`, while no window held the project: the board this
     /// channel keeps says so, as the window says it when it is there.
     fn ended_with_no_window(&self, _number: u32, _exit: &Exit) {}
+    /// No window holds the project now: its last link ended (#2006). A line handed on that
+    /// waits for that window's reply is let go of, and heard by the board this channel keeps.
+    fn no_window(&self) {}
 }
 
 /// A host whose binary hears no hooks: a held project has no channel, and a chat's start keeps
