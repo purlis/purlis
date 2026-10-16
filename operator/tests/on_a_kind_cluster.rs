@@ -428,3 +428,132 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     let _ = pools.delete("e2e-use", &delete).await;
     scratch.end().await;
 }
+
+/// Whether the operator has asked upstream for a runner for any claim in `namespace`.
+async fn upstream_claims_in(client: &Client, namespace: &str) -> usize {
+    Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), namespace)
+        .list(&ListParams::default())
+        .await
+        .expect("upstream claims")
+        .items
+        .len()
+}
+
+/// The installed binding made again as a new object, unless it is there: from then on the
+/// policy is in force.
+async fn restore_binding(
+    bindings: &Api<k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding>,
+    installed: &k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding,
+) {
+    let name = installed.name_any();
+    if bindings.get_opt(&name).await.ok().flatten().is_some() {
+        return;
+    }
+    let mut again = installed.clone();
+    again.metadata = ObjectMeta {
+        name: Some(name),
+        labels: installed.metadata.labels.clone(),
+        annotations: installed.metadata.annotations.clone(),
+        ..ObjectMeta::default()
+    };
+    bindings
+        .create(&PostParams::default(), &again)
+        .await
+        .expect("the binding made again");
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
+    use futures::FutureExt;
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+    use purlis_cluster_operator::POLICY;
+
+    let client = Client::try_default().await.expect("the cluster");
+    let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
+    let installed = bindings.get(POLICY).await.expect("the installed binding");
+    bindings
+        .delete(POLICY, &DeleteParams::default())
+        .await
+        .expect("the binding deleted");
+    eventually("the binding is gone", Duration::from_secs(30), || async {
+        bindings.get_opt(POLICY).await.ok()?.is_none().then_some(())
+    })
+    .await;
+
+    let outcome = std::panic::AssertUnwindSafe(async {
+        let scratch = Scratch::new(&client, "e2e-policy").await;
+        let pools = Api::<Pool>::all(client.clone());
+        let pool = Pool::new(
+            "e2e-policy",
+            PoolSpec {
+                image: runner_image(),
+            },
+        );
+        pools
+            .patch(
+                "e2e-policy",
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&pool),
+            )
+            .await
+            .expect("the pool");
+        let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+        claims
+            .create(&PostParams::default(), &claim("ada-1", "e2e-policy"))
+            .await
+            .expect("the claim, made with no policy in force");
+
+        eventually(
+            "with no binding, the claim says the policy is not in force",
+            Duration::from_secs(60),
+            || async {
+                let claim = claims.get("ada-1").await.ok()?;
+                (ready_of(&claim)? == ("False".into(), "PolicyNotInForce".into())).then_some(())
+            },
+        )
+        .await;
+        assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+
+        restore_binding(&bindings, &installed).await;
+        eventually(
+            "the claim made before the binding is refused",
+            Duration::from_secs(60),
+            || async {
+                let claim = claims.get("ada-1").await.ok()?;
+                (ready_of(&claim)? == ("False".into(), "MadeBeforePolicy".into())).then_some(())
+            },
+        )
+        .await;
+        assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+
+        // Creation times are whole seconds: a claim in the binding's own second is refused too.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        claims
+            .create(&PostParams::default(), &claim("ada-2", "e2e-policy"))
+            .await
+            .expect("a claim made under the policy");
+        eventually(
+            "the claim made after the binding is acted on",
+            Duration::from_secs(60),
+            || async { (upstream_claims_in(&client, &scratch.name).await == 1).then_some(()) },
+        )
+        .await;
+        let refused = claims.get("ada-1").await.expect("ada-1");
+        assert_eq!(
+            ready_of(&refused),
+            Some(("False".into(), "MadeBeforePolicy".into()))
+        );
+
+        let _ = pools.delete("e2e-policy", &DeleteParams::default()).await;
+        scratch.end().await;
+    })
+    .catch_unwind()
+    .await;
+    restore_binding(&bindings, &installed).await;
+    // The tests after this one make claims at once: past the binding's own second.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}

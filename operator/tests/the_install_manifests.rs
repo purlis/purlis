@@ -134,6 +134,11 @@ fn the_operator_may_do_exactly_what_it_needs() {
     rules.sort();
     let wanted = [
         (
+            "admissionregistration.k8s.io",
+            "validatingadmissionpolicybindings",
+            "get,list,watch",
+        ),
+        (
             "extensions.agents.x-k8s.io",
             "sandboxclaims",
             "create,list,patch,watch",
@@ -154,6 +159,23 @@ fn the_operator_may_do_exactly_what_it_needs() {
     ]
     .map(|(g, r, v)| (g.to_owned(), r.to_owned(), v.to_owned()));
     assert_eq!(rules, wanted);
+}
+
+#[test]
+fn the_operator_reads_only_its_own_policys_binding() {
+    let rules: Vec<Value> = operator_rules()
+        .into_iter()
+        .filter(|rule| strings(&rule["apiGroups"]) == ["admissionregistration.k8s.io"])
+        .collect();
+    assert_eq!(rules.len(), 1, "{rules:?}");
+    assert_eq!(
+        strings(&rules[0]["resources"]),
+        ["validatingadmissionpolicybindings"]
+    );
+    assert_eq!(
+        strings(&rules[0]["resourceNames"]),
+        [purlis_cluster_operator::POLICY]
+    );
 }
 
 #[test]

@@ -190,6 +190,12 @@ rules:
 
 Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
+**The operator acts only on Claims admitted under its policy, however it was installed.** It
+reads the policy's binding before it acts on any Claim. While no binding puts the policy in
+force, it acts on no Claim, and each says `PolicyNotInForce`. A Claim made before the binding,
+or in the same second, is never acted on: it says `MadeBeforePolicy`; delete it and make it
+again.
+
 ## What it makes
 
 For a Claim in namespace `ns` on Pool `p`, the operator applies, server-side:
@@ -214,6 +220,7 @@ it holds:
 | `runners.purlis.dev` | `pools` | get, list, watch |
 | `runners.purlis.dev` | `claims` | list, watch |
 | `runners.purlis.dev` | `claims/status` | patch |
+| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims` | create, list, patch, watch |
 | `extensions.agents.x-k8s.io` | `sandboxtemplates`, `sandboxwarmpools` | create, patch |
 
