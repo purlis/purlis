@@ -76,8 +76,11 @@ use crate::settings::Refusal;
 /// The key in `[sandbox]` that holds each persona's grants.
 pub const KEY: &str = "personas";
 
+/// The key in a persona's table that declares its browser (#2241).
+pub const BROWSER: &str = "browser";
+
 /// The keys one persona's table holds.
-const KEYS: [&str; 2] = [hosts::KEY, super::tools::KEY];
+const KEYS: [&str; 3] = [hosts::KEY, super::tools::KEY, BROWSER];
 
 /// What one persona is granted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -86,6 +89,50 @@ pub struct Grants {
     pub hosts: Vec<Host>,
     /// The programs its chats run through a vault (#1407).
     pub tools: Vec<super::tools::Tool>,
+    /// **The browser it declares** (#2241): the answer its chats' browser Ask marks.
+    /// **It grants nothing** (ADR 0073): the person still answers the Ask.
+    pub browser: Option<Browser>,
+}
+
+/// **What a persona declares its chats' browser usually reaches** (#2241, spec #2008 story 3):
+/// `browser = "project"` or `"open-web"` in its sandbox section. Only marks an answer of the
+/// browser Ask, in its place; never an answer itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Browser {
+    /// This project's sites and its dev servers.
+    Project,
+    /// This project's sites, its dev servers and the open web.
+    OpenWeb,
+}
+
+impl Browser {
+    /// The word the file writes it with.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::OpenWeb => "open-web",
+        }
+    }
+
+    /// The declaration `word` writes, if it is one.
+    pub fn of_word(word: &str) -> Option<Self> {
+        [Self::Project, Self::OpenWeb]
+            .into_iter()
+            .find(|one| one.word() == word)
+    }
+
+    /// Whether it reaches the open web.
+    pub fn open_web(self) -> bool {
+        self == Self::OpenWeb
+    }
+}
+
+/// **The browser `persona` declares** in the project read as `plane` (#2241): from the
+/// project's root `charter.toml`, which no sandboxed chat writes, whether or not the project sandboxes its chats, since a chat's browser is
+/// asked about either way. `None` where it declares none, or what it wrote was refused.
+pub fn declared_browser(plane: &super::Plane, persona: &str) -> Option<Browser> {
+    let said = plane.said();
+    said.policy.or(said.unset)?.personas.get(persona)?.browser
 }
 
 /// What `[sandbox] personas` holds: each persona's grants, and each thing in it that is not
@@ -152,8 +199,8 @@ pub fn keyed(
         let Some(grants) = grants.as_table() else {
             refused.push(Refusal::at(
                 format!(
-                    "{here} in {file} is not a table, so it grants nothing — it holds hosts and \
-                     tools"
+                    "{here} in {file} is not a table, so it grants nothing — it holds hosts, tools \
+                     and browser"
                 ),
                 &here_key,
             ));
@@ -164,7 +211,7 @@ pub fn keyed(
                 refused.push(Refusal::at(
                     format!(
                         "{here}.{key} in {file} is not a key purlis reads — a persona's sandbox \
-                         holds hosts and tools"
+                         holds hosts, tools and browser"
                     ),
                     &[super::TABLE, KEY, persona.as_str(), key.as_str()],
                 ));
@@ -195,6 +242,25 @@ pub fn keyed(
                 Vec::new()
             }
         };
+        let browser_key = [super::TABLE, KEY, persona.as_str(), BROWSER];
+        let browser = match grants.get(BROWSER) {
+            None => None,
+            Some(value) => {
+                let declared = value.as_str().and_then(Browser::of_word);
+                if declared.is_none() {
+                    refused.push(Refusal::at(
+                        format!(
+                            "{here}.{BROWSER} in {file} is not \"project\" or \"open-web\", so \
+                             {persona} declares no browser — write browser = \"project\" for this \
+                             project's sites and its dev servers, or \"open-web\" for the open \
+                             web too"
+                        ),
+                        &browser_key,
+                    ));
+                }
+                declared
+            }
+        };
         let (tools, tools_refused) = super::tools::keyed(
             grants.get(super::tools::KEY),
             &here,
@@ -202,7 +268,14 @@ pub fn keyed(
             &[super::TABLE, KEY, persona.as_str()],
         );
         refused.extend(tools_refused);
-        out.insert(persona.clone(), Grants { hosts, tools });
+        out.insert(
+            persona.clone(),
+            Grants {
+                hosts,
+                tools,
+                browser,
+            },
+        );
     }
     (out, refused)
 }

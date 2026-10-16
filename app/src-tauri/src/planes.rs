@@ -2448,6 +2448,12 @@ impl Planes {
         self
     }
 
+    /// Who is told each chat whose browsers ended because the person narrowed its reach
+    /// (#2013), or removed Always for its persona (#2241).
+    pub fn browsers_ended(&self) -> &crate::chatbrowsers::Teller {
+        &self.browsers_ended
+    }
+
     /// Tells `ended` each chat whose browsers ended because the person narrowed its reach, so
     /// the window says so on its tab (#2013).
     pub fn telling_browsers_ended(mut self, ended: crate::chatbrowsers::Teller) -> Self {

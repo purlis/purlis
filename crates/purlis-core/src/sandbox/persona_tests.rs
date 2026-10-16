@@ -858,3 +858,76 @@ fn a_tool_whose_program_is_one_no_tool_may_be_is_not_shown_or_allowed_and_says_w
     super::tools::SEARCH_HERE.with(|dirs| *dirs.borrow_mut() = None);
     super::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
 }
+
+/// #2241: a persona declares its browser in its sandbox section, `browser = "project"` or
+/// `"open-web"`, in the committed file, whether or not the project sandboxes its chats. The
+/// declaration grants nothing: no host, no tool, and nothing to allow on this machine.
+#[test]
+fn a_persona_declares_its_browser_in_its_sandbox_section_and_is_granted_nothing_by_it() {
+    use super::persona::{Browser, declared_browser};
+    let on =
+        "[sandbox]\nmode = \"on\"\negress = []\n\n[sandbox.personas.qa]\nbrowser = \"open-web\"\n";
+    let plane = Plane::of(Some(on));
+    assert_eq!(declared_browser(&plane, "qa"), Some(Browser::OpenWeb));
+    assert_eq!(declared_browser(&plane, "devops"), None);
+    assert!(plane.said().refused.is_empty());
+    let unset = "[sandbox.personas.qa]\nbrowser = \"project\"\n";
+    assert_eq!(
+        declared_browser(&Plane::of(Some(unset)), "qa"),
+        Some(Browser::Project)
+    );
+    // Nothing to reach or allow for it.
+    assert_eq!(reached(on, Some("qa")), Vec::<String>::new());
+    let root = tempfile::tempdir().expect("a project");
+    assert!(
+        super::persona::shown_in(root.path(), &plane, &Locks::none()).is_empty(),
+        "a declared browser asks nothing of the person's hosts Notice"
+    );
+}
+
+/// #2241: a declaration that is neither word is refused with a sentence, and declares nothing.
+#[test]
+fn a_browser_declaration_that_is_neither_word_is_refused_and_declares_nothing() {
+    use super::persona::declared_browser;
+    let text = "[sandbox]\nmode = \"on\"\n\n[sandbox.personas.qa]\nbrowser = \"everything\"\n";
+    let plane = Plane::of(Some(text));
+    assert_eq!(declared_browser(&plane, "qa"), None);
+    let refused = super::refusals(text, "charter.toml");
+    assert_eq!(
+        refused,
+        [
+            "sandbox.personas.qa.browser in charter.toml is not \"project\" or \"open-web\", so \
+             qa declares no browser — write browser = \"project\" for this project's sites and \
+             its dev servers, or \"open-web\" for the open web too"
+        ]
+    );
+}
+
+/// #2241 security: a persona declares its browser only in the project's root `charter.toml`,
+/// which no sandboxed chat writes: what its `persona.md` says (a file a chat may edit) and what the
+/// person's local file says declare nothing.
+#[test]
+fn a_browser_written_where_a_chat_may_write_declares_nothing() {
+    use super::persona::declared_browser;
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    std::fs::write(
+        root.join(crate::plane::MANIFEST),
+        "schema = 1\n\n[sandbox]\nmode = \"on\"\n",
+    )
+    .expect("the committed file");
+    let qa = root.join("personas/qa");
+    std::fs::create_dir_all(&qa).expect("a persona folder");
+    std::fs::write(
+        qa.join("persona.md"),
+        "---\nrole: qa\nbrowser: open-web\nsandbox:\n  browser: open-web\n---\n\n# qa\n",
+    )
+    .expect("persona.md");
+    std::fs::write(
+        root.join(crate::profiles::LOCAL_FILE),
+        "[sandbox.personas.qa]\nbrowser = \"open-web\"\n",
+    )
+    .expect("the local file");
+
+    assert_eq!(declared_browser(&Plane::read(root), "qa"), None);
+}

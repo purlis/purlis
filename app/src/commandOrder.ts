@@ -69,6 +69,8 @@ export const LANES = {
       "allowSandboxBlockForTasks",
       "revokeSandboxGrant",
       "allowRefusedVault",
+      // Always for a persona's browser is kept in this machine's answers (#2241).
+      "allowChatBrowser",
     ],
   },
   /**

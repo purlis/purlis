@@ -129,6 +129,8 @@ const BROWSER: Shown = {
   options: [
     { id: "project", label: "This project's sites", allows: true },
     { id: "open-web", label: "Also the open web", allows: true },
+    { id: "project-always", label: "This project's sites, always for steward", allows: true },
+    { id: "open-web-always", label: "Also the open web, always for steward", allows: true },
     { id: "keep", label: "Keep off", allows: false },
   ],
   source: "browser",
@@ -286,14 +288,18 @@ describe("answering through the path an ask names", () => {
     ]);
   });
 
-  it("sets what a chat's browser reaches by its own commands, or keeps it off with the reason (#2013)", async () => {
+  it("sets what a chat's browser reaches by its own commands, for the chat or always for its persona, or keeps it off with the reason (#2013, #2241)", async () => {
     const calls = sent({ allow_chat_browser: null, keep_chat_browser_off: null });
     await answerThrough(PLANE, BROWSER, "project");
     await answerThrough(PLANE, BROWSER, "open-web");
+    await answerThrough(PLANE, BROWSER, "project-always");
+    await answerThrough(PLANE, BROWSER, "open-web-always");
     await answerTaken(PLANE, BROWSER, "keep", "  not for this task ");
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
-      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: false }],
-      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: true }],
+      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: false, always: false }],
+      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: true, always: false }],
+      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: false, always: true }],
+      ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: true, always: true }],
       ["keep_chat_browser_off", { plane: PLANE, session: 8, reason: "not for this task" }],
     ]);
   });

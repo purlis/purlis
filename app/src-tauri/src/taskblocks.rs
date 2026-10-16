@@ -75,8 +75,9 @@ pub fn normalised(what: GrantWhat, target: &str) -> Option<String> {
         GrantWhat::Port => purlis_core::sandbox::localport::port(target)
             .ok()
             .map(|port| port.to_string()),
-        // Neither is ever a block's: each is granted from its own Notice (#1430, #1362).
-        GrantWhat::Vault | GrantWhat::PersonaHosts => None,
+        // None is ever a block's: each is granted from its own Notice or Ask (#1430, #1362,
+        // #2241).
+        GrantWhat::Vault | GrantWhat::PersonaHosts | GrantWhat::Browser => None,
     }
 }
 

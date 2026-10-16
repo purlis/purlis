@@ -300,6 +300,7 @@ fn a_tool_is_armed_for_a_chat_only_once_this_machine_allows_it() {
             Grants {
                 hosts: vec![host.clone()],
                 tools: vec![tool],
+                browser: None,
             },
         )])
     };

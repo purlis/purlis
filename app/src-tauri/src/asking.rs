@@ -194,6 +194,11 @@ pub struct Offered {
     pub label: String,
     /// Whether choosing it lets the call run.
     pub allows: bool,
+    /// **The answer marked as the one the source suggests** (#2241): a persona's declared
+    /// browser. Marked in its place, never moved, and never an answer: only the person's press
+    /// answers. Absent (rather than `false`) wherever nothing is marked.
+    #[specta(optional)]
+    pub preselected: Option<bool>,
 }
 
 /// Told a project's asks each time they change.
@@ -243,6 +248,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
             .into_iter()
             .map(|option| Offered {
                 allows: option.kind == ChoiceKind::Allow,
+                preselected: None,
                 id: option.id,
                 label: option.label,
             })
@@ -370,6 +376,7 @@ fn allows(
         id: level_id(*level).to_owned(),
         label: allow_said(*level, sandbox).to_owned(),
         allows: true,
+        preselected: None,
     })
 }
 
@@ -378,6 +385,7 @@ fn refuses(id: &str, label: &str) -> Offered {
         id: id.to_owned(),
         label: label.to_owned(),
         allows: false,
+        preselected: None,
     }
 }
 
@@ -770,6 +778,7 @@ pub fn workspace_removal(
                 id: REMOVE.to_owned(),
                 label: REMOVE_SAID.to_owned(),
                 allows: true,
+                preselected: None,
             },
             refuses(KEEP, KEEP_IT_SAID),
         ],
@@ -795,26 +804,84 @@ fn browser_key(session: u32) -> String {
 /// browser may reach. Every word is purlis's. **This project's sites** is the hosts the chat's
 /// sandbox lists and the services on this machine the person allowed; **Also the open web**
 /// adds every public site; **Keep off** refuses its every browser call.
-pub fn browser_posture(waits: &crate::chatbrowsers::Waits) -> Shown {
+///
+/// **Always for this persona** (#2241) is offered beside each, for a chat that runs as a
+/// persona, unless an administrator's policy leaves out `you`, the scope it is kept at
+/// (`locks`). **The answers never move**: This project's sites, Also the open web, each Always
+/// after them, Keep off last, whatever the persona declares, so a key always presses the same
+/// answer. **A persona's declared browser** marks its for-this-chat answer only, by its label
+/// ("<persona> uses this") and as `preselected`, its Always beside it unmarked, and the line says
+/// what the persona declares: the person still answers (ADR 0073).
+pub fn browser_posture(
+    waits: &crate::chatbrowsers::Waits,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
+    use purlis_core::sandbox::persona::Browser;
+    let persona = waits.as_persona.persona.as_deref();
+    let always_for = persona.filter(|_| {
+        locks
+            .scope_removed(purlis_core::sandbox::grant::Level::You)
+            .is_none()
+    });
+    let declared = waits.as_persona.declared;
+    let mut says = "Wants a browser: what may it reach? This project's sites are the hosts its \
+                    sandbox lists and the services on this machine you allowed"
+        .to_owned();
+    if let (Some(persona), Some(declared)) = (persona, declared) {
+        says.push_str(&format!(
+            ". Its persona {persona} declares {}",
+            match declared {
+                Browser::Project => "this project's sites",
+                Browser::OpenWeb => "the open web too",
+            }
+        ));
+    }
+    let offer = |id: &str, label: String| Offered {
+        id: id.to_owned(),
+        label,
+        allows: true,
+        preselected: None,
+    };
+    // The declared reach's answer for this chat alone is marked, in place.
+    let marked = |reach: Browser, said: &str| match (persona, declared) {
+        (Some(persona), Some(declared)) if declared == reach => Offered {
+            preselected: Some(true),
+            ..offer(
+                match reach {
+                    Browser::Project => BROWSER_PROJECT,
+                    Browser::OpenWeb => BROWSER_OPEN_WEB,
+                },
+                format!("{said} ({persona} uses this)"),
+            )
+        },
+        _ => offer(
+            match reach {
+                Browser::Project => BROWSER_PROJECT,
+                Browser::OpenWeb => BROWSER_OPEN_WEB,
+            },
+            said.to_owned(),
+        ),
+    };
+    let mut options = vec![
+        marked(Browser::Project, "This project's sites"),
+        marked(Browser::OpenWeb, "Also the open web"),
+    ];
+    if let Some(persona) = always_for {
+        options.push(offer(
+            BROWSER_PROJECT_ALWAYS,
+            format!("This project's sites, always for {persona}"),
+        ));
+        options.push(offer(
+            BROWSER_OPEN_WEB_ALWAYS,
+            format!("Also the open web, always for {persona}"),
+        ));
+    }
+    options.push(refuses(KEEP, "Keep off"));
     Shown {
         session: waits.session,
         ask: browser_key(waits.session),
-        says: "Wants a browser: what may it reach? This project's sites are the hosts its \
-               sandbox lists and the services on this machine you allowed"
-            .to_owned(),
-        options: vec![
-            Offered {
-                id: BROWSER_PROJECT.to_owned(),
-                label: "This project's sites".to_owned(),
-                allows: true,
-            },
-            Offered {
-                id: BROWSER_OPEN_WEB.to_owned(),
-                label: "Also the open web".to_owned(),
-                allows: true,
-            },
-            refuses(KEEP, "Keep off"),
-        ],
+        says: said_inertly(&says),
+        options,
         source: AskSource::Browser,
         chain: Vec::new(),
         answer: AnswerPath::Browser,
@@ -823,6 +890,11 @@ pub fn browser_posture(waits: &crate::chatbrowsers::Waits) -> Shown {
         writes: None,
     }
 }
+
+/// The id of This project's sites, always for the chat's persona (#2241).
+pub const BROWSER_PROJECT_ALWAYS: &str = "project-always";
+/// The id of Also the open web, always for the chat's persona (#2241).
+pub const BROWSER_OPEN_WEB_ALWAYS: &str = "open-web-always";
 
 /// The id of This project's sites on a chat's browser Ask (#2013).
 pub const BROWSER_PROJECT: &str = "project";
@@ -880,6 +952,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
             id: APPLY.to_owned(),
             label: "Apply".to_owned(),
             allows: true,
+            preselected: None,
         });
     }
     if opens {
@@ -920,6 +993,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
             id: SIGN_IN.to_owned(),
             label: "Sign in".to_owned(),
             allows: true,
+            preselected: None,
         }]
     } else {
         plans
@@ -928,6 +1002,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
                 id: format!("{SIGN_IN}:{}", plan.provider),
                 label: format!("Sign in to {}", plan.title),
                 allows: true,
+                preselected: None,
             })
             .collect()
     };
@@ -994,6 +1069,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
                 id: MAKE_SANDBOX_ONLY.to_owned(),
                 label: "Make one".to_owned(),
                 allows: true,
+                preselected: None,
             },
             refuses(DISMISS, "Dismiss"),
         ],
@@ -1114,7 +1190,12 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .map(|(one, now)| proposed_change(one, now)),
     );
     // A chat whose first browser call asks the person waits on that answer too (#2013).
-    asks.extend(waiting.browsers.iter().map(browser_posture));
+    asks.extend(
+        waiting
+            .browsers
+            .iter()
+            .map(|one| browser_posture(one, waiting.locks)),
+    );
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();

@@ -291,6 +291,11 @@ struct OnDisk {
     /// kept. A list that changed since grants nothing until it is allowed again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     persona_hosts_mine: Vec<PersonaHostsAllowed>,
+    /// **Always for this persona** on a chat's browser Ask (#2241): what every chat running as
+    /// each persona in this project on this machine may have its browser reach, without being
+    /// asked. The only place it is kept, where no chat writes; one per persona.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    browsers_mine: Vec<BrowserAlways>,
     /// Your own sandbox levels for this project, and for its personas, as you set or confirmed
     /// them in Settings on this machine (#2071, ADR 0096 §7): what `purlis.local.toml`'s
     /// `[sandbox] level` and `[sandbox.personas]` are honoured down to
@@ -421,6 +426,18 @@ pub struct PersonaHostsAllowed {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changed: bool,
 }
+
+/// One persona whose chats' browser you allowed always (#2241), and what it reaches: this
+/// project's sites and its dev servers, and with `open_web` the open web too.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BrowserAlways {
+    pub persona: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open_web: bool,
+}
+
+/// What a [`Made`] record and the audit call your Always for a persona's browser (#2241).
+pub const BROWSER: &str = "browser";
 
 /// What a [`Made`] record and the audit call your Allow of a persona's hosts (#1362).
 pub const PERSONA_HOSTS: &str = "persona-hosts";
@@ -1556,6 +1573,62 @@ pub fn revoke_persona_hosts(root: &Path, persona: &str) -> io::Result<bool> {
         was = held.persona_hosts_mine.len() != before;
         held.granted
             .retain(|made| !(made.what == PERSONA_HOSTS && made.target == persona));
+    })?;
+    Ok(was)
+}
+
+// ---- Always for a persona's browser (#2241) -----------------------------------------------------
+
+/// Every Always for a persona's browser kept here (#2241), whether or not policy holds it.
+pub fn browsers_always(root: &Path) -> Vec<BrowserAlways> {
+    read(root).browsers_mine
+}
+
+/// **Always for `persona`'s browser**, as kept here (#2241): whether it reaches the open web
+/// too. `None` where none is kept. Whether policy holds it is [`browser_always_here`]'s.
+pub fn browser_always(root: &Path, persona: &str) -> Option<bool> {
+    read(root)
+        .browsers_mine
+        .into_iter()
+        .find(|one| one.persona == persona)
+        .map(|one| one.open_web)
+}
+
+/// [`browser_always`] **in force under `locks`**: none while an administrator's
+/// `allow-scopes` leaves out `you`, the scope it is kept at; it stays kept meanwhile.
+pub fn browser_always_here(
+    root: &Path,
+    persona: &str,
+    locks: &super::policy::Locks,
+) -> Option<bool> {
+    if locks.scope_removed(super::grant::Level::You).is_some() {
+        return None;
+    }
+    browser_always(root, persona)
+}
+
+/// Keeps **Always for `persona`'s browser**, reaching the open web too with `open_web`, in place
+/// of any kept before (#2241). Whether policy allows it is the caller's to have checked.
+pub fn keep_browser_always(root: &Path, persona: &str, open_web: bool) -> io::Result<()> {
+    change(root, |held| {
+        held.browsers_mine.retain(|one| one.persona != persona);
+        held.browsers_mine.push(BrowserAlways {
+            persona: persona.to_owned(),
+            open_web,
+        });
+    })
+}
+
+/// Removes **Always for `persona`'s browser** and its Granted record (#2241). Answers whether
+/// one was kept.
+pub fn revoke_browser_always(root: &Path, persona: &str) -> io::Result<bool> {
+    let mut was = false;
+    change(root, |held| {
+        let before = held.browsers_mine.len();
+        held.browsers_mine.retain(|one| one.persona != persona);
+        was = held.browsers_mine.len() != before;
+        held.granted
+            .retain(|made| !(made.what == BROWSER && made.target == persona));
     })?;
     Ok(was)
 }

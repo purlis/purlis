@@ -4472,7 +4472,13 @@ export type GrantWhat =
 /**  A system service to look up by name (D-sock-1): this machine's alone. */
 "service" | 
 /**  A service on this Mac, by its one loopback port (qw384): this machine's alone. */
-"port";
+"port" | 
+/**
+ *  Always for a persona's browser (#2241): what every chat as the persona may have its
+ *  browser reach in this project on this machine. Allowed from a chat's browser Ask
+ *  (`allow_chat_browser`), never from a block's Allow.
+ */
+"browser";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -5471,6 +5477,12 @@ export type Offered = {
 	label: string,
 	/**  Whether choosing it lets the call run. */
 	allows: boolean,
+	/**
+	 *  **The answer marked as the one the source suggests** (#2241): a persona's declared
+	 *  browser. Marked in its place, never moved, and never an answer: only the person's press
+	 *  answers. Absent (rather than `false`) wherever nothing is marked.
+	 */
+	preselected?: boolean | null,
 };
 
 /**

@@ -374,6 +374,53 @@ describe("the Allowed list", () => {
     );
   });
 
+  it("lists Always for a persona's browser, credited to the persona, held by policy, and removes it (#2241)", async () => {
+    const QA: SandboxGrant = {
+      id: "you\u001fbrowser\u001fqa",
+      what: "browser",
+      target: "this project's sites, its dev servers and the open web",
+      persona: "qa",
+      level: "you",
+      by: null,
+      at: null,
+      chat: "qa 8",
+      locked: null,
+      waiting: null,
+      for_no_persona: false,
+      expected: false,
+    };
+    expect(grantSaid(QA)).toBe(
+      "Chats as qa open a browser without asking, reaching this project's sites, its dev servers and the open web · This project on this machine · allowed by you, from qa 8",
+    );
+    const asked: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "sandbox_grants")
+        return [
+          QA,
+          {
+            ...QA,
+            id: "you\u001fbrowser\u001fops",
+            persona: "ops",
+            locked: "Policy removed Allow for you.",
+          },
+        ];
+      if (cmd === "revoke_sandbox_grant") return [];
+      return null;
+    });
+    render(<Granted />);
+    expect(await screen.findByText(/Not in force\. Policy removed Allow for you\./)).toBeVisible();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Remove Always for qa's browser" }));
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "revoke_sandbox_grant",
+        args: { plane: PLANE, id: QA.id },
+      }),
+    );
+  });
+
   it("lists an Allow whose list changed as not in force, with Remove (#1362)", async () => {
     const WAITING: SandboxGrant = {
       id: "you\u001fpersona-hosts\u001fdevops",
