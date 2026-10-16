@@ -364,7 +364,7 @@ fn motion_is_taken_where_given_and_filled_token_by_token() {
 #[test]
 fn a_duration_is_a_whole_number_of_milliseconds_up_to_the_ceiling() {
     for good in [json!(0), json!(1), json!(160), json!(LONGEST), json!(120.0)] {
-        let resolved = load(&json!({ "name": "x", "appearance": "dark",
+        let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "duration.quick": good } }));
         assert!(resolved.complaints.is_empty(), "{good}");
     }
@@ -375,7 +375,7 @@ fn a_duration_is_a_whole_number_of_milliseconds_up_to_the_ceiling() {
         json!(LONGEST + 1),
         json!("0ms; } x"),
     ] {
-        let resolved = load(&json!({ "name": "x", "appearance": "dark",
+        let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "duration.quick": bad } }));
         assert_eq!(resolved.complaints.len(), 1, "{bad}");
         assert_eq!(resolved.theme.motion, dark().motion);
@@ -389,7 +389,7 @@ fn an_easing_is_four_bounded_numbers() {
         json!([0.2, 0, 0, 1]),
         json!([0.34, 1.56, 0.64, 1]),
     ] {
-        let resolved = load(&json!({ "name": "x", "appearance": "dark",
+        let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "easing.enter": good } }));
         assert!(resolved.complaints.is_empty(), "{good}");
     }
@@ -401,7 +401,7 @@ fn an_easing_is_four_bounded_numbers() {
         json!(["0", "0", "1", "1"]),
         json!("ease-out"),
     ] {
-        let resolved = load(&json!({ "name": "x", "appearance": "dark",
+        let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "easing.enter": bad } }));
         assert_eq!(resolved.complaints.len(), 1, "{bad}");
     }
@@ -443,7 +443,7 @@ fn a_theme_may_turn_motion_off() {
         .iter()
         .map(|token| ((*token).to_owned(), json!(0)))
         .collect();
-    let resolved = load(&json!({ "name": "still", "appearance": "dark", "motion": off }));
+    let resolved = load(&json!({ "name": "still", "appearance": "dark", "tokens": {}, "motion": off }));
     assert!(resolved.complaints.is_empty());
     assert!(resolved.theme.motion.durations.values().all(|ms| *ms == 0));
 }

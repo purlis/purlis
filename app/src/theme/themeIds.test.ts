@@ -82,7 +82,7 @@ describe("the built-in icon theme's id (#1854)", () => {
       expect(BUILT_IN_ICONS[ICON_THEME_ALIASES[id]], `${id} names no built-in`).toBeDefined();
       expect(builtInIcons(id)).toBe(BUILT_IN_ICONS[ICON_THEME_ALIASES[id]]);
       // An old icon theme id is no colour theme.
-      expect(builtIn(id)).toBeUndefined();
+      expect(BUILT_IN[id]).toBeUndefined();
     }
     for (const id of Object.keys(BUILT_IN_ICONS)) expect(builtInIcons(id)).toBe(BUILT_IN_ICONS[id]);
     for (const id of ["purlis-dark", "seti/Seti", "", "toString", "__proto__"])
