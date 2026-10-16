@@ -3,12 +3,12 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { ChatBrowser, OpenChat } from "./bindings";
+import type { BrowserFrame, ChatBrowser, OpenChat } from "./bindings";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
@@ -72,7 +72,7 @@ type Asked = { cmd: string; args: Record<string, unknown> };
 function core(browsers: ChatBrowser[]) {
   const asked: Asked[] = [];
   const listeners = new Map<string, number>();
-  const views = new Map<string, Channel<string>>();
+  const views = new Map<string, Channel<BrowserFrame>>();
   let view = 0;
   const open = [chat(1), chat(2)];
   mockIPC((cmd, args) => {
@@ -88,8 +88,8 @@ function core(browsers: ChatBrowser[]) {
     if (cmd === "chat_browsers") return browsers;
     if (cmd === "watch_browser") {
       view += 1;
-      views.set(`${String(a.program)} ${String(a.role)}`, a.frames as Channel<string>);
-      return { view, width: 1280, height: 800 };
+      views.set(`${String(a.program)} ${String(a.role)}`, a.frames as Channel<BrowserFrame>);
+      return { view, width: 1280, height: 800, person_drives: false };
     }
     if (cmd === "plane_sidebar")
       return {
@@ -123,6 +123,7 @@ function core(browsers: ChatBrowser[]) {
       };
     if (cmd === "workspace_repos")
       return { workspace: a.workspace, repos: [], cache_refused: null };
+    if (cmd === "browser_input") return { outcome: "taken" };
     if (cmd === "finished_tasks") return [];
     if (cmd === "stopping_chats") return [];
     if (cmd === "chat_states") return [];
@@ -148,7 +149,7 @@ function core(browsers: ChatBrowser[]) {
     },
     /** A frame on the view of `program` attached as `role`. */
     frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
-      views.get(`${program} ${role}`)?.onmessage(base64),
+      views.get(`${program} ${role}`)?.onmessage({ aim: "p1:1", jpeg: base64 }),
   };
 }
 
@@ -263,6 +264,50 @@ describe("a chat's browser on its chat's tab", () => {
     await screen.findByRole("button", { name: "Open browser b1 of steward 1" });
 
     expect(screen.queryByRole("button", { name: /Open browser .* of steward 2/ })).toBeNull();
+  });
+});
+
+describe("a chat's browser view, opened from its row", () => {
+  // jsdom lays nothing out: the page is drawn over 1280 by 800 pixels of the view, at its size.
+  const box = { left: 0, top: 0, width: 1280, height: 800, right: 1280, bottom: 800, x: 0, y: 0 };
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue({
+      ...box,
+      toJSON: () => box,
+    } as DOMRect);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("is taken over with a click, as any browser view is (#2014)", async () => {
+    const host = core([B7]);
+    await opened();
+    const browsers = within(await chatsTree()).getByRole("group", {
+      name: "Browsers of steward 1",
+    });
+    await userEvent.click(within(browsers).getByRole("button", { name: /Browser b1/ }));
+    await waitFor(() =>
+      expect(host.asked("watch_browser")).toContainEqual(
+        expect.objectContaining({ program: "B7", role: "focused" }),
+      ),
+    );
+    const view = await screen.findByTestId("browser-view");
+    const bar = within(view).getByRole("status");
+    await screen.findByLabelText("The browser's page");
+    expect(bar).toHaveTextContent("Click or type in the page to take it over.");
+    host.frame("B7", "focused", "/9j/AA==");
+
+    fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
+      clientX: 640,
+      clientY: 400,
+      button: 0,
+      detail: 1,
+      pointerId: 1,
+    });
+
+    await waitFor(() => expect(host.asked("take_over_browser")).toEqual([{ program: "B7" }]));
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    await waitFor(() => expect(bar).toHaveTextContent("You are driving this browser."));
+    expect(within(view).getByRole("button", { name: /Done/ })).toBeInTheDocument();
   });
 });
 

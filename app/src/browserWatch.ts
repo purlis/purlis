@@ -3,7 +3,7 @@
 
 import { Channel } from "@tauri-apps/api/core";
 import { useEffect, useState, type RefObject } from "react";
-import { commands, type BrowserViewRole } from "./bindings";
+import { commands, type BrowserFrame, type BrowserViewRole } from "./bindings";
 import { frameBytes, latestOnly, paint } from "./browserFrames";
 
 /** Whether the window can be seen now: not minimised, hidden or behind a full-screen app. */
@@ -51,12 +51,13 @@ export function useBrowserWatch(
     const draw = latestOnly((jpeg) =>
       canvas.current === null ? Promise.resolve() : paint(canvas.current, jpeg, across),
     );
-    const frames = new Channel<string>();
+    const frames = new Channel<BrowserFrame>();
     frames.onmessage = (frame) => {
       if (gone) return;
-      // An empty frame is the host's word that the view has ended for good.
-      if (frame === "") setWatched({ kind: "ended" });
-      else draw(frameBytes(frame));
+      // An empty frame is the host's word that the view has ended for good. What it shows
+      // (`aim`) is for the person's input, which a thumbnail takes none of.
+      if (frame.jpeg === "") setWatched({ kind: "ended" });
+      else draw(frameBytes(frame.jpeg));
     };
     void commands.watchBrowser(program, role, frames).then((answer) => {
       if (answer.status === "error") {
