@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792193521075,
+  "lastUpdate": 1792194658992,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14784,6 +14784,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2542675,
             "unit": "ms",
             "extra": "median of 5 runs: 100.269, 100.991, 102.254, 102.297, 102.730 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e02a5c75fd02b5771217ad5f357f7989cea48086",
+          "message": "Geometry and type tokens everywhere: Settings, its tables and its editors (#2369)\n\n* Settings, its tables and its editors read the geometry and type tokens\n\nSettings' pages, rows, help and errors, the level switcher, the nav and\nits Edit as TOML links, the dispatch limits and grants, the sandbox and\nnetwork pages, collections, This machine's list, fields, choices and a\nform's buttons take their spacing, corners, type sizes and weights from\nthe core tokens, snapped to the scale by the operator's rule (#2313).\n75 allowance entries go (60 geometry, 15 type); none is added.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* DispatchGrants test: a persona's row group name reads the strong weight token\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Core type scale: a medium weight, and Settings' form labels read it\n\nThe foundation draws weight 500 throughout, so the core's weights are\nregular 400, medium 500 and strong 600. A setting's name and a choice's\nname were 500 and now read --font-weight-medium, which draws the same.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Type guard: a literal 500 is pointed at the medium weight\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T03:47:35+04:00",
+          "tree_id": "a829486aa587d3343a948534d55839123f2a3791",
+          "url": "https://github.com/purlis/purlis/commit/e02a5c75fd02b5771217ad5f357f7989cea48086"
+        },
+        "date": 1792194657709,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.44024949999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.419, 0.424, 0.440, 0.441, 0.458 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3597695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.329, 16.358, 16.360, 16.455, 16.647 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.323667,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.762, 102.158, 102.324, 102.602, 103.063 ms"
           }
         ]
       }
