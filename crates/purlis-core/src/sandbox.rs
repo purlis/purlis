@@ -3658,6 +3658,19 @@ pub struct Placed {
     pub ssh: Option<PathBuf>,
 }
 
+impl Placed {
+    /// Where a confinement the session host started is, as the session protocol says it.
+    pub fn of_wire(confined: &purlis_session_protocol::session::Confined) -> Placed {
+        Placed {
+            http: confined.http,
+            socks: confined.socks,
+            tmp: confined.tmp.as_ref().map(PathBuf::from),
+            routed: confined.routed.as_ref().map(PathBuf::from),
+            ssh: confined.ssh.as_ref().map(PathBuf::from),
+        }
+    }
+}
+
 impl Confinement {
     /// A proxy carrying `hosts`, and a new temp directory.
     pub fn start(hosts: Vec<String>) -> std::io::Result<Self> {

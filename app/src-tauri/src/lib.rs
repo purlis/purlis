@@ -219,7 +219,11 @@ fn chat_git_hooks<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     binary: &std::path::Path,
 ) -> Option<purlis_core::githooks::GitHooks> {
-    let dir = app.path().app_data_dir().ok()?.join("git-hooks");
+    let dir = app
+        .path()
+        .app_data_dir()
+        .ok()?
+        .join(purlis_core::hoststart::GIT_HOOKS);
     let hooks = purlis_core::githooks::GitHooks::at(&dir);
     match hooks.write(binary) {
         Ok(()) => Some(hooks),
@@ -403,7 +407,29 @@ pub(crate) struct EventLogRefused {
 /// It must hold the plugin's manifest: `--plugin-dir` pointed at a directory that is not one
 /// would start every chat with an error.
 fn bundled_plugin(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let dir = app.path().resource_dir().ok()?.join(PLUGIN_DIR);
+    plugin_in(&app.path().resource_dir().ok()?)
+}
+
+/// [`bundled_plugin`], for the window's session host, which has no window to ask: the same
+/// resources folder, as Tauri finds it beside this program (#2171).
+pub(crate) fn bundled_plugin_here() -> Option<PathBuf> {
+    let package = tauri::PackageInfo {
+        name: PRODUCT_NAME.to_owned(),
+        version: env!("CARGO_PKG_VERSION").parse().ok()?,
+        authors: env!("CARGO_PKG_AUTHORS"),
+        description: env!("CARGO_PKG_DESCRIPTION"),
+        crate_name: env!("CARGO_PKG_NAME"),
+    };
+    plugin_in(&tauri::utils::platform::resource_dir(&package, &tauri::Env::default()).ok()?)
+}
+
+/// The app's name as `tauri.conf.json`'s `productName` says it: where Linux packages put its
+/// resources.
+const PRODUCT_NAME: &str = "purlis";
+
+/// The plugin in the resources folder `resources`, where it is there whole.
+fn plugin_in(resources: &std::path::Path) -> Option<PathBuf> {
+    let dir = resources.join(PLUGIN_DIR);
     dir.join(".claude-plugin")
         .join("plugin.json")
         .is_file()
@@ -2961,7 +2987,7 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
         purlis_core::browsers::given_to(
             purlis_host::Hosting::kept(
                 &place.credentials,
-                purlis_host::FromTheWindow(sessionhost::launched),
+                sessionhost::Composes::shipped(),
                 purlis_host::Terminals,
                 sessionhost::HookChannels(kept.clone()),
                 hostedconfinement::ConfinesHere,

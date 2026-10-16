@@ -79,6 +79,38 @@ pub struct Opening {
     pub confinement: Option<String>,
 }
 
+/// **A chat by what it is named, for the session host to compose** (#2171): its profile and
+/// persona, its workspace, the conversation it carries on, its first message, and whether the
+/// person opted it out of the sandbox.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the window starts a runner's chat by its names in #2217"
+    )
+)]
+#[derive(Debug, Clone)]
+pub struct Named {
+    pub profile: Option<String>,
+    pub persona: Option<String>,
+    pub workspace: Option<String>,
+    pub resume: Option<String>,
+    pub first_message: Option<String>,
+    pub without_sandbox: bool,
+    pub size: Size,
+}
+
+/// Why a chat by what it is named alone is not started in the window's own process.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the window starts a runner's chat by its names in #2217"
+    )
+)]
+pub const NOT_COMPOSED_HERE: &str =
+    "a chat in the window is started from what the window composed, never by its names alone";
+
 /// Where a view's text goes. It is called on the view's own thread, one batch at a time.
 pub type Sink = Box<dyn FnMut(String) + Send>;
 
@@ -136,6 +168,25 @@ pub trait SessionHost: Send + Sync {
         opening: &Opening,
         announce: &dyn Fn(u32),
     ) -> Result<u32, String>;
+
+    /// **Starts a chat the session host composes itself** (#2171): by what `named` names of it,
+    /// and nothing the window composed. Only a host composes one: the window's own process
+    /// refuses it in a sentence.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the window starts a runner's chat by its names in #2217"
+        )
+    )]
+    fn open_named(
+        &self,
+        _wanted: Option<u32>,
+        _named: &Named,
+        _announce: &dyn Fn(u32),
+    ) -> Result<u32, String> {
+        Err(NOT_COMPOSED_HERE.to_owned())
+    }
 
     /// Sends what a pane typed to the program: bytes, written to its pty as they are. Text is
     /// its UTF-8; a mouse report in the default encoding is bytes that are not text at all
