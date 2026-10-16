@@ -239,7 +239,7 @@ body {
   position: relative;
   display: flex;
   align-items: stretch;
-  min-height: 2rem;
+  min-height: var(--size-control);
   background: var(--layer-workspace);
 }
 
@@ -305,7 +305,7 @@ body {
 }
 
 .workspaces-strip {
-  min-height: 2rem;
+  min-height: var(--size-control);
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -463,7 +463,7 @@ body {
   align-items: center;
   align-self: stretch;
   flex: none;
-  padding: 0 0.4rem;
+  padding: 0 var(--space-3);
   border: 0;
   border-radius: 0;
   background: none;
@@ -500,7 +500,7 @@ body {
   align-items: center;
   align-self: stretch;
   flex: none;
-  padding: 0 0.35rem;
+  padding: 0 var(--space-2);
   border: 0;
   border-radius: 0;
   background: none;
@@ -580,7 +580,7 @@ body {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--accent-base);
 }
 
@@ -604,7 +604,7 @@ body {
 .show-more-needs {
   background: var(--needs-you-base);
   color: var(--needs-you-text);
-  font-weight: 700;
+  font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
 }
 
@@ -674,8 +674,8 @@ body {
   display: flex;
   align-items: stretch;
   flex: none;
-  gap: 0.25rem;
-  padding-inline: 0.3rem;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
 }
 
 /* The strip's own buttons. A tab overrides every one of these from a more specific selector
@@ -683,12 +683,12 @@ body {
 .projects button {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-2);
   color: var(--text-primary);
   background: none;
   border: 0;
-  border-radius: 4px;
-  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
   font: inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -709,10 +709,10 @@ body {
    D5, ADR 0094). */
 .bar {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: stretch;
   min-height: var(--size-chrome);
-  padding-inline: 0 0.6rem;
+  padding-inline: 0 var(--space-4);
   background: var(--layer-chat);
 }
 
@@ -732,7 +732,7 @@ body {
 
 .tab {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -800,12 +800,12 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   align-self: stretch;
-  margin: 0.15rem;
-  padding: 0 0.4rem;
+  margin: var(--space-1);
+  padding: 0 var(--space-3);
   color: var(--text-primary);
   background: var(--surface-sunken);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font: inherit;
   /* The size of the title it stands in for (qw337). */
   font-size: var(--font-size-md);
@@ -865,10 +865,13 @@ body {
    size, in the secondary text colour. */
 .plane-updated {
   flex: none;
-  margin-left: 0.3rem;
-  font-size: 0.7em;
+  margin-left: var(--space-2);
   line-height: 1;
   color: var(--text-secondary);
+}
+.plane-updated .lucide {
+  width: calc(var(--space-4) + var(--space-1));
+  height: calc(var(--space-4) + var(--space-1));
 }
 /* On the strip the mark is a button beside the tab, pressing Start fresh (NO-3): the same quiet
    mark, with nothing of a button's chrome until it is under the pointer. */
@@ -943,12 +946,12 @@ body {
 .bar button {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-2);
   color: var(--text-primary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
   font: inherit;
   cursor: pointer;
 }
@@ -982,11 +985,11 @@ button.bare {
   align-items: center;
   justify-content: center;
   align-self: center;
-  gap: 0.3rem;
+  gap: var(--space-2);
   min-width: 1.9rem;
-  padding: 0.25rem;
+  padding: var(--space-2);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   font: inherit;
@@ -1031,10 +1034,10 @@ button.show-more {
   display: inline-flex;
   align-items: center;
   align-self: center;
-  gap: 0.2rem;
-  padding: 0.15rem 0.4rem;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   font: inherit;
@@ -1871,14 +1874,14 @@ button.show-more:focus-visible {
   display: flex;
   /* It does not shrink: the name gives way, and then the counts go whole (`wholeWays.ts`). */
   flex: none;
-  gap: 0.15rem;
+  gap: var(--space-1);
   align-items: center;
   align-self: center;
   min-width: min-content;
   height: 1.35rem;
   /* Clear of the tab's close, whose press ends the chat: a press a pixel off a count must
      not be one. */
-  margin-inline-end: 0.25rem;
+  margin-inline-end: var(--space-2);
 }
 
 /* The fourth step: the chip set aside whole (`wholeWays.fitCounts`), out of the cell's flow
@@ -1892,8 +1895,8 @@ button.show-more:focus-visible {
 /* The name gives way a thousand times sooner than the chip, and stops at its floor. */
 .tabs .tab:has(> .tab-tasks) > [role="tab"] {
   flex-shrink: 1000;
-  min-width: 2rem;
-  padding-inline-end: 0.3rem;
+  min-width: var(--size-control);
+  padding-inline-end: var(--space-2);
 }
 
 /* A pinned one keeps its row clear of its pin's corner here too (`.pinned`). */
@@ -1906,13 +1909,13 @@ button.show-more:focus-visible {
   flex: none;
   align-items: center;
   height: 1.35rem;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-2);
   border: 0;
-  border-radius: 0.7rem;
+  border-radius: var(--radius-full);
   background: none;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.85em;
+  font-size: var(--font-size-sm);
   line-height: 1;
   cursor: pointer;
 }
@@ -1922,7 +1925,7 @@ button.show-more:focus-visible {
 .tabs .tab-tasks button.tab-tasks-counts {
   position: relative;
   flex: none;
-  gap: 0 0.4rem;
+  gap: 0 var(--space-3);
   overflow: hidden;
   background: var(--surface-sunken);
   font-variant-numeric: tabular-nums;
@@ -1942,7 +1945,7 @@ button.show-more:focus-visible {
 .tab-tasks-counts .count {
   display: inline-flex;
   flex: none;
-  gap: 0.15rem;
+  gap: var(--space-1);
   align-items: center;
   height: 1.35rem;
 }
@@ -1962,8 +1965,8 @@ button.show-more:focus-visible {
 /* The hand is pressed, so it is as wide as a thing to press. */
 .tabs .tab-tasks button.tab-tasks-hand {
   justify-content: center;
-  min-width: 1.5rem;
-  padding: 0 0.15rem;
+  min-width: var(--size-chrome);
+  padding: 0 var(--space-1);
 }
 
 /* The narrowest tab that also wears the hand has no room for a count beside it (the third
@@ -2000,23 +2003,23 @@ button.show-more:focus-visible {
 
 /* A task stands one step in from the chat that asked for it (V100-41). */
 .tasks-menu-row[data-level="2"] {
-  --ui-menu-indent: 0.9rem;
+  --ui-menu-indent: var(--space-5);
 }
 
 .tasks-menu-row[data-level="3"] {
-  --ui-menu-indent: 1.8rem;
+  --ui-menu-indent: calc(var(--space-5) * 2);
 }
 
 .tasks-menu-row[data-level="4"] {
-  --ui-menu-indent: 2.7rem;
+  --ui-menu-indent: calc(var(--space-5) * 3);
 }
 
 .tasks-menu-row[data-level="5"] {
-  --ui-menu-indent: 3.6rem;
+  --ui-menu-indent: calc(var(--space-5) * 4);
 }
 
 .tasks-menu-row[data-level="6"] {
-  --ui-menu-indent: 4.5rem;
+  --ui-menu-indent: calc(var(--space-5) * 5);
 }
 
 /* The mark of the chat the tab shows now, and the same width left empty on every other row,
@@ -2042,7 +2045,7 @@ button.show-more:focus-visible {
 }
 
 .tasks-menu-row[data-current] .name {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* Who asked for a task, drawn where its line stands in the fold and no indent says it. */
@@ -2052,19 +2055,19 @@ button.show-more:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-secondary);
-  font-size: 0.9em;
+  font-size: var(--font-size-sm);
 }
 
 /* **An ended task's report, opened under its line**: text, as its finished row in the Chats
    list draws it, wrapped and no taller than a few lines before it scrolls. */
 .tasks-menu-report {
   max-height: 10rem;
-  margin: 0 0.45rem 0.2rem 1.35rem;
-  padding: 0.3rem 0.5rem;
+  margin: 0 var(--space-3) var(--space-1) var(--space-6);
+  padding: var(--space-2) var(--space-3);
   overflow-y: auto;
   border-inline-start: 2px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 0.9em;
+  font-size: var(--font-size-md);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -2077,7 +2080,7 @@ button.show-more:focus-visible {
 .tasks-menu-row .since {
   flex: none;
   color: var(--text-secondary);
-  font-size: 0.9em;
+  font-size: var(--font-size-sm);
 }
 
 /* Where a line is, or why a row cannot run, gives way after the name (#1545): at the menu's
@@ -2104,7 +2107,7 @@ button.show-more:focus-visible {
   max-width: 16em;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 0.9em;
+  font-size: var(--font-size-sm);
 }
 
 .tasks-menu-row .doing:empty {
@@ -2141,9 +2144,9 @@ button.show-more:focus-visible {
   inset-block: 0;
   inset-inline-end: 0.3rem;
   display: none;
-  gap: 0.15rem;
+  gap: var(--space-1);
   align-items: center;
-  padding-inline-start: 0.4rem;
+  padding-inline-start: var(--space-3);
   background: var(--tab-active);
 }
 
@@ -2163,7 +2166,7 @@ button.show-more:focus-visible {
   height: 1.3rem;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   cursor: pointer;
@@ -2182,13 +2185,13 @@ button.show-more:focus-visible {
 /* The menu's last line, for what binds and what was used (#1498, #1500). */
 .tasks-menu-foot {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-5);
   justify-content: space-between;
-  margin-top: 0.2rem;
-  padding: 0.35rem 0.45rem 0.15rem;
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-1);
   border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 0.9em;
+  font-size: var(--font-size-md);
 }
 
 /* Each of the footer's lines may give way to the menu's width and breaks rather than widen it. */
@@ -2629,7 +2632,7 @@ button.show-more:focus-visible {
   flex: none;
   flex-direction: column;
   width: 2.5rem;
-  padding-block: 0.25rem;
+  padding-block: var(--space-2);
   background: var(--surface-deep);
 }
 
@@ -2646,7 +2649,7 @@ button.show-more:focus-visible {
 .activity-divider {
   flex: none;
   height: 1px;
-  margin: auto 0.5rem 0.25rem;
+  margin: auto var(--space-3) var(--space-2);
   background: var(--border-subtle);
 }
 
@@ -2661,7 +2664,7 @@ button.show-more:focus-visible {
 .activity-bar [role="tablist"] {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--space-1);
 }
 
 .activity-tab {
@@ -2715,12 +2718,12 @@ button.show-more:focus-visible {
   inset-block-end: 0.2rem;
   inset-inline-end: 0.15rem;
   min-width: 1rem;
-  padding: 0 0.25rem;
-  border-radius: 999px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--control-count);
   color: var(--text-primary);
-  font-size: 0.65rem;
-  font-weight: 700;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
   line-height: 1rem;
   font-variant-numeric: tabular-nums;
   /* Repos' count is two numbers (#1739): one line, never wrapped under the icon. */
@@ -4478,7 +4481,7 @@ h2.sidebar-title .node-icon {
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
-  margin-inline-start: 0.4rem;
+  margin-inline-start: var(--space-3);
   background: var(--state-waiting);
   rotate: 45deg;
   vertical-align: middle;
@@ -4506,7 +4509,7 @@ h2.sidebar-title .node-icon {
   display: inline-block;
   width: 0.45rem;
   height: 0.45rem;
-  margin-inline-start: 0.4rem;
+  margin-inline-start: var(--space-3);
   background: var(--state-waiting);
   vertical-align: middle;
   flex: none;
@@ -4539,11 +4542,11 @@ h2.sidebar-title .node-icon {
 }
 .needs-you-button {
   display: flex;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
-  padding: 0.05rem 0.3rem;
+  padding: var(--space-0) var(--space-2);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-primary);
   font: inherit;
@@ -4574,11 +4577,11 @@ h2.sidebar-title .node-icon {
 }
 .needs-you-number {
   min-width: 1.3rem;
-  padding: 0 0.32rem;
-  border-radius: 999px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--needs-you-base);
   color: var(--needs-you-text);
-  font-weight: 700;
+  font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -5275,7 +5278,7 @@ h2.sidebar-title .node-icon {
 }
 
 .status-workspace {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* A count's label. Quiet, because the number is the thing being read and the label only says
@@ -5710,11 +5713,11 @@ h2.sidebar-title .node-icon {
   --title-bar-drag: 5rem;
   display: flex;
   flex: none;
-  gap: 0.75rem;
+  gap: var(--space-5);
   align-items: center;
   min-height: 2.1rem;
-  padding: 0 0.6rem 0 calc(var(--window-controls, 0px) + 0.6rem);
-  font-size: 0.8rem;
+  padding: 0 var(--space-4) 0 calc(var(--window-controls, 0px) + var(--space-4));
+  font-size: var(--font-size-xs);
   background: var(--surface-deep);
   border-bottom: 1px solid var(--border-subtle);
   overflow: hidden;
@@ -5729,7 +5732,7 @@ h2.sidebar-title .node-icon {
   flex: 1 1 auto;
   align-self: stretch;
   margin-inline-end: var(--title-bar-drag);
-  font-size: 1rem;
+  font-size: var(--font-size-base);
 }
 
 /* The right-hand end, which never gives way. At the far end whether or not there is a strip
@@ -5738,7 +5741,7 @@ h2.sidebar-title .node-icon {
   display: flex;
   flex: none;
   margin-inline-start: auto;
-  gap: 0.4rem;
+  gap: var(--space-3);
   align-items: center;
 }
 
@@ -5762,13 +5765,13 @@ h2.sidebar-title .node-icon {
 /* About charter, in the same chrome as the update item beside it — one row, one shape. */
 .title-about {
   display: flex;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
   color: var(--text-secondary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-0) var(--space-3);
   font: inherit;
   cursor: pointer;
 }
@@ -5781,13 +5784,13 @@ h2.sidebar-title .node-icon {
    once it is thrown, so a stopped app is never mistaken for an idle one. */
 .title-kill-switch {
   display: flex;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
   color: var(--text-secondary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-0) var(--space-3);
   font: inherit;
   cursor: pointer;
 }

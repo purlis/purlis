@@ -235,9 +235,12 @@ describe("the type guard (#1920)", () => {
   });
 
   it("fails a ceiling that was raised, and a file that was given one", () => {
-    // The list and the source agree, and the list is one longer than the ceiling it had.
+    // The list and the source agree, and the list is one longer than its ceiling, however far
+    // the migrations have already shortened it.
     const found = literalsByFile();
-    const grown = [...TYPE_ALLOWANCE["App.css"], ".planted | font-size: 0.8rem"];
+    const past = CEILING["App.css"] - TYPE_ALLOWANCE["App.css"].length + 1;
+    const planted = Array.from({ length: past }, (_, n) => `.planted-${n} | font-size: 0.8rem`);
+    const grown = [...TYPE_ALLOWANCE["App.css"], ...planted];
     expect(
       offTheList(new Map([...found, ["App.css", grown]]), { ...TYPE_ALLOWANCE, "App.css": grown }),
     ).toEqual([`App.css: the allowance grew to ${grown.length}, past ${CEILING["App.css"]}`]);
