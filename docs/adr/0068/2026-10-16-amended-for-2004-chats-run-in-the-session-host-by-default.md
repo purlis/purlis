@@ -60,11 +60,14 @@ confirmed** (D-2004-2 to D-2004-4, D-2004-8).
    projects to the host, which tells clones apart by their links already (#2178). *D-2004-7,
    ruled.*
 6. **The way back is safe after a crash.** A window whose chats run in its own process
-   (`PURLIS_CHATS_IN_THE_HOST=0`) that finds a host a crashed window left still serving tells
-   it `quit`, so every chat it kept ends as a quit, and only then starts a host of its own; it
-   puts no chat back until its host has settled so, and none at all while a host it found
-   could not be ended. A conversation never has a program in the host and one in the window
-   at once. *D-2004-8, to be confirmed.*
+   (`PURLIS_CHATS_IN_THE_HOST=0`) that finds a session host serving its config home tells it
+   `quit`, so every chat it runs ends as a quit, and only then starts a host of its own. That is
+   any host serving that config home: one a crashed window left, and equally a `purlis serve`
+   started in a terminal or the host of another window of the same config home, whose chats end
+   with it. The window puts a chat back only once its own host serves, or once it knows no other
+   host serves its config home (none holds its lock); otherwise it puts none back and keeps the
+   record for the next launch. Its attempt to reach a host it found is bounded. A conversation
+   never has a program in a host and one in the window at once. *D-2004-8, to be confirmed.*
 
 **What this does not do.** An update still ends every chat until the upgrade handoff (#665).
 The window's own path stays built until #2005 deletes it.

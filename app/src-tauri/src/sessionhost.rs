@@ -622,6 +622,8 @@ struct Supervision {
     ends_a_host_it_finds: std::sync::atomic::AtomicBool,
     /// A host found serving could not be ended, and may still run a window's chats (#2004).
     left_serving: std::sync::atomic::AtomicBool,
+    /// Where the host serves: what the way back asks whether another host holds (#2004).
+    place: Mutex<Option<purlis_host::Place>>,
 }
 
 #[derive(Default)]
@@ -708,6 +710,11 @@ impl SessionHost {
         place: purlis_host::Place,
         starts: impl Fn() -> Result<Command, String> + Send + Sync + 'static,
     ) {
+        *self
+            .supervision
+            .place
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(place.clone());
         let connection = &self.connection;
         if let Err(why) = purlis_core::hostsocket::make_the_folder(&place.socket) {
             let why = format!(
@@ -750,22 +757,30 @@ impl SessionHost {
     }
 
     /// **What a window whose chats run in its own process waits on before it puts any back**
-    /// (#2004, with [`Self::ending_a_host_it_finds`]): the host settled, at most `within`, so a
-    /// host a crashed window left has ended its chats first. Refused, with why, while a host
-    /// found serving could not be ended: a chat it may still run is not started again here.
+    /// (#2004, with [`Self::ending_a_host_it_finds`]): its own host serving, at most `within`,
+    /// so a host a crashed window left has ended its chats first. Its own host serving holds the
+    /// place's lock, so no other host runs them. Short of that, it puts chats back only when it
+    /// knows no other host serves there: none holds the place's lock, and none it found was left
+    /// serving. Otherwise it refuses, with why.
     pub fn before_chats_are_put_back(&self, within: Duration) -> crate::planes::Gate {
         let (connection, supervision) =
             (Arc::clone(&self.connection), Arc::clone(&self.supervision));
         Arc::new(move || {
-            // Ready, or gone with why: settled either way.
-            let _ = connection.wait(within);
-            if supervision
+            if connection.wait(within).is_ok() {
+                return Ok(());
+            }
+            let left_serving = supervision
                 .left_serving
-                .load(std::sync::atomic::Ordering::SeqCst)
-            {
+                .load(std::sync::atomic::Ordering::SeqCst);
+            let place = supervision
+                .place
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            if left_serving || place.is_some_and(|place| another_holds(&place.lock)) {
                 return Err(
-                    "a session host a window left serving may still run these chats, \
-                            and it could not be ended; quit purlis and start it again"
+                    "another session host may still run these chats; quit purlis and start it \
+                     again"
                         .to_owned(),
                 );
             }
@@ -1162,6 +1177,19 @@ fn log_what_it_says(said: std::process::ChildStderr, supervision: Arc<Supervisio
         });
 }
 
+/// Whether a host holds the lock at `lock` now: taken and let go of at once when it is free.
+/// A lock that cannot be asked is taken as held.
+fn another_holds(lock: &Path) -> bool {
+    match std::fs::File::open(lock) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => true,
+        Ok(file) => match file.try_lock() {
+            Ok(()) => false,
+            Err(_) => true,
+        },
+    }
+}
+
 /// How many hosts found serving a window ends in a row before it counts the next as an
 /// unexpected end (#2004).
 const ENDS_IN_A_ROW: u32 = 3;
@@ -1171,7 +1199,11 @@ const ENDS_IN_A_ROW: u32 = 3;
 fn end_the_one_serving(place: &purlis_host::Place) -> Result<(), String> {
     let credential = Credential::read(&place.credentials, Scope::LocalUi)
         .map_err(|why| format!("its credential could not be read: {why}"))?;
-    let link = tauri::async_runtime::block_on(open_link(&place.socket, &credential, || {}))?;
+    // Bounded: a host that takes the connection and never answers is not waited on for good.
+    let link = tauri::async_runtime::block_on(async {
+        tokio::time::timeout(QUITS_WITHIN, open_link(&place.socket, &credential, || {})).await
+    })
+    .map_err(|_| "it did not answer".to_owned())??;
     tracing::info!(
         "purlis: chats run in the window on this launch, so the session host a window left \
          serving at {} is told to quit, ending the chats it kept",

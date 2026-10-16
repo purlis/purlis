@@ -175,3 +175,25 @@ fn a_config_home_spelled_two_ways_names_one_socket() {
         socket
     );
 }
+
+/// #2114: a config home named before it is made names the socket it names once it is.
+#[test]
+fn a_config_home_not_made_yet_names_the_socket_it_will_once_it_is() {
+    let socket = PathBuf::from("/run/user/501/purlis/purlisd.sock");
+    let homes = tempfile::tempdir().unwrap();
+    let default = homes.path().join("default");
+    std::fs::create_dir_all(&default).unwrap();
+    let real = homes.path().join("real");
+    std::os::unix::fs::symlink(homes.path(), homes.path().join("link")).unwrap();
+    let through_a_link = homes.path().join("link").join("real").join("config");
+
+    let before = named_for(&socket, Some(&through_a_link), Some(&default));
+    std::fs::create_dir_all(real.join("config")).unwrap();
+    let after = named_for(&socket, Some(&through_a_link), Some(&default));
+
+    assert_eq!(before, after);
+    assert_eq!(
+        after,
+        named_for(&socket, Some(&real.join("config")), Some(&default))
+    );
+}

@@ -85,15 +85,15 @@ pub fn here_for(runtime: Option<&OsStr>, config: Option<&Path>) -> PathBuf {
 /// **The socket's name for the config home `config`** (#2114): `socket` as it is where `config`
 /// is the one a person's purlis finds by itself (`default`), or none is known, so every build
 /// finds its host where the last one listened; otherwise `purlisd-<key>.sock` in the same
-/// folder, `<key>` the first 16 hex digits of the SHA-256 of `config` resolved (as written
-/// where it cannot be), so one config home spelled two ways is one. So another
+/// folder, `<key>` the first 16 hex digits of the SHA-256 of `config` resolved through its
+/// nearest folder that exists, so one config home spelled two ways, or named before it is made,
+/// is one. So another
 /// purlis on this device with a config home of its own, whose credentials are its own (a
 /// scenario run, a development build beside an installed one), has a session host of its own,
 /// and one host still serves every project of a config home (ADR 0068 §1).
 #[cfg(unix)]
 pub fn named_for(socket: &Path, config: Option<&Path>, default: Option<&Path>) -> PathBuf {
     use sha2::{Digest, Sha256};
-    let resolved = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let config = config.map(resolved);
     let default = default.map(resolved);
     let Some(config) = config.filter(|config| Some(config) != default.as_ref()) else {
@@ -105,6 +105,29 @@ pub fn named_for(socket: &Path, config: Option<&Path>, default: Option<&Path>) -
         .map(|byte| format!("{byte:02x}"))
         .collect();
     socket.with_file_name(format!("purlisd-{key}.sock"))
+}
+
+/// `path` resolved through its nearest folder that exists, with the rest as written: a config
+/// home not made yet names the socket it will once it is.
+#[cfg(unix)]
+fn resolved(path: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut at = path;
+    loop {
+        if let Ok(found) = std::fs::canonicalize(at) {
+            return rest
+                .iter()
+                .rev()
+                .fold(found, |whole, part| whole.join(part));
+        }
+        match (at.parent(), at.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_os_string());
+                at = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
 }
 
 /// Makes the socket's folder this user's alone now (`purlis_same_user::private_directory`),

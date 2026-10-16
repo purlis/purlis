@@ -203,10 +203,12 @@ fn no_chat_is_put_back_before_the_gate_lets_it_and_none_when_it_refuses() {
     let dir = tempfile::tempdir().expect("a directory");
     let root = a_plane_with_chats(&dir.path().join("plane"), 2);
     let host = Pretend::default();
+    let (asked, entered) = std::sync::mpsc::channel::<()>();
     let (open, opened) = std::sync::mpsc::channel::<()>();
-    let opened = Mutex::new(opened);
+    let (asked, opened) = (Mutex::new(asked), Mutex::new(opened));
     let planes = planes_on(&[&host], &dir.path().join("config")).putting_back_chats_after(
         Arc::new(move || {
+            let _ = asked.lock().unwrap().send(());
             opened
                 .lock()
                 .unwrap()
@@ -217,7 +219,10 @@ fn no_chat_is_put_back_before_the_gate_lets_it_and_none_when_it_refuses() {
 
     let plane = approve_and_open(&planes, &root);
     let held = planes.held(&plane).expect("it is held");
-    std::thread::sleep(Duration::from_millis(300));
+    // The gate is asked, and holds: a start comes only after it answers.
+    entered
+        .recv_timeout(SOON)
+        .expect("the gate is asked before anything starts");
     assert!(
         host.asked().is_empty(),
         "a chat started before the gate let it"
@@ -228,15 +233,25 @@ fn no_chat_is_put_back_before_the_gate_lets_it_and_none_when_it_refuses() {
     until("both chats to start", || held.chats().open_now().len() == 2);
     planes.let_go_of_all();
 
-    // A gate that refuses: nothing starts, and the record still holds every chat.
+    // A gate that refuses, on the thread that asks: once the open returns, the put back is
+    // over, nothing started, and the record still holds every chat.
     let refusing = tempfile::tempdir().expect("a directory");
     let root = a_plane_with_chats(&refusing.path().join("plane"), 2);
     let host = Pretend::default();
-    let planes = planes_on(&[&host], &refusing.path().join("config"))
-        .putting_back_chats_after(Arc::new(|| Err("a host still runs them".to_owned())));
+    let planes = {
+        let host = host.clone();
+        Planes::telling(
+            Arc::new(|_: Moved| {}),
+            crate::Shipped::default(),
+            Some(refusing.path().join("config")),
+        )
+        .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+            Box::new(host.clone())
+        }))
+        .putting_back_chats_after(Arc::new(|| Err("a host still runs them".to_owned())))
+    };
     let plane = approve_and_open(&planes, &root);
     let held = planes.held(&plane).expect("it is held");
-    std::thread::sleep(Duration::from_millis(300));
     assert!(host.asked().is_empty(), "a chat started past a refusal");
     assert!(held.chats().open_now().is_empty());
     planes.let_go_of_all();
