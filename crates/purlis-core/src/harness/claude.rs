@@ -367,6 +367,15 @@ fn settings(
             .iter()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
+    // **And a chat's browser tools, each by name** (#2245, ruled 2026-10-16, amending ADR
+    // 0064): the person's answer to the chat's browser Ask is the consent, which the app asks
+    // at the first call and holds in front of every one, as the dispatch grant is for a
+    // dispatch. On the same arguments as the `--mcp-config` that hands the chat the server
+    // that serves them, so only a chat that may have a browser carries them.
+    allow.extend(
+        crate::browsertools::run_on_the_browser_ask()
+            .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
+    );
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -882,6 +891,27 @@ mod tests {
         assert!(settings["permissions"]["allow"].as_array().is_some());
         let (_, settings) = armed_as(&plane, "steward");
         assert_eq!(settings["permissions"].get("deny"), None);
+    }
+
+    #[test]
+    fn a_browser_tool_a_persona_disallows_is_denied_beside_the_browser_tools_allow() {
+        // #2245: the browser tools are allowed on the chat's browser Ask, and a persona's
+        // `disallowed-tools:` still takes one away: its deny outranks the allow beside it.
+        use crate::personaverbs::tests_plane::Plane;
+        let plane = Plane::fixture("minimal");
+        plane.write(
+            "personas/reviewer/persona.md",
+            "---\nname: reviewer\ndisallowed-tools: mcp__purlis__browser_click\n---\n",
+        );
+
+        let (_, settings) = armed_as(&plane, "reviewer");
+        assert_eq!(
+            settings["permissions"]["deny"],
+            serde_json::json!(["mcp__purlis__browser_click"])
+        );
+        let allow = settings["permissions"]["allow"].as_array().expect("allow");
+        assert!(allow.contains(&serde_json::json!("mcp__purlis__browser_click")));
+        assert!(allow.contains(&serde_json::json!("mcp__purlis__browser_open")));
     }
 
     /// Whether a rule of `allow` lets `command` run in Claude Code without asking: a `Bash(…)`
