@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792141618632,
+  "lastUpdate": 1792142919644,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13776,6 +13776,48 @@ window.BENCHMARK_DATA = {
             "value": 103.8961645,
             "unit": "ms",
             "extra": "median of 5 runs: 102.838, 103.586, 103.896, 105.643, 107.423 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f1b5057c9828b0807f28ecb2cc431f4be846981a",
+          "message": "Flaky: a task ended with no window is owed to its asker in the same write (#2272) (#2274)\n\nSettling a dispatch whose chat is gone wrote the record twice: once to end\nit, then again to mark its report owed to the chat that asked. A reader\nbetween the two writes found the task ended and owed to nobody, which is\nwhat the behaviour test saw when it read right after the end landed.\n\nThe end and the owed mark are now one write under the store's lock, for\nthe session host's settle and the window's settle at open alike. A unit\ntest reads each version of the record as it lands and fails on any that is\nended but not owed.\n\nCloses #2272\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T13:05:42+04:00",
+          "tree_id": "c572c4a7af582d5382c58b6ff43d99532cfb883c",
+          "url": "https://github.com/purlis/purlis/commit/f1b5057c9828b0807f28ecb2cc431f4be846981a"
+        },
+        "date": 1792142917969,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5314905000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.520, 0.521, 0.531, 0.540, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.9889205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.774, 16.792, 16.989, 17.003, 17.079 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.38,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.030, 104.165, 104.380, 104.649, 106.174 ms"
           }
         ]
       }
