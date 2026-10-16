@@ -15,6 +15,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::blank::{Rect, paint_over};
+use super::drawn::{STYLES, drawn};
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
@@ -420,6 +421,15 @@ struct ToRead {
     frame: FrameAx,
     session: String,
     parent_session: Option<String>,
+}
+
+/// The frame at the top of one of a page's sessions: its parent's session, and the frames
+/// between it and the page that have sessions of their own.
+struct Root {
+    frame: String,
+    session: String,
+    parent: Option<String>,
+    boundaries: Vec<(String, String)>,
 }
 
 /// Where an element is, for acting on it.
@@ -1670,9 +1680,10 @@ impl Browser {
         Ok(self.answer(&target, settled, opened, Content::Image(painted), None))
     }
 
-    /// The box of every blanked element on `target`'s page, and of every element that shows a
-    /// text kept out (#2014), in CSS pixels. An element the engine says it cannot place is not
-    /// drawn; any other failure withholds the screenshot.
+    /// The box of every blanked element on `target`'s page, of every element that shows a text
+    /// kept out (#2014), and of everything else the page draws that may show one (#2303), in CSS
+    /// pixels. An element the engine says it cannot place is not drawn; any other failure
+    /// withholds the screenshot.
     fn blanked_boxes(&self, target: &str) -> Result<Vec<Rect>, Refusal> {
         let mut keys: Vec<NodeKey> = {
             let state = lock(&self.inner.state);
@@ -1696,34 +1707,132 @@ impl Browser {
                 let Some(frame) = page.frames.get(&key.frame) else {
                     continue;
                 };
-                let boundaries = page.boundaries(&key.frame);
                 Located {
                     target: target.to_owned(),
                     page_session: page.session.clone().unwrap_or_default(),
                     node_session: frame.session.clone(),
                     backend: key.backend,
-                    boundaries,
+                    boundaries: page.boundaries(&key.frame),
                 }
             };
-            let placed = self.frame_offset(&at, false).and_then(|offset| {
-                self.devtools()
+            boxes.extend(self.placed(&at)?);
+        }
+        boxes.extend(self.drawn_boxes(target)?);
+        Ok(boxes)
+    }
+
+    /// Where `at` is drawn, in CSS pixels; `None` when the engine says it is not drawn.
+    fn placed(&self, at: &Located) -> Result<Option<Rect>, Refusal> {
+        let placed = self.frame_offset(at, false).and_then(|offset| {
+            self.devtools()
+                .call(
+                    "DOM.getContentQuads",
+                    json!({ "backendNodeId": at.backend }),
+                    Some(&at.node_session),
+                )
+                .map(|quads| (offset, quads))
+        });
+        match placed {
+            Ok(((dx, dy), quads)) => Ok(bounds(&quads).map(|mut rect| {
+                rect.x += dx;
+                rect.y += dy;
+                rect
+            })),
+            Err(CallError::Engine { message, .. }) if not_drawn(&message) => Ok(None),
+            Err(why) => Err(Refusal::Withheld(why.to_string())),
+        }
+    }
+
+    /// The box of everything `target`'s page draws that may show a text it keeps out (#2303):
+    /// none while it keeps nothing out. Each of the page's sessions is read for what its
+    /// documents lay out; one that cannot be read withholds the screenshot.
+    fn drawn_boxes(&self, target: &str) -> Result<Vec<Rect>, Refusal> {
+        let (kept, page_session, roots) = {
+            let state = lock(&self.inner.state);
+            let page = state.page(target).ok_or(Refusal::NoPage)?;
+            if page.scrubbed.is_empty() {
+                return Ok(Vec::new());
+            }
+            let page_session = page.session.clone().ok_or(Refusal::Unknown)?;
+            let mut roots: Vec<Root> = page
+                .frames
+                .iter()
+                .filter_map(|(id, frame)| {
+                    let parent = frame.parent.as_ref().and_then(|p| page.frames.get(p));
+                    match parent {
+                        Some(parent) if parent.session == frame.session => None,
+                        _ => Some(Root {
+                            frame: id.clone(),
+                            session: frame.session.clone(),
+                            parent: parent.map(|p| p.session.clone()),
+                            boundaries: page.boundaries(id),
+                        }),
+                    }
+                })
+                .collect();
+            if !roots.iter().any(|root| root.session == page_session) {
+                roots.push(Root {
+                    frame: target.to_owned(),
+                    session: page_session.clone(),
+                    parent: None,
+                    boundaries: Vec::new(),
+                });
+            }
+            (page.scrubbed.clone(), page_session, roots)
+        };
+        let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
+        // The frame elements whose documents are read in sessions of their own.
+        let read_apart: HashSet<(String, i64)> = roots
+            .iter()
+            .filter_map(|root| {
+                let parent = root.parent.as_ref()?;
+                let owner = self
+                    .devtools()
                     .call(
-                        "DOM.getContentQuads",
-                        json!({ "backendNodeId": at.backend }),
-                        Some(&at.node_session),
+                        "DOM.getFrameOwner",
+                        json!({ "frameId": root.frame }),
+                        Some(parent),
                     )
-                    .map(|quads| (offset, quads))
+                    .ok()?;
+                let owner = owner.get("backendNodeId").and_then(Value::as_i64)?;
+                Some((parent.clone(), owner))
+            })
+            .collect();
+        let mut boxes = Vec::new();
+        for Root {
+            session,
+            boundaries,
+            ..
+        } in &roots
+        {
+            let answer = self
+                .devtools()
+                .call(
+                    "DOMSnapshot.captureSnapshot",
+                    json!({ "computedStyles": STYLES }),
+                    Some(session),
+                )
+                .map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let found = drawn(&answer, &kept).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let frames = found.frames.into_iter().filter(|chain| {
+                chain
+                    .first()
+                    .is_none_or(|own| !read_apart.contains(&(session.clone(), *own)))
             });
-            match placed {
-                Ok(((dx, dy), quads)) => {
-                    if let Some(mut rect) = bounds(&quads) {
-                        rect.x += dx;
-                        rect.y += dy;
+            for chain in found.paint.into_iter().chain(frames) {
+                for backend in chain {
+                    let at = Located {
+                        target: target.to_owned(),
+                        page_session: page_session.clone(),
+                        node_session: session.clone(),
+                        backend,
+                        boundaries: boundaries.clone(),
+                    };
+                    if let Some(rect) = self.placed(&at)? {
                         boxes.push(rect);
+                        break;
                     }
                 }
-                Err(CallError::Engine { message, .. }) if not_drawn(&message) => {}
-                Err(why) => return Err(Refusal::Withheld(why.to_string())),
             }
         }
         Ok(boxes)

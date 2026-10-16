@@ -611,7 +611,8 @@ _Avoid_: selector, handle, node id, ref (in prose)
 Said of an element of a page whose content no answer to the agent shows: the field purlis filled
 for a **browser login**, and every field the person typed into. A snapshot shows it by its role
 and reference only, a screenshot has it painted over, and what it held is kept out of every answer
-about its page for as long as the page is open.
+about its page for as long as the page is open. A screenshot also paints over wherever else the
+page draws it, and every canvas, image and frame it cannot read, or is withheld.
 _Avoid_: masked, redacted, hidden (a page hides elements of its own)
 
 **Engine**:

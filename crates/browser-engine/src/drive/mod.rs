@@ -36,6 +36,7 @@
 
 mod blank;
 mod browser;
+mod drawn;
 pub mod fit;
 mod keys;
 mod ledger;
