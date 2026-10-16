@@ -9,7 +9,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use purlis_session_protocol::auth::Credentials;
+use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link;
 use purlis_session_protocol::local::Listener;
 use purlis_session_protocol::session;
@@ -74,8 +74,8 @@ fn unsafe_at(doing: &'static str, at: &Path) -> impl FnOnce(std::io::Error) -> H
     move |why| HostError::Unsafe { doing, at, why }
 }
 
-/// Serve the session protocol at `place` until `until` resolves, then end every program it
-/// runs and remove the socket. `ready` is called once the host accepts. `window` is the window
+/// Serve the session protocol at `place` until `until` resolves or the window quits (`quit`),
+/// then end every program it runs and remove the socket. `ready` is called once the host accepts. `window` is the window
 /// that started this host, when one did: its chats, in its process or in this one, run below it.
 /// `hosting` holds the programs, and the kill switch as it read it when it was made.
 pub async fn serve(
@@ -102,7 +102,7 @@ pub async fn serve(
     ready();
 
     let served = accept(&listener, &credentials, &hosting, until).await;
-    // Quitting still ends every chat (ADR 0068 §2): the host stops with the window.
+    // Quitting still ends every chat (ADR 0068 §2), as does the grace period passing.
     let ending = hosting.clone();
     let _ = tokio::task::spawn_blocking(move || ending.end_all()).await;
     // The lock is still held, so the socket at the path is this host's.
@@ -158,16 +158,27 @@ async fn accept(
     loop {
         let accepted = tokio::select! {
             () = &mut until => return Ok(()),
+            // The window quit: every program has ended as a quit, and the host stops (#2006).
+            () = hosting.until_it_quits() => return Ok(()),
             accepted = listener.accept() => accepted.map_err(HostError::Accept)?,
         };
         match accepted {
             Ok(peer) => {
                 let credentials = Arc::clone(credentials);
                 let hosting = hosting.clone();
+                let pid = peer.pid();
                 tokio::spawn(async move {
                     let chats = Arc::new(hosting.clone());
                     match link::serve(peer, session::speaks(), &credentials, &chats).await {
                         Ok(link) => {
+                            // The window, back after the one that started this host went: it
+                            // holds the chats as that one did (#2006).
+                            if link.scope() == Scope::LocalUi && !hosting.a_window_linked_from(pid)
+                            {
+                                say("a window's link was refused: this host has taken as many \
+                                     windows as it holds");
+                                return;
+                            }
                             let _ = session::serve(link, hosting, None).await;
                         }
                         Err(refused) => say(&format!("a connection was refused: {refused}")),

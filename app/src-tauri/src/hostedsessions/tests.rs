@@ -570,7 +570,7 @@ impl purlis_host::Channel for StandInChannel {
         self.board.moved(number, moved);
     }
 
-    fn board(&self) -> serde_json::Value {
+    fn board(&self) -> Result<serde_json::Value, String> {
         self.board.whole()
     }
 
@@ -800,7 +800,16 @@ fn a_quit_that_the_host_does_not_answer_gives_up_on_it_by_the_deadline() {
 /// The board the host keeps, as a window takes it.
 fn the_hosts_board(heard: &Heard) -> purlis_core::state::Board {
     let mut taken = purlis_core::state::Board::new();
-    taken.keep(serde_json::from_value(heard.channel.board.whole()).expect("a whole board"));
+    taken.keep(
+        serde_json::from_value(
+            heard
+                .channel
+                .board
+                .whole()
+                .expect("a board within an answer"),
+        )
+        .expect("a whole board"),
+    );
     taken
 }
 
@@ -1226,4 +1235,308 @@ fn a_link_that_opens_after_nobody_waits_for_it_is_closed() {
     assert!(opened.is_err(), "the link opened in time");
     ends.recv_timeout(PATIENCE)
         .expect("the link that opened late is still open");
+}
+
+// ---------------------------------------------------------------------------------------
+// a window that comes back to a host that outlived it (#2006)
+// ---------------------------------------------------------------------------------------
+
+/// One host whose programs and confinements are stand-ins, and windows that come and go on it,
+/// each over a link a test cuts as a crash of the window would.
+struct Comeback {
+    hosting: Hosting,
+    runs: StandIns,
+    confines: purlis_host::standin::StandInConfines,
+    root: std::path::PathBuf,
+    runtime: tokio::runtime::Runtime,
+    _dir: tempfile::TempDir,
+}
+
+/// A window on [`Comeback`]'s host: its chats, and what cuts each of its links.
+struct AWindow {
+    sessions: HostedSessions,
+    cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
+}
+
+impl Comeback {
+    fn new() -> Comeback {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let runs = StandIns::default();
+        let confines = purlis_host::standin::StandInConfines::default();
+        let (dir, root) = a_project();
+        Comeback {
+            hosting: Hosting::confining(
+                FromTheWindow(crate::sessionhost::launched),
+                confines.clone(),
+                runs.clone(),
+            ),
+            runs,
+            confines,
+            root,
+            runtime,
+            _dir: dir,
+        }
+    }
+
+    fn window(&self) -> AWindow {
+        let cuts: Arc<Mutex<Vec<tokio::task::AbortHandle>>> = Arc::default();
+        let link = self
+            .runtime
+            .block_on(crate::behaviour::a_cuttable_link(
+                self.hosting.clone(),
+                Arc::clone(&cuts),
+            ))
+            .unwrap();
+        let dial: Dial = {
+            let (hosting, cuts, handle) = (
+                self.hosting.clone(),
+                Arc::clone(&cuts),
+                self.runtime.handle().clone(),
+            );
+            Arc::new(move |within| {
+                open_within(
+                    &handle,
+                    within,
+                    crate::behaviour::a_cuttable_link(hosting.clone(), Arc::clone(&cuts)),
+                )
+            })
+        };
+        let connection = Arc::new(Connection::default());
+        connection.ready(Arc::new(link), dial);
+        AWindow {
+            sessions: HostedSessions::new(connection, &self.root),
+            cuts,
+        }
+    }
+}
+
+impl AWindow {
+    /// The window crashes: every link of its is cut, and nothing of it says goodbye.
+    fn crashes(self) {
+        for cut in self.cuts.lock().unwrap().iter() {
+            cut.abort();
+        }
+        std::mem::forget(self.sessions);
+    }
+}
+
+#[test]
+fn a_chat_left_running_is_reattached_under_its_number_and_drawn_as_it_is_now() {
+    let host = Comeback::new();
+    let first = host.window();
+    first
+        .sessions
+        .open(Some(3), &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = host.runs.last();
+    program.writes(b"before. ");
+    first.crashes();
+    program.writes(b"while away. ");
+
+    let back = host.window();
+    assert!(back.sessions.left_running(3));
+    assert!(!back.sessions.left_running(4));
+    let announced = Mutex::new(Vec::new());
+    let id = back
+        .sessions
+        .reattach(3, &|id| announced.lock().unwrap().push(id))
+        .expect("it is reattached");
+
+    assert_eq!(id, 3);
+    assert_eq!(*announced.lock().unwrap(), [3]);
+    assert_eq!(back.sessions.running(), [3]);
+    assert_eq!(back.sessions.process_id(3), Some(4242));
+    assert!(!back.sessions.left_running(3), "reattached once");
+    let (sink, seen) = a_pane();
+    back.sessions.watch(3, sink).expect("a view opens");
+    until("the screen as it is now is drawn", || {
+        seen.lock().unwrap().contains("before. while away. ")
+    });
+    back.sessions.input(3, b"typed").unwrap();
+    until("the typing reaches it", || program.seen().typed == b"typed");
+    assert_eq!(host.runs.ran().len(), 1, "nothing was started again");
+}
+
+#[test]
+fn a_chat_that_ended_with_no_window_there_is_reattached_and_told_ended() {
+    let host = Comeback::new();
+    let first = host.window();
+    first
+        .sessions
+        .open(Some(2), &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = host.runs.last();
+    first.crashes();
+    program.ends(Exit::Code(3));
+
+    let back = host.window();
+    let ends = Arc::new(Mutex::new(Vec::new()));
+    back.sessions.when_one_ends({
+        let ends = Arc::clone(&ends);
+        Arc::new(move |id, exit| ends.lock().unwrap().push((id, exit)))
+    });
+    assert!(back.sessions.left_running(2));
+    back.sessions
+        .reattach(2, &|_| {})
+        .expect("it is reattached");
+
+    until("it is told ended", || !ends.lock().unwrap().is_empty());
+    assert_eq!(
+        *ends.lock().unwrap(),
+        [(2, purlis_core::session::Exit::Code(3))]
+    );
+    assert_eq!(back.sessions.process_id(2), None);
+    assert_eq!(back.sessions.running(), [2], "its tab stays");
+}
+
+#[test]
+fn what_no_put_back_reattached_is_closed_and_what_it_did_runs_on() {
+    let host = Comeback::new();
+    let first = host.window();
+    for number in [1, 2] {
+        first
+            .sessions
+            .open(Some(number), &a_shell("true"), &|_| {})
+            .unwrap();
+    }
+    let (kept, left) = (host.runs.ran()[0].1.clone(), host.runs.ran()[1].1.clone());
+    first.crashes();
+
+    let back = host.window();
+    back.sessions
+        .reattach(1, &|_| {})
+        .expect("it is reattached");
+    back.sessions.close_what_was_not_reattached();
+
+    until("the one nothing reattached is ended", || {
+        left.seen().stopped
+    });
+    assert!(!kept.seen().stopped);
+    assert!(!back.sessions.left_running(2));
+    assert_eq!(back.sessions.running(), [1]);
+}
+
+#[test]
+fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came_back() {
+    use purlis_core::sandbox::egress::{PLAIN_PORTS, Refusals, TUNNEL_PORTS};
+    use purlis_core::sandbox::plan::{Beside, Hearing, Plan};
+    use purlis_core::sandbox::reach::Reach;
+    let refused_by = |heard: &Arc<Mutex<Vec<String>>>| Hearing {
+        refusals: Refusals::telling({
+            let heard = Arc::clone(heard);
+            Arc::new(move |host: &str, port: u16| {
+                heard.lock().unwrap().push(format!("{host}:{port}"));
+            })
+        }),
+        more: None,
+        reached: None,
+        asks: None,
+    };
+    let plan = Plan {
+        reach: Reach::of(Vec::new()).written(),
+        tunnel_ports: TUNNEL_PORTS.to_vec(),
+        plain_ports: PLAIN_PORTS.to_vec(),
+        any_port: false,
+        beside: Beside::Wrapped,
+        given: Vec::new(),
+    };
+    let host = Comeback::new();
+    let first = host.window();
+    let heard_first = Arc::new(Mutex::new(Vec::new()));
+    let confined = first
+        .sessions
+        .confine(&plan, refused_by(&heard_first))
+        .expect("confined");
+    let id = confined.held_as().expect("held in the host").to_owned();
+    first
+        .sessions
+        .open(
+            Some(4),
+            &Opening {
+                confinement: Some(id.clone()),
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .unwrap();
+    std::mem::forget(confined);
+    first.crashes();
+
+    let back = host.window();
+    let heard_back = Arc::new(Mutex::new(Vec::new()));
+    let again = back
+        .sessions
+        .confined_again(4, refused_by(&heard_back))
+        .expect("it runs in one")
+        .expect("it is reattached");
+    host.confines.proxy_did(
+        &id,
+        purlis_session_protocol::session::SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    assert_eq!(again.held_as(), Some(id.as_str()));
+    until("the window that came back hears its proxy", || {
+        !heard_back.lock().unwrap().is_empty()
+    });
+    assert_eq!(*heard_back.lock().unwrap(), ["tracker.example.com:443"]);
+    assert!(!host.confines.ended(&id), "it runs on");
+    assert!(
+        back.sessions
+            .confined_again(5, refused_by(&heard_back))
+            .is_none()
+    );
+}
+
+/// A window that comes back puts its record back as a launch does (#2006): each chat the host
+/// still runs is reattached under its number and none is started again, a chat the host no
+/// longer has is started, and what the host runs that the record does not name is closed.
+#[test]
+fn a_record_put_back_reattaches_what_the_host_still_runs_and_starts_the_rest() {
+    let host = Comeback::new();
+    let first = host.window();
+    for number in [1, 2] {
+        first
+            .sessions
+            .open(Some(number), &a_shell("true"), &|_| {})
+            .unwrap();
+    }
+    let (kept, left) = (host.runs.ran()[0].1.clone(), host.runs.ran()[1].1.clone());
+    first.crashes();
+    let back = host.window();
+    let chats =
+        crate::chats::Chats::on_host(Box::new(|_| {}), Box::new(back.sessions), host.root.clone());
+    let chat = |number: u32| purlis_core::reopen::Chat {
+        program: "/bin/sh".to_owned(),
+        args: vec!["-c".to_owned(), "true".to_owned()],
+        name: format!("chat {number}"),
+        number: Some(number),
+        identity: purlis_core::reopen::Identity {
+            id: Some(format!("01K6E8ZK6V4Q9T0N3M2B1C5D{number:02}")),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let record = purlis_core::reopen::Record {
+        chats: vec![chat(1), chat(3)],
+        ..Default::default()
+    };
+
+    let open = chats.put_back(&record, SIZE);
+    chats.close_what_was_not_reattached();
+
+    let mut sessions: Vec<u32> = open.iter().map(|one| one.session).collect();
+    sessions.sort_unstable();
+    assert_eq!(sessions, [1, 3]);
+    assert_eq!(host.runs.ran().len(), 3, "only chat 3 was started");
+    until("the one the record does not name is ended", || {
+        left.seen().stopped
+    });
+    assert!(!kept.seen().stopped, "the reattached one runs on");
 }

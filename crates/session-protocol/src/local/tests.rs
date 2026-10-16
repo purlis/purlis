@@ -119,10 +119,19 @@ impl Tree {
         programs: &[u32],
         holder: Option<u32>,
     ) -> std::io::Result<Option<u32>> {
+        self.inside_any(peer, programs, &holder.into_iter().collect::<Vec<_>>())
+    }
+
+    fn inside_any(
+        &self,
+        peer: u32,
+        programs: &[u32],
+        holders: &[u32],
+    ) -> std::io::Result<Option<u32>> {
         inside_of(
             peer,
             programs,
-            holder,
+            holders,
             |pid| self.parent(pid),
             |pid| self.session(pid),
         )
@@ -161,6 +170,24 @@ fn a_process_below_the_window_that_holds_the_chats_is_inside_one() {
         IN_THE_WINDOW.inside(200, &[], Some(100)).unwrap(),
         Some(100)
     );
+}
+
+/// A window that came back to a host its first window started (#2006): the first window (100)
+/// went, and the person's next one (300) holds the chats as well, so a process below either is
+/// inside one, and neither window is.
+#[test]
+fn a_process_below_any_window_that_held_the_chats_is_inside_one() {
+    let windows = [100, 300];
+    assert_eq!(
+        IN_THE_WINDOW.inside_any(301, &[], &windows).unwrap(),
+        Some(300)
+    );
+    assert_eq!(
+        IN_THE_WINDOW.inside_any(201, &[], &windows).unwrap(),
+        Some(100)
+    );
+    assert_eq!(IN_THE_WINDOW.inside_any(300, &[], &windows).unwrap(), None);
+    assert_eq!(IN_THE_WINDOW.inside_any(100, &[], &windows).unwrap(), None);
 }
 
 #[test]

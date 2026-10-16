@@ -149,6 +149,11 @@ pub struct Keeping {
     pub record: Box<dyn Fn(Entry) -> io::Result<()> + Send + Sync + 'static>,
     /// Chat `chat` was heard from: its spool is looked at soon after.
     pub heard_from: Box<dyn Fn(u32) + Send + Sync + 'static>,
+    /// A report, a tool call or a refused commit was handed on, and the window it went to went
+    /// before it replied ([`Relaying::let_go`]): the host's own board hears it, as it hears a
+    /// line no window took (#2006). A window that is only slow is not this: it still moves its
+    /// own board, and tells the host so.
+    pub unheard: Box<dyn Fn(&Heard) + Send + Sync + 'static>,
 }
 
 /// What a line handed on waits for.
@@ -202,7 +207,9 @@ impl Relaying {
     }
 
     /// Nothing replies from now on: every line that waits is let go of, and answered as a line
-    /// nobody heard.
+    /// nobody heard. A report, a tool call or a refused commit among them is told to the host's
+    /// keeping as unheard ([`Keeping::unheard`]). What the host does when the window's link
+    /// ends, and as the channel stops.
     pub fn let_go(&self) {
         self.waiting().clear();
     }
@@ -250,6 +257,10 @@ impl Relaying {
         };
         let reply = replied.recv_timeout(A_RELAYED_LINE_IS_TAKEN_WITHIN);
         self.done(id);
+        if let (Err(mpsc::RecvTimeoutError::Disconnected), Some(keeping)) = (&reply, &self.keeping)
+        {
+            (keeping.unheard)(heard);
+        }
         match reply {
             Ok(Replied::Taken) => Ok(()),
             Ok(Replied::Record(entry)) if of_the_line(&entry, heard) => self.record(entry),

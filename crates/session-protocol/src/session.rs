@@ -122,9 +122,16 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::Act`]), answered `browsed`, or refused `browser_refused` in the driver's
 /// words or `browser_ended`; a browser's start may say what it reaches (`reach`,
 /// [`crate::browsing::BrowserReach`]).
+///
+/// 1.13 added what a window that comes back to a host that outlived it needs (#2006):
+/// `programs_of`, answered `programs`, says each program a held project still has, running or
+/// ended, with what the window takes it back by; `quit` says the window is quitting, so the host
+/// ends every program as a quit and stops, where a link that ends without it is a crash the host
+/// waits out (ADR 0068 §2); and `board` is refused `too_large` where the kept board is more than
+/// one answer carries.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 11,
+    minor: 13,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -182,6 +189,10 @@ pub const BROWSER_REFUSED: &str = "browser_refused";
 /// was done; a new browser is opened for the next act.
 pub const BROWSER_ENDED: &str = "browser_ended";
 
+/// What the host would answer is more than one answer carries, for a reason its `why` gives
+/// (1.13): a held project's kept board too large to hand over whole.
+pub const TOO_LARGE: &str = "too_large";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -195,6 +206,7 @@ pub const REFUSALS: &[&str] = &[
     NOT_RECORDED,
     BROWSER_REFUSED,
     BROWSER_ENDED,
+    TOO_LARGE,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -352,6 +364,15 @@ pub enum Command {
         call_id: String,
         act: crate::browsing::Act,
     },
+    /// Every program a held project still has, running or ended, that no client has closed
+    /// (1.13): what a window that comes back to the host takes back. Answered
+    /// [`Answer::Programs`]. The window's alone ([`crate::grants::Power::Reattach`]).
+    ProgramsOf { project: String },
+    /// The window is quitting (1.13, ADR 0068 §2): the host ends every program it runs as a quit
+    /// would, answers once they are gone, and stops. A window's link that ends without it is a
+    /// crash, after which the host keeps its programs for the grace period. The window's alone
+    /// ([`crate::grants::Power::Quit`]).
+    Quit,
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -706,6 +727,8 @@ pub enum Answer {
     Dealt { number: u32 },
     /// A held project's kept board, as the core says it: [`Command::Board`] (1.10).
     Board(serde_json::Value),
+    /// The programs a held project still has: [`Command::ProgramsOf`] (1.13).
+    Programs(Vec<HeldProgram>),
     /// Where the confinement it started is: [`Command::Confine`] (1.4).
     Confined(Confined),
     /// The hosts held connections gave up on before an Allow, which the chat is told to retry:
@@ -722,6 +745,37 @@ pub enum Answer {
     Subscribed,
     /// Done, with nothing to say.
     Done,
+}
+
+/// One program a held project still has, as [`Command::ProgramsOf`] answers it (1.13): what a
+/// window that comes back takes it back by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldProgram {
+    /// Its id in the host.
+    pub program: String,
+    /// What kind of program it is: a harness or a shell.
+    pub kind: ProgramKind,
+    /// Its number in its project.
+    pub number: u32,
+    /// Its process, while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<u32>,
+    /// The run its start began (ADR 0066), where its start said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
+    /// How it ended, where it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<Exit>,
+    /// The confinement it runs in, and where that is, where it runs in one (1.4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confined: Option<Confined>,
+    /// The plan that confinement was started from, as the window that confined it sent it: what
+    /// a window that comes back compares with the plan it would make now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<ConfinePlan>,
+    /// The size its terminal is now.
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -933,6 +987,8 @@ wire_words!(Command {
     MidTurn => "mid_turn",
     Record => "record",
     Browse => "browse",
+    ProgramsOf => "programs_of",
+    Quit => "quit",
 });
 
 impl Command {
@@ -969,6 +1025,8 @@ impl Command {
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
             Command::Record { .. } => Power::Record,
             Command::Browse { .. } => Power::Browser,
+            Command::ProgramsOf { .. } => Power::Reattach,
+            Command::Quit => Power::Quit,
         }
     }
 }
@@ -981,6 +1039,7 @@ wire_words!(Answer {
     Readiness => "readiness",
     Dealt => "dealt",
     Board => "board",
+    Programs => "programs",
     Confined => "confined",
     ReachChanged => "reach_changed",
     Reach => "reach",
@@ -1406,7 +1465,8 @@ impl Lane {
             | Command::StopAll
             | Command::Rearm
             | Command::KillSwitch
-            | Command::MidTurn { .. } => None,
+            | Command::MidTurn { .. }
+            | Command::Quit => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -1432,9 +1492,10 @@ impl Lane {
             Command::Record { .. } => Some(Lane::Record),
             // A board's moves are made in the order the window made them, and a read of it
             // follows every move sent before it.
-            Command::BoardMoved { project, .. } | Command::Board { project } => {
-                Some(Lane::Board(project.clone()))
-            }
+            // And what a window takes back follows them too (1.13).
+            Command::BoardMoved { project, .. }
+            | Command::Board { project }
+            | Command::ProgramsOf { project } => Some(Lane::Board(project.clone())),
             Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
         }
     }
@@ -1904,6 +1965,25 @@ impl Client {
             Answer::Dealt { number } => Ok(number),
             other => Err(unexpected(&other)),
         }
+    }
+
+    /// Every program `project` still has, running or ended, as a window that comes back takes
+    /// them back (1.13).
+    pub async fn programs_of(&self, project: &str) -> Result<Vec<HeldProgram>, CallError> {
+        match self
+            .call(Command::ProgramsOf {
+                project: project.into(),
+            })
+            .await?
+        {
+            Answer::Programs(programs) => Ok(programs),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// The window is quitting: the host ends every program as a quit and stops (1.13).
+    pub async fn quit(&self) -> Result<(), CallError> {
+        self.done(Command::Quit).await
     }
 
     /// Throw the kill switch: every program the host runs ends, and none starts until the

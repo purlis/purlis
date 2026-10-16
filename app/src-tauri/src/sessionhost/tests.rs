@@ -21,12 +21,12 @@ fn the_window_starts_its_own_binary_as_its_session_host_holding_its_input() {
 }
 
 #[test]
-fn a_host_that_found_another_serving_is_said_so_and_not_connected_to() {
-    assert!(why_not_ready(Some(3)).contains("another session host already serves"));
+fn a_host_that_found_another_serving_leaves_the_window_to_reattach_to_that_one() {
+    assert_eq!(not_ready(Some(3)), NotReady::AnotherServes);
     for code in [None, Some(0), Some(1)] {
         assert_eq!(
-            why_not_ready(code),
-            "the session host ended before it was ready",
+            not_ready(code),
+            NotReady::Gone("the session host ended before it was ready"),
             "{code:?}"
         );
     }
@@ -47,7 +47,10 @@ fn a_report(chat: u32, event: purlis_core::state::Event) -> purlis_core::hookwir
 /// What the host's board keeps, read back as a window takes it.
 fn as_a_window_takes(board: &KeptBoard) -> purlis_core::state::Board {
     let mut taken = purlis_core::state::Board::new();
-    taken.keep(serde_json::from_value(board.whole()).expect("a whole board"));
+    taken.keep(
+        serde_json::from_value(board.whole().expect("a board within an answer"))
+            .expect("a whole board"),
+    );
     taken
 }
 
@@ -311,7 +314,7 @@ fn every_move_the_window_tells_is_read_and_made_by_the_hosts_board() {
     }
 
     assert_eq!(
-        without_counts(host.whole()),
+        without_counts(host.whole().expect("a board within an answer")),
         without_counts(serde_json::to_value(window.kept()).expect("said")),
     );
 }
@@ -438,8 +441,11 @@ fn a_host_the_window_ends_is_never_started_again() {
     assert_eq!(starts_in(&started), 0);
 }
 
+/// A host that finds another serving leaves the window to reattach to that one (#2006), never
+/// to be started again while its link holds. One that cannot be reached counts as an
+/// unexpected end, so a host that is never reached trips the breaker rather than looping.
 #[test]
-fn a_host_that_found_another_serving_is_not_started_again() {
+fn a_host_that_found_another_serving_is_reattached_to_and_one_never_reached_trips_the_breaker() {
     let home = tempfile::tempdir().unwrap();
     let started = home.path().join("started");
     let host = SessionHost::default();
@@ -461,15 +467,9 @@ fn a_host_that_found_another_serving_is_not_started_again() {
     };
 
     host.start_at(a_place(home.path()), another_serves);
-    until("it is seen to have ended", || {
-        host.connection()
-            .wait(Duration::ZERO)
-            .is_err_and(|why| why.contains("another"))
-    });
-    std::thread::sleep(Duration::from_millis(500));
+    until("the breaker trips", || failing.now().is_some());
 
-    assert_eq!(starts_in(&started), 1);
-    assert!(failing.now().is_none());
+    assert_eq!(starts_in(&started), breaker::EXITS);
     host.end();
 }
 

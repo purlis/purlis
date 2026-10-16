@@ -281,6 +281,12 @@ fn every_command() -> Vec<Command> {
             call_id: "c-1".into(),
             act: purlis_session_protocol::browsing::Act::Pages,
         },
+        // A window that comes back takes a held project's programs again, and a quit ends the
+        // host: the window's alone (1.13).
+        Command::ProgramsOf {
+            project: "01J9PRJCT00000000000000000".into(),
+        },
+        Command::Quit,
     ]
 }
 
@@ -327,6 +333,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "board_moved",
             "board",
             "browse",
+            "programs_of",
+            "quit",
         ],
         Scope::Terminal => &[
             "list",

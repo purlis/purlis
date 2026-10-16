@@ -310,6 +310,36 @@ fn a_line_still_waiting_when_the_window_is_let_go_of_is_answered_as_unheard() {
     );
 }
 
+/// A report handed on to a window that went before it replied (#2006): its hook spools it, and
+/// the host is told it went unheard, so the board it keeps still hears it.
+#[test]
+fn a_report_whose_window_went_before_replying_is_told_to_the_host_as_unheard() {
+    let kept = Arc::new(Kept::default());
+    let relaying = Relaying::keeping(Box::new(|_, _| true), kept.keeping());
+    let host = relaying.hearing(Arc::new(ChatTokens::default()));
+    let reporting = std::thread::spawn(move || (host.each)(report(3)));
+    std::thread::sleep(Duration::from_millis(200));
+
+    relaying.let_go();
+
+    assert!(reporting.join().expect("answered").is_err(), "it spools");
+    assert_eq!(*kept.unheard.lock().unwrap(), [Heard::Report(report(3))]);
+}
+
+/// A window that is only slow still has the line (#2006): it moves its own board and tells the
+/// host, so the host is not told the line went unheard.
+#[test]
+fn a_report_a_window_did_not_take_in_time_is_not_told_as_unheard() {
+    let kept = Arc::new(Kept::default());
+    let relaying = Relaying::keeping(Box::new(|_, _| true), kept.keeping());
+    let host = relaying.hearing(Arc::new(ChatTokens::default()));
+
+    let taken = (host.each)(report(3));
+
+    assert!(taken.is_err());
+    assert!(kept.unheard.lock().unwrap().is_empty());
+}
+
 #[test]
 fn the_window_is_told_an_asker_hung_up_until_its_ask_is_answered() {
     let (window, holding) = a_window();
@@ -349,11 +379,35 @@ impl Write for Shared {
 // the event log is written in the host (#2003)
 // ---------------------------------------------------------------------------------------
 
-/// What the host's keeping was given: each entry it recorded, and each chat heard from.
+/// What the host's keeping was given: each entry it recorded, each chat heard from, and each
+/// line handed on that no window replied to because the window went.
 #[derive(Default)]
 struct Kept {
     recorded: Mutex<Vec<Entry>>,
     heard_from: Mutex<Vec<u32>>,
+    unheard: Mutex<Vec<Heard>>,
+}
+
+impl Kept {
+    fn keeping(self: &Arc<Self>) -> Keeping {
+        Keeping {
+            record: {
+                let kept = Arc::clone(self);
+                Box::new(move |entry| {
+                    kept.recorded.lock().unwrap().push(entry);
+                    Ok(())
+                })
+            },
+            heard_from: {
+                let kept = Arc::clone(self);
+                Box::new(move |chat| kept.heard_from.lock().unwrap().push(chat))
+            },
+            unheard: {
+                let kept = Arc::clone(self);
+                Box::new(move |heard| kept.unheard.lock().unwrap().push(heard.clone()))
+            },
+        }
+    }
 }
 
 fn a_report_entry(chat: u32) -> Entry {
@@ -405,19 +459,7 @@ fn relayed_keeping(window: Hearing, kept: &Arc<Kept>) -> Hearing {
                 true
             })
         },
-        Keeping {
-            record: {
-                let kept = Arc::clone(kept);
-                Box::new(move |entry| {
-                    kept.recorded.lock().unwrap().push(entry);
-                    Ok(())
-                })
-            },
-            heard_from: {
-                let kept = Arc::clone(kept);
-                Box::new(move |chat| kept.heard_from.lock().unwrap().push(chat))
-            },
-        },
+        kept.keeping(),
     );
     *host.lock().unwrap() = Some(Arc::clone(&relaying));
     relaying.hearing(Arc::new(ChatTokens::default()))

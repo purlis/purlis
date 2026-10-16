@@ -388,6 +388,36 @@ async fn every_hosted_program_is_inside_a_chat_to_the_admission_check() {
     );
     let windowed = Hosting::running_with(Echo, StandIns::default()).started_by(Some(Window(77)));
     assert_eq!(windowed.holder(), Some(77));
+    assert_eq!(windowed.holders(), [77]);
+}
+
+#[tokio::test]
+async fn a_window_that_comes_back_holds_the_chats_beside_the_one_that_started_the_host() {
+    let windowed = Hosting::running_with(Echo, StandIns::default()).started_by(Some(Window(77)));
+
+    assert!(windowed.a_window_linked_from(78));
+    assert!(windowed.a_window_linked_from(77));
+    assert_eq!(windowed.holders(), [77, 78]);
+    // Holders are only ever added: past the bound, another window is refused, and every one
+    // kept stays.
+    for pid in 1000..1015 {
+        assert!(windowed.a_window_linked_from(pid));
+    }
+    assert!(!windowed.a_window_linked_from(2000));
+    assert!(
+        windowed.a_window_linked_from(78),
+        "one already holding is served"
+    );
+    assert_eq!(windowed.holders().len(), 17);
+    assert!(windowed.holders().contains(&78));
+
+    let alone = Hosting::running_with(Echo, StandIns::default());
+    assert!(alone.a_window_linked_from(78));
+    assert_eq!(
+        alone.holders(),
+        [std::process::id()],
+        "a host no window started holds its chats below itself alone"
+    );
 }
 
 #[tokio::test]

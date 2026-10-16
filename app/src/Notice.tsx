@@ -276,8 +276,8 @@ export function Notice(props: NoticeProps) {
  * - what happened while the person was away (#1514, #1551), before everything else that waits:
  *   it is what they read first on coming back;
  * - an offer, before news about how things came back;
- * - a chat that lost its conversation, before one charter had to guess about, before one that
- *   came back as it was.
+ * - a chat whose state the session host could not hand over, then one that lost its
+ *   conversation, before one charter had to guess about, before one that came back as it was.
  */
 export const IMPORTANCE: readonly string[] = [
   "window-trouble",
@@ -294,6 +294,7 @@ export const IMPORTANCE: readonly string[] = [
   "sandbox-expects",
   "vaults-waiting",
   "pin-dormant",
+  "chat-untaken",
   "chat-fresh",
   "chat-guessed",
   "chat-resumed",
