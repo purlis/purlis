@@ -7697,7 +7697,23 @@ mod tests {
         let root = a_plane(&dir.path().join("plane"));
         let (planes, _told) = planes_telling();
         let held = planes.held(&planes.open(&root)).expect("it is held");
-        let (chat, _) = a_claude_stand_in(&held, dir.path(), "chat", None);
+        // A Claude Code chat on no profile, which a restart starts again from its record.
+        let at = dir.path().join("chat");
+        std::fs::create_dir_all(&at).expect("a directory");
+        let ready = at.join("ready");
+        let program = stand_in::claude_code(
+            &at,
+            "claude",
+            &format!("#!/bin/sh\n: > '{}'\nexec sleep 600\n", ready.display()),
+        );
+        let mut record = one_chat_on(&program.display().to_string()).chats.remove(0);
+        record.resume =
+            purlis_core::harness::SessionId::new("11111111-2222-4333-8444-555555555555").ok();
+        let chat = held
+            .chats()
+            .start(&record, STARTING)
+            .expect("the chat starts");
+        assert!(becomes(|| ready.exists()), "the stand-in never started");
         an_ask_open_on(&held, chat);
 
         let started = held
