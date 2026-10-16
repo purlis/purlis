@@ -1,0 +1,145 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# purlis's own definitions, Pool and Claim (runners.purlis.dev/v1alpha1), applied before the
+# operator. Generated from operator/src/resources.rs; never edited by hand. Regenerate with
+#   PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: pools.runners.purlis.dev
+spec:
+  group: runners.purlis.dev
+  names:
+    kind: Pool
+    plural: pools
+    singular: pool
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.image
+      name: Image
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Where a team's purlis runners come from (purlis's cluster operator).
+        properties:
+          spec:
+            description: |-
+              Where a team's runners come from. Cluster-wide, defined once for the team. Who may claim from
+              it is the cluster's own access control: a Claim is admitted only for someone allowed to `use`
+              the Pool (deploy/policy.yaml).
+            properties:
+              image:
+                description: |-
+                  The runner image, by digest (`<repository>@sha256:<digest>`), since a tag can move. Any
+                  image that keeps purlis's runner image contract (docs/runner-image.md).
+                pattern: ^[^\s@]+@sha256:[0-9a-f]{64}$
+                type: string
+            required:
+            - image
+            type: object
+        required:
+        - spec
+        title: Pool
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: claims.runners.purlis.dev
+spec:
+  group: runners.purlis.dev
+  names:
+    kind: Claim
+    plural: claims
+    singular: claim
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.pool
+      name: Pool
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: A person's request for a purlis runner from a pool (purlis's cluster operator).
+        properties:
+          spec:
+            description: One person's request for a runner from a pool, and the runner it is given.
+            properties:
+              pool:
+                description: |-
+                  The name of the Pool the runner comes from. It never changes: another pool is another
+                  claim.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: A claim's pool cannot change. Make a new claim for another pool.
+                  rule: self == oldSelf
+            required:
+            - pool
+            type: object
+          status:
+            description: What the operator says about a Claim.
+            nullable: true
+            properties:
+              conditions:
+                default: []
+                description: '`Ready`: whether the claim''s runner is running, and if not, why.'
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        title: Claim
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

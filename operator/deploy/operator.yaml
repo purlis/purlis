@@ -1,0 +1,97 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# purlis's cluster operator: its namespace, its service account, what it may do, and the one
+# pod that runs it. Applied after upstream agent-sandbox (vendor/agent-sandbox/) and purlis's
+# definitions (crds.yaml); docs/cluster-operator.md says how.
+#
+# What it may do is the ClusterRole below and nothing else. It holds no right to exec or attach
+# to a pod, reads no Secret, and never touches a pod at all: upstream's controller makes the
+# runners' pods. operator/tests/the_install_manifests.rs holds every rule.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: purlis-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: purlis-cluster-operator
+  namespace: purlis-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: purlis-cluster-operator
+rules:
+  # A team's pools and people's claims: read, and a claim's status written. Claims are read
+  # from the operator's own watch; a pool is read by name when a claim names it.
+  - apiGroups: [runners.purlis.dev]
+    resources: [pools]
+    verbs: [get, list, watch]
+  - apiGroups: [runners.purlis.dev]
+    resources: [claims]
+    verbs: [list, watch]
+  - apiGroups: [runners.purlis.dev]
+    resources: [claims/status]
+    verbs: [patch]
+  # Upstream's objects a claim becomes, applied server-side. Deleting them is the cluster's
+  # garbage collector's, through their owners: the operator holds no delete.
+  - apiGroups: [extensions.agents.x-k8s.io]
+    resources: [sandboxclaims]
+    verbs: [create, list, patch, watch]
+  - apiGroups: [extensions.agents.x-k8s.io]
+    resources: [sandboxtemplates, sandboxwarmpools]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: purlis-cluster-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: purlis-cluster-operator
+subjects:
+  - kind: ServiceAccount
+    name: purlis-cluster-operator
+    namespace: purlis-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: purlis-cluster-operator
+  namespace: purlis-system
+spec:
+  replicas: 1
+  # One operator at a time: the old one stops before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: purlis-cluster-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: purlis-cluster-operator
+    spec:
+      serviceAccountName: purlis-cluster-operator
+      enableServiceLinks: false
+      containers:
+        - name: operator
+          # Not published yet: build it from operator/Dockerfile and name your build by digest.
+          image: ghcr.io/purlis/purlis-cluster-operator:main
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
