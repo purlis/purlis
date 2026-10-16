@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::engine::Size;
+use purlis_host::Hosting;
 use purlis_host::standin::{Savers, StandIns};
-use purlis_host::{FromTheWindow, Hosting};
 use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
@@ -99,8 +99,11 @@ fn hosted() -> Hosted {
         .unwrap();
     let runs = StandIns::default();
     let savers = Savers::default();
-    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone())
-        .saving_with(savers.clone());
+    let hosting = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    )
+    .saving_with(savers.clone());
     let (connection, link) = in_memory(hosting, &runtime);
     let (dir, root) = a_project();
     Hosted {
@@ -167,7 +170,10 @@ fn two_clones_of_one_project_in_one_window_both_start_chats() {
         .build()
         .unwrap();
     let runs = StandIns::default();
-    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone());
+    let hosting = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    );
     let (connection, _window) = in_memory(hosting, &runtime);
     let clone = || {
         let (dir, root) = a_project();
@@ -598,7 +604,7 @@ fn heard_in_the_window() -> Heard {
     let runs = StandIns::default();
     let channel = HooksHeard::default();
     let hosting = Hosting::hearing_with(
-        FromTheWindow(crate::sessionhost::launched),
+        crate::sessionhost::Composes::as_the_tests_ship(),
         runs.clone(),
         channel.clone(),
     );
@@ -974,8 +980,11 @@ async fn a_served_link(
 fn a_host_on(runtime: &tokio::runtime::Runtime) -> OneHost {
     let runs = StandIns::default();
     let savers = Savers::default();
-    let hosting = Hosting::running_with(FromTheWindow(crate::sessionhost::launched), runs.clone())
-        .saving_with(savers.clone());
+    let hosting = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    )
+    .saving_with(savers.clone());
     let serving: Arc<Mutex<Vec<tokio::task::AbortHandle>>> = Arc::default();
     let link = Arc::new(
         runtime
@@ -1172,7 +1181,7 @@ fn a_runtime() -> tokio::runtime::Runtime {
 fn a_call_that_cannot_wait_never_waits_behind_another_roots_link_being_opened() {
     let runtime = a_runtime();
     let hosting = Hosting::running_with(
-        FromTheWindow(crate::sessionhost::launched),
+        crate::sessionhost::Composes::as_the_tests_ship(),
         StandIns::default(),
     );
     let (connection, window) = in_memory(hosting, &runtime);
@@ -1219,7 +1228,7 @@ fn a_call_that_cannot_wait_never_waits_behind_another_roots_link_being_opened() 
 fn a_link_that_opens_after_nobody_waits_for_it_is_closed() {
     let runtime = a_runtime();
     let hosting = Hosting::running_with(
-        FromTheWindow(crate::sessionhost::launched),
+        crate::sessionhost::Composes::as_the_tests_ship(),
         StandIns::default(),
     );
     let (closed, ends) = std::sync::mpsc::channel();
@@ -1270,7 +1279,7 @@ impl Comeback {
         let (dir, root) = a_project();
         Comeback {
             hosting: Hosting::confining(
-                FromTheWindow(crate::sessionhost::launched),
+                crate::sessionhost::Composes::as_the_tests_ship(),
                 confines.clone(),
                 runs.clone(),
             ),

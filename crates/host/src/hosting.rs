@@ -63,8 +63,8 @@ use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::local::Chats;
 use purlis_session_protocol::session::{
-    self, Answer, Attached, Chat, Command, Confined, Exit, HeldProgram, Launch, Peer, ProgramKind,
-    Pushed, Readiness, Refusal, SandboxTold, Since, StartProgram, ViewKind, ViewRole,
+    self, Answer, Attached, Chat, Command, Confined, Exit, HeldProgram, Peer, ProgramKind, Pushed,
+    Readiness, Refusal, SandboxTold, Since, StartProgram, ViewKind, ViewRole,
 };
 use purlis_session_protocol::version::Version;
 use purlis_session_protocol::view::{Attachment, Source, ViewId};
@@ -93,35 +93,32 @@ pub struct ToCompose<'a> {
     pub size: Size,
     /// The start, as the client sent it.
     pub start: &'a StartProgram,
+    /// Where its hooks report, and the token they carry, as its project's channel issued them:
+    /// none where the host hears no channel for the project (#2000). A window's launch carries
+    /// the same.
+    pub reporting: Option<&'a session::Reporting>,
+    /// What the host does beside a start its binary composes itself (#2171).
+    pub beside: &'a dyn Beside,
 }
 
 /// Turns a start into the program to run and the environment it runs with: the binary's, built
 /// on the core, so the host links none of it (#1998).
 pub trait Compose: Send + Sync + 'static {
-    /// The program to run for `starting`, or why it cannot be started, in a sentence.
+    /// The program to run for `starting`, or why it cannot be started, in a sentence. Called
+    /// off the host's runtime: it may read files and wait on [`ToCompose::beside`].
     fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String>;
 }
 
-/// Composes a start from the window's own [`Launch`], which `launched` turns into the program,
-/// numbered and sized, as the window would have started it (#1998). A start with no launch, by
-/// persona, profile and harness alone, is refused in a sentence until what composes one from
-/// those lives in the host.
-pub struct FromTheWindow<F>(pub F);
-
-impl<F> Compose for FromTheWindow<F>
-where
-    F: Fn(&Launch, u32, Size) -> Result<Spec, String> + Send + Sync + 'static,
-{
-    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
-        match &starting.start.launch {
-            Some(launch) => (self.0)(launch, starting.number, starting.size),
-            None => Err(
-                "this session host starts a chat the window composed; a start by persona, \
-                 profile and harness alone is not composed here yet"
-                    .into(),
-            ),
-        }
-    }
+/// **What the host does beside a start its binary composes itself** (#2171): a start with no
+/// launch is composed in the host from the project's own files, and what the window does beside
+/// its own start is done here.
+pub trait Beside {
+    /// Starts the confinement `plan` plans for the program being started, in its project: the
+    /// program's own from the first, so it ends with the program, or with the start where the
+    /// start fails. Its proxy asks nobody: no window hears it.
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String>;
+    /// Writes `entry` in the event log this host holds, durably, or says why not.
+    fn record(&self, entry: serde_json::Value) -> Result<(), String>;
 }
 
 /// A host whose binary composes no start: every start is refused with a sentence.
@@ -1131,16 +1128,18 @@ impl Hosting {
         // window's launch says where it runs, never where it reports (#2000).
         let channel = self.channel(&at);
         let mut start = start;
-        if let (Some(channel), Some(launch)) = (&channel, start.launch.as_mut()) {
-            match channel.report_to(number) {
-                Ok(reporting) => launch.reporting = Some(reporting),
-                Err(why) => {
-                    self.end_confinements_of(&program);
-                    return Err(not_started(format!(
-                        "chat {number} could not be issued its token: {why}"
-                    )));
-                }
+        let reporting = match channel.as_ref().map(|channel| channel.report_to(number)) {
+            Some(Ok(reporting)) => Some(reporting),
+            Some(Err(why)) => {
+                self.end_confinements_of(&program);
+                return Err(not_started(format!(
+                    "chat {number} could not be issued its token: {why}"
+                )));
             }
+            None => None,
+        };
+        if let (Some(reporting), Some(launch)) = (&reporting, start.launch.as_mut()) {
+            launch.reporting = Some(reporting.clone());
         }
         // On every way it fails, nothing runs in its confinement: that ends with the start.
         let forget = |channel: &Option<Arc<dyn Channel>>| {
@@ -1148,13 +1147,34 @@ impl Hosting {
                 channel.forget(number);
             }
         };
-        let spec = match self.inner.compose.compose(&ToCompose {
-            project: &at.project,
-            project_path: &at.path,
-            number,
-            size,
-            start: &start,
-        }) {
+        // Composed off the runtime: a start the host composes itself reads the project's files
+        // and starts its confinement (#2171).
+        let composed = {
+            let hosting = self.clone();
+            let start = start.clone();
+            let at = at.clone();
+            let program = program.clone();
+            tokio::task::spawn_blocking(move || {
+                let beside = ForTheProgram {
+                    hosting: hosting.clone(),
+                    program,
+                    at: at.clone(),
+                };
+                hosting.inner.compose.compose(&ToCompose {
+                    project: &at.project,
+                    project_path: &at.path,
+                    number,
+                    size,
+                    start: &start,
+                    reporting: reporting.as_ref(),
+                    beside: &beside,
+                })
+            })
+            .await
+            .map_err(|why| why.to_string())
+            .and_then(|composed| composed)
+        };
+        let spec = match composed {
             Ok(spec) => spec,
             Err(why) => {
                 forget(&channel);
@@ -1162,6 +1182,8 @@ impl Hosting {
                 return Err(not_started(why));
             }
         };
+        // Where it runs, for a start the host composed: what its project's saver waits on.
+        let cwd = spec.cwd.clone();
         // Starting a program opens a terminal and forks: off the runtime.
         let hosting = self.clone();
         let running = match tokio::task::spawn_blocking(move || hosting.inner.run.run(spec)).await {
@@ -1197,7 +1219,8 @@ impl Hosting {
                     .launch
                     .as_ref()
                     .and_then(|launch| launch.cwd.as_ref())
-                    .map(PathBuf::from),
+                    .map(PathBuf::from)
+                    .or(cwd),
                 ended: false,
                 exit: None,
                 stopping: Arc::clone(&stopping),
@@ -1609,25 +1632,7 @@ impl Hosting {
             }
             held_at(&state, &confine.project, link_of(peer))?.path
         };
-        let weak = Arc::downgrade(&self.inner);
-        let tell = {
-            let (weak, id) = (Weak::clone(&weak), id.clone());
-            Arc::new(move |told: SandboxTold| {
-                if let Some(inner) = weak.upgrade() {
-                    Hosting { inner }.tell(&Pushed::Sandbox {
-                        confinement: id.clone(),
-                        told,
-                    });
-                }
-            })
-        };
-        let askable = {
-            let id = id.clone();
-            Arc::new(move || {
-                weak.upgrade()
-                    .is_some_and(|inner| Hosting { inner }.askable(&id))
-            })
-        };
+        let (tell, askable) = self.heard_as(&id);
         let hosting = self.clone();
         let confining = tokio::task::spawn_blocking(move || {
             hosting.inner.confine.confine(
@@ -1676,6 +1681,31 @@ impl Hosting {
             )));
         }
         Ok(Answer::Confined(confined))
+    }
+
+    /// What confinement `id`'s proxy tells, pushed to the links that may confine, and whether it
+    /// may hold a connection while the person is asked, now.
+    fn heard_as(&self, id: &str) -> (crate::confining::Tell, crate::confining::Askable) {
+        let weak = Arc::downgrade(&self.inner);
+        let tell = {
+            let (weak, id) = (Weak::clone(&weak), id.to_owned());
+            Arc::new(move |told: SandboxTold| {
+                if let Some(inner) = weak.upgrade() {
+                    Hosting { inner }.tell(&Pushed::Sandbox {
+                        confinement: id.clone(),
+                        told,
+                    });
+                }
+            })
+        };
+        let askable = {
+            let id = id.to_owned();
+            Arc::new(move || {
+                weak.upgrade()
+                    .is_some_and(|inner| Hosting { inner }.askable(&id))
+            })
+        };
+        (tell, askable)
     }
 
     /// Whether confinement `id`'s proxy may hold a connection while the person is asked: a
@@ -1742,6 +1772,51 @@ fn take_confinements(state: &mut State, whose: impl Fn(&Owner) -> bool) -> Vec<A
 }
 
 /// Ends `confinements` off the runtime: a proxy's end waits on its listeners.
+/// [`Beside`] for program `program`, being started in the project held `at` (#2171).
+struct ForTheProgram {
+    hosting: Hosting,
+    program: String,
+    at: HeldAt,
+}
+
+impl Beside for ForTheProgram {
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        let id = ulid::Ulid::generate().to_string();
+        let (tell, askable) = self.hosting.heard_as(&id);
+        let confining = self.hosting.inner.confine.confine(
+            &ToConfine {
+                project_path: &self.at.path,
+                confine: &session::Confine {
+                    confinement: id.clone(),
+                    project: self.at.project.clone(),
+                    plan: plan.clone(),
+                    // Nobody hears what it would ask about: it refuses instead.
+                    asks: false,
+                },
+            },
+            tell,
+            askable,
+        )?;
+        let confining: Arc<dyn Confining> = Arc::from(confining);
+        let mut confined = confining.confined();
+        confined.confinement = id.clone();
+        self.hosting.state().confinements.insert(
+            id,
+            Confinement {
+                project: self.at.project.clone(),
+                owner: Owner::Program(self.program.clone()),
+                confining,
+                plan: plan.clone(),
+            },
+        );
+        Ok(confined)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        self.hosting.record().record(entry)
+    }
+}
+
 fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
     if confinements.is_empty() {
         return;

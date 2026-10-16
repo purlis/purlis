@@ -20,8 +20,6 @@ use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
 use purlis_core::reopen::{Chat, Focus, Record, Reopened, View};
 
-use purlis_core::harness::StateHooks;
-
 use crate::host::{Opening, SessionHost};
 #[cfg(test)]
 use crate::sessions::{Reporting, Sessions};
@@ -51,20 +49,7 @@ fn renamed_session(words: &mut [String], was: &str, fresh: &str) -> bool {
 /// build therefore strips only by the `OP_` prefix; the declared-name strip is exercised at the
 /// session builder ([`crate::sessions`] tests pass `env_strip` directly) and in the core.
 fn declared_identity_vars(root: &Path) -> Vec<String> {
-    if purlis_core::fence::FENCED {
-        return Vec::new();
-    }
-    let ctx = purlis_core::secrets::Ctx::new(root, purlis_core::secrets::Env::from_process());
-    let Ok(doc) = purlis_core::secrets::registry::load_registry(&ctx) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = purlis_core::secrets::registry::identity_vars(&doc)
-        .into_iter()
-        .flat_map(|(_, vars)| vars)
-        .collect();
-    names.sort();
-    names.dedup();
-    names
+    purlis_core::hoststart::declared_identity_vars(root)
 }
 
 /// What more of this machine's environment the operator lets a chat of the project at `root`
@@ -894,7 +879,7 @@ pub struct ChatGrant {
 }
 
 /// The arguments and the environment that arm a chat's harness for that chat alone.
-type Armed = (Vec<String>, Vec<(String, String)>);
+use purlis_core::hoststart::Armed;
 
 /// A chat's sandbox, as a start decided it: compiled for its harness with the real program it
 /// then runs (ruling V87g), or lifted and why — never both, and neither where its project has
@@ -1184,46 +1169,20 @@ impl Chats {
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
     ) -> Result<Armed, String> {
-        // Said under the policy in force (#1431): where it requires the sandbox, the refusal
-        // leads with the policy, not the project, and ends with who set it.
-        let not_carried = |then: &str| {
-            purlis_core::sandbox::under_policy(
-                &purlis_core::sandbox::policy::Locks::of(&self.project),
-                format!(
-                    "{}, and this app cannot hand the sandbox to this chat's harness, so nothing \
-                     was started{then}",
-                    purlis_core::sandbox::LEAD
-                ),
-            )
-        };
-        if let Some(applied) = sandbox
-            && harness != Some(applied.harness())
-        {
-            return Err(not_carried("."));
-        }
-        let (Some(harness), Some(binary)) = (harness, self.shipped.binary.as_deref()) else {
-            return match sandbox {
-                Some(_) => Err(not_carried(": purlis's own binary was not found.")),
-                None => Ok((Vec::new(), Vec::new())),
-            };
-        };
-        let kit = purlis_core::harness::Kit {
-            binary,
-            plugin: self.shipped.plugin.as_deref(),
-            persona: persona.map(|persona| purlis_core::harness::As {
-                root: &self.project,
-                persona,
-            }),
-        };
-        match harness.state_hooks(kit, cwd, plugins, sandbox) {
-            StateHooks::ThisSessionOnly { args, env, .. } => Ok((args, env)),
-            StateHooks::None if sandbox.is_some() => Err(not_carried(
-                ": purlis's plugin, which carries it, was not found.",
-            )),
-            // Nothing is added to the command line, and nothing of the operator's is written
-            // behind their back. The chat shows `unknown`.
-            StateHooks::None => Ok((Vec::new(), Vec::new())),
-        }
+        let shipped = &self.shipped;
+        purlis_core::hoststart::armed(
+            &self.project,
+            &purlis_core::hoststart::Kit {
+                binary: shipped.binary.clone(),
+                plugin: shipped.plugin.clone(),
+                git_hooks: None,
+            },
+            harness,
+            cwd,
+            plugins,
+            sandbox,
+            persona,
+        )
     }
 
     /// The sandbox a chat that is not on a profile starts under: the same decision
@@ -5315,21 +5274,10 @@ fn what_its_hooks_read(
     sandboxed: bool,
     id: Option<&str>,
 ) {
-    let ours = [
-        purlis_core::hookwire::SANDBOXED_ENV,
-        purlis_core::sandboxblock::CHAT_DIR_ENV,
-        purlis_core::hookwire::CHAT_ID_ENV,
-    ];
-    env.retain(|(key, _)| !ours.iter().any(|one| purlis_core::envvar::same(one, key)));
-    if let Some(cwd) = cwd {
-        env.push((ours[1].to_owned(), cwd.display().to_string()));
-    }
-    if sandboxed {
-        env.push((ours[0].to_owned(), "1".to_owned()));
-    }
-    if let Some(id) = id {
-        env.push((ours[2].to_owned(), id.to_owned()));
-    }
+    purlis_core::hoststart::what_its_hooks_read(
+        env,
+        &purlis_core::hoststart::Watched { cwd, sandboxed, id },
+    );
 }
 
 #[cfg(test)]

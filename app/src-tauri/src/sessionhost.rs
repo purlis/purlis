@@ -111,36 +111,54 @@ pub fn not_ready(code: Option<i32>) -> NotReady {
     }
 }
 
-/// A chat the window composed, as the window would start it: the core's composition, against
-/// the environment the window started this host with (#1998). The host's [`purlis_host::Compose`]
-/// for the window's binary.
-pub fn launched(
-    launch: &session::Launch,
-    number: u32,
-    size: purlis_core::engine::Size,
-) -> Result<purlis_core::session::Spec, String> {
-    purlis_core::chatspec::launched(
-        std::env::vars_os(),
-        &purlis_core::chatspec::Launched {
-            program: &launch.program,
-            args: &launch.args,
-            cwd: launch.cwd.as_deref(),
-            set: &launch.set,
-            strip: &launch.strip,
-            pass: &launch.pass,
-            declared: &launch.declared,
-            harness: launch.harness.as_deref(),
-            git_hooks: launch.git_hooks.as_deref(),
-            reporting: launch.reporting.as_ref().map(|reporting| {
-                purlis_core::chatspec::Reporting {
-                    socket: Path::new(&reporting.socket),
-                    token: &reporting.token,
-                }
-            }),
-        },
-        number,
-        size,
-    )
+/// **How the window's host composes each start** (#2174, #2171): the window's launch by its
+/// words, or, for a start with no launch, the launch the window would compose, from the
+/// project's own files, with what this app ships ([`purlis_core::hoststart::spec`]).
+pub struct Composes(pub purlis_core::hoststart::Kit);
+
+impl Composes {
+    /// With what this app ships, found as the host starts: its `purlis`, its bundled plugin and
+    /// the git hooks the window wrote at its launch.
+    pub fn shipped() -> Composes {
+        let binary = crate::charter_binary();
+        let plugin = crate::bundled_plugin_here();
+        Composes(purlis_core::hoststart::Kit::found(binary, plugin))
+    }
+
+    /// With what a test's build ships ([`crate::Shipped::default`]): a stand-in `purlis` and an
+    /// empty plugin.
+    #[cfg(test)]
+    pub fn as_the_tests_ship() -> Composes {
+        let shipped = crate::Shipped::default();
+        Composes(purlis_core::hoststart::Kit {
+            binary: shipped.binary,
+            plugin: shipped.plugin,
+            git_hooks: shipped.git_hooks,
+        })
+    }
+}
+
+impl purlis_host::Compose for Composes {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_core::session::Spec, String> {
+        let beside = starting.beside;
+        purlis_core::hoststart::spec(
+            &purlis_core::hoststart::Starting {
+                root: starting.project_path,
+                number: starting.number,
+                start: starting.start,
+                reporting: starting.reporting,
+            },
+            starting.size,
+            &self.0,
+            &(
+                |plan: &session::ConfinePlan| beside.confine(plan),
+                |entry| beside.record(entry),
+            ),
+        )
+    }
 }
 
 /// **The event log in the window's session host, and what a program's end leaves there**

@@ -157,3 +157,62 @@ fn a_launch_of_a_harness_this_build_does_not_know_is_refused() {
 
     assert!(refused.contains("a-harness-from-the-future"), "{refused}");
 }
+
+/// #2174: the session protocol's `launch`, as both binaries' hosts are handed it, is started
+/// by its words: one adapter, the same spec the core composes from its parts.
+#[test]
+fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
+    use purlis_session_protocol::session;
+    let set = [("PURLIS_ROOT".to_owned(), "/home/me/project".to_owned())];
+    let wired = session::Launch {
+        program: "/usr/local/bin/claude".to_owned(),
+        args: vec!["--resume".to_owned(), "abc".to_owned()],
+        cwd: Some("/home/me/project".to_owned()),
+        set: set.to_vec(),
+        strip: vec!["MY_VAULT_TOKEN".to_owned()],
+        pass: vec!["EDITOR".to_owned()],
+        declared: Vec::new(),
+        harness: Some("claude".to_owned()),
+        git_hooks: Some("/home/me/.purlis/git-hooks".to_owned()),
+        reporting: Some(session::Reporting {
+            socket: "/home/me/project/.purlis/app/hooks.sock".to_owned(),
+            token: "the-chats-own".to_owned(),
+        }),
+        confinement: None,
+    };
+
+    let started = from_launch(app(), &wired, 7, SIZE).expect("it composes");
+    let args = ["--resume".to_owned(), "abc".to_owned()];
+    let strip = ["MY_VAULT_TOKEN".to_owned()];
+    let pass = ["EDITOR".to_owned()];
+    let by_its_parts = launched(
+        app(),
+        &Launched {
+            program: "/usr/local/bin/claude",
+            args: &args,
+            cwd: Some("/home/me/project"),
+            set: &set,
+            strip: &strip,
+            pass: &pass,
+            declared: &[],
+            harness: Some("claude"),
+            git_hooks: Some("/home/me/.purlis/git-hooks"),
+            reporting: Some(Reporting {
+                socket: std::path::Path::new("/home/me/project/.purlis/app/hooks.sock"),
+                token: "the-chats-own",
+            }),
+        },
+        7,
+        SIZE,
+    )
+    .expect("it composes");
+
+    assert_eq!(started.program, "/usr/local/bin/claude");
+    assert_eq!(started.args, by_its_parts.args);
+    assert_eq!(started.args.len(), 2);
+    assert_eq!(started.env, by_its_parts.env);
+    assert_eq!(
+        value(&started, "PURLIS_CHAT_TOKEN").as_deref(),
+        Some("the-chats-own")
+    );
+}

@@ -13,6 +13,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use purlis_session_protocol::session;
+
 use super::asks::Asks;
 use super::egress;
 use super::localport;
@@ -107,6 +109,64 @@ impl Hearing {
 }
 
 impl Plan {
+    /// **This plan, as the session protocol carries it to the host that starts it** (#1999).
+    pub fn wired(&self) -> session::ConfinePlan {
+        session::ConfinePlan {
+            listed: self
+                .reach
+                .listed
+                .iter()
+                .map(|(host, by)| session::Listed {
+                    host: host.clone(),
+                    layer: super::reach::layer_of(*by),
+                })
+                .collect(),
+            never: self.reach.never.clone(),
+            withdrawn: self.reach.withdrawn.clone(),
+            anything: self.reach.anything,
+            tunnel_ports: self.tunnel_ports.clone(),
+            plain_ports: self.plain_ports.clone(),
+            any_port: self.any_port,
+            beside: match &self.beside {
+                Beside::Wrapped => session::Beside::Wrapped,
+                Beside::ProxyOnly { routes } => session::Beside::ProxyOnly {
+                    routes: routes.display().to_string(),
+                },
+            },
+            given: self.given.clone(),
+        }
+    }
+
+    /// **The plan a host was handed, read back exactly**, or why it does not read: a host
+    /// policy pins that is not a host is refused, never dropped.
+    pub fn from_wire(wired: &session::ConfinePlan) -> Result<Plan, String> {
+        let reach = Written {
+            listed: wired
+                .listed
+                .iter()
+                .map(|listed| (listed.host.clone(), super::reach::by_of(listed.layer)))
+                .collect(),
+            never: wired.never.clone(),
+            withdrawn: wired.withdrawn.clone(),
+            anything: wired.anything,
+        };
+        // Read once here, so a plan that does not read is refused before anything starts.
+        Reach::from_written(&reach)?;
+        Ok(Plan {
+            reach,
+            tunnel_ports: wired.tunnel_ports.clone(),
+            plain_ports: wired.plain_ports.clone(),
+            any_port: wired.any_port,
+            beside: match &wired.beside {
+                session::Beside::Wrapped => Beside::Wrapped,
+                session::Beside::ProxyOnly { routes } => Beside::ProxyOnly {
+                    routes: PathBuf::from(routes),
+                },
+            },
+            given: wired.given.clone(),
+        })
+    }
+
     /// What the proxy serves: this plan, told to `telling`.
     pub fn serving(&self, reach: Reach, telling: Telling) -> egress::Serving {
         egress::Serving {

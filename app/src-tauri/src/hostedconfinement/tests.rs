@@ -232,7 +232,7 @@ fn a_chats_proxy_in_the_host_still_reaches_its_hosts_once_the_windows_link_is_go
     let port = service.local_addr().expect("its port").port();
     let project = tempfile::tempdir().expect("a project");
     let hosting = purlis_host::Hosting::confining(
-        purlis_host::FromTheWindow(crate::sessionhost::launched),
+        crate::sessionhost::Composes::as_the_tests_ship(),
         super::ConfinesHere,
         purlis_host::standin::StandIns::default(),
     );
@@ -342,7 +342,7 @@ fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
         .expect("a runtime");
     let confines = purlis_host::standin::StandInConfines::default();
     let hosting = purlis_host::Hosting::confining(
-        purlis_host::FromTheWindow(crate::sessionhost::launched),
+        crate::sessionhost::Composes::as_the_tests_ship(),
         confines.clone(),
         purlis_host::standin::StandIns::default(),
     );
