@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792140065011,
+  "lastUpdate": 1792141618632,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13734,6 +13734,48 @@ window.BENCHMARK_DATA = {
             "value": 104.8133505,
             "unit": "ms",
             "extra": "median of 5 runs: 103.925, 104.270, 104.813, 104.895, 105.419 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7ebbfef727ced6ed10a5ba233fb2221c4dcc0bd1",
+          "message": "build(deps): bump the tauri group: updater 2.13.2, wdio plugin 1.5.0 (#2249)\n\ntauri-plugin-updater 2.13.2, tauri-plugin-wdio and\ntauri-plugin-wdio-webdriver 1.5.0, from Dependabot's #1776 on current\nmain. webview2-com 0.38 leaves the lock, and gix-imara-diff now resolves\nhashbrown 0.16.1 (it was 0.17.1), both inside its accepted range.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T12:54:02+04:00",
+          "tree_id": "595ed0fcb22750209beca8848567500b63d47992",
+          "url": "https://github.com/purlis/purlis/commit/7ebbfef727ced6ed10a5ba233fb2221c4dcc0bd1"
+        },
+        "date": 1792141617041,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.520505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.511, 0.521, 0.526, 0.532 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.9015165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.800, 16.806, 16.902, 17.018, 17.067 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.8961645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.838, 103.586, 103.896, 105.643, 107.423 ms"
           }
         ]
       }
