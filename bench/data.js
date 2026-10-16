@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792123966647,
+  "lastUpdate": 1792125134417,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13440,6 +13440,48 @@ window.BENCHMARK_DATA = {
             "value": 101.60929349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.510, 101.516, 101.609, 101.674, 101.722 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7bbe823b28136dcabf42bb7a77acf7adaba5d822",
+          "message": "build(deps): Bump rust-toolchain from 1.99.0 to 1.99.1 (#2223)\n\nBumps [rust-toolchain](https://github.com/rust-lang/rust) from 1.99.0 to 1.99.1.\n- [Release notes](https://github.com/rust-lang/rust/releases)\n- [Changelog](https://github.com/rust-lang/rust/blob/1.99.1/RELEASES.md)\n- [Commits](https://github.com/rust-lang/rust/compare/1.99.0...1.99.1)\n\n---\nupdated-dependencies:\n- dependency-name: rust-toolchain\n  dependency-version: 1.99.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-16T08:11:38+04:00",
+          "tree_id": "a29d3d271eebba9ccee2493121ae027c41e2a1b1",
+          "url": "https://github.com/purlis/purlis/commit/7bbe823b28136dcabf42bb7a77acf7adaba5d822"
+        },
+        "date": 1792125133350,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3344585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.326, 0.333, 0.334, 0.343, 0.348 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.469742500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.328, 16.449, 16.470, 16.473, 16.577 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8004685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.477, 101.271, 101.800, 102.658, 103.120 ms"
           }
         ]
       }
