@@ -39,8 +39,8 @@ export const staleCloneCause = (stale: StaleClone) =>
  *   the branch is kept.
  * - **On a moved remote**: the forge answered a fetch with the repo's new address. *Use the new
  *   address* sets `origin` to exactly the address the Notice shows. A push address of `origin`'s
- *   own goes with it where every one names the old place; where any names another, every one is
- *   left, and the Notice names them (#2117).
+ *   own goes with it where every one is its old address, and the Notice says pushes move
+ *   too; where any is another, every one is left, and the Notice names them (#2117).
  *
  * A Fix that would lose work does nothing and says what blocks it, on the Notice. The list is
  * read again when the window comes back into focus and when the project's git standing moves,
@@ -162,6 +162,7 @@ export function StaleCloneNotices({
                     <code>{one.remote.origin}</code>, and the forge says it moved to{" "}
                     <code>{one.remote.now}</code>. Its fetches and pushes reach it only while the
                     forge redirects the old address.
+                    {one.remote.pushes_follow && " Pushes move to the new address too."}
                     <KeptPushes places={one.remote.pushes_kept} />
                   </>
                 )}
@@ -176,7 +177,7 @@ export function StaleCloneNotices({
 
 /**
  * Where the repo pushes that *Use the new address* leaves as it is (#2117): its push addresses,
- * where any names another place than `origin`. Nothing where there is none.
+ * where any is another than `origin`'s old one. Nothing where there is none.
  */
 function KeptPushes({ places }: { places: readonly string[] }) {
   if (places.length === 0) return null;

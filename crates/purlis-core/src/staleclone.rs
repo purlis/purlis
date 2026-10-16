@@ -16,9 +16,11 @@
 //!   lives at another address on the same host (a rename, or a move to another owner). purlis
 //!   keeps that address in the repo's own config (`remote.origin.purlisMovedTo`), rebuilt from
 //!   its checked parts, and the fix sets `origin` to exactly that address. A push URL of
-//!   `origin`'s own goes with it where every one names the old place (#2117): it is dropped, as
+//!   `origin`'s own goes with it where every one is `origin`'s old address, read the same way
+//!   (#2117): the same scheme, the same user, the same host and the same path. It is dropped, as
 //!   `forge::gitcredential::remote::keep` drops one, so pushes go where `origin` now fetches
-//!   from. Where any names another place, every push URL is left, and the window says so.
+//!   from. Where any is another (another place, or another transport or identity for the same
+//!   place), every push URL is left, and the window says so.
 //!
 //! **Read from what purlis can read without running anything a chat wrote**: git through the
 //! hardened runner ([`crate::worktree::git`]), which runs no hook, filter or fsmonitor. Nothing
@@ -37,8 +39,9 @@ use crate::worktree::{self, git};
 /// The repo's config key that keeps where the forge said `origin` moved to.
 pub const MOVED_KEY: &str = "remote.origin.purlisMovedTo";
 
-/// What purlis read about one repo of a workspace.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// What purlis read about one repo of a workspace. Its `Debug` names each address as a place:
+/// a recorded address can carry a token.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Seen {
     pub workspace: String,
     pub repo: String,
@@ -59,20 +62,134 @@ pub struct Seen {
     pub only_here: Option<u32>,
 }
 
-/// One way a repo is stale.
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl std::fmt::Debug for Seen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Seen")
+            .field("workspace", &self.workspace)
+            .field("repo", &self.repo)
+            .field("branch", &self.branch)
+            .field("default", &self.default)
+            .field("origin", &self.origin.as_deref().map(place))
+            .field("moved_to", &self.moved_to.as_deref().map(place))
+            .field("push_urls", &places(&self.push_urls))
+            .field("clean", &self.clean)
+            .field("only_here", &self.only_here)
+            .finish()
+    }
+}
+
+/// One way a repo is stale. Its `Debug` names each address as a place: a recorded address can
+/// carry a token.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Stale {
     /// On `branch`, where `default` is the remote's default branch.
     OffDefault { branch: String, default: String },
     /// `origin` is `origin`, and the forge said the repo now lives at `now`: the address the fix
-    /// sets, as [`rebuilt`] made it. `pushes_kept` are `origin`'s push URLs the fix leaves as
-    /// they are: every one, where any names another place than `origin`; none, where there is
-    /// none or every one names `origin`'s old place (those go with it).
+    /// sets, as [`rebuilt`] made it. `pushes` says what the fix does with `origin`'s push URLs.
     RemoteMoved {
         origin: String,
         now: String,
-        pushes_kept: Vec<String>,
+        pushes: Pushes,
     },
+}
+
+impl std::fmt::Debug for Stale {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OffDefault { branch, default } => f
+                .debug_struct("OffDefault")
+                .field("branch", branch)
+                .field("default", default)
+                .finish(),
+            Self::RemoteMoved {
+                origin,
+                now,
+                pushes,
+            } => f
+                .debug_struct("RemoteMoved")
+                .field("origin", &place(origin))
+                .field("now", &place(now))
+                .field("pushes", pushes)
+                .finish(),
+        }
+    }
+}
+
+/// What the remote fix does with `origin`'s push URLs (#2117).
+#[derive(Clone, PartialEq, Eq)]
+pub enum Pushes {
+    /// It has none of its own: pushes go where it fetches from.
+    Origin,
+    /// Every one is `origin`'s old address, read the same way: the fix drops them, and pushes go
+    /// where `origin` now fetches from.
+    Follow,
+    /// These are left as they are: any one names another place, or the same place over another
+    /// transport or as another user.
+    Kept(Vec<String>),
+}
+
+impl std::fmt::Debug for Pushes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Origin => f.write_str("Origin"),
+            Self::Follow => f.write_str("Follow"),
+            Self::Kept(urls) => f.debug_tuple("Kept").field(&places(urls)).finish(),
+        }
+    }
+}
+
+/// `urls` as places, for a `Debug` that never prints an address whole.
+fn places(urls: &[String]) -> Vec<String> {
+    urls.iter().map(|url| place(url)).collect()
+}
+
+/// What the fix does with `push_urls` when `origin` moves.
+fn pushes_of(origin: &str, push_urls: &[String]) -> Pushes {
+    if push_urls.is_empty() {
+        return Pushes::Origin;
+    }
+    let was = address(origin);
+    if was.is_some() && push_urls.iter().all(|url| address(url) == was) {
+        Pushes::Follow
+    } else {
+        Pushes::Kept(push_urls.to_vec())
+    }
+}
+
+/// A remote's address as the parts that say where and how git reaches it: the transport
+/// (`git@host:path` is SSH), the user as written, the host (and port) lowercased, and the path
+/// as written, less a trailing `/` and `.git`. `None` for a folder or what does not read as an
+/// address.
+fn address(url: &str) -> Option<(String, String, String, String)> {
+    let (scheme, authority, path) = match url.split_once("://") {
+        Some((scheme, rest)) => {
+            let (authority, path) = rest.split_once('/')?;
+            let scheme = scheme.to_ascii_lowercase();
+            let scheme = match scheme.as_str() {
+                "git+ssh" | "ssh+git" => "ssh".to_owned(),
+                _ => scheme,
+            };
+            (scheme, authority, path)
+        }
+        None => {
+            let (authority, path) = url.split_once(':')?;
+            if authority.contains('/') {
+                return None;
+            }
+            ("ssh".to_owned(), authority, path)
+        }
+    };
+    let (user, host) = authority.rsplit_once('@').unwrap_or(("", authority));
+    let path = path.trim_start_matches('/').trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    (!host.is_empty() && !path.is_empty()).then(|| {
+        (
+            scheme,
+            user.to_owned(),
+            host.to_ascii_lowercase(),
+            path.to_owned(),
+        )
+    })
 }
 
 /// Which fix the person pressed.
@@ -88,7 +205,7 @@ pub enum Step {
     Switch {
         to: String,
     },
-    /// Sets `origin` to `to`, and with `drop_push` drops its push URLs, which named the old place.
+    /// Sets `origin` to `to`, and with `drop_push` drops its push URLs ([`Pushes::Follow`]).
     SetUrl {
         to: String,
         drop_push: bool,
@@ -134,19 +251,10 @@ pub fn judged(seen: &Seen) -> Vec<Stale> {
     if let (Some(origin), Some(said)) = (&seen.origin, &seen.moved_to)
         && let Some(now) = rebuilt(origin, said)
     {
-        let was = forge::gitcredential::place_of(origin);
-        let all_old = seen
-            .push_urls
-            .iter()
-            .all(|url| was.is_some() && forge::gitcredential::place_of(url) == was);
         out.push(Stale::RemoteMoved {
             origin: origin.clone(),
             now,
-            pushes_kept: if all_old {
-                Vec::new()
-            } else {
-                seen.push_urls.clone()
-            },
+            pushes: pushes_of(origin, &seen.push_urls),
         });
     }
     out
@@ -252,11 +360,9 @@ pub fn step(seen: &Seen, fix: Fix) -> Result<Step, Blocked> {
         Fix::Remote => stale
             .into_iter()
             .find_map(|one| match one {
-                Stale::RemoteMoved {
-                    now, pushes_kept, ..
-                } => Some(Step::SetUrl {
+                Stale::RemoteMoved { now, pushes, .. } => Some(Step::SetUrl {
                     to: now,
-                    drop_push: pushes_kept.is_empty() && !seen.push_urls.is_empty(),
+                    drop_push: pushes == Pushes::Follow,
                 }),
                 Stale::OffDefault { .. } => None,
             })
@@ -278,7 +384,7 @@ pub fn place(url: &str) -> String {
     forge::gitcredential::place_of(url).unwrap_or_else(|| "an address purlis cannot read".into())
 }
 
-/// What [`found`] read, and what it could not.
+/// What [`found`] read, and what it could not. Its `Debug` prints no address whole ([`Stale`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Findings {
     pub found: Vec<Found>,
@@ -479,8 +585,8 @@ pub fn fix(
                 });
                 if let Err(why) = dropped {
                     return Err(format!(
-                        "origin fetches from {}, but its push address still names {}: git \
-                         would not drop it ({why}). Check it with git remote -v.",
+                        "origin fetches from {}, but pushes still go to {}: its push address \
+                         could not be dropped ({why}).",
                         place(&to),
                         place(&was)
                     ));

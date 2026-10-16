@@ -83,7 +83,7 @@ fn a_remote_the_forge_said_moved_is_stale() {
         [Stale::RemoteMoved {
             origin: "https://github.com/acme/widget.git".into(),
             now: "https://github.com/purlis/widget.git".into(),
-            pushes_kept: Vec::new(),
+            pushes: Pushes::Origin,
         }]
     );
 }
@@ -318,15 +318,14 @@ fn moved_with_pushes(pushes: &[&str]) -> Seen {
 }
 
 #[test]
-fn a_push_url_naming_the_old_place_moves_with_origin() {
-    // However it is spelled, a push URL of the old place goes with origin: pushes then go
-    // where origin now fetches from.
+fn a_push_url_of_the_old_address_moves_with_origin() {
+    // origin's own address, however git would also read it: pushes then go where origin now
+    // fetches from.
     for pushes in [
         &["https://github.com/acme/widget.git"][..],
-        &["git@github.com:acme/widget.git"][..],
         &[
-            "https://github.com/Acme/widget",
-            "ssh://git@github.com/acme/widget.git",
+            "https://GitHub.com/acme/widget/",
+            "https://github.com/acme/widget",
         ][..],
     ] {
         let seen = moved_with_pushes(pushes);
@@ -335,7 +334,7 @@ fn a_push_url_naming_the_old_place_moves_with_origin() {
             [Stale::RemoteMoved {
                 origin: "https://github.com/acme/widget.git".into(),
                 now: "https://github.com/purlis/widget.git".into(),
-                pushes_kept: Vec::new(),
+                pushes: Pushes::Follow,
             }],
             "{pushes:?}"
         );
@@ -351,15 +350,36 @@ fn a_push_url_naming_the_old_place_moves_with_origin() {
 }
 
 #[test]
-fn a_push_url_naming_another_place_is_left_and_said() {
+fn a_push_url_of_an_ssh_origin_moves_with_it_in_either_ssh_spelling() {
+    let seen = Seen {
+        origin: Some("git@github.com:acme/widget.git".into()),
+        ..moved_with_pushes(&["ssh://git@github.com/acme/widget.git"])
+    };
+    assert_eq!(
+        step(&seen, Fix::Remote),
+        Ok(Step::SetUrl {
+            to: "https://github.com/purlis/widget.git".into(),
+            drop_push: true,
+        })
+    );
+}
+
+#[test]
+fn a_push_url_naming_another_place_or_reaching_it_another_way_is_left_and_said() {
     for pushes in [
         &["https://github.com/someone/widget.git"][..],
+        // The same place over another transport: dropping it would change how pushes go.
+        &["git@github.com:acme/widget.git"][..],
+        // The same place as another user: dropping it would change who pushes.
+        &["https://git@github.com/acme/widget.git"][..],
+        // A path differing only by case is another repository on a forge that tells them apart.
+        &["https://github.com/Acme/widget.git"][..],
         // One of them elsewhere: every one is left, and every one is said.
         &[
             "https://github.com/acme/widget.git",
             "https://gitlab.example/acme/widget.git",
         ][..],
-        // One purlis cannot read as a place is not the old place.
+        // One purlis cannot read as an address is not origin's.
         &["/srv/mirror/widget.git"][..],
     ] {
         let seen = moved_with_pushes(pushes);
@@ -368,7 +388,7 @@ fn a_push_url_naming_another_place_is_left_and_said() {
             [Stale::RemoteMoved {
                 origin: "https://github.com/acme/widget.git".into(),
                 now: "https://github.com/purlis/widget.git".into(),
-                pushes_kept: pushes.iter().map(|&url| url.to_owned()).collect(),
+                pushes: Pushes::Kept(pushes.iter().map(|&url| url.to_owned()).collect()),
             }],
             "{pushes:?}"
         );
@@ -380,5 +400,22 @@ fn a_push_url_naming_another_place_is_left_and_said() {
             }),
             "{pushes:?}"
         );
+    }
+}
+
+#[test]
+fn what_is_found_never_prints_an_address_whole() {
+    let seen = moved_with_pushes(&["https://u:s3cret@mirror/acme/widget.git"]);
+    let found = Findings {
+        found: vec![Found {
+            workspace: "smart-ide".into(),
+            repo: "widget".into(),
+            stale: judged(&seen),
+        }],
+        unread: Vec::new(),
+    };
+    for printed in [format!("{seen:?}"), format!("{found:?}")] {
+        assert!(!printed.contains("s3cret"), "{printed}");
+        assert!(printed.contains("mirror/acme/widget"), "{printed}");
     }
 }

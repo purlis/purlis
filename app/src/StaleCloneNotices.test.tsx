@@ -32,6 +32,7 @@ const BOTH: StaleClone = {
   remote: {
     origin: "github.com/acme/widget",
     now: "https://github.com/purlis/widget.git",
+    pushes_follow: false,
     pushes_kept: [],
   },
 };
@@ -92,6 +93,7 @@ describe("a stale repo's Notice", () => {
         remote: {
           origin: "github.com/acme/widget",
           now: "https://github.com/purlis/widget.git",
+          pushes_follow: false,
           pushes_kept: ["github.com/acme/widget", "gitlab.example/mirror/widget"],
         },
       },
@@ -104,12 +106,34 @@ describe("a stale repo's Notice", () => {
     );
   });
 
-  it("says nothing of push addresses where none is left behind", async () => {
+  it("says pushes go to the new address too when its push address follows", async () => {
+    core([
+      {
+        ...BOTH,
+        remote: {
+          origin: "github.com/acme/widget",
+          now: "https://github.com/purlis/widget.git",
+          pushes_follow: true,
+          pushes_kept: [],
+        },
+      },
+    ]);
+    shown();
+
+    const notice = await screen.findByRole("status", { name: "widget in smart-ide" });
+    expect(notice).toHaveTextContent(
+      "redirects the old address. Pushes move to the new address too.",
+    );
+    expect(notice).not.toHaveTextContent("It pushes to");
+  });
+
+  it("says nothing of push addresses where it has none of its own", async () => {
     core([BOTH]);
     shown();
 
     const notice = await screen.findByRole("status", { name: "widget in smart-ide" });
     expect(notice).not.toHaveTextContent("It pushes to");
+    expect(notice).not.toHaveTextContent("Pushes move to the new address too.");
   });
 
   it("asks the core to fix the repo it names, and goes once it is fixed", async () => {

@@ -9523,9 +9523,14 @@ export type StaleRemote = {
 	/**  The address the Fix sets, whole, as it is set. */
 	now: string,
 	/**
+	 *  Whether `origin`'s push URLs, each its old address, go with it, so pushes go to `now` too
+	 *  (#2117).
+	 */
+	pushes_follow: boolean,
+	/**
 	 *  The places `origin` pushes to that the Fix leaves as they are, as `<host>/<owner>/<repo>`
-	 *  (a user never drawn): empty where it has no push URL of its own, or where every one names
-	 *  the old place and goes with `origin` (#2117).
+	 *  (a user never drawn), each once: empty where it has no push URL of its own or they follow
+	 *  it (#2117).
 	 */
 	pushes_kept: string[],
 };

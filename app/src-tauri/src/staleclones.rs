@@ -11,7 +11,7 @@
 //! nothing. The Fix is the window's alone (`WINDOW_ONLY`): it moves a repo's tree or its remote.
 
 use purlis_core::forge::route::HostScope;
-use purlis_core::staleclone::{self, Fix, Stale};
+use purlis_core::staleclone::{self, Fix, Pushes, Stale};
 
 use crate::planes::{PlaneId, Planes};
 
@@ -46,9 +46,12 @@ pub struct StaleRemote {
     pub origin: String,
     /// The address the Fix sets, whole, as it is set.
     pub now: String,
+    /// Whether `origin`'s push URLs, each its old address, go with it, so pushes go to `now` too
+    /// (#2117).
+    pub pushes_follow: bool,
     /// The places `origin` pushes to that the Fix leaves as they are, as `<host>/<owner>/<repo>`
-    /// (a user never drawn): empty where it has no push URL of its own, or where every one names
-    /// the old place and goes with `origin` (#2117).
+    /// (a user never drawn), each once: empty where it has no push URL of its own or they follow
+    /// it (#2117).
     pub pushes_kept: Vec<String>,
 }
 
@@ -177,19 +180,22 @@ fn shown(findings: staleclone::Findings) -> StaleClones {
                     Stale::RemoteMoved {
                         origin,
                         now,
-                        pushes_kept,
+                        pushes,
                     } => {
                         // Each place once, however many push URLs name it.
-                        let mut places: Vec<String> = Vec::new();
-                        for place in pushes_kept.iter().map(|url| staleclone::place(url)) {
-                            if !places.contains(&place) {
-                                places.push(place);
+                        let mut kept: Vec<String> = Vec::new();
+                        if let Pushes::Kept(urls) = &pushes {
+                            for place in urls.iter().map(|url| staleclone::place(url)) {
+                                if !kept.contains(&place) {
+                                    kept.push(place);
+                                }
                             }
                         }
                         out.remote = Some(StaleRemote {
                             origin: staleclone::place(&origin),
                             now,
-                            pushes_kept: places,
+                            pushes_follow: pushes == Pushes::Follow,
+                            pushes_kept: kept,
                         });
                     }
                 }
