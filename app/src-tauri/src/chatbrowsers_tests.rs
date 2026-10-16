@@ -477,3 +477,25 @@ fn a_browser_not_yet_ended_counts_toward_the_projects_three() {
     assert!(why.contains("this project"), "{why}");
     assert_eq!(hosted.started.lock().unwrap().len(), 3);
 }
+
+/// #2245: a chat's browser tools run without the harness's own prompt, so the app refuses a
+/// browser call from a chat this window does not have open, before any Ask: it raises none,
+/// starts nothing, and says why. It holds the project and its hook socket, which a sandboxed
+/// run may not: CI runs it first.
+#[test]
+fn a_browser_call_from_a_chat_the_window_does_not_have_open_is_refused_and_asks_nothing() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its manifest");
+    let planes = crate::planes::Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    assert!(held.chats().open_now().is_empty(), "no chat is open");
+
+    let why = refusal(super::answered(&held, &ask(7, click())));
+
+    assert!(why.contains("not one this purlis window has open"), "{why}");
+    assert_eq!(held.browsers().posture(7), Posture::Unasked);
+    assert!(held.browsers().waiting().is_empty(), "no Ask is raised");
+}

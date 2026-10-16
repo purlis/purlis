@@ -941,7 +941,9 @@ mod tests {
     /// `session_record`, the record command's twin (#1332), and the two dispatch tools (V98b),
     /// beside the read-only tools of `chattools::PRE_ALLOWED`. A handoff has a command and no
     /// tool, so it adds none here.
-    const THE_RECORD_TOOLS_ALLOW: usize = 1 + crate::chattools::DISPATCH_TOOLS.len();
+    /// And the browser tools, on the chat's browser Ask (#2245).
+    const THE_RECORD_TOOLS_ALLOW: usize =
+        1 + crate::chattools::DISPATCH_TOOLS.len() + crate::browsertools::TOOLS.len();
 
     #[test]
     fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_asking() {
@@ -995,6 +997,26 @@ mod tests {
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
+                // And the browser tools, on the chat's browser Ask (#2245).
+                "mcp__purlis__browser_open",
+                "mcp__purlis__browser_navigate",
+                "mcp__purlis__browser_snapshot",
+                "mcp__purlis__browser_find",
+                "mcp__purlis__browser_click",
+                "mcp__purlis__browser_double_click",
+                "mcp__purlis__browser_hover",
+                "mcp__purlis__browser_type",
+                "mcp__purlis__browser_press",
+                "mcp__purlis__browser_select",
+                "mcp__purlis__browser_drag",
+                "mcp__purlis__browser_scroll",
+                "mcp__purlis__browser_back",
+                "mcp__purlis__browser_wait_for_text",
+                "mcp__purlis__browser_pages",
+                "mcp__purlis__browser_switch_page",
+                "mcp__purlis__browser_screenshot",
+                "mcp__purlis__browser_new",
+                "mcp__purlis__browser_close",
             ]})
         );
     }
@@ -1135,6 +1157,77 @@ mod tests {
         }
         // No `ask` for it either: `init` writes none, and a chat is handed none.
         assert_eq!(settings["permissions"].get("ask"), None);
+    }
+
+    #[test]
+    fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_prompt() {
+        // #2245, ruled 2026-10-16 (amending ADR 0064): the person's answer to a chat's browser
+        // Ask is the consent for its browser tools, as the dispatch grant is for a dispatch
+        // (V98b). So each tool is allowed by its full name, beside the server that serves it,
+        // and the app's Ask stays in front of every act: the first call raises it and opens
+        // nothing, and Keep off refuses every call (`chatbrowsers` tests).
+        let empty = tempfile::tempdir().expect("a directory");
+        let (args, _) = claude("/bin/charter", empty.path());
+        let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
+        let browser: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .filter(|rule| rule.contains("browser"))
+            .collect();
+        // Every tool, by name, and nothing else that names a browser: no wildcard over the
+        // prefix, which would allow a browser tool added later before anyone ruled it in.
+        assert_eq!(
+            browser,
+            [
+                "mcp__purlis__browser_open",
+                "mcp__purlis__browser_navigate",
+                "mcp__purlis__browser_snapshot",
+                "mcp__purlis__browser_find",
+                "mcp__purlis__browser_click",
+                "mcp__purlis__browser_double_click",
+                "mcp__purlis__browser_hover",
+                "mcp__purlis__browser_type",
+                "mcp__purlis__browser_press",
+                "mcp__purlis__browser_select",
+                "mcp__purlis__browser_drag",
+                "mcp__purlis__browser_scroll",
+                "mcp__purlis__browser_back",
+                "mcp__purlis__browser_wait_for_text",
+                "mcp__purlis__browser_pages",
+                "mcp__purlis__browser_switch_page",
+                "mcp__purlis__browser_screenshot",
+                "mcp__purlis__browser_new",
+                "mcp__purlis__browser_close",
+            ]
+        );
+        // And each names a tool the server serves, so a renamed tool fails here, not quietly.
+        for rule in &browser {
+            let tool = rule.strip_prefix("mcp__purlis__").expect("purlis's server");
+            assert!(crate::browsertools::is_one(tool), "{tool}");
+        }
+        assert_eq!(browser.len(), crate::browsertools::TOOLS.len());
+        // **Only where the chat may have a browser**: on the same arguments that hand the chat
+        // purlis's server, whose browser tools reach the app's Ask. A chat handed no server is
+        // handed no settings either.
+        let at = args
+            .iter()
+            .position(|arg| arg == "--mcp-config")
+            .expect("--mcp-config");
+        let config: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+        assert_eq!(
+            config["mcpServers"]["purlis"]["args"],
+            serde_json::json!(["mcp"])
+        );
+        let no_plugin = Kit {
+            plugin: None,
+            ..kit("/bin/charter")
+        };
+        assert!(matches!(
+            Harness::ClaudeCode.state_hooks(no_plugin, Some(empty.path()), &BTreeMap::new(), None),
+            StateHooks::None
+        ));
     }
 
     #[test]
@@ -1415,6 +1508,25 @@ mod tests {
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
+                "mcp__purlis__browser_open",
+                "mcp__purlis__browser_navigate",
+                "mcp__purlis__browser_snapshot",
+                "mcp__purlis__browser_find",
+                "mcp__purlis__browser_click",
+                "mcp__purlis__browser_double_click",
+                "mcp__purlis__browser_hover",
+                "mcp__purlis__browser_type",
+                "mcp__purlis__browser_press",
+                "mcp__purlis__browser_select",
+                "mcp__purlis__browser_drag",
+                "mcp__purlis__browser_scroll",
+                "mcp__purlis__browser_back",
+                "mcp__purlis__browser_wait_for_text",
+                "mcp__purlis__browser_pages",
+                "mcp__purlis__browser_switch_page",
+                "mcp__purlis__browser_screenshot",
+                "mcp__purlis__browser_new",
+                "mcp__purlis__browser_close",
             ])
         );
         assert_eq!(
