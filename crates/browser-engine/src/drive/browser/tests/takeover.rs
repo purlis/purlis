@@ -388,3 +388,32 @@ fn no_input_of_a_cut_call_reaches_the_page_once_the_person_has_taken_over() {
     assert_eq!(clicked, Err(Refusal::Interrupted));
     assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
 }
+
+#[test]
+fn what_the_person_typed_stays_out_of_later_answers_even_once_its_field_is_gone() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    for letter in ["x", "y", "z", "k"] {
+        browser.person_input(&key(&aim, letter, true)).unwrap();
+        browser.person_input(&key(&aim, letter, false)).unwrap();
+    }
+    // The page loads another document by itself, which says what was typed.
+    {
+        let mut model = super::super::lock(&engine.model);
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let said = nodes.iter_mut().find(|n| n["nodeId"] == "16").unwrap();
+        said["name"]["value"] = json!("Welcome back, XYZK");
+    }
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-7","url":"http://fixture.test/next.html","name":""}}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(30));
+
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(!text.to_lowercase().contains("xyzk"), "{text}");
+}

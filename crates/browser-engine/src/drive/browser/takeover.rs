@@ -15,8 +15,9 @@
 //! where it was aimed: at the page and document a frame showed them. Before a key that edits
 //! reaches the page, the element that has the focus is blanked, so what the person types is in
 //! no later snapshot, find or screenshot; and the page is read again after it, so the field's
-//! latest content is kept out of every later answer about its page too. Text typed with
-//! nothing focused is kept out the same way.
+//! latest content is kept out of every later answer about its page too. And each run of
+//! characters the person typed is kept out of later answers about its page as typed, wherever
+//! the page shows it, whatever became of the field.
 //!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
@@ -56,8 +57,9 @@ impl Default for Lease {
 pub(crate) struct Typing {
     /// The pages (by target) the person typed into since each was last read.
     dirty: HashSet<String>,
-    /// Text typed on a page with nothing focused, by target.
-    loose: HashMap<String, String>,
+    /// The runs of characters the person typed on each page (by target), the last one still
+    /// growing: a key that types no character, or a press of the mouse, ends a run.
+    runs: HashMap<String, Vec<String>>,
     /// The mouse buttons the person holds down, as the engine's bits.
     held: i64,
 }
@@ -275,21 +277,15 @@ impl Browser {
                 let edits = *down && edits(key, *modifiers);
                 if edits {
                     match self.blank_focused(None) {
-                        Ok(()) => {}
-                        Err(Refusal::NothingFocused) => {
-                            if let Some(text) = &text {
-                                lock(&self.typing)
-                                    .loose
-                                    .entry(target.clone())
-                                    .or_default()
-                                    .push_str(text);
-                            }
-                        }
+                        Ok(()) | Err(Refusal::NothingFocused) => {}
                         Err(why) => return Err(why),
                     }
                 }
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
+                if *down {
+                    lock(&self.typing).typed(&target, key, text.as_deref());
+                }
                 if edits {
                     lock(&self.typing).dirty.insert(target.clone());
                     // Read the page again now, so the field's content with this key in it is
@@ -311,6 +307,7 @@ impl Browser {
             } => {
                 // A press may send what was typed away (a form's button): it is read first.
                 if *kind == MouseKind::Pressed {
+                    lock(&self.typing).end_run(&target);
                     self.keep_typing_out();
                 }
                 let bit = button_bit(*button);
@@ -367,24 +364,57 @@ impl Browser {
         })
     }
 
-    /// Reads every page the person typed into again, and keeps what they typed with nothing
-    /// focused out of every later answer about its page.
+    /// Reads every page the person typed into again, and keeps each run of characters they
+    /// typed out of every later answer about its page.
     fn keep_typing_out(&self) {
-        let (dirty, loose) = {
+        let (dirty, runs) = {
             let mut typing = lock(&self.typing);
-            (
-                std::mem::take(&mut typing.dirty),
-                std::mem::take(&mut typing.loose),
-            )
+            // Each run is kept out once: a run still growing is a run a press of the mouse or
+            // the hand-back has just ended.
+            let runs: Vec<(String, Vec<String>)> = std::mem::take(&mut typing.runs)
+                .into_iter()
+                .map(|(target, runs)| {
+                    let typed = runs.into_iter().filter(|run| !run.is_empty());
+                    (target, typed.collect())
+                })
+                .collect();
+            (std::mem::take(&mut typing.dirty), runs)
         };
         for target in dirty {
             let _ = self.snapshot_of(&target);
         }
         let mut state = lock(&self.inner.state);
-        for (target, text) in loose {
+        for (target, runs) in runs {
             if let Some(page) = state.page_mut(&target) {
-                page.keep_out(&[text]);
+                page.keep_out(&runs);
             }
+        }
+    }
+}
+
+impl Typing {
+    /// The person pressed `key` on `target`'s page, typing `text`, if it types any.
+    fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
+        let runs = self.runs.entry(target.to_owned()).or_default();
+        match text {
+            Some(text) if text != "\r" => match runs.last_mut() {
+                Some(run) => run.push_str(text),
+                None => runs.push(text.to_owned()),
+            },
+            _ if key == "Backspace" => {
+                if let Some(run) = runs.last_mut() {
+                    run.pop();
+                }
+            }
+            _ => self.end_run(target),
+        }
+    }
+
+    /// The run of characters being typed on `target`'s page ends here.
+    fn end_run(&mut self, target: &str) {
+        let runs = self.runs.entry(target.to_owned()).or_default();
+        if runs.last().is_some_and(|run| !run.is_empty()) {
+            runs.push(String::new());
         }
     }
 }

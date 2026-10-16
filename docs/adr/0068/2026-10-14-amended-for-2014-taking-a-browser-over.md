@@ -29,8 +29,9 @@ the person typed. The amendments above are left as accepted, and this note adds 
    change what a field holds (one that types, a deletion, a Control or Meta chord), the element
    that has the focus is blanked, and the page is read again after it, so what the field holds is
    in no later snapshot, find, wait or screenshot, and stays out of every later answer about its
-   page. A press of the mouse and the hand-back read every page typed into again. Text typed with
-   nothing focused is kept out of later answers about its page too. A page that cannot say which
+   page. A press of the mouse and the hand-back read every page typed into again, and each run of
+   characters the person typed is kept out of later answers about its page as typed, whatever
+   became of its field. A page that cannot say which
    element has the focus has the key held back, and the person is told. *D-2014-4, to be
    confirmed.*
 5. **Input is aimed.** A browser view's frames name what they show, the page and which of its
