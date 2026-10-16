@@ -335,6 +335,91 @@ fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows
     }
 }
 
+/// Every Rust source a build ships from: each crate under `crates/` and the app's own, by its
+/// path from the repository's root, with its tests left out (a file's `tests.rs`, a crate's
+/// `tests/`, and an inline test module).
+fn shipped_sources() -> Vec<(String, String)> {
+    let top = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut found = Vec::new();
+    let mut left = vec![top.join("crates"), top.join("app/src-tauri")];
+    while let Some(dir) = left.pop() {
+        for entry in std::fs::read_dir(&dir).expect("the sources").flatten() {
+            let path = entry.path();
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if path.is_dir() {
+                if !matches!(name.as_ref(), "target" | "tests" | "node_modules" | "gen") {
+                    left.push(path);
+                }
+            } else if name.ends_with(".rs") && !name.ends_with("tests.rs") {
+                let file = path
+                    .strip_prefix(&top)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                let code = text.split("#[cfg(test)]\nmod ").next().unwrap_or_default();
+                found.push((file, code.to_owned()));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// **Only the press that showed a request's checks merges past them** (#1978, the
+/// operator's ruling P1). The core's merge as it stands reads no check; it is private, so
+/// the compiler holds it to `merge_as_seen`, which looks again and merges only the commit
+/// and the standing the confirmation showed. This holds `merge_as_seen` to the window's one
+/// command, in every crate, and that command to the window's confirmation. A second way in
+/// fails this, and is a ruling first.
+#[test]
+fn only_the_press_that_showed_the_checks_reaches_the_merge_as_it_stands() {
+    assert_eq!(
+        call_sites(&shipped_sources(), concat!("merge_as", "_seen")),
+        ["app/src-tauri/src/saving.rs", "app/src-tauri/src/saving.rs"],
+        "every call of a merge past the checks, the project's and a repo's"
+    );
+    for command in ["merge_save_request", "look_at_save_request"] {
+        assert!(
+            purlis_session_protocol::ui::window_only(command),
+            "{command}"
+        );
+        assert!(
+            !purlis_session_protocol::ui::served_on_a_link(command),
+            "{command}"
+        );
+    }
+    // The window sends the merge from one place: the confirmation drawn from a fresh look.
+    let top = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut sends = Vec::new();
+    let mut left = vec![top.join("app/src")];
+    while let Some(dir) = left.pop() {
+        for entry in std::fs::read_dir(&dir)
+            .expect("the window's sources")
+            .flatten()
+        {
+            let path = entry.path();
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if path.is_dir() {
+                left.push(path);
+            } else if (name.ends_with(".ts") || name.ends_with(".tsx"))
+                && !name.contains(".test.")
+                && name != "bindings.ts"
+            {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                let count = text.matches(concat!(".mergeSave", "Request(")).count();
+                let file = path
+                    .strip_prefix(&top)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                sends.extend(std::iter::repeat_n(file, count));
+            }
+        }
+    }
+    assert_eq!(sends, ["app/src/SavingMerge.tsx"]);
+}
+
 #[test]
 fn the_guard_counts_calls_and_so_fails_on_a_second_one() {
     let sent = concat!("start_", "sent");
@@ -544,6 +629,221 @@ fn a_request_the_forge_says_is_green_now_starts_no_chat_and_says_so() {
     );
     assert!(held.chats().open_now().is_empty(), "a chat was started");
     assert!(project.first_messages().is_empty(), "the harness was run");
+}
+
+/// git for a fixture: never the developer's global config, so never their signer.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let mut command = std::process::Command::new("git");
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.invalid")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.invalid");
+    let out = purlis_core::forklock::output(&mut command).expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// What the project's saves keep beside its open request: #12 at `head`, standing as
+/// `merge` says. The shared standing is told it moved.
+fn kept_open(root: &Path, head: &str, page: &str, merge: &planegit::Merging) {
+    let state = purlis_core::plane::state_dir(root);
+    std::fs::create_dir_all(&state).expect("the state directory");
+    std::fs::write(
+        state.join("save-branch.json"),
+        serde_json::json!({
+            "branch": "purlis/save/test",
+            "pushed": head,
+            "pr": {"number": 12, "url": page, "head": head, "target": "main",
+                   "merges_itself": true, "merge": merge.to_json()},
+        })
+        .to_string(),
+    )
+    .expect("what the saves keep");
+    planegit::touch(root);
+}
+
+/// **Fix reads the request from the project itself** (#1978): whether it is red, and
+/// which request it is, come from the clone as its saves keep them, not from a string a
+/// test hands in. A request that is waiting starts nothing; once it is red, the press
+/// finds the chat an earlier Fix started for that same request, and asks the forge
+/// nothing.
+#[test]
+fn fix_reads_the_red_request_from_the_project_and_finds_the_chat_open_for_it() {
+    let project = Project::new();
+    let root = &project.root;
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[plane]\nmode = \"pr-merge\"\nbranch = \"main\"\n",
+    )
+    .expect("charter.toml");
+    // The machine's own files stay out of git, as a project's do.
+    std::fs::write(
+        root.join(".gitignore"),
+        format!("/{}\n/runs/\n", purlis_core::profiles::LOCAL_FILE),
+    )
+    .expect(".gitignore");
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", purlis_core::plane::MANIFEST, ".gitignore"]);
+    git(root, &["commit", "-q", "-m", "one"]);
+    let head = git(root, &["rev-parse", "HEAD"]);
+    let page = "https://github.com/acme/plane/pull/12";
+    let planes = planes();
+    let id = planes.open(root);
+    let held = planes.held(&id).expect("held");
+
+    kept_open(
+        root,
+        &head,
+        page,
+        &planegit::Merging::new(MergeState::Waiting, "its checks are still running"),
+    );
+    let waiting = fix_request(&held, None, None, SIZE);
+    assert_eq!(
+        waiting,
+        Err("Its pull request is not red any more, so there is nothing to fix.".to_owned())
+    );
+    assert!(held.chats().open_now().is_empty(), "a chat was started");
+
+    let red = planegit::Merging::of(&Ok(purlis_core::forge::pr::Ready::Red(vec![
+        purlis_core::forge::checks::FailedCheck::of(Some("lint"), None),
+    ])));
+    kept_open(root, &head, page, &red);
+    assert_eq!(
+        planegit::shared_standing(root).pr.as_deref(),
+        Some(page),
+        "the standing reads the request from the project"
+    );
+    // The chat an earlier Fix started for this request: what the press must find.
+    let earlier = start(
+        &held,
+        &format!("plane {page}"),
+        &lint_failed(Whose::Project),
+        held.root(),
+        SIZE,
+    )
+    .expect("it starts");
+
+    let again = fix_request(&held, None, None, SIZE);
+
+    assert_eq!(
+        again,
+        Ok(Fixing {
+            existing: true,
+            ..earlier
+        })
+    );
+    assert_eq!(
+        project.first_messages_once(1).len(),
+        1,
+        "one run of the harness"
+    );
+}
+
+/// **Fix reads a repo's request from its clone** (#1978): the repo's half of the test above.
+/// Whether it is red, and which request it is, come from the workspace's clone and the
+/// journal its saves write. Waiting starts nothing; red finds the chat an earlier Fix started
+/// for that same request, in the workspace, and asks the forge nothing.
+#[test]
+fn fix_reads_a_repos_red_request_from_its_clone_and_finds_the_chat_open_for_it() {
+    let project = Project::new();
+    let root = &project.root;
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[repos.widget]\nmode = \"pr-merge\"\n",
+    )
+    .expect("charter.toml");
+    let alpha = root.join("workspaces").join("alpha");
+    let clone = alpha.join("widget");
+    std::fs::create_dir_all(&clone).expect("the clone");
+    git(&clone, &["init", "-q", "-b", "main"]);
+    std::fs::write(clone.join("README.md"), "one\n").expect("a file");
+    git(&clone, &["add", "README.md"]);
+    git(&clone, &["commit", "-q", "-m", "one"]);
+    git(
+        &clone,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/widget.git",
+        ],
+    );
+    let head = git(&clone, &["rev-parse", "HEAD"]);
+    let page = "https://github.com/acme/widget/pull/12";
+    // What a save of it writes to the journal, the newest line last.
+    let journal = planegit::journal_path(root);
+    std::fs::create_dir_all(journal.parent().expect("the state directory")).expect("made");
+    let saved = |merge: &planegit::Merging| {
+        let mut lines = std::fs::read_to_string(&journal).unwrap_or_default();
+        lines.push_str(
+            &serde_json::json!({
+                "target": "repo:alpha/widget",
+                "outcome": "pr-open",
+                "commit": head,
+                "number": 12,
+                "pr": page,
+                "pushed_at": 1_800_000_000u64,
+                "merge": merge.to_json(),
+            })
+            .to_string(),
+        );
+        lines.push('\n');
+        std::fs::write(&journal, lines).expect("the journal");
+        planegit::touch(&clone);
+    };
+    let planes = planes();
+    let id = planes.open(root);
+    let held = planes.held(&id).expect("held");
+
+    saved(&planegit::Merging::new(
+        MergeState::Waiting,
+        "its checks are still running",
+    ));
+    assert_eq!(
+        fix_request(&held, Some("alpha"), Some("widget"), SIZE),
+        Err("Its pull request is not red any more, so there is nothing to fix.".to_owned())
+    );
+    assert!(held.chats().open_now().is_empty(), "a chat was started");
+
+    saved(&planegit::Merging::of(&Ok(
+        purlis_core::forge::pr::Ready::Red(vec![purlis_core::forge::checks::FailedCheck::of(
+            Some("lint"),
+            None,
+        )]),
+    )));
+    // The chat an earlier Fix started for this request: what the press must find.
+    let earlier = start(
+        &held,
+        &format!("repo:alpha/widget {page}"),
+        &lint_failed(Whose::Repo {
+            workspace: "alpha",
+            name: "widget",
+        }),
+        &alpha,
+        SIZE,
+    )
+    .expect("it starts");
+
+    let again = fix_request(&held, Some("alpha"), Some("widget"), SIZE);
+
+    assert_eq!(
+        again,
+        Ok(Fixing {
+            existing: true,
+            ..earlier
+        })
+    );
 }
 
 #[test]
