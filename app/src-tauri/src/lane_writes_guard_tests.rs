@@ -86,6 +86,9 @@ const LANE_FILE_WRITES_BEGINNING: &[(&str, &[&str])] = &[
 /// machine's sandbox file, so one added later is a write until it is listed here.
 const LOCAL_READS: &[&str] = &[
     "allowed_persona_hosts",
+    "browser_always",
+    "browser_always_here",
+    "browsers_always",
     "confirmed_hosts",
     "confirmed_levels",
     "dispatch_mine_in",

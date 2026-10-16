@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex};
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
 
-use super::{ChatBrowsers, Driver, Ended, Posture, Refused};
+use purlis_core::sandbox::persona::Browser;
+
+use super::{AsPersona, ChatBrowsers, Driver, Ended, Posture, Refused};
 
 /// A driver that stands in for the session host: it starts numbered browsers, answers every
 /// act settled, and keeps what it was asked.
@@ -98,8 +100,34 @@ fn reach() -> BrowserReach {
 }
 
 fn answered(browsers: &ChatBrowsers, hosted: &Arc<Hosted>, browse: &BrowseAsk) -> (Answer, bool) {
+    answered_as(browsers, hosted, browse, &AsPersona::default())
+}
+
+/// [`answered`] for a chat whose persona, declaration and Always are `as_persona`'s.
+fn answered_as(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    browse: &BrowseAsk,
+    as_persona: &AsPersona,
+) -> (Answer, bool) {
     let driver: Arc<dyn Driver> = hosted.clone();
-    browsers.answer(Some(&driver), Path::new("/p"), browse, &|| reach(), 1000)
+    browsers.answer(
+        Some(&driver),
+        Path::new("/p"),
+        browse,
+        &|| reach(),
+        &|| as_persona.clone(),
+        1000,
+    )
+}
+
+/// A chat running as `persona`, which declares `declared`, with Always kept as `always`.
+fn as_persona(persona: &str, declared: Option<Browser>, always: Option<bool>) -> AsPersona {
+    AsPersona {
+        persona: Some(persona.to_owned()),
+        declared,
+        always,
+    }
 }
 
 fn refusal(answer: Answer) -> String {
@@ -128,7 +156,8 @@ fn a_chats_first_browser_call_raises_one_ask_and_starts_no_browser() {
         browsers.waiting(),
         [super::Waits {
             session: 3,
-            since: 1000
+            since: 1000,
+            as_persona: AsPersona::default(),
         }]
     );
 }
@@ -331,6 +360,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         Path::new("/p"),
         &ask(3, click()),
         &|| narrower.clone(),
+        &AsPersona::default,
         1000,
     );
     let Answer::Browsed { browsed, .. } = answer else {
@@ -388,7 +418,14 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
 
     let why = refusal(
         browsers
-            .answer(None, Path::new("/p"), &ask(3, click()), &|| reach(), 0)
+            .answer(
+                None,
+                Path::new("/p"),
+                &ask(3, click()),
+                &|| reach(),
+                &AsPersona::default,
+                0,
+            )
             .0,
     );
 
@@ -498,4 +535,211 @@ fn a_browser_call_from_a_chat_the_window_does_not_have_open_is_refused_and_asks_
     assert!(why.contains("not one this purlis window has open"), "{why}");
     assert_eq!(held.browsers().posture(7), Posture::Unasked);
     assert!(held.browsers().waiting().is_empty(), "no Ask is raised");
+}
+
+// ---- a persona's browser, and Always for this persona (#2241) --------------------------------
+
+/// #2241: Always for this persona holds for every chat opened as that persona: its first
+/// browser call opens a browser reaching what was answered, and nothing is asked.
+#[test]
+fn always_for_this_persona_opens_a_chats_browser_with_no_ask() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let qa = as_persona("qa", None, Some(true));
+
+    let (answer, raised) = answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+    let (_, raised_too) = answered_as(&browsers, &hosted, &ask(4, click()), &qa);
+
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert!(!raised && !raised_too, "nothing is asked");
+    let started = hosted.started.lock().unwrap();
+    assert_eq!(started.len(), 2);
+    assert!(started.iter().all(|reach| reach.open_web));
+    assert!(browsers.waiting().is_empty());
+}
+
+/// #2241, ADR 0073: a persona's declaration only preselects the Ask's answer: the person is
+/// still asked, nothing starts until they answer, and the Ask carries what it declares.
+#[test]
+fn a_declared_browser_is_preselected_and_the_person_still_answers() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let qa = as_persona("qa", Some(Browser::OpenWeb), None);
+
+    let (answer, raised) = answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+
+    assert!(raised);
+    assert!(refusal(answer).contains("asked the person"));
+    assert!(hosted.started.lock().unwrap().is_empty());
+    assert_eq!(browsers.waiting()[0].as_persona, qa);
+}
+
+/// #2241 security: what a persona declares never widens what the person answered, whether
+/// they answered for this chat or Always for the persona.
+#[test]
+fn what_a_persona_declares_never_widens_what_the_person_answered() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    // Always kept for this project's sites; the persona now declares the open web.
+    let widened = as_persona("qa", Some(Browser::OpenWeb), Some(false));
+    answered_as(&browsers, &hosted, &ask(3, click()), &widened);
+    // Asked, declared the open web, and answered this project's sites for this chat.
+    let declared = as_persona("qa", Some(Browser::OpenWeb), None);
+    answered_as(&browsers, &hosted, &ask(4, click()), &declared);
+    assert!(browsers.allow(4, false));
+    answered_as(&browsers, &hosted, &ask(4, click()), &declared);
+
+    let started = hosted.started.lock().unwrap();
+    assert_eq!(started.len(), 2);
+    assert!(started.iter().all(|reach| !reach.open_web), "{started:?}");
+}
+
+/// #2241: Always answered on one chat's Ask answers every chat as that persona that waits on
+/// the same Ask, and no chat of another persona.
+#[test]
+fn always_answers_every_chat_as_that_persona_that_waits() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let qa = as_persona("qa", None, None);
+    answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+    answered_as(&browsers, &hosted, &ask(4, click()), &qa);
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(5, click()),
+        &as_persona("devops", None, None),
+    );
+
+    let mut answered = browsers.allow_always("qa", false);
+    answered.sort_unstable();
+
+    assert_eq!(answered, [3, 4]);
+    assert_eq!(browsers.posture(3), Posture::Allowed { open_web: false });
+    assert_eq!(browsers.posture(5), Posture::Asked);
+}
+
+/// #2241 security, D-2013-11/16: removing Always narrows running chats: the browsers of each
+/// chat it opened end, and the chat's next call asks the person again.
+#[test]
+fn removing_always_ends_the_browsers_it_opened_and_the_next_call_asks_again() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(false)),
+    );
+    // A chat the person answered for itself keeps its browser.
+    answered_as(&browsers, &hosted, &ask(4, click()), &AsPersona::default());
+    browsers.allow(4, false);
+    answered_as(&browsers, &hosted, &ask(4, click()), &AsPersona::default());
+
+    let ended = browsers.always_removed(Some(&driver), "qa");
+
+    assert_eq!(
+        ended,
+        [(
+            3,
+            Ended {
+                ended: 1,
+                unended: 0
+            }
+        )]
+    );
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    let (_, raised) = answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, None),
+    );
+    assert!(raised, "asked again");
+    assert_eq!(browsers.posture(4), Posture::Allowed { open_web: false });
+}
+
+/// #2241: Always that is gone at a chat's next call (removed elsewhere, or held by an
+/// administrator's policy) ends the browsers it opened and asks again; one narrowed to this
+/// project's sites ends them and opens the next on that; one widened ends nothing.
+#[test]
+fn always_that_changed_since_a_chats_browser_opened_is_followed_at_its_next_call() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(true)),
+    );
+    // Narrowed to this project's sites.
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(false)),
+    );
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert!(!hosted.started.lock().unwrap()[1].open_web);
+    // Widened: what runs runs on.
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(true)),
+    );
+    assert_eq!(hosted.closed.lock().unwrap().len(), 1);
+    // Gone: ended, and asked again.
+    let (answer, raised) = answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, None),
+    );
+    assert!(raised);
+    assert!(refusal(answer).contains("asked the person"));
+    assert_eq!(hosted.closed.lock().unwrap().len(), 2);
+}
+
+/// #2241, D-2013-11: Always answered again narrower ends the browsers of the chats it allowed at
+/// once, and the next opens on the narrower reach; answered again wider ends nothing.
+#[test]
+fn always_answered_again_narrower_ends_the_browsers_it_opened_at_once() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(true)),
+    );
+
+    assert!(
+        browsers
+            .always_changed(Some(&driver), "qa", true)
+            .is_empty(),
+        "the same answer ends nothing"
+    );
+    let ended = browsers.always_changed(Some(&driver), "qa", false);
+
+    assert_eq!(
+        ended,
+        [(
+            3,
+            Ended {
+                ended: 1,
+                unended: 0
+            }
+        )]
+    );
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert_eq!(browsers.posture(3), Posture::Allowed { open_web: false });
+    answered_as(
+        &browsers,
+        &hosted,
+        &ask(3, click()),
+        &as_persona("qa", None, Some(false)),
+    );
+    assert!(!hosted.started.lock().unwrap()[1].open_web);
 }

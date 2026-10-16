@@ -993,3 +993,100 @@ fn an_answer_to_what_a_project_expects_is_kept_by_what_was_shown() {
         }]
     );
 }
+
+// -------------------------------------------------------------------------------------
+// Always for this persona: a browser (#2241)
+// -------------------------------------------------------------------------------------
+
+/// #2241: **Always for this persona** is kept in this machine's own file for the project, beside
+/// its other Always answers, with what it reaches; one answer per persona, the last one kept;
+/// and Remove takes it and its Granted record away.
+#[test]
+fn always_for_a_persona_s_browser_is_kept_per_persona_and_removed_whole() {
+    let project = a_project("schema = 1\n");
+    let root = project.path();
+    assert_eq!(browser_always(root, "qa"), None);
+    keep_browser_always(root, "qa", false).expect("kept");
+    keep_browser_always(root, "research", true).expect("kept");
+    assert_eq!(browser_always(root, "qa"), Some(false));
+    assert_eq!(browser_always(root, "research"), Some(true));
+    // A second answer for the same persona replaces the first.
+    keep_browser_always(root, "qa", true).expect("kept");
+    assert_eq!(browser_always(root, "qa"), Some(true));
+    assert_eq!(browsers_always(root).len(), 2);
+    let text = std::fs::read_to_string(path(root)).expect("this machine's file");
+    assert!(text.contains("\"browsers_mine\""), "{text}");
+    record_made(
+        root,
+        Made {
+            what: BROWSER.to_owned(),
+            target: "qa".to_owned(),
+            level: "you".to_owned(),
+            at: 1,
+            chat: None,
+        },
+    )
+    .expect("recorded");
+    assert!(revoke_browser_always(root, "qa").expect("removed"));
+    assert_eq!(browser_always(root, "qa"), None);
+    assert!(made(root).iter().all(|one| one.what != BROWSER));
+    assert!(!revoke_browser_always(root, "qa").expect("nothing to remove"));
+    // Nothing of it is in the project.
+    assert_eq!(charter_toml(root), "schema = 1\n");
+}
+
+/// #2241: an administrator's policy forbids Always for this persona by leaving `you` out of
+/// `allow-scopes`: one kept before reaches no chat while the policy stands, and is kept.
+#[test]
+fn a_policy_without_the_you_scope_holds_always_for_a_persona_s_browser() {
+    use crate::sandbox::policy::Locks;
+    let project = a_project("schema = 1\n");
+    let root = project.path();
+    keep_browser_always(root, "qa", false).expect("kept");
+    assert_eq!(browser_always_here(root, "qa", &Locks::none()), Some(false));
+    let no_you = Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["chat", "project"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert_eq!(browser_always_here(root, "qa", &no_you), None);
+    assert_eq!(
+        browser_always(root, "qa"),
+        Some(false),
+        "kept, not in force"
+    );
+}
+
+/// #2241 security: Always for a persona's browser is kept only in this machine's file for the
+/// project, which every sandboxed chat is denied writing; nothing of it is in the project.
+#[test]
+fn always_for_a_persona_s_browser_is_kept_where_no_sandboxed_chat_writes() {
+    let project = a_project("schema = 1\n");
+    let root = project.path().canonicalize().expect("real");
+    let home = tempfile::tempdir().expect("a config home");
+    let home_path = home.path().canonicalize().expect("real");
+    TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home_path.clone()));
+    keep_browser_always(&root, "qa", true).expect("kept");
+    let file = path(&root);
+    let kept = std::fs::read_to_string(&file).expect("kept in this machine's file");
+    assert!(kept.contains("\"qa\""), "{kept}");
+    assert!(file.starts_with(&home_path), "{}", file.display());
+    let machine = crate::sandbox::Machine {
+        env: crate::secrets::Env::of(&[(
+            crate::machine::HOME_VAR,
+            home_path.to_str().expect("utf-8"),
+        )]),
+        home: Some(root.join("home")),
+        os: crate::sandbox::Os::MacOs,
+    };
+    let denied = crate::sandbox::Denied::of(&root, &machine);
+    assert!(
+        denied
+            .paths
+            .iter()
+            .any(|denial| file.starts_with(&denial.path)),
+        "{} is not denied: {:?}",
+        file.display(),
+        denied.paths
+    );
+    TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
