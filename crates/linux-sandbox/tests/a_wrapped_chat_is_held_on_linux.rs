@@ -365,6 +365,11 @@ fn only_the_proxy_and_the_hook_socket_are_reached() {
     assert_eq!(p.run(&["udp", "192.0.2.1", "53"]), "EACCES");
     assert_eq!(p.run(&["udp", "127.0.0.1", &port]), "EACCES");
     assert_eq!(p.run(&["unix", &p.s(&p.hook)]), "ok");
+    // Through a link, a socket is judged by what it reaches, as the kernel names it.
+    std::os::unix::fs::symlink(&p.hook, p.cwd.join("hook-link")).expect("a link");
+    std::os::unix::fs::symlink(&p.bus, p.cwd.join("bus-link")).expect("a link");
+    assert_eq!(p.run(&["unix", "hook-link"]), "ok");
+    assert_eq!(p.run(&["unix", "bus-link"]), "EACCES");
     // The session bus, where the credential store answers, as any socket but the hook's.
     assert_eq!(p.run(&["unix", &p.s(&p.bus)]), "EACCES");
     assert_eq!(p.run(&["abstract", "purlis-probe"]), "EACCES");

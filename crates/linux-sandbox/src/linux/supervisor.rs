@@ -18,7 +18,7 @@ use std::io::IoSliceMut;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 
 use nix::errno::Errno;
@@ -692,19 +692,23 @@ impl Supervisor {
             libc::AF_UNIX => {
                 let path = &bytes[2..];
                 if path.first().is_none_or(|first| *first == 0) {
-                    // An abstract or unnamed socket names no path.
-                    if !self.profile.allows(&Op::Connect(Remote::Unix(None))) {
-                        return Err(REFUSED);
-                    }
+                    // An abstract or unnamed socket names no path, and no profile allows one.
                     return Err(REFUSED);
                 }
                 let end = path.iter().position(|c| *c == 0).unwrap_or(path.len());
-                let named = Path::new(OsStr::from_bytes(&path[..end]));
-                let absolute: PathBuf = if named.is_absolute() {
-                    named.to_path_buf()
-                } else {
-                    walk::named(chat.start(libc::AT_FDCWD)?)?.join(named)
+                // Found as the kernel would find it for the chat, through any link on the way,
+                // and judged by the name the kernel gives the socket itself, as Seatbelt judges
+                // it: a link to an allowed socket reaches it, and a link to another does not.
+                let Found::There {
+                    fd: found, kind, ..
+                } = chat.walk(libc::AT_FDCWD, &path[..end], true)?
+                else {
+                    return Err(Errno::ENOENT);
                 };
+                if kind != Kind::Socket {
+                    return Err(Errno::ECONNREFUSED);
+                }
+                let absolute = named(&found)?;
                 if !self
                     .profile
                     .allows(&Op::Connect(Remote::Unix(Some(&absolute))))
@@ -717,7 +721,10 @@ impl Supervisor {
                     SockFlag::SOCK_CLOEXEC,
                     None,
                 )?;
-                connect(socket.as_raw_fd(), &UnixAddr::new(absolute.as_path())?)?;
+                // Through the descriptor the walk holds, so the socket connected is the one
+                // judged, whatever its path's length.
+                let held = format!("/proc/self/fd/{}", found.as_raw_fd());
+                connect(socket.as_raw_fd(), &UnixAddr::new(held.as_str())?)?;
                 socket
             }
             libc::AF_INET | libc::AF_INET6 => {
