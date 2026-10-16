@@ -314,10 +314,10 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
 
 describe("the persona sub-agent files purlis generated, as a Notice (#1990, Q67)", () => {
   const leftover = row("personas", "warn", {
-    detail: "1 generated sub-agent file(s) remain in .claude/agents/",
+    detail: "1 generated sub-agent file remains in .claude/agents/",
     fix: "persona-agents",
   });
-  const gone = row("personas", "ok", { detail: "1 persona(s), all clean" });
+  const gone = row("personas", "ok", { detail: "1 persona, all clean" });
 
   it("stands once in the Inbox, its Fix runs the doctor's fix, and it goes with the files", async () => {
     let removed = false;

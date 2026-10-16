@@ -1463,6 +1463,7 @@ fn a_generated_sub_agent_that_is_still_there_is_counted_and_its_fix_is_offered()
     .unwrap();
     let clean = one(&root, "personas");
     assert_eq!(clean.status, Status::Ok, "{clean:?}");
+    assert_eq!(clean.detail, "1 persona, all clean");
     assert_eq!(clean.fix, None);
 
     let agents = root.join(".claude/agents");
@@ -1480,7 +1481,7 @@ fn a_generated_sub_agent_that_is_still_there_is_counted_and_its_fix_is_offered()
     assert_eq!(r.status, Status::Warn);
     assert_eq!(
         r.detail,
-        "1 generated sub-agent file(s) remain in .claude/agents/"
+        "1 generated sub-agent file remains in .claude/agents/"
     );
     assert!(
         r.hint
