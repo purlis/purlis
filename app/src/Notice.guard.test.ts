@@ -101,6 +101,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "BrowserView.tsx": {
+    count: 1,
+    why:
+      "a browser view's bar (#2014): who drives the page under it, drawn by purlis outside the " +
+      "frame, said to a screen reader as it changes. Done beside it hands the browser back, and " +
+      "a refusal of the person's input is said in it, replaced by the next",
+  },
   "Brief.tsx": {
     count: 3,
     why:
