@@ -239,7 +239,7 @@ body {
   position: relative;
   display: flex;
   align-items: stretch;
-  min-height: 2rem;
+  min-height: var(--size-control);
   background: var(--layer-workspace);
 }
 
@@ -305,7 +305,7 @@ body {
 }
 
 .workspaces-strip {
-  min-height: 2rem;
+  min-height: var(--size-control);
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -687,7 +687,7 @@ body {
   color: var(--text-primary);
   background: none;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 0.2rem 0.5rem;
   font: inherit;
   cursor: pointer;
@@ -805,7 +805,7 @@ body {
   color: var(--text-primary);
   background: var(--surface-sunken);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font: inherit;
   /* The size of the title it stands in for (qw337). */
   font-size: var(--font-size-md);
@@ -892,7 +892,7 @@ body {
   color: var(--text-primary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 0.2rem 0.5rem;
   font: inherit;
   cursor: pointer;
@@ -931,7 +931,7 @@ button.bare {
   min-width: 1.9rem;
   padding: 0.25rem;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   font: inherit;
@@ -979,7 +979,7 @@ button.show-more {
   gap: 0.2rem;
   padding: 0.15rem 0.4rem;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   font: inherit;
@@ -1837,7 +1837,7 @@ button.show-more:focus-visible {
 /* The name gives way a thousand times sooner than the chip, and stops at its floor. */
 .tabs .tab:has(> .tab-tasks) > [role="tab"] {
   flex-shrink: 1000;
-  min-width: 2rem;
+  min-width: var(--size-control);
   padding-inline-end: 0.3rem;
 }
 
@@ -1907,7 +1907,7 @@ button.show-more:focus-visible {
 /* The hand is pressed, so it is as wide as a thing to press. */
 .tabs .tab-tasks button.tab-tasks-hand {
   justify-content: center;
-  min-width: 1.5rem;
+  min-width: var(--size-chrome);
   padding: 0 0.15rem;
 }
 
@@ -1987,7 +1987,7 @@ button.show-more:focus-visible {
 }
 
 .tasks-menu-row[data-current] .name {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* Who asked for a task, drawn where its line stands in the fold and no indent says it. */
@@ -2108,7 +2108,7 @@ button.show-more:focus-visible {
   height: 1.3rem;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   cursor: pointer;
@@ -4473,7 +4473,7 @@ h2.sidebar-title .node-icon {
   align-items: center;
   padding: 0.05rem 0.3rem;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-primary);
   font: inherit;
@@ -5205,7 +5205,7 @@ h2.sidebar-title .node-icon {
 }
 
 .status-workspace {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* A count's label. Quiet, because the number is the thing being read and the label only says
@@ -5659,7 +5659,7 @@ h2.sidebar-title .node-icon {
   flex: 1 1 auto;
   align-self: stretch;
   margin-inline-end: var(--title-bar-drag);
-  font-size: 1rem;
+  font-size: var(--font-size-base);
 }
 
 /* The right-hand end, which never gives way. At the far end whether or not there is a strip
@@ -5697,7 +5697,7 @@ h2.sidebar-title .node-icon {
   color: var(--text-secondary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 0.05rem 0.4rem;
   font: inherit;
   cursor: pointer;
@@ -5716,7 +5716,7 @@ h2.sidebar-title .node-icon {
   color: var(--text-secondary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 0.05rem 0.4rem;
   font: inherit;
   cursor: pointer;
