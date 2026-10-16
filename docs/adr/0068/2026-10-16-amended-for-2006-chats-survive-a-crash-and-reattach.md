@@ -40,8 +40,12 @@ item 11, which the dispatcher decided.
    quit. *D-2006-4, to be confirmed.*
 5. **A window started beside a serving host reattaches to it** (lifts D-1997-5). The window
    still starts its host; one that exits because another serves this user (D-1997-2) leaves the
-   window to connect to the one serving, with the credentials that one minted. The host runs in
-   a process group of its own, so a signal to the window's group does not end it with the
+   window to connect to the one serving, with the credentials that one minted. The window's
+   supervisor (#2007) does not start a host again while that link holds: the host is not the
+   window's to end, so its end is its link's, and once the link ends a host is started again,
+   counted toward the breaker as any unexpected end is. A quit ends the window's supervision
+   before it tells the host, so nothing is started again after a quit. The host runs in a
+   process group of its own, so a signal to the window's group does not end it with the
    window. *D-2006-5, to be confirmed.*
 6. **A window that comes back holds the chats as the first one did** (D-1997-3). On a host a
    window started, each process admitted as `local-ui` is taken as a holder beside the window
