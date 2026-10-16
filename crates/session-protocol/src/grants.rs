@@ -33,6 +33,7 @@
 //! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn` (1.7) | yes | | | | | |
+//! | `browse`, an act of a chat's browser, and a browser's `reach` (1.9) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -76,6 +77,10 @@
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
 //!   a view of one, `remote-link` included; a stop of one, like every stop, only removes power.
+//! - **A chat's browser is driven through the window alone** (1.9, #2013). The window asks the
+//!   person what a chat's browser may reach, starts it with that reach, and hands on each of
+//!   the chat's acts with `browse`. No other scope sends an act, `remote-link` included: a
+//!   relayed hold does not carry a chat's browser.
 //! - **Saving a held project is the window's alone** (1.7): the project's commits and pushes
 //!   are the person's, and the host's question of who is mid-turn goes only to the window's
 //!   links, which alone answer it. A hold relayed over a link does not carry it.
