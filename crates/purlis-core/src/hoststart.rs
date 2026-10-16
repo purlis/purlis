@@ -97,6 +97,8 @@ pub struct Starting<'a> {
     pub start: &'a StartProgram,
     /// Where its hooks report, and its token, as its project's channel issued them.
     pub reporting: Option<&'a session::Reporting>,
+    /// The scope of the link the start came on, by its word: what its run says started it.
+    pub started_by: &'a str,
 }
 
 /// **The program a start runs, as the binary that hosts composes it** (#2174): the window's
@@ -173,11 +175,24 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
     {
         return Err(NOT_HANDED.into());
     }
+    compose_ready(starting, ready, kit, beside)
+}
+
+/// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
+/// compiled for another machine through.
+pub fn compose_ready(
+    starting: &Starting<'_>,
+    ready: crate::start::Ready,
+    kit: &Kit,
+    beside: &dyn Beside,
+) -> Result<Launch, String> {
+    let (root, start) = (starting.root, starting.start);
+    let cwd = ready.cwd.clone().unwrap_or_else(|| root.to_path_buf());
     let ready = told_first(ready, start.first_message.as_deref())?;
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
     // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
-    let (trust, _counted) =
+    let (trust, counted) =
         crate::sandbox::at_start(ready.unsandboxed.as_ref(), sandbox.is_some(), false, true);
     if let Some(change) = &trust {
         recorded(change, start, ready.harness, persona.as_deref(), beside)?;
@@ -242,6 +257,22 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         Some(route) => route.first_on_path(env),
         None => env,
     };
+    // The run this start begins, written before its program can send a line (ADR 0066), and the
+    // new chat counted towards this machine's opt-out rate (ADR 0067 §7, ruling V78 d).
+    if let Err(why) = begun(
+        starting,
+        &ready,
+        persona.as_deref(),
+        sandbox.is_some(),
+        beside,
+    ) {
+        tracing::warn!("purlis: a composed chat's run was not written ({why})");
+    }
+    if let Some(counted) = counted
+        && let Err(why) = crate::sandbox::local::count(root, counted)
+    {
+        tracing::warn!("purlis: a composed chat was not counted ({why})");
+    }
     Ok(Launch {
         program,
         args,
@@ -306,6 +337,63 @@ fn persona_of(env: &[(String, String)], root: &Path) -> Option<String> {
         .find(|(name, _)| name == crate::active::PERSONA_ENV)
         .map(|(_, persona)| persona.clone())
         .or_else(|| crate::start::persona_for_a_new_chat(root))
+}
+
+/// **Writes the run `starting` begins** in the host's event log, as the window writes a run of
+/// its own: under the start's chat and run, with what the start decided, and who started it.
+/// A run that is not written is said in the host's log, as the window says one, and the chat
+/// still starts.
+fn begun(
+    starting: &Starting<'_>,
+    ready: &crate::start::Ready,
+    persona: Option<&str>,
+    sandboxed: bool,
+    beside: &dyn Beside,
+) -> Result<(), String> {
+    use crate::eventlog::{Attributes, Began, Entry, NONE};
+    let start = starting.start;
+    let (Some(chat), Some(run)) = (start.program.as_deref(), start.run.as_deref()) else {
+        return Err("the start names no chat and run for its run to begin under".to_owned());
+    };
+    let none = || Some(NONE.to_owned());
+    let attributes = Attributes {
+        persona: persona.map(str::to_owned).or_else(none),
+        harness: ready
+            .harness
+            .map_or_else(none, |harness| Some(harness.name().to_owned())),
+        profile: start.profile.clone(),
+        model_source: ready
+            .sign_in
+            .as_ref()
+            .map(|sign_in| sign_in.kind.word().to_owned()),
+        provider: None,
+        model: None,
+        sandbox: if sandboxed {
+            crate::sandbox::Os::this().backend_word().map(str::to_owned)
+        } else {
+            none()
+        },
+        conversation: ready.session.as_ref().map(ToString::to_string),
+        started_by: Some(starting.started_by.to_owned()),
+    };
+    let cause = if start.resume.is_some() {
+        Began::Reopen
+    } else {
+        Began::Start
+    };
+    let entry = Entry::Begin {
+        plane: starting.root.to_path_buf(),
+        number: starting.number,
+        chat: chat.to_owned(),
+        run: run.to_owned(),
+        cause,
+        attributes,
+        held: false,
+        trust: None,
+    };
+    serde_json::to_value(entry)
+        .map_err(|why| why.to_string())
+        .and_then(|entry| beside.record(entry))
 }
 
 /// Writes the trust event `change` under the start's own chat and run, or refuses the start

@@ -97,6 +97,8 @@ pub struct ToCompose<'a> {
     /// none where the host hears no channel for the project (#2000). A window's launch carries
     /// the same.
     pub reporting: Option<&'a session::Reporting>,
+    /// The scope of the link the start came on: what its run says started it (#2171).
+    pub started_by: Scope,
     /// What the host does beside a start its binary composes itself (#2171).
     pub beside: &'a dyn Beside,
 }
@@ -1068,6 +1070,7 @@ impl Hosting {
 
     async fn start(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
         self.let_through(&start, peer)?;
+        let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
             rows: start.rows.unwrap_or(24),
@@ -1128,6 +1131,9 @@ impl Hosting {
         // window's launch says where it runs, never where it reports (#2000).
         let channel = self.channel(&at);
         let mut start = start;
+        // The id it runs under, as its composition names it.
+        start.program = Some(program.clone());
+        let started_by = peer.scope();
         let reporting = match channel.as_ref().map(|channel| channel.report_to(number)) {
             Some(Ok(reporting)) => Some(reporting),
             Some(Err(why)) => {
@@ -1167,6 +1173,7 @@ impl Hosting {
                     size,
                     start: &start,
                     reporting: reporting.as_ref(),
+                    started_by,
                     beside: &beside,
                 })
             })
@@ -1771,7 +1778,21 @@ fn take_confinements(state: &mut State, whose: impl Fn(&Owner) -> bool) -> Vec<A
         .collect()
 }
 
-/// Ends `confinements` off the runtime: a proxy's end waits on its listeners.
+/// **The ids a start begins under** (#2171): the chat's own and its run, as the window names
+/// them, which it alone keeps for its chats (ADR 0066). From every other scope the host mints
+/// both, so what the host writes under a chat's id is only ever written for the chat the id was
+/// minted for.
+fn ids_of(start: StartProgram, scope: Scope) -> StartProgram {
+    if scope == Scope::LocalUi {
+        return start;
+    }
+    StartProgram {
+        program: None,
+        run: Some(ulid::Ulid::generate().to_string()),
+        ..start
+    }
+}
+
 /// [`Beside`] for program `program`, being started in the project held `at` (#2171).
 struct ForTheProgram {
     hosting: Hosting,
@@ -1817,6 +1838,7 @@ impl Beside for ForTheProgram {
     }
 }
 
+/// Ends `confinements` off the runtime: a proxy's end waits on its listeners.
 fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
     if confinements.is_empty() {
         return;

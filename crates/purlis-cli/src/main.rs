@@ -821,6 +821,7 @@ impl purlis_host::Compose for Composes {
                 number: starting.number,
                 start: starting.start,
                 reporting: starting.reporting,
+                started_by: starting.started_by.word(),
             },
             starting.size,
             &self.0,

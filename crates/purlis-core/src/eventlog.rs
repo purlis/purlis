@@ -1222,6 +1222,10 @@ pub struct Attributes {
     pub sandbox: Option<String>,
     /// The harness's own id for the conversation, where one is known as the run begins.
     pub conversation: Option<String>,
+    /// Who started the chat, by the session protocol's word for the scope of the link the start
+    /// came on (`local-ui` for the window, `terminal`, `remote-link`), where it is known
+    /// (#2171).
+    pub started_by: Option<String>,
 }
 
 impl Attributes {
@@ -1251,6 +1255,7 @@ impl Attributes {
             "model": said(&self.model),
             "sandbox": said(&self.sandbox),
             "conversation": said(&conversation),
+            "started_by": said(&self.started_by),
         })
     }
 

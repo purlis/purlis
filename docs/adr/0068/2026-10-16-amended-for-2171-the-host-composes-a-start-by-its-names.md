@@ -7,7 +7,7 @@ the egress proxy (#1999) and the hook socket and tokens (#2000) in the host, it 
 §1, §4, §5 and the amendments above are left as accepted, and this note adds to them; the
 operator's rulings of 2026-10-15 on starts relayed over a link (the amendment for #2042) and on
 a sandbox-only Codex profile (#2037) stand as ruled. Every item is **decided in implementation,
-to be confirmed** (D-2171-1 to D-2171-9).
+to be confirmed** (D-2171-1 to D-2171-15).
 
 1. **One adapter from a start to its program** (#2174). Both binaries' hosts compose each start
    through one function of the core, `purlis_core::hoststart::spec`: a start with the window's
@@ -48,3 +48,27 @@ to be confirmed** (D-2171-1 to D-2171-9).
    so it stays at 1.11 and FD-27's table is unchanged: a start's `launch` stays `local-ui`'s,
    relayed over a link, and every scope that may start a program may start one by its names.
    *D-2171-9.*
+10. **What a host arms a chat with is found where purlis put it.** The window's host takes its
+    `purlis` beside it, the bundled plugin from the resources folder Tauri finds for this
+    program, and the git hooks the window writes in its data folder at its launch; `purlis
+    serve` arms with itself and ships no plugin. *D-2171-10.*
+11. **A composed chat is named by its number, and the kill switch stops it.** Its name is
+    `chat <number>`; while the kill switch is thrown no composed start is let through, the
+    operator's shell being the window's own launch. *D-2171-11.*
+12. **The behaviour suite starts a chat by its names on every target.** The window's
+    `SessionHost` seam starts one (`open_named`), which only a host composes: the window's own
+    process refuses it in a sentence. An opt-out waits through a link, since it is asked again on
+    the device a chat moves to (ADR 0078 §4, ruled 2026-10-15). *D-2171-12.*
+13. **Who may start a chat by its names is FD-27's `start_program` row**, as the amendment for
+    FD-27 accepted it: `local-ui`, `terminal` and `remote-link`, each a person's scope or the
+    person's own peer device. Nothing in this change widens that row. *D-2171-13.*
+14. **The ids a start begins under are the window's to name.** A chat's id and its run, given
+    in a start from `local-ui`, are kept (ADR 0066); from every other scope the host mints
+    both, so what it writes under a chat's id is only ever written for the chat that id was
+    minted for. *D-2171-14.*
+15. **A composed start begins its run in the host's event log, and says who started it.** Its
+    `run.started` is written under its chat and run as the window writes one, with the run's
+    attributes and `started_by`, the scope of the link the start came on; the window's own
+    starts say `local-ui`. A new composed chat is counted towards this machine's opt-out rate
+    as the window's new chats are (ADR 0067 §7, ruling V78 d). A run that cannot be written is
+    said in the host's log, and the chat still starts, as in the window. *D-2171-15.*

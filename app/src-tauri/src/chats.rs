@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use purlis_core::engine::Size;
 use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
+use purlis_core::hoststart::Armed;
 use purlis_core::reopen::{Chat, Focus, Record, Reopened, View};
 
 use crate::host::{Opening, SessionHost};
@@ -267,6 +268,12 @@ pub(crate) fn run_attributes(
             none()
         },
         conversation: conversation.map(str::to_owned),
+        // The window starts each of its own chats (#2171).
+        started_by: Some(
+            purlis_session_protocol::auth::Scope::LocalUi
+                .word()
+                .to_owned(),
+        ),
     }
 }
 
@@ -877,9 +884,6 @@ pub struct ChatGrant {
     /// The session it was allowed in.
     pub from: u32,
 }
-
-/// The arguments and the environment that arm a chat's harness for that chat alone.
-use purlis_core::hoststart::Armed;
 
 /// A chat's sandbox, as a start decided it: compiled for its harness with the real program it
 /// then runs (ruling V87g), or lifted and why — never both, and neither where its project has

@@ -57,10 +57,13 @@ impl Project {
         self.dir.path()
     }
 
-    /// What purlis ships, as stand-ins: a `purlis` that does nothing, and an empty plugin.
+    /// What purlis ships, as stand-ins: a `purlis` that does nothing, and a plugin holding only
+    /// opencode's file.
     fn kit(&self) -> Kit {
         let plugin = self.bin.path().join("plugin");
-        fs::create_dir_all(&plugin).unwrap();
+        let shim = purlis_core::opencode::shim_in(&plugin);
+        fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        fs::write(&shim, "// opencode's purlis plugin, a stand-in\n").unwrap();
         Kit {
             binary: Some(stand_in::program(
                 self.bin.path(),
@@ -80,6 +83,8 @@ impl Project {
 /// What the host was asked to do beside the start.
 #[derive(Default)]
 struct Host {
+    /// The chat's own temp folder beside its proxy.
+    tmp: Option<tempfile::TempDir>,
     confined: RefCell<Vec<ConfinePlan>>,
     recorded: RefCell<Vec<serde_json::Value>>,
     refuses_to_record: bool,
@@ -92,7 +97,10 @@ impl Beside for Host {
             confinement: "01J9CNFNMNT0000000000000000".into(),
             http: 50811,
             socks: 50812,
-            tmp: None,
+            tmp: self
+                .tmp
+                .as_ref()
+                .map(|tmp| tmp.path().display().to_string()),
             routed: None,
             ssh: None,
         })
@@ -130,6 +138,7 @@ fn composed(project: &Project, start: &StartProgram, host: &Host) -> Result<Laun
                 socket: "/the/project/hooks.sock".into(),
                 token: "token-3".into(),
             }),
+            started_by: "terminal",
         },
         &project.kit(),
         host,
@@ -345,7 +354,11 @@ fn an_opt_out_is_written_under_its_run_before_it_is_composed() {
     assert_eq!(launch.confinement, None, "it runs without the sandbox");
     assert!(host.confined.borrow().is_empty());
     let recorded = host.recorded.borrow();
-    assert_eq!(recorded.len(), 1, "{recorded:?}");
+    assert_eq!(
+        recorded.len(),
+        2,
+        "its trust event, then its run: {recorded:?}"
+    );
     assert_eq!(recorded[0]["entry"], "trust");
     assert_eq!(recorded[0]["kind"], "trust.sandbox.off");
     assert_eq!(recorded[0]["chat"], "01J9CHAT000000000000000000");
@@ -387,6 +400,154 @@ fn an_opt_out_with_no_run_to_write_it_under_is_not_started() {
     .unwrap_err();
 
     assert!(refused.contains("always recorded"), "{refused}");
+}
+
+#[test]
+fn a_composed_starts_run_begins_under_its_ids_and_says_who_started_it() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    let host = Host::default();
+
+    composed(
+        &project,
+        // Out of the sandbox, so nothing but the start decides it.
+        &asking(|start| start.without_sandbox = true),
+        &host,
+    )
+    .expect("composed");
+
+    let recorded = host.recorded.borrow();
+    let begun = recorded
+        .iter()
+        .find(|entry| entry["entry"] == "begin")
+        .unwrap_or_else(|| panic!("no run began: {recorded:?}"));
+    assert_eq!(begun["chat"], "01J9CHAT000000000000000000");
+    assert_eq!(begun["run"], "01J9RUN0000000000000000000");
+    assert_eq!(begun["number"], 3);
+    assert_eq!(begun["cause"], "start");
+    assert_eq!(begun["attributes"]["started_by"], "terminal");
+    assert_eq!(begun["attributes"]["persona"], "steward");
+    assert_eq!(begun["attributes"]["profile"], "work");
+}
+
+/// An opencode chat's sandbox, compiled for a Mac whatever this machine is: what a composed start
+/// is given to wrap, with no program run to get there.
+fn a_sandboxed_opencode_start(project: &Project) -> purlis_core::start::Ready {
+    let applied = purlis_core::sandbox::for_start(
+        purlis_core::harness::Harness::Opencode,
+        project.root(),
+        &purlis_core::sandbox::Machine {
+            env: purlis_core::secrets::Env::of(&[]),
+            home: None,
+            os: purlis_core::sandbox::Os::MacOs,
+        },
+        &|_| true,
+    )
+    .expect("it compiles")
+    .expect("a sandbox at the floor");
+    purlis_core::start::Ready {
+        program: project.program(),
+        command: Vec::new(),
+        args: Vec::new(),
+        env: vec![("PURLIS_PERSONA".to_owned(), "steward".to_owned())],
+        cwd: Some(project.root().to_path_buf()),
+        harness: Some(purlis_core::harness::Harness::Opencode),
+        declared: None,
+        session: None,
+        how: purlis_core::reopen::Reopened::Fresh(
+            purlis_core::reopen::Fresh::NoResumeForThisProgram,
+        ),
+        plugins: Default::default(),
+        sandbox: Some(applied),
+        unsandboxed: None,
+        floorless: None,
+        notices: Vec::new(),
+        agents_md: Vec::new(),
+        sign_in: None,
+    }
+}
+
+fn composed_from(
+    project: &Project,
+    ready: purlis_core::start::Ready,
+    host: &dyn Beside,
+) -> Result<Launch, String> {
+    let start = asking(|_| {});
+    hoststart::compose_ready(
+        &Starting {
+            root: project.root(),
+            number: 3,
+            start: &start,
+            reporting: None,
+            started_by: "terminal",
+        },
+        ready,
+        &project.kit(),
+        host,
+    )
+}
+
+/// On every machine: a sandboxed start the host composes runs in the confinement the host
+/// started for it, named in its launch, and is wrapped in its sandbox.
+#[test]
+fn a_sandboxed_composed_start_runs_in_the_confinement_the_host_started_for_it() {
+    purlis_core::unsteered!();
+    let project = Project::on("codex");
+    let host = Host {
+        tmp: Some(tempfile::tempdir().unwrap()),
+        ..Host::default()
+    };
+
+    let launch =
+        composed_from(&project, a_sandboxed_opencode_start(&project), &host).expect("composed");
+
+    assert_eq!(host.confined.borrow().len(), 1, "one confinement");
+    assert_eq!(
+        launch.confinement.as_deref(),
+        Some("01J9CNFNMNT0000000000000000")
+    );
+    assert_ne!(
+        launch.program,
+        project.program(),
+        "it runs inside its sandbox"
+    );
+    assert_eq!(
+        set(&launch, purlis_core::hookwire::SANDBOXED_ENV).as_deref(),
+        Some("1")
+    );
+}
+
+/// What a host that could not start a chat's confinement does.
+struct NoConfinement;
+
+impl Beside for NoConfinement {
+    fn confine(&self, _plan: &ConfinePlan) -> Result<Confined, String> {
+        Err("its confinement was not started".into())
+    }
+
+    fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// On every machine: a sandboxed start whose confinement the host could not start is not
+/// composed at all, never composed to run without its proxy.
+#[test]
+fn a_sandboxed_composed_start_without_its_confinement_is_not_started() {
+    purlis_core::unsteered!();
+    let project = Project::on("codex");
+
+    let refused = composed_from(
+        &project,
+        a_sandboxed_opencode_start(&project),
+        &NoConfinement,
+    )
+    .unwrap_err();
+
+    assert!(
+        refused.contains("its confinement was not started"),
+        "{refused}"
+    );
 }
 
 /// Where this machine sandboxes a chat, the host starts its confinement, as the program's own,

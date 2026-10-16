@@ -54,6 +54,11 @@ impl Compose for ComposesItself {
                 .unwrap_or_default()
                 .into(),
         ));
+        let ids = |id: &Option<String>| id.clone().unwrap_or_default().into();
+        spec.env.push(("CHAT".into(), ids(&starting.start.program)));
+        spec.env.push(("RUN".into(), ids(&starting.start.run)));
+        spec.env
+            .push(("STARTED_BY".into(), starting.started_by.word().into()));
         Ok(spec)
     }
 }
@@ -125,6 +130,11 @@ struct Linked {
 }
 
 async fn linked() -> Linked {
+    linked_as(Scope::LocalUi).await
+}
+
+/// [`linked`], the start's link admitted as `scope`; the project is held on a window's link.
+async fn linked_as(scope: Scope) -> Linked {
     let (runs, confines, log) = (
         StandIns::default(),
         StandInConfines::default(),
@@ -142,13 +152,25 @@ async fn linked() -> Linked {
         ),
         link::serve_any(b, session::speaks(), &HELD)
     );
-    tokio::spawn(session::serve(served.unwrap(), hosting, None));
-    let (client, _views, _events) = Client::new(client.unwrap());
+    tokio::spawn(session::serve(served.unwrap(), hosting.clone(), None));
+    let (window, _views, _events) = Client::new(client.unwrap());
     let project = tempfile::tempdir().unwrap();
-    client
+    window
         .hold_project(PROJECT, project.path().to_str().unwrap())
         .await
         .expect("held");
+    let client = if scope == Scope::LocalUi {
+        window
+    } else {
+        let (a, b) = duplex(256 * 1024);
+        let (client, served) = tokio::join!(
+            link::connect(a, session::speaks(), scope, HELD.of(scope)),
+            link::serve_any(b, session::speaks(), &HELD)
+        );
+        tokio::spawn(session::serve(served.unwrap(), hosting, None));
+        std::mem::forget(window);
+        Client::new(client.unwrap()).0
+    };
     Linked {
         client,
         runs,
@@ -234,4 +256,77 @@ async fn a_start_the_host_could_not_compose_ends_the_confinement_it_asked_for() 
         linked.confines.ended(&started)
     })
     .await;
+}
+
+/// Its ids as the window names them: the chat's own and its run's.
+fn named_ids(mut start: StartProgram) -> StartProgram {
+    start.program = Some("01J9CHAT000000000000000000".into());
+    start.run = Some("01J9RUN0000000000000000000".into());
+    start
+}
+
+#[tokio::test]
+async fn a_start_from_the_window_runs_under_the_ids_the_window_named() {
+    let linked = linked().await;
+
+    let program = linked
+        .client
+        .start_program(named_ids(composed(None)))
+        .await
+        .expect("started");
+
+    let (spec, _) = linked.runs.ran().pop().expect("it ran");
+    assert_eq!(program, "01J9CHAT000000000000000000");
+    assert_eq!(
+        env_of(&spec, "CHAT").as_deref(),
+        Some("01J9CHAT000000000000000000")
+    );
+    assert_eq!(
+        env_of(&spec, "RUN").as_deref(),
+        Some("01J9RUN0000000000000000000")
+    );
+    assert_eq!(env_of(&spec, "STARTED_BY").as_deref(), Some("local-ui"));
+}
+
+#[tokio::test]
+async fn a_start_from_another_scope_runs_under_ids_the_host_minted() {
+    let linked = linked_as(Scope::Terminal).await;
+
+    let program = linked
+        .client
+        .start_program(named_ids(composed(None)))
+        .await
+        .expect("started");
+
+    let (spec, _) = linked.runs.ran().pop().expect("it ran");
+    let (chat, run) = (
+        env_of(&spec, "CHAT").unwrap(),
+        env_of(&spec, "RUN").unwrap(),
+    );
+    assert_eq!(chat, program, "it runs under the id it is answered by");
+    assert_ne!(chat, "01J9CHAT000000000000000000");
+    assert!(!run.is_empty());
+    assert_ne!(run, "01J9RUN0000000000000000000");
+    assert_eq!(env_of(&spec, "STARTED_BY").as_deref(), Some("terminal"));
+}
+
+#[tokio::test]
+async fn a_start_whose_confinement_could_not_be_started_runs_nothing() {
+    let linked = linked().await;
+    linked.confines.refuse("no loopback port was free");
+
+    let refused = linked
+        .client
+        .start_program(composed(None))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::NOT_STARTED)
+    );
+    assert!(
+        linked.runs.ran().is_empty(),
+        "nothing runs without its proxy"
+    );
 }
