@@ -43,17 +43,14 @@ async function openMenuOf(bar: string, name: string): Promise<void> {
     const w = window as unknown as { vmLog?: string[] };
     if (w.vmLog !== undefined) return;
     w.vmLog = [];
-    for (const type of ["keydown", "keyup", "contextmenu", "focusin", "focusout"])
-      document.addEventListener(
-        type,
-        (e) => {
-          const t = e.target as HTMLElement | null;
-          w.vmLog?.push(
-            `${type} key=${(e as KeyboardEvent).key ?? ""} shift=${(e as KeyboardEvent).shiftKey ?? ""} trusted=${e.isTrusted} target=${t?.tagName ?? ""}[${t?.getAttribute?.("aria-label") ?? ""}] active=${(document.activeElement as HTMLElement | null)?.getAttribute?.("aria-label") ?? document.activeElement?.tagName}`,
-          );
-        },
-        true,
-      );
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        const t = e.target as HTMLElement | null;
+        w.vmLog?.push(`${e.key}${e.shiftKey ? "+S" : ""}@${t?.getAttribute("role") ?? t?.tagName}`);
+      },
+      true,
+    );
   });
   await browser
     .waitUntil(
@@ -78,11 +75,10 @@ async function openMenuOf(bar: string, name: string): Promise<void> {
     .catch(async (err: Error) => {
       const seen = await browser.execute((css: string) => {
         const tab = document.querySelector<HTMLElement>(css);
-        const attrs =
-          tab === null ? "none" : [...tab.attributes].map((a) => `${a.name}=${a.value}`).join(" ");
-        return `${attrs} menus=${document.querySelectorAll('[role="menu"]').length} log=${((window as unknown as { vmLog?: string[] }).vmLog ?? []).slice(-30).join(" | ")}`;
+        const log = (window as unknown as { vmLog?: string[] }).vmLog ?? [];
+        return `ds=${tab?.getAttribute("data-state") ?? "-"} n=${log.length} ${log.slice(-6).join(",")}`;
       }, icon);
-      throw new Error(`${err.message} DIAG ${seen}`);
+      throw new Error(`DIAG ${seen} :: ${err.message}`);
     });
   await $(MENU).waitForDisplayed({ timeout: 10_000 });
 }
