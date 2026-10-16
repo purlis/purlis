@@ -1501,6 +1501,9 @@ pub struct Recorder {
     key: ArgsKey,
     /// By project and number: a number means nothing outside the project that dealt it.
     chats: HashMap<(PathBuf, u32), Identity>,
+    /// The numbers whose held run was taken back ([`Recorder::taken_back`]), by project: a
+    /// later line from one is recorded with no chat or run, never under a run of its own.
+    taken_back: std::collections::HashSet<(PathBuf, u32)>,
     /// Each live sub-agent's child run, by chat id and the harness's agent id.
     children: HashMap<(String, String), (String, String)>,
     /// The sub-agents whose `SubagentStop` was heard, by chat id and agent id: a later line
@@ -1588,6 +1591,7 @@ impl Recorder {
             chats: HashMap::new(),
             children: HashMap::new(),
             stopped: std::collections::HashSet::new(),
+            taken_back: std::collections::HashSet::new(),
             calls: HashMap::new(),
             kill_switch: None,
             kill_switch_skipped: None,
@@ -1632,6 +1636,10 @@ impl Recorder {
         cleared: Option<&str>,
         spooled: Option<u64>,
     ) -> io::Result<Event> {
+        if self.was_taken_back(plane, report.chat) {
+            let body = spooled_as(serde_json::json!({}), spooled);
+            return self.of_no_run(report.chat, &format!("hook.{}", report.event.word()), body);
+        }
         // A run held for its start is said before any line of it.
         self.begun(plane, report.chat)?;
         let known = self.chats.contains_key(&(plane.to_path_buf(), report.chat));
@@ -1721,6 +1729,10 @@ impl Recorder {
         now: Instant,
         spooled: Option<u64>,
     ) -> io::Result<Event> {
+        if self.was_taken_back(plane, call.chat) {
+            let body = spooled_as(self.tool_body(call), spooled);
+            return self.of_no_run(call.chat, &tool_kind(call), body);
+        }
         let top = self.identity(plane, call.chat)?;
         let under = self.under(top, call.agent.as_deref())?;
         let phase = phase(&call.tool_hook);
@@ -1774,6 +1786,7 @@ impl Recorder {
     /// event: a chat the reopen record names, before the host starts anything, so a line it
     /// spooled before the host went away is recorded under the run it ran in (FD-30).
     pub fn knows(&mut self, plane: &Path, number: u32, RunOf { chat, run }: RunOf<'_>) {
+        self.taken_back.remove(&(plane.to_path_buf(), number));
         self.chats.insert(
             (plane.to_path_buf(), number),
             Identity {
@@ -1861,8 +1874,11 @@ impl Recorder {
         number: u32,
         spooled: Option<u64>,
     ) -> io::Result<Event> {
-        let who = self.identity(plane, number)?;
         let body = spooled_as(serde_json::json!({}), spooled);
+        if self.was_taken_back(plane, number) {
+            return self.of_no_run(number, COMMIT_REFUSED, body);
+        }
+        let who = self.identity(plane, number)?;
         self.log
             .append(Some(&who.chat), Some(&who.run), None, COMMIT_REFUSED, body)
     }
@@ -2295,6 +2311,7 @@ impl Recorder {
         cause: Began,
         attributes: &Attributes,
     ) {
+        self.taken_back.remove(&(plane.to_path_buf(), number));
         self.chats.insert(
             (plane.to_path_buf(), number),
             Identity {
@@ -2326,6 +2343,34 @@ impl Recorder {
         self.log
             .append(Some(&who.chat), Some(&who.run), None, "run.started", body)
             .map(Some)
+    }
+
+    /// Chat `number`'s start whose run is held ([`Recorder::begin_held`]) was put aside: its
+    /// `run.started` is never written, and a later line from its program is recorded with no
+    /// chat or run, under its number (`chat_number`), as a line of a chat the log does not know
+    /// is (#2252). A run a line of it already said is kept: the log is append-only.
+    pub fn taken_back(&mut self, plane: &Path, number: u32) {
+        let key = (plane.to_path_buf(), number);
+        if self.chats.get(&key).is_some_and(|who| who.held.is_some()) {
+            self.chats.remove(&key);
+            self.taken_back.insert(key);
+        }
+    }
+
+    /// Whether chat `number`'s start was taken back ([`Recorder::taken_back`]).
+    fn was_taken_back(&self, plane: &Path, number: u32) -> bool {
+        self.taken_back.contains(&(plane.to_path_buf(), number))
+    }
+
+    /// A line of `kind` from chat `number`, under no chat or run.
+    fn of_no_run(
+        &mut self,
+        number: u32,
+        kind: &str,
+        mut body: serde_json::Value,
+    ) -> io::Result<Event> {
+        body["chat_number"] = number.into();
+        self.log.append(None, None, None, kind, body)
     }
 
     /// The chat's identity, giving it one and its first run when it has none.

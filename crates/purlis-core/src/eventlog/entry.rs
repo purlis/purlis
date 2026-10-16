@@ -57,6 +57,9 @@ pub enum Entry {
     /// The start whose run was held goes on: its `run.started` is written now
     /// ([`Recorder::begun`]).
     Begun { plane: PathBuf, number: u32 },
+    /// The start whose run was held was put aside: its run is never said, and what its program
+    /// still sends is of no run ([`Recorder::taken_back`], #2252).
+    TakenBack { plane: PathBuf, number: u32 },
     /// What a start decided about a chat's sandbox, under the run it begins
     /// ([`Recorder::trust`]): its kind and body as the window composed them.
     Trust {
@@ -133,6 +136,10 @@ impl Recorder {
                 }
             }
             Entry::Begun { plane, number } => Ok(self.begun(&plane, number)?.into_iter().collect()),
+            Entry::TakenBack { plane, number } => {
+                self.taken_back(&plane, number);
+                Ok(Vec::new())
+            }
             Entry::Trust {
                 chat,
                 run,

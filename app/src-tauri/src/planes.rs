@@ -3555,12 +3555,22 @@ impl Planes {
                     }
                 }
             }));
-            chats.when_a_held_run_goes_on(Box::new(move |session| {
-                let begun = events.record(purlis_core::eventlog::Entry::Begun {
-                    plane: root.clone(),
-                    number: session,
+            // A start put aside is taken back: its program's later lines are of no run (#2252).
+            chats.when_a_held_start_is_settled(Box::new(move |session, how| {
+                let plane = root.clone();
+                let settled = events.record(match how {
+                    crate::chats::HeldStart::GoesOn => purlis_core::eventlog::Entry::Begun {
+                        plane,
+                        number: session,
+                    },
+                    crate::chats::HeldStart::TakenBack => {
+                        purlis_core::eventlog::Entry::TakenBack {
+                            plane,
+                            number: session,
+                        }
+                    }
                 });
-                if let Err(why) = begun {
+                if let Err(why) = settled {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");
                 }
             }));
