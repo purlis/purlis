@@ -249,6 +249,14 @@ async fn only_the_link_that_may_save_hears_how_saving_goes() {
         subscribed.unwrap();
         others.push((scope.to_string(), client, events));
     }
+    // A window's link that may save but does not hold the project.
+    let (not_holding, not_holding_events) = a_link(&host, Scope::LocalUi).await;
+    not_holding.subscribe(Default::default()).await.unwrap();
+    others.push((
+        "a window's link that does not hold it".into(),
+        not_holding,
+        not_holding_events,
+    ));
     // Another host's link, holding the project as a relayed hold does.
     let (remote, remote_events) = {
         let (client, _views, events) = Client::new(from_another_host(host.hosting.clone()).await);

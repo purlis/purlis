@@ -47,9 +47,9 @@
 //! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
 //! is composed, and tells the window what each look did: only a link that may save a project
 //! ([`Power::Save`]) and holds it hears how saving it goes, its saver's question of who is
-//! mid-turn included. One saver per project, however often it is asked. A link that ends without a word leaves it saving, so the project is saved
-//! while the window is gone for a moment; the window's own stop, or every window letting go of
-//! the project, ends it.
+//! mid-turn included. One saver per project, however often it is asked. A link that ends
+//! without a word leaves it saving, so the project is saved while the window is gone for a
+//! moment; the window's own stop, or every window letting go of the project, ends it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
