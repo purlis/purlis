@@ -568,3 +568,24 @@ fn what_the_person_pasted_stays_out_even_once_the_page_has_moved_on() {
     let text = snapshot(&browser, 1);
     assert!(!text.contains("pasted-Other7"), "{text}");
 }
+
+#[test]
+fn input_aimed_at_a_frame_whose_inside_has_since_changed_is_dropped() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    // The payment frame inside the page loads another document; the page's own stays.
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-8","url":"http://other.test/next.html","name":"payment"}}),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the frame's new document is known", || {
+        aim_now(&browser) != aim
+    });
+
+    let late = browser.person_input(&press(&aim, 120.0, 215.0));
+
+    assert_eq!(late, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
+}

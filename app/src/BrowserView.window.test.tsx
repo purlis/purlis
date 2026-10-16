@@ -10,6 +10,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame } from "./bindings";
 import { pickIn } from "./primitives/select.testkit";
+import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
 
 /**
@@ -51,7 +52,11 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
-function core(open: () => unknown = () => "B1", personDrives = false) {
+function core(
+  open: () => unknown = () => "B1",
+  personDrives = false,
+  input: () => unknown = () => ({ outcome: "taken" }),
+) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   let frames: Channel<BrowserFrame> | undefined;
   mockIPC(
@@ -69,7 +74,7 @@ function core(open: () => unknown = () => "B1", personDrives = false) {
         frames = (args as { frames: Channel<BrowserFrame> }).frames;
         return { view: 4, width: 1280, height: 800, person_drives: personDrives };
       }
-      if (cmd === "browser_input") return { outcome: "taken" };
+      if (cmd === "browser_input") return input();
       return null;
     },
     { shouldMockEvents: true },
@@ -200,18 +205,28 @@ describe("taking a browser over from its view (#2014)", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  async function drawn(personDrives = false) {
+  async function drawn(personDrives = false, input?: () => unknown) {
     const { BrowserView } = await import("./BrowserView");
     const { ProjectShownProvider } = await import("./projectShown");
-    const host = core(undefined, personDrives);
-    render(
-      <ProjectShownProvider value={true}>
+    const host = core(undefined, personDrives, input);
+    const view = (seen: boolean) => (
+      <ProjectShownProvider value={seen}>
         <BrowserView program="B1" />
-      </ProjectShownProvider>,
+      </ProjectShownProvider>
     );
+    const { rerender } = render(view(true));
     await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
     host.send("/9j/AA==", "p1:7");
-    return host;
+    return { ...host, seen: (seen: boolean) => rerender(view(seen)) };
+  }
+
+  /** An answer to the person's input that waits until `let` is called. */
+  function held() {
+    const lets: (() => void)[] = [];
+    return {
+      input: () => new Promise((answer) => lets.push(() => answer({ outcome: "taken" }))),
+      let: () => lets.splice(0).forEach((go) => go()),
+    };
   }
 
   it("takes the browser over with a click, which then reaches the page where it was aimed", async () => {
@@ -291,7 +306,7 @@ describe("taking a browser over from its view (#2014)", () => {
   it("hands the browser back on the one chord, which never reaches the page", async () => {
     const host = await drawn(true);
     await screen.findByRole("button", { name: "Done" });
-    const mac = navigator.platform.toLowerCase().includes("mac");
+    const mac = onAMac();
 
     fireEvent.keyDown(screen.getByTestId("browser-surface"), {
       key: "Enter",
@@ -329,10 +344,62 @@ describe("taking a browser over from its view (#2014)", () => {
   it("moves of a mouse the person does not drive with reach nothing", async () => {
     const host = await drawn();
 
-    fireEvent.pointerMove(screen.getByTestId("browser-surface"), { clientX: 10, clientY: 10 });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const surface = screen.getByTestId("browser-surface");
 
-    expect(host.asked("browser_input")).toEqual([]);
+    fireEvent.pointerMove(surface, { clientX: 10, clientY: 10 });
     expect(host.asked("take_over_browser")).toEqual([]);
+    // A key after it takes the browser over, and is the only input sent: the move went nowhere.
+    fireEvent.keyDown(surface, { key: "x", code: "KeyX", keyCode: 88 });
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+
+    expect(host.asked("browser_input")[0].input).toMatchObject({ kind: "key", key: "x" });
+  });
+
+  it("hands back only after the keys already typed have reached the page", async () => {
+    const answers = held();
+    const host = await drawn(true, answers.input);
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+
+    fireEvent.keyDown(surface, { key: "a", code: "KeyA", keyCode: 65 });
+    fireEvent.keyDown(surface, { key: "b", code: "KeyB", keyCode: 66 });
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(host.asked("hand_back_browser")).toEqual([]);
+    answers.let();
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(2));
+    answers.let();
+
+    await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
+    const order = host.order();
+    expect(order.lastIndexOf("browser_input")).toBeLessThan(order.indexOf("hand_back_browser"));
+  });
+
+  it("sends nothing queued before its view was watched again", async () => {
+    const answers = held();
+    const host = await drawn(true, answers.input);
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    fireEvent.keyDown(surface, { key: "a", code: "KeyA", keyCode: 65 });
+    fireEvent.keyDown(surface, { key: "b", code: "KeyB", keyCode: 66 });
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+
+    host.seen(false);
+    host.seen(true);
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(2));
+    answers.let();
+    await waitFor(() => expect(host.asked("unwatch_browser").length).toBeGreaterThan(0));
+
+    fireEvent.keyDown(screen.getByTestId("browser-surface"), {
+      key: "c",
+      code: "KeyC",
+      keyCode: 67,
+    });
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(2));
+    answers.let();
+    expect(host.asked("browser_input").map(({ input }) => (input as { key: string }).key)).toEqual([
+      "a",
+      "c",
+    ]);
   });
 });

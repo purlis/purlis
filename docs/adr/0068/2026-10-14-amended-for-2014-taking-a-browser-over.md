@@ -25,19 +25,22 @@ the person typed. The amendments above are left as accepted, and this note adds 
    unknown", whatever it had read. The hand-back voids every reference dealt before it, so the
    agent's next act starts from a new snapshot. The agent is told nothing of what the person did,
    and nothing they did is replayed. *D-2014-3, D-2014-10, to be confirmed.*
-4. **What the person types is blanked before it reaches the page.** Before each key that may
-   change what a field holds (one that types, a deletion, a Control or Meta chord), the element
-   that has the focus is blanked, and the page is read again after it, so what the field holds is
-   in no later snapshot, find, wait or screenshot, and stays out of every later answer about its
-   page. A press of the mouse and the hand-back read every page typed into again, and each run of
-   characters the person typed is kept out of later answers about its page as typed, whatever
-   became of its field. A page that cannot say which
-   element has the focus has the key held back, and the person is told. *D-2014-4, to be
+4. **What the person types or pastes stays out of every answer the agent gets.** Before each key
+   that may change what a field holds (one that types, a deletion, a chord such as a paste), the
+   element that has the focus is blanked, so it is in no later snapshot, find, wait or screenshot.
+   After the key, what the field holds is read from the field itself, and again at a press of the
+   mouse and at the hand-back; with each run of characters as the person typed it, it is kept out
+   of every later answer about every page of the browser, a page opened later included, whatever
+   became of the field. A page that cannot say which element has the focus, or has one focused
+   that its tree does not show, has the key held back, and the person is told. A character typed
+   with Alt or AltGr (Option on a Mac) types, blanked first like any other. *D-2014-4, to be
    confirmed.*
-5. **Input is aimed.** A browser view's frames name what they show, the page and which of its
-   documents (a frame format of its own, sent to 1.12 links), and each event of the person's names
-   the frame it was aimed at. The engine drops an event whose page no longer shows that document;
-   nothing is replayed. *D-2014-5, to be confirmed.*
+5. **Input is aimed.** A browser view's frames name what they show, the page and its documents
+   (a number that changes when the page or any frame inside it loads another document; a frame
+   format of its own, sent to 1.12 links), and each event of the person's names the frame it was
+   aimed at. The engine drops an event whose page has moved on in any of its frames, so input
+   aimed at one frame's document never lands on another's; nothing is replayed. *D-2014-5,
+   decided by the dispatcher.*
 6. **Taking over and handing back, in the window.** The first click or key in a browser view takes
    the browser over and reaches the page; the bar purlis draws above the page says the agent is
    paused. Done, or ⌘⇧↩ (Ctrl+Shift+Enter off a Mac), hands it back; nothing else does. While the

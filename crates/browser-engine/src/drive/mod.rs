@@ -109,9 +109,9 @@ pub enum Driver {
     Person,
 }
 
-/// What a frame showed: its page, and which of the page's documents (a number that changes
-/// each time the page loads another). Input aimed at a frame names it, and input whose page
-/// has moved on is dropped.
+/// What a frame showed: its page, and its documents (a number that changes each time the page
+/// or any frame inside it loads another document, or a frame in it goes). Input aimed at a frame
+/// names it, and input whose page has moved on, in any of its frames, is dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Aim {
     pub page: PageId,

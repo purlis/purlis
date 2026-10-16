@@ -1292,3 +1292,48 @@ describe("the persona view on a read-only project (#826)", () => {
     expect(ran).toEqual([]);
   });
 });
+
+describe("a browser view's bar (#2014)", () => {
+  /** The host's side of a browser view: who drives it, and what the person's input comes to. */
+  function browserHost(personDrives: boolean, input: unknown = { outcome: "taken" }) {
+    mockIPC((cmd) => {
+      if (cmd === "watch_browser")
+        return { view: 4, width: 1280, height: 800, person_drives: personDrives };
+      if (cmd === "browser_input") return input;
+      return null;
+    });
+  }
+  const BROWSER: ViewRef = { from: null, view: "browser", key: "B1" };
+
+  it("says a click or a key takes the browser over while the agent drives, and offers no Done", async () => {
+    browserHost(false);
+    draw(BROWSER, { title: "Browser" });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Click or type in the page to take it over.",
+    );
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Page size" })).toBeInTheDocument();
+  });
+
+  it("says the agent is paused while the person drives, with Done beside it", async () => {
+    browserHost(true);
+    draw(BROWSER, { title: "Browser" });
+
+    expect(await screen.findByRole("button", { name: "Done" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "You are driving this browser. The agent is paused until you press Done.",
+    );
+  });
+
+  it("says in the bar why a key of the person's was held back", async () => {
+    const why = "the page cannot tell which field has the focus";
+    browserHost(true, { outcome: "refused", why });
+    draw(BROWSER, { title: "Browser" });
+    await screen.findByRole("button", { name: "Done" });
+
+    fireEvent.keyDown(screen.getByTestId("browser-surface"), { key: "x", code: "KeyX" });
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(why));
+  });
+});

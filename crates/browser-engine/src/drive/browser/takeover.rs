@@ -12,7 +12,7 @@
 //! the page showed while the person drove is never handed to the agent.
 //!
 //! **The person's input** ([`Browser::person_input`]) is taken only while they drive, and only
-//! where it was aimed: at the page and document a frame showed them. What the person types or
+//! where it was aimed: at the page and documents a frame showed them. What the person types or
 //! pastes stays out of every answer the agent gets:
 //!
 //! - Before a key that may change a field reaches the page, the element that has the focus is

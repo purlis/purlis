@@ -135,6 +135,9 @@ struct Page {
     /// What blanked elements of this page held, kept out of every answer while the page lasts,
     /// whatever became of the elements.
     scrubbed: Vec<String>,
+    /// What the page shows, as a number that changes each time it or any frame in it loads
+    /// another document, or a frame in it goes (#2014): the document a frame's aim names.
+    shows: u64,
     frames: HashMap<String, Frame>,
 }
 
@@ -291,10 +294,10 @@ impl State {
     /// What a frame of `target`'s page shows now: the page, and its main frame's document.
     fn aim(&self, target: &str) -> Option<Aim> {
         let page = self.page(target)?;
-        let main = page.frames.get(target)?;
+        page.frames.get(target)?;
         Some(Aim {
             page: page.id.clone(),
-            document: main.generation,
+            document: page.shows,
         })
     }
 
@@ -353,6 +356,7 @@ impl State {
         entry.name = text("name");
         entry.url = text("url");
         if navigated {
+            page.shows = generation;
             entry.generation = generation;
             if id == target {
                 page.url = text("url");
@@ -364,6 +368,8 @@ impl State {
 
     /// Forgets `frame` and every frame inside it.
     fn frame_gone(&mut self, target: &str, frame: &str) {
+        self.generations += 1;
+        let shows = self.generations;
         let Some(page) = self.page_mut(target) else {
             return;
         };
@@ -382,6 +388,7 @@ impl State {
         for id in &gone {
             page.frames.remove(id);
         }
+        page.shows = shows;
         for id in &gone {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
@@ -1781,6 +1788,7 @@ impl Inner {
                                 title: String::new(),
                                 settle: Settle::new(now),
                                 scrubbed: kept,
+                                shows: 0,
                                 frames: HashMap::new(),
                             });
                         }

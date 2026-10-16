@@ -44,20 +44,30 @@ function useWindowSeen(): boolean {
   return seen;
 }
 
+/** What waits to be sent: one event of the person's, or their hand-back, after every event
+ *  before it. */
+type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
+
 /**
  * Sends the person's events to the browser one at a time, in the order they came: a key's down
- * before its up, a press before its release. A move waiting behind another is replaced by the
- * newer one, so a quick mouse never queues a backlog.
+ * before its up, a press before its release, and the hand-back after every key typed before it.
+ * A move waiting behind another is replaced by the newer one, so a quick mouse never queues a
+ * backlog. `clear` drops whatever waits: a view watched again starts with nothing queued, so
+ * nothing aimed at an earlier frame is sent after it.
  */
 function useSender(program: string, said: (why: string | undefined) => void) {
-  const waiting = useRef<BrowserInput[]>([]);
+  const waiting = useRef<Queued[]>([]);
   const sending = useRef(false);
   const next = useCallback(async () => {
     if (sending.current) return;
     sending.current = true;
     try {
-      for (let input = waiting.current.shift(); input; input = waiting.current.shift()) {
-        const sent = await commands.browserInput(program, input);
+      for (let one = waiting.current.shift(); one; one = waiting.current.shift()) {
+        if ("handBack" in one) {
+          await one.handBack();
+          continue;
+        }
+        const sent = await commands.browserInput(program, one.input);
         if (sent.status === "error") said(sent.error);
         else if (sent.data.outcome === "refused") said(sent.data.why);
         // A missed one was aimed at a page that has moved on: it is dropped, as it should be.
@@ -66,18 +76,32 @@ function useSender(program: string, said: (why: string | undefined) => void) {
       sending.current = false;
     }
   }, [program, said]);
-  return useCallback(
+  const send = useCallback(
     (input: BrowserInput) => {
       const queue = waiting.current;
       const last = queue[queue.length - 1];
-      const aMove = (one: BrowserInput | undefined) =>
-        one?.kind === "mouse" && one.action === "moved";
-      if (aMove(input) && aMove(last)) queue[queue.length - 1] = input;
-      else queue.push(input);
+      const aMove = (one: Queued | undefined) =>
+        one !== undefined &&
+        "input" in one &&
+        one.input.kind === "mouse" &&
+        one.input.action === "moved";
+      if (aMove({ input }) && aMove(last)) queue[queue.length - 1] = { input };
+      else queue.push({ input });
       void next();
     },
     [next],
   );
+  const after = useCallback(
+    (handBack: () => Promise<void>) => {
+      waiting.current.push({ handBack });
+      void next();
+    },
+    [next],
+  );
+  const clear = useCallback(() => {
+    waiting.current = [];
+  }, []);
+  return { send, after, clear };
 }
 
 /**
@@ -111,7 +135,7 @@ export function BrowserView({ program }: { program: string }) {
   const windowSeen = useWindowSeen();
   const seen = inFront && windowSeen;
   const mac = onAMac();
-  const send = useSender(program, setSaid);
+  const { send, after, clear } = useSender(program, setSaid);
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -120,6 +144,7 @@ export function BrowserView({ program }: { program: string }) {
 
   useEffect(() => {
     if (!seen) return;
+    clear();
     let gone = false;
     let view: number | undefined;
     const draw = latestOnly((jpeg) =>
@@ -147,6 +172,10 @@ export function BrowserView({ program }: { program: string }) {
         return;
       }
       page.current = { width: watched.data.width, height: watched.data.height };
+      const sized = SIZE_PRESETS.find(
+        (one) => one.width === watched.data.width && one.height === watched.data.height,
+      );
+      if (sized !== undefined) setSize(sized.id);
       drivingNow(watched.data.person_drives);
       setShown({ kind: "live", width: watched.data.width, height: watched.data.height });
     });
@@ -154,7 +183,7 @@ export function BrowserView({ program }: { program: string }) {
       gone = true;
       if (view !== undefined) void commands.unwatchBrowser(program, view);
     };
-  }, [program, seen, drivingNow]);
+  }, [program, seen, drivingNow, clear]);
 
   /** Takes the browser over, once: answers whether the person drives it now. */
   const takeOver = useCallback((): Promise<boolean> => {
@@ -172,8 +201,10 @@ export function BrowserView({ program }: { program: string }) {
     return taking.current;
   }, [program, drivingNow]);
 
+  // After every key already typed: none of them is lost to the hand-back.
   const handBack = useCallback(() => {
-    void commands.handBackBrowser(program).then((back) => {
+    after(async () => {
+      const back = await commands.handBackBrowser(program);
       if (back.status === "error") {
         setSaid(back.error);
         return;
@@ -181,7 +212,7 @@ export function BrowserView({ program }: { program: string }) {
       setSaid(undefined);
       drivingNow(false);
     });
-  }, [program, drivingNow]);
+  }, [after, program, drivingNow]);
 
   // While the person drives, the palette's pass-through key, pressed again, reaches the page.
   useEffect(() => {

@@ -245,9 +245,9 @@ pub enum Driver {
     Person,
 }
 
-/// What a frame of a browser showed (1.12): its page (`p1`), and which of the page's documents,
-/// a number that changes each time the page loads another. Input names the frame it was aimed
-/// at by it, and the browser drops input whose page has moved on.
+/// What a frame of a browser showed (1.12): its page (`p1`), and its documents, a number that
+/// changes each time the page or any frame inside it loads another document. Input names the
+/// frame it was aimed at by it, and the browser drops input whose page has moved on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Aim {
     pub page: String,
