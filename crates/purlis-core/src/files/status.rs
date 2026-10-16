@@ -1083,7 +1083,7 @@ mod tests {
     #[test]
     fn a_status_compares_the_working_tree_on_every_core() {
         let cores = std::thread::available_parallelism().map_or(1, usize::from);
-        assert_eq!(gix::features::parallel::num_threads(None), cores);
+        assert_eq!(gix::parallel::num_threads(None), cores);
     }
 
     /// #1153 review: the compare runs on every core, but never on more than eight threads,

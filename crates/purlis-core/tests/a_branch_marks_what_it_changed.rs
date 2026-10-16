@@ -865,7 +865,7 @@ fn resident() -> u64 {
 
 #[cfg(unix)]
 #[test]
-fn an_ignore_file_linked_to_an_endless_device_fails_the_read_and_never_swells_charter() {
+fn an_ignore_file_linked_to_an_endless_device_is_never_opened_and_never_swells_charter() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("thing");
     let piece = cut(&f, "piece");
@@ -879,11 +879,40 @@ fn an_ignore_file_linked_to_an_endless_device_fails_the_read_and_never_swells_ch
     let root = files::root(&reader, &f.plane, branch(&f)).unwrap();
     let matters = root.matters(&reader, &[root.path().join("sub/new.txt")]);
 
-    assert!(status.is_err(), "{status:?}");
-    // A read that could not answer counts as one that matters: the markers are read again.
+    // As git does, a `.gitignore` that is a link is never followed: the links are marked as
+    // the new files they are, and what they point at ignores nothing.
+    let status = status.unwrap();
+    let marked: Vec<&str> = status
+        .changes
+        .iter()
+        .map(|change| change.path.as_str())
+        .collect();
+    assert_eq!(marked, [".gitignore", "sub/.gitignore"], "{status:?}");
     assert!(matters);
     let grew = resident().saturating_sub(before);
     assert!(grew < 64 * 1024 * 1024, "charter grew by {grew} bytes");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_ignore_file_linked_to_a_file_outside_the_branch_ignores_nothing() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, "piece");
+    let outside = f.plane.join("ignores-everything");
+    std::fs::write(&outside, "*\n").unwrap();
+    std::os::unix::fs::symlink(&outside, piece.join(".gitignore")).unwrap();
+    write(&piece, "new.txt", "new\n");
+
+    let status = files::status(&reader(), &f.plane, branch(&f)).unwrap();
+
+    // The link is never followed, so the `*` it points at is never applied.
+    let marked: Vec<&str> = status
+        .changes
+        .iter()
+        .map(|change| change.path.as_str())
+        .collect();
+    assert_eq!(marked, [".gitignore", "new.txt"], "{status:?}");
 }
 
 #[cfg(unix)]
