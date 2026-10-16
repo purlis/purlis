@@ -341,6 +341,21 @@ fn ask_operator_on_a_harness_that_cannot_ask_says_so() {
 }
 
 #[test]
+fn ask_operator_pointed_at_a_browser_asks_the_app_and_never_the_harness() {
+    // #2015: a browser that needs the person is the app's Ask, raised at once; the harness's own
+    // prompt is not used, so no elicitation goes out. With no app, it says there is none.
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(true);
+    let said = server.call(
+        "ask_operator",
+        json!({ "question": "The page wants the letters", "browser": "b1" }),
+    );
+    assert_eq!(said["isError"], true, "{said}");
+    assert!(text(&said).contains("no browser"), "{said}");
+}
+
+#[test]
 fn no_answer_carries_the_chat_s_token() {
     // The server is handed the chat's whole environment by Claude Code and opencode; nothing
     // it answers repeats it.

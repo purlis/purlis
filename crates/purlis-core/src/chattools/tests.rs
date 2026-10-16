@@ -1040,3 +1040,16 @@ fn an_acp_session_s_server_is_handed_each_scope_variable_once_with_the_chat_s_va
         ])
     );
 }
+
+#[test]
+fn ask_operator_may_be_pointed_at_one_of_the_chats_browsers_by_its_name() {
+    // #2015: the one ask tool, pointed at a browser that needs the person.
+    let ask = TOOLS
+        .iter()
+        .find(|tool| tool.name == ASK_OPERATOR)
+        .expect("the ask tool");
+    let schema = (ask.schema)();
+    assert_eq!(schema["required"], json!(["question"]));
+    assert_eq!(schema["properties"]["browser"]["type"], "string");
+    assert!(ask.description.contains("browser"), "{}", ask.description);
+}

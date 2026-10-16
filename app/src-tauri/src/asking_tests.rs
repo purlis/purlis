@@ -105,6 +105,8 @@ struct World {
     sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
     browsers: Vec<crate::chatbrowsers::Waits>,
+    /// The browsers whose chat asked the person to take them over (#2015).
+    needs_you: Vec<crate::browserneedsyou::Waiting>,
 }
 
 impl World {
@@ -126,6 +128,7 @@ impl World {
             sign_ins: Vec::new(),
             sandbox_only: None,
             browsers: Vec::new(),
+            needs_you: Vec::new(),
         }
     }
 
@@ -154,6 +157,7 @@ impl World {
             sandbox_only: self.sandbox_only.clone(),
             proposals: Vec::new(),
             browsers: self.browsers.clone(),
+            needs_you: self.needs_you.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -1282,4 +1286,51 @@ fn an_administrators_policy_forbids_always_for_this_persona_on_the_browser_ask()
     assert_eq!(ids(&ask), ["project", "open-web", "keep"]);
     assert_eq!(ask.options[0].preselected, Some(true));
     assert_eq!(ask.options[0].label, "This project's sites (qa uses this)");
+}
+
+#[test]
+fn a_browser_that_needs_the_person_is_an_ask_whose_one_answer_takes_it_over() {
+    // #2015: its source is the browser, its words the agent's, marked as the chat's, and its
+    // one answer opens the browser taken over.
+    let mut world = World::new();
+    world.queue = vec![8];
+    world.names = vec![(8, "qa 8")];
+    world.needs_you = vec![crate::browserneedsyou::Waiting {
+        session: 8,
+        browser: "b1".into(),
+        program: "01J9BRWSR000000000000000P1".into(),
+        question: "The page asks for the letters in the picture".into(),
+        since: 50,
+    }];
+    world.since = vec![("browser-needs-you:01J9BRWSR000000000000000P1", 50)];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.len(),
+        1,
+        "its wait is that Ask, and no question beside it"
+    );
+    let ask = &asks[0];
+    assert_eq!(ask.source, AskSource::BrowserNeedsYou);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::TakeOver {
+            program: "01J9BRWSR000000000000000P1".into()
+        }
+    );
+    assert_eq!(
+        ask.says,
+        "Needs you in its browser b1. The chat says: The page asks for the letters in the \
+         picture"
+    );
+    assert_eq!(ask.chain, ["qa 8"]);
+    assert_eq!(
+        ask.options
+            .iter()
+            .map(|one| (one.id.as_str(), one.label.as_str(), one.allows))
+            .collect::<Vec<_>>(),
+        [("take-over", "Take over", true)]
+    );
+    assert_eq!(ask.since, Some(50));
 }

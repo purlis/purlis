@@ -14,7 +14,8 @@
  *   ({@link resumeUpdates});
  * - a sandbox change that asks nothing: a block that is no host ask ({@link sandboxUpdates});
  * - a dispatch refused while nobody was there (#1507): the away list ({@link awayUpdates});
- * - a Smart close that stopped without its record (SI-8f) ({@link smartCloseUpdates}).
+ * - a Smart close that stopped without its record (SI-8f) ({@link smartCloseUpdates});
+ * - an Ask about a chat's browser that ended with the browser (#2015) ({@link browserAskUpdates}).
  *
  * **Kept a day on this machine, never in a project** (`note_inbox_updates`, I-8): the window
  * notes what it derived, by a key of its source's own, and the core keeps it in purlis's data
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { awaySaid } from "./AwayRefusals";
 import {
   commands,
+  type AskEnded,
   type AwayRefusal,
   type ChatBlocked,
   type DoctorReport,
@@ -77,6 +79,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "report-undelivered": "Report not delivered",
   "commit-refused": "Commit refused",
   "root-update-refused": "Asks you to update the project",
+  "browser-ask-ended": "Browser ended",
 };
 
 /**
@@ -190,6 +193,25 @@ export function awayUpdates(refused: readonly AwayRefusal[]): UpdateNoted[] {
     session: null,
     chain: [],
     says: awaySaid(one),
+  }));
+}
+
+/**
+ * **An Ask about a chat's browser that ended with the browser** (#2015): the chat asked the
+ * person to take it over, and the browser ended first (closed, narrowed, its chat closed, Stop
+ * all). One update an Ask, at its end, in the core's words.
+ */
+export function browserAskUpdates(
+  ended: readonly AskEnded[],
+  nameOf: (session: number) => string,
+): UpdateNoted[] {
+  return ended.map((one) => ({
+    key: `browser-ask:${one.session}:${one.browser}:${one.at}`,
+    kind: "browser-ask-ended",
+    at: one.at,
+    session: one.session,
+    chain: [nameOf(one.session)],
+    says: one.says,
   }));
 }
 

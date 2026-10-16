@@ -238,3 +238,110 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
 
     assert!(again.person_drives);
 }
+
+#[test]
+fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finished() {
+    // #2015, over a real host whose browser is a stand-in: the chat's browser opens the fixture
+    // site's CAPTCHA page, the chat asks the person through `ask_operator` pointed at it, the
+    // person takes it over, types, and hands it back with Done.
+    use crate::browserneedsyou::{self, NeedsYou};
+    use crate::chatbrowsers::{AsPersona, ChatBrowsers, Driver};
+    use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
+    use purlis_core::state::State;
+    use purlis_session_protocol::browsing::{Act, BrowserReach};
+
+    let window = window();
+    let driver: Arc<dyn Driver> =
+        Arc::new(WindowBrowsers::new(Arc::clone(&window.browsers.connection)));
+    let chats = ChatBrowsers::default();
+    let needs = NeedsYou::default();
+    let calls = std::sync::atomic::AtomicU32::new(0);
+    let call = |asked: Browsing| {
+        let browse = BrowseAsk {
+            chat: 4,
+            browser: Some("b1".into())
+                .filter(|_| !matches!(asked, Browsing::Act(Act::Open { .. }))),
+            call_id: format!(
+                "c-{}",
+                calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ),
+            asked,
+        };
+        if let Some(answer) = browserneedsyou::answered_first(&chats, &needs, &browse, 1000) {
+            return answer;
+        }
+        chats
+            .answer(
+                Some(&driver),
+                &window.root,
+                &browse,
+                &BrowserReach::default,
+                &AsPersona::default,
+                1000,
+            )
+            .0
+    };
+    let captcha = || {
+        Browsing::Act(Act::Open {
+            address: "http://fixture.test/captcha.html".into(),
+        })
+    };
+    call(captcha());
+    assert!(chats.allow(4, false));
+    assert!(matches!(call(captcha()), Answer::Browsed { .. }));
+    let (_, program) = chats.which(4, None).expect("the chat's browser");
+
+    let asked = call(Browsing::NeedsYou {
+        question: "The page asks for the letters in the picture".into(),
+    });
+    assert!(
+        matches!(&asked, Answer::Browsed { browsed, .. } if browsed.note.as_deref().is_some_and(|note| note.contains("Needs you"))),
+        "{asked:?}"
+    );
+    assert_eq!(
+        needs.waiting().len(),
+        1,
+        "one Ask, whose source is the browser"
+    );
+
+    // The person takes it over from the Ask and types the code.
+    window.browsers.take_over(&program).unwrap();
+    let screen = window.started.started()[0].clone();
+    window
+        .browsers
+        .watch(&program, BrowserViewRole::Focused, Box::new(|_, _| {}))
+        .unwrap();
+    screen.shown().document = 1;
+    let typed = BrowserInput::Key {
+        aim: "p1:1".to_owned(),
+        action: KeyAct::Down,
+        key: "Q".into(),
+        physical: "KeyQ".into(),
+        key_code: 81,
+        modifiers: 0,
+    };
+    window.browsers.input(&program, typed).unwrap();
+    window.browsers.hand_back(&program).unwrap();
+
+    let back = needs.handed_back(&program).expect("the Ask waited");
+    let sent: Mutex<Vec<String>> = Mutex::default();
+    browserneedsyou::tell(
+        &crate::vaultroute::Refusals::default(),
+        &back,
+        || (State::Waiting, false),
+        |_, text| {
+            sent.lock().unwrap().push(text.to_owned());
+            Ok(())
+        },
+        |_| panic!("a waiting chat is told now"),
+    );
+    assert_eq!(
+        *sent.lock().unwrap(),
+        [browserneedsyou::finished(&back).line()]
+    );
+    assert!(needs.waiting().is_empty());
+    assert!(
+        matches!(call(Browsing::Act(Act::Pages)), Answer::Browsed { .. }),
+        "the browser is the chat's again"
+    );
+}

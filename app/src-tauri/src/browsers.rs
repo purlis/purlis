@@ -646,21 +646,30 @@ pub async fn take_over_browser(app: tauri::AppHandle, program: String) -> Result
     }
 }
 
-/// The person hands browser `program` back to its chat (#2014): Done.
+/// The person hands browser `program` back to its chat (#2014): Done. An Ask that asked them
+/// to take it over ends, and its chat is told they finished, never what they did (#2015).
 #[tauri::command]
 #[specta::specta]
-pub async fn hand_back_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+pub async fn hand_back_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    program: String,
+) -> Result<(), String> {
+    // The Ask that asked the person to take it over ends, and its chat is woken (#2015).
+    let projects = planes.every_project();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("handing a browser back", move || {
-            browsers.hand_back(&program)
+            browsers.hand_back(&program)?;
+            crate::browserneedsyou::handed_back(&projects, &program);
+            Ok(())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program);
+        let _ = (app, program, projects);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }
@@ -715,15 +724,26 @@ pub async fn size_browser(
 /// Ends browser `program`: its engine and everything it started.
 #[tauri::command]
 #[specta::specta]
-pub async fn close_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+pub async fn close_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    program: String,
+) -> Result<(), String> {
+    // An Ask about it ends with it, with an Update (#2015).
+    let projects = planes.every_project();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
-        crate::off_the_window("ending a browser", move || browsers.close(&program)).await
+        crate::off_the_window("ending a browser", move || {
+            browsers.close(&program)?;
+            crate::browserneedsyou::program_ended(&projects, &program);
+            Ok(())
+        })
+        .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program);
+        let _ = (app, program, projects);
         Ok(())
     }
 }
@@ -744,7 +764,13 @@ pub fn let_go_of(app: &tauri::AppHandle, root: &std::path::Path) {
 pub fn stop_every_browser(app: &tauri::AppHandle) -> usize {
     #[cfg(unix)]
     {
-        browsers(app).map_or(0, |browsers| browsers.stop_every_browser())
+        use tauri::Manager;
+        let stopped = browsers(app).map_or(0, |browsers| browsers.stop_every_browser());
+        // Every Ask about a browser ends with it, each with an Update (#2015).
+        if let Some(planes) = app.try_state::<crate::planes::Planes>() {
+            crate::browserneedsyou::all_ended(&planes.every_project());
+        }
+        stopped
     }
     #[cfg(not(unix))]
     {

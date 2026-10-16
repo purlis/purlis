@@ -1134,7 +1134,10 @@ export const commands = {
 	 *  words until [`hand_back_browser`], and a call in flight is cut.
 	 */
 	takeOverBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("take_over_browser", { program })),
-	/**  The person hands browser `program` back to its chat (#2014): Done. */
+	/**
+	 *  The person hands browser `program` back to its chat (#2014): Done. An Ask that asked them
+	 *  to take it over ends, and its chat is told they finished, never what they did (#2015).
+	 */
 	handBackBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("hand_back_browser", { program })),
 	/**  One click, move, wheel or key of the person's in browser `program`, which they drive (#2014). */
 	browserInput: (program: string, input: BrowserInput) => typedError<InputOutcome, string>(__TAURI_INVOKE("browser_input", { program, input })),
@@ -3443,6 +3446,12 @@ export type AnswerPath =
  *  Keep off, with the person's reason (#2013).
  */
 { via: "browser" } | 
+/**
+ *  Take over sends `take_over_browser` for browser `program`, the session host's lease,
+ *  then opens its view, so the person's first click or key reaches the page (#2015). The
+ *  Ask ends on their Done (`hand_back_browser`), or with the browser.
+ */
+{ via: "take-over"; program: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3492,6 +3501,21 @@ export type Ask = {
 	changes: string[],
 	/**  Whether this is a first approval rather than a re-ask, so the dialog can say which. */
 	first: boolean,
+};
+
+/**
+ *  **An Ask about a chat's browser that ended with the browser**, as the window is told it: the
+ *  Inbox keeps it as an Update.
+ */
+export type AskEnded = {
+	plane: PlaneId,
+	session: number,
+	/**  The browser, by the name its chat knows it by. */
+	browser: string,
+	/**  When it ended, in seconds since 1970. */
+	at: number,
+	/**  What the Update says, in purlis's words. */
+	says: string,
 };
 
 /**  One ask policy takes off one chat's tab ([`AskOffer::locked_for`]). */
@@ -3567,7 +3591,12 @@ export type AskSource =
  */
 "sandbox-only" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
-"browser";
+"browser" | 
+/**
+ *  A chat's browser whose page needs the person (#2015): the chat asked them to take it
+ *  over, through `ask_operator` pointed at it.
+ */
+"browser-needs-you";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -9925,7 +9954,9 @@ export type UpdateKind =
  *  purlis refused a chat a git command that would rewrite the project's root from another
  *  commit, so bringing the remote's commits in is the person's (qw348).
  */
-"root-update-refused";
+"root-update-refused" | 
+/**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
+"browser-ask-ended";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

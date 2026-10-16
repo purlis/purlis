@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./asks";
 import type { Shown } from "./bindings";
+import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { PROFILE_SIGN_IN } from "./settings/links";
 
@@ -136,6 +137,16 @@ const BROWSER: Shown = {
   source: "browser",
   chain: ["steward 8"],
   answer: { via: "browser" },
+};
+
+const NEEDS_YOU: Shown = {
+  session: 8,
+  ask: "browser-needs-you:P1",
+  says: "Needs you in its browser b1. The chat says: The page asks for the letters",
+  options: [{ id: "take-over", label: "Take over", allows: true }],
+  source: "browser-needs-you",
+  chain: ["qa 8"],
+  answer: { via: "take-over", program: "P1" },
 };
 
 const QUESTION: Shown = {
@@ -302,6 +313,39 @@ describe("answering through the path an ask names", () => {
       ["allow_chat_browser", { plane: PLANE, session: 8, openWeb: true, always: true }],
       ["keep_chat_browser_off", { plane: PLANE, session: 8, reason: "not for this task" }],
     ]);
+  });
+
+  it("takes a browser that needs the person over, then opens its view, and the Ask waits on for their Done (#2015)", async () => {
+    const calls = sent({ take_over_browser: null });
+    const opened: OpenBrowserAsk[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent<OpenBrowserAsk>).detail);
+    window.addEventListener(OPEN_BROWSER_ASK, heard);
+    try {
+      expect(await answerTaken(PLANE, NEEDS_YOU, "take-over")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+    } finally {
+      window.removeEventListener(OPEN_BROWSER_ASK, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["take_over_browser", { program: "P1" }],
+    ]);
+    expect(opened).toEqual([{ plane: PLANE, program: "P1" }]);
+  });
+
+  it("opens no view of a browser the host would not hand over (#2015)", async () => {
+    sent({ take_over_browser: new Error("this browser has ended") });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push(event);
+    window.addEventListener(OPEN_BROWSER_ASK, heard);
+    try {
+      expect(await answerThrough(PLANE, NEEDS_YOU, "take-over")).toBe("this browser has ended");
+    } finally {
+      window.removeEventListener(OPEN_BROWSER_ASK, heard);
+    }
+    expect(opened).toEqual([]);
   });
 
   it("says the source's own sentence when the source refuses", async () => {

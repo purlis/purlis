@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type {
+  AskEnded,
   AwayRefusal,
   ChatBlocked,
   DoctorReport,
@@ -20,6 +21,7 @@ import {
   KIND_SAID,
   LIVE,
   awayUpdates,
+  browserAskUpdates,
   doctorUpdates,
   listed,
   reasonUpdates,
@@ -205,6 +207,29 @@ describe("each source, said as updates", () => {
     expect(KIND_SAID[said[0].kind]).toBe("Asks you to update the project");
     expect(said[0].says).toContain("Update, in Saving");
     expect(LIVE.has(said[0].kind)).toBe(true);
+  });
+
+  it("makes an Ask that ended with its browser an update about its chat, standing its day (#2015)", () => {
+    const ended: AskEnded = {
+      plane: "/home/dev/plane",
+      session: 4,
+      browser: "b1",
+      at: 1_800_000_100,
+      says: "Its browser b1 ended, so what it asked you to do there ended too",
+    };
+    const said = browserAskUpdates([ended], nameOf);
+    expect(said).toEqual([
+      {
+        key: "browser-ask:4:b1:1800000100",
+        kind: "browser-ask-ended",
+        at: 1_800_000_100,
+        session: 4,
+        chain: [nameOf(4)],
+        says: "Its browser b1 ended, so what it asked you to do there ended too",
+      },
+    ]);
+    expect(KIND_SAID["browser-ask-ended"]).toBe("Browser ended");
+    expect(LIVE.has("browser-ask-ended")).toBe(false);
   });
 
   it("makes a Smart close that stopped an update about its chat", () => {
