@@ -558,7 +558,7 @@ mod tests {
         let alive = dir.path().join("alive");
         let script = format!(
             "if [ -p /dev/fd/2 ]; then held=pipe; else held=file; fi; sleep 2; \
-             echo late >&2; echo late again >&2; echo \"$held\" > '{}'",
+             echo late >&2; echo late again >&2; echo \"$held\" > '{0}.part'; mv '{0}.part' '{0}'",
             alive.display()
         );
 

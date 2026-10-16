@@ -415,12 +415,15 @@ mod tests {
     #[test]
     fn an_open_synchronized_update_reports_the_deadline_it_is_given_up_on() {
         let mut term = engine();
+        // Read before the update opens: a loaded machine can let its whole wait pass between
+        // the opening and any later look at the clock.
+        let opened_after = Instant::now();
 
         term.advance(b"\x1b[?2026h\x1b[H\x1b[2Jhalf a frame");
 
         let deadline = term.open_update().expect("the update is open");
         assert!(
-            deadline > Instant::now(),
+            deadline > opened_after,
             "an update just opened is not already past its deadline"
         );
     }
