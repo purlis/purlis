@@ -407,3 +407,48 @@ fn a_stand_in_the_chat_bound_at_the_socket_is_told_nothing_and_allows_nothing() 
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// #1040: the same hook inside purlis's own Linux sandbox, which makes the hook's connection
+/// itself and lets nothing inside it read the host's descriptors, still asks the window, and
+/// the window's Allow is still printed.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_hook_inside_purlis_s_linux_sandbox_asks_the_window_the_same() {
+    let host = host();
+    let socket = host.path.canonicalize().expect("the socket");
+    let profile = format!(
+        "(version 1)\n(deny default)\n(allow file-read*)\n\
+         (allow network-outbound (remote unix-socket (path-literal \"{}\")))\n\
+         (allow file-write* (literal \"/dev/null\"))\n",
+        socket.display()
+    );
+    let words = purlis_linux_sandbox::line(
+        &profile,
+        CHARTER.to_owned(),
+        vec!["hook".to_owned(), "permissionrequest".to_owned()],
+    );
+    let mut child = support::command(CHARTER)
+        .args(&words)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", host.dir.path())
+        .env(SOCKET_ENV, &host.path)
+        .env(CHAT_ENV, "7")
+        .env(TOKEN_ENV, &host.token)
+        .process_group(0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("charter runs");
+    stand_in::feed(&mut child, payload().to_string().as_bytes());
+    let raised = waiting(&host.hooks);
+    host.hooks
+        .answer("7", &raised.id, "allow", the_window(), Instant::now())
+        .expect("the first answer applies");
+    let out = child.wait_with_output().expect("the hook ends");
+
+    let said: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|_| panic!("one line of JSON: {}", String::from_utf8_lossy(&out.stderr)));
+    assert_eq!(said["hookSpecificOutput"]["decision"]["behavior"], "allow");
+}

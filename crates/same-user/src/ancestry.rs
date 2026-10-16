@@ -405,8 +405,38 @@ pub fn admit_host(
     if !ancestors.contains(&pid) {
         return Err(NotOurHost::NotAnAncestor { pid });
     }
-    let holds = holds_a_socket_at(pid, path, run).map_err(NotOurHost::NoSocketTable)?;
+    let holds = match holds_a_socket_at(pid, path, run) {
+        Ok(holds) => holds,
+        // **Inside purlis's own Linux sandbox** (#1040) no process outside it may have its
+        // descriptors read (Landlock keeps a sandboxed process from every right to trace one
+        // outside). There the listener is told by the pidfd the kernel gives for the far end:
+        // a pidfd names one process for its whole life and is never handed to another, so the
+        // listener is the ancestor `pid` names, alive, and no process given its number since.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        Err(why) if why.kind() == io::ErrorKind::PermissionDenied => {
+            listener_is(socket, pid).map_err(NotOurHost::NoSocketTable)?
+        }
+        Err(why) => return Err(NotOurHost::NoSocketTable(why)),
+    };
     judge(pid, &ancestors, holds)
+}
+
+/// Whether the process at the far end of `socket` is process `pid` now, by the pidfd the kernel
+/// gives for it (`SO_PEERPIDFD`, Linux 6.5): `false` where that process has ended.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn listener_is(socket: &impl AsFd, pid: u32) -> io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    let pidfd = nix::sys::socket::getsockopt(socket, nix::sys::socket::sockopt::PeerPidfd)
+        .map_err(io::Error::from)?;
+    let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{}", pidfd.as_raw_fd()))?;
+    Ok(pidfd_pid(&info) == Some(i64::from(pid)))
+}
+
+/// The process a pidfd's `/proc/self/fdinfo` text names: `-1` once it has ended.
+pub fn pidfd_pid(info: &str) -> Option<i64> {
+    info.lines()
+        .find_map(|line| line.strip_prefix("Pid:"))
+        .and_then(|it| it.trim().parse().ok())
 }
 
 /// The decision [`admit_host`] makes, given what it read: the listener's pid, this process's
@@ -621,6 +651,31 @@ fn resolves_to(name: &str, target: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pidfd_names_its_process_until_it_ends() {
+        assert_eq!(
+            pidfd_pid(
+                "pos:\t0\nflags:\t02000002\nmnt_id:\t15\nino:\t1057\nPid:\t4242\nNSpid:\t4242\n"
+            ),
+            Some(4242)
+        );
+        assert_eq!(pidfd_pid("pos:\t0\nPid:\t-1\nNSpid:\t-1\n"), Some(-1));
+        assert_eq!(pidfd_pid("pos:\t0\n"), None);
+    }
+
+    /// The listener of a socket this process connected to is told by its pidfd: this test's
+    /// own process, listening, and nobody once it has gone.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn the_far_end_of_a_socket_is_told_by_its_pidfd() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let path = dir.path().join("s");
+        let _listening = std::os::unix::net::UnixListener::bind(&path).expect("a socket");
+        let socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+        assert!(listener_is(&socket, std::process::id()).expect("read"));
+        assert!(!listener_is(&socket, 1).expect("read"));
+    }
 
     /// 50 → 40 → 30 (a chat's program) → 20 → 1; 60 → 1, in session 30, its parent gone.
     fn tree(pid: u32) -> Option<u32> {
