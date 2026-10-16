@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792137327886,
+  "lastUpdate": 1792138749922,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13650,6 +13650,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9908085,
             "unit": "ms",
             "extra": "median of 5 runs: 101.590, 101.703, 101.991, 102.294, 102.444 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f2983b73cc48942305e96abdeeeae741f6c19471",
+          "message": "A start put aside at once leaves nothing in the event log (#2252) (#2253)\n\n* A start put aside at once leaves nothing in the event log (#2252)\n\nA held start (#2250) whose chat's last run was unsandboxed writes its\ntrust.sandbox.on once the start goes on, just before its run.started,\nso the start put aside writes none and the start in its place writes\nit once.\n\nThe host tells the recorder a held start was taken back\n(Recorder::taken_back). Its run is never said, and later lines from\nthat program are recorded with no chat or run under their number, as\na line of a chat the log does not know is. A run a line of it already\nsaid is kept.\n\na_held_run_taken_back_writes_nothing now begins another number after\nthe held one, as the host's retry does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Hold a start's trust event with its held run (#2252)\n\nThe sandbox coming back on for a held start is held in the event log\nwith its run (HeldTrust, carried by RunSaid::Held), and begun writes it\njust before the run.started, whichever comes first: the host's start\ngoing on or a line of the program. A start taken back drops both.\n\nidentity() answers no identity for a number taken back, so a line or\nan audit naming that number (sandbox grant, applied change, dispatch\ngrant) is recorded with no run and never begins one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Hold only the sandbox back on with a held run, and speak to older hosts (#2252)\n\nEntry::apply holds a trust event only with a held run, and only\ntrust.sandbox.on; any other is refused. A held trust event the log does\nnot keep is warned of, and the run.started is still written.\n\nThe session protocol is 1.9: a record's begin may hold the start's\ntrust event, and taken_back says a held start was put aside. A window\nsends a host before 1.9 the trust event on its own, before the start's\nbegin, and no taken_back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Box the trust event an Entry::Begin holds (#2252)\n\nKeeps Entry small: clippy refuses the size gap it made in an enum that\ncarries an Entry.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T12:05:53+04:00",
+          "tree_id": "25a76b7fb0852bb33e1a0f03ab0538c9202e6db0",
+          "url": "https://github.com/purlis/purlis/commit/f2983b73cc48942305e96abdeeeae741f6c19471"
+        },
+        "date": 1792138748334,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.51113,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.509, 0.511, 0.513, 0.525 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.082847,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.613, 16.971, 17.083, 17.179, 17.492 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.273617,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.643, 104.141, 104.274, 105.368, 106.620 ms"
           }
         ]
       }
