@@ -12,8 +12,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
-import * as Tooltip from "@radix-ui/react-tooltip";
 import { isView, RADIX_FROM, sourceFiles, SRC, withoutComments } from "./guards.testkit";
+import { PACKAGES, partsNotHeld } from "./overlaysHeld.testkit";
 import { drawnOverTheWindow, InTheWindow, useProjectHost } from "./projectShown";
 
 /**
@@ -62,16 +62,6 @@ const sources = sourceFiles(isView).map((file) => ({
   text: withoutComments(readFileSync(join(SRC, file), "utf8"), "ts"),
 }));
 
-/** Each of those packages as Radix exports it, and the window's file for it as it exports it. */
-const PACKAGES: Record<string, object> = {
-  "alert-dialog": AlertDialog,
-  "context-menu": ContextMenu,
-  dialog: Dialog,
-  "dropdown-menu": DropdownMenu,
-  popover: Popover,
-  select: Select,
-  tooltip: Tooltip,
-};
 const OURS = import.meta.glob("./overlays/*.tsx", { eager: true });
 
 /** The packages whose parts are drawn over the window, by the name after `react-`. */
@@ -101,40 +91,26 @@ describe("every way the window draws something over itself", () => {
     expect(direct).toEqual([]);
   });
 
-  it("has a file there for each kind, which holds back every part that draws", () => {
-    for (const kind of OVER) {
-      const text = readFileSync(join(SRC, "overlays", `${kind}.tsx`), "utf8");
-      const held = [
-        ...text.matchAll(
-          /export const (\w+) = (?:holdingOnlyWhileShown|onlyWhileShown)\(Radix\.\1\);/g,
-        ),
-      ].map(([, part]) => part);
-      // The portal everywhere; the content too, for an overlay written without its portal.
-      expect(held).toEqual(expect.arrayContaining(["Portal", "Content"]));
-    }
+  it("has a file there for each kind, and no other", () => {
+    expect(Object.keys(OURS).sort()).toEqual(OVER.map((kind) => `./overlays/${kind}.tsx`).sort());
+    expect(Object.keys(PACKAGES).sort()).toEqual([...OVER].sort());
   });
 
-  it("hands on no part that draws by any other name", () => {
-    // Radix exports every part twice, `Content` and `DialogContent`: the same part. Handed on
-    // whole (`export *`), the long name was a way to write an overlay that asks nothing, and
-    // a project behind could draw it over the window. So each file lists the parts it hands
-    // on, and whatever draws, by whichever name, is either held back or not there.
-    const draws = /(?:Portal|Content|Overlay)$/;
-    for (const kind of OVER) {
-      const text = readFileSync(join(SRC, "overlays", `${kind}.tsx`), "utf8");
-      expect(withoutComments(text, "ts")).not.toMatch(/export \*/);
-      const real = PACKAGES[kind] as Record<string, unknown>;
+  it.each(OVER)(
+    "hands on every part of %s that draws held back, by what it is and not by its name",
+    (kind) => {
+      // Radix exports every part twice, `Content` and `DialogContent`: the same part. Handed on
+      // whole (`export *`), the long name was a way to write an overlay that asks nothing, and a
+      // project behind could draw it over the window. So each file lists the parts it hands on:
+      // Radix's own for a part that does not draw, and for one that does, a part that draws
+      // nothing while its project is behind, which is looked at by drawing it there
+      // (`overlaysHeld.testkit.ts`). A name nobody listed fails, whatever it is called.
       const ours = OURS[`./overlays/${kind}.tsx`] as Record<string, unknown>;
-      expect(Object.keys(ours).length).toBeGreaterThan(3);
-      const asIs = Object.keys(real).filter(
-        (name) => draws.test(name) && ours[name] === real[name],
-      );
-      expect(asIs).toEqual([]);
-      // And every part it does hand on is Radix's own, by Radix's short name.
-      for (const [name, part] of Object.entries(ours))
-        if (!draws.test(name)) expect(part).toBe(real[name]);
-    }
-  });
+      expect(partsNotHeld(PACKAGES[kind], ours)).toEqual([]);
+      // The portal everywhere; the content too, for an overlay written without its portal.
+      expect(Object.keys(ours)).toEqual(expect.arrayContaining(["Portal", "Content"]));
+    },
+  );
 
   it("opens each one through its portal", () => {
     // `<Dialog.Content>` with no `<Dialog.Portal>` around it is drawn in place; held back all
