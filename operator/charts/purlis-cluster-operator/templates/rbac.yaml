@@ -1,0 +1,47 @@
+{{- /*
+Copyright 2026 Purlis
+SPDX-License-Identifier: Apache-2.0
+
+What the operator may do: this ClusterRole and nothing else. No value of the chart reaches it.
+*/ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: purlis-cluster-operator
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+rules:
+  # A team's pools and people's claims: read, and a claim's status written. Claims are read
+  # from the operator's own watch; a pool is read by name when a claim names it.
+  - apiGroups: [runners.purlis.dev]
+    resources: [pools]
+    verbs: [get, list, watch]
+  - apiGroups: [runners.purlis.dev]
+    resources: [claims]
+    verbs: [list, watch]
+  - apiGroups: [runners.purlis.dev]
+    resources: [claims/status]
+    verbs: [patch]
+  # Upstream's objects a claim becomes, applied server-side. Deleting them is the cluster's
+  # garbage collector's, through their owners: the operator holds no delete.
+  - apiGroups: [extensions.agents.x-k8s.io]
+    resources: [sandboxclaims]
+    verbs: [create, list, patch, watch]
+  - apiGroups: [extensions.agents.x-k8s.io]
+    resources: [sandboxtemplates, sandboxwarmpools]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: purlis-cluster-operator
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: purlis-cluster-operator
+subjects:
+  - kind: ServiceAccount
+    name: purlis-cluster-operator
+    namespace: {{ .Release.Namespace }}

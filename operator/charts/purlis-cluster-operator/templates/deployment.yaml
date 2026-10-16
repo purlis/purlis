@@ -1,0 +1,52 @@
+{{- /*
+Copyright 2026 Purlis
+SPDX-License-Identifier: Apache-2.0
+
+The one pod that runs the operator. It meets the restricted Pod Security Standard whatever the
+values: only its image, pull secrets and resources come from them.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: purlis-cluster-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # One operator at a time: the old one stops before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: purlis-cluster-operator
+  template:
+    metadata:
+      labels:
+        {{- include "purlis-cluster-operator.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: purlis-cluster-operator
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: operator
+          image: {{ include "purlis-cluster-operator.image" . }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault

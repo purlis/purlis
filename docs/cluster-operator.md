@@ -57,13 +57,63 @@ Claim says whether it is ready.
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
 
-`operator/deploy/operator.yaml` names the image `ghcr.io/purlis/purlis-cluster-operator:main`,
-a tag, until the published manifests name it by digest (#2281); install it with the image set
-to a digest, as below.
-
 ## Install
 
-Three steps, in order. The definitions and their policy are a step of their own, so a
+A Helm chart, [`operator/charts/purlis-cluster-operator/`](../operator/charts/purlis-cluster-operator/),
+or the plain manifests in [`operator/deploy/`](../operator/deploy/), which are rendered from the
+chart and make exactly the same objects: `operator/tests/the_chart.rs` holds the two equal, and
+the kind tests install the chart and check that the plain manifests would change nothing. The
+chart is not published to any chart repository; install it from a checkout of this repository.
+
+Either way the operator's image is named by its **digest**: the chart refuses an install
+without one, and the plain `operator.yaml` names a placeholder digest no registry holds until
+you set the real one.
+
+### With Helm
+
+Helm 4, the version the tests use. Three steps, in order:
+
+```bash
+# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
+kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
+
+# 2. The release's namespace. Only pods that meet the restricted Pod Security Standard are
+#    admitted in it; the operator's pod does.
+kubectl create namespace purlis-system
+kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
+
+# 3. purlis's definitions, the policy on Claims, and the operator.
+helm install purlis-cluster-operator operator/charts/purlis-cluster-operator \
+  --namespace purlis-system \
+  --set image.digest=sha256:<digest> \
+  --set 'imagePullSecrets[0].name=<a secret that pulls ghcr.io/purlis>'
+```
+
+**The definitions are a step of their own.** Helm installs the chart's `crds/` (Pool and
+Claim) before anything else in it, and never upgrades or deletes them. A cluster admin who
+reviews and applies them apart from the controllers applies `operator/deploy/crds.yaml` with
+`kubectl apply --server-side` and installs the chart with `--skip-crds`. After an upgrade of
+the chart that changes them, apply `operator/deploy/crds.yaml` the same way.
+
+`helm uninstall` removes the operator and leaves the definitions, the Claims and Pools in
+them, and the policy on Claims, which Helm keeps (`helm.sh/resource-policy: keep`).
+
+The chart's values, all in its
+[`values.yaml`](../operator/charts/purlis-cluster-operator/values.yaml), and
+`values.schema.json` refuses any other:
+
+| Value | What it sets | Default |
+|---|---|---|
+| `image.repository` | where the image is pulled from, without a tag or digest | `ghcr.io/purlis/purlis-cluster-operator` |
+| `image.digest` | the image's digest, `sha256:` and 64 hex digits; required | none |
+| `imagePullSecrets` | secrets in the release's namespace that pull the image | none |
+| `resources` | the operator's CPU and memory | requests 10m CPU and 32Mi, limit 256Mi |
+
+No value changes what the operator may do or how its pod is confined.
+
+### With the plain manifests
+
+The same steps with `kubectl`. The definitions and their policy are a step of their own, so a
 cluster admin can review and apply them apart from the controllers.
 
 ```bash
@@ -76,7 +126,7 @@ kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
-# 3. The operator, in the `purlis-system` namespace, with its image named by digest: the
+# 3. The `purlis-system` namespace and the operator, with its image named by digest: the
 #    `operator.yaml` of a run's `operator-image` artifact, which already names it, or this
 #    one with the image set.
 kubectl apply --server-side -f operator/deploy/operator.yaml
@@ -85,7 +135,7 @@ kubectl -n purlis-system set image deployment/purlis-cluster-operator \
 ```
 
 A build of your own, from [`operator/Dockerfile`](../operator/Dockerfile), is installed the
-same way, with its own digest.
+same way, with its own repository and digest.
 
 ## A pool and a claim
 
@@ -182,16 +232,23 @@ and memory included. Give cluster-admin and node access accordingly.
 
 ## Tests
 
-- `cargo test` in `operator/`: what a Claim asks of upstream, that every field the operator
-  writes is one the pinned upstream declares, and the install manifests (the definitions are
-  generated from the Rust types; regenerate them with
-  `PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests`).
+- `cargo test` in `operator/`, with `helm` 4 on PATH: what a Claim asks of upstream, that
+  every field the operator writes is one the pinned upstream declares, the install manifests,
+  and the chart, rendered and linted by Helm itself: the plain manifests are what it renders,
+  its image is named only by digest, and no value changes what the operator may do. The
+  definitions are generated from the Rust types and the plain manifests from the chart;
+  regenerate them, in this order, with
+  `PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests` and
+  `PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart`.
 - [`operator/e2e/kind.sh`](../operator/e2e/kind.sh) `<runner image> <operator image>`: a kind
   cluster of Kubernetes 1.36 with a registry beside it, so images are named by digest; the
-  pinned upstream, purlis's definitions, the policy and the operator; then
-  `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows. It removes
-  everything it started. `.github/workflows/operator.yml` runs it, with a runner image built
-  from the same commit, on every pull request that changes `operator/` or `runner-image/`.
+  pinned upstream; purlis's definitions, the policy and the operator installed by the chart in
+  a namespace that enforces the restricted Pod Security Standard; `kubectl diff` showing the
+  plain manifests would change nothing the chart made; then
+  `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows; then
+  `helm uninstall`, which leaves the definitions and the policy. It removes everything it
+  started. `.github/workflows/operator.yml` runs it, with a runner image built from the same
+  commit, on every pull request that changes `operator/` or `runner-image/`.
 
 ## Moving the upstream pin
 

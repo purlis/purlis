@@ -2,16 +2,18 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# The operator's end-to-end tests on a kind cluster (#2054): a cluster of the oldest Kubernetes
-# purlis supports, a registry beside it so images are named by digest as a Pool names them, the
-# pinned upstream agent-sandbox, purlis's definitions and the operator, then
-# `tests/on_a_kind_cluster.rs`. Everything it started is removed when it ends, unless KEEP=1.
+# The operator's end-to-end tests on a kind cluster (#2054, #2237): a cluster of the oldest
+# Kubernetes purlis supports, a registry beside it so images are named by digest as a Pool names
+# them, the pinned upstream agent-sandbox, then purlis's definitions, policy and operator
+# installed by the Helm chart (charts/purlis-cluster-operator/), as docs/cluster-operator.md
+# installs them. The cluster then shows the plain manifests in deploy/ would change nothing, and
+# `tests/on_a_kind_cluster.rs` runs. Everything it started is removed when it ends, unless KEEP=1.
 #
 #   operator/e2e/kind.sh <runner image> <operator image>
 #
 # Both images are local ones (`docker image ls`): the runner image (runner-image/Dockerfile, or
 # any image that keeps its contract) and the operator's (operator/Dockerfile). Needs docker,
-# kind, kubectl and cargo on PATH. `.github/workflows/operator.yml` runs it.
+# kind, kubectl, helm (v4) and cargo on PATH. `.github/workflows/operator.yml` runs it.
 
 set -eu
 
@@ -30,6 +32,12 @@ context=kind-$cluster
 # A kubeconfig of the run's own: the person's own is never read or written.
 KUBECONFIG=$(mktemp "${TMPDIR:-/tmp}/purlis-operator-e2e.XXXXXX")
 export KUBECONFIG
+# Helm's homes of the run's own, likewise.
+helm_home=$(mktemp -d "${TMPDIR:-/tmp}/purlis-operator-e2e-helm.XXXXXX")
+export HELM_CACHE_HOME="$helm_home/cache" HELM_CONFIG_HOME="$helm_home/config" HELM_DATA_HOME="$helm_home/data"
+chart=$here/charts/purlis-cluster-operator
+# The image the plain manifests name until an install sets the real one (tests/the_chart.rs).
+placeholder=ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 end() {
   status=$?
@@ -44,8 +52,9 @@ end() {
     kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
     docker rm -f "$registry" >/dev/null 2>&1 || true
     rm -f "$KUBECONFIG"
+    rm -rf "$helm_home"
   else
-    echo "kept: the cluster $cluster, its registry, and KUBECONFIG=$KUBECONFIG" >&2
+    echo "kept: the cluster $cluster, its registry, KUBECONFIG=$KUBECONFIG and Helm's homes in $helm_home" >&2
   fi
   exit "$status"
 }
@@ -79,16 +88,31 @@ echo "--- upstream agent-sandbox v1.0.6"
 kubectl --context "$context" apply --server-side -f "$upstream" >/dev/null
 kubectl --context "$context" -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
 
-echo "--- the policy on claims and purlis's definitions, then the operator"
-# The policy first, so no Claim is ever admitted before it holds.
-kubectl --context "$context" apply --server-side -f "$here/deploy/policy.yaml"
-kubectl --context "$context" apply --server-side -f "$here/deploy/crds.yaml"
+echo "--- purlis's definitions, policy and operator, by the chart"
+# The release's namespace, made as docs/cluster-operator.md makes it: only pods that meet the
+# restricted Pod Security Standard are admitted in it, so the operator's pod has to.
+kubectl --context "$context" create namespace purlis-system
+kubectl --context "$context" label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
+helm install purlis-cluster-operator "$chart" --kube-context "$context" --namespace purlis-system \
+  --set image.repository="${operator%@*}" --set image.digest="${operator#*@}" \
+  --wait --timeout 180s
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
-sed "s|image: ghcr.io/purlis/purlis-cluster-operator:main|image: $operator|" "$here/deploy/operator.yaml" |
-  kubectl --context "$context" apply --server-side -f -
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
+
+echo "--- the plain manifests are what the chart installed"
+# `kubectl diff` exits 1 when applying them would change anything the chart made.
+sed "s|image: $placeholder\$|image: $operator|" "$here/deploy/operator.yaml" > "$helm_home/operator.yaml"
+grep -qxF "          image: $operator" "$helm_home/operator.yaml"
+kubectl --context "$context" diff --server-side \
+  -f "$here/deploy/policy.yaml" -f "$here/deploy/crds.yaml" -f "$helm_home/operator.yaml"
 
 echo "--- the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \
   --test on_a_kind_cluster -- --ignored --test-threads=1
+
+echo "--- uninstalled, the chart leaves the definitions and the policy"
+helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait
+kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev \
+  validatingadmissionpolicy/purlis-claims-use-their-pool \
+  validatingadmissionpolicybinding/purlis-claims-use-their-pool >/dev/null

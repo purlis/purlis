@@ -5,8 +5,8 @@ name: cluster operator
 
 # purlis's cluster operator (#2054, spec #2041): a Rust workspace of its own in `operator/`,
 # which `ci` never builds. This workflow checks it, and runs it on a kind cluster of the oldest
-# Kubernetes purlis supports with the pinned upstream agent-sandbox and a runner image built
-# from this commit (`operator/e2e/kind.sh`).
+# Kubernetes purlis supports with the pinned upstream agent-sandbox, the operator installed by its
+# Helm chart, and a runner image built from this commit (`operator/e2e/kind.sh`).
 #
 # Only a change to the operator, the runner image, the toolchain, the licence and advisory
 # rules or this file runs it on a pull request, so every other pull request waits on none of
@@ -49,7 +49,7 @@ env:
 
 jobs:
   checks:
-    name: operator (fmt, clippy, test, licences)
+    name: operator (fmt, clippy, test, chart, licences)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
@@ -67,6 +67,19 @@ jobs:
         with:
           workspaces: operator
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Helm, one exact release, checked against the SHA-256 it publishes, in place of any the
+      # runner image carries: the chart's tests render it with Helm itself.
+      - name: Install Helm
+        env:
+          HELM_VERSION: v4.3.0
+          HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
+        run: |
+          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/helm.tgz" \
+            "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          echo "$HELM_SHA256  $RUNNER_TEMP/helm.tgz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/helm.tgz" -C "$RUNNER_TEMP"
+          sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
+          helm version
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets
       - run: cargo test --locked
@@ -110,6 +123,19 @@ jobs:
             "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
           echo "$KIND_SHA256  $RUNNER_TEMP/kind" | sha256sum --check --strict
           sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
+      # Helm, one exact release, checked against the SHA-256 it publishes, in place of any the
+      # runner image carries: the chart's tests render it with Helm itself.
+      - name: Install Helm
+        env:
+          HELM_VERSION: v4.3.0
+          HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
+        run: |
+          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/helm.tgz" \
+            "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          echo "$HELM_SHA256  $RUNNER_TEMP/helm.tgz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/helm.tgz" -C "$RUNNER_TEMP"
+          sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
+          helm version
       # The runner image of this commit, from runner-image/Dockerfile, as `runner-image.yml`
       # builds it but in a debug build: the operator is under test here, not the binary.
       - name: The runner image

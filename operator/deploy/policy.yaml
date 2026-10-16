@@ -6,6 +6,10 @@
 # person. Applied before purlis's definitions (crds.yaml), so no Claim is admitted before it
 # holds, and before the operator.
 #
+# Rendered from the chart, charts/purlis-cluster-operator/; never edited by hand. Regenerate
+# with
+#   PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart
+#
 # A cluster admin grants `use` with RBAC, on one pool or on all of them:
 #
 #   apiGroups: [runners.purlis.dev]
@@ -16,10 +20,19 @@
 # A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
+---
+# Source: purlis-cluster-operator/templates/policy.yaml
+# Kept when the release is uninstalled, as Helm keeps the definitions in crds/: a Claim is never
+# admitted without it.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: purlis-claims-use-their-pool
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -36,10 +49,16 @@ spec:
         'You may not use the pool ' + object.spec.pool + '. A cluster admin can grant use on it.'
       reason: Forbidden
 ---
+# Source: purlis-cluster-operator/templates/policy.yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: purlis-claims-use-their-pool
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   policyName: purlis-claims-use-their-pool
   validationActions: [Deny]

@@ -1,0 +1,41 @@
+{{- /*
+Copyright 2026 Purlis
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+# Kept when the release is uninstalled, as Helm keeps the definitions in crds/: a Claim is never
+# admitted without it.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-claims-use-their-pool
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [runners.purlis.dev]
+        apiVersions: ["*"]
+        operations: [CREATE]
+        resources: [claims]
+  validations:
+    - expression: >-
+        authorizer.group('runners.purlis.dev').resource('pools')
+        .name(object.spec.pool).check('use').allowed()
+      messageExpression: >-
+        'You may not use the pool ' + object.spec.pool + '. A cluster admin can grant use on it.'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-claims-use-their-pool
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-claims-use-their-pool
+  validationActions: [Deny]
