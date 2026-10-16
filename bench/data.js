@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792142919644,
+  "lastUpdate": 1792144264202,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13818,6 +13818,48 @@ window.BENCHMARK_DATA = {
             "value": 104.38,
             "unit": "ms",
             "extra": "median of 5 runs: 104.030, 104.165, 104.380, 104.649, 106.174 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0288aec2b4d71a580d5f1ff98c9d7f2d7e829670",
+          "message": "The live board and Needs you live in the session host (#2235)\n\n* The board kept in the session host: core moves, protocol 1.10, host\n\nA board tells each move it makes to whoever keeps it too, and makes a\nmove it is told; it is taken whole, and moved by a hook line where no\nwindow decides. Session protocol 1.10 adds board_moved and board,\nlocal-ui only. The host keeps a project, its hook channel and its board\nwhile a program runs in it after the last link that held it ended, and\ntells the board of a program that ends with no window there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The window takes the host's board and tells it each move\n\nAs the window holds a project in the session host it takes the board the\nhost keeps, whole, before it hears a line handed on since the hold, and\nis told every chat on it; from then on each move it makes on its own\nboard is told to the host in order. The window's binary keeps the board\nin the host and moves it by the lines no window took and by a program\nthat ends with no window there. A behaviour cuts the window's link and\nchecks a window back reads every chat as the host kept it. ADR 0068 is\namended for #2194.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A board told every move covers an answer in the window\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* ADR 0068's #2194 note names the minors still held\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A kept project keeps its ended programs, and every move is read back\n\nA project stays in the host after its link ends while it has a program\nthe window has not closed, running or ended; host tests cover both\nsides. Every Move is said as JSON and read by the kept board in a test.\nThe #2000 amendment is restored with a pointer to the #2194 note, and\nCONTEXT.md names the kept board.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T13:44:02+04:00",
+          "tree_id": "33a953648d6a7c8f3f97fdfd2e1cf7eb6c8d4c05",
+          "url": "https://github.com/purlis/purlis/commit/0288aec2b4d71a580d5f1ff98c9d7f2d7e829670"
+        },
+        "date": 1792144263089,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27626249999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.260, 0.274, 0.276, 0.283, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.455341,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.372, 16.446, 16.455, 16.482, 16.489 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.070821,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.409, 100.862, 101.071, 101.865, 102.075 ms"
           }
         ]
       }
