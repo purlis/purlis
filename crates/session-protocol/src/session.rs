@@ -506,12 +506,13 @@ pub struct StartProgram {
     /// What is typed to the harness once it is ready (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_message: Option<String>,
-    /// The person chose to run this one without the sandbox (ADR 0067 §7, 1.2).
+    /// The person chose to run this one without the sandbox (ADR 0067 §7, 1.2): taken from a
+    /// `local-ui` link alone ([`crate::grants::Power::OptOut`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub without_sandbox: bool,
     /// The window's own start, composed above its seam: given only by the window, on a
-    /// `local-ui` link ([`crate::grants::Power::Launch`]), until what composes it lives in the
-    /// host (1.2).
+    /// `local-ui` link, or by its host relaying it over the link between hosts
+    /// ([`crate::grants::Power::Launch`]), until what composes it lives in the host (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch: Option<Launch>,
     /// For a [`ProgramKind::Browser`], what it may reach (1.9): absent, nothing listed and
@@ -547,7 +548,7 @@ impl StartProgram {
 /// What the window composed for a start above its seam: the program and its words, and what
 /// its environment is made of (1.2). The host composes the environment from it the way the
 /// window did, against its own, which it was started with
-/// ([`crate::grants::Power::Launch`]: the window's alone).
+/// ([`crate::grants::Power::Launch`]: the window's alone, or relayed by its host).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Launch {
     /// The program, by path or name.
@@ -909,11 +910,11 @@ impl Command {
             Command::HoldProject { .. }
             | Command::LetGoOfProject { .. }
             | Command::Deal { .. }
-            | Command::DealtAlready { .. }
-            | Command::StartSaving { .. }
+            | Command::DealtAlready { .. } => Power::Hold,
+            Command::StartSaving { .. }
             | Command::StopSaving { .. }
             | Command::FetchProject { .. }
-            | Command::MidTurn { .. } => Power::Hold,
+            | Command::MidTurn { .. } => Power::Save,
             Command::ReplyHeard { .. } => Power::Heard,
             Command::Confine(_)
             | Command::LetGoOfConfinement { .. }
@@ -1488,7 +1489,19 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
             why: format!(
-                "a start the window composed is taken from purlis's window only, and this link \
+                "a start the window composed is taken from purlis's window, or its host's relay, \
+                 only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
+        && start.without_sandbox
+        && !scope.may(Power::OptOut)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a chat is started without the sandbox only from purlis's window, and this link \
                  is `{scope}`"
             ),
         });

@@ -387,3 +387,41 @@ fn the_person_s_stop_takes_a_cancelled_task_over_and_the_asking_chat_is_told_of_
     assert_eq!(word.len(), 1, "{word:?}");
     assert!(word[0].stopped.is_some(), "{word:?}");
 }
+
+#[test]
+fn a_task_being_stopped_whose_project_settings_change_is_ended_and_not_started_again() {
+    // ADR 0067 as amended 2026-10-16, on #1448's terms: a restart would take it out of the
+    // person's stop, so it is ended, as the stop would end it.
+    let (_plane, host, _planes, _id, held, _steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    let held_ = kept(&held);
+    bounded("the person's stop", move || {
+        crate::stopping::end_task_in_a_test(&held_, task, Way::Report, false)
+    })
+    .expect("stopping");
+    assert!(held.stopping().is_stopping(task));
+    let started_before = host.openings().len();
+
+    let why = held
+        .contain_project_settings(task)
+        .expect_err("not started again");
+
+    assert!(why.contains("stopping"), "{why}");
+    assert_eq!(host.openings().len(), started_before, "nothing was started");
+    assert!(!open_chats(&held).contains(&task), "it was ended");
+}
+
+#[test]
+fn a_task_s_run_ended_to_start_it_again_does_not_end_its_dispatch() {
+    // The end of a run replaced at once is no end of the task: its record still runs, and
+    // nothing is reported for it.
+    let (_plane, host, _planes, _id, held, _steward, task) = a_steward_and_its_task();
+    held.chats().replaced_in_a_test(task);
+
+    host.program_ends(task, purlis_core::session::Exit::Code(1));
+
+    let record = record_of(&held, task);
+    assert!(record.running(), "{record:?}");
+    assert_eq!(record.report, None);
+    assert!(open_chats(&held).contains(&task));
+}

@@ -102,6 +102,7 @@ mod planes;
 mod planewatch;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod projectsettings;
 mod proposals;
 mod readonly;
 mod rebrief;
@@ -2598,7 +2599,6 @@ fn resize_session(
     planes
         .held(&plane)?
         .chats()
-        .sessions()
         .resize(session, Size { columns, rows })
 }
 
@@ -2696,6 +2696,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::ChatBlocked>()
         // What `chat-sandbox-refused-more` carries (#1353).
         .typ::<hooks::RefusedMore>()
+        // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
+        .typ::<projectsettings::Rescreened>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chat-stop` carries (#1448).
@@ -3602,6 +3604,20 @@ pub fn run() {
                 })
                 // How many hosts a chat's proxy refused past the ones it names: its host
                 // Notice says so (#1353).
+                // A sandboxed Claude Code chat whose project settings changed so that it no
+                // longer loads them: the window restarts it at once (ADR 0067 as amended
+                // 2026-10-16).
+                .telling_project_settings({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: projectsettings::Rescreened| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            projectsettings::EVENT,
+                            &told,
+                        );
+                    })
+                })
                 .telling_refused_more({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: hooks::RefusedMore| {

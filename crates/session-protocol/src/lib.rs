@@ -65,6 +65,10 @@
 //! 6. [`ui`]: the UI RPC beside it, the app's own commands for its own build and the `local-ui`
 //!    scope only, excluded from that promise.
 //!
+//! **Between two hosts** ([`hostlink`]), a connector's stream carries the link of ADR 0078 §3
+//! first: its own version, a handshake that proves both hosts' pinned link keys, then sealed
+//! frames with the link's own ping, inside which all of the above runs as `remote-link`.
+//!
 //! **What this crate does not decide.** Where a view's bytes and snapshot come from, and what
 //! each command does, is the host's (FD-5): a [`view::Source`] for each kind of view (a
 //! terminal's from `Engine::snapshot` and the session's output), and a [`session::Host`]. What each scope may call is [`grants`]' one table (FD-27), which
@@ -73,6 +77,7 @@
 pub mod auth;
 pub mod browsing;
 pub mod grants;
+pub mod hostlink;
 pub mod link;
 #[cfg(unix)]
 pub mod local;

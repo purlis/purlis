@@ -187,7 +187,7 @@ fn every_command() -> Vec<Command> {
             question: 1,
             chats: None,
         },
-        // A start the window composed: the window's alone.
+        // A start the window composed: the window's alone, or relayed by its host.
         Command::StartProgram(Box::new(session::StartProgram {
             launch: Some(session::Launch {
                 program: "/bin/sh".into(),
@@ -297,7 +297,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "stop_saving",
             "fetch_project",
             "mid_turn",
-            "start_program",
+            "start_program", // the start the window composed, with its launch
             "deal",
             "dealt_already",
             "reply_heard",
@@ -312,7 +312,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "attach_view",
             "browse",
         ],
-        Scope::Terminal | Scope::RemoteLink => &[
+        Scope::Terminal => &[
             "list",
             "attach",
             "detach",
@@ -327,6 +327,33 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "unsubscribe",
             "close",
             "readiness",
+            "stop_all",
+            "kill_switch",
+        ],
+        // The window's own commands, relayed by its host over the link between hosts (ruled
+        // 2026-10-15, #2042): a hold, a start with its launch, the numbers dealt, and its reply
+        // to what a project's hooks wrote; never an answer, a confinement or a re-arm.
+        Scope::RemoteLink => &[
+            "list",
+            "attach",
+            "detach",
+            "write",
+            "resize",
+            "stop",
+            "start",
+            "start_program",
+            "attach_view",
+            "detach_view",
+            "subscribe",
+            "unsubscribe",
+            "hold_project",
+            "let_go_of_project",
+            "close",
+            "readiness",
+            "start_program", // the start the window composed, with its launch
+            "deal",
+            "dealt_already",
+            "reply_heard",
             "stop_all",
             "kill_switch",
         ],
@@ -413,7 +440,8 @@ async fn editor_may_call_none_of_the_session_commands() {
 }
 
 #[tokio::test]
-async fn remote_link_may_drive_a_chat_but_never_answer_its_asks() {
+async fn remote_link_may_drive_a_chat_and_take_the_windows_relayed_start_but_never_answer_its_asks()
+{
     check_the_row(Scope::RemoteLink).await;
 }
 
