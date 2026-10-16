@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792144264202,
+  "lastUpdate": 1792145903927,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13860,6 +13860,48 @@ window.BENCHMARK_DATA = {
             "value": 101.070821,
             "unit": "ms",
             "extra": "median of 5 runs: 100.409, 100.862, 101.071, 101.865, 102.075 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a23c7a96bf4203dd871b95249b02df72a9b4cec6",
+          "message": "Flaky: the guided steps keep their places in order; two web tests wait on what they check (#2266)\n\n* Flaky: the guided steps keep their places in order; two web tests wait on what they check\n\n- useOnboarding (product): one write of the kept place at a time, in the\n  order the changes came, and a place changed again before its turn is\n  not written. The core keeps each off its own thread, so two at once\n  could land out of order.\n- onboarding.e2e: the first test waits until the core keeps the finish,\n  so the second test's own place is written after it.\n- TaskInTab.window: \"follows a rename of either chat\" is two tests, one\n  rename each; every card read waits out the card's real rest and leave.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* test: TaskInTab.window's tests have a 15 s budget\n\nThey render the whole app: about 1 to 2 s each when idle, and just over\n5 s on a runner with every core busy, where the default 5 s budget cut\nthem off with no assertion failed. A budget, not a wait.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T13:57:05+04:00",
+          "tree_id": "84fc2ffa6a0edca75f1c4c6b16a4b6bede34d167",
+          "url": "https://github.com/purlis/purlis/commit/a23c7a96bf4203dd871b95249b02df72a9b4cec6"
+        },
+        "date": 1792145902815,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.519864,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.489, 0.507, 0.520, 0.523, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.115783,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.942, 16.981, 17.116, 17.127, 17.139 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.4628825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.569, 104.415, 104.463, 106.101, 107.061 ms"
           }
         ]
       }
