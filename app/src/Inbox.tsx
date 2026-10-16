@@ -755,9 +755,15 @@ function Ask({
             <Stop key={option.id} id={`${key}:${option.id}`}>
               <button
                 type="button"
-                className={
-                  option.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"
-                }
+                // The answer the source suggests is styled as the primary one, in its place
+                // (#2241): a persona's declared browser. Still only the person's press answers.
+                className={[
+                  "ui-button inbox-answer",
+                  option.allows ? "allows" : "",
+                  option.preselected === true ? "ui-button-primary" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 aria-disabled={busy || undefined}
                 aria-busy={busy || undefined}
                 onClick={() => answer(option)}

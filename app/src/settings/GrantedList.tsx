@@ -48,7 +48,9 @@ export function grantSaid(one: SandboxGrant): string {
               ? `Reach the system service ${one.target}${one.expected ? " (this project expects it)" : ""}`
               : one.what === "port"
                 ? `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`
-                : `Write ${one.target} and everything in it`;
+                : one.what === "browser"
+                  ? `Chats as ${one.persona ?? "a persona"} open a browser without asking, reaching ${one.target}`
+                  : `Write ${one.target} and everything in it`;
   const by =
     one.level !== "project"
       ? "allowed by you"
@@ -68,6 +70,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "socket") return `connecting to ${one.target}`;
   if (one.what === "service") return `reaching ${one.target}`;
   if (one.what === "port") return `connecting to port ${one.target}`;
+  if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
   return `writing ${one.target}`;
 }
 
@@ -162,11 +165,12 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
                   {`Open vault ${one.target}`}
                 </OutLink>
               )}
-              {(one.what === "vault" || one.what === "persona-hosts") && one.persona !== null && (
-                <OutLink plane={plane} action={showPersona(one.persona)}>
-                  {`Show ${one.persona}`}
-                </OutLink>
-              )}
+              {(one.what === "vault" || one.what === "persona-hosts" || one.what === "browser") &&
+                one.persona !== null && (
+                  <OutLink plane={plane} action={showPersona(one.persona)}>
+                    {`Show ${one.persona}`}
+                  </OutLink>
+                )}
               {(one.cautions ?? []).length > 0 && (
                 // T-4: the core's sentence for a persona's general-purpose tool.
                 <span className="granted-note"> {(one.cautions ?? []).join(" ")}</span>

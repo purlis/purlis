@@ -1741,6 +1741,77 @@ fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
     first.ended_by_the_quit();
 }
 
+/// **A change written while the window is gone is committed by the host process** (#2287,
+/// #2002): a window started on a real git plane has the host save it, and is killed outright
+/// (its links and the host's standard input gone, with no quit). A file then written in the
+/// plane is committed by the host, well within the grace period it waits for a window in. A
+/// host process's target only: there is a window to kill and a host that outlives it. The test
+/// ends the host it started.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_change_written_while_the_window_is_gone_is_committed_by_the_host_process() {
+    const _: () = assert!(A_SAVE_WITHIN.as_secs() < purlis_host::GRACE.as_secs());
+    let home = tempfile::tempdir().expect("the host's home");
+    let HostHome {
+        place, inherited, ..
+    } = a_host_home(home.path());
+    let (_project, root) = a_project();
+    a_plane_saved_after_a_second(&root);
+    let window = KilledWindow::start(&place, &root, move || {
+        let mut command = crate::sessionhost::command(&charter_app());
+        command.env_clear().envs(inherited.iter().cloned());
+        Ok(command)
+    });
+    let (told, looks) = told_of_looks();
+    let saving = window.sessions.keep_saving(&root, told);
+    // The host saves the plane before the window goes.
+    std::fs::write(root.join("before.md"), "written with the window there\n").expect("written");
+    let deadline = Instant::now() + A_SAVE_WITHIN;
+    while !looks
+        .lock()
+        .expect("the looks")
+        .iter()
+        .any(|looked| looked.saved)
+    {
+        assert!(Instant::now() < deadline, "the host never saved the plane");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let mut window = window.killed();
+    // A window killed outright stops nothing: its saver is never dropped.
+    std::mem::forget(saving);
+    std::fs::write(root.join("away.md"), "written with the window gone\n").expect("written");
+
+    let deadline = Instant::now() + A_SAVE_WITHIN;
+    while !committed(&root, "away.md") {
+        assert!(
+            Instant::now() < deadline,
+            "the host did not commit a change written with the window gone within {A_SAVE_WITHIN:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        window.host_runs(),
+        "the host that committed it outlived the window"
+    );
+    window.end_its_host();
+}
+
+/// Whether `file` is in a commit of the repository at `root`.
+#[cfg(target_os = "linux")]
+fn committed(root: &Path, file: &str) -> bool {
+    let out = purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["log", "--format=%H", "--", file])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .expect("git runs");
+    out.status.success() && !out.stdout.trim_ascii().is_empty()
+}
+
 /// A window that starts the window's binary as its session host itself, as the window does,
 /// over a link a test can cut, and is then killed outright.
 #[cfg(target_os = "linux")]
@@ -1838,6 +1909,17 @@ impl KilledWindow {
             assert!(Instant::now() < deadline, "the host outlived the quit");
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+
+    /// Whether the host this window started still runs.
+    fn host_runs(&mut self) -> bool {
+        matches!(self.host.try_wait(), Ok(None))
+    }
+
+    /// The host this window started, ended by the test and reaped.
+    fn end_its_host(mut self) {
+        self.host.kill().expect("the host is ended");
+        self.host.wait().expect("the host is reaped");
     }
 }
 

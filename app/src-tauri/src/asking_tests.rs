@@ -1138,6 +1138,7 @@ fn a_chats_first_browser_call_is_one_ask_of_what_its_browser_may_reach() {
     world.browsers = vec![crate::chatbrowsers::Waits {
         session: 8,
         since: 40,
+        as_persona: crate::chatbrowsers::AsPersona::default(),
     }];
     world.since = vec![("browser:8", 40)];
 
@@ -1165,4 +1166,120 @@ fn a_chats_first_browser_call_is_one_ask_of_what_its_browser_may_reach() {
         ]
     );
     assert_eq!(ask.since, Some(40));
+}
+
+/// A chat as `persona`, declaring `declared`, waiting on its browser Ask (#2241).
+fn browser_waits(
+    world: &mut World,
+    persona: &str,
+    declared: Option<purlis_core::sandbox::persona::Browser>,
+) {
+    world.queue = vec![8];
+    world.names = vec![(8, "qa 8")];
+    world.browsers = vec![crate::chatbrowsers::Waits {
+        session: 8,
+        since: 40,
+        as_persona: crate::chatbrowsers::AsPersona {
+            persona: Some(persona.to_owned()),
+            declared,
+            always: None,
+        },
+    }];
+    world.since = vec![("browser:8", 40)];
+}
+
+#[test]
+fn a_persona_chats_browser_ask_offers_always_for_this_persona_beside_each_reach() {
+    // #2241: Allow for this chat, Always for this persona, Keep off.
+    let mut world = World::new();
+    browser_waits(&mut world, "qa", None);
+
+    let ask = world.asks().remove(0);
+
+    assert_eq!(
+        ids(&ask),
+        [
+            "project",
+            "open-web",
+            "project-always",
+            "open-web-always",
+            "keep"
+        ]
+    );
+    assert_eq!(ask.options[2].label, "This project's sites, always for qa");
+    assert_eq!(ask.options[3].label, "Also the open web, always for qa");
+    assert!(ask.options.iter().all(|one| one.preselected.is_none()));
+}
+
+#[test]
+fn a_persona_s_declared_browser_is_marked_in_place_and_still_asked() {
+    // #2241, ADR 0073: the declaration marks its answer for this chat, by its label, and the
+    // person answers; its Always beside it is not marked.
+    use purlis_core::sandbox::persona::Browser;
+    let mut world = World::new();
+    browser_waits(&mut world, "qa", Some(Browser::OpenWeb));
+
+    let ask = world.asks().remove(0);
+
+    let marked: Vec<(&str, &str)> = ask
+        .options
+        .iter()
+        .filter(|one| one.preselected == Some(true))
+        .map(|one| (one.id.as_str(), one.label.as_str()))
+        .collect();
+    assert_eq!(marked, [("open-web", "Also the open web (qa uses this)")]);
+    assert_eq!(ask.options[3].label, "Also the open web, always for qa");
+    assert!(
+        ask.says
+            .ends_with("Its persona qa declares the open web too"),
+        "{}",
+        ask.says
+    );
+}
+
+#[test]
+fn the_browser_asks_answers_keep_their_places_whatever_a_persona_declares() {
+    // #2241: the same key presses the same answer: the order, and the first answer (where the
+    // keyboard lands), never depend on what is declared.
+    use purlis_core::sandbox::persona::Browser;
+    let order = |declared: Option<Browser>| {
+        let mut world = World::new();
+        browser_waits(&mut world, "qa", declared);
+        ids(&world.asks().remove(0))
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let undeclared = order(None);
+    assert_eq!(
+        undeclared,
+        [
+            "project",
+            "open-web",
+            "project-always",
+            "open-web-always",
+            "keep"
+        ]
+    );
+    assert_eq!(order(Some(Browser::Project)), undeclared);
+    assert_eq!(order(Some(Browser::OpenWeb)), undeclared);
+}
+
+#[test]
+fn an_administrators_policy_forbids_always_for_this_persona_on_the_browser_ask() {
+    // #2241: `allow-scopes` without `you` removes Always; a declaration preselects the Allow
+    // for this chat instead.
+    use purlis_core::sandbox::persona::Browser;
+    let mut world = World::new();
+    browser_waits(&mut world, "qa", Some(Browser::Project));
+    world.locks = Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["chat", "project"]}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+
+    let ask = world.asks().remove(0);
+
+    assert_eq!(ids(&ask), ["project", "open-web", "keep"]);
+    assert_eq!(ask.options[0].preselected, Some(true));
+    assert_eq!(ask.options[0].label, "This project's sites (qa uses this)");
 }
