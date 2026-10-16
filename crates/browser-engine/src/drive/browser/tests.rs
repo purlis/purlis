@@ -581,6 +581,42 @@ fn a_page_opened_before_it_has_an_address_is_answered_once_it_has_one() {
 }
 
 #[test]
+fn a_page_opened_with_no_address_has_not_settled_until_it_has_one() {
+    // As a link with `target="_blank"` opens one in a real engine: the page is made empty, is
+    // attached and reads as loaded, and is given its address only once it has gone on.
+    let (browser, engine) = browser();
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+    engine.on(|sent, engine| {
+        if sent.method == "Input.dispatchMouseEvent" && sent.params["type"] == "mouseReleased" {
+            engine.emit(
+                "Target.targetCreated",
+                json!({"targetInfo":{"targetId":"PAGE-10","type":"page","title":"","url":"","openerId":"PAGE-1","attached":false}}),
+                None,
+            );
+        }
+        if sent.method == "Runtime.runIfWaitingForDebugger"
+            && sent.session.as_deref() == Some("S-PAGE-10")
+        {
+            // The engine goes on in its own time: the address comes well after the quiet while.
+            let events = super::lock(&engine.events).clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                let _ = events.send(Event {
+                    method: "Target.targetInfoChanged".to_owned(),
+                    params: json!({"targetInfo":{"targetId":"PAGE-10","type":"page","title":"More","url":"http://fixture.test/more.html","attached":true}}),
+                    session_id: None,
+                });
+            });
+        }
+        None
+    });
+    let answer = browser.call(&id(2), Call::Click { target: more }).unwrap();
+    assert_eq!(answer.settled, Settled::Yes, "{answer:?}");
+    assert_eq!(answer.opened.len(), 1, "{answer:?}");
+    assert_eq!(answer.opened[0].address, "http://fixture.test/more.html");
+}
+
+#[test]
 fn a_page_the_engine_opens_at_a_file_or_app_address_is_closed_and_never_listed() {
     let (browser, engine) = browser();
     let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");

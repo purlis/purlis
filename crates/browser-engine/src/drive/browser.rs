@@ -910,6 +910,11 @@ impl Browser {
                     };
                     match &page.session {
                         None => waiting.push(format!("{prefix}the page is still opening")),
+                        // A page the action opened is made empty and given its address once
+                        // it has gone on: its empty document reads as loaded before then.
+                        Some(_) if page.target != target && page.url.is_empty() => {
+                            waiting.push(format!("{prefix}the page has no address yet"));
+                        }
                         Some(session) => {
                             sessions.push((prefix.clone(), session.clone()));
                             waiting.extend(

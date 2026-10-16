@@ -113,8 +113,13 @@ fn a_persona_chat_whose_turn_ends_is_not_counted_as_needing_you() {
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert_eq!(record_of(&held, task).needed_you, 0);
 
-    // A prompt in its next turn is a wait for the person's input, and counts.
+    // A prompt in its next turn is a wait for the person's input, and counts. Each report is
+    // a connection of its own, and the app serves connections side by side: the turn is on the
+    // board before its prompt is sent, as it is when a harness asks mid-turn.
     reports(&held, task, Event::UserPromptSubmit, Detail::default());
+    until("the next turn", || {
+        held.hooks().board().state(task) == State::Running
+    });
     reports(&held, task, Event::Notification, asks(Prompt::Permission));
     until("the wait on the record", || {
         record_of(&held, task).needed_you == 1
