@@ -194,7 +194,6 @@ export const GEOMETRY_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".shown-state .word | font-size: 0.9em",
     ".wrapping-up | width: 0.5rem",
     ".wrapping-up | height: 0.5rem",
-    ".wrapping-up | margin-inline-start: 0.4rem",
     ".stopping-mark | width: 0.45rem",
     ".stopping-mark | height: 0.45rem",
     ".needs-you-number | min-width: 1.3rem",

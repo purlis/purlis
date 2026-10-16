@@ -798,10 +798,17 @@ one file's list touch different lines, so their removals merge.
 
 **A migration snaps to the scale** (the operator, 2026-10-17, #2313). A spacing, corner, type
 size or weight with no exact token takes the nearest one, by computed px at the 14px root (a tie
-goes to the smaller); a px literal may become a rem token, and a `999px` pill is
-`--radius-full`. A structural size that is no step of the scale, such as an icon's box or a
-strip's cap on a tab's width, keeps its literal and its line. Each snap is listed with its
-change in px in the pull request, and the window is looked at before and after.
+goes to the smaller), and a px literal may become a rem token. Three more rules go with it:
+
+- **An evenly stepped series takes a multiple of one token** (`calc(var(--space-5) * 3)`), so its
+  steps stay even rather than flattening onto the top of the scale.
+- **A corner that draws the same is the pill.** A radius at or above half its box's height
+  becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
+- **Line heights are outside the snap**, as is a structural size that is no step of the scale,
+  such as an icon's box or a strip's cap on a tab's width: each keeps its literal and its line.
+
+Each snap is listed with its change in px in the pull request, and the window is looked at
+before and after.
 
 ## Text roles
 

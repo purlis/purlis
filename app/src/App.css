@@ -866,9 +866,12 @@ body {
 .plane-updated {
   flex: none;
   margin-left: var(--space-2);
-  font-size: var(--font-size-xs);
   line-height: 1;
   color: var(--text-secondary);
+}
+.plane-updated .lucide {
+  width: calc(var(--space-4) + var(--space-1));
+  height: calc(var(--space-4) + var(--space-1));
 }
 /* On the strip the mark is a button beside the tab, pressing Start fresh (NO-3): the same quiet
    mark, with nothing of a button's chrome until it is under the pointer. */
@@ -1908,7 +1911,7 @@ button.show-more:focus-visible {
   height: 1.35rem;
   padding: 0 var(--space-2);
   border: 0;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-full);
   background: none;
   color: var(--text-secondary);
   font: inherit;
@@ -4478,7 +4481,7 @@ h2.sidebar-title .node-icon {
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
-  margin-inline-start: 0.4rem;
+  margin-inline-start: var(--space-3);
   background: var(--state-waiting);
   rotate: 45deg;
   vertical-align: middle;
