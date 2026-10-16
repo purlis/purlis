@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The engine is downloaded on first use, and runs only once what was downloaded is what a
-//! trusted manifest pins: the manifest this build ships, or a newer one whose signature a
-//! trusted key verifies. Nothing here reaches the network: the download is served from memory.
+//! trusted manifest pins: the manifest this build ships, or a newer one whose signature
+//! verifies. What verifies an engine manifest's signature in a build is Sigstore's
+//! (`an_engine_update_is_taken_only_as_the_manifest_workflow_signed_it.rs`); here a minisign key
+//! made for each test stands in for it, so these hold the mechanics around any signer. Nothing here reaches the network: the download is served from memory.
 
 #![cfg(unix)]
 
@@ -13,7 +15,7 @@ use std::os::unix::fs::PermissionsExt;
 
 use common::fixture::{self, Served, VERSION, archive, at, manifest, manifest_text, sha256, url};
 use purlis_browser_engine::install::{
-    EngineChoice, EngineSettings, Engines, ManifestSignature, Minisign, NoSigner, Platform, Refused,
+    EngineChoice, EngineSettings, Engines, ManifestSignature, NoSigner, Platform, Refused,
 };
 
 const ISSUED: &str = "2026-10-14T11:19:22Z";
@@ -133,7 +135,7 @@ impl Keys {
         Self(minisign::KeyPair::generate_unencrypted_keypair().unwrap())
     }
     fn signer(&self) -> Box<dyn ManifestSignature> {
-        Box::new(Minisign::from_public_key(&self.0.pk.to_base64()).unwrap())
+        Box::new(Trusts(self.0.pk.clone()))
     }
     fn sign(&self, text: &str) -> String {
         minisign::sign(
@@ -145,6 +147,25 @@ impl Keys {
         )
         .unwrap()
         .into_string()
+    }
+}
+
+/// A signer that trusts one minisign key.
+struct Trusts(minisign::PublicKey);
+
+impl ManifestSignature for Trusts {
+    fn verify(&self, manifest: &[u8], signature: &str) -> Result<(), String> {
+        let signature =
+            minisign::SignatureBox::from_string(signature).map_err(|why| why.to_string())?;
+        minisign::verify(
+            &self.0,
+            &signature,
+            std::io::Cursor::new(manifest),
+            true,
+            false,
+            false,
+        )
+        .map_err(|why| why.to_string())
     }
 }
 
@@ -434,4 +455,209 @@ fn an_archive_that_names_the_install_record_itself_is_refused() {
         .unwrap_err();
     assert!(matches!(refused, Refused::Archive(_)), "{refused:?}");
     assert_eq!(leftovers(root.path()), Vec::<String>::new());
+}
+
+/// The manifest workflow signs a manifest every day, so one naming the version in use, issued
+/// later, says that version is still current: it is taken, and the engine ages from it.
+#[test]
+fn a_signed_manifest_of_the_same_version_issued_later_is_taken_and_the_engine_ages_from_it() {
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let old = archive("pinned");
+    let served = Served::with(url(VERSION), old.clone());
+    let engines = engines(root.path(), &sha256(&old), keys.signer());
+    let late = "2026-11-10T09:00:00Z";
+    let refused = engines
+        .prepare(&EngineSettings::default(), &served, at(late))
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Outdated { .. }), "{refused:?}");
+
+    let text = manifest_text(VERSION, "2026-11-09T05:00:00Z", &sha256(&old));
+    let ready = engines
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at(late),
+        )
+        .unwrap();
+    assert_eq!(ready.version(), Some(VERSION));
+    let ready = engines
+        .prepare(&EngineSettings::default(), &served, at(late))
+        .unwrap();
+    assert_eq!(ready.age(), purlis_browser_engine::install::Age::Current);
+    assert_eq!(
+        served.asked.borrow().len(),
+        1,
+        "the engine already installed is not downloaded again"
+    );
+
+    // The same manifest again is nothing new.
+    let again = engines
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at(late),
+        )
+        .unwrap_err();
+    assert!(matches!(again, Refused::Older { .. }), "{again:?}");
+}
+
+/// A build whose own pin is newer than an update kept from before never steps back to it.
+#[test]
+fn a_kept_update_naming_an_older_version_than_the_builds_pin_is_not_used_even_issued_later() {
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let (old, new) = (archive("pinned"), archive("newer"));
+    let mut served = Served::with(url(VERSION), old.clone());
+    served.files.insert(url(NEWER), new.clone());
+    let text = manifest_text(VERSION, "2026-10-25T00:00:00Z", &sha256(&old));
+    engines(root.path(), &sha256(&old), keys.signer())
+        .update(
+            text.as_bytes(),
+            &keys.sign(&text),
+            &EngineSettings::default(),
+            &served,
+            at("2026-10-25T01:00:00Z"),
+        )
+        .unwrap();
+    let newer_build = Engines::new(
+        root.path(),
+        Platform::Linux64,
+        manifest(NEWER, NEWER_ISSUED, &sha256(&new)),
+        keys.signer(),
+    );
+    let ready = newer_build
+        .prepare(
+            &EngineSettings::default(),
+            &served,
+            at("2026-10-25T02:00:00Z"),
+        )
+        .unwrap();
+    assert_eq!(ready.version(), Some(NEWER));
+}
+
+#[test]
+fn an_update_is_kept_beside_its_sigstore_bundle() {
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let (old, new) = (archive("pinned"), archive("newer"));
+    let mut served = Served::with(url(VERSION), old.clone());
+    served.files.insert(url(NEWER), new.clone());
+    let text = manifest_text(NEWER, NEWER_ISSUED, &sha256(&new));
+    let signature = keys.sign(&text);
+    engines(root.path(), &sha256(&old), keys.signer())
+        .update(
+            text.as_bytes(),
+            &signature,
+            &EngineSettings::default(),
+            &served,
+            at(NOW),
+        )
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("update.json")).unwrap(),
+        text
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("update.json.sigstore.json")).unwrap(),
+        signature
+    );
+}
+
+/// The background check (#2073): the published manifest and its bundle are read, and taken only
+/// as [`Engines::update`] takes one.
+#[test]
+fn the_published_manifest_is_read_with_its_bundle_and_taken_when_it_verifies() {
+    use purlis_browser_engine::install::{PUBLISHED_BUNDLE, PUBLISHED_MANIFEST};
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let (old, new) = (archive("pinned"), archive("newer"));
+    let mut served = Served::with(url(VERSION), old.clone());
+    served.files.insert(url(NEWER), new.clone());
+    let engines = engines(root.path(), &sha256(&old), keys.signer());
+    assert!(!engines.in_use(), "nothing is installed yet");
+    engines
+        .prepare(&EngineSettings::default(), &served, at(NOW))
+        .unwrap();
+    assert!(engines.in_use());
+
+    // Nothing published yet: refused as a download, and the engine stays.
+    let refused = engines
+        .update_from_published(&EngineSettings::default(), &served, at(NOW))
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Download(_)), "{refused:?}");
+
+    let text = manifest_text(NEWER, NEWER_ISSUED, &sha256(&new));
+    served
+        .files
+        .insert(PUBLISHED_MANIFEST.to_owned(), text.clone().into_bytes());
+    served.files.insert(
+        PUBLISHED_BUNDLE.to_owned(),
+        Keys::new().sign(&text).into_bytes(),
+    );
+    let refused = engines
+        .update_from_published(&EngineSettings::default(), &served, at(NOW))
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Signature(_)), "{refused:?}");
+
+    served
+        .files
+        .insert(PUBLISHED_BUNDLE.to_owned(), keys.sign(&text).into_bytes());
+    let ready = engines
+        .update_from_published(&EngineSettings::default(), &served, at(NOW))
+        .unwrap();
+    assert_eq!(ready.version(), Some(NEWER));
+}
+
+#[test]
+fn a_published_manifest_larger_than_any_manifest_is_refused_unread() {
+    use purlis_browser_engine::install::{
+        MAX_MANIFEST_BYTES, PUBLISHED_BUNDLE, PUBLISHED_MANIFEST,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let keys = Keys::new();
+    let old = archive("pinned");
+    let mut served = Served::with(url(VERSION), old.clone());
+    served.files.insert(
+        PUBLISHED_MANIFEST.to_owned(),
+        vec![b' '; MAX_MANIFEST_BYTES as usize + 1],
+    );
+    served
+        .files
+        .insert(PUBLISHED_BUNDLE.to_owned(), b"{}".to_vec());
+    let refused = engines(root.path(), &sha256(&old), keys.signer())
+        .update_from_published(&EngineSettings::default(), &served, at(NOW))
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Download(_)), "{refused:?}");
+}
+
+/// With no network at all after the first download, and no update ever received, the engine
+/// the build pins keeps running with the verifier a build uses.
+#[test]
+fn the_pinned_engine_runs_offline_with_no_update_ever_received() {
+    use purlis_browser_engine::sigstore::Sigstore;
+    let root = tempfile::tempdir().unwrap();
+    let bytes = archive("pinned");
+    let served = Served::with(url(VERSION), bytes.clone());
+    let engines = engines(
+        root.path(),
+        &sha256(&bytes),
+        Box::new(Sigstore::engine_manifests()),
+    );
+    engines
+        .prepare(&EngineSettings::default(), &served, at(NOW))
+        .unwrap();
+    let offline = Served::default();
+    let refused = engines
+        .update_from_published(&EngineSettings::default(), &offline, at(NOW))
+        .unwrap_err();
+    assert!(matches!(refused, Refused::Download(_)), "{refused:?}");
+    let ready = engines
+        .prepare(&EngineSettings::default(), &offline, at(NOW))
+        .unwrap();
+    assert_eq!(ready.version(), Some(VERSION));
 }

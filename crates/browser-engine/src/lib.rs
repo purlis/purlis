@@ -10,6 +10,8 @@
 //!   for Testing, downloaded on first use and checked against a trusted manifest before it
 //!   runs, its age warned about and refused; or the machine's own Chrome, by the person's
 //!   choice.
+//! - [`sigstore`]: who may sign a newer manifest than the build's own: one GitHub workflow,
+//!   keyless, its Sigstore bundle verified offline against the trusted root the build ships.
 //! - [`launch`]: what the engine is started with: its own sandbox on, the reach proxy its only
 //!   route, no direct UDP, password saving, autofill and crash reports off, no window.
 //! - [`process`]: one process group per browser, led by its [`keeper`], with DevTools on an
@@ -30,5 +32,6 @@ pub mod keeper;
 pub mod launch;
 pub mod machine;
 pub mod process;
+pub mod sigstore;
 
 pub use address::{NotWebAddress, WebAddress};

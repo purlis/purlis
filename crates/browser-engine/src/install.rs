@@ -11,15 +11,23 @@
 //! - the one this build ships ([`Manifest::shipped`], `engine-pin.json` beside this crate),
 //!   trusted because it is inside the build the updater verified (ADR 0042);
 //! - a newer one received later, trusted only when a [`ManifestSignature`] verifies its
-//!   signature, and only when it is newer than the one in use (no step back).
+//!   signature: in a build, [`crate::sigstore::Sigstore`], which takes only a Sigstore bundle
+//!   made by the manifest workflow on `main` of purlis/purlis (#2073). It is taken only when it
+//!   supersedes the one in use ([`Manifest::supersedes`]): a later version, or the same version
+//!   issued later, never an earlier one (no step back).
 //!
-//! The newer of the two is the one used. An archive runs only after its digest matched the
+//! The one that supersedes the other is the one used. An archive runs only after its digest matched the
 //! trusted manifest's, before a byte of it was unpacked; an archive that does not match is
 //! deleted and nothing of it is kept. Chrome for Testing publishes no signature or digest of
 //! its own, so the pin is the only proof there is.
 //!
-//! **Fails closed.** [`NoSigner`] verifies nothing, so a build that has no key for engine
-//! updates refuses every update and runs its own pinned engine.
+//! **Fails closed.** A manifest whose bundle does not verify is refused, and the engine in use
+//! stays. A build that never receives one runs its own pinned engine. [`NoSigner`] verifies
+//! nothing, for what trusts no update at all.
+//!
+//! **Where updates are published**: [`PUBLISHED_MANIFEST`] and [`PUBLISHED_BUNDLE`], release
+//! assets the manifest workflow replaces each day; the session host reads them in the
+//! background (`purlis_core::browsers`).
 //!
 //! **Age.** An engine is behind from the moment the newest trusted manifest was issued: a
 //! manifest says *as of this time, this version is current*, so until a newer one is verified,
@@ -43,6 +51,17 @@ use sha2::{Digest, Sha256};
 
 /// The largest archive downloaded: 1 GiB, several times Chrome for Testing's.
 pub const MAX_ARCHIVE_BYTES: u64 = 1 << 30;
+
+/// Where the newest signed engine manifest is published: an asset of the `engine-manifest`
+/// prerelease of purlis/purlis, which `.github/workflows/engine-manifest.yml` replaces.
+pub const PUBLISHED_MANIFEST: &str =
+    "https://github.com/purlis/purlis/releases/download/engine-manifest/engine-manifest.json";
+
+/// The Sigstore bundle over [`PUBLISHED_MANIFEST`], published beside it.
+pub const PUBLISHED_BUNDLE: &str = "https://github.com/purlis/purlis/releases/download/engine-manifest/engine-manifest.json.sigstore.json";
+
+/// The largest manifest or bundle read: either is a few kilobytes.
+pub const MAX_MANIFEST_BYTES: u64 = 1 << 20;
 
 /// The manifest this build ships.
 const SHIPPED: &str = include_str!("../engine-pin.json");
@@ -166,6 +185,13 @@ impl Manifest {
         Self::parse(SHIPPED.as_bytes()).expect("the shipped engine manifest parses")
     }
 
+    /// Whether this manifest is to be used in place of `other`: it names a later version, or
+    /// the same version issued later, which says that version is still current. Never one that
+    /// names an earlier version, however late it was issued (no step back).
+    pub fn supersedes(&self, other: &Manifest) -> bool {
+        (version_parts(&self.version), self.issued) > (version_parts(&other.version), other.issued)
+    }
+
     fn download(&self, platform: Platform) -> Option<&Download> {
         self.downloads
             .iter()
@@ -179,41 +205,14 @@ pub trait ManifestSignature {
     fn verify(&self, manifest: &[u8], signature: &str) -> Result<(), String>;
 }
 
-/// Verifies nothing: every manifest it is shown is refused. A build with no key for engine
-/// updates runs the engine it pins, and ages towards the refusal.
+/// Verifies nothing: every manifest it is shown is refused, so what uses it runs the engine it
+/// pins, and ages towards the refusal.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoSigner;
 
 impl ManifestSignature for NoSigner {
     fn verify(&self, _: &[u8], _: &str) -> Result<(), String> {
-        Err("this build trusts no key for engine updates".to_owned())
-    }
-}
-
-/// A minisign signature by one public key, the tool and check purlis's own updates use
-/// (ADR 0042).
-pub struct Minisign(minisign_verify::PublicKey);
-
-impl Minisign {
-    /// The key, as the base64 line of a minisign `.pub` file or the whole file.
-    pub fn from_public_key(text: &str) -> Result<Self, String> {
-        let text = text.trim();
-        let key = if text.contains('\n') {
-            minisign_verify::PublicKey::decode(text)
-        } else {
-            minisign_verify::PublicKey::from_base64(text)
-        };
-        key.map(Self).map_err(|why| why.to_string())
-    }
-}
-
-impl ManifestSignature for Minisign {
-    fn verify(&self, manifest: &[u8], signature: &str) -> Result<(), String> {
-        let signature =
-            minisign_verify::Signature::decode(signature).map_err(|why| why.to_string())?;
-        self.0
-            .verify(manifest, &signature, false)
-            .map_err(|why| why.to_string())
+        Err("no engine update is trusted here".to_owned())
     }
 }
 
@@ -366,7 +365,7 @@ pub enum Refused {
     /// A signed manifest that does not parse.
     #[error(transparent)]
     Manifest(#[from] BadManifest),
-    /// A signed manifest no newer than the one in use.
+    /// A signed manifest that does not supersede the one in use ([`Manifest::supersedes`]).
     #[error("the engine update names {version}, which is not newer than the engine in use")]
     Older {
         /// The update's version.
@@ -401,7 +400,7 @@ pub struct Engines {
 }
 
 const UPDATE: &str = "update.json";
-const UPDATE_SIGNATURE: &str = "update.json.minisig";
+const UPDATE_SIGNATURE: &str = "update.json.sigstore.json";
 const INSTALLED: &str = "installed.json";
 
 impl Engines {
@@ -476,7 +475,7 @@ impl Engines {
             .map_err(Refused::Signature)?;
         let update = Manifest::parse(manifest)?;
         let current = self.trusted();
-        if update.issued <= current.issued || !newer_version(&update.version, &current.version) {
+        if !update.supersedes(&current) {
             return Err(Refused::Older {
                 version: update.version,
             });
@@ -493,6 +492,32 @@ impl Engines {
         })
     }
 
+    /// Reads the newest published manifest and its bundle ([`PUBLISHED_MANIFEST`],
+    /// [`PUBLISHED_BUNDLE`]) through `fetch` and takes it as [`Engines::update`] does: the
+    /// session host's background check, and "Update now". Either file larger than
+    /// [`MAX_MANIFEST_BYTES`] is refused unread.
+    pub fn update_from_published(
+        &self,
+        settings: &EngineSettings,
+        fetch: &dyn Fetch,
+        now: DateTime<Utc>,
+    ) -> Result<Ready, Refused> {
+        let manifest = read_small(fetch, PUBLISHED_MANIFEST)?;
+        let bundle = read_small(fetch, PUBLISHED_BUNDLE)?;
+        let bundle = String::from_utf8(bundle)
+            .map_err(|_| Refused::Signature("the Sigstore bundle is not text".to_owned()))?;
+        self.update(&manifest, &bundle, settings, fetch, now)
+    }
+
+    /// Whether an engine is installed here: the pinned engine has been used on this machine.
+    pub fn in_use(&self) -> bool {
+        fs::read_dir(&self.root).is_ok_and(|entries| {
+            entries
+                .flatten()
+                .any(|entry| installed_digest(&entry.path()).is_some())
+        })
+    }
+
     /// The newer of the shipped manifest and a stored update that still verifies.
     fn trusted(&self) -> Manifest {
         let stored = fs::read(self.root.join(UPDATE)).ok().and_then(|text| {
@@ -501,7 +526,7 @@ impl Engines {
             Manifest::parse(&text).ok()
         });
         match stored {
-            Some(update) if update.issued > self.shipped.issued => update,
+            Some(update) if update.supersedes(&self.shipped) => update,
             _ => self.shipped.clone(),
         }
     }
@@ -569,10 +594,9 @@ impl Engines {
     }
 }
 
-/// Whether dotted version `a` is later than `b`, part by part as numbers.
-fn newer_version(a: &str, b: &str) -> bool {
-    let parts = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
-    parts(a) > parts(b)
+/// Dotted version `v`'s parts as numbers, to compare part by part.
+fn version_parts(v: &str) -> Vec<u64> {
+    v.split('.').map(|p| p.parse().unwrap_or(0)).collect()
 }
 
 /// Refuses an unpacked tree holding a link that is absolute or leads out of the tree.
@@ -642,6 +666,21 @@ fn installed_digest(home: &Path) -> Option<String> {
     let text = fs::read(home.join(INSTALLED)).ok()?;
     let record: serde_json::Value = serde_json::from_slice(&text).ok()?;
     record.get("sha256")?.as_str().map(str::to_owned)
+}
+
+/// The bytes at `url`, refused when there are more than [`MAX_MANIFEST_BYTES`].
+fn read_small(fetch: &dyn Fetch, url: &str) -> Result<Vec<u8>, Refused> {
+    let mut bytes = Vec::new();
+    fetch
+        .fetch(url)
+        .and_then(|reader| reader.take(MAX_MANIFEST_BYTES + 1).read_to_end(&mut bytes))
+        .map_err(Refused::Download)?;
+    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err(Refused::Download(io::Error::other(format!(
+            "{url} is larger than any engine manifest"
+        ))));
+    }
+    Ok(bytes)
 }
 
 /// Downloads `url` into `to` and returns its SHA-256, refusing more than [`MAX_ARCHIVE_BYTES`].
