@@ -24,7 +24,9 @@ The rule, in one line each:
   focus rings and elevation are the core tokens in `app/src/theme/geometry.css`, the same in
   every theme. A theme sets colour, shadow colour and motion, and nothing else;
   `app/src/theme/geometry.test.ts` fails if a theme could set one. See
-  [Geometry is core](#geometry-is-core) and ADR 0094.
+  [Geometry is core](#geometry-is-core) and ADR 0094. ADR 0097 supersedes that rule: a theme
+  is bounded data and may set every token. The window holds 0094's rule until the theme engine
+  of spec #2313 is built.
 
 ## Why a theme is data and not CSS
 

@@ -1104,6 +1104,91 @@ and sub-agents, a persona's charter) changed on disk. It runs on what it read un
 started fresh, and its tab carries a quiet mark saying so. It is not a needs-you item.
 _Avoid_: stale, behind, outdated, Incoming (that is the remote's commits)
 
+### Themes
+
+**Theme**:
+What the window is drawn in: every token's value, from colour and motion to geometry, fonts, the
+icon set and how a workspace's tint lands. A theme is bounded data, never code, and may set every
+token; what it leaves out comes from its parent or from core (ADR 0097). A theme is built in, the
+person's own, a project's, a workspace's or an extension's.
+_Avoid_: skin, look (as the name), colour scheme (that is only its colours), style
+
+**Theme folder**:
+A theme as it is kept: a folder holding `theme.json`, and optionally its fonts, icons, a preview
+and a licence. It needs no approval, and saving a file in it repaints the window (ADR 0098). A
+project keeps its theme folders in `themes/` at the plane root, and a workspace in its own
+`themes/`.
+_Avoid_: theme file (one file is not a folder), theme package, theme pack (that is an extension)
+
+**Appearance**:
+One way a theme is drawn, tagged dark or light and optionally high contrast. A theme has one or
+more, and the person picks one or lets the system's choose. A theme with a dark and a light
+appearance can follow the system.
+_Avoid_: mode, variant, flavour, dark mode (as the name of the setting)
+
+**Theme option**:
+A toggle or a choice a theme offers, such as an accent or borders on or off, that sets tokens
+when picked. Its values are the person's choice. An option never sets a free number.
+_Avoid_: setting (that is the person's, for every theme), variant, preference
+
+**Palette**:
+A theme's named colours, which its tokens refer to by name, so one colour is changed once.
+_Avoid_: swatches, colour list, primitives
+
+**Density**:
+The person's setting of how much room the window gives its rows and controls: comfortable or
+compact. Every theme honours it, and a theme may tune what compact means for it.
+_Avoid_: compact mode, zoom, scale, text size (that is a setting of its own)
+
+**Theme specimen**:
+A fixed page drawn off-screen with sample content, in a given theme, appearance and options: every
+control, a chat pane, an editor, a terminal, Settings, a dialog and a Notice. It is how a chat sees
+a theme it makes and what the gallery's cards show. It never shows the person's real window or
+data.
+_Avoid_: preview (that is drawing a theme in the real window), screenshot, sample window
+
+**Theme check**:
+What purlis says about a theme: format and bound errors, contrast findings by pair with the
+ratio, and hard-floor findings, for every appearance and option combination. A format error
+refuses the theme; a contrast finding is a warning.
+_Avoid_: theme lint, validation, audit
+
+**Theme draft**:
+A chat's unsaved changes to a theme, drawn only in that chat's workspace (the plane root for a
+root chat) until the person keeps or reverts them. A strip on the workspace says it is live and by
+which chat.
+_Avoid_: preview, unsaved theme, working copy
+
+**Hard floor**:
+A rule about readability no theme draft can break, such as primary text at 3:1 or a visible focus
+ring. A draft that breaks one is not drawn, and the last good version stays.
+_Avoid_: contrast check (that is the theme check's), minimum, guard
+
+**Workspace theme**:
+The theme a workspace is drawn in, which the window repaints to when the workspace comes to the
+front. It is the person's choice for that workspace, or a LIVE workspace's committed default.
+_Avoid_: workspace colour (that is its tint), workspace skin
+
+**Foundation**:
+The designer's drawn look that the theme Purlis is built from: its type, colours, icons and sizes,
+read once from the Figma file into a record the project keeps.
+_Avoid_: design system (that is how the window is built), brand, mockup
+
+**Default theme**:
+The theme a level offers when the person has chosen none: the project's or a LIVE workspace's
+committed one, or Purlis when no level says. The person's own choice always beats it.
+_Avoid_: fallback, standard theme, base theme (that is what a theme extends)
+
+**Preview theme**:
+A shipped theme that is not the default yet and says so in its name, as "Purlis (preview)" does
+until every surface is covered. It is chosen like any theme and moves nobody to it.
+_Avoid_: beta theme, experimental theme, preview (that is drawing a theme in the window)
+
+**Purlis Classic**:
+The theme of today's look, kept unchanged as a theme of its own when Purlis becomes the default,
+in a dark and a light appearance.
+_Avoid_: purlis-dark, purlis-light (those are old ids), legacy theme, old theme
+
 ### Saving
 
 **Save**:

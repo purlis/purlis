@@ -180,7 +180,7 @@ const KEYS: [&str; 2] = ["hears", "workspace_folder"];
 /// The names a workspace's own files and folders have, which no extension may claim: a fork
 /// already carries or deliberately leaves each of them, and an extension naming one would be
 /// asking charter to copy what the core decided about.
-const CORE_NAMES: [&str; 12] = [
+const CORE_NAMES: [&str; 13] = [
     "workspace.md",
     "workspace.json",
     "memory",
@@ -190,6 +190,7 @@ const CORE_NAMES: [&str; 12] = [
     "refs",
     "pieces",
     "worktrees",
+    "themes",
     "README.md",
     "CLAUDE.md",
     "AGENTS.md",
