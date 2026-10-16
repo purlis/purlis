@@ -199,6 +199,13 @@ fn a_pull_request_runs_it_only_when_the_images_files_change() {
 }
 
 #[test]
+fn the_operator_image_is_never_started_by_hand() {
+    let (text, _) = workflow(&OPERATOR);
+    let on = triggers(&text);
+    assert!(!on.contains(&"workflow_dispatch:"), "{on:?}");
+}
+
+#[test]
 fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
     for image in &IMAGES {
         let (text, jobs) = workflow(image);

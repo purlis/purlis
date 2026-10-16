@@ -14,7 +14,7 @@ run-name: ${{ github.event_name == 'workflow_run' && format('cluster operator {0
 # (ruling of 2026-10-14): `image` pushes only into a package the packages API shows private, and
 # `index` tags and signs only when that still holds and the registry refuses an anonymous pull.
 #
-# Three ways in, and what each makes:
+# Two ways in, and what each makes:
 #
 #   `cluster operator` green -> the image of that commit: built, checked, pushed, tagged
 #   on a push to `main`         `sha-<commit>` (and `main` when that moves it forward), signed,
@@ -25,7 +25,9 @@ run-name: ${{ github.event_name == 'workflow_run' && format('cluster operator {0
 #                               tests on that commit are what this waits for.
 #   a pull request           -> touching the operator or this image's own files only: the same
 #                               build and check, for both architectures, pushed nowhere.
-#   `workflow_dispatch`      -> the same, for any branch, pushed nowhere.
+#
+# Nothing else starts it: there is no `workflow_dispatch`, and a failed publishing run is re-run
+# from its own page.
 #
 # **Each architecture is built on a runner of its own architecture** (`ubuntu-24.04` and
 # `ubuntu-24.04-arm`), with no emulation, with the pinned toolchain, `cargo auditable` and the
@@ -51,7 +53,6 @@ on:
     workflows: [cluster operator]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 # One publish at a time, never cancelled once started, as `runner-image.yml`'s; a run that
 # publishes nothing takes a group of its own and displaces no publish. A pull request's run is
