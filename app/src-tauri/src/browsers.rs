@@ -304,10 +304,9 @@ mod hosted {
             if let Some(held) = projects.get(root) {
                 return Ok((link, held.project.clone()));
             }
-            let project =
-                purlis_core::scaffold::planefile::ensure_project_id(root).map_err(|why| {
-                    format!("this project has no id the session host can name it by: {why}")
-                })?;
+            let project = purlis_core::scaffold::planefile::id_to_hold_by(root).map_err(|why| {
+                format!("this project has no id the session host can name it by: {why}")
+            })?;
             link.call(Command::HoldProject {
                 project: project.clone(),
                 project_path: root.display().to_string(),

@@ -136,6 +136,10 @@ impl Started {
 
 #[test]
 fn an_upgrade_to_chats_in_the_host_reopens_every_chat_as_it_was() {
+    if std::env::var_os(LAUNCH).is_some() {
+        // What goes wrong in a launch is said where the test's output shows it.
+        purlis_core::applog::install_for_a_terminal();
+    }
     match std::env::var(LAUNCH).as_deref() {
         Ok("before") => return the_launch_before_the_upgrade(&a_child_s_world()),
         Ok("after") => return the_launch_after_the_upgrade(&a_child_s_world()),
@@ -427,9 +431,16 @@ fn the_launch_after_the_upgrade(world: &World) {
         .held(&planes.open(&root))
         .expect("the project is held");
     held.reopen(SIZE, reopen::read_or_refusal(&root), Choice::ReopenAll);
-    until("both chats to come back", || {
-        world.starts().len() == started_before + 2
-    });
+    let began = Instant::now();
+    while world.starts().len() != started_before + 2 {
+        assert!(
+            began.elapsed() < PATIENCE,
+            "still waiting for both chats to come back: {} started; the window draws {:?}",
+            world.starts().len() - started_before,
+            held.chats().drawn_now()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let mut profiles: Vec<String> = held
         .chats()
         .open_now()

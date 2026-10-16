@@ -186,6 +186,24 @@ pub fn project_id(root: &Path) -> Option<String> {
     id_in(&table).ok().flatten()
 }
 
+/// **The id the session host holds the project at `root` by** (ADR 0068, amended for #1998 and
+/// #2004): [`project_id`] where the project keeps one, and otherwise one derived from where it
+/// is, a ULID of the SHA-256 of its resolved path, so it is held by the same id at every launch
+/// and nothing is written into its `charter.toml`. Holding a project never writes it: with chats
+/// in the session host by default, every project a person opens is held, and none of them gains
+/// a committed change by being opened (D-2004-7, to be confirmed).
+pub fn id_to_hold_by(root: &Path) -> std::io::Result<String> {
+    if let Some(id) = project_id(root) {
+        return Ok(id);
+    }
+    use sha2::{Digest, Sha256};
+    let resolved = std::fs::canonicalize(root)?;
+    let digest = Sha256::digest(resolved.as_os_str().as_encoded_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    Ok(ulid::Ulid::from_bytes(bytes).to_string())
+}
+
 /// [`project_id`], minting it first when the project has none: a fresh ULID, written into
 /// `charter.toml` as `[project] id` by the same text edit as [`set_key`], so every byte the
 /// operator wrote is kept. Read, decided and written under one lock, so two processes asking

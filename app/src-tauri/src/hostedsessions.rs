@@ -1179,7 +1179,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     {
         return Ok((link, project.clone()));
     }
-    let project = purlis_core::scaffold::planefile::ensure_project_id(root)
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(root)
         .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
     // Before the hold, so the host's first line for the project is heard.
     if let Some(relayed) = lock(relayed).clone() {

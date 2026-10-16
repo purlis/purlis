@@ -164,3 +164,45 @@ fn a_project_that_is_not_a_table_is_refused_and_left_as_it_is() {
         text
     );
 }
+
+/// #2004: holding a project in the session host writes nothing into it. One that keeps no id is
+/// held by one derived from where it is, the same at every ask, and its `charter.toml` is left
+/// as it is, whether or not this purlis may write it (a newer schema, #826).
+#[test]
+fn a_project_with_no_id_is_held_without_a_write_and_by_the_same_id_each_time() {
+    purlis_core::unsteered!();
+    for text in [
+        "schema = 1
+",
+        "schema = 99
+",
+    ] {
+        let root = project(text);
+
+        let first = planefile::id_to_hold_by(root.path()).unwrap();
+        let again = planefile::id_to_hold_by(root.path()).unwrap();
+
+        assert!(ulid::Ulid::from_string(&first).is_ok(), "{first} is a ULID");
+        assert_eq!(first, again);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("charter.toml")).unwrap(),
+            text,
+            "nothing was written"
+        );
+        let other = project(text);
+        assert_ne!(planefile::id_to_hold_by(other.path()).unwrap(), first);
+    }
+}
+
+/// #2004: a project that keeps an id is held by it.
+#[test]
+fn a_project_that_keeps_an_id_is_held_by_it() {
+    purlis_core::unsteered!();
+    let root = project(
+        "schema = 1
+",
+    );
+    let id = planefile::ensure_project_id(root.path()).unwrap();
+
+    assert_eq!(planefile::id_to_hold_by(root.path()).unwrap(), id);
+}
