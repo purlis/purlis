@@ -712,10 +712,21 @@ pub async fn size_browser(
     }
 }
 
-/// Ends browser `program`: its engine and everything it started.
+/// Ends browser `program`: its engine and everything it started. Never a browser a chat uses,
+/// which ends with its chat (#2024).
 #[tauri::command]
 #[specta::specta]
-pub async fn close_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+pub async fn close_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    program: String,
+) -> Result<(), String> {
+    let held = planes.every_held();
+    if let Some(why) =
+        crate::chatbrowsers::closing_refused(held.iter().map(|one| one.browsers()), &program)
+    {
+        return Err(why);
+    }
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
@@ -744,7 +755,13 @@ pub fn let_go_of(app: &tauri::AppHandle, root: &std::path::Path) {
 pub fn stop_every_browser(app: &tauri::AppHandle) -> usize {
     #[cfg(unix)]
     {
-        browsers(app).map_or(0, |browsers| browsers.stop_every_browser())
+        use tauri::Manager;
+        let stopped = browsers(app).map_or(0, |browsers| browsers.stop_every_browser());
+        // The chats' browsers leave their rows and tabs (#2024).
+        if let Some(planes) = app.try_state::<crate::planes::Planes>() {
+            planes.chat_browsers_stopped();
+        }
+        stopped
     }
     #[cfg(not(unix))]
     {

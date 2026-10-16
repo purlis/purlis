@@ -278,8 +278,17 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { BROWSER_TITLE, browserView, browsersLetGo, isBrowser } from "./browsers";
+import {
+  BROWSER_TITLE,
+  browserView,
+  browsersLetGo,
+  chatBrowserTitle,
+  isBrowser,
+  openBrowserBeside,
+} from "./browsers";
 import { sendToDriven } from "./browserDriving";
+import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import type { BrowserShown } from "./ChatBrowsersShown";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
@@ -3630,10 +3639,20 @@ export const PlaneView = memo(function PlaneView({
     });
   }, [plane, refusedBy, showView, succeeded]);
 
-  /** **A browser lives as long as a tab shows it** (#2012): when the last one closes, it ends. */
+  /** The browsers of this project's chats (#2024): rows under their chats, live on their tabs. */
+  const { browsers: chatBrowsers, read: chatBrowsersRead } = useChatBrowsers(plane);
+  /** Their programs: a tab showing one closes only its view, since it ends with its chat. */
+  const chatPrograms = useMemo(() => programsOf(chatBrowsers), [chatBrowsers]);
+  const chatProgramsNow = useRef(chatPrograms);
+  useEffect(() => {
+    chatProgramsNow.current = chatPrograms;
+  }, [chatPrograms]);
+
+  /** **A browser lives as long as a tab shows it** (#2012): when the last one closes, it ends.
+   *  Not a chat's (#2024), which ends with its chat. */
   const browsersBefore = useRef(tabs);
   useEffect(() => {
-    for (const program of browsersLetGo(browsersBefore.current, tabs))
+    for (const program of browsersLetGo(browsersBefore.current, tabs, chatProgramsNow.current))
       void commands.closeBrowser(program);
     browsersBefore.current = tabs;
   }, [tabs]);
@@ -3991,6 +4010,48 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     nameOfNow.current = nameOf;
   }, [nameOf]);
+
+  /** Each chat's browsers as they are drawn (#2024), by the name the chat has here. */
+  const chatBrowsersShown = useMemo(
+    () =>
+      new Map(
+        [...chatBrowsers].map(([session, listed]) => [
+          session,
+          listed.map((browser): BrowserShown => ({ browser, chat: nameOf(session) })),
+        ]),
+      ),
+    [chatBrowsers, nameOf],
+  );
+  /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
+  const browsersOfTab = useCallback(
+    (id: number) =>
+      panesOf(tabs, id).flatMap(({ session }) => chatBrowsersShown.get(session) ?? []),
+    [tabs, chatBrowsersShown],
+  );
+  /** A chat's browser's view, in a tab of its own on its chat's strip (#2024). */
+  const openChatBrowser = useCallback(
+    ({ browser, chat }: BrowserShown) =>
+      showView(
+        browserView(browser.program),
+        chatBrowserTitle(chat, browser.name),
+        filedIn(browser.session),
+      ),
+    [showView, filedIn],
+  );
+  /** **A chat's new browser opens beside it**, where the person's setting says so (#2024): only
+   *  one that started after the window first read them, so a reload opens nothing. */
+  const { beside: browsersBeside } = useChatsListPrefs();
+  const browsersKnown = useRef<Set<string> | undefined>(undefined);
+  useEffect(() => {
+    if (!chatBrowsersRead) return;
+    const known = browsersKnown.current;
+    browsersKnown.current = programsOf(chatBrowsers);
+    if (known === undefined || !browsersBeside) return;
+    for (const [session, listed] of chatBrowsers)
+      for (const { program, unended } of listed)
+        if (!unended && !known.has(program))
+          change((was) => openBrowserBeside(was, session, program, filedIn(session)));
+  }, [chatBrowsers, chatBrowsersRead, browsersBeside, change, filedIn]);
 
   const frontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
   // The session the next worktree question is about: the chat in the pane that has the
@@ -8178,6 +8239,8 @@ export const PlaneView = memo(function PlaneView({
                   onChanges={(task) =>
                     showView(taskChangesView(task.id), taskChangesTitle(task.name))
                   }
+                  browsers={chatBrowsersShown}
+                  onBrowser={openChatBrowser}
                 />
               </WaitingTaskWaysContext.Provider>
             ),
@@ -8477,6 +8540,8 @@ export const PlaneView = memo(function PlaneView({
                 handedFrom={handedFrom}
                 workItems={workItems}
                 restoring={restoringChats}
+                browsersOfTab={browsersOfTab}
+                openBrowser={openChatBrowser}
               />
               {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
                 splits, the key the palette claimed, and — under the line — ending this pane's

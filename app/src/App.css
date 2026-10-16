@@ -882,6 +882,61 @@ body {
   color: var(--text-primary);
 }
 
+/* **A chat's browsers on its tab** (#2024): each a live thumbnail beside the tab, as the fresh
+   mark is, with nothing of a button's chrome but a hairline frame the page's picture sits in.
+   As tall as a mark and as wide as a page that tall; a browser's mark until its first frame. */
+.tab-browsers {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: var(--space-2);
+}
+
+.tab-browsers > .tab-browser {
+  block-size: auto;
+  padding: 0;
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.tab-browsers > .tab-browser:hover {
+  border-color: var(--border-strong);
+}
+
+/* How many: the tab's count pill (`.count-pill`), with a browser's mark before the digit. */
+.tab-browsers-count {
+  align-items: center;
+  padding-inline-start: var(--space-2);
+}
+
+.tab-browsers-count > svg {
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+.browser-thumbnail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: calc(var(--space-6) * 1.6);
+  block-size: var(--space-6);
+  overflow: hidden;
+}
+
+.browser-thumbnail > canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.browser-thumbnail > svg {
+  inline-size: var(--space-5);
+  block-size: var(--space-5);
+}
+
 /* The bar's own controls — `+`, the two splits, `End this pane's chat`, the region toggles.
    Each carries an icon beside its words (`PlaneView`'s `Doer`), so this is a flex row: the
    words stay, because an icon-only bar is a bar an operator has to learn. */
@@ -3816,7 +3871,8 @@ h2.sidebar-title .node-icon {
    (`.ui-button-sm`), the row's height. What is said under the line (a refusal, the core's note,
    the report) stands where the name does, and the item draws the levels' guides on down past
    it. */
-.chats-section li.finished-tasks {
+.chats-section li.finished-tasks,
+.chats-section li.chat-browsers {
   --finished-depth: min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4));
   display: block;
   background-image: repeating-linear-gradient(
@@ -3854,10 +3910,22 @@ h2.sidebar-title .node-icon {
   font-size: var(--font-size-sm);
 }
 
+/* **A chat's browsers, under its row** (#2024) wear a finished task's name's rules: the shared
+   tree row at the level below the chat's, its mark and name in a chat's row's columns. */
 .chats-section .finished-name,
+.chats-section .chat-browser,
 .chats-section .finished-count {
   color: inherit;
   font: inherit;
+}
+
+.chats-section .chat-browser {
+  display: flex;
+  width: 100%;
+}
+
+.chats-section .chat-browser-unended {
+  flex: none;
 }
 
 /* Its mark and its name in a chat's row's columns, and its persona's mark at its end, the
@@ -3868,13 +3936,15 @@ h2.sidebar-title .node-icon {
 }
 
 .chats-section .finished-name > svg,
+.chats-section .chat-browser > svg,
 .chats-section .finished-name > .persona-mark {
   flex: none;
   inline-size: var(--space-6);
   block-size: var(--space-6);
 }
 
-.chats-section .finished-name .session {
+.chats-section .finished-name .session,
+.chats-section .chat-browser .session {
   flex: 1 1 3rem;
   min-width: 0;
   overflow: hidden;
@@ -8419,7 +8489,21 @@ textarea.ui-field {
 
 .browser-frame {
   display: block;
+  min-height: 0;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
+   above the page and outside the frame, so a page can never draw them. */
+.browser-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-inline-end: var(--space-3);
+  border-inline-end: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

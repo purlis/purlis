@@ -1630,6 +1630,41 @@ export function openBeside(tabs: Tabs, task: number, askedBy: AskedBy, chat?: st
 }
 
 /**
+ * **Opens `view` beside chat `session`'s pane, in that chat's tab** (#2024): the pane is split
+ * side by side, the view on the right. Nothing else moves: the tab in front and the pane with
+ * the keyboard stay where they were, so a view opened for the person while they work elsewhere
+ * takes nothing from them. A view some tab shows already, or a chat no pane shows, is left as
+ * it is (answers `tabs` itself).
+ */
+export function openViewBeside(
+  tabs: Tabs,
+  session: number,
+  view: ViewRef,
+  workspace: string,
+): Tabs {
+  if (findView(tabs, view)) return tabs;
+  for (const id of tabs.order) {
+    const tab = tabs.byId[id];
+    const home = contents(tab.layout).find(
+      ({ content }) => content.kind === "session" && content.session === session,
+    );
+    if (home === undefined) continue;
+    const pane = tabs.named.panes + 1;
+    const layout = replace(tab.layout, home.pane, (found) => ({
+      kind: "split",
+      direction: "row",
+      children: [found, { kind: "pane", pane, content: { kind: "view", view, workspace } }],
+    }));
+    return {
+      ...tabs,
+      byId: { ...tabs.byId, [id]: { ...tab, layout } },
+      named: { ...tabs.named, panes: pane },
+    };
+  }
+  return tabs;
+}
+
+/**
  * `tab` showing `shows`, kept true to the tab: only a chat pane the tab still has, and only a
  * chat other than the pane's own. A tab showing no task carries no `shows` at all, so it is
  * the value it was before any task was shown.

@@ -56,6 +56,7 @@ mod sandbox;
 pub(crate) mod session;
 mod shadowed;
 mod spool;
+mod themes;
 mod vault_registry;
 mod vaults;
 mod work;
@@ -546,6 +547,7 @@ impl Doctor {
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(plane::behind_the_layout(self));
         rows.push(layer::workspace_layer(self));
+        rows.extend(themes::themes(self));
         rows.push(changes::changes(self));
         rows.extend(work::work_links(self));
         rows.push(inventory::inventory(self));

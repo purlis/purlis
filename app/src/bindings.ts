@@ -664,6 +664,12 @@ export const commands = {
 	 */
 	keepChatBrowserOff: (plane: PlaneId, session: number, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_chat_browser_off", { plane, session, reason })),
 	/**
+	 *  **The browsers of project `plane`'s chats** (#2024): what the Chats list draws under each
+	 *  chat and its tab draws live, read again on [`LISTED`]. The window's alone
+	 *  (`ui::WINDOW_ONLY`): a browser is watched only in the person's own window.
+	 */
+	chatBrowsers: (plane: PlaneId) => typedError<ChatBrowser[], string>(__TAURI_INVOKE("chat_browsers", { plane })),
+	/**
 	 *  **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
 	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
 	 *  Window-only.
@@ -1127,7 +1133,10 @@ export const commands = {
 	watchBrowser: (program: string, role: BrowserViewRole, frames: Channel<BrowserFrame>) => typedError<BrowserWatching, string>(__TAURI_INVOKE("watch_browser", { program, role, frames })),
 	/**  Closes a browser view the window had open. The browser runs on. */
 	unwatchBrowser: (program: string, view: number) => typedError<null, string>(__TAURI_INVOKE("unwatch_browser", { program, view })),
-	/**  Ends browser `program`: its engine and everything it started. */
+	/**
+	 *  Ends browser `program`: its engine and everything it started. Never a browser a chat uses,
+	 *  which ends with its chat (#2024).
+	 */
 	closeBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("close_browser", { program })),
 	/**
 	 *  The person takes browser `program` over (#2014): its chat's browser tools are refused in
@@ -3912,6 +3921,11 @@ export type BrowsersEnded = {
 	note: string,
 };
 
+/**  **A project whose chats' browsers were added to or taken from** (#2024). */
+export type BrowsersListed = {
+	plane: PlaneId,
+};
+
 /**  What kind of build this is, which decides which section is shown. */
 export type Build = 
 /**  The changelog has a section for this version. */
@@ -4126,6 +4140,24 @@ export type ChatBlocked = {
 	 *  Judged as a port is before it is sent here, and again before anything is allowed.
 	 */
 	suggested?: string | null,
+};
+
+/**
+ *  **One browser of a chat's, as the window lists it** (#2024): under its chat in the Chats
+ *  list, live on its chat's tab, and opened in a view tab by its program.
+ */
+export type ChatBrowser = {
+	/**  The chat it is of. */
+	session: number,
+	/**  What the chat calls it: `b1`, `b2`. */
+	name: string,
+	/**  Its program in the session host: what its view is opened by. */
+	program: string,
+	/**
+	 *  It was to end and could not be ended yet (D-2013-16): no call of the chat's reaches it,
+	 *  purlis keeps trying, and Stop all ends it now.
+	 */
+	unended: boolean,
 };
 
 /**

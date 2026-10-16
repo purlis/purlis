@@ -2,8 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { browserView, browsersLetGo, browsersShown, BROWSER_TITLE } from "./browsers";
-import { closeFocusedPane, contentsOf, noTabs, openView, splitFocusedPane } from "./tabs";
+import {
+  addressChip,
+  browserView,
+  browsersLetGo,
+  browsersShown,
+  BROWSER_TITLE,
+  chatBrowserTitle,
+  openBrowserBeside,
+} from "./browsers";
+import {
+  closeFocusedPane,
+  closeTab,
+  contentsOf,
+  noTabs,
+  openTab,
+  openView,
+  splitFocusedPane,
+} from "./tabs";
 
 const filedIn = () => "alpha";
 
@@ -39,5 +55,67 @@ describe("a browser's view tab (#2012)", () => {
     const browserClosed = closeFocusedPane(chatClosed, filedIn);
     expect(browsersLetGo(chatClosed, browserClosed)).toEqual(["B2"]);
     expect(browsersShown(browserClosed)).toEqual(new Set(["B1"]));
+  });
+});
+
+describe("a chat's browser (#2024)", () => {
+  it("is named after its chat and the name the chat knows it by", () => {
+    expect(chatBrowserTitle("steward 3", "b1")).toBe("Browser b1 of steward 3");
+  });
+
+  it("is never let go of when a tab showing it closes: it ends with its chat", () => {
+    const opened = openView(noTabs(), browserView("B7"), BROWSER_TITLE, "alpha");
+    const closed = closeTab(opened, opened.inFront ?? -1, filedIn, () => false);
+
+    expect(browsersLetGo(opened, closed, new Set(["B7"]))).toEqual([]);
+    expect(browsersLetGo(opened, closed)).toEqual(["B7"]);
+  });
+
+  it("opens beside its chat's pane, in the chat's tab, and leaves the keyboard where it was", () => {
+    const chat = openTab(noTabs(), 3, "3", "steward");
+    const other = openTab(chat, 9, "9", "steward");
+    const tab = chat.inFront ?? -1;
+
+    const beside = openBrowserBeside(other, 3, "B7", "alpha");
+
+    expect(contentsOf(beside, tab).map(({ content }) => content)).toEqual([
+      { kind: "session", session: 3, chat: "3" },
+      { kind: "view", view: browserView("B7"), workspace: "alpha" },
+    ]);
+    expect(beside.inFront).toBe(other.inFront);
+    expect(beside.byId[tab].focused).toBe(chat.byId[tab].focused);
+  });
+
+  it("is not opened a second time beside its chat once a tab shows it", () => {
+    const chat = openTab(noTabs(), 3, "3", "steward");
+    const once = openBrowserBeside(chat, 3, "B7", "alpha");
+
+    expect(openBrowserBeside(once, 3, "B7", "alpha")).toBe(once);
+  });
+
+  it("of a chat with no pane opens in nothing: its row still opens it", () => {
+    const tabs = openTab(noTabs(), 3, "3", "steward");
+    expect(openBrowserBeside(tabs, 4, "B7", "alpha")).toBe(tabs);
+  });
+});
+
+describe("a browser's address chip (#2024)", () => {
+  it("names the page's host and the device it runs on", () => {
+    expect(addressChip("http://localhost:5173/login", "this Mac")).toEqual({
+      said: "localhost:5173 on this Mac",
+      whole: "http://localhost:5173/login",
+    });
+    expect(addressChip("https://docs.example.com/a?b=c", "this computer")).toEqual({
+      said: "docs.example.com on this computer",
+      whole: "https://docs.example.com/a?b=c",
+    });
+  });
+
+  it("names the device alone where there is no page yet, or the page is blank", () => {
+    expect(addressChip(null, "this Mac")).toEqual({ said: "On this Mac", whole: null });
+    expect(addressChip("about:blank", "this Mac")).toEqual({
+      said: "A blank page on this Mac",
+      whole: null,
+    });
   });
 });

@@ -24,7 +24,9 @@ The rule, in one line each:
   focus rings and elevation are the core tokens in `app/src/theme/geometry.css`, the same in
   every theme. A theme sets colour, shadow colour and motion, and nothing else;
   `app/src/theme/geometry.test.ts` fails if a theme could set one. See
-  [Geometry is core](#geometry-is-core) and ADR 0094.
+  [Geometry is core](#geometry-is-core) and ADR 0094. ADR 0097 supersedes that rule: a theme
+  is bounded data and may set every token. The window holds 0094's rule until the theme engine
+  of spec #2313 is built.
 
 ## Why a theme is data and not CSS
 
@@ -459,8 +461,9 @@ has it; nothing reads the key after that.
   task does (#1489, V100-74): **`tabbed`**, `true` when it opens in a tab of its own, with a
   minimise button in place of the close; `false`, its session's tab is switched to it. And
   **`away`** (#1514, V100-73), `false` when coming back to the window draws no summary of what
-  happened while you were away. Leave any out for its default, `false`, `false` and
-  `true`; purlis leaves the whole of `chats` out
+  happened while you were away. And **`beside`** (#2024), `true` when a browser a chat starts
+  opens beside the chat, in its tab. Leave any out for its default, `false`, `false`, `true`
+  and `false`; purlis leaves the whole of `chats` out
   while all are the defaults. A value that is neither is the default, and the Inbox says so. Settings
   writes it (`app/src/chatsListPrefs.ts`). It is in this file because it is how one person
   likes their window, and a project would carry it to every clone.
