@@ -82,9 +82,15 @@ fn ref_on(text: &str, words: &str) -> Ref {
     Ref::new(&line[start..end])
 }
 
-fn open_the_way_out(browser: &Browser) {
+/// Opens the page of ways out; a failure says what the judge was told by then.
+fn open_the_way_out(browser: &Browser, told: &Told) {
     let address = WebAddress::parse("http://fixture.test/leaving.html").unwrap();
-    call(browser, Call::Open { address });
+    if let Err(why) = browser.call(&next_id(), Call::Open { address }) {
+        panic!(
+            "the page of ways out did not open: {why}; the judge was told {:?}",
+            told.lock().unwrap()
+        );
+    }
 }
 
 fn told_about(told: &Mutex<Vec<(String, Why)>>, address: &str) -> Vec<Why> {
@@ -102,7 +108,7 @@ fn a_link_the_page_offered_is_a_read_and_loads() {
     let Some((browser, _data, _site)) = started_judged(judge) else {
         return;
     };
-    open_the_way_out(&browser);
+    open_the_way_out(&browser, &told);
     assert_eq!(
         told_about(&told, "http://fixture.test/leaving.html"),
         [Why::Addressed]
@@ -127,7 +133,7 @@ fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
     let Some((browser, _data, _site)) = started_judged(judge) else {
         return;
     };
-    open_the_way_out(&browser);
+    open_the_way_out(&browser, &told);
     let answer = call(
         &browser,
         Call::Navigate {
@@ -156,7 +162,7 @@ fn a_form_submitted_to_the_site_sends_whether_by_get_or_by_post() {
         ("textbox \"Search\"", "button \"Search the other site\""),
         ("textbox \"Note\"", "button \"Post to the other site\""),
     ] {
-        open_the_way_out(&browser);
+        open_the_way_out(&browser, &told);
         let page = snapshot(&browser);
         call(
             &browser,
