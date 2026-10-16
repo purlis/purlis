@@ -209,9 +209,9 @@ export function trimMessage(message) {
 }
 
 // Workflow command escaping: `%`, CR and LF in data; `:` and `,` too in a property.
-const escapeData = (s) =>
+export const escapeData = (s) =>
   s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-const escapeProperty = (s) =>
+export const escapeProperty = (s) =>
   escapeData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
 
 /**

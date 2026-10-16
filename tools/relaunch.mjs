@@ -40,6 +40,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { annotations, linesWritten, stepTimer } from "./relaunch-report.mjs";
+
 const ROOT = resolve(import.meta.dirname, "..");
 const APP = join(process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"), "charter-app");
 /** The conversation the chat is under. The stand-in harness only has to echo it back. */
@@ -73,10 +75,40 @@ if (!existsSync(APP)) {
 }
 
 const failures = [];
+/**
+ * The launch the checks are about: its name, and its steps with their times once it has ended.
+ * A failed check is annotated with both (#2183), so the checks API says where the run stopped.
+ */
+let launch = { name: "before the first launch", steps: "" };
 function check(what, ok, detail = "") {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}${detail ? ` — ${detail}` : ""}`);
-  if (!ok) failures.push(what);
+  if (!ok) failures.push({ launch: launch.name, what, detail, steps: launch.steps });
 }
+
+/**
+ * Ends the run with `code`, the failures as annotations first when on GitHub. It exits only once
+ * stdout has drained: on macOS stdout to a pipe is written asynchronously, and an exit at once
+ * cut the one FAIL line of #2183 at 64 KiB.
+ */
+function finish(code) {
+  if (process.env.GITHUB_ACTIONS === "true") {
+    for (const line of annotations(failures)) console.log(line);
+  }
+  process.stdout.write("", () => process.exit(code));
+}
+
+// A run that throws (the app's WebDriver server refusing, a record that is not JSON) stops at a
+// launch's step too, and says which.
+process.on("uncaughtException", (error) => {
+  console.error(error);
+  failures.push({
+    launch: launch.name,
+    what: "the run stopped",
+    detail: String(error?.stack ?? error),
+    steps: launch.steps || launch.timer?.summary() || "",
+  });
+  finish(1);
+});
 
 /** A plane with nothing in it but the file that makes it one. */
 function aPlane() {
@@ -149,7 +181,8 @@ const idOf = (element) => Object.values(element)[0];
  * keyboard, which is the answer a stray Return would give.
  */
 function pressing(answer, argvFile, hold = 2_000) {
-  return async (port, until) => {
+  return async (port, until, steps) => {
+    steps.step("waiting for the app's WebDriver server");
     let session;
     while (Date.now() < until && session === undefined) {
       session = await webdriver(port, "POST", "/session", { capabilities: { alwaysMatch: {} } })
@@ -158,6 +191,7 @@ function pressing(answer, argvFile, hold = 2_000) {
       if (session === undefined) await new Promise((tick) => setTimeout(tick, 250));
     }
     if (session === undefined) throw new Error("the app's WebDriver server never answered");
+    steps.step("waiting for the launch's question");
     const buttons = async () =>
       webdriver(port, "POST", `/session/${session}/elements`, {
         using: "css selector",
@@ -166,7 +200,9 @@ function pressing(answer, argvFile, hold = 2_000) {
     while (Date.now() < until && (await buttons()).length === 0) {
       await new Promise((tick) => setTimeout(tick, 250));
     }
+    steps.step("holding with the question up");
     await new Promise((tick) => setTimeout(tick, hold));
+    steps.step("reading the question");
     const startedWhileAsking = argvSeen(argvFile).length;
     const textOf = (element) =>
       webdriver(port, "GET", `/session/${session}/element/${idOf(element)}/text`);
@@ -182,6 +218,7 @@ function pressing(answer, argvFile, hold = 2_000) {
     for (const button of await buttons()) {
       const text = await textOf(button);
       if (text.trim() === answer) {
+        steps.step(`pressing ${answer}`);
         await webdriver(port, "POST", `/session/${session}/element/${idOf(button)}/click`, {});
         return { startedWhileAsking, said, focused: focused.trim() };
       }
@@ -196,7 +233,10 @@ function pressing(answer, argvFile, hold = 2_000) {
  * `answer`, when given, is run beside the wait with the app's WebDriver port — it is how the
  * launch's question is answered — and what it returns comes back as `answered`.
  */
-async function theAppRuns(plane, done, answer) {
+async function theAppRuns(name, plane, done, answer) {
+  const steps = stepTimer();
+  launch = { name, steps: "", timer: steps };
+  steps.step("starting the app");
   const port = await aFreePort();
   // `CHARTER_LAUNCH_LOG` makes the app say how far up it got. A launch that never reaches
   // its first chat says nothing at all otherwise, which cost three round trips of guessing.
@@ -229,10 +269,15 @@ async function theAppRuns(plane, done, answer) {
     let answered;
     let refused;
     if (answer) {
-      answer(port, until).then(
-        (said) => (answered = said),
+      answer(port, until, steps).then(
+        (said) => {
+          answered = said;
+          steps.step("waiting for what the launch should do");
+        },
         (why) => (refused = why),
       );
+    } else {
+      steps.step("waiting for what the launch should do");
     }
     while (Date.now() < until) {
       if (refused) return { ok: false, output: `${output}\n(answering failed: ${refused})` };
@@ -242,19 +287,24 @@ async function theAppRuns(plane, done, answer) {
     }
     return { ok: false, output, answered };
   } finally {
+    steps.step("ending the app");
     // The pid this started, never a name: other things on this machine are called claude.
     app.kill("SIGTERM");
     await new Promise((gone) => {
       app.on("exit", gone);
       setTimeout(gone, 3_000);
     });
+    launch.steps = steps.summary();
   }
 }
 
-/** Every line the stand-in harness has written, which is one per time it was started. */
+/**
+ * Every line the stand-in harness has finished writing, which is one per time it was started. A
+ * line still being written is not one yet (#2183): read early, it lacks the `--resume` at its end.
+ */
 function argvSeen(file) {
   try {
-    return readFileSync(file, "utf8").split("\n").filter(Boolean);
+    return linesWritten(readFileSync(file, "utf8"));
   } catch {
     return [];
   }
@@ -297,6 +347,7 @@ writeFileSync(
 console.log(`a plane at ${plane}`);
 
 const first = await theAppRuns(
+  "the first launch",
   plane,
   () => argvSeen(argvFile).length >= 1,
   pressing("Reopen all sessions", argvFile),
@@ -360,6 +411,7 @@ check(
 
 // The second launch reads what the first one wrote, not what this script hand-wrote.
 const second = await theAppRuns(
+  "the second launch, reading what the first wrote",
   plane,
   () => argvSeen(argvFile).length >= 2,
   pressing("Reopen all sessions", argvFile, 0),
@@ -388,7 +440,12 @@ const recordCleared = () => {
     return false;
   }
 };
-const third = await theAppRuns(plane, recordCleared, pressing("Start fresh", argvFile, 0));
+const third = await theAppRuns(
+  "the third launch, answered Start fresh",
+  plane,
+  recordCleared,
+  pressing("Start fresh", argvFile, 0),
+);
 check("start fresh clears the record", third.ok, third.ok ? "" : `the app said:\n${third.output}`);
 check(
   "and starts no chat",
@@ -432,6 +489,7 @@ mkdirSync(join(CONFIG_HOME, "charter"), { recursive: true, mode: 0o700 });
 writeFileSync(RESTARTED, "");
 const beforeRestart = argvSeen(argvFile).length;
 const fourth = await theAppRuns(
+  "the fourth launch, after a restart to update",
   plane,
   () => argvSeen(argvFile).length > beforeRestart,
   pressing("Reopen all sessions", argvFile, 0),
@@ -459,4 +517,4 @@ check(
 rmSync(RESTARTED, { force: true });
 
 console.log(failures.length === 0 ? "\nall good" : `\n${failures.length} failed`);
-process.exit(failures.length === 0 ? 0 : 1);
+finish(failures.length === 0 ? 0 : 1);
