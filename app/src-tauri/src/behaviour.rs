@@ -1315,6 +1315,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
         cause: Began::Start,
         attributes: Attributes::default(),
         held: false,
+        trust: None,
     });
     record(Entry::Tool {
         plane: root.clone(),

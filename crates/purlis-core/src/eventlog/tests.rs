@@ -2812,7 +2812,7 @@ fn a_run_held_for_its_start_is_written_once_when_it_begins() {
         run: RUN,
     };
 
-    host.begin_held(plane, 4, of, Began::Start, &Attributes::default());
+    host.begin_held(plane, 4, of, Began::Start, &Attributes::default(), None);
     assert!(read(dir.path()).unwrap().is_empty(), "nothing yet");
 
     host.begun(plane, 4).unwrap();
@@ -2824,8 +2824,57 @@ fn a_run_held_for_its_start_is_written_once_when_it_begins() {
     assert_eq!(events[0].body["cause"], "start");
 }
 
+/// A run id of its own, for the start that takes a held one's place.
+const AGAIN: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7J";
+
 #[test]
 fn a_held_run_taken_back_writes_nothing() {
+    // #2252: the start in its place is begun under another number, as the host's retry is,
+    // and the held run is still never said.
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    let held = RunOf {
+        chat: CHAT,
+        run: RUN,
+    };
+
+    host.begin_held(
+        plane,
+        4,
+        held,
+        Began::Start,
+        &Attributes::default(),
+        Some(back_on()),
+    );
+    host.taken_back(plane, 4);
+    host.begin(
+        plane,
+        5,
+        RunOf {
+            chat: CHAT,
+            run: AGAIN,
+        },
+        Began::Start,
+        &Attributes::default(),
+    )
+    .unwrap();
+    host.begun(plane, 4).unwrap();
+
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [("run.started".to_owned(), Some(AGAIN.to_owned()))],
+        "only the run that went on"
+    );
+}
+
+#[test]
+fn a_late_line_of_a_start_taken_back_is_recorded_with_no_run() {
+    // #2252: the program of a start put aside may still speak; its lines are kept, the way a
+    // line of a chat the log does not know is, and never mint a run.
+    use crate::hookwire::Decision;
+    use crate::state::Event::SessionStart;
+    use std::time::Instant;
     let dir = tempfile::tempdir().unwrap();
     let plane = Path::new("/planes/one");
     let mut host = recorder(dir.path());
@@ -2839,9 +2888,64 @@ fn a_held_run_taken_back_writes_nothing() {
         },
         Began::Start,
         &Attributes::default(),
+        None,
     );
+    host.taken_back(plane, 4);
+    host.report(plane, &report(4, SessionStart), Followed::Moved)
+        .unwrap();
+    host.tool(
+        plane,
+        &tool_call(4, "pretooluse", Decision::None),
+        Instant::now(),
+    )
+    .unwrap();
+    host.refused(plane, 4).unwrap();
 
-    assert!(read(dir.path()).unwrap().is_empty());
+    let events = read(dir.path()).unwrap();
+    assert_eq!(
+        events.iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(),
+        ["hook.sessionstart", "hook.pretooluse", COMMIT_REFUSED],
+        "no run.started: {events:#?}"
+    );
+    for event in &events {
+        assert_eq!((&event.chat, &event.run), (&None, &None), "{event:#?}");
+        assert_eq!(event.body["chat_number"], 4);
+    }
+}
+
+#[test]
+fn a_start_taken_back_after_a_line_said_its_run_keeps_that_run() {
+    // A line that came before the start was put aside already wrote the run's `run.started`:
+    // the log is append-only, so what follows of it stays under that run.
+    use crate::state::Event::{SessionStart, Stop};
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+        None,
+    );
+    host.report(plane, &report(4, SessionStart), Followed::No)
+        .unwrap();
+    host.taken_back(plane, 4);
+    host.report(plane, &report(4, Stop), Followed::No).unwrap();
+
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [
+            ("run.started".to_owned(), Some(RUN.to_owned())),
+            ("hook.sessionstart".to_owned(), Some(RUN.to_owned())),
+            ("hook.stop".to_owned(), Some(RUN.to_owned())),
+        ]
+    );
 }
 
 #[test]
@@ -2861,6 +2965,7 @@ fn a_line_of_a_held_run_comes_after_its_run_started() {
         },
         Began::Start,
         &Attributes::default(),
+        None,
     );
     host.report(plane, &report(4, SessionStart), Followed::No)
         .unwrap();
@@ -2872,5 +2977,90 @@ fn a_line_of_a_held_run_comes_after_its_run_started() {
             ("run.started".to_owned(), Some(RUN.to_owned())),
             ("hook.sessionstart".to_owned(), Some(RUN.to_owned())),
         ]
+    );
+}
+
+/// The sandbox coming back on for a chat, as its start holds it (#2252).
+fn back_on() -> HeldTrust {
+    HeldTrust::of(
+        &crate::sandbox::Change::On,
+        Some(crate::harness::Harness::ClaudeCode),
+        None,
+    )
+}
+
+#[test]
+fn a_held_runs_trust_event_comes_first_whatever_reaches_the_log_first() {
+    // ADR 0067 §7, #2252: a hook line of the program before the host's start goes on still
+    // finds the sandbox's trust event, then the run's `run.started`, ahead of it.
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+        Some(back_on()),
+    );
+    host.report(plane, &report(4, SessionStart), Followed::No)
+        .unwrap();
+    host.begun(plane, 4).unwrap();
+
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [
+            ("trust.sandbox.on".to_owned(), Some(RUN.to_owned())),
+            ("run.started".to_owned(), Some(RUN.to_owned())),
+            ("hook.sessionstart".to_owned(), Some(RUN.to_owned())),
+        ]
+    );
+    assert_eq!(read(dir.path()).unwrap()[0].body, back_on().body);
+}
+
+#[test]
+fn an_audit_naming_a_start_taken_back_begins_no_run() {
+    // #2252: a grant, a change applied or a dispatch grant from that number is of no run.
+    use crate::sandbox::grant::{Audited, Level};
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    host.begin_held(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+        Some(back_on()),
+    );
+    host.taken_back(plane, 4);
+    let granted = host
+        .sandbox_grant(
+            plane,
+            Some(4),
+            &Audited {
+                granted: true,
+                what: "host",
+                target: "api.example.com",
+                level: Level::Chat,
+            },
+        )
+        .unwrap();
+
+    assert_eq!((granted.chat, granted.run), (None, None));
+    assert_eq!(
+        kinds_and_runs(dir.path()),
+        [("trust.sandbox.grant".to_owned(), None)],
+        "no run begun, and the held trust event dropped"
     );
 }
