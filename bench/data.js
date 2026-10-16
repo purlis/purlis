@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792191119675,
+  "lastUpdate": 1792192296634,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14700,6 +14700,48 @@ window.BENCHMARK_DATA = {
             "value": 104.2614045,
             "unit": "ms",
             "extra": "median of 5 runs: 103.893, 104.108, 104.261, 104.420, 105.795 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4b04c2ba96ec564d37fae9d81c1f1a08439d4055",
+          "message": "Doctor personas row: plurals agree, not \"(s)\" (#2359)\n\n* Doctor personas row: plurals agree, not \"(s)\" (#2078)\n\nThe personas row, and the Inbox Notice that carries its text since #1990,\nsaid \"1 generated sub-agent file(s) remain\" and \"1 persona(s), all clean\".\ndocs/ui-copy.md says counts are digits and plurals agree. The row now says\n\"1 generated sub-agent file remains\" / \"2 ... files remain\", \"1 persona\" /\n\"2 personas\", and \"N with errors\" / \"N with warnings\" for the lint counts.\n\nCloses #2078\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Doctor personas row: drafts agree too; changelog as a fragment\n\nReview of #2359: the row said \"2 draft: a, b\"; it now says \"2 drafts: a, b\",\npinned by a core test. The CHANGELOG.md edit moves to\nchanges/doctor-personas-plurals.md, as changes/README.md asks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* DoctorNotice test: the Notice's text matcher says \"file remains\"\n\nThe matcher was a regex escaping \"file\\(s\\) remain\", so the plain-string\nupdate missed it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Aaron Yordanyan <dbrownsimple@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T03:02:13+04:00",
+          "tree_id": "de1bb9b541c8eff4acc4c0791aa827d3b218b9bf",
+          "url": "https://github.com/purlis/purlis/commit/4b04c2ba96ec564d37fae9d81c1f1a08439d4055"
+        },
+        "date": 1792192295819,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5241495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.492, 0.493, 0.524, 0.529, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0937325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.796, 16.839, 17.094, 17.098, 17.336 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.83598549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.630, 104.825, 104.836, 105.329, 105.559 ms"
           }
         ]
       }
