@@ -684,6 +684,10 @@ struct OpenChat {
     /// What a Resume from a session record had to guess because the record could not say it —
     /// its profile, its directory — or none (SI-8e).
     guessed: Option<String>,
+    /// Why what it was doing could not be taken from the session host as it was reattached
+    /// (#2006), where it could not: its tab says so until the Notice is dismissed.
+    #[specta(optional)]
+    untaken: Option<String>,
     /// The harness profile it started on, where it started on one.
     profile: Option<String>,
     /// The persona it adopted.
@@ -2511,6 +2515,7 @@ impl From<chats::Open> for OpenChat {
                 .as_ref()
                 .map(|from| HandedFromNote::of(from, open.tab)),
             guessed: None,
+            untaken: open.untaken,
             restoring: None,
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
@@ -3890,9 +3895,9 @@ pub fn run() {
                 // its push a few seconds (`Planes::let_go_of_every_plane`, ADR 0051).
                 app.state::<Planes>().let_go_of_all();
                 // Then the session host, once every plane has written its record and ended its
-                // chats, wherever they ran (#1998): it ends what is left as it stops, and would
-                // end all the same when this process does, since it holds the host's standard
-                // input.
+                // chats, wherever they ran (#1998): it is told the window quits, and ends what is
+                // left as it stops. A window that goes without this crashed, and the host keeps
+                // its chats for the grace period (#2006).
                 #[cfg(unix)]
                 if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
                     host.end();

@@ -255,6 +255,58 @@ pub trait SessionHost: Send + Sync {
     fn hear_through(&self, relayed: std::sync::Arc<crate::hooks::Relayed>) {
         let _ = relayed;
     }
+
+    /// **Whether chat `number` is still in the host from before this window** (#2006): its
+    /// program runs there, or ended there, after the window that started it went without a
+    /// quit. A chat put back is then reattached ([`Self::reattach`]) rather than started again,
+    /// on the conversation and the screen it has now. A host in the window's own process
+    /// outlives no window, so it has none.
+    fn left_running(&self, number: u32) -> bool {
+        let _ = number;
+        false
+    }
+
+    /// **Reattaches chat `number`** as a chat of this window (#2006): what [`Self::open`] does,
+    /// for a program the host already runs, or ran, under that number. `announce` is called
+    /// with the number before anything is told of the chat, as for a start. A program that
+    /// ended while no window was there is told ended ([`Self::when_one_ends`]) once it is
+    /// reattached.
+    fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
+        let _ = announce;
+        Err(format!(
+            "chat {number} is not in the session host to be reattached"
+        ))
+    }
+
+    /// **The confinement chat `number` runs in, reattached** with `hearing` told what its proxy
+    /// does from now on (#2006): none where the chat runs in none, or is not left running.
+    fn confined_again(
+        &self,
+        number: u32,
+        hearing: purlis_core::sandbox::plan::Hearing,
+    ) -> Option<Result<purlis_core::sandbox::Confinement, String>> {
+        let _ = (number, hearing);
+        None
+    }
+
+    /// Why the state of each chat reattached is not the host's, where it is not: the board the
+    /// host kept could not be taken as the window held the project (#2006), so each such chat
+    /// reads as this window's own board has it until it next reports.
+    fn state_not_reattached(&self) -> Option<String> {
+        None
+    }
+
+    /// The plan of the confinement chat `number` ran in, as the window that started it planned
+    /// it, where it is left running in one (#2006): what the window compares with the plan it
+    /// makes now, to know whether its sandbox changed while no window was there.
+    fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
+        let _ = number;
+        None
+    }
+
+    /// Every chat this plane left running in the host that nothing reattached is closed
+    /// (#2006): what a put back that settled leaves no tab for, so nothing runs unseen.
+    fn close_what_was_not_reattached(&self) {}
 }
 
 /// One chat as the board has it, read under one hold so the three agree.
@@ -398,9 +450,32 @@ pub(crate) mod pretend {
         most_ending: AtomicU32,
         /// The sessions whose program ended with their host ([`Pretend::program_ends_with_its_host`]).
         lost: Mutex<Vec<u32>>,
+        /// The chats left running from before this window, and the plan each ran in
+        /// ([`Pretend::leaves_running`], #2006).
+        left: Mutex<Vec<(u32, Option<purlis_core::sandbox::plan::Plan>)>>,
+        /// The chats reattached, in order.
+        reattached: Mutex<Vec<u32>>,
+        /// The chats left running that nothing reattached, closed.
+        closed_left: Mutex<Vec<u32>>,
     }
 
     impl Pretend {
+        /// Chat `number` runs from before this window, in `plan` where it is confined: a window
+        /// that comes back reattaches it (#2006).
+        pub fn leaves_running(&self, number: u32, plan: Option<purlis_core::sandbox::plan::Plan>) {
+            lock(&self.seen.left).push((number, plan));
+        }
+
+        /// The chats reattached, in order.
+        pub fn reattached(&self) -> Vec<u32> {
+            lock(&self.seen.reattached).clone()
+        }
+
+        /// The chats left running that nothing reattached, and so were closed.
+        pub fn closed_left(&self) -> Vec<u32> {
+            lock(&self.seen.closed_left).clone()
+        }
+
         /// Ending every session waits, from now on, until [`Self::lets_its_end_go`]: its chats
         /// ignore their end, as a slow program does.
         pub fn holds_its_end(&self) {
@@ -630,6 +705,36 @@ pub(crate) mod pretend {
         }
         fn reports_to(&self) -> Option<std::path::PathBuf> {
             lock(&self.seen.socket).clone()
+        }
+        fn left_running(&self, number: u32) -> bool {
+            lock(&self.seen.left).iter().any(|(one, _)| *one == number)
+        }
+        fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
+            lock(&self.seen.left)
+                .iter()
+                .find(|(one, _)| *one == number)
+                .and_then(|(_, plan)| plan.clone())
+        }
+        fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
+            let mut left = lock(&self.seen.left);
+            let at = left
+                .iter()
+                .position(|(one, _)| *one == number)
+                .ok_or_else(|| format!("chat {number} is not left running"))?;
+            left.remove(at);
+            drop(left);
+            self.seen.dealt.fetch_max(number, Ordering::SeqCst);
+            announce(number);
+            lock(&self.seen.reattached).push(number);
+            lock(&self.seen.running).push(number);
+            Ok(number)
+        }
+        fn close_what_was_not_reattached(&self) {
+            let left: Vec<u32> = lock(&self.seen.left)
+                .drain(..)
+                .map(|(one, _)| one)
+                .collect();
+            lock(&self.seen.closed_left).extend(left);
         }
     }
 

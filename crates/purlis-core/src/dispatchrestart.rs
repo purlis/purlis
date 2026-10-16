@@ -216,6 +216,19 @@ pub fn at_launch(
     record: &reopen::Record,
     running: &[dispatchrecord::Record],
 ) -> AtLaunch {
+    at_launch_beside(root, record, running, &|_| false)
+}
+
+/// [`at_launch`], beside a session host that still runs the chats `left_running` says from
+/// before the window went (#2006). Such a task is the same program, at work: it comes back
+/// whatever it could be resumed by, is told nothing, and is listed under its asking chat as any
+/// task still owing its report is.
+pub fn at_launch_beside(
+    root: &Path,
+    record: &reopen::Record,
+    running: &[dispatchrecord::Record],
+    left_running: &dyn Fn(&Chat) -> bool,
+) -> AtLaunch {
     let mut carry_on = Vec::new();
     let mut listed = Vec::new();
     let mut not_resumed = Vec::new();
@@ -234,8 +247,11 @@ pub fn at_launch(
         };
         let id = chat.identity.id.clone().unwrap_or_default();
         let told = chat.resume.is_some() && chat.profile.is_some();
+        let left = matches!(stands, Vouched::Under | Vouched::Alone) && left_running(chat);
         match (stands, told) {
             (Vouched::No | Vouched::Persons, _) => {}
+            (Vouched::Under, _) if left => listed.push(id.clone()),
+            (Vouched::Alone, _) if left => {}
             (Vouched::Under | Vouched::Alone, false) => {
                 not_resumed.push(chat.clone());
                 continue;
