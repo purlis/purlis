@@ -11,6 +11,12 @@ yanked = "deny"
 # Transitive crates Tauri pulls in (unic-*, proc-macro-error) are reported upstream, not here.
 # Anything charter depends on directly still fails the check.
 unmaintained = "workspace"
+ignore = [
+  # Every zip 4.x release is yanked. tauri-plugin-updater, up to its newest 2.x, still asks
+  # for zip 4, and only on Windows, which purlis does not ship yet (docs/platforms.md). purlis's
+  # own zip reader (purlis-browser-engine) is on zip 9. This entry goes when the updater moves.
+  { crate = "zip@4.6.1", reason = "Windows-only dependency of tauri-plugin-updater, which still requires zip 4" },
+]
 
 [licenses]
 version = 2
