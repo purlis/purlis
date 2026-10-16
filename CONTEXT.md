@@ -615,7 +615,8 @@ words, and the browser returns to the agent only when the person says so.
 _Avoid_: controller, owner (that is whose the browser is), focus
 
 **Take over**:
-The person's act of becoming a browser's driver. **Hand back** ends it.
+The person's act of becoming a browser's driver: a click or a key in its view. **Hand back** ends
+it: Done, or one fixed chord, and nothing else.
 _Avoid_: control, grab, interrupt
 
 **Pin** (of a browser):
