@@ -198,6 +198,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`inventory/repos.json`](#inventoryreposjson)
   - [`docs/topology.md`](#docstopologymd)
   - [`README.md` — the generated persona roster block](#readmemd--the-generated-persona-roster-block)
+  - [`themes/` — the project's theme folders](#themes--the-projects-theme-folders)
   - [Plane-root files that exist but are **not** this area](#plane-root-files-that-exist-but-are-not-this-area)
 - [Workspaces](#workspaces)
   - [`workspaces/`](#workspaces-1)
@@ -220,6 +221,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/.charter-generated` — the harness-layer ownership marker](#workspaceswscharter-generated--the-harness-layer-ownership-marker)
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
   - [`workspaces/<ws>/<repo>/` — a cloned repo (guest checkout)](#workspaceswsrepo--a-cloned-repo-guest-checkout)
+  - [`workspaces/<ws>/themes/` — the workspace's theme folders](#workspaceswsthemes--the-workspaces-theme-folders)
   - [`<clone>/.git/info/exclude` — purlis's managed block](#clonegitinfoexclude--purliss-managed-block)
   - [`workspaces/<ws>/.worktrees/<repo>/<piece>/` — pieces](#workspaceswsworktreesrepopiece--pieces)
   - [`.gitignore` (plane root) — the managed live-workspace block](#gitignore-plane-root--the-managed-live-workspace-block)
@@ -1296,6 +1298,25 @@ enumerator that does not expect them has to guess.
   `charter/browser.py:151`, header at `charter/browser.py:173`) because a trace carries
   authenticated network traffic — the one of the three purlis takes a position on.
 
+### `themes/` — the project's theme folders
+
+- **Format:** a directory of theme folders, one per theme: `themes/<name>/theme.json`, plus
+  that theme's own fonts, icons, preview and licence beside it. The name is purlis's at the plane
+  root; the theme format itself is the theme engine's, and its schema is published with it.
+- **Status:** **purlis only** (spec #2313, ADR 0097, ADR 0098). A reserved name: purlis reads
+  only theme folders under it.
+- **Tier:** Plane — committed by `purlis save`, so the team gets the project's themes.
+- **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
+  draft, once the person keeps it. purlis creates none of it.
+- **Read by:** `purlis doctor`'s `themes` row (`crates/purlis-core/src/doctor/themes.rs`),
+  which names each entry that is not a theme folder: a file, a folder with no `theme.json`, a
+  `theme.json` that is not a file, or a link. A name starting with `.` (a `.gitkeep`) is left
+  alone. The row is printed only where a `themes/` exists.
+- **Git:** committed (nothing ignores it).
+- **Encoding details:** a theme folder is a folder, never a bare `theme.json`: a theme's fonts,
+  icons and licence live beside its `theme.json`, so each theme has a folder of its own. Decided
+  by ADR 0098, built by #2324: a theme folder needs no approval.
+
 ### Plane-root files that exist but are **not** this area
 
 Named so the assembled doc does not lose them: `vaults.json` (committed shared vault registry,
@@ -2348,13 +2369,29 @@ beside a purlis one is removed when the record is published (V93i).
   the recorded digest (`charter/workspace.py:2642`), and empty parent directories are pruned
   (`_prune_empty`, `charter/workspace.py:4123`).
 
+### `workspaces/<ws>/themes/` — the workspace's theme folders
+
+- **Format:** the same as the plane root's [`themes/`](#themes--the-projects-theme-folders): one
+  theme folder per theme, `themes/<name>/theme.json`.
+- **Status:** **purlis only** (spec #2313, ADR 0097, ADR 0098). A reserved name, and one of
+  purlis's own in a workspace, so no extension may keep a folder under it.
+- **Tier:** Plane when LIVE, Clone state when LOCAL — a workspace's themes travel with it.
+  Committed by `purlis save` if the workspace is LIVE; kept in this clone if it is LOCAL.
+- **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
+  draft, once the person keeps it. purlis creates none of it.
+- **Read by:** `purlis doctor`'s `themes` row, as at the plane root, for every workspace.
+- **Git:** as the workspace's other files: committed while the workspace is LIVE, ignored by
+  `/workspaces/*/*` while it is LOCAL.
+- **Encoding details:** as at the plane root. Decided by ADR 0098, built by #2324: a theme folder
+  needs no approval.
+
 ### `workspaces/<ws>/<folder>/` — a folder an extension keeps in a workspace
 
 - **Format:** whatever the extension writes there. purlis reads none of it.
 - **Status:** **purlis only** (purlis#343, ADR 0053). `<folder>` is the one name an
   approved extension declares as `contributes.events.workspace_folder`: letters, digits, `-`
   and `_`, and never one of purlis's own names in a workspace (`workspace.md`,
-  `workspace.json`, `memory`, `todos`, `refs`, `pieces`, `worktrees`, `README.md`,
+  `workspace.json`, `memory`, `todos`, `refs`, `pieces`, `worktrees`, `themes`, `README.md`,
   `CLAUDE.md`, `AGENTS.md`, `manifest.json`).
 - **Tier:** None — the extension's own folder; purlis reads none of it.
 - **Written by:** the extension's own program, which runs as the operator. purlis does not
