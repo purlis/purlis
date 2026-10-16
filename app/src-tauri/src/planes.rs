@@ -3655,12 +3655,20 @@ impl Planes {
                     typed.forget(session);
                     // A run ended so that the same chat starts again at once (ADR 0067 as
                     // amended 2026-10-16) has not ended the chat: what follows its place says
-                    // so, and nothing here does.
+                    // so. Its sub-agents' runs still end with it, stopped as a close stops
+                    // them (ADR 0076 §6), and nothing else here is done for it.
                     if me
                         .get()
                         .and_then(std::sync::Weak::upgrade)
                         .is_some_and(|held| held.chats.replaced(session))
                     {
+                        if let Some(events) = &events {
+                            let (state, cause) = how_its_run_ended(
+                                Some(purlis_core::state::run::StopBy::Closed),
+                                &exit,
+                            );
+                            its_children_end(events, &events_root, session, state, cause);
+                        }
                         return;
                     }
                     // A chat that ended on its own while it wrapped up wrote no record, and the
@@ -7855,6 +7863,13 @@ mod tests {
         assert!(why.contains("ended this chat"), "{why}");
         assert!(
             held.chats()
+                .would_not_start()
+                .iter()
+                .any(|one| one.why == why),
+            "kept with why among the chats that would not start"
+        );
+        assert!(
+            held.chats()
                 .open_now()
                 .iter()
                 .all(|one| one.session != session),
@@ -11056,6 +11071,45 @@ mod tests {
                 "exited".to_owned()
             )],
             "only its own sub-agents end, and never another chat's ({others:?})"
+        );
+    }
+
+    #[test]
+    fn a_run_ended_to_start_its_chat_again_ends_its_sub_agents_runs_in_the_event_log() {
+        // ADR 0076 §6: a run replaced at once (ADR 0067 as amended 2026-10-16) is no end of
+        // its chat, and its sub-agents' runs still end with it, stopped as a close stops them.
+        let dir = tempfile::tempdir().expect("a directory");
+        let logs = dir.path().join("events");
+        let events = an_event_log(&logs);
+        let host = Pretend::default();
+        let (planes, _told) = planes_on(&host);
+        let planes = planes.recording_events(Some(Arc::clone(&events)));
+        let plane = planes.open(&a_plane(&dir.path().join("plane")));
+        let held = planes.held(&plane).expect("it is held");
+        let session = held
+            .chats()
+            .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+            .expect("the host starts it");
+        let (run, children) = a_chat_with_sub_agents(&events, plane.root(), session, &["agent-1"]);
+        held.chats().replaced_in_a_test(session);
+
+        host.program_ends(session, purlis_core::session::Exit::Code(0));
+
+        assert_eq!(
+            runs_ended(&logs),
+            [(
+                children[0].clone(),
+                Some(run),
+                "stopped".to_owned(),
+                "closed".to_owned()
+            )]
+        );
+        assert!(
+            held.chats()
+                .open_now()
+                .iter()
+                .any(|one| one.session == session),
+            "the chat itself goes on"
         );
     }
 

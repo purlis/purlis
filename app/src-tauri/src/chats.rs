@@ -1679,6 +1679,12 @@ impl Chats {
         }
     }
 
+    /// Marks run `session` as replaced at once, as a restart for changed project settings does.
+    #[cfg(test)]
+    pub fn replaced_in_a_test(&self, session: u32) {
+        lock(&self.replacing).insert(session);
+    }
+
     /// Whether the end of run `session`'s program is the end of a run replaced at once, taken
     /// as no end of the chat. Answered once.
     pub fn replaced(&self, session: u32) -> bool {
@@ -7217,6 +7223,26 @@ pub(crate) mod tests {
         assert_eq!(after(&opened[1].args, "--resume").as_deref(), Some(ID));
         assert_eq!(after(&opened[1].args, "--session-id"), None);
         chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_restart_for_project_settings_ends_the_old_run_before_the_new_one_starts() {
+        let (plane, chats, host, _told) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        let started = chats
+            .restart_for_project_settings(session)
+            .expect("started again");
+        let running = host.running_when_opened();
+        assert!(
+            !running.last().expect("the new start").contains(&session),
+            "two runs never share its conversation: {running:?}"
+        );
+        assert_ne!(started, session);
+        let _ = chats.close(session);
+        chats.close(started).expect("ends");
     }
 
     #[test]
