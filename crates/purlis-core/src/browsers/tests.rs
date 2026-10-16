@@ -34,12 +34,12 @@ fn each_browsers_data_folder_is_made_under_the_data_home_it_was_given() {
 use std::time::Duration;
 
 use purlis_browser_engine::drive::{
-    Answer, Call, Content, DragTo, Field, PageId, PageInfo, Ref, Settled,
+    self, Answer, Call, Content, DragTo, Field, PageId, PageInfo, Ref, Settled,
 };
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::{Layer, Listed};
 
-use super::{browsed, call_of, reach_of};
+use super::{aim_of, browsed, call_of, input_of, reach_of};
 use crate::sandbox::browser_reach::NewSite;
 
 #[test]
@@ -208,4 +208,85 @@ fn a_browser_reaches_no_port_of_this_machine_its_chat_had_withdrawn() {
 
     assert!(!reach.decide("127.0.0.1", 5173, &[], &[]).carries());
     assert!(reach.decide("127.0.0.1", 8080, &[], &[]).carries());
+}
+
+#[test]
+fn the_persons_key_becomes_the_drivers_own_event_aimed_where_they_aimed_it() {
+    let input = wire::Input::Key {
+        aim: wire::Aim {
+            page: "p2".into(),
+            document: 9,
+        },
+        action: wire::KeyAction::Down,
+        key: "A".into(),
+        physical: "KeyA".into(),
+        key_code: 65,
+        modifiers: 8,
+    };
+
+    assert_eq!(
+        input_of(&input),
+        drive::PersonInput::Key {
+            aim: drive::Aim {
+                page: drive::PageId::new("p2"),
+                document: 9,
+            },
+            down: true,
+            key: "A".into(),
+            code: "KeyA".into(),
+            key_code: 65,
+            modifiers: 8,
+        }
+    );
+}
+
+#[test]
+fn the_persons_wheel_becomes_the_drivers_own_wheel_by_the_same_distance() {
+    let input = wire::Input::Mouse {
+        aim: wire::Aim {
+            page: "p1".into(),
+            document: 3,
+        },
+        action: wire::MouseAction::Wheel,
+        x: 640,
+        y: 400,
+        button: wire::Button::None,
+        clicks: 0,
+        modifiers: 0,
+        delta_x: 0,
+        delta_y: -120,
+    };
+
+    assert_eq!(
+        input_of(&input),
+        drive::PersonInput::Mouse {
+            aim: drive::Aim {
+                page: drive::PageId::new("p1"),
+                document: 3,
+            },
+            kind: drive::MouseKind::Wheel,
+            x: 640.0,
+            y: 400.0,
+            button: drive::MouseButton::None,
+            clicks: 0,
+            modifiers: 0,
+            delta_x: 0.0,
+            delta_y: -120.0,
+        }
+    );
+}
+
+#[test]
+fn a_frame_names_its_page_and_document_in_the_protocols_words() {
+    let aim = drive::Aim {
+        page: drive::PageId::new("p4"),
+        document: 12,
+    };
+    assert_eq!(
+        aim_of(&aim),
+        wire::Aim {
+            page: "p4".into(),
+            document: 12,
+        }
+    );
 }
