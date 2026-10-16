@@ -15,7 +15,10 @@
 //! - **On a moved remote.** The forge answered a fetch purlis ran with a redirect: the repo now
 //!   lives at another address on the same host (a rename, or a move to another owner). purlis
 //!   keeps that address in the repo's own config (`remote.origin.purlisMovedTo`), rebuilt from
-//!   its checked parts, and the fix sets `origin` to exactly that address.
+//!   its checked parts, and the fix sets `origin` to exactly that address. A push URL of
+//!   `origin`'s own goes with it where every one names the old place (#2117): it is dropped, as
+//!   `forge::gitcredential::remote::keep` drops one, so pushes go where `origin` now fetches
+//!   from. Where any names another place, every push URL is left, and the window says so.
 //!
 //! **Read from what purlis can read without running anything a chat wrote**: git through the
 //! hardened runner ([`crate::worktree::git`]), which runs no hook, filter or fsmonitor. Nothing
@@ -47,6 +50,8 @@ pub struct Seen {
     pub origin: Option<String>,
     /// Where the forge said `origin` now lives ([`MOVED_KEY`]).
     pub moved_to: Option<String>,
+    /// `origin`'s push URLs as the repo's config records them (`remote.origin.pushurl`).
+    pub push_urls: Vec<String>,
     /// No change in the tree and no operation stopped in it; `None` where git would not say.
     pub clean: Option<bool>,
     /// The commits of HEAD no other branch and no remote-tracking branch reaches; `None` where
@@ -60,8 +65,14 @@ pub enum Stale {
     /// On `branch`, where `default` is the remote's default branch.
     OffDefault { branch: String, default: String },
     /// `origin` is `origin`, and the forge said the repo now lives at `now`: the address the fix
-    /// sets, as [`rebuilt`] made it.
-    RemoteMoved { origin: String, now: String },
+    /// sets, as [`rebuilt`] made it. `pushes_kept` are `origin`'s push URLs the fix leaves as
+    /// they are: every one, where any names another place than `origin`; none, where there is
+    /// none or every one names `origin`'s old place (those go with it).
+    RemoteMoved {
+        origin: String,
+        now: String,
+        pushes_kept: Vec<String>,
+    },
 }
 
 /// Which fix the person pressed.
@@ -74,8 +85,14 @@ pub enum Fix {
 /// What a fix does: the one git command it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
-    Switch { to: String },
-    SetUrl { to: String },
+    Switch {
+        to: String,
+    },
+    /// Sets `origin` to `to`, and with `drop_push` drops its push URLs, which named the old place.
+    SetUrl {
+        to: String,
+        drop_push: bool,
+    },
 }
 
 /// Why a fix does nothing.
@@ -117,9 +134,19 @@ pub fn judged(seen: &Seen) -> Vec<Stale> {
     if let (Some(origin), Some(said)) = (&seen.origin, &seen.moved_to)
         && let Some(now) = rebuilt(origin, said)
     {
+        let was = forge::gitcredential::place_of(origin);
+        let all_old = seen
+            .push_urls
+            .iter()
+            .all(|url| was.is_some() && forge::gitcredential::place_of(url) == was);
         out.push(Stale::RemoteMoved {
             origin: origin.clone(),
             now,
+            pushes_kept: if all_old {
+                Vec::new()
+            } else {
+                seen.push_urls.clone()
+            },
         });
     }
     out
@@ -225,7 +252,12 @@ pub fn step(seen: &Seen, fix: Fix) -> Result<Step, Blocked> {
         Fix::Remote => stale
             .into_iter()
             .find_map(|one| match one {
-                Stale::RemoteMoved { now, .. } => Some(Step::SetUrl { to: now }),
+                Stale::RemoteMoved {
+                    now, pushes_kept, ..
+                } => Some(Step::SetUrl {
+                    to: now,
+                    drop_push: pushes_kept.is_empty() && !seen.push_urls.is_empty(),
+                }),
                 Stale::OffDefault { .. } => None,
             })
             .ok_or(Blocked::Settled),
@@ -334,6 +366,22 @@ pub fn read(ws: &str, repo: &repos::Repo) -> Seen {
         // As the config records it, never through a rewrite (`url.<base>.insteadOf`).
         origin: asked(at, &["config", "--get", "remote.origin.url"]),
         moved_to: asked(at, &["config", "--get", MOVED_KEY]),
+        push_urls: git::run(
+            at,
+            &["config", "--get-all", "remote.origin.pushurl"],
+            git::READ,
+        )
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| {
+            run.out
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default(),
         clean,
         only_here,
     }
@@ -395,7 +443,7 @@ pub fn fix(
                 moved: None,
             })
         }
-        Step::SetUrl { to } => {
+        Step::SetUrl { to, drop_push } => {
             if shown != Some(to.as_str()) {
                 return Err(
                     "Not changed: the forge's address changed since the window showed it. Look \
@@ -414,8 +462,37 @@ pub fn fix(
             }
             // What the forge said is done with once origin is there.
             let _ = git::run(&repo.path, &["config", "--unset-all", MOVED_KEY], git::READ);
+            // Its push URLs named the old place: dropped, pushes follow origin.
+            if drop_push {
+                let dropped = git::run(
+                    &repo.path,
+                    &["remote", "set-url", "--push", "--delete", "origin", "."],
+                    git::READ,
+                )
+                .map_err(|why| format!("purlis could not start git ({why})"))
+                .and_then(|run| {
+                    if run.ok() {
+                        Ok(())
+                    } else {
+                        Err(run.err.trim().to_owned())
+                    }
+                });
+                if let Err(why) = dropped {
+                    return Err(format!(
+                        "origin fetches from {}, but its push address still names {}: git \
+                         would not drop it ({why}). Check it with git remote -v.",
+                        place(&to),
+                        place(&was)
+                    ));
+                }
+            }
+            let fetches = if drop_push {
+                "fetches from and pushes to"
+            } else {
+                "fetches from"
+            };
             Ok(Fixed {
-                said: format!("{name} fetches from {}.", place(&to)),
+                said: format!("{name} {fetches} {}.", place(&to)),
                 moved: Some(Moved {
                     clone: repo.path.clone(),
                     was: place(&was),

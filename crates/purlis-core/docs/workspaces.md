@@ -449,7 +449,9 @@ shows again.
 - **Use the new address** sets `origin` to the address the Notice shows, which purlis rebuilt
   from the forge's answer: `https://<host>[:<port>]/<owner>/<repo>.git`, on `origin`'s own host
   and port. A record of the old address as the remote the window's saves push to follows it to
-  the new one.
+  the new one. A push URL of `origin`'s own (`remote.origin.pushurl`) goes with it when every
+  one names the old place: it is dropped, so pushes go where `origin` now fetches from. When any
+  names another place, every push URL is left as it is, and the Notice names where it pushes.
 
 Both are the window's alone: no chat and no link presses them.
 

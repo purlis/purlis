@@ -46,6 +46,10 @@ pub struct StaleRemote {
     pub origin: String,
     /// The address the Fix sets, whole, as it is set.
     pub now: String,
+    /// The places `origin` pushes to that the Fix leaves as they are, as `<host>/<owner>/<repo>`
+    /// (a user never drawn): empty where it has no push URL of its own, or where every one names
+    /// the old place and goes with `origin` (#2117).
+    pub pushes_kept: Vec<String>,
 }
 
 /// Which way out the person pressed.
@@ -170,10 +174,22 @@ fn shown(findings: staleclone::Findings) -> StaleClones {
                     Stale::OffDefault { branch, default } => {
                         out.branch = Some(StaleBranch { branch, default });
                     }
-                    Stale::RemoteMoved { origin, now } => {
+                    Stale::RemoteMoved {
+                        origin,
+                        now,
+                        pushes_kept,
+                    } => {
+                        // Each place once, however many push URLs name it.
+                        let mut places: Vec<String> = Vec::new();
+                        for place in pushes_kept.iter().map(|url| staleclone::place(url)) {
+                            if !places.contains(&place) {
+                                places.push(place);
+                            }
+                        }
                         out.remote = Some(StaleRemote {
                             origin: staleclone::place(&origin),
                             now,
+                            pushes_kept: places,
                         });
                     }
                 }

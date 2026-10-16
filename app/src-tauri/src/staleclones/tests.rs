@@ -19,6 +19,10 @@ fn a_stale_repo_is_one_row_with_both_findings_and_no_address_carries_a_user() {
                 Stale::RemoteMoved {
                     origin: "https://git@github.com/acme/widget.git".into(),
                     now: "https://github.com/Purlis/widget.git".into(),
+                    pushes_kept: vec![
+                        "https://bot:tok@gitlab.example/mirror/widget.git".into(),
+                        "git@gitlab.example:mirror/widget.git".into(),
+                    ],
                 },
             ],
         }],
@@ -38,6 +42,8 @@ fn a_stale_repo_is_one_row_with_both_findings_and_no_address_carries_a_user() {
                     origin: "github.com/acme/widget".into(),
                     // Whole and as set, so the window shows what the Fix sets.
                     now: "https://github.com/Purlis/widget.git".into(),
+                    // The push addresses the Fix leaves, as places, each once: no user is drawn.
+                    pushes_kept: vec!["gitlab.example/mirror/widget".into()],
                 }),
             }],
             unread: vec!["could not read workspace 'beta' (gone).".into()],

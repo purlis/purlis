@@ -12,6 +12,7 @@ fn settled() -> Seen {
         default: Some("main".into()),
         origin: Some("https://github.com/acme/widget.git".into()),
         moved_to: None,
+        push_urls: Vec::new(),
         clean: Some(true),
         only_here: Some(0),
     }
@@ -82,6 +83,7 @@ fn a_remote_the_forge_said_moved_is_stale() {
         [Stale::RemoteMoved {
             origin: "https://github.com/acme/widget.git".into(),
             now: "https://github.com/purlis/widget.git".into(),
+            pushes_kept: Vec::new(),
         }]
     );
 }
@@ -220,7 +222,8 @@ fn the_remote_fix_sets_the_address_the_forge_named() {
     assert_eq!(
         step(&seen, Fix::Remote),
         Ok(Step::SetUrl {
-            to: "https://github.com/purlis/widget.git".into()
+            to: "https://github.com/purlis/widget.git".into(),
+            drop_push: false,
         })
     );
 }
@@ -300,7 +303,82 @@ fn what_is_kept_is_what_the_fix_sets() {
     assert_eq!(
         step(&seen, Fix::Remote),
         Ok(Step::SetUrl {
-            to: "https://github.com/purlis/widget.git".into()
+            to: "https://github.com/purlis/widget.git".into(),
+            drop_push: false,
         })
     );
+}
+
+fn moved_with_pushes(pushes: &[&str]) -> Seen {
+    Seen {
+        moved_to: Some("https://github.com/purlis/widget.git".into()),
+        push_urls: pushes.iter().map(|&url| url.to_owned()).collect(),
+        ..settled()
+    }
+}
+
+#[test]
+fn a_push_url_naming_the_old_place_moves_with_origin() {
+    // However it is spelled, a push URL of the old place goes with origin: pushes then go
+    // where origin now fetches from.
+    for pushes in [
+        &["https://github.com/acme/widget.git"][..],
+        &["git@github.com:acme/widget.git"][..],
+        &[
+            "https://github.com/Acme/widget",
+            "ssh://git@github.com/acme/widget.git",
+        ][..],
+    ] {
+        let seen = moved_with_pushes(pushes);
+        assert_eq!(
+            judged(&seen),
+            [Stale::RemoteMoved {
+                origin: "https://github.com/acme/widget.git".into(),
+                now: "https://github.com/purlis/widget.git".into(),
+                pushes_kept: Vec::new(),
+            }],
+            "{pushes:?}"
+        );
+        assert_eq!(
+            step(&seen, Fix::Remote),
+            Ok(Step::SetUrl {
+                to: "https://github.com/purlis/widget.git".into(),
+                drop_push: true,
+            }),
+            "{pushes:?}"
+        );
+    }
+}
+
+#[test]
+fn a_push_url_naming_another_place_is_left_and_said() {
+    for pushes in [
+        &["https://github.com/someone/widget.git"][..],
+        // One of them elsewhere: every one is left, and every one is said.
+        &[
+            "https://github.com/acme/widget.git",
+            "https://gitlab.example/acme/widget.git",
+        ][..],
+        // One purlis cannot read as a place is not the old place.
+        &["/srv/mirror/widget.git"][..],
+    ] {
+        let seen = moved_with_pushes(pushes);
+        assert_eq!(
+            judged(&seen),
+            [Stale::RemoteMoved {
+                origin: "https://github.com/acme/widget.git".into(),
+                now: "https://github.com/purlis/widget.git".into(),
+                pushes_kept: pushes.iter().map(|&url| url.to_owned()).collect(),
+            }],
+            "{pushes:?}"
+        );
+        assert_eq!(
+            step(&seen, Fix::Remote),
+            Ok(Step::SetUrl {
+                to: "https://github.com/purlis/widget.git".into(),
+                drop_push: false,
+            }),
+            "{pushes:?}"
+        );
+    }
 }
