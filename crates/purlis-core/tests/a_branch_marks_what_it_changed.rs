@@ -895,6 +895,28 @@ fn an_ignore_file_linked_to_an_endless_device_is_never_opened_and_never_swells_c
 
 #[cfg(unix)]
 #[test]
+fn an_ignore_file_linked_to_a_file_outside_the_branch_ignores_nothing() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, "piece");
+    let outside = f.plane.join("ignores-everything");
+    std::fs::write(&outside, "*\n").unwrap();
+    std::os::unix::fs::symlink(&outside, piece.join(".gitignore")).unwrap();
+    write(&piece, "new.txt", "new\n");
+
+    let status = files::status(&reader(), &f.plane, branch(&f)).unwrap();
+
+    // The link is never followed, so the `*` it points at is never applied.
+    let marked: Vec<&str> = status
+        .changes
+        .iter()
+        .map(|change| change.path.as_str())
+        .collect();
+    assert_eq!(marked, [".gitignore", "new.txt"], "{status:?}");
+}
+
+#[cfg(unix)]
+#[test]
 fn a_fifo_named_as_an_ignore_file_times_the_read_out_and_other_branches_still_read() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("thing");
