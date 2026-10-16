@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792156619122,
+  "lastUpdate": 1792159260934,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14196,6 +14196,48 @@ window.BENCHMARK_DATA = {
             "value": 105.4372195,
             "unit": "ms",
             "extra": "median of 5 runs: 103.984, 105.090, 105.437, 105.492, 105.869 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f567d60055b5470046a1bb5eadc3c21dc80bec5d",
+          "message": "Browsers: a chat's browser tools without the harness's own prompt (#2296)\n\n* Browsers: a chat's browser tools run on its browser Ask (#2245)\n\nRuled 2026-10-16: the person's answer to a chat's browser Ask is the\nconsent for its browser tools, as the dispatch grant is for a dispatch\n(V98b). A Claude Code chat the app starts now carries an allow for each\nbrowser tool by its full name, beside the server that serves them; an\noperator's ask or deny still wins. ADR 0064 gets a dated amendment, and\na test holds the list by name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: test a persona's deny and a chat the window has not open (#2245)\n\nA persona's disallowed-tools naming a browser tool lands in deny beside\nthe browser tools' allow, and a browser call from a chat the window\ndoes not have open is refused before any Ask, starting nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T17:59:42+04:00",
+          "tree_id": "c38a202834e375e1e3b4961388b57fbbd340cd11",
+          "url": "https://github.com/purlis/purlis/commit/f567d60055b5470046a1bb5eadc3c21dc80bec5d"
+        },
+        "date": 1792159259140,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.358783,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.342, 0.349, 0.359, 0.361, 0.377 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4816625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.271, 16.463, 16.482, 16.505, 16.533 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.197228,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.846, 101.433, 102.197, 102.277, 102.555 ms"
           }
         ]
       }
