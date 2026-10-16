@@ -16,6 +16,9 @@ there leaves nothing in the event log under its run id:
   line from that program is recorded as a line of a chat the log does not know is: with no
   chat or run, under its number (`chat_number`), and an audit naming the number is of no run. The
   number is not forgotten, so nothing from it begins a run of its own.
+- **A window and a session host one version apart.** A host before session protocol 1.9 is
+  sent a held start's trust event on its own, before the start's run is told it, as every
+  start's was, and is not told a start was taken back.
 - **A run a line of it already said is kept.** The log is append-only: when a line of the
   program reached the log before the start was put aside, its `run.started` is written, and
   what follows of that program stays under that run.

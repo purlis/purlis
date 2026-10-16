@@ -357,3 +357,168 @@ fn a_held_run_sent_as_entries_is_written_as_the_windows_own_held_run_is() {
     );
     assert_eq!(host, window);
 }
+
+/// A held start's `Begin`, as the window sends it, holding `trust` where it is given.
+fn held_with(number: u32, trust: Option<super::super::HeldTrust>) -> Entry {
+    Entry::Begin {
+        plane: "/planes/one".into(),
+        number,
+        chat: CHAT.into(),
+        run: RUN.into(),
+        cause: Began::Start,
+        attributes: attributes(),
+        held: true,
+        trust,
+    }
+}
+
+/// The sandbox coming back on, held with a run (#2252).
+fn back_on() -> super::super::HeldTrust {
+    super::super::HeldTrust::of(
+        &crate::sandbox::Change::On,
+        Some(crate::harness::Harness::ClaudeCode),
+        Some("devops"),
+    )
+}
+
+#[test]
+fn a_held_trust_event_and_a_start_taken_back_sent_as_json_are_written_as_the_window_asks() {
+    // #2252: the trust event comes just before its run's `run.started`; a start taken back
+    // writes nothing, and a later line of it is of no run.
+    use crate::state::Event::Stop;
+    let plane = Path::new("/planes/one");
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+
+    assert!(
+        host.apply(sent(held_with(3, Some(back_on()))))
+            .unwrap()
+            .is_empty()
+    );
+    let begun = host
+        .apply(sent(Entry::Begun {
+            plane: plane.into(),
+            number: 3,
+        }))
+        .unwrap();
+    assert_eq!(
+        begun.iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(),
+        ["run.started"],
+        "the trust event is made durable on its own, just before"
+    );
+    host.apply(sent(held_with(4, Some(back_on())))).unwrap();
+    assert!(
+        host.apply(sent(Entry::TakenBack {
+            plane: plane.into(),
+            number: 4,
+        }))
+        .unwrap()
+        .is_empty()
+    );
+    host.apply(sent(Entry::Report {
+        plane: plane.into(),
+        report: report(4, Stop),
+        followed: Followed::No,
+        begun: None,
+    }))
+    .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .map(|e| (e.kind.as_str(), e.run.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            ("trust.sandbox.on", Some(RUN)),
+            ("run.started", Some(RUN)),
+            ("hook.stop", None),
+        ]
+    );
+    assert_eq!(&events[0].body, back_on().body());
+    assert_eq!(events[2].body["chat_number"], 4);
+}
+
+#[test]
+fn a_begin_holding_anything_but_the_sandbox_back_on_with_a_held_run_is_refused() {
+    let plane = Path::new("/planes/one");
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let off = super::super::HeldTrust::of(
+        &crate::sandbox::Change::Off(crate::sandbox::Lifted {
+            by: crate::sandbox::By::Person,
+            reason: None,
+        }),
+        Some(crate::harness::Harness::ClaudeCode),
+        None,
+    );
+    let not_trust: super::super::HeldTrust =
+        serde_json::from_value(serde_json::json!({ "kind": "run.started", "body": {} }))
+            .expect("it reads");
+    let unheld = match held_with(5, Some(back_on())) {
+        Entry::Begin {
+            plane,
+            number,
+            chat,
+            run,
+            cause,
+            attributes,
+            trust,
+            ..
+        } => Entry::Begin {
+            plane,
+            number,
+            chat,
+            run,
+            cause,
+            attributes,
+            held: false,
+            trust,
+        },
+        _ => unreachable!(),
+    };
+
+    for (entry, what) in [
+        (held_with(3, Some(off)), "an opt-out is never held"),
+        (held_with(4, Some(not_trust)), "not a trust event"),
+        (unheld, "held with a run that is not held"),
+    ] {
+        let refused = host.apply(sent(entry)).expect_err(what);
+        assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput, "{what}");
+    }
+    for number in [3, 4, 5] {
+        host.apply(sent(Entry::Begun {
+            plane: plane.into(),
+            number,
+        }))
+        .unwrap();
+    }
+    assert!(
+        read(dir.path()).unwrap().is_empty(),
+        "nothing held, nothing written"
+    );
+}
+
+#[test]
+fn a_begin_sent_before_a_run_held_its_trust_event_still_reads() {
+    // A window one version older sends no `trust`.
+    let entry: Entry = serde_json::from_value(serde_json::json!({
+        "entry": "begin",
+        "plane": "/planes/one",
+        "number": 3,
+        "chat": CHAT,
+        "run": RUN,
+        "cause": "start",
+        "attributes": {},
+        "held": true,
+    }))
+    .expect("it reads");
+    assert!(matches!(
+        entry,
+        Entry::Begin {
+            held: true,
+            trust: None,
+            ..
+        }
+    ));
+}

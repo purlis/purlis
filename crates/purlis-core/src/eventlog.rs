@@ -2378,11 +2378,15 @@ impl Recorder {
         let trust = who.held_trust.take();
         let who = who.clone();
         // Its start's trust event first, as at any start, made durable as the host makes it.
+        // One the log refuses costs the record of the sandbox coming back on, never the run.
         if let Some(HeldTrust { kind, body }) = trust {
-            let event = self
+            let kept = self
                 .log
-                .append(Some(&who.chat), Some(&who.run), None, &kind, body)?;
-            self.log.durable().through(event.seq)?;
+                .append(Some(&who.chat), Some(&who.run), None, &kind, body)
+                .and_then(|event| self.log.durable().through(event.seq));
+            if let Err(why) = kept {
+                tracing::warn!(error = %why, "the event log did not keep a held trust event");
+            }
         }
         // A child still live is of the run this one takes the place of, which has ended
         // superseded (ADR 0076 §2): a run whose own end was told has none left.

@@ -129,14 +129,12 @@ impl Recorder {
                 held,
                 trust,
             } => {
+                held_trust(held, trust.as_ref())?;
                 let run = RunOf {
                     chat: &chat,
                     run: &run,
                 };
                 if held {
-                    if let Some(trust) = &trust {
-                        trust_kind(trust.kind())?;
-                    }
                     self.begin_held(&plane, number, run, cause, &attributes, trust);
                     Ok(Vec::new())
                 } else {
@@ -210,6 +208,28 @@ fn trust_kind(kind: &str) -> io::Result<()> {
             format!("{kind:?} is not a kind of trust event, so nothing was written"),
         ))
     }
+}
+
+/// What a [`Entry::Begin`] may hold with its run: only the sandbox coming back on, and only
+/// with a run that is `held` (#2252).
+fn held_trust(held: bool, trust: Option<&HeldTrust>) -> io::Result<()> {
+    let Some(trust) = trust else {
+        return Ok(());
+    };
+    let refused = |why: String| Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+    if !held {
+        return refused(
+            "a trust event is held only with a run that is held, so nothing was written".into(),
+        );
+    }
+    let back_on = crate::sandbox::Change::On.kind();
+    if trust.kind() != back_on {
+        return refused(format!(
+            "{:?} is not held with a run, only {back_on:?} is, so nothing was written",
+            trust.kind()
+        ));
+    }
+    Ok(())
 }
 
 /// Where every trust event's kind begins (ADR 0075's registry).
