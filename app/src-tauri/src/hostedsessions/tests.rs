@@ -739,7 +739,7 @@ fn a_host_before_held_trust_events_is_sent_the_trust_event_first_and_no_start_ta
         cause: Began::Start,
         attributes: Attributes::default(),
         held: true,
-        trust,
+        trust: trust.map(Box::new),
     };
     let taken_back = Entry::TakenBack {
         plane: "/planes/one".into(),

@@ -368,7 +368,7 @@ fn held_with(number: u32, trust: Option<super::super::HeldTrust>) -> Entry {
         cause: Began::Start,
         attributes: attributes(),
         held: true,
-        trust,
+        trust: trust.map(Box::new),
     }
 }
 

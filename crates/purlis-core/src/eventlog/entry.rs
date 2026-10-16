@@ -56,7 +56,7 @@ pub enum Entry {
         /// The trust event held with a `held` run, written just before its `run.started`
         /// (#2252).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        trust: Option<HeldTrust>,
+        trust: Option<Box<HeldTrust>>,
     },
     /// The start whose run was held goes on: its `run.started` is written now
     /// ([`Recorder::begun`]).
@@ -129,13 +129,20 @@ impl Recorder {
                 held,
                 trust,
             } => {
-                held_trust(held, trust.as_ref())?;
+                held_trust(held, trust.as_deref())?;
                 let run = RunOf {
                     chat: &chat,
                     run: &run,
                 };
                 if held {
-                    self.begin_held(&plane, number, run, cause, &attributes, trust);
+                    self.begin_held(
+                        &plane,
+                        number,
+                        run,
+                        cause,
+                        &attributes,
+                        trust.map(|trust| *trust),
+                    );
                     Ok(Vec::new())
                 } else {
                     one(self.begin(&plane, number, run, cause, &attributes))

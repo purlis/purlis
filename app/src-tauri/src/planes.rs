@@ -3550,7 +3550,7 @@ impl Planes {
                         cause,
                         attributes: attributes.clone(),
                         trust: match &said {
-                            crate::chats::RunSaid::Held(trust) => trust.clone(),
+                            crate::chats::RunSaid::Held(trust) => trust.clone().map(Box::new),
                             crate::chats::RunSaid::Now => None,
                         },
                         held: said != crate::chats::RunSaid::Now,
