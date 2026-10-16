@@ -796,6 +796,20 @@ number. The list only shrinks:
 The surface tickets migrate a view and delete its lines in the same change. Two of them editing
 one file's list touch different lines, so their removals merge.
 
+**A migration snaps to the scale** (the operator, 2026-10-17, #2313). A spacing, corner, type
+size or weight with no exact token takes the nearest one, by computed px at the 14px root (a tie
+goes to the smaller), and a px literal may become a rem token. Three more rules go with it:
+
+- **An evenly stepped series takes a multiple of one token** (`calc(var(--space-5) * 3)`), so its
+  steps stay even rather than flattening onto the top of the scale.
+- **A corner that draws the same is the pill.** A radius at or above half its box's height
+  becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
+- **Line heights are outside the snap**, as is a structural size that is no step of the scale,
+  such as an icon's box or a strip's cap on a tab's width: each keeps its literal and its line.
+
+Each snap is listed with its change in px in the pull request, and the window is looked at
+before and after.
+
 ## Text roles
 
 **Every word in the window has a rank, and a rank is one class** (#1920). An audit on
@@ -856,8 +870,10 @@ window differ, the window was kept and the difference is recorded here for the m
   steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
   role.
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
-- **Counts and matches are weight 700** (five rules) and Settings' form labels 500 (two): no
-  token names either, and both stay in the allowance until #1920 rules on them.
+- **Counts and matches were weight 700** (five rules) and Settings' form labels 500 (two): no
+  token names either. The geometry snap rule (#2313, 2026-10-17) takes a weight with no token to
+  the nearest one, so the counts on the strips, the rail and the title bar's hand are
+  `--font-weight-strong` now (#2315); the rest move with their surfaces.
 - **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
   It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
 - **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's
