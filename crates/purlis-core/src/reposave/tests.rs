@@ -1245,3 +1245,75 @@ fn a_fresh_save_branch_is_named_purlis_and_a_charter_one_from_before_the_rename_
     run(&f.clone, &["branch", "charter/alpha/0ld0ld0"]);
     assert_eq!(save_branch_of(&f).as_deref(), Ok("charter/alpha/0ld0ld0"));
 }
+
+/// A `pr-merge` widget whose journal keeps #12 open at its HEAD, standing as `merge` says, on
+/// a host nobody answers: a forge asked would not answer.
+fn kept_open_for_the_person(merge: &Merging) -> (Fixture, repos::Repo) {
+    let f = Fixture::on(
+        "merge-shown.invalid",
+        "[repos.widget]\nmode = \"pr-merge\"\n",
+    );
+    planegit::journal_append(
+        &f.plane,
+        &serde_json::json!({
+            "target": "repo:alpha/widget",
+            "outcome": "pr-open",
+            "commit": f.head(),
+            "number": 12,
+            "pr": "https://merge-shown.invalid/acme/widget/pull/12",
+            "pushed_at": 1_800_000_000u64,
+            "merge": merge.to_json(),
+        }),
+    );
+    let widget = repos::Repo {
+        name: "widget".into(),
+        path: f.clone.clone(),
+    };
+    assert!(
+        open_request(&f.plane, "alpha", &widget).is_some(),
+        "kept open"
+    );
+    (f, widget)
+}
+
+/// **A repo's merge as it stands is of what the person was shown, and of nothing else**
+/// (#1978): what the confirmation showed is handed down to the merge, which reads no check,
+/// and is read again under its claim. A request at another commit by then, or one that turned
+/// red at the same commit after the look, is refused before the forge is asked.
+#[test]
+fn a_repos_merge_as_it_stands_refuses_another_commit_or_a_failure_after_the_look() {
+    let red = Merging::new(MergeState::Red, "1 check failed: test");
+    let (f, widget) = kept_open_for_the_person(&red);
+    let lines = f.journal().len();
+    let merged = |seen: &planegit::Seen| {
+        merge_as_it_stands(&f.plane, "alpha", &widget, &forge::Caller::window(), seen)
+    };
+
+    let another_commit = planegit::Seen {
+        head: "1".repeat(40),
+        shown: red.shown(),
+    };
+    assert_eq!(
+        merged(&another_commit),
+        Err(
+            "The request changed since you looked: a new commit was pushed onto it, so purlis \
+             did not merge it. Look at it again"
+                .to_string()
+        )
+    );
+
+    let waited = Merging::new(MergeState::Waiting, "no check has started on it");
+    let before_the_failure = planegit::Seen {
+        head: f.head(),
+        shown: waited.shown(),
+    };
+    assert_eq!(
+        merged(&before_the_failure),
+        Err(
+            "The request changed since you looked (1 check failed: test), so purlis did not \
+             merge it. Look at it again"
+                .to_string()
+        )
+    );
+    assert_eq!(f.journal().len(), lines, "nothing was asked or kept");
+}

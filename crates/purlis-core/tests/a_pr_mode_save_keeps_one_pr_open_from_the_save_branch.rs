@@ -1004,11 +1004,22 @@ mod pr_saves {
         assert_eq!(merge.state, planegit::MergeState::CannotMerge, "{merge:?}");
         assert!(merge.why.contains("not this save's request"), "{merge:?}");
 
-        // This clone's save branch, into another base: the person's merge is refused too.
+        // This clone's save branch, into another base: the person's merge is refused too, on
+        // the confirmation the window's look drew of it.
+        // The stand-in answers each question once, so each read is written down for itself:
+        // the window's look that draws the confirmation, then the press's own fresh look,
+        // then the merge's read of the merge state.
+        plane.state(12, true);
         answers(SAVE, "main");
-        let merged = planegit::merge_as_it_stands(
+        look(&plane);
+        let seen = planegit::seen(&plane.root).expect("what the confirmation shows");
+        plane.state(12, true);
+        answers(SAVE, "main");
+        answers(SAVE, "main");
+        let merged = planegit::merge_as_seen(
             &plane.root,
             &purlis_core::forge::Caller::window(),
+            &seen,
             &mut |_| {},
         );
         assert!(
@@ -1046,6 +1057,11 @@ mod pr_saves {
             Some(planegit::MergeState::Red)
         );
 
+        // What the confirmation showed: the window's look, handed back with the press.
+        let seen = planegit::seen(&plane.root).expect("what the confirmation shows");
+        assert_eq!(seen.head, head);
+        // The press looks again first, and finds it as it was shown.
+        looked(&plane, &head, "UNSTABLE", &[FAILED]);
         // The person's merge: the merge state is read, the checks are not.
         let host = plane.scene.host.clone();
         plane.scene.answers(
@@ -1081,9 +1097,10 @@ mod pr_saves {
         let at = merge(&plane, "rebase");
         plane.merged(12, &at);
 
-        let merged = planegit::merge_as_it_stands(
+        let merged = planegit::merge_as_seen(
             &plane.root,
             &purlis_core::forge::Caller::window(),
+            &seen,
             &mut |_| {},
         );
 

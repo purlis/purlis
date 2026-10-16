@@ -599,7 +599,7 @@ pub async fn merge_save_request(
     let root = held.root().to_path_buf();
     let (said, moved) = tauri::async_runtime::spawn_blocking(move || {
         let seen = planegit::Seen { head, shown };
-        merge_as_it_stands(&root, workspace.as_deref(), repo.as_deref(), &seen)
+        merge_what_was_shown(&root, workspace.as_deref(), repo.as_deref(), &seen)
     })
     .await
     .map_err(|err| format!("the merge did not finish: {err}"))??;
@@ -701,8 +701,9 @@ pub fn look_now(
 }
 
 /// [`merge_save_request`], without a runtime: what happened, and whether the project's tree
-/// moved.
-pub fn merge_as_it_stands(
+/// moved. Private: the window's press, which hands back what its confirmation showed, is its
+/// one caller, and the core merges only that (#1978).
+fn merge_what_was_shown(
     root: &Path,
     workspace: Option<&str>,
     repo: Option<&str>,
