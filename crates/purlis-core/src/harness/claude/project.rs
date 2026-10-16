@@ -120,6 +120,73 @@ impl Screened {
     }
 }
 
+/// What the tab of a sandboxed chat says when purlis could not watch its project's Claude Code
+/// settings for changes, so the chat runs without them ([`limited`]). Said in the window only.
+pub const UNWATCHED: &str = "purlis could not watch this project's Claude Code settings for \
+     changes, so this sandboxed chat runs on your own Claude Code settings and purlis's, with the \
+     project's deny and ask rules. It does not load the project's CLAUDE.md, rules, skills, agents \
+     or commands either. Restart the chat to try again.";
+
+/// What a chat restarted because its project's Claude Code settings changed is told as it
+/// starts again.
+pub const RESCREENED: &str = "purlis restarted this chat on its conversation: this project's \
+     Claude Code settings changed, and a sandboxed chat does not load them as they are now.";
+
+/// `armed`, the words a Claude Code chat was armed with ([`super::ClaudeCode`]), started on the
+/// person's settings and purlis's alone, with the project's deny and ask rules of `screened`
+/// carried on its `--settings`: what [`Screened::setting_sources`] gives a project whose files
+/// are not loaded, for one whose files cannot be kept watched.
+///
+/// **Fail closed.** Words with no `--plugin-dir` or no `--settings` JSON are refused, so the
+/// chat is not started on its project's files unwatched. Words already limited are as they are.
+pub fn limited(mut armed: Vec<String>, screened: &Screened) -> Result<Vec<String>, String> {
+    if armed.iter().any(|word| word == "--setting-sources") {
+        return Ok(armed);
+    }
+    let not_armed = || {
+        "this Claude Code chat's settings could not be limited to yours and purlis's, so \
+         nothing was started"
+            .to_owned()
+    };
+    let at = armed
+        .iter()
+        .position(|word| word == "--settings")
+        .map(|flag| flag + 1)
+        .filter(|&at| at < armed.len())
+        .ok_or_else(not_armed)?;
+    let mut settings: serde_json::Value =
+        serde_json::from_str(&armed[at]).map_err(|_| not_armed())?;
+    let permissions = settings
+        .as_object_mut()
+        .ok_or_else(not_armed)?
+        .entry("permissions")
+        .or_insert_with(|| serde_json::json!({}));
+    for (bucket, rules) in [("deny", &screened.deny), ("ask", &screened.ask)] {
+        if rules.is_empty() {
+            continue;
+        }
+        let mut had: Vec<serde_json::Value> = permissions
+            .get(bucket)
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        had.extend(rules.iter().cloned().map(serde_json::Value::String));
+        permissions[bucket] = serde_json::Value::Array(had);
+    }
+    armed[at] = settings.to_string();
+    let plugin = armed
+        .iter()
+        .position(|word| word == "--plugin-dir")
+        .map(|flag| flag + 2)
+        .filter(|&after| after <= armed.len())
+        .ok_or_else(not_armed)?;
+    armed.splice(
+        plugin..plugin,
+        ["--setting-sources".to_owned(), "user".to_owned()],
+    );
+    Ok(armed)
+}
+
 /// `names`, each as it can be shown, at most [`LISTED`] of them and how many more.
 fn listed(names: &[String]) -> String {
     let shown: Vec<String> = names

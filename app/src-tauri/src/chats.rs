@@ -26,6 +26,19 @@ use crate::host::{Opening, SessionHost};
 #[cfg(test)]
 use crate::sessions::{Reporting, Sessions};
 
+/// `words` with the session a new conversation is started under, `--session-id <was>`, named
+/// `fresh` instead; whether they held one. A `--resume` is left as it is.
+fn renamed_session(words: &mut [String], was: &str, fresh: &str) -> bool {
+    let mut renamed = false;
+    for at in 1..words.len() {
+        if words[at - 1] == "--session-id" && words[at] == was {
+            words[at] = fresh.to_owned();
+            renamed = true;
+        }
+    }
+    renamed
+}
+
 /// Every identity variable a vault of the project at `root` declares — both halves of each
 /// `env` binding — so a chat is started without any of them (#271 review, U6). `root` is the
 /// open project's, never one found above the chat's folder (#1410). A registry that cannot be
@@ -188,9 +201,20 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sync>;
 
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
-/// number, its id, the run's id, why it began and what it is (ADR 0066, #868). What the event
-/// log is told.
-pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes) + Send + Sync>;
+/// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
+/// `run.started` is held until the start goes on. What the event log is told.
+pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes, RunSaid) + Send + Sync>;
+
+/// When a run's `run.started` is written (#2250).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunSaid {
+    /// As it begins.
+    Now,
+    /// Once its start goes on ([`Chats::when_a_held_run_goes_on`]): a sandboxed Claude Code
+    /// chat whose project settings its start screens, which may be started once more at once.
+    /// A start put aside says nothing of it.
+    Held,
+}
 
 /// What a start decided about a chat's sandbox (ADR 0067 §7): the trust event to write, under
 /// the chat and the run the start is about to begin, BEFORE its program runs; or, once a new
@@ -452,10 +476,22 @@ pub struct Chats {
     starting: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// Told, by number, that a start whose run was held goes on ([`RunSaid::Held`]).
+    #[allow(clippy::type_complexity)]
+    goes_on: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
     /// Told what each start decided about the chat's sandbox (ADR 0067 §7).
     trusting: Mutex<Option<Trusting>>,
     /// What a start found to say on a chat's tab after the core's start had spoken: that its
     /// trust event could not be written. Taken by the window's start ([`Self::start_notes`]).
+    /// Every open sandboxed Claude Code chat's project settings files, watched and screened
+    /// again on each change (ADR 0067 as amended 2026-10-16, [`crate::projectsettings`]).
+    project_settings: crate::projectsettings::Watch,
+    /// The size each open chat's terminal was last given: what a restart the core drives itself
+    /// starts it at ([`Self::restart_for_project_settings`]).
+    sizes: Mutex<HashMap<u32, Size>>,
+    /// The runs ended so that the same chat starts again at once (ADR 0067 as amended
+    /// 2026-10-16): their program's end is no end of the chat, and is taken as none.
+    replacing: Mutex<std::collections::HashSet<u32>>,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
     /// Why each chat that runs with no sandbox where the floor could not be applied does
     /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
@@ -906,8 +942,12 @@ impl Chats {
             sessions: host,
             starting: Mutex::new(None),
             beginning: Mutex::new(None),
+            goes_on: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            project_settings: crate::projectsettings::Watch::new(),
+            sizes: Mutex::new(HashMap::new()),
+            replacing: Mutex::new(std::collections::HashSet::new()),
             floorless: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
@@ -994,6 +1034,12 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Calls `tell` with the number of a chat whose run began [`RunSaid::Held`] once its start
+    /// goes on, after its project settings were screened at its start (#2250).
+    pub fn when_a_held_run_goes_on(&self, tell: Box<dyn Fn(u32) + Send + Sync>) {
+        *lock(&self.goes_on) = Some(tell);
     }
 
     /// Calls `tell` with what each start decided about the chat's sandbox: its trust event as
@@ -1599,6 +1645,115 @@ impl Chats {
         }
     }
 
+    /// Who is told, from now on, each chat whose project's Claude Code settings changed so that
+    /// it no longer loads them (ADR 0067 as amended 2026-10-16): the project wires it to
+    /// [`crate::planes::Held::contain_project_settings`] and to the window.
+    pub fn tell_project_settings_to(&self, told: crate::projectsettings::Told) {
+        self.project_settings.telling(told);
+    }
+
+    /// Chat `session` owed a restart because its project settings no longer pass: what a test
+    /// that drives the restart itself owes it.
+    #[cfg(test)]
+    pub fn project_settings_changed(&self, session: u32) {
+        self.owe_restart(
+            session,
+            purlis_core::harness::claude::project::RESCREENED.to_owned(),
+        );
+    }
+
+    /// **Restarts chat `session` because its project settings no longer pass** (ADR 0067 as
+    /// amended 2026-10-16), at the size its terminal was last given, whether or not a window
+    /// is there to drive it. **Its run ends before the new one starts**, so two runs never share
+    /// its conversation; that end is taken as no end of the chat ([`Self::replaced`]). Refused
+    /// where it has no conversation to resume, with the run still going: the caller ends it.
+    pub fn restart_for_project_settings(&self, session: u32) -> Result<u32, String> {
+        self.claim(session)?;
+        let mut told = vec![purlis_core::harness::claude::project::RESCREENED.to_owned()];
+        told.extend(lock(&self.owed).remove(&session).unwrap_or_default());
+        let again = match self.again_on_its_conversation(session) {
+            Ok(again) if again.resume.is_some() => again,
+            Ok(_) => {
+                self.unclaim(session);
+                return Err(no_conversation(session));
+            }
+            Err(why) => {
+                self.unclaim(session);
+                return Err(why);
+            }
+        };
+        let size = lock(&self.sizes).get(&session).copied().unwrap_or(Size {
+            columns: 80,
+            rows: 24,
+        });
+        lock(&self.replacing).insert(session);
+        if let Err(why) = self.sessions.close(session) {
+            tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
+        }
+        let first = told.join("\n\n");
+        match self.start_recorded_told(&again, size, Why::Relaunch, Some(&first), None) {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
+    /// Marks run `session` as replaced at once, as a restart for changed project settings does.
+    #[cfg(test)]
+    pub fn replaced_in_a_test(&self, session: u32) {
+        lock(&self.replacing).insert(session);
+    }
+
+    /// Whether the end of run `session`'s program is the end of a run replaced at once, taken
+    /// as no end of the chat. Answered once.
+    pub fn replaced(&self, session: u32) -> bool {
+        lock(&self.replacing).remove(&session)
+    }
+
+    /// **Chat `session`, which could not be started again, kept aside with `why`** (ADR 0067 as
+    /// amended 2026-10-16): among the chats that would not start, which the window lists with
+    /// why and a Retry, whenever it opens. Before it is ended, while its record is known.
+    pub fn keep_aside(&self, session: u32, why: &str) {
+        if let Some(chat) = self.recorded_chat(session) {
+            lock(&self.would_not_start).push(Waiting {
+                chat,
+                why: why.to_owned(),
+                approval: None,
+                told: None,
+            });
+        }
+    }
+
+    /// Resizes chat `session`'s terminal, and keeps the size for a restart the core drives.
+    pub fn resize(&self, session: u32, size: Size) -> Result<(), String> {
+        self.sessions.resize(session, size)?;
+        if lock(&self.open).contains_key(&session) {
+            lock(&self.sizes).insert(session, size);
+        }
+        Ok(())
+    }
+
+    /// The watch of this project's chats' Claude Code settings, for a test to change files at
+    /// a moment of its choosing.
+    #[cfg(test)]
+    pub fn project_settings_watch(&self) -> &crate::projectsettings::Watch {
+        &self.project_settings
+    }
+
+    /// Every watched chat's project settings, screened again now.
+    #[cfg(test)]
+    pub fn screen_project_settings_again(&self) {
+        self.project_settings.screen_all();
+    }
+
+    /// The project settings of chats started from now are watched by `watch`.
+    #[cfg(test)]
+    pub fn watching_project_settings_with(&mut self, watch: crate::projectsettings::Watch) {
+        self.project_settings = watch;
+    }
+
     /// Owes chat `session` a restart on its conversation that tells it `told` (#1342): a grant
     /// of any level reaches a running chat that way.
     /// A chat that is not open is owed nothing: what was allowed reaches it at its next start.
@@ -2147,6 +2302,7 @@ impl Chats {
         if !restarting {
             lock(&self.owed).remove(&session);
         }
+        self.project_settings.forget(session);
     }
 
     /// Starts a chat, and remembers what it was started as.
@@ -2285,6 +2441,12 @@ impl Chats {
     /// Everything that differs between a profile chat and a shell chat is decided by the
     /// caller and arrives here as arguments — above all the HARNESS, which for a profile
     /// comes from its declared kind and must not be asked of the program's name.
+    ///
+    /// **A sandboxed Claude Code chat whose project settings stop passing as it starts** (ADR
+    /// 0067 as amended 2026-10-16): its first screen, once its program runs, says so. That run
+    /// is ended before anything else is started, and the chat is started once more on the
+    /// person's settings and purlis's: the number answered is the run that goes on, never one
+    /// already ended, and only that run is in the event log and this machine's count (#2250).
     #[allow(clippy::too_many_arguments)]
     fn open_it(
         &self,
@@ -2305,6 +2467,106 @@ impl Chats {
         why: Why,
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
     ) -> Result<u32, String> {
+        let again = (
+            program.clone(),
+            command.clone(),
+            args.clone(),
+            env.clone(),
+            conversation.clone(),
+            how.clone(),
+        );
+        let (session, failed) = self.open_it_as(
+            chat,
+            program,
+            command,
+            args,
+            env,
+            harness,
+            declared,
+            conversation,
+            how,
+            plugins,
+            sandbox,
+            unsandboxed,
+            size,
+            operator_shell,
+            why,
+            sign_in,
+            false,
+        )?;
+        if !failed {
+            return Ok(session);
+        }
+        // Ended first, so two runs never share its conversation; its end is no chat's end.
+        lock(&self.replacing).insert(session);
+        if let Err(ended) = self.close(session) {
+            tracing::warn!("purlis: a chat's first run did not end cleanly ({ended})");
+        }
+        // Taken back as a start that did not happen: what was announced of it goes.
+        lock(&self.late_notes).remove(&session);
+        lock(&self.older_in_notes).remove(&session);
+        if let Some(gone) = lock(&self.never_started).as_ref() {
+            gone(session);
+        }
+        let (program, mut command, mut args, env, mut conversation, how) = again;
+        // A new conversation is started under a new id: Claude Code refuses an id whose
+        // transcript the first run may have begun (measured in 2.1.300: `--session-id` is
+        // refused while `<id>.jsonl` exists), and that run was never prompted, so nothing of it
+        // is lost. A conversation resumed is resumed again under its own id.
+        if let Some(was) = conversation.clone() {
+            let fresh = purlis_core::harness::SessionId::fresh().as_str().to_owned();
+            if renamed_session(&mut args, &was, &fresh)
+                | renamed_session(&mut command, &was, &fresh)
+            {
+                conversation = Some(fresh);
+            }
+        }
+        self.open_it_as(
+            chat,
+            program,
+            command,
+            args,
+            env,
+            harness,
+            declared,
+            conversation,
+            how,
+            plugins,
+            sandbox,
+            unsandboxed,
+            size,
+            operator_shell,
+            why,
+            sign_in,
+            true,
+        )
+        .map(|(session, _)| session)
+    }
+
+    /// [`Self::open_it`] once: the session, and whether its project settings failed the first
+    /// screen after its program started. `limited` starts a sandboxed Claude Code chat on the
+    /// person's settings and purlis's, unwatched, whatever its project's files hold.
+    #[allow(clippy::too_many_arguments)]
+    fn open_it_as(
+        &self,
+        chat: &Chat,
+        program: String,
+        command: Vec<String>,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+        harness: Option<Harness>,
+        declared: Option<&purlis_core::harness_declaration::Declaration>,
+        conversation: Option<String>,
+        how: purlis_core::reopen::Reopened,
+        plugins: &purlis_core::harness_plugin::Chosen,
+        sandbox: Option<&purlis_core::sandbox::Applied>,
+        unsandboxed: Option<&purlis_core::sandbox::Lifted>,
+        size: Size,
+        operator_shell: bool,
+        why: Why,
+        sign_in: Option<&purlis_core::profilesignin::AtStart>,
+        limited: bool,
+    ) -> Result<(u32, bool), String> {
         // A project being let go of starts nothing more (#1949): its close may be running on
         // another thread than this start.
         if self.ending.load(Ordering::SeqCst) {
@@ -2441,6 +2703,30 @@ impl Chats {
         // rest on (M8.3) — then the state hooks, then charter's own words: a chat's recorded
         // arguments may end in a positional prompt that nothing may come after.
         // `purlis_core::start::Ready::command_line` is the one place that order is decided.
+        // A sandboxed Claude Code chat that loads its project's own settings has them watched
+        // from before it starts (ADR 0067 as amended 2026-10-16). Where they cannot be, it is
+        // started without them.
+        let settings_watched = match chat.cwd.as_deref() {
+            Some(cwd)
+                if !limited
+                    && sandbox.is_some()
+                    && harness == Some(Harness::ClaudeCode)
+                    && purlis_core::harness::claude::project::screen(Some(cwd))
+                        .loads_the_project() =>
+            {
+                Some(
+                    self.project_settings
+                        .prepare(cwd)
+                        .map(|()| cwd.to_path_buf()),
+                )
+            }
+            _ => None,
+        };
+        // A start its screen may put aside says its run once it goes on (#2250).
+        let said = match settings_watched {
+            Some(Ok(_)) => RunSaid::Held,
+            _ => RunSaid::Now,
+        };
         let (hooks, armed) = self.state_hooks(
             harness,
             chat.cwd.as_deref(),
@@ -2448,6 +2734,22 @@ impl Chats {
             sandbox,
             runs_as.as_deref(),
         )?;
+        let hooks = match &settings_watched {
+            Some(Err(why)) => {
+                tracing::warn!("purlis: a chat's project settings are not watched ({why})");
+                late.push(purlis_core::harness::claude::project::UNWATCHED.to_owned());
+                purlis_core::harness::claude::project::limited(
+                    hooks,
+                    &purlis_core::harness::claude::project::screen(chat.cwd.as_deref()),
+                )?
+            }
+            _ if limited && sandbox.is_some() && harness == Some(Harness::ClaudeCode) => {
+                let screened = purlis_core::harness::claude::project::screen(chat.cwd.as_deref());
+                late.extend(screened.note());
+                purlis_core::harness::claude::project::limited(hooks, &screened)?
+            }
+            _ => hooks,
+        };
         // What the run this start begins is, for its `run.started` (ADR 0066, #868), its model
         // source its profile's sign-in kind (ADR 0087 as amended, #2036).
         let mut attributes = run_attributes(
@@ -2636,7 +2938,7 @@ impl Chats {
                     if let Some(beginning) = lock(&self.beginning).as_ref()
                         && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
                     {
-                        beginning(session, RunOf { chat, run }, cause, &attributes);
+                        beginning(session, RunOf { chat, run }, cause, &attributes, said);
                     }
                 },
             )
@@ -2669,19 +2971,6 @@ impl Chats {
             identity,
             ..chat.clone()
         };
-        // Counted once it has started, so a start that failed is not a chat. A count that
-        // could not be kept costs the rate one chat, never the chat.
-        if let (Some(counted), Some(trusting)) = (counted, lock(&self.trusting).as_ref())
-            && let Err(why) = trusting(Sandboxing {
-                change: None,
-                run: None,
-                counted: Some(counted),
-                harness,
-                persona: chat.persona.as_deref(),
-            })
-        {
-            tracing::warn!("purlis: a chat was not counted for the sandbox ({why})");
-        }
         if !late.is_empty() {
             lock(&self.late_notes).insert(session, late);
         }
@@ -2708,6 +2997,35 @@ impl Chats {
                 },
             },
         );
+        lock(&self.sizes).insert(session, size);
+        // Screened once more now its program runs: a change since the screen its arming made is
+        // answered to the start, which starts it again on the person's settings.
+        let failed = match &settings_watched {
+            Some(Ok(cwd)) => !self.project_settings.chat(session, cwd),
+            _ => false,
+        };
+        // A start put aside here is no run and no chat (#2250): the one started in its place
+        // is said and counted.
+        if !failed {
+            if said == RunSaid::Held
+                && let Some(goes_on) = lock(&self.goes_on).as_ref()
+            {
+                goes_on(session);
+            }
+            // Counted once it has started, so a start that failed is not a chat. A count that
+            // could not be kept costs the rate one chat, never the chat.
+            if let (Some(counted), Some(trusting)) = (counted, lock(&self.trusting).as_ref())
+                && let Err(why) = trusting(Sandboxing {
+                    change: None,
+                    run: None,
+                    counted: Some(counted),
+                    harness,
+                    persona: chat.persona.as_deref(),
+                })
+            {
+                tracing::warn!("purlis: a chat was not counted for the sandbox ({why})");
+            }
+        }
         self.write_it_down();
         // A close that began while this started, past the check above, has ended every chat
         // it found: this one is ended as well, so nothing runs in a project nobody holds.
@@ -2715,13 +3033,15 @@ impl Chats {
             let _ = self.close(session);
             return Err(LETTING_GO.to_owned());
         }
-        Ok(session)
+        Ok((session, failed))
     }
 
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         let gone = lock(&self.open).remove(&session);
+        self.project_settings.forget(session);
+        lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
         lock(&self.told).remove(&session);
@@ -6782,6 +7102,290 @@ pub(crate) mod tests {
         chats.close(started).expect("ends");
     }
 
+    /// The project at `plane` holds `settings` in its `.claude/settings.json`.
+    fn project_settings_become(plane: &std::path::Path, settings: &str) {
+        std::fs::create_dir_all(plane.join(".claude")).expect(".claude");
+        std::fs::write(plane.join(".claude/settings.json"), settings).expect("settings");
+    }
+
+    /// Whether the last chat `host` started was limited to the person's settings and purlis's.
+    fn limited_to_the_person_s(host: &Pretend) -> bool {
+        let opened = host.openings();
+        let args = &opened.last().expect("a start").args;
+        args.windows(2)
+            .any(|pair| pair[0] == "--setting-sources" && pair[1] == "user")
+    }
+
+    /// Chats of a sandboxed project whose own Claude Code settings hold only what a chat keeps,
+    /// each told chat owed its restart as the project wires it.
+    fn chats_on_kept_project_settings(
+        watch: crate::projectsettings::Watch,
+    ) -> (tempfile::TempDir, Arc<Chats>, Pretend, Arc<Mutex<Vec<u32>>>) {
+        let plane = a_sandboxed_plane();
+        project_settings_become(
+            plane.path(),
+            r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}}"#,
+        );
+        let host = Pretend::default();
+        let mut chats = restartable_chats_of(plane.path(), host.clone());
+        chats.watching_project_settings_with(watch);
+        let chats = Arc::new(chats);
+        let told = Arc::new(Mutex::new(Vec::new()));
+        chats.tell_project_settings_to({
+            let (weak, told) = (Arc::downgrade(&chats), Arc::clone(&told));
+            Arc::new(move |session| {
+                if let Some(chats) = weak.upgrade() {
+                    chats.project_settings_changed(session);
+                }
+                lock(&told).push(session);
+            })
+        });
+        (plane, chats, host, told)
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_stop_passing_is_restarted_on_the_person_s_settings() {
+        // ADR 0067 as amended 2026-10-16.
+        let (plane, chats, host, told) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert!(!limited_to_the_person_s(&host), "its project's files load");
+        assert!(chats.owed_restarts().is_empty());
+
+        project_settings_become(plane.path(), r#"{"permissions": {"allow": ["Bash"]}}"#);
+        chats.screen_project_settings_again();
+        // Told by this screen, or by the watch's own on the change it heard.
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while lock(&told).is_empty() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert_eq!(*lock(&told), [session], "the window is told");
+        assert_eq!(chats.owed_restarts(), [session], "owed its restart");
+
+        let started = chats.restart(session, SIZE).expect("restarts");
+        chats.close(session).expect("the old run ends");
+        assert!(
+            limited_to_the_person_s(&host),
+            "on the person's settings now"
+        );
+        let notes = chats.start_notes(started);
+        assert!(
+            notes.iter().any(|note| note.contains("permissions.allow")),
+            "its tab says why: {notes:?}"
+        );
+        // Started on the person's settings, it is watched no more: nothing is owed again.
+        project_settings_become(plane.path(), r#"{"hooks": {"Stop": []}}"#);
+        chats.screen_project_settings_again();
+        assert_eq!(*lock(&told), [session]);
+        chats.close(started).expect("ends");
+    }
+
+    #[test]
+    fn a_change_caught_as_the_chat_is_first_screened_is_contained_too() {
+        // Between its arming and its first screen: the start loaded the files, and they changed.
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, told) = chats_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        // The start answers the run that goes on: started again on the person's settings, the
+        // first run ended, nobody told and nothing owed.
+        assert!(limited_to_the_person_s(&host));
+        assert_eq!(host.openings().len(), 2, "started once more");
+        assert_eq!(chats.open_now().len(), 1);
+        assert_eq!(chats.open_now()[0].session, session);
+        assert!(lock(&told).is_empty());
+        assert!(chats.owed_restarts().is_empty());
+        chats.close(session).expect("ends");
+    }
+
+    /// Chats of a sandboxed project whose own Claude Code settings hold only what a chat keeps,
+    /// saying each run that goes on and each count ([`saying`]), on `watch`.
+    fn saying_on_kept_project_settings(
+        watch: crate::projectsettings::Watch,
+    ) -> (tempfile::TempDir, Chats, Pretend, Said) {
+        let plane = a_sandboxed_plane();
+        project_settings_become(
+            plane.path(),
+            r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}}"#,
+        );
+        let host = Pretend::default();
+        let mut chats = restartable_chats_of(plane.path(), host.clone());
+        chats.watching_project_settings_with(watch);
+        let said = saying(&mut chats);
+        (plane, chats, host, said)
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_pass_its_start_counts_and_records_its_run_once() {
+        let (plane, chats, _host, said) =
+            saying_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(
+            *lock(&said),
+            [
+                format!("{session} run start"),
+                "counted Sandboxed claude -".to_owned(),
+            ]
+        );
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_chat_started_again_at_once_counts_and_records_one_run_not_two() {
+        // #2250: the first run, put aside at its start, is no run of the chat.
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, said) = saying_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(host.openings().len(), 2, "started once more");
+        assert_eq!(
+            *lock(&said),
+            [
+                format!("{session} run start"),
+                "counted Sandboxed claude -".to_owned(),
+            ],
+            "one run, under the number that goes on, counted once"
+        );
+        chats.close(session).expect("ends");
+    }
+
+    /// The word after `flag` in `args`, where there is one.
+    fn after(args: &[String], flag: &str) -> Option<String> {
+        args.windows(2)
+            .find(|pair| pair[0] == flag)
+            .map(|pair| pair[1].clone())
+    }
+
+    #[test]
+    fn a_new_conversation_started_once_more_at_its_start_is_under_a_new_id() {
+        // Claude Code refuses `--session-id` for an id whose transcript exists, and the first
+        // run may have begun one: the run that goes on is a new conversation of its own, and the
+        // chat's record names it.
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, _told) = chats_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_chat_in_with(plane.path(), None), SIZE)
+            .expect("starts");
+        let opened = host.openings();
+        assert_eq!(opened.len(), 2, "started once more");
+        let first = after(&opened[0].args, "--session-id").expect("a new conversation");
+        let second = after(&opened[1].args, "--session-id").expect("a new conversation");
+        assert_ne!(first, second, "under a new id");
+        assert_eq!(after(&opened[1].args, "--resume"), None);
+        let recorded = chats.recorded_chat(session).expect("its record");
+        assert_eq!(
+            recorded.resume.map(|id| id.as_str().to_owned()),
+            Some(second),
+            "its record names the conversation that goes on"
+        );
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_resumed_conversation_started_once_more_at_its_start_is_resumed_again() {
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, _told) = chats_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        let opened = host.openings();
+        assert_eq!(opened.len(), 2, "started once more");
+        assert_eq!(after(&opened[0].args, "--resume").as_deref(), Some(ID));
+        assert_eq!(after(&opened[1].args, "--resume").as_deref(), Some(ID));
+        assert_eq!(after(&opened[1].args, "--session-id"), None);
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_restart_for_project_settings_ends_the_old_run_before_the_new_one_starts() {
+        let (plane, chats, host, _told) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        let started = chats
+            .restart_for_project_settings(session)
+            .expect("started again");
+        let running = host.running_when_opened();
+        assert!(
+            !running.last().expect("the new start").contains(&session),
+            "two runs never share its conversation: {running:?}"
+        );
+        assert_ne!(started, session);
+        let _ = chats.close(session);
+        chats.close(started).expect("ends");
+    }
+
+    #[test]
+    fn a_session_is_renamed_only_where_a_new_conversation_is_started() {
+        let mut words: Vec<String> = ["--session-id", "a", "--name", "a"]
+            .map(str::to_owned)
+            .to_vec();
+        assert!(renamed_session(&mut words, "a", "b"));
+        assert_eq!(words, ["--session-id", "b", "--name", "a"]);
+        let mut resumed: Vec<String> = ["--resume", "a"].map(str::to_owned).to_vec();
+        assert!(!renamed_session(&mut resumed, "a", "b"));
+        assert_eq!(resumed, ["--resume", "a"]);
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_still_pass_is_left_as_it_is() {
+        let (plane, chats, host, told) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        project_settings_become(
+            plane.path(),
+            r#"{"permissions": {"ask": ["Bash(git push *)"]}, "model": "sonnet"}"#,
+        );
+        chats.screen_project_settings_again();
+        assert!(lock(&told).is_empty());
+        assert!(chats.owed_restarts().is_empty());
+        assert!(!limited_to_the_person_s(&host));
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_cannot_be_watched_starts_on_the_person_s_settings() {
+        let (plane, chats, host, _) =
+            chats_on_kept_project_settings(crate::projectsettings::Watch::unable());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert!(limited_to_the_person_s(&host), "fail closed");
+        let notes = chats.start_notes(session);
+        assert!(
+            notes
+                .iter()
+                .any(|note| note == purlis_core::harness::claude::project::UNWATCHED),
+            "{notes:?}"
+        );
+        chats.close(session).expect("ends");
+    }
+
     #[test]
     fn a_restart_keeps_the_conversation_and_compiles_the_sandbox_the_project_has_now() {
         let plane = a_sandboxed_plane();
@@ -9780,7 +10384,7 @@ pub(crate) mod tests {
         chats.on_device(Some(DEVICE.to_owned()));
         let begun: Begun = std::sync::Arc::default();
         let keep = std::sync::Arc::clone(&begun);
-        chats.when_a_run_begins(Box::new(move |session, of, cause, _| {
+        chats.when_a_run_begins(Box::new(move |session, of, cause, _, _| {
             lock(&keep).push((session, of.chat.to_owned(), of.run.to_owned(), cause));
         }));
         begun
@@ -11180,8 +11784,20 @@ pub(crate) mod tests {
     fn saying_or(chats: &mut Chats, refused: Option<&'static str>) -> Said {
         let said: Said = std::sync::Arc::default();
         let runs = std::sync::Arc::clone(&said);
-        chats.when_a_run_begins(Box::new(move |session, _, cause, _| {
-            lock(&runs).push(format!("{session} run {}", cause.word()));
+        // A run held is said once its start goes on, as the event log writes it.
+        let held: std::sync::Arc<Mutex<HashMap<u32, Began>>> = std::sync::Arc::default();
+        let holding = std::sync::Arc::clone(&held);
+        chats.when_a_run_begins(Box::new(move |session, _, cause, _, when| match when {
+            RunSaid::Now => lock(&runs).push(format!("{session} run {}", cause.word())),
+            RunSaid::Held => {
+                lock(&holding).insert(session, cause);
+            }
+        }));
+        let runs = std::sync::Arc::clone(&said);
+        chats.when_a_held_run_goes_on(Box::new(move |session| {
+            if let Some(cause) = lock(&held).remove(&session) {
+                lock(&runs).push(format!("{session} run {}", cause.word()));
+            }
         }));
         let decided = std::sync::Arc::clone(&said);
         chats.when_the_sandbox_is_decided(Box::new(move |it| {
