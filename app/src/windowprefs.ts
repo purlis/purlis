@@ -3,11 +3,12 @@
 
 import { useSyncExternalStore } from "react";
 import type { AlertRow } from "./bindings";
-import { load, type Theme } from "./theme/theme";
+import { AT_CREATION, type Complaint, type Theme } from "./theme/theme";
 
 /**
- * **What the window was handed as it was created**: the operator's layout file and theme file,
- * read by the Rust side before the window existed (`src-tauri/src/windowprefs.rs`).
+ * **What the window was handed as it was created**: the operator's layout file, and their theme
+ * file as the core's theme engine resolved it, read by the Rust side before the window existed
+ * (`src-tauri/src/windowprefs.rs`). The built-in themes come with them (`theme.ts` reads those).
  *
  * Both are files beside `machine.json` (`docs/design-system.md` has their formats), and both
  * are needed by the very first frame — a layout drawn after it is a re-layout the operator
@@ -17,7 +18,7 @@ import { load, type Theme } from "./theme/theme";
  */
 
 /** The global the initialization script defines. `windowprefs.rs` names it too. */
-export const GLOBAL = "__CHARTER_AT_CREATION__";
+export const GLOBAL = AT_CREATION;
 
 /** One file's reading — `purlis_core::windowprefs::Reading`, as serialised. */
 export type Reading = {
@@ -31,10 +32,25 @@ export type Reading = {
   trouble: string | null;
 };
 
+/** The person's own theme as the core read and resolved it — `purlis_core::theme::Theirs`. */
+export type TheirReading = {
+  /** Where the file is, or would be. */
+  path: string;
+  /** Whether there is a file at all. */
+  found: boolean;
+  /** Why a file that is there is not in force. */
+  trouble: string | null;
+  /** The theme it resolves to, when it is in force: complete, every value the engine's. */
+  theme: Theme | null;
+  /** What resolving it had to put right. */
+  complaints: Complaint[];
+};
+
 /** Both readings. */
-export type AtCreation = { layout: Reading; theme: Reading };
+export type AtCreation = { layout: Reading; theme: TheirReading };
 
 const NOTHING: Reading = { path: "", found: false, document: null, trouble: null };
+const NO_THEME: TheirReading = { path: "", found: false, trouble: null, theme: null, complaints: [] };
 
 /**
  * What the window was handed, or two empty readings when it was handed nothing — a page opened
@@ -46,7 +62,27 @@ export function atCreation(): AtCreation {
   const given = (globalThis as Record<string, unknown>)[GLOBAL];
   const held =
     given !== null && typeof given === "object" ? (given as Record<string, unknown>) : {};
-  return { layout: reading(held.layout), theme: reading(held.theme) };
+  return { layout: reading(held.layout), theme: theirReading(held.theme) };
+}
+
+function theirReading(raw: unknown): TheirReading {
+  if (raw === null || typeof raw !== "object") return NO_THEME;
+  const from = raw as Record<string, unknown>;
+  const theme = from.theme as { values?: unknown } | null | undefined;
+  const complaints = Array.isArray(from.complaints) ? (from.complaints as unknown[]) : [];
+  return {
+    path: typeof from.path === "string" ? from.path : "",
+    found: from.found === true,
+    trouble: typeof from.trouble === "string" ? from.trouble : null,
+    theme:
+      theme !== null && typeof theme === "object" && typeof theme.values === "object"
+        ? (theme as Theme)
+        : null,
+    complaints: complaints.filter(
+      (one): one is Complaint =>
+        one !== null && typeof one === "object" && typeof (one as Complaint).said === "string",
+    ),
+  };
 }
 
 function reading(raw: unknown): Reading {
@@ -168,14 +204,14 @@ export function onLayoutMovedAside(listener: () => void): () => void {
  * `docs/design-system.md` gave it, and until now read by nothing.
  *
  * It arrives with the window, so `main.tsx` draws it **before the first frame**: an operator
- * with a theme of their own never sees the built-in painted first. `theme.load` is what judges
- * it — every token against the vocabulary and the hex grammar — and whatever it had to put
- * right is said in the Inbox, with the file's path, because a colour that silently
+ * with a theme of their own never sees the built-in painted first. The core's theme engine is
+ * what judged it — every token against the vocabulary and the hex grammar — and whatever it had
+ * to put right is said in the Inbox, with the file's path, because a colour that silently
  * came out as the built-in's is a theme that looks like it was ignored.
  *
  * A file that is not a theme at all is said the same way, and the window keeps the built-in.
  */
-export function theirTheme(reading: Reading = atCreation().theme): Theme | undefined {
+export function theirTheme(reading: TheirReading = atCreation().theme): Theme | undefined {
   const where = reading.path || "the theme file";
   if (reading.trouble !== null) {
     sayAboutThisMachine("theme", {
@@ -186,8 +222,8 @@ export function theirTheme(reading: Reading = atCreation().theme): Theme | undef
     });
     return undefined;
   }
-  if (reading.document === null) return undefined;
-  const { theme, complaints } = load(reading.document);
+  const { theme, complaints } = reading;
+  if (theme === null) return undefined;
   if (complaints.length > 0) {
     sayAboutThisMachine("theme", {
       severity: "warn",

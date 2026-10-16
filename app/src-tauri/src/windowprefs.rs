@@ -3,52 +3,74 @@
 
 //! The window's layout and the operator's theme, **handed to the page as it is created** and
 //! written back when the layout changes (`purlis_core::windowprefs` holds the files and the
-//! reasons).
+//! reasons; `purlis_core::theme` resolves the theme).
 //!
 //! **Injected, never fetched.** A command is asynchronous, so a layout the window asked for
 //! would land after the first paint and the window would paint the default arrangement and then
 //! re-lay itself out — the flash ADR 0038 removed. So `lib.rs` builds the main window itself,
 //! from its entry in `tauri.conf.json`, with [`creation_script`] as its initialization script:
-//! Tauri runs that before the page's own scripts, so `main.tsx` finds both readings already in
-//! the page and the first frame is drawn from them.
+//! Tauri runs that before the page's own scripts, so `main.tsx` finds the layout, the theme
+//! already resolved and the built-in themes in the page, and the first frame is drawn from them.
+//! The built-ins are compiled into the core, so handing them over reads nothing from disk.
 //!
 //! **Main frame only.** `initialization_script` and not `…_for_all_frames`: an extension's panel
 //! is a frame of its own, and the operator's arrangement is nothing it needs to be handed.
 
 use std::path::Path;
+use std::sync::Mutex;
 
+use purlis_core::theme::{self, ResolvedTheme, Theirs};
 use purlis_core::windowprefs::{self, Reading};
 
 /// The global the page reads both readings from. `app/src/windowprefs.ts` names it too; the
 /// test below holds the script to it, and `windowprefs.test.ts` holds the page to it.
 pub(crate) const GLOBAL: &str = "__CHARTER_AT_CREATION__";
 
-/// Both readings, as the page receives them.
+/// What the page receives.
 #[derive(Debug, serde::Serialize)]
-struct AtCreation {
+struct AtCreation<'a> {
     layout: Reading,
-    theme: Reading,
+    /// The person's own theme, resolved by the core: what the first frame is drawn in when it
+    /// is in force.
+    theme: Theirs,
+    /// The themes purlis ships, resolved: what the first frame is drawn in otherwise.
+    built_in: &'a [ResolvedTheme],
 }
 
-/// The script that puts both readings on the page before any of the page's own code runs.
+/// The person's own theme as the last window was handed it, for [`theme_in_force`] to resolve
+/// from after the first frame: read once as a window is created, never again until the next.
 ///
-/// **What is read from disk reaches the page as JSON data, never as code.** The readings are
-/// serialised by `serde_json`, which escapes every quote and control character in a string, so
-/// nothing in a hand-edited file can end the literal it sits in; and the value is frozen, so
-/// nothing that runs later can quietly rewrite what the launch read.
+/// [`theme_in_force`]: crate::extensions::theme_in_force
+static THEIRS: Mutex<Option<ResolvedTheme>> = Mutex::new(None);
+
+/// The person's own theme in force, as the window was handed it.
+pub(crate) fn theirs_in_force() -> Option<ResolvedTheme> {
+    THEIRS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// The script that puts what was read on the page before any of the page's own code runs.
 ///
-/// A machine with no config home hands the page two empty readings: the default arrangement and
-/// the built-in theme, which is what such a machine has always had.
+/// **What is read from disk reaches the page as JSON data, never as code.** It is serialised
+/// by `serde_json`, which escapes every quote and control character in a string, so nothing in a
+/// hand-edited file can end the literal it sits in; and the value is frozen, so nothing that
+/// runs later can quietly rewrite what the launch read. A theme's values are the core's
+/// resolved ones, each a colour or a number, never the file's text.
+///
+/// A machine with no config home hands the page an empty layout and no theme of the person's:
+/// the default arrangement and the built-in theme, which is what such a machine has always had.
 pub(crate) fn creation_script(config_root: Option<&Path>) -> String {
-    let at = match config_root {
-        Some(root) => AtCreation {
-            layout: windowprefs::read_layout(root),
-            theme: windowprefs::read_theme(root),
-        },
-        None => AtCreation {
-            layout: Reading::default(),
-            theme: Reading::default(),
-        },
+    let theirs = theme::read_theirs(config_root);
+    THEIRS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone_from(&theirs.theme);
+    let at = AtCreation {
+        layout: config_root.map_or_else(Reading::default, windowprefs::read_layout),
+        theme: theirs,
+        built_in: theme::built_ins(),
     };
     let json = serde_json::to_string(&at).expect("a reading is plain data serde can always write");
     format!(
@@ -90,9 +112,15 @@ pub async fn adopt_layout(text: String) -> Result<bool, String> {
 #[specta::specta]
 pub async fn use_built_in_theme() -> Result<String, String> {
     let root = config_root()?;
-    tauri::async_runtime::spawn_blocking(move || windowprefs::use_built_in_theme(&root))
-        .await
-        .map_err(|err| format!("moving the theme aside did not finish: {err}"))?
+    let moved =
+        tauri::async_runtime::spawn_blocking(move || windowprefs::use_built_in_theme(&root))
+            .await
+            .map_err(|err| format!("moving the theme aside did not finish: {err}"))??;
+    // From here on there is no theme of the person's to draw.
+    *THEIRS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    Ok(moved)
 }
 
 /// **Use the default layout** (#1289): moves the layout file aside to `layout.aside.json`,
@@ -259,7 +287,19 @@ mod tests {
         let at = defined(&script);
         assert_eq!(at["layout"]["found"], true);
         assert_eq!(at["layout"]["document"]["regions"][0]["side"], "left");
-        assert_eq!(at["theme"]["document"]["name"], "Mine");
+        assert_eq!(at["theme"]["theme"]["name"], "Mine");
+        // Resolved: every token, filled from the built-in the file did not mention.
+        assert_eq!(
+            at["theme"]["theme"]["values"]["surface.base"],
+            theme::default_theme().value("surface.base")
+        );
+        let built: Vec<&str> = at["built_in"]
+            .as_array()
+            .expect("the built-ins")
+            .iter()
+            .filter_map(|one| one["name"].as_str())
+            .collect();
+        assert_eq!(built, purlis_core::extension::BUILT_IN_THEMES);
     }
 
     #[test]
@@ -277,7 +317,7 @@ mod tests {
         .unwrap();
         let at = defined(&creation_script(Some(home.path())));
         assert_eq!(
-            at["theme"]["document"]["name"],
+            at["theme"]["theme"]["name"],
             "\"}); alert(1); ({\"\u{2028}</script>"
         );
     }
@@ -370,5 +410,7 @@ mod tests {
         let at = defined(&creation_script(None));
         assert_eq!(at["layout"]["found"], false);
         assert_eq!(at["theme"]["found"], false);
+        assert_eq!(at["theme"]["theme"], serde_json::Value::Null);
+        assert_eq!(at["built_in"].as_array().map(Vec::len), Some(2));
     }
 }

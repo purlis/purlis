@@ -13,10 +13,8 @@ import {
   drawIn,
   inForce,
   onDrawn,
-  THEME_ALIASES,
   type Theme,
 } from "./theme/theme";
-import { GLOBAL } from "./windowprefs";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 
@@ -83,9 +81,18 @@ type Row = {
   ask: typeof ASK | null;
 };
 
+/** What the core's theme engine answers `theme_in_force` with. */
+type InForce = { theme: Theme | null; complaints: string[]; follows_system: boolean };
+const KEEPS: InForce = { theme: null, complaints: [], follows_system: false };
+
+/** A theme as the core resolves one: complete, `over` laid on the dark built-in. */
+function resolved(name: string, over: Partial<Theme["values"]> = {}): Theme {
+  return { ...DEFAULT_THEME, name, values: { ...DEFAULT_THEME.values, ...over } };
+}
+
 function core({
   rows = [] as Row[],
-  themes = [] as { extension: string; name: string; text: string }[],
+  inForce: answer = (() => KEEPS) as (asked: Record<string, unknown>) => InForce,
   unreadable = null as string | null,
   dropped = [] as string[],
   picks = null as string | null,
@@ -101,7 +108,7 @@ function core({
         unreadable,
         dropped,
       };
-    if (cmd === "extension_themes") return themes;
+    if (cmd === "theme_in_force") return answer((args ?? {}) as Record<string, unknown>);
     if (cmd === "extension_icon_themes") return iconThemes;
     if (cmd === "pick_extension") return picks;
     if (cmd === "install_extension") return ASK;
@@ -363,7 +370,7 @@ describe("the extension registry", () => {
     mockIPC((cmd) => {
       if (cmd === "installed_extensions")
         return { built_in_themes: [], extensions: [newRow], unreadable, dropped: [] };
-      if (cmd === "extension_themes") return [];
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
       throw new Error(`the window asked for ${cmd}, which this test did not expect`);
     });
     render(<Extensions onClose={() => undefined} />);
@@ -389,7 +396,7 @@ describe("the extension registry", () => {
           unreadable: "'/home/o/.config/charter/extensions.json' is not JSON",
           dropped: [],
         };
-      if (cmd === "extension_themes") return [];
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
       if (cmd === "open_extension_record") return null;
       throw new Error(`the window asked for ${cmd}, which this test did not expect`);
     });
@@ -544,7 +551,8 @@ describe("the consent surface", () => {
           unreadable: null,
           dropped: [],
         };
-      if (cmd === "extension_themes" || cmd === "extension_icon_themes") return [];
+      if (cmd === "extension_icon_themes") return [];
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
       if (cmd === "pick_extension") return "/home/dev/ext/solarized";
       if (cmd === "install_extension") {
         rows.push(newRow);
@@ -571,117 +579,9 @@ describe("the consent surface", () => {
   });
 });
 
-describe("a theme an extension contributes", () => {
-  it("is drawn when it is in force", async () => {
-    core({
-      rows: [{ ...newRow, standing: "approved", themes_in_force: ["Solarized Dark"], ask: null }],
-      themes: [
-        {
-          extension: "solarized",
-          name: "Solarized Dark",
-          text: JSON.stringify({
-            name: "Solarized Dark",
-            appearance: "dark",
-            tokens: { "surface.base": OTHER },
-          }),
-        },
-      ],
-    });
-    render(<Extensions onClose={() => undefined} />);
-
-    await screen.findByText("Solarized");
-    await expect.poll(() => inForce().values["surface.base"]).toBe(OTHER);
-    expect(inForce().name).toBe("Solarized Dark");
-  });
-
-  it("does not take the window down when it is not JSON at all", async () => {
-    core({
-      rows: [{ ...newRow, standing: "approved", themes_in_force: ["Broken"], ask: null }],
-      themes: [{ extension: "solarized", name: "Broken", text: "}{ not json" }],
-    });
-    render(<Extensions onClose={() => undefined} />);
-
-    await screen.findByText("Solarized");
-    expect(inForce()).toBe(DEFAULT_THEME);
-  });
-
-  it("falls back token by token rather than being refused whole", async () => {
-    // `theme.load`'s rule, reached through the registry: a window that will not start because a
-    // colour was spelled wrong is worse than every possible wrong colour.
-    core({
-      rows: [{ ...newRow, standing: "approved", themes_in_force: ["Half"], ask: null }],
-      themes: [
-        {
-          extension: "solarized",
-          name: "Half",
-          text: JSON.stringify({
-            name: "Half",
-            appearance: "dark",
-            tokens: { "surface.base": OTHER, "text.primary": "red; } body { display: none" },
-          }),
-        },
-      ],
-    });
-    render(<Extensions onClose={() => undefined} />);
-
-    await screen.findByText("Solarized");
-    await expect.poll(() => inForce().name).toBe("Half");
-    expect(inForce().values["surface.base"]).toBe(OTHER);
-    expect(
-      inForce().values["text.primary"],
-      "a value that is not a colour reached the document",
-    ).toBe(DEFAULT_THEME.values["text.primary"]);
-  });
-});
-
-describe("a theme, per project (charter-app#253)", () => {
-  const SOLARIZED = {
-    extension: "solarized",
-    name: "Solarized Dark",
-    text: JSON.stringify({
-      name: "Solarized Dark",
-      appearance: "dark",
-      tokens: { "surface.base": OTHER },
-    }),
-  };
-
-  it("is drawn while the project in front has its extension on", async () => {
-    core({ themes: [SOLARIZED] });
-    await drawThemeFor(new Set(["solarized"]));
-    expect(inForce().name).toBe("Solarized Dark");
-  });
-
-  it("is not drawn for a project that turned its extension off, and the built-in comes back", async () => {
-    core({ themes: [SOLARIZED] });
-    await drawThemeFor(new Set(["solarized"]));
-    expect(inForce().name).toBe("Solarized Dark");
-
-    await drawThemeFor(new Set());
-
-    expect(inForce()).toBe(DEFAULT_THEME);
-  });
-
-  it("is drawn from every approved extension when no project is in front", async () => {
-    core({ themes: [SOLARIZED] });
-    await drawThemeFor("every");
-    expect(inForce().name).toBe("Solarized Dark");
-  });
-});
-
-describe("the theme a project picks (charter-app#273)", () => {
-  const SOLARIZED = {
-    extension: "solarized",
-    name: "Solarized Dark",
-    text: JSON.stringify({
-      name: "Solarized Dark",
-      appearance: "dark",
-      tokens: { "surface.base": OTHER },
-    }),
-  };
-
+describe("the theme in force, as the core's theme engine resolves it (spec #2313)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    Reflect.deleteProperty(globalThis, GLOBAL);
   });
 
   /** The operating system's appearance, as `matchMedia` answers it, and a way to change it. */
@@ -705,97 +605,100 @@ describe("the theme a project picks (charter-app#273)", () => {
     };
   }
 
-  it("draws a built-in the project picked, whatever its extensions contribute", async () => {
-    core({ themes: [SOLARIZED] });
-    await drawThemeFor(new Set(["solarized"]), "purlis-light");
-    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
-  });
-
-  it("draws the renamed built-in for a pick that names it by an old id (#1838)", async () => {
-    core({ themes: [SOLARIZED] });
-    for (const [old, now] of Object.entries(THEME_ALIASES)) {
-      drawIn(BUILT_IN[now === "purlis-dark" ? "purlis-light" : "purlis-dark"]);
-      await drawThemeFor(new Set(["solarized"]), old);
-      expect(inForce(), old).toBe(BUILT_IN[now]);
-    }
-  });
-
-  it("draws the extension theme the project picked", async () => {
-    const light = {
-      extension: "solarized",
-      name: "Solarized Light",
-      text: JSON.stringify({ name: "Solarized Light", appearance: "light", tokens: {} }),
-    };
-    core({ themes: [SOLARIZED, light] });
-    await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Light");
-    expect(inForce().name).toBe("Solarized Light");
-    expect(inForce().appearance).toBe("light");
-  });
-
-  it("falls back to the built-in when the picked theme is not among what the window holds", async () => {
-    core({ themes: [SOLARIZED] });
-    await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Light");
-    expect(inForce()).toBe(DEFAULT_THEME);
-
-    await drawThemeFor(new Set(), "solarized/Solarized Dark");
-    expect(inForce()).toBe(DEFAULT_THEME);
-  });
-
-  it("draws the built-in for a picked theme that is not JSON, never the last project's", async () => {
-    core({ themes: [{ ...SOLARIZED, text: "not json" }] });
-    drawIn(BUILT_IN["purlis-light"]); // the project in front before this one
+  it("asks the core with the project's pick, what it has on, and the system's appearance", async () => {
+    const asked = core({});
+    system(true);
     await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark");
-    expect(inForce()).toBe(DEFAULT_THEME);
-  });
-
-  it("follows the system, and keeps following it while the pick stands", async () => {
-    core({});
-    const turn = system(true);
-    await drawThemeFor(new Set(), "system");
-    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
-
-    turn(false);
-    expect(inForce()).toBe(BUILT_IN["purlis-dark"]);
-
-    await drawThemeFor(new Set(), "purlis-light");
-    turn(true);
-    turn(false);
-    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
-  });
-
-  it("reaches the terminal live when the project in front changes", async () => {
-    // #216's live switch: a pane follows `onDrawn`, so the theme a project switch draws is the
-    // one every terminal on screen is handed.
-    core({ themes: [SOLARIZED] });
-    const terminal: Theme[] = [];
-    const stop = onDrawn((theme) => terminal.push(theme));
-
-    await drawThemeFor(new Set(["solarized"]), "purlis-light"); // project A in front
-    await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark"); // project B
-    await drawThemeFor(new Set(), null); // project C picks nothing and has nothing on
-    stop();
-
-    expect(terminal.map((theme) => theme.name)).toEqual([
-      "purlis-light",
-      "Solarized Dark",
-      "purlis-dark",
+    await drawThemeFor("every");
+    expect(asked.filter((call) => call.cmd === "theme_in_force").map((call) => call.args)).toEqual([
+      { pick: "solarized/Solarized Dark", on: ["solarized"], light: true, reread: false },
+      { pick: null, on: null, light: true, reread: false },
     ]);
   });
 
-  it("wins over this machine's theme.json, which comes back for a project that picks nothing", async () => {
-    core({ themes: [SOLARIZED] });
-    (globalThis as Record<string, unknown>)[GLOBAL] = {
-      theme: {
-        path: "/home/dev/.config/charter/theme.json",
-        found: true,
-        document: { name: "mine", appearance: "light", tokens: {} },
-        trouble: null,
-      },
-    };
-    await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark");
+  it("draws what the core answered, and keeps the window when it answers no theme", async () => {
+    let answer: InForce = { ...KEEPS, theme: resolved("Solarized Dark", { "surface.base": OTHER }) };
+    core({ inForce: () => answer });
+    await drawThemeFor(new Set(["solarized"]));
     expect(inForce().name).toBe("Solarized Dark");
+    expect(inForce().values["surface.base"]).toBe(OTHER);
 
-    await drawThemeFor(new Set(["solarized"]), null);
-    expect(inForce().name).toBe("mine");
+    answer = KEEPS;
+    await drawThemeFor(new Set(["solarized"]));
+    expect(inForce().name).toBe("Solarized Dark");
+  });
+
+  it("asks for a new survey once an approval or a removal changed what is installed", async () => {
+    const asked = core({
+      rows: [{ ...newRow, standing: "approved", themes_in_force: ["Solarized Dark"], ask: null }],
+      inForce: () => ({ ...KEEPS, theme: resolved("Solarized Dark", { "surface.base": OTHER }) }),
+    });
+    render(<Extensions onClose={() => undefined} />);
+
+    await screen.findByText("Solarized");
+    await expect.poll(() => inForce().name).toBe("Solarized Dark");
+    const call = asked.find((one) => one.cmd === "theme_in_force");
+    expect(call?.args.reread).toBe(true);
+  });
+
+  it("asks again when the system turns, while the theme in force follows it", async () => {
+    const turn = system(true);
+    let following = true;
+    core({
+      inForce: (asked) => ({
+        theme: BUILT_IN[asked.light === true ? "purlis-light" : "purlis-dark"],
+        complaints: [],
+        follows_system: following,
+      }),
+    });
+    await drawThemeFor(new Set(), "system");
+    expect(inForce().name).toBe("purlis-light");
+
+    turn(false);
+    await expect.poll(() => inForce().name).toBe("purlis-dark");
+
+    following = false;
+    await drawThemeFor(new Set(), "purlis-dark");
+    const before = inForce();
+    turn(true);
+    await Promise.resolve();
+    expect(inForce()).toBe(before);
+  });
+
+  it("tells the terminal only when the theme drawn changes", async () => {
+    // #216's live switch: a pane follows `onDrawn`. The core answers a fresh copy each time, so
+    // a project switch that keeps the theme must not hand every terminal the same colours again.
+    let answer = resolved("purlis-light");
+    core({ inForce: () => ({ ...KEEPS, theme: { ...answer } }) });
+    const terminal: Theme[] = [];
+    const stop = onDrawn((theme) => terminal.push(theme));
+
+    await drawThemeFor(new Set(), "purlis-light"); // project A in front
+    await drawThemeFor(new Set(), "purlis-light"); // project B, the same theme
+    answer = resolved("Solarized Dark", { "surface.base": OTHER });
+    await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark"); // project C
+    stop();
+
+    expect(terminal.map((theme) => theme.name)).toEqual(["purlis-light", "Solarized Dark"]);
+  });
+
+  it("draws nothing for an answer that was overtaken by a newer ask", async () => {
+    let release: (() => void) | undefined;
+    const slow = new Promise<void>((done) => (release = done));
+    let first = true;
+    mockIPC(async (cmd) => {
+      if (cmd !== "theme_in_force") return null;
+      if (first) {
+        first = false;
+        await slow;
+        return { ...KEEPS, theme: resolved("stale") };
+      }
+      return { ...KEEPS, theme: resolved("fresh") };
+    });
+    const older = drawThemeFor(new Set(), "a/stale");
+    await drawThemeFor(new Set(), "a/fresh");
+    release?.();
+    await older;
+    expect(inForce().name).toBe("fresh");
   });
 });

@@ -17,7 +17,8 @@
  *   against the path grammar (letters and numbers, nothing else) and drawn by `FileIcon.tsx` as
  *   React elements it builds itself. No SVG text is ever put in the page, so an icon theme an
  *   extension contributes cannot carry a script, a link, a style or a fetch: there is no field
- *   to put one in. That is ADR 0041's parse-and-re-emit, the rule `theme.ts`'s `load` keeps.
+ *   to put one in. That is ADR 0041's parse-and-re-emit, the rule the core's theme engine
+ *   keeps for colour.
  * - **A bad theme never stops a tree.** `loadIcons` always answers with a complete theme: what
  *   it cannot read is said in a complaint, and the built-in's `file` and `folder` stand in for
  *   a theme that has none.

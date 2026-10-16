@@ -227,13 +227,14 @@ fn is_a_manifest_name(name: &str) -> bool {
 /// not know.
 pub const VERSION: u32 = 1;
 
-/// The themes purlis itself contributes. They are compiled into the window's bundle
-/// (`app/src/theme/purlis-dark.json`, `purlis-light.json`) and are in the survey so that
+/// The themes purlis itself contributes. They are compiled into this crate's theme engine
+/// (`theme/built-in/*.json`, [`crate::theme::built_ins`]) and are in the survey so that
 /// "what has contributed what" has one answer rather than one per source.
 ///
-/// `app/src/theme/registry.test.ts` reads this array out of this file and fails if the window
-/// ships a built-in it does not name. Two lists that must agree, with the agreement tested,
-/// because the alternative is a registry that quietly stops being the whole answer.
+/// The engine's tests fail when it ships a built-in this does not name, and
+/// `app/src/theme/registry.test.ts` when the window is handed one. Lists that must agree, with
+/// the agreement tested, because the alternative is a registry that quietly stops being the
+/// whole answer.
 ///
 /// Each is a [`crate::names`] entry's purlis spelling (`THEME_DARK`, `THEME_LIGHT`, pinned by
 /// `names_tests.rs`); a pick that names one's old id is read as it ([`project::theme::Pick`]).
@@ -707,11 +708,10 @@ impl Extension {
 
     /// The text of one declared theme, as it was when the fingerprint was taken.
     ///
-    /// It is handed to the window **as text**, unparsed. The theme vocabulary belongs to
-    /// `app/src/theme/theme.ts` — it is that module's `TOKENS` that is the closed vocabulary
-    /// charter owns, and its `load` that parses and re-emits rather than interpolating (ADR
-    /// 0041's properties 1 and 4). A second parser here would be a second vocabulary, and the
-    /// two would drift.
+    /// A colour theme's text is read by the theme engine ([`crate::theme::load_text`]), against
+    /// the closed vocabulary purlis owns, and re-emitted from parsed values rather than
+    /// interpolated (ADR 0041's properties 1 and 4). An icon theme's is handed to the window as
+    /// text, unparsed, and read by `app/src/theme/icons.ts` against its own.
     pub fn theme_text(&self, which: &Theme) -> Option<&str> {
         self.theme_text.get(&which.file).map(String::as_str)
     }

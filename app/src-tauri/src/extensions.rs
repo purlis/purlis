@@ -22,7 +22,7 @@
 //! and hands back the question; [`approve_extension`] takes the answer, carrying back the
 //! fingerprint that was on screen (charter-app#123's shape).
 
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use purlis_core::extension;
 
@@ -165,35 +165,166 @@ pub struct ExtensionTheme {
     pub extension: String,
     /// What to call it, as the manifest does.
     pub name: String,
-    /// The file's **text**, unparsed.
-    ///
-    /// **The vocabulary is `theme.ts`'s and the parser is `theme.ts`'s**, and this crate
-    /// deliberately does not grow a second one. `TOKENS` is the closed vocabulary charter owns
-    /// (ADR 0041 property 1) and `load` is the parse-and-re-emit that keeps a theme's bytes out
-    /// of a stylesheet (property 4); both are already written and already tested. A Rust parser
-    /// here would be a second vocabulary, and two vocabularies drift — which is property 1
-    /// turning into a lie by accident rather than by decision.
+    /// The file's **text**, unparsed: an icon theme's, which `theme/icons.ts` parses against its
+    /// closed vocabulary (path data and `icon.*` tokens). A colour theme never reaches the window
+    /// as text: the core's theme engine resolves it ([`theme_in_force`]).
     ///
     /// It is the text the fingerprint was taken over, handed on rather than fetched again.
     pub text: String,
 }
 
-/// Every theme in force: the ones approved extensions contribute, and nothing else.
+/// **The theme the window draws** (spec #2313): the core's theme engine resolves it
+/// ([`purlis_core::theme::resolve`]) and the window only applies what comes back.
 ///
-/// An extension that is new, changed or unreadable contributes nothing here. That is the
-/// registry doing its one job — [`extension::Surveyed::themes_in_force`] is what answers, and
-/// this command only shapes it.
+/// `pick` is what the project or workspace in front picked (`project_theme_drawn`), `on` the
+/// extensions it has on (`extensions_on`), `None` with no project in front, when every approved
+/// extension's theme may be drawn. `light` is the operating system's appearance, which a
+/// `system` pick follows; the window asks again when it changes.
+///
+/// The themes approved extensions contribute come from a survey, which reads and fingerprints
+/// every extension's files, so it is taken only when the answer needs one and kept until
+/// `reread` (an approval or a removal changes them). An extension that is new, changed or
+/// unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 #[tauri::command]
 #[specta::specta]
-pub async fn extension_themes() -> Result<Vec<ExtensionTheme>, String> {
+pub async fn theme_in_force(
+    pick: Option<String>,
+    on: Option<Vec<String>>,
+    light: bool,
+    reread: bool,
+) -> Result<ThemeInForce, String> {
     let root = config_root()?;
-    tauri::async_runtime::spawn_blocking(move || in_force(&extension::survey(&root, &built_in())))
-        .await
-        .map_err(|err| format!("reading this machine's themes did not finish: {err}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        if reread {
+            *offered_kept() = None;
+        }
+        let theirs = crate::windowprefs::theirs_in_force();
+        theme_in_force_of(
+            pick.as_deref(),
+            on.as_deref(),
+            theirs.as_ref(),
+            light,
+            || {
+                offered_kept()
+                    .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
+                    .clone()
+            },
+        )
+    })
+    .await
+    .map_err(|err| format!("reading the theme in force did not finish: {err}"))
+}
+
+/// The extension themes the last survey found, until an approval or a removal asks again.
+fn offered_kept() -> std::sync::MutexGuard<'static, Option<Arc<[purlis_core::theme::Offered]>>> {
+    static KEPT: Mutex<Option<Arc<[purlis_core::theme::Offered]>>> = Mutex::new(None);
+    KEPT.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Each theme in force, resolved from the text its fingerprint was taken over.
+fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
+    in_force(seen)
+        .into_iter()
+        .map(|one| purlis_core::theme::Offered::of(one.extension, one.name, &one.text))
+        .collect()
+}
+
+/// [`theme_in_force`] without a runtime.
+fn theme_in_force_of(
+    pick: Option<&str>,
+    on: Option<&[String]>,
+    theirs: Option<&purlis_core::theme::ResolvedTheme>,
+    light: bool,
+    offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
+) -> ThemeInForce {
+    use purlis_core::theme;
+    let pick = pick.and_then(extension::project::theme::Pick::parse);
+    let drawn = theme::resolve(
+        &theme::Inputs {
+            pick: pick.as_ref(),
+            theirs,
+            on: on.map_or(theme::On::Every, theme::On::Only),
+            system: if light {
+                theme::Appearance::Light
+            } else {
+                theme::Appearance::Dark
+            },
+        },
+        offered,
+    );
+    ThemeInForce {
+        theme: drawn.theme.as_ref().map(WindowTheme::from),
+        complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
+        follows_system: drawn.follows_system,
+    }
+}
+
+/// What [`theme_in_force`] answers.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct ThemeInForce {
+    /// The theme to draw; `null` keeps the one the window draws (an extension theme that is not
+    /// JSON at all, which nothing picked).
+    pub theme: Option<WindowTheme>,
+    /// What resolving it had to put right.
+    pub complaints: Vec<String>,
+    /// Whether it follows the operating system's appearance.
+    pub follows_system: bool,
+}
+
+/// A resolved theme as the window applies it: the window's `Theme`, every token and every
+/// motion value present.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowTheme {
+    pub name: String,
+    /// `dark` or `light`.
+    pub appearance: String,
+    pub values: std::collections::BTreeMap<String, String>,
+    pub motion: WindowMotion,
+}
+
+/// A resolved theme's motion: milliseconds, and the four numbers of each cubic Bézier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowMotion {
+    pub durations: std::collections::BTreeMap<String, u32>,
+    pub easings: std::collections::BTreeMap<String, [f64; 4]>,
+}
+
+impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
+    fn from(theme: &purlis_core::theme::ResolvedTheme) -> Self {
+        let owned = |map: &std::collections::BTreeMap<&'static str, String>| {
+            map.iter()
+                .map(|(key, value)| ((*key).to_owned(), value.clone()))
+                .collect()
+        };
+        Self {
+            name: theme.name.clone(),
+            appearance: match theme.appearance {
+                purlis_core::theme::Appearance::Dark => "dark",
+                purlis_core::theme::Appearance::Light => "light",
+            }
+            .to_owned(),
+            values: owned(&theme.values),
+            motion: WindowMotion {
+                durations: theme
+                    .motion
+                    .durations
+                    .iter()
+                    .map(|(key, ms)| ((*key).to_owned(), *ms))
+                    .collect(),
+                easings: theme
+                    .motion
+                    .easings
+                    .iter()
+                    .map(|(key, curve)| ((*key).to_owned(), *curve))
+                    .collect(),
+            },
+        }
+    }
 }
 
 /// Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
-/// [`extension_themes`]'s terms and in its shape. The text is parsed by `theme/icons.ts`
+/// the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
 /// against its closed vocabulary — path data and `icon.*` tokens — and never by this crate.
 #[tauri::command]
 #[specta::specta]
@@ -213,7 +344,7 @@ pub async fn extension_icon_themes() -> Result<Vec<ExtensionTheme>, String> {
 /// cost of fingerprinting code — and folding that into `workspace_panels` would put it on the
 /// path that has 100 ms to draw, once per click on the workspace strip.
 ///
-/// It is the same shape as [`extension_themes`] one row down, and for the same reason: an
+/// It is the same shape as [`extension_icon_themes`] one row up, and for the same reason: an
 /// extension that is new, changed or unreadable contributes nothing here. That is the registry
 /// doing its one job, and a contributed panel rests on it entirely.
 #[tauri::command]
@@ -241,7 +372,7 @@ fn panels_in_force(seen: &extension::Survey) -> Vec<crate::panels::PanelView> {
     found.iter().map(crate::panels::PanelView::from).collect()
 }
 
-/// [`extension_themes`] with the survey already taken.
+/// The colour themes approved extensions contribute, with the survey already taken.
 fn in_force(seen: &extension::Survey) -> Vec<ExtensionTheme> {
     texts_in_force(seen, extension::Surveyed::themes_in_force)
 }
@@ -1269,6 +1400,48 @@ mod tests {
             in_force(&extension::survey(&config, &extension::BuiltIn::none())).is_empty(),
             "a theme that changed after approval was still drawn"
         );
+    }
+
+    #[test]
+    fn the_window_is_handed_an_approved_extensions_theme_resolved_by_the_core() {
+        let (_dir, at, config) = made();
+        std::fs::write(
+            at.join("dark.json"),
+            r##"{"name":"Solarized Dark","appearance":"light","tokens":{"text.primary":"#123"}}"##,
+        )
+        .expect("a theme");
+        let found =
+            extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+        extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
+        let offered = || offered_of(&extension::survey(&config, &extension::BuiltIn::none()));
+
+        let drawn = theme_in_force_of(Some("solarized/Solarized Dark"), None, None, false, offered);
+        let theme = drawn.theme.expect("a theme");
+        assert_eq!(theme.name, "Solarized Dark");
+        assert_eq!(theme.appearance, "light");
+        assert_eq!(theme.values["text.primary"], "#123");
+        assert_eq!(
+            theme.values.len(),
+            purlis_core::theme::vocabulary::TOKENS.len()
+        );
+        assert!(!drawn.follows_system);
+
+        // Off in the project in front: the default, and no survey needed to say so for a
+        // built-in pick or the system's.
+        let off = theme_in_force_of(
+            Some("solarized/Solarized Dark"),
+            Some(&[]),
+            None,
+            false,
+            offered,
+        );
+        assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("purlis-dark"));
+        let system = theme_in_force_of(Some("system"), None, None, true, || unreachable!());
+        assert_eq!(
+            system.theme.map(|it| it.name).as_deref(),
+            Some("purlis-light")
+        );
+        assert!(system.follows_system);
     }
 
     #[test]

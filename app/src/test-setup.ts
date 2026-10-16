@@ -1,6 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+// First, before anything that imports `theme.ts`: the built-in themes the app's core hands the
+// real window as it is created.
+import "./theme/handed.testkit";
 import "@testing-library/jest-dom/vitest";
 import { toHaveValue } from "@testing-library/jest-dom/matchers";
 import { afterEach, expect } from "vitest";

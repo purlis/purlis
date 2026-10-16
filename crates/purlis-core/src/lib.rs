@@ -220,6 +220,7 @@ mod testgit;
 // calls it.
 #[doc(hidden)]
 pub mod testrun;
+pub mod theme;
 pub mod toolgate;
 pub mod toolhooks;
 pub mod touching;

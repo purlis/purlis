@@ -10,13 +10,13 @@ import { BUILT_IN } from "./theme";
 
 /**
  * The registry's answer to "what has contributed what to this window" has to include the themes
- * charter itself ships, and those live in two places that cannot import each other: the window's
- * bundle (`BUILT_IN` here) and `purlis_core::extension::BUILT_IN_THEMES`, which is what the
- * survey hands back.
+ * purlis itself ships. Those are compiled into the core (`purlis_core::theme::built_ins`, whose
+ * tests hold them to `purlis_core::extension::BUILT_IN_THEMES`) and handed to the window as it
+ * is created (`BUILT_IN` here). The icon theme is still the window's own bundle's.
  *
- * Two lists that must agree, with the agreement tested rather than remembered. Without this, a
- * third built-in theme would ship, the registry would go on naming two, and the one surface that
- * is supposed to be the whole answer would quietly stop being it — which is the failure mode ADR
+ * Lists that must agree, with the agreement tested rather than remembered. Without this, a
+ * third built-in would ship, the registry would go on naming two, and the one surface that is
+ * supposed to be the whole answer would quietly stop being it — which is the failure mode ADR
  * 0041 builds the registry to prevent, arrived at from the inside.
  */
 /// From `app`, which is vitest's working directory here — the same anchor

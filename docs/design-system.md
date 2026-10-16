@@ -86,7 +86,8 @@ on the window. `danger.wash` follows
 it, since a wash is its base at a low alpha. The badge kept `#b85050`; purlis-light's
 `#a83232` already cleared 4.5 on each of them and did not move.
 
-**Every theme is held to a contrast floor.** `contrast.test.ts` checks each pair that ends up as
+**Every theme is held to a contrast floor.** The theme engine's check (`purlis_core::theme::check`,
+which runs on any theme) holds each pair that ends up as
 something drawn on something: 4.5:1 for text (AA's floor for text under 24px, or 18.66px bold,
 which a label, a button and a menu row all are), 3:1 for the state marks and the sixteen ANSI
 colours against the terminal's own background. "Complete" is not "legible", and a light theme
@@ -97,11 +98,11 @@ _recede_; it still has to be visible, and purlis-dark measures 2.13:1.
 
 **The pairs are read from the stylesheets too** (DS-6, #629). A rule in `App.css` or
 `styles.css` that sets one token as its text and another as its background draws one on the
-other, and `contrast.test.ts` fails, naming the rule, until that pair is in its list at the floor
-its use asks for. A background that is a wash (a token with alpha) is measured laid over what it
+other, and `contrast.test.ts` fails, naming the rule, until that pair is in the engine's list
+(`PAIRS`) at the floor its use asks for. A background that is a wash (a token with alpha) is measured laid over what it
 sits on. The check reads one rule at a time, so a colour taken from a parent's background, or a
-`:hover` rule that sets only a background, is still listed by hand. Every colour theme file in
-`app/src/theme/` is run, as it ships and tinted by every palette colour.
+`:hover` rule that sets only a background, is still listed by hand. Every built-in theme is
+checked, as it ships and tinted by every palette colour.
 
 **The `layer.*` tokens are a shade that means _depth_, and nothing louder.** purlis#171
 said which of the three strips you were looking at with an indent; purlis#193 took the
@@ -111,7 +112,7 @@ minimalistic, and i prefer to change little bit backgrounds of tabs and little l
 selected tab, borders are not feeling well."_ So each strip is one small step of neutral grey,
 outermost deepest, and `layer.selected` is a step lighter than the lightest of them; that
 background is the whole of the selection signal. **Both themes step the same way** — deeper
-outside, lighter in, lightest where you are — and `contrast.test.ts` holds a strip's muted tab
+outside, lighter in, lightest where you are — and the contrast check holds a strip's muted tab
 text to 4.5:1 on each shade and the selected tab's primary text on `layer.selected`. Their own
 group rather than `surface.*`, so a theme author can move the axis without moving every other
 surface in the window.
@@ -149,7 +150,7 @@ keyboard is. The `.tree` class in `App.css` that drew them before is gone.
   round the row, with no fill, so a focused row is never read as selected and the selected row
   the keyboard is on shows both.
 
-`contrast.test.ts` holds everything a row draws on `list.selected` — primary, secondary and
+The contrast check holds everything a row draws on `list.selected` — primary, secondary and
 muted text at 4.5:1, the state marks, the needs-you hand, the edge and the focus ring at 3:1 — and the guide on
 each surface a tree is drawn on, and holds `list.selected` apart from `surface.hover` and
 `layer.selected` in every theme and tint. The ceiling that sets is the needs-you hand: a fill
@@ -180,7 +181,7 @@ the core reads) or a `#rrggbb` whose hue is taken, and the window turns only the
 Never the text, never `layer.project` (the project strip is not a workspace's), never the
 terminal. `app/src/theme/tint.ts` does the arithmetic in OKLCH and then keeps each token's
 **relative luminance** exactly, so a tinted shade clears every contrast floor the theme's own
-cleared; `contrast.test.ts` runs every palette hue on both built-in themes, and holds two pairs
+cleared; the contrast check runs every palette hue on any theme, and holds two pairs
 the tint adds — the mark (`accent.base`) and a tab's primary text on `layer.workspace`. A neutral
 grey is given a small fixed chroma, felt rather than noticed, as the strips are meant to be;
 white stays white. No colour is written for this anywhere but `app/src/theme/`: a component asks
@@ -201,8 +202,8 @@ to change that changes one value rather than hunting for the second one.
 
 ## The brand: Verdigris
 
-purlis ships two themes, `purlis-dark` and `purlis-light` (`app/src/theme/purlis-dark.json`,
-`purlis-light.json`), and both are drawn in **Verdigris** (#1838, the operator's D1 and D4 on
+purlis ships two themes, `purlis-dark` and `purlis-light`
+(`crates/purlis-core/src/theme/built-in/purlis-dark.json`, `purlis-light.json`), and both are drawn in **Verdigris** (#1838, the operator's D1 and D4 on
 #1832): a slightly desaturated teal accent on warm-grey neutrals. It is calm and technical,
 easy on the eyes in a long session, and not the blue most developer tools use.
 
@@ -224,16 +225,17 @@ easy on the eyes in a long session, and not the blue most developer tools use.
   base and primary text, and its selection is the accent at the same alpha as before. On the
   off-white light base, `terminal.ansi.bright-white` is `#7d858f`, darker than before, so it
   still clears the 3:1 an ANSI colour is held to.
-- **Every pair holds.** `contrast.test.ts` passes all its pairs, the ANSI floors, the selected
-  row's distinctness and every tint in both themes. The closest pair is `needs-you.base` on the
+- **Every pair holds.** The theme engine's check (`purlis_core::theme::check`) passes all its
+  pairs, the ANSI floors, the selected row's distinctness and every tint in both themes. The closest pair is `needs-you.base` on the
   dark `list.selected`, at 3.08:1 against a floor of 3.
 
 **The ids.** A theme is picked by its id: in a project's `[theme] use`, a workspace's
 `settings.theme.use`, and the window's own choice. The ids the two themes had before the rename
 are still read, as the renamed theme, until the rename's compatibility window closes (ADR 0091).
 They are spelled in two places: the core's name module (`purlis_core::names::THEME_DARK`,
-`THEME_LIGHT`), which `extension::project::theme::Pick` reads a file's pick through, and the
-window's alias table (`THEME_ALIASES` in `theme.ts`), which `builtIn` resolves through.
+`THEME_LIGHT`), which `extension::project::theme::Pick` and the theme engine's `built_in` read
+a pick through, and the window's alias table (`THEME_ALIASES` in `theme.ts`), which labels one
+in Settings.
 `themeIds.test.ts` holds the two tables to each other and fails on an old id spelled anywhere
 else in the window; `no_old_name_is_spelled_outside_the_name_module` does the same for the Rust.
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
@@ -263,9 +265,35 @@ rewrites the file; the next pick made in Settings writes the new id.
 - **A partial theme is normal.** Name the tokens you are changing; the rest come from the
   built-in of the same appearance.
 - **Nothing in a theme file can stop the window.** A token that is missing, misspelled or
-  malformed falls back and the substitution is reported. `load` always answers with a complete
-  theme, because ADR 0026 holds cold start at 2 s and a window that will not come up because a
+  malformed falls back and the substitution is reported. The theme engine's `load` always
+  answers with a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up because a
   colour was spelled wrong is worse than every possible wrong colour.
+
+### The theme engine
+
+**One theme engine, in the Rust core, owns everything about a theme** (`purlis_core::theme`,
+spec #2313): reading a theme from every source there is (the built-ins compiled into it, the
+person's `theme.json`, an approved extension's theme, the pick a project or workspace makes),
+holding every value to its grammar, filling what is missing from the built-in of the same
+appearance and saying so, deciding which theme the window draws, and checking whether its words
+can be read. Its interface:
+
+- `load(document)` reads one theme file and always answers with a complete theme and what it had
+  to put right;
+- `resolve(inputs)` answers which theme the window draws, from the project's pick, the person's
+  own theme, the extension themes in force and the operating system's appearance;
+- `check(theme)` holds any theme to every contrast pair (`PAIRS`), the ANSI floors and the
+  selected row's distinctness, as it is and tinted by every workspace colour, and reports each
+  finding with its ratio.
+
+**The window only applies.** It is handed a resolved theme, every token's final value and the
+motion, and writes the custom properties and xterm's object from it (`theme.ts`). The first
+frame's theme is resolved before the window exists and handed to it with the window, so nothing
+is read or asked on the way to the first paint; a project's pick and an extension's theme are
+asked for afterwards (`theme_in_force`). The window still names the token, motion, geometry and
+tint lists it writes, and `core.test.ts` holds each to the engine's; the stylesheets' half of the
+contrast suite stays in `contrast.test.ts`, which reads the engine's `PAIRS` and fails for a pair
+a stylesheet draws that the list does not hold.
 
 ### Where a user's theme lives
 
@@ -282,7 +310,7 @@ has. Nothing about this needs ADR 0040 amended again.
 
 **It is read before the window exists and handed to it as it is created** (M6.7), the same way
 as the layout below, so an operator with a theme of their own never sees the built-in painted
-first. `theme.ts`'s `load` judges it token by token, and whatever it had to put right — a
+first. The theme engine (`purlis_core::theme`) judges it token by token, and whatever it had to put right — a
 misspelled token, a value that is not hex, a file that is not JSON — is said in the Inbox,
 as a Notice about this machine, with the file's path. **It wins over an extension's theme**: it
 is the one theme the operator wrote for this machine themselves, so an approved extension's
@@ -569,7 +597,8 @@ A theme file carries them under `motion`, beside `tokens`:
 - **`0` turns a motion off.** A theme that sets every duration to zero is a still window.
 - **An extension restyles motion the same way it restyles colour** — through the theme it
   contributes (ADR 0041; the panel contract of ADR 0043 is the same registry). Nothing
-  about the extension path changed: the theme text goes to `load`, and `load` now reads `motion`.
+  about the extension path changed: the theme text goes to the theme engine's `load`, which
+  reads `motion` with the colours.
 
 ### Reduced motion is the layer's job, once
 
