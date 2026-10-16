@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792138749922,
+  "lastUpdate": 1792140065011,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13692,6 +13692,48 @@ window.BENCHMARK_DATA = {
             "value": 104.273617,
             "unit": "ms",
             "extra": "median of 5 runs: 102.643, 104.141, 104.274, 105.368, 106.620 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d8745e3cab668473b724d81781a2e2d445ffeda",
+          "message": "build(deps): Bump the rust group with 7 updates (gix 0.89 fixes) (#2248)\n\n* build(deps): bump the rust group with 7 updates\n\nserde_json 1.0.154, agent-client-protocol 3.3.0, sha2 0.11.1, gix 0.89.0,\nuuid 1.28.0, proptest 1.12.0 and tokio-util 0.7.20, from Dependabot's\n#2229 on current main. The eighth update, zip, is on main already (#2256).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* fix(core): build on gix 0.89\n\ngix 0.89 changes three calls core makes:\n\n- `Repository::merge_base` returns `Ok(None)` when two commits share no\n  history, where it was an error. Both callers treat `None` as they\n  treated the error.\n- `gix::path::from_bstr` returns a `Result`. A folder name the system\n  cannot spell as a path is held back like a folder that does not open.\n- `gix::features::parallel` is now `gix::parallel`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* fix(session-protocol): name the item a closing link sink takes\n\ntokio-util 0.7.20 adds `Encoder<&[u8]>` for `LengthDelimitedCodec`, so\n`Framed::close` no longer infers which `Sink` it closes. The link sends\n`Bytes`, and its close now says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* test(core): a linked .gitignore is never followed on gix 0.89\n\ngix 0.89 reads a worktree's `.gitignore` without following a link, as\ngit does, so a status over a branch whose ignore files link to an\nendless device answers: the links are marked as the new files they are\nand nothing is read through them. The test now holds that answer and\nstill holds that charter's memory stays steady.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* test(core): an ignore file linked outside the branch ignores nothing\n\nA `.gitignore` that links to a readable file outside the branch holding\n`*` is never followed, so a new file beside it is still marked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T12:21:48+04:00",
+          "tree_id": "3a3cac8da634485fa3efe6c5e36bc44105f10eb2",
+          "url": "https://github.com/purlis/purlis/commit/4d8745e3cab668473b724d81781a2e2d445ffeda"
+        },
+        "date": 1792140063253,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5199495000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.513, 0.517, 0.520, 0.542, 0.544 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.161296,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.550, 16.790, 17.161, 17.193, 17.300 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.8133505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.925, 104.270, 104.813, 104.895, 105.419 ms"
           }
         ]
       }
