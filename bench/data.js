@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792165473758,
+  "lastUpdate": 1792171157341,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14406,6 +14406,48 @@ window.BENCHMARK_DATA = {
             "value": 101.96988350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.778, 101.312, 101.970, 102.577, 102.955 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ff05bcbda6b470c7d6593b84814b6ea935375e73",
+          "message": "The session host composes a start from persona, profile, resume, first message and sandbox opt-out (#2308)\n\n* Session host: compose a start by its names, through one adapter\n\nA start_program with no launch is composed in the session host from\nwhat it names (profile, persona, workspace, resume, first message and\nthe person's opt-out), with the code the window's start runs:\npurlis_core::start::ready, the window's arming of the harness, its line\nunder the sandbox and its environment. The host starts its confinement\nas the program's own and writes an opt-out in its event log before the\nchat runs.\n\nBoth binaries' hosts turn a start into its program through one core\nfunction, purlis_core::hoststart::spec, and the launch adapter\npurlis_core::chatspec::from_launch; the host crate links no core.\n\nCloses #2171\nCloses #2174\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Session host: composed starts begin their run and name who started them\n\nReview round for #2308:\n- the host keeps a start's chat and run ids from local-ui only and mints\n  both for every other scope;\n- a composed start writes its run.started, with the new started_by\n  attribute (the window's own runs say local-ui), and counts towards the\n  local opt-out rate;\n- gating tests: a sandboxed composed start runs in the confinement the\n  host started for it, on every machine, and one whose confinement could\n  not be started runs nothing;\n- ADR 0068 amendment gains D-2171-10 to D-2171-15; changes fragment;\n  plane-format names started_by; two doc comments put back in place.\n\nCloses #2306\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T21:18:05+04:00",
+          "tree_id": "8e13daaf2c0063af7c04deb1fbad923f77be922a",
+          "url": "https://github.com/purlis/purlis/commit/ff05bcbda6b470c7d6593b84814b6ea935375e73"
+        },
+        "date": 1792171155976,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.45339399999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.449, 0.452, 0.453, 0.460, 0.476 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.381719500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.281, 16.317, 16.382, 16.785, 16.909 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9749655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.849, 101.325, 101.975, 102.061, 103.128 ms"
           }
         ]
       }
