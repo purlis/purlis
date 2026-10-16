@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792121184286,
+  "lastUpdate": 1792123966647,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13398,6 +13398,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9481675,
             "unit": "ms",
             "extra": "median of 5 runs: 100.168, 100.867, 100.948, 101.321, 101.547 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1bf38128b7ccecf926a450b7f87b8542d3937660",
+          "message": "build(deps): Bump the web group across 1 directory with 14 updates (#2227)\n\nBumps the web group with 14 updates in the /app directory:\n\n| Package | From | To |\n| --- | --- | --- |\n| [@radix-ui/react-alert-dialog](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/alert-dialog) | `1.1.24` | `1.2.1` |\n| [@radix-ui/react-checkbox](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/checkbox) | `1.3.12` | `1.4.1` |\n| [@radix-ui/react-context-menu](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/context-menu) | `2.3.8` | `2.4.1` |\n| [@radix-ui/react-dialog](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/dialog) | `1.2.0` | `1.3.1` |\n| [@radix-ui/react-dropdown-menu](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/dropdown-menu) | `2.1.25` | `2.2.1` |\n| [@radix-ui/react-popover](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/popover) | `1.2.0` | `1.3.1` |\n| [@radix-ui/react-radio-group](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/radio-group) | `1.4.8` | `1.5.1` |\n| [@radix-ui/react-roving-focus](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/roving-focus) | `1.1.20` | `1.2.1` |\n| [@radix-ui/react-select](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/select) | `2.3.8` | `2.4.1` |\n| [@radix-ui/react-switch](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/switch) | `1.3.8` | `1.4.1` |\n| [@radix-ui/react-tooltip](https://github.com/radix-ui/primitives/tree/HEAD/packages/react/tooltip) | `1.3.0` | `1.4.1` |\n| [prettier](https://github.com/prettier/prettier) | `3.9.9` | `3.9.10` |\n| [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint) | `8.71.1` | `8.71.2` |\n| [vitest](https://github.com/vitest-dev/vitest/tree/HEAD/packages/vitest) | `5.0.3` | `5.0.4` |\n\n\n\nUpdates `@radix-ui/react-alert-dialog` from 1.1.24 to 1.2.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/alert-dialog/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/alert-dialog)\n\nUpdates `@radix-ui/react-checkbox` from 1.3.12 to 1.4.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/checkbox/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/checkbox)\n\nUpdates `@radix-ui/react-context-menu` from 2.3.8 to 2.4.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/context-menu/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/context-menu)\n\nUpdates `@radix-ui/react-dialog` from 1.2.0 to 1.3.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/dialog/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/dialog)\n\nUpdates `@radix-ui/react-dropdown-menu` from 2.1.25 to 2.2.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/dropdown-menu/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/dropdown-menu)\n\nUpdates `@radix-ui/react-popover` from 1.2.0 to 1.3.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/popover/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/popover)\n\nUpdates `@radix-ui/react-radio-group` from 1.4.8 to 1.5.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/radio-group/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/radio-group)\n\nUpdates `@radix-ui/react-roving-focus` from 1.1.20 to 1.2.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/roving-focus/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/roving-focus)\n\nUpdates `@radix-ui/react-select` from 2.3.8 to 2.4.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/select/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/select)\n\nUpdates `@radix-ui/react-switch` from 1.3.8 to 1.4.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/switch/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/switch)\n\nUpdates `@radix-ui/react-tooltip` from 1.3.0 to 1.4.1\n- [Changelog](https://github.com/radix-ui/primitives/blob/main/packages/react/tooltip/CHANGELOG.md)\n- [Commits](https://github.com/radix-ui/primitives/commits/HEAD/packages/react/tooltip)\n\nUpdates `prettier` from 3.9.9 to 3.9.10\n- [Release notes](https://github.com/prettier/prettier/releases)\n- [Changelog](https://github.com/prettier/prettier/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/prettier/prettier/compare/3.9.9...3.9.10)\n\nUpdates `typescript-eslint` from 8.71.1 to 8.71.2\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.71.2/packages/typescript-eslint)\n\nUpdates `vitest` from 5.0.3 to 5.0.4\n- [Release notes](https://github.com/vitest-dev/vitest/releases)\n- [Changelog](https://github.com/vitest-dev/vitest/blob/main/docs/releases.md)\n- [Commits](https://github.com/vitest-dev/vitest/commits/v5.0.4/packages/vitest)\n\n---\nupdated-dependencies:\n- dependency-name: \"@radix-ui/react-alert-dialog\"\n  dependency-version: 1.2.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-checkbox\"\n  dependency-version: 1.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-context-menu\"\n  dependency-version: 2.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-dialog\"\n  dependency-version: 1.3.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-dropdown-menu\"\n  dependency-version: 2.2.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-popover\"\n  dependency-version: 1.3.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-radio-group\"\n  dependency-version: 1.5.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-roving-focus\"\n  dependency-version: 1.2.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-select\"\n  dependency-version: 2.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-switch\"\n  dependency-version: 1.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@radix-ui/react-tooltip\"\n  dependency-version: 1.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: prettier\n  dependency-version: 3.9.10\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: typescript-eslint\n  dependency-version: 8.71.2\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: vitest\n  dependency-version: 5.0.4\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-16T08:11:33+04:00",
+          "tree_id": "59c80585b1b9e47a72623d3867f284b2d06baed8",
+          "url": "https://github.com/purlis/purlis/commit/1bf38128b7ccecf926a450b7f87b8542d3937660"
+        },
+        "date": 1792123965672,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.463393,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.449, 0.462, 0.463, 0.475, 0.496 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5538725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.447, 16.491, 16.554, 16.630, 16.670 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.60929349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.510, 101.516, 101.609, 101.674, 101.722 ms"
           }
         ]
       }
