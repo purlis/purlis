@@ -417,3 +417,60 @@ fn the_bound_held_here_is_the_line_bound_the_socket_holds_an_ask_to() {
     assert_eq!(u64::from(AN_ASK), crate::hookwire::A_LINE_IS_AT_MOST);
     const { assert!(AN_ASK < A_FRAME_IS_AT_MOST) };
 }
+
+#[test]
+fn a_browsers_screenshot_goes_back_as_an_image_after_its_answer_and_never_inside_it() {
+    use purlis_session_protocol::browsing::Browsed;
+    let png = vec![0x89, b'P', b'N', b'G', 1, 2, 3];
+    let answer = Answer::Browsed {
+        browser: "b1".into(),
+        browsed: Box::new(Browsed {
+            settled: true,
+            png: Some(png.clone()),
+            ..Browsed::default()
+        }),
+    };
+
+    let reply = Reply::from(answer);
+
+    assert_eq!(
+        reply.attached,
+        [Attached {
+            media_type: "image/png".into(),
+            bytes: png,
+        }]
+    );
+    match reply.answer {
+        Answer::Browsed { browsed, .. } => assert_eq!(browsed.png, None),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn on_a_line_a_browsers_screenshot_is_left_out_and_the_answer_says_so() {
+    use purlis_session_protocol::browsing::Browsed;
+    let answer = Answer::Browsed {
+        browser: "b1".into(),
+        browsed: Box::new(Browsed {
+            settled: true,
+            png: Some(vec![0x89, b'P', b'N', b'G']),
+            ..Browsed::default()
+        }),
+    };
+
+    let line = super::on_a_line(answer);
+
+    match line {
+        Answer::Browsed { browsed, .. } => {
+            assert_eq!(browsed.png, None);
+            assert!(
+                browsed
+                    .note
+                    .as_deref()
+                    .is_some_and(|note| note.contains("purlis mcp")),
+                "{browsed:?}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}

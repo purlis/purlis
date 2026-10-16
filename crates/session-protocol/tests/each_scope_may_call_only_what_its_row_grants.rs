@@ -275,6 +275,12 @@ fn every_command() -> Vec<Command> {
         Command::Board {
             project: "01J9PRJCT00000000000000000".into(),
         },
+        // A browser driven for a chat: the window's alone (1.11).
+        Command::Browse {
+            program: CHAT.into(),
+            call_id: "c-1".into(),
+            act: purlis_session_protocol::browsing::Act::Pages,
+        },
     ]
 }
 
@@ -320,6 +326,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "record",
             "board_moved",
             "board",
+            "browse",
         ],
         Scope::Terminal => &[
             "list",

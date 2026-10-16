@@ -169,6 +169,26 @@ fn a_harness_lists_charter_s_tools() {
             "dispatch_read",
             "dispatch_report",
             "ask_operator",
+            // A real browser the session host runs (#2013).
+            "browser_open",
+            "browser_navigate",
+            "browser_snapshot",
+            "browser_find",
+            "browser_click",
+            "browser_double_click",
+            "browser_hover",
+            "browser_type",
+            "browser_press",
+            "browser_select",
+            "browser_drag",
+            "browser_scroll",
+            "browser_back",
+            "browser_wait_for_text",
+            "browser_pages",
+            "browser_switch_page",
+            "browser_screenshot",
+            "browser_new",
+            "browser_close",
         ]
     );
 }

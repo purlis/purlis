@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::StreamExt;
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
 use purlis_session_protocol::session::{Exit, Readiness, ViewKind, ViewRole};
 use purlis_session_protocol::view::frames::{JPEG, frame};
 use purlis_session_protocol::view::{Attachment, Source};
@@ -58,15 +59,34 @@ pub trait Screen: Send + Sync + 'static {
     fn stop(&self);
     /// Calls `tell` once, as the engine ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
+    /// Carries out `act` under its own id `call_id` (#2013), and answers what the browser
+    /// answered, or why it did not act. It waits on the engine, so the host calls it off its
+    /// runtime.
+    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed>;
 }
+
+/// Why a browser did not carry an act out (#2013).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotActed {
+    /// The browser has ended: stopped, closed, or its engine ended. Refused
+    /// `browser_ended`, in [`AN_ENDED_BROWSER`]'s words.
+    Ended,
+    /// The driver refused it, or could not tell whether it acted, in words that say what to do.
+    Refused(String),
+}
+
+/// What an act on a browser that has ended is refused with (#2013).
+pub const AN_ENDED_BROWSER: &str = "the browser has ended: open a new one";
 
 /// Starts browsers: the binary's, built on the engine and the core.
 pub trait Browsers: Send + Sync + 'static {
     /// The folder each browser's data folder is made in, under the host's store. Asked as a
     /// browser starts, never before, so a host that starts none reads no store for them.
     fn data_folders(&self) -> Result<PathBuf, String>;
-    /// Start a browser whose data folder is `data` (made by the binary, this user's alone).
-    fn start(&self, data: &Path) -> Result<Arc<dyn Screen>, String>;
+    /// Start a browser whose data folder is `data` (made by the binary, this user's alone),
+    /// reaching what `reach` says, or with none, nothing listed and every site new to the
+    /// project refused (#2013).
+    fn start(&self, data: &Path, reach: Option<&BrowserReach>) -> Result<Arc<dyn Screen>, String>;
 }
 
 /// A host whose binary starts no browser: every start of one is refused with a sentence.
@@ -77,7 +97,11 @@ impl Browsers for NoBrowsers {
         Err("this session host was not given a way to start a browser".into())
     }
 
-    fn start(&self, _data: &Path) -> Result<Arc<dyn Screen>, String> {
+    fn start(
+        &self,
+        _data: &Path,
+        _reach: Option<&BrowserReach>,
+    ) -> Result<Arc<dyn Screen>, String> {
         Err("this session host was not given a way to start a browser".into())
     }
 }
@@ -271,6 +295,10 @@ impl Running for Browser {
 
     fn view_size(&self) -> Option<(u16, u16)> {
         Some(self.hub.screen.size())
+    }
+
+    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
+        self.hub.screen.act(call_id, act)
     }
 
     fn stop(&self) {

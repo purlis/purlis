@@ -45,6 +45,9 @@ pub enum About {
     Port { port: String },
     /// A vault its persona may not use.
     Vault { vault: String },
+    /// A browser for the chat (#2013): the first browser tool it called asked the person what
+    /// its browser may reach. `open_web` is what an Allow let it reach (none for Keep off).
+    Browser { open_web: Option<bool> },
 }
 
 impl About {
@@ -86,6 +89,15 @@ impl About {
                 )
             }
             Self::Vault { vault } => format!("using vault {}", code(vault)),
+            Self::Browser { open_web: None } => "using a browser".to_owned(),
+            Self::Browser {
+                open_web: Some(false),
+            } => "using a browser that reaches this project's sites and its dev servers".to_owned(),
+            Self::Browser {
+                open_web: Some(true),
+            } => "using a browser that reaches this project's sites, its dev servers and the \
+                  open web"
+                .to_owned(),
         }
     }
 }

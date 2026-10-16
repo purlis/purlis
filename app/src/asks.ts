@@ -276,6 +276,15 @@ export async function answerTaken(
         }
         break;
       }
+      case "browser":
+        // What a chat's browser may reach (#2013): this project's sites and its dev servers,
+        // also the open web, or Keep off. The chat is told on its next turn, with the reason
+        // the person typed for Keep off.
+        if (option === "project") return commands.allowChatBrowser(plane, ask.session, false);
+        if (option === "open-web") return commands.allowChatBrowser(plane, ask.session, true);
+        if (option === "keep")
+          return commands.keepChatBrowserOff(plane, ask.session, reason?.trim() || null);
+        break;
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

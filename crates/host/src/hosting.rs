@@ -241,6 +241,17 @@ pub trait Running: Send + Sync + 'static {
     fn readiness(&self) -> Readiness;
     /// Calls `tell` once, as it ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
+    /// Carries out a browser's act (#2013): refused for every program that is not a browser.
+    fn act(
+        &self,
+        call_id: &str,
+        act: purlis_session_protocol::browsing::Act,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
+        let _ = (call_id, act);
+        Err(crate::browsers::NotActed::Refused(
+            "this program is not a browser, so it takes no browser's act".into(),
+        ))
+    }
 }
 
 /// Runs each start in a terminal of its own: a pseudo-terminal, and the engine that keeps its
@@ -1073,9 +1084,10 @@ impl Hosting {
         // Starting an engine forks and waits for it to answer: off the runtime.
         let hosting = self.clone();
         let named = program.clone();
+        let reach = start.reach.clone();
         let started = tokio::task::spawn_blocking(move || {
             let data = hosting.inner.browsers.data_folders()?.join(&named);
-            match hosting.inner.browsers.start(&data) {
+            match hosting.inner.browsers.start(&data, reach.as_ref()) {
                 Ok(screen) => Ok((screen, data)),
                 Err(why) => {
                     let _ = std::fs::remove_dir_all(&data);
@@ -1127,6 +1139,31 @@ impl Hosting {
             number: None,
             process,
         })
+    }
+
+    /// One act of browser `program`'s (#2013), carried out off the runtime, since it waits on
+    /// the engine: what the browser answered, or its driver's refusal in its words.
+    async fn browse(
+        &self,
+        program: &str,
+        call_id: String,
+        act: purlis_session_protocol::browsing::Act,
+    ) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.act(&call_id, act))
+            .await
+            .map_err(|why| not_started(why.to_string()))?
+            .map(|browsed| Answer::Browsed(Box::new(browsed)))
+            .map_err(|not| match not {
+                crate::browsers::NotActed::Ended => Refusal {
+                    code: session::BROWSER_ENDED.into(),
+                    why: crate::browsers::AN_ENDED_BROWSER.into(),
+                },
+                crate::browsers::NotActed::Refused(why) => Refusal {
+                    code: session::BROWSER_REFUSED.into(),
+                    why,
+                },
+            })
     }
 
     async fn attach(
@@ -1670,6 +1707,11 @@ impl session::Host for Hosting {
                     .map(|()| Answer::Done)
                     .map_err(not_recorded)
             }
+            Command::Browse {
+                program,
+                call_id,
+                act,
+            } => self.browse(&program, call_id, act).await,
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),

@@ -139,6 +139,8 @@ pub enum AskSource {
     /// A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
     /// making one and running Codex's own sign-in in it.
     SandboxOnly,
+    /// A chat's first browser call, asking what its browser may reach (#2013).
+    Browser,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -178,6 +180,9 @@ pub enum AnswerPath {
     /// Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
     /// `dismiss_sandbox_only`.
     SandboxOnly,
+    /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
+    /// Keep off, with the person's reason (#2013).
+    Browser,
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -781,6 +786,49 @@ pub fn workspace_removal(
     }
 }
 
+/// The key of chat `session`'s browser Ask (#2013): one per chat.
+fn browser_key(session: u32) -> String {
+    format!("browser:{session}")
+}
+
+/// **The browser adapter** (#2013): a chat's first browser call, which asks the person what its
+/// browser may reach. Every word is purlis's. **This project's sites** is the hosts the chat's
+/// sandbox lists and the services on this machine the person allowed; **Also the open web**
+/// adds every public site; **Keep off** refuses its every browser call.
+pub fn browser_posture(waits: &crate::chatbrowsers::Waits) -> Shown {
+    Shown {
+        session: waits.session,
+        ask: browser_key(waits.session),
+        says: "Wants a browser: what may it reach? This project's sites are the hosts its \
+               sandbox lists and the services on this machine you allowed"
+            .to_owned(),
+        options: vec![
+            Offered {
+                id: BROWSER_PROJECT.to_owned(),
+                label: "This project's sites".to_owned(),
+                allows: true,
+            },
+            Offered {
+                id: BROWSER_OPEN_WEB.to_owned(),
+                label: "Also the open web".to_owned(),
+                allows: true,
+            },
+            refuses(KEEP, "Keep off"),
+        ],
+        source: AskSource::Browser,
+        chain: Vec::new(),
+        answer: AnswerPath::Browser,
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
+/// The id of This project's sites on a chat's browser Ask (#2013).
+pub const BROWSER_PROJECT: &str = "project";
+/// The id of Also the open web on a chat's browser Ask (#2013).
+pub const BROWSER_OPEN_WEB: &str = "open-web";
+
 /// The id of Apply on a proposed change (#1975).
 pub const APPLY: &str = "apply";
 /// The id of Dismiss on a proposed change.
@@ -1017,6 +1065,8 @@ pub struct Waiting<'a> {
     pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     /// Whether a sandboxed Codex chat here waits for a sandbox-only profile (#2037).
     pub sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
+    /// The chats whose first browser call asks what their browser may reach (#2013).
+    pub browsers: Vec<crate::chatbrowsers::Waits>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -1063,6 +1113,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|(one, now)| proposed_change(one, now)),
     );
+    // A chat whose first browser call asks the person waits on that answer too (#2013).
+    asks.extend(waiting.browsers.iter().map(browser_posture));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -1227,7 +1279,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     if let Some(one) = &sandbox_only {
         since.insert("sandbox-only:codex".to_owned(), one.since);
     }
+    let browsers = held.browsers().waiting();
+    for one in &browsers {
+        since.insert(browser_key(one.session), one.since);
+    }
     let waiting = Waiting {
+        browsers,
         sandbox_only,
         sign_ins,
         removals,

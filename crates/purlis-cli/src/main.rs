@@ -29,6 +29,7 @@ use purlis_core::state::Event;
 use purlis_core::workspaces::Plane;
 
 mod brokered;
+mod browsing;
 mod change;
 mod curation;
 mod dispatch;

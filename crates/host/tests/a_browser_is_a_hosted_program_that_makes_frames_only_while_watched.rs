@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use purlis_host::standin::{StandInBrowsers, StandInScreen, StandIns};
 use purlis_host::{ComposesNothing, Hosting};
 use purlis_session_protocol::auth::{Credentials, Scope};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
     self, Client, Events, Exit, ProgramKind, Pushed, StartProgram, Told, ViewKind, ViewRole,
@@ -360,4 +361,127 @@ async fn stop_all_ends_every_browser_and_no_browser_starts_until_the_window_rear
 
     linked.client.rearm().await.expect("re-armed");
     linked.browser().await;
+}
+
+// ---- A chat's browser (#2013): what it may reach, and the acts the window hands on (1.11) ----
+
+#[tokio::test]
+async fn a_browser_is_started_with_the_reach_the_window_gives_it() {
+    let linked = linked().await;
+    let reach = BrowserReach {
+        listed: vec![session::Listed {
+            host: "docs.example.com".into(),
+            layer: session::Layer::Open,
+        }],
+        never: Vec::new(),
+        withdrawn: vec![5173],
+        open_web: true,
+    };
+
+    linked
+        .client
+        .start_program(StartProgram {
+            reach: Some(reach.clone()),
+            ..StartProgram::of(PROJECT, ProgramKind::Browser)
+        })
+        .await
+        .expect("a browser starts");
+
+    let screen = linked.browsers.started().last().unwrap().clone();
+    assert_eq!(screen.shown().reach, Some(reach));
+}
+
+#[tokio::test]
+async fn an_act_reaches_its_browser_with_its_id_and_the_browser_s_answer_comes_back() {
+    let linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    screen.answers(Ok(Browsed {
+        settled: true,
+        text: Some("- link \"Docs\" [e3]".into()),
+        ..Browsed::default()
+    }));
+
+    let answered = linked
+        .client
+        .browse(
+            &program,
+            "c-1",
+            Act::Click {
+                target: "e3".into(),
+            },
+        )
+        .await
+        .expect("the act is answered");
+
+    assert_eq!(answered.text.as_deref(), Some("- link \"Docs\" [e3]"));
+    assert_eq!(
+        screen.shown().acts,
+        [(
+            "c-1".to_owned(),
+            Act::Click {
+                target: "e3".into()
+            }
+        )]
+    );
+}
+
+#[tokio::test]
+async fn an_act_the_browser_refuses_is_refused_in_its_words() {
+    let linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    screen.answers(Err(
+        "e3 is not shown on the page now: take a new snapshot".into()
+    ));
+
+    let refused = linked
+        .client
+        .browse(
+            &program,
+            "c-2",
+            Act::Click {
+                target: "e3".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    let refusal = refused.refusal().expect("a refusal");
+    assert_eq!(refusal.code, session::BROWSER_REFUSED);
+    assert_eq!(
+        refusal.why,
+        "e3 is not shown on the page now: take a new snapshot"
+    );
+}
+
+#[tokio::test]
+async fn an_act_on_a_browser_whose_engine_ended_is_refused_as_ended_by_its_code() {
+    let linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    screen.ends(Exit::Code(0));
+
+    let refused = linked
+        .client
+        .browse(&program, "c-4", Act::Pages)
+        .await
+        .unwrap_err();
+
+    let refusal = refused.refusal().expect("a refusal");
+    assert_eq!(refusal.code, session::BROWSER_ENDED);
+    assert_eq!(refusal.why, purlis_host::AN_ENDED_BROWSER);
+}
+
+#[tokio::test]
+async fn an_act_for_a_program_the_host_does_not_hold_is_refused_as_no_such_chat() {
+    let linked = linked().await;
+
+    let refused = linked
+        .client
+        .browse("01J9NOSUCH000000000000000", "c-3", Act::Pages)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_CHAT)
+    );
 }

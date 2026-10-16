@@ -462,6 +462,12 @@ pub struct Shown {
     /// Frames it made: only while showing.
     pub made: u32,
     pub stopped: bool,
+    /// What it was started reaching (#2013).
+    pub reach: Option<purlis_session_protocol::browsing::BrowserReach>,
+    /// Each act it was asked, with its id, in order (#2013).
+    pub acts: Vec<(String, purlis_session_protocol::browsing::Act)>,
+    /// What it answers its next acts with, in order; once none is left, a settled page.
+    answers: std::collections::VecDeque<Result<purlis_session_protocol::browsing::Browsed, String>>,
     sink: Option<crate::browsers::FrameSink>,
     ends: Option<Box<dyn FnOnce(Exit) + Send>>,
 }
@@ -486,9 +492,18 @@ impl StandInScreen {
         }
     }
 
-    /// The engine ended by itself.
+    /// It answers its next act with `answer`.
+    pub fn answers(&self, answer: Result<purlis_session_protocol::browsing::Browsed, String>) {
+        self.shown().answers.push_back(answer);
+    }
+
+    /// The engine ended by itself: it acts no more.
     pub fn ends(&self, exit: Exit) {
-        let tell = self.shown().ends.take();
+        let tell = {
+            let mut shown = self.shown();
+            shown.stopped = true;
+            shown.ends.take()
+        };
         if let Some(tell) = tell {
             tell(exit);
         }
@@ -535,6 +550,28 @@ impl crate::browsers::Screen for StandInScreen {
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
         self.shown().ends = Some(tell);
     }
+
+    fn act(
+        &self,
+        call_id: &str,
+        act: purlis_session_protocol::browsing::Act,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
+        let mut shown = self.shown();
+        if shown.stopped {
+            return Err(crate::browsers::NotActed::Ended);
+        }
+        shown.acts.push((call_id.to_owned(), act));
+        shown
+            .answers
+            .pop_front()
+            .unwrap_or_else(|| {
+                Ok(purlis_session_protocol::browsing::Browsed {
+                    settled: true,
+                    ..Default::default()
+                })
+            })
+            .map_err(crate::browsers::NotActed::Refused)
+    }
 }
 
 /// Starts every browser as a stand-in, each with its data folder in one folder, and keeps each.
@@ -564,10 +601,15 @@ impl crate::browsers::Browsers for StandInBrowsers {
         Ok(self.folder.clone())
     }
 
-    fn start(&self, data: &std::path::Path) -> Result<Arc<dyn crate::browsers::Screen>, String> {
+    fn start(
+        &self,
+        data: &std::path::Path,
+        reach: Option<&purlis_session_protocol::browsing::BrowserReach>,
+    ) -> Result<Arc<dyn crate::browsers::Screen>, String> {
         std::fs::create_dir_all(data).map_err(|why| why.to_string())?;
         let screen = StandInScreen::default();
         screen.shown().data = data.to_path_buf();
+        screen.shown().reach = reach.cloned();
         self.started.lock().unwrap().push(screen.clone());
         Ok(Arc::new(screen))
     }

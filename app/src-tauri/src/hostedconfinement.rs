@@ -26,35 +26,13 @@ use std::sync::Arc;
 use purlis_core::sandbox::asks::{self, Asks, Heard};
 use purlis_core::sandbox::hosts::Host;
 use purlis_core::sandbox::plan::{Asking, Beside, Hearing, Plan, Telling};
-use purlis_core::sandbox::reach::{By, Decision, Reach};
+use purlis_core::sandbox::reach::{By, Decision, Reach, by_of, layer_of};
 use purlis_core::sandbox::{Board, Confinement, HeldElsewhere, Placed, egress};
 use purlis_session_protocol::session::{
-    self, Answer, Command, ConfinePlan, Confined, Layer, Listed, ReachChange, ReachNow, SandboxTold,
+    self, Answer, Command, ConfinePlan, Confined, Listed, ReachChange, ReachNow, SandboxTold,
 };
 
 use crate::hostedsessions::HostLink;
-
-/// A layer as the session protocol names it.
-pub fn layer_of(by: By) -> Layer {
-    match by {
-        By::Open => Layer::Open,
-        By::Persona => Layer::Persona,
-        By::You => Layer::You,
-        By::Chat => Layer::Chat,
-        By::Project => Layer::Project,
-    }
-}
-
-/// A layer the session protocol names, as the core does.
-pub fn by_of(layer: Layer) -> By {
-    match layer {
-        Layer::Open => By::Open,
-        Layer::Persona => By::Persona,
-        Layer::You => By::You,
-        Layer::Chat => By::Chat,
-        Layer::Project => By::Project,
-    }
-}
 
 /// **A chat's plan, as the window hands it to the host.**
 pub fn wire(plan: &Plan) -> ConfinePlan {

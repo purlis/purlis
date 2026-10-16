@@ -165,6 +165,30 @@ pub struct Written {
     pub anything: bool,
 }
 
+/// A layer the session protocol names, as the core names it.
+pub fn by_of(layer: purlis_session_protocol::session::Layer) -> By {
+    use purlis_session_protocol::session::Layer;
+    match layer {
+        Layer::Open => By::Open,
+        Layer::Persona => By::Persona,
+        Layer::You => By::You,
+        Layer::Chat => By::Chat,
+        Layer::Project => By::Project,
+    }
+}
+
+/// A layer as the session protocol names it.
+pub fn layer_of(by: By) -> purlis_session_protocol::session::Layer {
+    use purlis_session_protocol::session::Layer;
+    match by {
+        By::Open => Layer::Open,
+        By::Persona => Layer::Persona,
+        By::You => Layer::You,
+        By::Chat => Layer::Chat,
+        By::Project => Layer::Project,
+    }
+}
+
 /// [`Reach::withdrawn`]: one set, shared by every copy of a reach.
 #[derive(Debug, Clone, Default)]
 struct Withdrawn(Arc<Mutex<BTreeSet<u16>>>);

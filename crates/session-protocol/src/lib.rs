@@ -75,6 +75,7 @@
 //! [`session::serve`] checks before any host hears of a command.
 
 pub mod auth;
+pub mod browsing;
 pub mod grants;
 pub mod hostlink;
 pub mod link;

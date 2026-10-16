@@ -291,6 +291,9 @@ pub fn answer(
         // An ask after a task this chat dispatched (#1441): no ticket, for the record's reason,
         // and whose task it names is the app's record of that chat.
         Ask::Task(asked) => crate::dispatched::answer(held, &asked, connection),
+        // A browser tool's call (#2013): no ticket, for the record's reason. The line names a
+        // browser of the chat whose token it carries, looked up among that chat's alone.
+        Ask::Browse(browse) => crate::chatbrowsers::answered(held, &browse),
     }
 }
 

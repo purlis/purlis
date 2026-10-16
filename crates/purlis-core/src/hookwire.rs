@@ -1316,6 +1316,44 @@ pub enum Ask {
     /// it, or why they do not. No ticket, for [`Self::Removal`]'s reason. Boxed: it carries the
     /// file's whole new content.
     Propose(Box<ProposeAsk>),
+    /// Drive one of this chat's browsers (#2013): what a chat's browser tools hand over. The app
+    /// decides whether the chat may have a browser at all (the one Ask that sets its posture),
+    /// starts its browser in the session host with what it may reach, and hands the act on. It
+    /// answers [`Answer::Browsed`], or [`Answer::No`] with why, in words that say what to do.
+    /// Asked over the framed stream, so a screenshot comes back as an image. Boxed: it may carry
+    /// the text the agent types.
+    Browse(Box<BrowseAsk>),
+}
+
+/// **An act a chat asks of one of its browsers** ([`Ask::Browse`], #2013).
+///
+/// **It names the chat's own browser and nothing else, and that is the guard**: a browser is
+/// named as the app named it to this chat (`b1`), looked up among the browsers the app started
+/// for the chat whose token the line carries, so no line reaches another chat's browser. What
+/// the browser may reach is the app's and the person's, never the line's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BrowseAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// Which of the chat's browsers, by the name the app gave it; none for the one it used last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser: Option<String>,
+    /// The act's own id: a retry with the same id answers again and acts on nothing.
+    pub call_id: String,
+    pub asked: Browsing,
+}
+
+/// What a chat asks of its browsers ([`BrowseAsk`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Browsing {
+    /// One act of a browser's, carried to it as it is.
+    Act(purlis_session_protocol::browsing::Act),
+    /// A new browser for this chat, apart from its others (cookies and storage its own), which
+    /// becomes the one it uses.
+    New,
+    /// End the browser named, or the one it used last.
+    Close,
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path
@@ -1729,6 +1767,14 @@ pub enum Answer {
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
     No { why: String },
+    /// What one of the chat's browsers answered ([`Ask::Browse`], #2013): the browser, by the
+    /// name the app gave it, and what it said. On the framed stream its screenshot travels as an
+    /// image after the answer ([`framed::Reply`]), never inside it. Boxed: it carries a page's
+    /// lines.
+    Browsed {
+        browser: String,
+        browsed: Box<purlis_session_protocol::browsing::Browsed>,
+    },
     /// The session record is written (#1332): where, plane-relative, and whether the chat's
     /// tab now closes, which it does only under a smart-close pass. `warnings` is what did not
     /// follow it ([`crate::sessionrecord::Recorded::warnings`]).
@@ -1992,6 +2038,7 @@ impl Ask {
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
             Self::Propose(proposed) => proposed.chat,
+            Self::Browse(browse) => browse.chat,
         }
     }
 }
@@ -3610,7 +3657,7 @@ fn serve(
                 if let Ok(asker) = writer.try_clone() {
                     tokens.answering(this, asker);
                 }
-                let answer = (hearing.answer)(this, ask);
+                let answer = framed::on_a_line((hearing.answer)(this, ask));
                 tokens.answered(this);
                 let Ok(mut said) = serde_json::to_vec(&answer) else {
                     return;
@@ -6862,7 +6909,8 @@ mod tests {
                     | Ask::Dispatch(_)
                     | Ask::Task(_)
                     | Ask::Removal(_)
-                    | Ask::Propose(_) => Answer::No {
+                    | Ask::Propose(_)
+                    | Ask::Browse(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }
