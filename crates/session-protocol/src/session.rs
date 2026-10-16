@@ -122,9 +122,15 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::Act`]), answered `browsed`, or refused `browser_refused` in the driver's
 /// words or `browser_ended`; a browser's start may say what it reaches (`reach`,
 /// [`crate::browsing::BrowserReach`]).
+///
+/// 1.12 added taking a browser over (#2014): `take_over` and `hand_back`, answered `driving`
+/// with who drives now; `browser_input`, one event of the person's aimed at what a frame showed
+/// ([`crate::browsing::Input`]), refused `not_driving` unless the person drives and
+/// `input_missed` where the page has moved on; `size_browser`; a listed browser's `driver`; and
+/// a browser view's frames name what they show ([`crate::view::frames::AIMED_JPEG`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 11,
+    minor: 12,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -181,6 +187,12 @@ pub const BROWSER_REFUSED: &str = "browser_refused";
 /// The browser an act was for has ended: stopped, closed, or its engine ended (1.11). Nothing
 /// was done; a new browser is opened for the next act.
 pub const BROWSER_ENDED: &str = "browser_ended";
+/// The person's input, or a size, for a browser they have not taken over (1.12): nothing reached
+/// the page.
+pub const NOT_DRIVING: &str = "not_driving";
+/// The person's input was aimed at a page or document the browser no longer shows (1.12): it was
+/// dropped, and nothing reached the page.
+pub const INPUT_MISSED: &str = "input_missed";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -195,6 +207,8 @@ pub const REFUSALS: &[&str] = &[
     NOT_RECORDED,
     BROWSER_REFUSED,
     BROWSER_ENDED,
+    NOT_DRIVING,
+    INPUT_MISSED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -351,6 +365,29 @@ pub enum Command {
         program: String,
         call_id: String,
         act: crate::browsing::Act,
+    },
+    /// The person takes browser `program` over (1.12, #2014): an act in flight answers that it
+    /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
+    /// is the host's: it stays with the person whatever becomes of the link that took it, until
+    /// they hand it back. Answered [`Answer::Driving`]. The window's alone
+    /// ([`crate::grants::Power::Browser`]).
+    TakeOver { program: String },
+    /// The person hands browser `program` back (1.12): every reference dealt before it is void.
+    /// Answered [`Answer::Driving`].
+    HandBack { program: String },
+    /// One event of the person's in a browser they drive (1.12): refused [`NOT_DRIVING`] unless
+    /// they took it over, and [`INPUT_MISSED`] where the page no longer shows what the event was
+    /// aimed at. Nothing is replayed: an event that does not reach the page is dropped.
+    BrowserInput {
+        program: String,
+        input: crate::browsing::Input,
+    },
+    /// The person sets the size of browser `program`'s pages, in CSS pixels (1.12): refused
+    /// [`NOT_DRIVING`] unless they drive it.
+    SizeBrowser {
+        program: String,
+        width: u16,
+        height: u16,
     },
 }
 
@@ -718,6 +755,8 @@ pub enum Answer {
     KillSwitch(KillSwitch),
     /// What a browser answered an act with: [`Command::Browse`] (1.11).
     Browsed(Box<crate::browsing::Browsed>),
+    /// Who drives a browser now: [`Command::TakeOver`] and [`Command::HandBack`] (1.12).
+    Driving { driver: crate::browsing::Driver },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -773,6 +812,10 @@ pub struct Chat {
     /// to a link that speaks 1.6, so a client one version behind never takes one for a chat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ProgramKind>,
+    /// Who drives it, where it is a browser (1.12): the person from their take-over to their
+    /// hand-back, so a window that comes back draws the browser as still theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver: Option<crate::browsing::Driver>,
 }
 
 /// Whether a hosted program is ready to be typed at (1.2): the terminal's line discipline and
@@ -933,6 +976,10 @@ wire_words!(Command {
     MidTurn => "mid_turn",
     Record => "record",
     Browse => "browse",
+    TakeOver => "take_over",
+    HandBack => "hand_back",
+    BrowserInput => "browser_input",
+    SizeBrowser => "size_browser",
 });
 
 impl Command {
@@ -968,7 +1015,11 @@ impl Command {
             | Command::ReachOf { .. } => Power::Confine,
             Command::Subscribe { .. } | Command::Unsubscribe => Power::Subscribe,
             Command::Record { .. } => Power::Record,
-            Command::Browse { .. } => Power::Browser,
+            Command::Browse { .. }
+            | Command::TakeOver { .. }
+            | Command::HandBack { .. }
+            | Command::BrowserInput { .. }
+            | Command::SizeBrowser { .. } => Power::Browser,
         }
     }
 }
@@ -986,6 +1037,7 @@ wire_words!(Answer {
     Reach => "reach",
     KillSwitch => "kill_switch",
     Browsed => "browsed",
+    Driving => "driving",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -1436,6 +1488,13 @@ impl Lane {
                 Some(Lane::Board(project.clone()))
             }
             Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
+            // The person's take-over, input and hand-back keep their order with each other and
+            // with the browser's views, never waiting behind an act in flight, which the
+            // take-over cuts.
+            Command::TakeOver { program }
+            | Command::HandBack { program }
+            | Command::BrowserInput { program, .. }
+            | Command::SizeBrowser { program, .. } => Some(Lane::Program(program.clone())),
         }
     }
 }

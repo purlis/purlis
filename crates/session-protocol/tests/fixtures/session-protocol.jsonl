@@ -97,3 +97,14 @@
 {"reply":{"re":50,"ok":{"browsed":{"page":{"page":"p2","address":"https://docs.example.com/new","title":"New","current":true},"settled":false,"waiting_for":["a request still open"],"png":"iVBORw0KGgo=","note":"the screenshot was halved to 640×400 to fit"}}}}
 {"reply":{"re":48,"refused":{"code":"browser_refused","why":"e4 is from an earlier document of its page: take a new snapshot"}}}
 {"reply":{"re":49,"refused":{"code":"browser_ended","why":"the browser has ended: open a new one"}}}
+{"call":{"id":71,"command":"take_over","program":"01J9ZQ8000000000000000000D"}}
+{"reply":{"re":71,"ok":{"driving":{"driver":"person"}}}}
+{"call":{"id":72,"command":"browser_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"mouse","aim":{"page":"p1","document":3},"action":"pressed","x":120,"y":215,"button":"left","clicks":1}}}
+{"call":{"id":73,"command":"browser_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"key","aim":{"page":"p1","document":3},"action":"down","key":"A","physical":"KeyA","key_code":65,"modifiers":8}}}
+{"call":{"id":74,"command":"browser_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"mouse","aim":{"page":"p1","document":4},"action":"wheel","x":640,"y":400,"delta_y":120}}}
+{"reply":{"re":73,"refused":{"code":"input_missed","why":"the page changed before this input reached it, so it was dropped"}}}
+{"call":{"id":75,"command":"size_browser","program":"01J9ZQ8000000000000000000D","width":390,"height":844}}
+{"reply":{"re":75,"refused":{"code":"not_driving","why":"the person is not driving this browser: take it over first"}}}
+{"call":{"id":76,"command":"hand_back","program":"01J9ZQ8000000000000000000D"}}
+{"reply":{"re":76,"ok":{"driving":{"driver":"agent"}}}}
+{"reply":{"re":1,"ok":{"chats":[{"chat":"01J9ZQ8000000000000000000D","project":"01J9PRJCT00000000000000000","state":"running","kind":"browser","driver":"person"}]}}}

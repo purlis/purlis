@@ -281,6 +281,32 @@ fn every_command() -> Vec<Command> {
             call_id: "c-1".into(),
             act: purlis_session_protocol::browsing::Act::Pages,
         },
+        // A browser the person takes over, drives and hands back: the window's alone (1.12).
+        Command::TakeOver {
+            program: CHAT.into(),
+        },
+        Command::BrowserInput {
+            program: CHAT.into(),
+            input: purlis_session_protocol::browsing::Input::Key {
+                aim: purlis_session_protocol::browsing::Aim {
+                    page: "p1".into(),
+                    document: 1,
+                },
+                action: purlis_session_protocol::browsing::KeyAction::Down,
+                key: "a".into(),
+                physical: "KeyA".into(),
+                key_code: 65,
+                modifiers: 0,
+            },
+        },
+        Command::SizeBrowser {
+            program: CHAT.into(),
+            width: 390,
+            height: 844,
+        },
+        Command::HandBack {
+            program: CHAT.into(),
+        },
     ]
 }
 
@@ -327,6 +353,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "board_moved",
             "board",
             "browse",
+            "take_over",
+            "browser_input",
+            "size_browser",
+            "hand_back",
         ],
         Scope::Terminal => &[
             "list",
