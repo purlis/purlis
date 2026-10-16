@@ -340,3 +340,83 @@ fn a_line_the_host_heard_late_and_could_not_record_is_handed_on_from_the_spool()
 
     assert_eq!(drained_while_running(&path, 12), ["unrecorded"]);
 }
+
+/// #2003, closing #2000's D-2000-8: with chats in the session host, the host's listener takes
+/// the line and the window's hearing, handed it over the relay, is slower than the hook waits;
+/// the hook spools it too. The host records what the window carried back on the thread that
+/// heard the line, and drains the spool in the same process, so the line is recorded once.
+#[test]
+fn a_line_the_host_took_late_while_the_window_heard_it_and_its_hook_spooled_is_recorded_once() {
+    use super::relay::{Heard, Heeding, Keeping, Relaying, Replied, Reply, carry};
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join(".charter/app/hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener
+        .tokens()
+        .issue_to_this_process(13)
+        .expect("a token");
+    // The window's own hearing: slow, and carrying back what it would record.
+    let window = Arc::new(Heeding::new(hearing(Box::new(|call| {
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = carry(crate::eventlog::Entry::Tool {
+            plane: "/planes/one".into(),
+            call,
+        });
+        Ok(())
+    }))));
+    let recorded = Arc::new(Mutex::new(Vec::new()));
+    let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    let relaying = Relaying::keeping(
+        {
+            let host = Arc::clone(&host);
+            Box::new(move |id, heard| {
+                let heard: Heard =
+                    serde_json::from_str(&serde_json::to_string(heard).unwrap()).unwrap();
+                let host = Arc::clone(&host);
+                let reply: Reply = Arc::new(move |replied: Replied| {
+                    let relaying = host.lock().unwrap().clone().unwrap();
+                    relaying.replied(id, replied);
+                });
+                let window = Arc::clone(&window);
+                std::thread::spawn(move || window.hear(id, heard, reply));
+                true
+            })
+        },
+        Keeping {
+            record: {
+                let recorded = Arc::clone(&recorded);
+                Box::new(move |entry| {
+                    if let crate::eventlog::Entry::Tool { call, .. } = entry {
+                        recorded
+                            .lock()
+                            .expect("the record")
+                            .push(call.call.unwrap_or_default());
+                    }
+                    Ok(())
+                })
+            },
+            heard_from: Box::new(|_| {}),
+        },
+    );
+    *host.lock().unwrap() = Some(Arc::clone(&relaying));
+    let tokens = listener.tokens();
+    let _reading = listener.hear(relaying.hearing(tokens));
+
+    let delivered = deliver_tool(&path, Some(&token), &call(13, "late")).expect("spooled");
+    assert_eq!(
+        delivered,
+        Delivered::Spooled(1),
+        "the hook gave up on the host"
+    );
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while recorded.lock().expect("the record").is_empty() && std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(*recorded.lock().expect("the record"), ["late"]);
+    assert_eq!(
+        drained_while_running(&path, 13),
+        Vec::<String>::new(),
+        "the host's drain knows the copy of a line it recorded live"
+    );
+}

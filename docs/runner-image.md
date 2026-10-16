@@ -42,7 +42,7 @@ green `main`. A team can also build its own, as long as it keeps the contract be
   signed until it has passed for both architectures. A pull request that changes the image
   builds and checks it the same way, and pushes nothing.
 
-The image is Ubuntu 24.04 (its base pinned by digest) with `ca-certificates`, `git` and
+The image is Ubuntu 26.04 LTS (its base pinned by digest) with `ca-certificates`, `git` and
 `tini`, the `purlis` binary, and one user, `purlis` (10001), who is not root. Its source is
 [`runner-image/Dockerfile`](../runner-image/Dockerfile).
 

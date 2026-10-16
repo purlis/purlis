@@ -17,8 +17,8 @@ other item is **decided in implementation, to be confirmed** (D-2194-2 to D-2194
 2. **Session protocol 1.10, a minor.** It adds `board_moved`, one move as the core says it, and
    `board`, answered `board` with the host's board whole, both as JSON. Both run in one lane per
    project, so a read follows every move sent before it. Only `local-ui` sends either, and FD-27's
-   table gains the row. 1.8 and 1.9 are held for changes not yet merged. *D-2194-2, to be
-   confirmed.*
+   table gains the row. It follows 1.8 (#2003), and 1.9 is held for a change not yet merged.
+   *D-2194-2, to be confirmed.*
 3. **A project outlives the link that held it while it has a program the window has not closed,
    running or ended.** Its hook channel and its kept board stay, so a window that comes back
    reads how each program ended. Nothing starts, is dealt a number or is confined in it until a

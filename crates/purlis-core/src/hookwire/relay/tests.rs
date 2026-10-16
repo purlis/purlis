@@ -344,3 +344,305 @@ impl Write for Shared {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// the event log is written in the host (#2003)
+// ---------------------------------------------------------------------------------------
+
+/// What the host's keeping was given: each entry it recorded, and each chat heard from.
+#[derive(Default)]
+struct Kept {
+    recorded: Mutex<Vec<Entry>>,
+    heard_from: Mutex<Vec<u32>>,
+}
+
+fn a_report_entry(chat: u32) -> Entry {
+    Entry::Report {
+        plane: "/planes/one".into(),
+        report: report(chat),
+        followed: crate::eventlog::Followed::No,
+        begun: None,
+    }
+}
+
+/// The window's own hearing, as the window's hooks hear in a project whose chats run in the
+/// host: what it would record of a report it carries back ([`carry`]), and what it hands back
+/// written nothing of its own.
+fn the_windows_carrying(window: &Arc<Window>) -> Hearing {
+    let (_, holding) = a_window();
+    let mut hearing = the_windows(window, &holding);
+    hearing.each = {
+        let window = Arc::clone(window);
+        Box::new(move |report| {
+            window.said(format!("report {}", report.chat));
+            match carry(a_report_entry(report.chat)) {
+                None => Ok(()),
+                Some(_) => Err(io::Error::other("nothing carried it")),
+            }
+        })
+    };
+    hearing
+}
+
+/// A host's hearing over JSON to `window`'s, keeping the event log in `kept`.
+fn relayed_keeping(window: Hearing, kept: &Arc<Kept>) -> Hearing {
+    let heeding = Arc::new(Heeding::new(window));
+    let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
+    let relaying = Relaying::keeping(
+        {
+            let host = Arc::clone(&host);
+            Box::new(move |id, heard| {
+                let heard: Heard =
+                    serde_json::from_str(&serde_json::to_string(heard).unwrap()).unwrap();
+                let host = Arc::clone(&host);
+                let reply: Reply = Arc::new(move |replied: Replied| {
+                    let replied: Replied =
+                        serde_json::from_str(&serde_json::to_string(&replied).unwrap()).unwrap();
+                    let relaying = host.lock().unwrap().clone().unwrap();
+                    relaying.replied(id, replied);
+                });
+                heeding.hear(id, heard, reply);
+                true
+            })
+        },
+        Keeping {
+            record: {
+                let kept = Arc::clone(kept);
+                Box::new(move |entry| {
+                    kept.recorded.lock().unwrap().push(entry);
+                    Ok(())
+                })
+            },
+            heard_from: {
+                let kept = Arc::clone(kept);
+                Box::new(move |chat| kept.heard_from.lock().unwrap().push(chat))
+            },
+        },
+    );
+    *host.lock().unwrap() = Some(Arc::clone(&relaying));
+    relaying.hearing(Arc::new(ChatTokens::default()))
+}
+
+#[test]
+fn what_the_windows_hearing_would_record_is_recorded_in_the_host_and_its_hook_told_it_is_taken() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let host = relayed_keeping(the_windows_carrying(&window), &kept);
+
+    let taken = (host.each)(report(3));
+
+    assert!(taken.is_ok(), "{taken:?}");
+    assert_eq!(window.heard(), ["report 3"], "the window still hears it");
+    assert_eq!(*kept.recorded.lock().unwrap(), [a_report_entry(3)]);
+    assert_eq!(*kept.heard_from.lock().unwrap(), [3]);
+}
+
+#[test]
+fn a_line_the_hosts_drain_recorded_first_moves_the_window_and_is_not_recorded_again() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let host = relayed_keeping(the_windows_carrying(&window), &kept);
+
+    // As the host's listener holds it for a line the drain recorded first (#952).
+    let taken = {
+        let _already = super::super::RecordedAlready::held();
+        (host.each)(report(3))
+    };
+
+    assert!(taken.is_ok(), "{taken:?}");
+    assert_eq!(window.heard(), ["report 3"], "what it moves, it moves");
+    assert!(
+        kept.recorded.lock().unwrap().is_empty(),
+        "recorded once, from its spooled copy"
+    );
+}
+
+#[test]
+fn a_line_the_window_could_not_take_is_recorded_nowhere_and_its_hook_spools_it() {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let (_, holding) = a_window();
+    let host = relayed_keeping(the_windows(&window, &holding), &kept);
+
+    let refused = (host.each)(report(13));
+
+    assert_eq!(
+        refused.expect_err("not taken").to_string(),
+        "the event log is full"
+    );
+    assert!(kept.recorded.lock().unwrap().is_empty());
+}
+
+#[test]
+fn an_entry_carried_with_no_line_being_heard_is_handed_back_to_be_written_as_anything_else_is() {
+    let entry = a_report_entry(3);
+
+    assert_eq!(carry(entry.clone()), Some(entry.clone()));
+    let ((), carried) = carrying(|| {
+        assert_eq!(carry(entry.clone()), None);
+        assert_eq!(
+            carry(entry.clone()),
+            Some(entry.clone()),
+            "one line carries one entry"
+        );
+    });
+    assert_eq!(carried, Some(entry.clone()));
+    assert_eq!(carry(entry.clone()), Some(entry), "not past the line");
+}
+
+/// The window's hearing, sending back `entry` whatever line it heard.
+fn the_windows_sending_back(window: &Arc<Window>, entry: Entry) -> Hearing {
+    let (_, holding) = a_window();
+    let mut hearing = the_windows(window, &holding);
+    hearing.each = {
+        let (window, entry) = (Arc::clone(window), entry.clone());
+        Box::new(move |report| {
+            window.said(format!("report {}", report.chat));
+            let _ = carry(entry.clone());
+            Ok(())
+        })
+    };
+    hearing.tool = {
+        let (window, entry) = (Arc::clone(window), entry.clone());
+        Box::new(move |call| {
+            window.said(format!("tool {}", call.chat));
+            let _ = carry(entry.clone());
+            Ok(())
+        })
+    };
+    hearing.refused = {
+        let window = Arc::clone(window);
+        Box::new(move |refused| {
+            window.said(format!("refused {}", refused.chat));
+            let _ = carry(entry.clone());
+            Ok(())
+        })
+    };
+    hearing
+}
+
+/// Tool call `id` of chat `chat`.
+fn tool_call(chat: u32, id: &str) -> ToolCall {
+    ToolCall {
+        chat,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some("Bash".to_owned()),
+        call: Some(id.to_owned()),
+        args: None,
+        decision: super::super::Decision::None,
+        rule: None,
+        hook_ms: 1,
+        agent: None,
+        at_ms: 0,
+    }
+}
+
+fn a_tool_entry(call: ToolCall) -> Entry {
+    Entry::Tool {
+        plane: "/planes/one".into(),
+        call,
+    }
+}
+
+fn a_refused_entry(chat: u32) -> Entry {
+    Entry::Refused {
+        plane: "/planes/one".into(),
+        chat,
+    }
+}
+
+fn commit_refused(chat: u32) -> CommitRefused {
+    CommitRefused {
+        chat,
+        commit_refused: "repo: a finding".to_owned(),
+    }
+}
+
+/// What the host made of `line` when the window's hearing sent `entry` back with it: whether
+/// the hook was told it is taken, and what was written.
+fn sent_back_with(line: &dyn Fn(&Hearing) -> io::Result<()>, entry: &Entry) -> (bool, Vec<Entry>) {
+    let window = Arc::new(Window::default());
+    let kept = Arc::new(Kept::default());
+    let host = relayed_keeping(the_windows_sending_back(&window, entry.clone()), &kept);
+    let taken = line(&host).is_ok();
+    let written = kept.recorded.lock().unwrap().clone();
+    (taken, written)
+}
+
+#[test]
+fn the_host_records_only_an_entry_that_is_the_record_of_the_line_it_was_sent_back_with() {
+    let not_this_line = [
+        a_report_entry(4),
+        Entry::Report {
+            plane: "/planes/one".into(),
+            report: Report {
+                event: Event::SessionStart,
+                ..report(3)
+            },
+            followed: crate::eventlog::Followed::No,
+            begun: None,
+        },
+        Entry::Refused {
+            plane: "/planes/one".into(),
+            chat: 3,
+        },
+        Entry::Audited {
+            plane: "/planes/one".into(),
+            number: Some(3),
+            kind: "trust.dispatch.grant".into(),
+            body: serde_json::json!({}),
+        },
+        Entry::KillSwitchRead,
+    ];
+    for entry in not_this_line {
+        let window = Arc::new(Window::default());
+        let kept = Arc::new(Kept::default());
+        let host = relayed_keeping(the_windows_sending_back(&window, entry.clone()), &kept);
+
+        let taken = (host.each)(report(3));
+
+        assert!(taken.is_err(), "{entry:?}: its hook spools the line");
+        assert!(
+            kept.recorded.lock().unwrap().is_empty(),
+            "{entry:?} is not written"
+        );
+    }
+}
+
+#[test]
+fn the_host_records_of_a_tool_line_or_a_refused_commit_only_that_line_s_own_record() {
+    let tool_line = |host: &Hearing| (host.tool)(tool_call(3, "toolu_01"));
+    let refused_line = |host: &Hearing| (host.refused)(commit_refused(3));
+
+    // Each line's own record is written, and its hook told it is taken.
+    let own = a_tool_entry(tool_call(3, "toolu_01"));
+    assert_eq!(sent_back_with(&tool_line, &own), (true, vec![own]));
+    let own = a_refused_entry(3);
+    assert_eq!(sent_back_with(&refused_line, &own), (true, vec![own]));
+
+    let not_the_tool_line = [
+        a_tool_entry(tool_call(3, "toolu_02")),
+        a_tool_entry(tool_call(4, "toolu_01")),
+        a_report_entry(3),
+        a_refused_entry(3),
+    ];
+    for entry in not_the_tool_line {
+        assert_eq!(
+            sent_back_with(&tool_line, &entry),
+            (false, Vec::new()),
+            "{entry:?}: not written, and its hook spools the line"
+        );
+    }
+    let not_the_refused_line = [
+        a_refused_entry(4),
+        a_report_entry(3),
+        a_tool_entry(tool_call(3, "toolu_01")),
+    ];
+    for entry in not_the_refused_line {
+        assert_eq!(
+            sent_back_with(&refused_line, &entry),
+            (false, Vec::new()),
+            "{entry:?}: not written, and its hook spools the line"
+        );
+    }
+}

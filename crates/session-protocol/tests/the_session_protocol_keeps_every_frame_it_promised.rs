@@ -6,11 +6,12 @@
 //! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says: 1.0's, 1.1's
 //! hosted programs and views of a kind (#1994), 1.2's chats in the host (#1998), 1.3's hooks in
 //! the host (#2000), 1.4's chat confinement in the host (#1999), 1.5's kill switch in the host
-//! (#2001), 1.6's browsers (#2012), 1.7's saving in the host (#2002), and 1.10's board kept in
-//! the host (#2194). Each must read back as it was recorded, by this build and so by every
-//! later one, which is what lets a client and a host one version apart talk. A frame kind added
-//! without being recorded fails here, so the promise grows on purpose. The UI RPC is not in it:
-//! it is private to one build of the app, and excluded from this promise (V7).
+//! (#2001), 1.6's browsers (#2012), 1.7's saving in the host (#2002), 1.8's event log written in
+//! the host (#2003), and 1.10's board kept in the host (#2194). Each must read back as it was
+//! recorded, by this build and so by every later one, which is what lets a client and a host one
+//! version apart talk. A frame kind added without being recorded fails here, so the promise grows
+//! on purpose. The UI RPC is not in it: it is private to one build of the app, and excluded from
+//! this promise (V7).
 //!
 //! And a host reads a later minor's frames the way the promise says: a field it does not know
 //! is ignored, a command it does not know is refused with `unknown_command` and the link
