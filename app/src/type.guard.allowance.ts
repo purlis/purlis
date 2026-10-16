@@ -119,7 +119,6 @@ export const TYPE_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".search-file-name | font-weight: 600",
     ".search-line | font-family: ui-monospace, Menlo, Consolas, monospace",
     ".search-line-text mark | font-weight: 700",
-    ".ui-levels-small | font-size: 0.8em",
   ],
   "primitives/collections.css": [
     ".ui-table thead th | font-weight: 600",
