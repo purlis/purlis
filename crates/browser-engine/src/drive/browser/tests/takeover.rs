@@ -652,7 +652,7 @@ fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
 }
 
 #[test]
-fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it() {
+fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it_as_text() {
     let (browser, engine) = browser();
     focus_on(&engine, &[]);
     browser.take_over();
