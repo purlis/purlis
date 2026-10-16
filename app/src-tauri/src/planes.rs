@@ -3536,9 +3536,29 @@ impl Planes {
             let events = Arc::clone(events);
             // The key the hook channel records this project's chats under.
             let root = id.root().to_path_buf();
-            chats.when_a_run_begins(Box::new(move |session, run, cause, attributes| {
+            // A run its start may still put aside is held until the start goes on (#2250); a
+            // line of it that comes first is written after its `run.started`.
+            chats.when_a_run_begins(Box::new({
+                let (events, root) = (Arc::clone(&events), root.clone());
+                move |session, run, cause, attributes, said| {
+                    let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
+                    match said {
+                        crate::chats::RunSaid::Now => {
+                            if let Err(why) = log.begin(&root, session, run, cause, attributes) {
+                                tracing::warn!(
+                                    "purlis: a run was not written to the event log ({why})"
+                                );
+                            }
+                        }
+                        crate::chats::RunSaid::Held => {
+                            log.begin_held(&root, session, run, cause, attributes);
+                        }
+                    }
+                }
+            }));
+            chats.when_a_held_run_goes_on(Box::new(move |session| {
                 let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Err(why) = log.begin(&root, session, run, cause, attributes) {
+                if let Err(why) = log.begun(&root, session) {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");
                 }
             }));

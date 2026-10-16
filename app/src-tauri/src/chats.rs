@@ -201,9 +201,20 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sync>;
 
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
-/// number, its id, the run's id, why it began and what it is (ADR 0066, #868). What the event
-/// log is told.
-pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes) + Send + Sync>;
+/// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
+/// `run.started` is held until the start goes on. What the event log is told.
+pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes, RunSaid) + Send + Sync>;
+
+/// When a run's `run.started` is written (#2250).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunSaid {
+    /// As it begins.
+    Now,
+    /// Once its start goes on ([`Chats::when_a_held_run_goes_on`]): a sandboxed Claude Code
+    /// chat whose project settings its start screens, which may be started once more at once.
+    /// A start put aside says nothing of it.
+    Held,
+}
 
 /// What a start decided about a chat's sandbox (ADR 0067 §7): the trust event to write, under
 /// the chat and the run the start is about to begin, BEFORE its program runs; or, once a new
@@ -465,6 +476,9 @@ pub struct Chats {
     starting: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// Told, by number, that a start whose run was held goes on ([`RunSaid::Held`]).
+    #[allow(clippy::type_complexity)]
+    goes_on: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
     /// Told what each start decided about the chat's sandbox (ADR 0067 §7).
     trusting: Mutex<Option<Trusting>>,
     /// What a start found to say on a chat's tab after the core's start had spoken: that its
@@ -928,6 +942,7 @@ impl Chats {
             sessions: host,
             starting: Mutex::new(None),
             beginning: Mutex::new(None),
+            goes_on: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
@@ -1019,6 +1034,12 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Calls `tell` with the number of a chat whose run began [`RunSaid::Held`] once its start
+    /// goes on, after its project settings were screened at its start (#2250).
+    pub fn when_a_held_run_goes_on(&self, tell: Box<dyn Fn(u32) + Send + Sync>) {
+        *lock(&self.goes_on) = Some(tell);
     }
 
     /// Calls `tell` with what each start decided about the chat's sandbox: its trust event as
@@ -2425,7 +2446,7 @@ impl Chats {
     /// 0067 as amended 2026-10-16): its first screen, once its program runs, says so. That run
     /// is ended before anything else is started, and the chat is started once more on the
     /// person's settings and purlis's: the number answered is the run that goes on, never one
-    /// already ended.
+    /// already ended, and only that run is in the event log and this machine's count (#2250).
     #[allow(clippy::too_many_arguments)]
     fn open_it(
         &self,
@@ -2701,6 +2722,11 @@ impl Chats {
             }
             _ => None,
         };
+        // A start its screen may put aside says its run once it goes on (#2250).
+        let said = match settings_watched {
+            Some(Ok(_)) => RunSaid::Held,
+            _ => RunSaid::Now,
+        };
         let (hooks, armed) = self.state_hooks(
             harness,
             chat.cwd.as_deref(),
@@ -2912,7 +2938,7 @@ impl Chats {
                     if let Some(beginning) = lock(&self.beginning).as_ref()
                         && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
                     {
-                        beginning(session, RunOf { chat, run }, cause, &attributes);
+                        beginning(session, RunOf { chat, run }, cause, &attributes, said);
                     }
                 },
             )
@@ -2945,19 +2971,6 @@ impl Chats {
             identity,
             ..chat.clone()
         };
-        // Counted once it has started, so a start that failed is not a chat. A count that
-        // could not be kept costs the rate one chat, never the chat.
-        if let (Some(counted), Some(trusting)) = (counted, lock(&self.trusting).as_ref())
-            && let Err(why) = trusting(Sandboxing {
-                change: None,
-                run: None,
-                counted: Some(counted),
-                harness,
-                persona: chat.persona.as_deref(),
-            })
-        {
-            tracing::warn!("purlis: a chat was not counted for the sandbox ({why})");
-        }
         if !late.is_empty() {
             lock(&self.late_notes).insert(session, late);
         }
@@ -2991,6 +3004,28 @@ impl Chats {
             Some(Ok(cwd)) => !self.project_settings.chat(session, cwd),
             _ => false,
         };
+        // A start put aside here is no run and no chat (#2250): the one started in its place
+        // is said and counted.
+        if !failed {
+            if said == RunSaid::Held
+                && let Some(goes_on) = lock(&self.goes_on).as_ref()
+            {
+                goes_on(session);
+            }
+            // Counted once it has started, so a start that failed is not a chat. A count that
+            // could not be kept costs the rate one chat, never the chat.
+            if let (Some(counted), Some(trusting)) = (counted, lock(&self.trusting).as_ref())
+                && let Err(why) = trusting(Sandboxing {
+                    change: None,
+                    run: None,
+                    counted: Some(counted),
+                    harness,
+                    persona: chat.persona.as_deref(),
+                })
+            {
+                tracing::warn!("purlis: a chat was not counted for the sandbox ({why})");
+            }
+        }
         self.write_it_down();
         // A close that began while this started, past the check above, has ended every chat
         // it found: this one is ended as well, so nothing runs in a project nobody holds.
@@ -7170,6 +7205,64 @@ pub(crate) mod tests {
         chats.close(session).expect("ends");
     }
 
+    /// Chats of a sandboxed project whose own Claude Code settings hold only what a chat keeps,
+    /// saying each run that goes on and each count ([`saying`]), on `watch`.
+    fn saying_on_kept_project_settings(
+        watch: crate::projectsettings::Watch,
+    ) -> (tempfile::TempDir, Chats, Pretend, Said) {
+        let plane = a_sandboxed_plane();
+        project_settings_become(
+            plane.path(),
+            r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}}"#,
+        );
+        let host = Pretend::default();
+        let mut chats = restartable_chats_of(plane.path(), host.clone());
+        chats.watching_project_settings_with(watch);
+        let said = saying(&mut chats);
+        (plane, chats, host, said)
+    }
+
+    #[test]
+    fn a_chat_whose_project_settings_pass_its_start_counts_and_records_its_run_once() {
+        let (plane, chats, _host, said) =
+            saying_on_kept_project_settings(crate::projectsettings::Watch::new());
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(
+            *lock(&said),
+            [
+                format!("{session} run start"),
+                "counted Sandboxed claude -".to_owned(),
+            ]
+        );
+        chats.close(session).expect("ends");
+    }
+
+    #[test]
+    fn a_chat_started_again_at_once_counts_and_records_one_run_not_two() {
+        // #2250: the first run, put aside at its start, is no run of the chat.
+        let watch = crate::projectsettings::Watch::new();
+        let (plane, chats, host, said) = saying_on_kept_project_settings(watch.clone());
+        let root = plane.path().to_path_buf();
+        watch.changing_before_the_next_chat(move || {
+            project_settings_become(&root, r#"{"permissions": {"allow": ["Bash"]}}"#);
+        });
+        let session = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(host.openings().len(), 2, "started once more");
+        assert_eq!(
+            *lock(&said),
+            [
+                format!("{session} run start"),
+                "counted Sandboxed claude -".to_owned(),
+            ],
+            "one run, under the number that goes on, counted once"
+        );
+        chats.close(session).expect("ends");
+    }
+
     /// The word after `flag` in `args`, where there is one.
     fn after(args: &[String], flag: &str) -> Option<String> {
         args.windows(2)
@@ -10291,7 +10384,7 @@ pub(crate) mod tests {
         chats.on_device(Some(DEVICE.to_owned()));
         let begun: Begun = std::sync::Arc::default();
         let keep = std::sync::Arc::clone(&begun);
-        chats.when_a_run_begins(Box::new(move |session, of, cause, _| {
+        chats.when_a_run_begins(Box::new(move |session, of, cause, _, _| {
             lock(&keep).push((session, of.chat.to_owned(), of.run.to_owned(), cause));
         }));
         begun
@@ -11691,8 +11784,20 @@ pub(crate) mod tests {
     fn saying_or(chats: &mut Chats, refused: Option<&'static str>) -> Said {
         let said: Said = std::sync::Arc::default();
         let runs = std::sync::Arc::clone(&said);
-        chats.when_a_run_begins(Box::new(move |session, _, cause, _| {
-            lock(&runs).push(format!("{session} run {}", cause.word()));
+        // A run held is said once its start goes on, as the event log writes it.
+        let held: std::sync::Arc<Mutex<HashMap<u32, Began>>> = std::sync::Arc::default();
+        let holding = std::sync::Arc::clone(&held);
+        chats.when_a_run_begins(Box::new(move |session, _, cause, _, when| match when {
+            RunSaid::Now => lock(&runs).push(format!("{session} run {}", cause.word())),
+            RunSaid::Held => {
+                lock(&holding).insert(session, cause);
+            }
+        }));
+        let runs = std::sync::Arc::clone(&said);
+        chats.when_a_held_run_goes_on(Box::new(move |session| {
+            if let Some(cause) = lock(&held).remove(&session) {
+                lock(&runs).push(format!("{session} run {}", cause.word()));
+            }
         }));
         let decided = std::sync::Arc::clone(&said);
         chats.when_the_sandbox_is_decided(Box::new(move |it| {
