@@ -1115,14 +1115,13 @@ _Avoid_: skin, look (as the name), colour scheme (that is only its colours), sty
 
 **Theme folder**:
 A theme as it is kept: a folder holding `theme.json`, and optionally its fonts, icons, a preview
-and a licence. It needs no approval, and saving a file in it repaints the window (ADR 0098). A
-project keeps its theme folders in `themes/` at the plane root, and a workspace in its own
-`themes/`.
+and a licence. It is data, not a capability (ADR 0098). A project keeps its theme folders in
+`themes/` at the plane root, and a workspace in its own `themes/`.
 _Avoid_: theme file (one file is not a folder), theme package, theme pack (that is an extension)
 
 **Appearance**:
 One way a theme is drawn, tagged dark or light and optionally high contrast. A theme has one or
-more, and the person picks one or lets the system's choose. A theme with a dark and a light
+more, and the person picks one or lets the system choose. A theme with a dark and a light
 appearance can follow the system.
 _Avoid_: mode, variant, flavour, dark mode (as the name of the setting)
 
@@ -1131,9 +1130,10 @@ A toggle or a choice a theme offers, such as an accent or borders on or off, tha
 when picked. Its values are the person's choice. An option never sets a free number.
 _Avoid_: setting (that is the person's, for every theme), variant, preference
 
-**Palette**:
-A theme's named colours, which its tokens refer to by name, so one colour is changed once.
-_Avoid_: swatches, colour list, primitives
+**Palette** (of a theme):
+A theme's named colours, which its tokens refer to by name, so one colour is changed once. The
+names belong to that theme alone.
+_Avoid_: palette (bare, which is the command palette), swatches, colour list, primitives
 
 **Density**:
 The person's setting of how much room the window gives its rows and controls: comfortable or
@@ -1141,10 +1141,9 @@ compact. Every theme honours it, and a theme may tune what compact means for it.
 _Avoid_: compact mode, zoom, scale, text size (that is a setting of its own)
 
 **Theme specimen**:
-A fixed page drawn off-screen with sample content, in a given theme, appearance and options: every
-control, a chat pane, an editor, a terminal, Settings, a dialog and a Notice. It is how a chat sees
-a theme it makes and what the gallery's cards show. It never shows the person's real window or
-data.
+A fixed page drawn off-screen with sample content, in a given theme, appearance and options. It
+is how a chat sees a theme it makes and what the gallery's cards show. It never shows the person's
+real window or data.
 _Avoid_: preview (that is drawing a theme in the real window), screenshot, sample window
 
 **Theme check**:
@@ -1170,8 +1169,8 @@ front. It is the person's choice for that workspace, or a LIVE workspace's commi
 _Avoid_: workspace colour (that is its tint), workspace skin
 
 **Foundation**:
-The designer's drawn look that the theme Purlis is built from: its type, colours, icons and sizes,
-read once from the Figma file into a record the project keeps.
+The designer's drawn look that the theme Purlis is built from: its type, colours, icons and
+sizes, kept as a record in the project.
 _Avoid_: design system (that is how the window is built), brand, mockup
 
 **Default theme**:

@@ -119,3 +119,17 @@ fn the_row_is_in_the_doctors_run() {
         .expect("a themes row");
     assert_eq!(row.status, Status::Warn);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_themes_that_is_a_link_is_named_as_one() {
+    let (_d, root) = plane("schema = 1\n");
+    theme_folder(&root.join("elsewhere/nord"));
+    std::os::unix::fs::symlink(root.join("elsewhere"), root.join("themes")).unwrap();
+    let row = themes(&doctor(&root)).expect("a row");
+    assert_eq!(row.status, Status::Warn, "{row:?}");
+    assert_eq!(
+        row.detail,
+        "1 entry in a themes/ folder is not a theme folder: themes (a link, not a folder)"
+    );
+}

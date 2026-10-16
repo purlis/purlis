@@ -1302,19 +1302,21 @@ enumerator that does not expect them has to guess.
 ### `themes/` — the project's theme folders
 
 - **Format:** a directory of theme folders, one per theme: `themes/<name>/theme.json`, plus
-  that theme's own fonts, icons, preview and licence beside it. **Status: reserved** (spec
-  #2313, ADR 0097, ADR 0098). The name is purlis's at the plane root; the theme format itself is
-  the theme engine's, and its schema is published with it.
+  that theme's own fonts, icons, preview and licence beside it. The name is purlis's at the plane
+  root; the theme format itself is the theme engine's, and its schema is published with it.
+- **Status:** **purlis only** (spec #2313, ADR 0097, ADR 0098). A reserved name: purlis reads
+  nothing else under it.
 - **Tier:** Plane — committed by `purlis save`, so the team gets the project's themes.
-- **Written by:** the person, and a chat's theme draft once the person keeps it. purlis creates
-  none of it.
+- **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
+  draft, once the person keeps it. purlis creates none of it.
 - **Read by:** `purlis doctor`'s `themes` row (`crates/purlis-core/src/doctor/themes.rs`),
   which names each entry that is not a theme folder: a file, a folder with no `theme.json`, a
   `theme.json` that is not a file, or a link. A name starting with `.` (a `.gitkeep`) is left
   alone. The row is printed only where a `themes/` exists.
+- **Git:** committed (nothing ignores it).
 - **Encoding details:** a theme folder is a folder, never a bare `theme.json`: a theme's fonts,
-  icons and licence live beside its `theme.json`, so each theme has a folder of its own. A theme
-  folder needs no approval (ADR 0098).
+  icons and licence live beside its `theme.json`, so each theme has a folder of its own. Decided
+  by ADR 0098, built by #2324: a theme folder needs no approval.
 
 ### Plane-root files that exist but are **not** this area
 
@@ -2371,14 +2373,18 @@ beside a purlis one is removed when the record is published (V93i).
 ### `workspaces/<ws>/themes/` — the workspace's theme folders
 
 - **Format:** the same as the plane root's [`themes/`](#themes--the-projects-theme-folders): one
-  theme folder per theme, `themes/<name>/theme.json`. **Status: reserved** (spec #2313, ADR 0097,
-  ADR 0098), and one of purlis's own names in a workspace, so no extension may keep a folder
-  under it.
+  theme folder per theme, `themes/<name>/theme.json`.
+- **Status:** **purlis only** (spec #2313, ADR 0097, ADR 0098). A reserved name, and one of
+  purlis's own in a workspace, so no extension may keep a folder under it.
 - **Tier:** Plane when LIVE, Clone state when LOCAL — a workspace's themes travel with it.
   Committed by `purlis save` if the workspace is LIVE; kept in this clone if it is LOCAL.
-- **Written by:** the person, and a chat's theme draft once the person keeps it. purlis creates
-  none of it.
+- **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
+  draft, once the person keeps it. purlis creates none of it.
 - **Read by:** `purlis doctor`'s `themes` row, as at the plane root, for every workspace.
+- **Git:** as the workspace's other files: committed while the workspace is LIVE, ignored by
+  `/workspaces/*/*` while it is LOCAL.
+- **Encoding details:** as at the plane root. Decided by ADR 0098, built by #2324: a theme folder
+  needs no approval.
 
 ### `workspaces/<ws>/<folder>/` — a folder an extension keeps in a workspace
 

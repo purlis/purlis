@@ -8,6 +8,9 @@ time). Each records the change as an amendment of its own, in [`0041/`](0041/) a
 [`0053/`](0053/). It builds on [ADR 0097](0097-a-theme-is-bounded-data-and-may-set-every-token.md):
 a theme is bounded data.
 
+**Built by #2324** (theme folders need no approval) and #2332 (theme drafts). Until then, an
+extension, its themes included, is approved as today.
+
 ## Where purlis was
 
 A theme could come only from the person's own file or from an extension. An extension is
@@ -52,8 +55,10 @@ is a setting, reviewed like one.
 
 ### 5. What does not move
 
-- **Hard floors hold whatever the theme's source**: a theme draft that breaks one is never drawn.
-- **The consent surfaces and the state colours** keep the floor ADR 0041 gave them.
+- **Hard floors**: a theme draft that breaks one is not drawn, and the theme check reports any
+  theme's hard-floor failures as findings.
+- **The consent surfaces and the state marks** are themeable under the engine's hard floors, and
+  their wording, icons and placement are purlis's (ADR 0097 §6).
 - **No theme reaches a secret, a permission, a hook or a harness setting.** ADR 0041's table
   stands.
 

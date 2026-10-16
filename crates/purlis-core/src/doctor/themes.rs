@@ -97,9 +97,12 @@ fn look(root: &Path, relative: &str, found: &mut Found) -> Result<(), String> {
     };
     found.any = true;
     if !meta.is_dir() {
-        found
-            .strays
-            .push(format!("{} (not a folder)", shown(relative)));
+        let what = if meta.file_type().is_symlink() {
+            "a link, not a folder"
+        } else {
+            "not a folder"
+        };
+        found.strays.push(format!("{} ({what})", shown(relative)));
         return Ok(());
     }
     let entries = std::fs::read_dir(&at).map_err(|e| format!("{}: {e}", shown(relative)))?;

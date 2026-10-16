@@ -11,3 +11,5 @@ fingerprint, ask again when it changes) is for what runs:
 - **An extension that asks for no capability, names no program and contributes only themes and
   icon themes is treated as theme folders**: no fingerprint, no prompt, and editing its themes
   asks nothing. It is still installed by path, by the person, as decision 3 says.
+
+**Built by #2324.** Until then, extensions are approved as today, their themes included.

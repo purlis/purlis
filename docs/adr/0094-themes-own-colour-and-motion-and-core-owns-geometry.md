@@ -1,9 +1,9 @@
 # Themes own colour and motion, core owns geometry, and every control starts from one baseline
 
 **Superseded 2026-10-16 by [ADR 0097](0097-a-theme-is-bounded-data-and-may-set-every-token.md)**
-(spec #2313): a theme is bounded data and may set every token. Its token layers (§1), the
-control baseline (§3) and one class per control (§4) stand, as ADR 0097 restates them. Until the
-theme engine of #2313 is built, the window holds the rule below.
+(spec #2313): a theme is bounded data and may set every token, component tokens included. Its
+token layers (§1), the control baseline (§3) and one class per control (§4) stand, as ADR 0097
+restates them. Until the theme engine of #2313 is built, the window holds the rule below.
 
 **Accepted 2026-10-12.** Extends ADR 0037 (behaviour from a headless library, the look is
 purlis's own): it gives "type, spacing, density, elevation", which 0037 left untaken, a home.

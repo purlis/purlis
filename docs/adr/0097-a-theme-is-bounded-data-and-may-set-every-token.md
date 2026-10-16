@@ -5,7 +5,9 @@
 that a theme owns colour and motion and core owns geometry. What 0094 built on that rule, the
 token layers, the control baseline and one class per control (its §1, §3 and §4), stands, as
 said below. It keeps [ADR 0041](0041-a-plugin-is-a-subprocess-or-charter-has-no-plugins.md)'s
-four properties of a declarative extension and changes how one of its three crossings is held.
+four properties of a declarative extension, changes how one of its three crossings is held, and
+amends its rule that the consent surfaces and the state colours are purlis's (the operator's
+ruling of 2026-10-17).
 
 ## Where purlis was
 
@@ -20,9 +22,18 @@ anything.
 
 ### 1. A theme may set every token
 
-A theme may set colour, motion, geometry, the UI, mono and terminal fonts, its icon set, and
-which tokens a workspace's tint changes. There is no token a theme may not set. Core still gives
+**Every token in the published theme vocabulary may be set by any theme**: colour, motion,
+geometry, the UI, mono and terminal fonts, its icon set, which tokens a workspace's tint changes,
+the tokens of the consent surfaces and the state marks, and the component tokens. Core still gives
 every token its default value, which is Purlis Classic's, so a theme holds only what it changes.
+
+**Component tokens are in the vocabulary.** Each one defaults to the semantic token it aliases
+today (`--btn-bg` to `control.base`), so a theme that sets none draws every control as the
+semantic tokens say, and one that sets a component token is held to the same bounds and hard
+floors as any other.
+
+The same vocabulary and the same bounds apply to every theme, whatever its source: built in, the
+person's own, a project's, a workspace's or an extension's.
 
 ### 2. The bound is on the value, not on the name
 
@@ -77,7 +88,12 @@ Some things no theme decides:
 - **Hard floors**: primary text on every surface at 3:1 or more and a focus ring visible against
   its surfaces, plus the short list the engine keeps. A theme draft that breaks one is never
   drawn.
-- **The consent surfaces and the state colours** keep the floor ADR 0041 gave them.
+- **The consent surfaces and the state marks are in the vocabulary, under hard floors of their
+  own.** The consent surfaces are the asks, Allow and Keep blocked, and needs-you. Beside the
+  general floors, the engine's list holds that an ask contrasts with its surface, that Allow is
+  distinguishable from Keep blocked, and that danger is distinguishable from primary.
+- **A consent surface's wording, icons and placement are purlis's**, and are not theme data. A
+  theme colours a prompt; it cannot draw one.
 - **Density, text size, the font override and reduced motion** are the person's settings, and
   every theme honours them. A theme may tune what compact means for it; it cannot turn compact
   off.
@@ -85,8 +101,8 @@ Some things no theme decides:
 ### 7. What stands from ADR 0094
 
 - The three token layers. A theme's palette is the primitive layer, its tokens are the semantic
-  layer, and component tokens stay purlis's, aliases inside the control classes that no theme
-  sets.
+  layer, and component tokens are the aliases inside the control classes, now in the vocabulary
+  (§1).
 - The control baseline: every control takes the window's font and its height from padding.
 - One CSS class per control kind, over Radix.
 - Lengths that grow with the words are in rem.
