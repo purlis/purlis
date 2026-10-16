@@ -38,25 +38,52 @@ const MENU = '[role="menu"]';
  */
 async function openMenuOf(bar: string, name: string): Promise<void> {
   const icon = `${bar} [role="tab"][aria-label="${name}"]`;
-  await browser.waitUntil(
-    async () => {
-      const now = await browser.execute((css: string) => {
+  // DIAGNOSTIC (#1973, removed before merge): what the page hears of the driver's key.
+  await browser.execute(() => {
+    const w = window as unknown as { vmLog?: string[] };
+    if (w.vmLog !== undefined) return;
+    w.vmLog = [];
+    for (const type of ["keydown", "keyup", "contextmenu", "focusin", "focusout"])
+      document.addEventListener(
+        type,
+        (e) => {
+          const t = e.target as HTMLElement | null;
+          w.vmLog?.push(
+            `${type} key=${(e as KeyboardEvent).key ?? ""} shift=${(e as KeyboardEvent).shiftKey ?? ""} trusted=${e.isTrusted} target=${t?.tagName ?? ""}[${t?.getAttribute?.("aria-label") ?? ""}] active=${(document.activeElement as HTMLElement | null)?.getAttribute?.("aria-label") ?? document.activeElement?.tagName}`,
+          );
+        },
+        true,
+      );
+  });
+  await browser
+    .waitUntil(
+      async () => {
+        const now = await browser.execute((css: string) => {
+          const tab = document.querySelector<HTMLElement>(css);
+          if (tab === null) return "absent";
+          if (tab.getAttribute("data-state") === "open") return "open";
+          tab.focus();
+          return document.activeElement === tab ? "held" : "refused";
+        }, icon);
+        if (now === "open") return true;
+        if (now === "held") await browser.keys(["Shift", "F10"]);
+        return false;
+      },
+      {
+        timeout: 20_000,
+        interval: 500,
+        timeoutMsg: `Shift+F10 on the ${name} icon in ${bar} never opened its menu`,
+      },
+    )
+    .catch(async (err: Error) => {
+      const seen = await browser.execute((css: string) => {
         const tab = document.querySelector<HTMLElement>(css);
-        if (tab === null) return "absent";
-        if (tab.getAttribute("data-state") === "open") return "open";
-        tab.focus();
-        return document.activeElement === tab ? "held" : "refused";
+        const attrs =
+          tab === null ? "none" : [...tab.attributes].map((a) => `${a.name}=${a.value}`).join(" ");
+        return `${attrs} menus=${document.querySelectorAll('[role="menu"]').length} log=${((window as unknown as { vmLog?: string[] }).vmLog ?? []).slice(-30).join(" | ")}`;
       }, icon);
-      if (now === "open") return true;
-      if (now === "held") await browser.keys(["Shift", "F10"]);
-      return false;
-    },
-    {
-      timeout: 20_000,
-      interval: 500,
-      timeoutMsg: `Shift+F10 on the ${name} icon in ${bar} never opened its menu`,
-    },
-  );
+      throw new Error(`${err.message} DIAG ${seen}`);
+    });
   await $(MENU).waitForDisplayed({ timeout: 10_000 });
 }
 
