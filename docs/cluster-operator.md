@@ -11,8 +11,7 @@ pinned to one tested release whose definitions purlis vendors, and it never re-i
 that project does. Its source is [`operator/`](../operator/).
 
 This is its first slice (#2054): a Pool and a Claim make a running session host, and the
-Claim says whether it is ready. The operator's image is not published yet; build it from
-[`operator/Dockerfile`](../operator/Dockerfile).
+Claim says whether it is ready.
 
 ## What it needs
 
@@ -22,6 +21,45 @@ Claim says whether it is ready. The operator's image is not published yet; build
   [`operator/vendor/agent-sandbox/v1.0.6/`](../operator/vendor/agent-sandbox/v1.0.6/).
 - **A runner image**, named by digest: purlis's own or a team's that keeps the
   [runner image contract](runner-image.md).
+
+## Its image
+
+- **Where:** `ghcr.io/purlis/purlis-cluster-operator`, a private package of the `purlis`
+  organisation on GitHub, kept private exactly as the [runner image](runner-image.md) is: the
+  workflow checks through GitHub's packages API that the package is private before each push,
+  and again, with the registry refusing both images to anyone who has not signed in, before
+  any tag or signature. If either check cannot get a clear answer, the run stops. It stays
+  private until the maintainer rules to publish it, so pulling it needs a GitHub sign-in with
+  read access to the package: give the cluster an image pull secret for it.
+- **When:** `.github/workflows/operator-image.yml` builds it for every change to the operator
+  on `main`, once the operator's own checks and kind tests (`operator.yml`) passed on that
+  commit. A pull request that changes the operator builds and checks it the same way, and
+  pushes nothing.
+- **What:** `linux/amd64` and `linux/arm64` under one index, each built on a GitHub runner of
+  that architecture with the pinned toolchain, `cargo auditable` and the operator's `release`
+  profile, no cache, into [`operator/Dockerfile`](../operator/Dockerfile). Each architecture's
+  image is pushed untagged, by digest, and pulled back; nothing is tagged or signed until
+  `tools/operator-image-check.mjs` has passed on exactly those bytes: Linux on that
+  architecture, a numbered user who is not root, the operator as the whole default command,
+  and a binary that starts there.
+- **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
+  forward. Tags can move, so name the image by its **digest**. The run's summary records it,
+  and its `operator-image` artifact holds the digest and this commit's
+  `operator/deploy/operator.yaml` with its image set to it.
+- **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
+  workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
+  anywhere, and the signature's entry in Sigstore's public transparency log names the image
+  and its digest (ruled 2026-10-15). Check an image before you install it:
+
+  ```bash
+  cosign verify ghcr.io/purlis/purlis-cluster-operator@sha256:<digest> \
+    --certificate-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+
+`operator/deploy/operator.yaml` names the image `ghcr.io/purlis/purlis-cluster-operator:main`,
+a tag, until the published manifests name it by digest (#2281); install it with the image set
+to a digest, as below.
 
 ## Install
 
@@ -38,11 +76,16 @@ kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
-# 3. The operator, in the `purlis-system` namespace, with its image set to your build.
+# 3. The operator, in the `purlis-system` namespace, with its image named by digest: the
+#    `operator.yaml` of a run's `operator-image` artifact, which already names it, or this
+#    one with the image set.
 kubectl apply --server-side -f operator/deploy/operator.yaml
 kubectl -n purlis-system set image deployment/purlis-cluster-operator \
-  operator=<registry>/purlis-cluster-operator@sha256:<digest>
+  operator=ghcr.io/purlis/purlis-cluster-operator@sha256:<digest>
 ```
+
+A build of your own, from [`operator/Dockerfile`](../operator/Dockerfile), is installed the
+same way, with its own digest.
 
 ## A pool and a claim
 

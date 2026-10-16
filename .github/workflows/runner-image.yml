@@ -31,7 +31,7 @@ run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}
 # compiles the Linux one: the pinned toolchain, `cargo auditable`, the `dev-release` profile,
 # no cache. The compile runs in a job that holds no write permission; the image jobs hold
 # `packages: write`, and only `index`, which signs, can mint an OIDC token. What the registry
-# and the forge are asked before a push, a tag or a signature is `tools/runner-image-registry.mjs`,
+# and the forge are asked before a push, a tag or a signature is `tools/image-registry.mjs`,
 # which fails closed.
 #
 # **Nothing is tagged or signed that was not checked.** `image` pushes each architecture's
@@ -44,6 +44,7 @@ on:
     paths:
       - runner-image/**
       - tools/runner-image-*
+      - tools/image-registry*
       - .github/workflows/runner-image.yml
   workflow_run:
     workflows: [ci]
@@ -199,28 +200,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          state=$(node tools/runner-image-registry.mjs visibility)
-          if [ "$state" = absent ]; then
-            placeholder="$RUNNER_TEMP/placeholder"
-            mkdir -p "$placeholder"
-            echo "The purlis runner image's package, made private before the image is pushed." > "$placeholder/README"
-            printf 'FROM scratch\nCOPY README /README\n' | docker buildx build \
-              --platform "linux/$ARCH" --provenance=false \
-              --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
-              --file - "$placeholder"
-            for _ in 1 2 3 4 5 6; do
-              state=$(node tools/runner-image-registry.mjs visibility)
-              [ "$state" = absent ] || break
-              sleep 10
-            done
-          fi
-          if [ "$state" != private ]; then
-            echo "::error::the package is $state, not private, so nothing is pushed"
-            exit 1
-          fi
-          echo "the package is private"
+        run: node tools/image-registry.mjs ensure-private "$ARCH"
 
       - name: Build the runner image, to check it here
         if: env.PUBLISH != 'true'
@@ -336,18 +316,18 @@ jobs:
       # The package stays private until the operator rules to publish it. Before anything is
       # tagged or signed, the packages API has to say `private` and the registry has to refuse
       # both images to a puller who has not signed in. An answer that shows neither stops the
-      # run (`tools/runner-image-registry.mjs` fails closed).
+      # run (`tools/image-registry.mjs` fails closed).
       - name: The images are private
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          state=$(node tools/runner-image-registry.mjs visibility)
+          state=$(node tools/image-registry.mjs visibility)
           if [ "$state" != private ]; then
             echo "::error::the package is $state, not private"
             exit 1
           fi
-          node tools/runner-image-registry.mjs anonymous \
+          node tools/image-registry.mjs anonymous \
             "$(cat "$RUNNER_TEMP/digests/amd64")" "$(cat "$RUNNER_TEMP/digests/arm64")"
 
       # `main` only moves forward, as the dev channel does (`tools/dev-build-order.mjs`): `ci`
@@ -359,13 +339,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          order=$(node tools/runner-image-registry.mjs order "$SHA")
+          order=$(node tools/image-registry.mjs order "$SHA")
           echo "$order"
           tags=(--tag "$IMAGE:sha-$SHA")
           case "$order" in
             main:*) tags+=(--tag "$IMAGE:main") ;;
             sha-only:*) echo "::notice::main is not moved: ${order#sha-only: }" ;;
-            *) echo "::error::tools/runner-image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
+            *) echo "::error::tools/image-registry.mjs answered neither main nor sha-only: $order"; exit 1 ;;
           esac
           docker buildx imagetools create "${tags[@]}" \
             "$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" \
