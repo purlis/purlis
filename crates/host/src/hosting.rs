@@ -35,9 +35,9 @@
 //! **A held project is saved here when the window asks** (#2002): the host runs the binary's
 //! saver for it ([`Save`]), the project's watcher and auto-save, built on the core as a start
 //! is composed, and tells every window that holds the project there what each look did. One
-//! saver per project at each place it is held (#2178), however often it is asked. A link that ends without a word leaves it saving, so the project is saved
-//! while the window is gone for a moment; the window's own stop, or every window letting go of
-//! the project, ends it.
+//! saver per project at each place it is held (#2178), however often it is asked. A link that
+//! ends without a word leaves it saving, so the project is saved while the window is gone for a
+//! moment; the window's own stop, or every window letting go of the project, ends it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -372,34 +372,37 @@ enum Owner {
     Program(String),
 }
 
-/// A project, by its stable id, at the folder it is held at on this machine: what the host
-/// holds, deals numbers in, hears hooks from and saves. The id is the project's on the wire;
-/// which of its clones a command means is the one its link holds (#2178).
+/// A place: a project, by its stable id, at the folder it is held at on this machine, by the
+/// folder's canonical path, so one folder is one place however its path is spelled. What the
+/// host holds, deals numbers in, hears hooks from and saves. The id is the project's on the
+/// wire; which of its clones a command means is the one its link holds (#2178).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct HeldAt {
     project: String,
     path: PathBuf,
 }
 
+/// The place `link` holds `project` at, if it holds it.
+fn held_by<'a>(state: &'a State, project: &str, link: u64) -> Option<&'a HeldAt> {
+    state
+        .projects
+        .iter()
+        .find(|(at, held)| at.project == project && held.links.contains_key(&link))
+        .map(|(at, _)| at)
+}
+
 /// Where `project` is for a command from `link`: the place the link holds it at, or, for a link
 /// that holds it nowhere, the one place it is held. A project held at two places, neither the
 /// link's, is not guessed at.
 fn held_at(state: &State, project: &str, link: u64) -> Result<HeldAt, Refusal> {
-    let places: Vec<(&HeldAt, &Held)> = state
-        .projects
-        .iter()
-        .filter(|(at, _)| at.project == project)
-        .collect();
-    if let Some((at, _)) = places
-        .iter()
-        .find(|(_, held)| held.links.contains_key(&link))
-    {
-        return Ok((*at).clone());
+    if let Some(at) = held_by(state, project, link) {
+        return Ok(at.clone());
     }
-    match places.as_slice() {
-        [] => Err(no_such_project(project)),
-        [(at, _)] => Ok((*at).clone()),
-        _ => Err(Refusal {
+    let mut places = state.projects.keys().filter(|at| at.project == project);
+    match (places.next(), places.next()) {
+        (None, _) => Err(no_such_project(project)),
+        (Some(at), None) => Ok(at.clone()),
+        (Some(_), Some(_)) => Err(Refusal {
             code: session::NO_SUCH_PROJECT.into(),
             why: format!(
                 "project {project} is held at more than one place on this host, and this link \
@@ -409,17 +412,18 @@ fn held_at(state: &State, project: &str, link: u64) -> Result<HeldAt, Refusal> {
     }
 }
 
-/// Where `project` is saved for a command from `link`: as [`held_at`] says, or, where nobody
-/// holds it any more (a window that ended leaves it saved), the one place it is saved.
-fn saved_at(state: &State, project: &str, link: u64) -> Option<HeldAt> {
-    if let Ok(at) = held_at(state, project, link) {
-        return Some(at);
+/// Where `project` is saved for a command from `link`: as [`held_at`] says while any place
+/// holds it, or, once nobody holds it any more (a window that ended leaves it saved), the one
+/// place it is still saved, if there is one.
+fn saved_at(state: &State, project: &str, link: u64) -> Result<Option<HeldAt>, Refusal> {
+    if state.projects.keys().any(|at| at.project == project) {
+        return held_at(state, project, link).map(Some);
     }
     let mut saved = state.saving.keys().filter(|at| at.project == project);
-    match (saved.next(), saved.next()) {
+    Ok(match (saved.next(), saved.next()) {
         (Some(at), None) => Some(at.clone()),
         _ => None,
-    }
+    })
 }
 
 struct Held {
@@ -716,26 +720,28 @@ impl Hosting {
     }
 
     fn hold(&self, project: String, path: String, peer: &Peer) -> Result<Answer, Refusal> {
-        let path = PathBuf::from(path);
-        if !path.is_absolute() || !path.is_dir() {
-            return Err(Refusal {
-                code: session::NO_SUCH_PROJECT.into(),
-                why: format!(
-                    "{} is not a folder on this machine, so project {project} is not held",
-                    path.display()
-                ),
-            });
-        }
+        let given = PathBuf::from(path);
+        // One folder is one place however its path is spelled.
+        let path = match std::fs::canonicalize(&given) {
+            Ok(path) if given.is_absolute() && path.is_dir() => path,
+            _ => {
+                return Err(Refusal {
+                    code: session::NO_SUCH_PROJECT.into(),
+                    why: format!(
+                        "{} is not a folder on this machine, so project {project} is not held",
+                        given.display()
+                    ),
+                });
+            }
+        };
         let link = link_of(peer);
         let at = HeldAt { project, path };
         let mut state = self.state();
         // A project held is where this link first held it until the link lets go: a link holds
         // each project at one place, and no hold moves where another link holds it (#2178).
-        if let Some(elsewhere) = state.projects.iter().find_map(|(held_at, held)| {
-            (held_at.project == at.project && held_at.path != at.path)
-                .then_some(held_at)
-                .filter(|_| held.links.contains_key(&link))
-        }) {
+        if let Some(elsewhere) =
+            held_by(&state, &at.project, link).filter(|held| held.path != at.path)
+        {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: format!(
@@ -784,12 +790,7 @@ impl Hosting {
         let link = link_of(peer);
         let mut state = self.state();
         // A link lets go only of its own holds.
-        let Some(at) = state
-            .projects
-            .iter()
-            .find(|(at, held)| at.project == project && held.links.contains_key(&link))
-            .map(|(at, _)| at.clone())
-        else {
+        let Some(at) = held_by(&state, project, link).cloned() else {
             return Err(no_such_project(project));
         };
         let Some(held) = state.projects.get_mut(&at) else {
@@ -1501,7 +1502,7 @@ impl Hosting {
     async fn stop_saving(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let saving = {
             let mut state = self.state();
-            saved_at(&state, project, link_of(peer)).and_then(|at| state.saving.remove(&at))
+            saved_at(&state, project, link_of(peer))?.and_then(|at| state.saving.remove(&at))
         };
         if let Some(saving) = saving {
             let _ = tokio::task::spawn_blocking(move || drop(saving)).await;
@@ -1511,7 +1512,7 @@ impl Hosting {
 
     fn fetch(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let state = self.state();
-        let saving = saved_at(&state, project, link_of(peer))
+        let saving = saved_at(&state, project, link_of(peer))?
             .and_then(|at| state.saving.get(&at))
             .ok_or_else(|| Refusal {
                 code: session::NO_SUCH_PROJECT.into(),

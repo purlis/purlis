@@ -37,6 +37,8 @@ static HELD: std::sync::LazyLock<Credentials> =
 struct Heard {
     said: Arc<Mutex<Vec<String>>>,
     hand_on: Arc<Mutex<Option<HandOn>>>,
+    /// What each channel was handed, by its folder's name.
+    hands_on_at: Arc<Mutex<std::collections::HashMap<String, HandOn>>>,
 }
 
 impl Heard {
@@ -53,6 +55,12 @@ impl Heard {
         let hand_on = self.hand_on.lock().unwrap().clone().expect("a channel");
         hand_on(id, line)
     }
+
+    /// [`Self::hands_on`], from the channel of the place at `folder`.
+    fn hands_on_at(&self, folder: &Path, id: u64, line: serde_json::Value) -> bool {
+        let hand_on = self.hands_on_at.lock().unwrap()[&file_name(folder)].clone();
+        hand_on(id, line)
+    }
 }
 
 /// Opens a stand-in channel that keeps what it is asked in [`Heard`].
@@ -66,6 +74,11 @@ impl Hear for Hears {
         hand_on: HandOn,
     ) -> Result<Option<Arc<dyn Channel>>, String> {
         self.0.say(format!("open {project} at {}", file_name(path)));
+        self.0
+            .hands_on_at
+            .lock()
+            .unwrap()
+            .insert(file_name(path), hand_on.clone());
         *self.0.hand_on.lock().unwrap() = Some(hand_on);
         Ok(Some(Arc::new(StandInChannel(self.0.clone()))))
     }
@@ -432,9 +445,8 @@ async fn each_clone_of_a_project_has_its_own_channel_and_its_lines_reach_only_it
         .unwrap();
     let mut events = linked.events;
 
-    // The last channel opened is the second clone's.
     let line = json!({"report": {"chat": 1, "event": "stop"}});
-    assert!(linked.heard.hands_on(21, line.clone()));
+    assert!(linked.heard.hands_on_at(clone.path(), 21, line.clone()));
     let pushed = loop {
         match timeout(PATIENCE, told.recv()).await {
             Ok(Some(Told::Pushed(pushed @ Pushed::Heard { .. }))) => break pushed,

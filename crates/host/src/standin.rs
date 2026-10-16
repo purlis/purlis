@@ -194,6 +194,19 @@ impl Savers {
         }
     }
 
+    /// Its saving of the project at `path` looks, and did `looked`.
+    pub fn looks_at(&self, path: &std::path::Path, looked: Looked) {
+        let told = {
+            let saved = self.0.lock().unwrap();
+            saved
+                .started
+                .iter()
+                .rposition(|(_, at)| at == path)
+                .and_then(|which| saved.told.get(which).cloned())
+        };
+        told.expect("a saving of that path")(looked);
+    }
+
     /// Who its last saving is told works in its project.
     pub fn working(&self) -> Vec<Working> {
         let working = self.0.lock().unwrap().working.last().cloned();

@@ -3,9 +3,10 @@
 
 //! A project's saving in the session host (#2002), spoken over the session protocol on an
 //! in-memory link: the window asks the host to save a project it holds, the host runs its
-//! binary's saver for it, once, and tells every window that holds it what each look did. The saver goes
-//! on when the window's link ends without a word, and stops when the window says so. The saver
-//! here is a stand-in; the app's own, over a real project, is the app's behaviour suite.
+//! binary's saver for it, once, and tells every window that holds it what each look did. The
+//! saver goes on when the window's link ends without a word, and stops when the window says so.
+//! The saver here is a stand-in; the app's own, over a real project, is the app's behaviour
+//! suite.
 
 #![cfg(unix)]
 
@@ -26,6 +27,11 @@ const PATIENCE: Duration = Duration::from_secs(5);
 
 static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().unwrap());
+
+/// The place the host holds `folder` at: the folder, however its path is spelled.
+fn place(folder: &tempfile::TempDir) -> std::path::PathBuf {
+    std::fs::canonicalize(folder.path()).unwrap()
+}
 
 struct Host {
     hosting: Hosting,
@@ -50,6 +56,16 @@ fn a_host() -> Host {
 
 /// A window: a `local-ui` link to the host, with the project held on it.
 async fn a_window(host: &Host) -> (Client, Events) {
+    let (client, events) = a_link(host).await;
+    client
+        .hold_project(PROJECT, host.project.path().to_str().unwrap())
+        .await
+        .expect("the project is held");
+    (client, events)
+}
+
+/// A `local-ui` link to the host, holding nothing.
+async fn a_link(host: &Host) -> (Client, Events) {
     let (a, b) = duplex(256 * 1024);
     let (client, served) = tokio::join!(
         link::connect(
@@ -62,10 +78,6 @@ async fn a_window(host: &Host) -> (Client, Events) {
     );
     tokio::spawn(session::serve(served.unwrap(), host.hosting.clone(), None));
     let (client, _views, events) = Client::new(client.unwrap());
-    client
-        .hold_project(PROJECT, host.project.path().to_str().unwrap())
-        .await
-        .expect("the project is held");
     (client, events)
 }
 
@@ -107,7 +119,7 @@ async fn a_held_project_is_saved_by_one_saver_however_often_it_is_asked() {
     let started = host.savers.started();
     assert_eq!(started.len(), 1, "a second saver was started");
     assert_eq!(started[0].0, PROJECT);
-    assert_eq!(started[0].1, host.project.path());
+    assert_eq!(started[0].1, place(&host.project));
     assert_eq!(host.savers.running(), 1);
 }
 
@@ -156,11 +168,13 @@ async fn each_clone_of_a_project_has_its_own_saver_and_only_its_window_hears_its
 
     first.start_saving(PROJECT).await.unwrap();
     second.start_saving(PROJECT).await.unwrap();
-    // The last saver started is the second clone's.
-    host.savers.looks(Looked {
-        saved: true,
-        moved_tree: false,
-    });
+    host.savers.looks_at(
+        &place(&clone.project),
+        Looked {
+            saved: true,
+            moved_tree: false,
+        },
+    );
 
     let started = host.savers.started();
     assert_eq!(started.len(), 2, "each clone has a saver of its own");
@@ -174,6 +188,32 @@ async fn each_clone_of_a_project_has_its_own_saver_and_only_its_window_hears_its
             .await
             .is_err(),
         "the first clone's window was told the second's look"
+    );
+}
+
+#[tokio::test]
+async fn a_link_that_holds_neither_of_two_clones_stops_neither_saver() {
+    let host = a_host();
+    let (first, _first_told) = a_window(&host).await;
+    first.start_saving(PROJECT).await.unwrap();
+    let clone = Host {
+        hosting: host.hosting.clone(),
+        savers: host.savers.clone(),
+        project: tempfile::tempdir().unwrap(),
+    };
+    let (_second, _second_told) = a_window(&clone).await;
+    let (neither, _told) = a_link(&host).await;
+
+    let stopped = neither.stop_saving(PROJECT).await;
+
+    assert_eq!(
+        stopped.unwrap_err().refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_PROJECT)
+    );
+    assert_eq!(
+        host.savers.running(),
+        1,
+        "the first clone's saver was stopped"
     );
 }
 
