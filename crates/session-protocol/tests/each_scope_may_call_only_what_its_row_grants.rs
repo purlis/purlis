@@ -280,6 +280,7 @@ fn every_command() -> Vec<Command> {
             program: CHAT.into(),
             call_id: "c-1".into(),
             act: purlis_session_protocol::browsing::Act::Pages,
+            reach: None,
         },
         // A window that comes back takes a held project's programs again, and a quit ends the
         // host: the window's alone (1.13).

@@ -167,7 +167,7 @@ fn a_key(aim: &str) -> BrowserInput {
 #[test]
 fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_the_page() {
     use crate::chatbrowsers::{Driver, Refused};
-    use purlis_session_protocol::browsing::Act;
+    use purlis_session_protocol::browsing::{Act, BrowserReach};
 
     let window = window();
     let program = window.browsers.open(&window.root).unwrap();
@@ -199,7 +199,13 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
     );
 
     window.browsers.take_over(&program).unwrap();
-    let refused = Driver::act(&window.browsers, &program, "c-1", Act::Pages);
+    let refused = Driver::act(
+        &window.browsers,
+        &program,
+        "c-1",
+        Act::Pages,
+        BrowserReach::default(),
+    );
     assert!(
         matches!(&refused, Err(Refused::Said(why)) if why.contains("the person has taken this browser over")),
         "{refused:?}"
@@ -216,7 +222,16 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
     );
 
     window.browsers.hand_back(&program).unwrap();
-    assert!(Driver::act(&window.browsers, &program, "c-2", Act::Pages).is_ok());
+    assert!(
+        Driver::act(
+            &window.browsers,
+            &program,
+            "c-2",
+            Act::Pages,
+            BrowserReach::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]

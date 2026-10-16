@@ -166,3 +166,27 @@ fn a_kind_no_block_raises_tells_nothing() {
     kept_blocked(&chats, 3, (GrantWhat::PersonaHosts, "steward"), None);
     assert!(told(&talk, 3).is_empty());
 }
+
+#[test]
+fn an_allow_of_a_site_a_chats_browser_asked_about_tells_that_chat_once() {
+    use purlis_core::sandbox::grant::{self, Level};
+    let (chats, talk) = chats_and_talk();
+    chats.ask_for_its_browser(3, &["news.example.org:443".to_owned()]);
+    chats.ask_for_its_browser(4, &["news.example.org:443".to_owned()]);
+    let host = grant::host("news.example.org:443").unwrap();
+    chats.allow_live(Some(3), &host, Level::Chat);
+    let three = told(&talk, 3);
+    assert_eq!(three.len(), 1, "{three:?}");
+    assert!(three[0].contains("news.example.org"), "{three:?}");
+    assert!(
+        told(&talk, 4).is_empty(),
+        "this chat's Allow reaches no other chat"
+    );
+    chats.allow_live(Some(3), &host, Level::You);
+    assert_eq!(told(&talk, 3).len(), 1, "told once");
+    assert_eq!(
+        told(&talk, 4).len(),
+        1,
+        "the project's Allow reaches every chat that asked"
+    );
+}

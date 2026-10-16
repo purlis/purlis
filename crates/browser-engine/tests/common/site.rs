@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use purlis_browser_engine::drive::{Browser, Limits};
+use purlis_browser_engine::drive::{Browser, Judge, Limits};
 use purlis_browser_engine::launch::{Launch, ReachProxy};
 use purlis_browser_engine::machine::machine_chrome;
 use purlis_browser_engine::process::{Engine, Keeper};
@@ -188,6 +188,15 @@ fn respond(
 /// `None` where no engine runs (and then nothing listens). Keep the folder and the site for as
 /// long as the browser.
 pub fn started() -> Option<(Browser, tempfile::TempDir, Site)> {
+    started_with(None)
+}
+
+/// [`started`], every request of its pages told to `judge` (#2018).
+pub fn started_judged(judge: Judge) -> Option<(Browser, tempfile::TempDir, Site)> {
+    started_with(Some(judge))
+}
+
+fn started_with(judge: Option<Judge>) -> Option<(Browser, tempfile::TempDir, Site)> {
     let program = engine_program()?;
     say_failures_on_ci();
     let site = serve();
@@ -207,5 +216,9 @@ pub fn started() -> Option<(Browser, tempfile::TempDir, Site)> {
         settle_within: Duration::from_secs(20),
         ..Limits::default()
     };
-    Some((Browser::new(engine, limits).unwrap(), data, site))
+    let browser = match judge {
+        Some(judge) => Browser::judged(engine, limits, judge),
+        None => Browser::new(engine, limits),
+    };
+    Some((browser.unwrap(), data, site))
 }

@@ -1,0 +1,335 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! Where a browser may go (#2018): every request a page is about to send is held until it is
+//! judged, told as what it is (a read, an address the agent wrote, or something sent), and let
+//! on or failed as the judge says; a site the judge asks about is in the act's answer.
+
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use serde_json::json;
+
+use super::{browser_judged, id, ref_of, snapshot};
+use crate::WebAddress;
+use crate::drive::{Call, Driver, Field, Gate, Judge, Outbound, Why};
+
+/// A judge that keeps every request it is told, and asks about each address `asks` holds.
+fn judge(asks: &'static [&'static str]) -> (Judge, Arc<Mutex<Vec<Outbound>>>) {
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let keep = Arc::clone(&told);
+    let judge: Judge = Arc::new(move |out: &Outbound| {
+        keep.lock().unwrap().push(out.clone());
+        match asks.iter().find(|ask| out.address.starts_with(**ask)) {
+            Some(_) => Gate::Ask {
+                site: "new.test:443".to_owned(),
+            },
+            None => Gate::Go,
+        }
+    });
+    (judge, told)
+}
+
+/// The engine is about to send `method` to `url` for frame `frame`, as a `kind` of resource.
+fn paused(engine: &super::Engine, request: &str, url: &str, method: &str, kind: &str, frame: &str) {
+    engine.emit(
+        "Fetch.requestPaused",
+        json!({
+            "requestId": request,
+            "request": { "url": url, "method": method, "headers": {} },
+            "frameId": frame,
+            "resourceType": kind,
+        }),
+        None,
+    );
+}
+
+/// Waits until the driver answered request `request`, and says how: `continue` or `fail`.
+fn answered(engine: &super::Engine, request: &str) -> String {
+    let start = Instant::now();
+    loop {
+        for (method, said) in [
+            ("Fetch.continueRequest", "continue"),
+            ("Fetch.failRequest", "fail"),
+        ] {
+            if engine
+                .sent(method)
+                .iter()
+                .any(|s| s.params["requestId"] == request)
+            {
+                return said.to_owned();
+            }
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "request {request} was never answered"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn whys(told: &Mutex<Vec<Outbound>>) -> Vec<(String, Why, Driver)> {
+    told.lock()
+        .unwrap()
+        .iter()
+        .map(|out| (out.address.clone(), out.why, out.by))
+        .collect()
+}
+
+#[test]
+fn a_judged_browser_holds_every_request_of_every_page_until_it_is_judged() {
+    let (judge, _) = judge(&[]);
+    let (_browser, engine) = browser_judged(judge);
+    let enabled = engine.sent("Fetch.enable");
+    assert_eq!(enabled.len(), 1, "requests are held once, browser-wide");
+    assert_eq!(enabled[0].session, None);
+    assert_eq!(
+        enabled[0].params["patterns"],
+        json!([{ "urlPattern": "*", "requestStage": "Request" }])
+    );
+}
+
+#[test]
+fn what_a_page_reads_is_told_as_a_read_and_let_on() {
+    let (judge, told) = judge(&[]);
+    let (_browser, engine) = browser_judged(judge);
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/logo.png",
+        "GET",
+        "Image",
+        "PAGE-1",
+    );
+    // A link the page offered, followed: a document of the page's own, nobody wrote it.
+    paused(
+        &engine,
+        "R2",
+        "https://new.test/next",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R1"), "continue");
+    assert_eq!(answered(&engine, "R2"), "continue");
+    assert_eq!(
+        whys(&told),
+        vec![
+            (
+                "https://new.test/logo.png".into(),
+                Why::Reads,
+                Driver::Agent
+            ),
+            ("https://new.test/next".into(), Why::Reads, Driver::Agent),
+        ]
+    );
+}
+
+#[test]
+fn a_request_with_a_body_is_told_as_sending() {
+    let (judge, told) = judge(&["https://new.test/"]);
+    let (_browser, engine) = browser_judged(judge);
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/save",
+        "POST",
+        "XHR",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R1"), "fail");
+    let failed = &engine.sent("Fetch.failRequest")[0];
+    assert_eq!(failed.params["errorReason"], "BlockedByClient");
+    assert_eq!(whys(&told)[0].1, Why::Sends);
+}
+
+#[test]
+fn a_form_the_page_submits_is_told_as_sending_though_it_is_a_get() {
+    let (judge, told) = judge(&[]);
+    let (_browser, engine) = browser_judged(judge);
+    engine.emit(
+        "Page.frameRequestedNavigation",
+        json!({
+            "frameId": "PAGE-1",
+            "reason": "formSubmissionGet",
+            "url": "https://new.test/search?q=what+was+typed#top",
+            "disposition": "currentTab",
+        }),
+        Some("S-PAGE-1"),
+    );
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/search?q=what+was+typed",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R1"), "continue");
+    assert_eq!(whys(&told)[0].1, Why::Sends);
+}
+
+#[test]
+fn an_address_the_agent_writes_and_where_it_redirects_are_told_as_addressed() {
+    let (judge, told) = judge(&["https://new.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    engine.on(move |sent, engine| {
+        if sent.method == "Page.navigate" {
+            // The address the agent wrote, then the site it redirects to.
+            paused(
+                engine,
+                "R1",
+                "https://known.test/go",
+                "GET",
+                "Document",
+                "PAGE-1",
+            );
+            paused(
+                engine,
+                "R2",
+                "https://new.test/landing",
+                "GET",
+                "Document",
+                "PAGE-1",
+            );
+        }
+        None
+    });
+    let answer = browser
+        .call(
+            &id(1),
+            Call::Navigate {
+                page: None,
+                address: WebAddress::parse("https://known.test/go").unwrap(),
+            },
+        )
+        .unwrap();
+    assert_eq!(answered(&engine, "R1"), "continue");
+    assert_eq!(answered(&engine, "R2"), "fail");
+    assert_eq!(
+        whys(&told)
+            .into_iter()
+            .map(|(_, why, _)| why)
+            .collect::<Vec<_>>(),
+        vec![Why::Addressed, Why::Addressed]
+    );
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    // Once the act has answered, the page's own documents are reads again.
+    paused(
+        &engine,
+        "R3",
+        "https://known.test/next",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R3"), "continue");
+    assert_eq!(whys(&told)[2].1, Why::Reads);
+}
+
+#[test]
+fn typing_on_a_page_of_a_site_the_judge_asks_about_types_nothing_and_says_so() {
+    // The stand-in's page is at http://fixture.test/frames.html.
+    let (judge, told) = judge(&["http://fixture.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let text = snapshot(&browser, 1);
+    let name = ref_of(&text, "- textbox \"Name\"");
+    let answer = browser
+        .call(
+            &id(2),
+            Call::Type {
+                page: None,
+                fields: vec![Field {
+                    into: Some(name),
+                    text: "Grace".into(),
+                    replace: true,
+                }],
+            },
+        )
+        .unwrap();
+    assert!(engine.sent("Input.insertText").is_empty());
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+    assert!(answer.note.unwrap().contains("nothing was typed"));
+    let typing = whys(&told);
+    assert_eq!(
+        typing.last().unwrap(),
+        &(
+            "http://fixture.test/frames.html".to_owned(),
+            Why::Sends,
+            Driver::Agent
+        )
+    );
+}
+
+#[test]
+fn keys_pressed_on_a_page_of_a_site_the_judge_asks_about_are_held_back() {
+    let (judge, _) = judge(&["http://fixture.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let answer = browser
+        .call(
+            &id(1),
+            Call::Press {
+                page: None,
+                keys: vec!["Enter".into()],
+            },
+        )
+        .unwrap();
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+    assert_eq!(answer.asked, vec!["new.test:443".to_owned()]);
+}
+
+#[test]
+fn while_the_person_drives_every_request_is_told_as_theirs() {
+    let (judge, told) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    browser.take_over();
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/save",
+        "POST",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R1"), "continue");
+    assert_eq!(whys(&told)[0].2, Driver::Person);
+    browser.hand_back();
+    paused(
+        &engine,
+        "R2",
+        "https://new.test/save",
+        "POST",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R2"), "continue");
+    assert_eq!(whys(&told)[1].2, Driver::Agent);
+}
+
+#[test]
+fn a_site_asked_about_between_acts_is_told_in_the_next_answer_once() {
+    let (judge, _) = judge(&["https://new.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/beacon",
+        "POST",
+        "Ping",
+        "PAGE-1",
+    );
+    paused(
+        &engine,
+        "R2",
+        "https://new.test/beacon",
+        "POST",
+        "Ping",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R2"), "fail");
+    let first = browser.call(&id(1), Call::Pages).unwrap();
+    assert_eq!(first.asked, vec!["new.test:443".to_owned()]);
+    let next = browser.call(&id(2), Call::Pages).unwrap();
+    assert!(next.asked.is_empty());
+}

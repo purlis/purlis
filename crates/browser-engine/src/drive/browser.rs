@@ -4,8 +4,8 @@
 //! One browser's pages, driven over DevTools: what the engine's events say about its pages and
 //! frames, and each call made into the engine's own calls.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -21,8 +21,8 @@ use super::screencast::Screencast;
 use super::settle::{Activity, Settle, activity};
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
 use super::{
-    Aim, Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Painted, Ref,
-    Refusal, Settled, lock,
+    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Judge, Limits, Outbound,
+    PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
@@ -107,6 +107,12 @@ const POLL: Duration = Duration::from_millis(50);
 const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
+/// The most form submissions remembered until their request is seen (#2018).
+const FORMS_KEPT: usize = 16;
+/// The most sites asked about that wait for the next answer (#2018).
+const ASKED_KEPT: usize = 16;
+/// How long the driver waits for the engine to take its word on a held request (#2018).
+const JUDGED_WITHIN: Duration = Duration::from_secs(5);
 
 /// Whether a page may stay open at `address`: a web address, an empty page (or one with no
 /// address yet), or the engine's own page for a load that failed. Every other page is closed.
@@ -260,9 +266,44 @@ struct State {
     /// What the person typed while driving (#2014): kept out of every answer about every page
     /// of the browser, a page opened later included.
     kept: Vec<String>,
+    /// The page whose address the agent's act is sending it to, while that act lasts (#2018):
+    /// its documents are the agent's address, redirects included.
+    addressing: Option<String>,
+    /// Addresses forms were submitted to, each until its request is seen (#2018).
+    forms: VecDeque<String>,
+    /// The sites the judge asked about since the last answer, each once (#2018).
+    asked: Vec<String>,
 }
 
 impl State {
+    /// Why a request to `address` by `method` is sent (#2018): a body or a submitted form
+    /// sends; a document of the page the agent's act is addressing is the agent's address;
+    /// anything else reads.
+    fn why(&mut self, address: &str, method: &str, document: bool, frame: Option<&str>) -> Why {
+        let bare = without_fragment(address);
+        let submitted = document
+            && self
+                .forms
+                .iter()
+                .position(|form| form == bare)
+                .map(|at| self.forms.remove(at))
+                .is_some();
+        if submitted || !matches!(method, "GET" | "HEAD" | "OPTIONS") {
+            Why::Sends
+        } else if document && frame.is_some() && frame == self.addressing.as_deref() {
+            Why::Addressed
+        } else {
+            Why::Reads
+        }
+    }
+
+    /// Keeps `site` to be said in the next answer, once.
+    fn ask(&mut self, site: &str) {
+        if !self.asked.iter().any(|one| one == site) && self.asked.len() < ASKED_KEPT {
+            self.asked.push(site.to_owned());
+        }
+    }
+
     fn page(&self, target: &str) -> Option<&Page> {
         self.pages.iter().find(|p| p.target == target)
     }
@@ -402,6 +443,11 @@ enum FollowUp {
     Close(String),
     SetUp(String),
     Release(String),
+    /// A request held until the judge says whether it goes (#2018).
+    Judge {
+        request: String,
+        outbound: Outbound,
+    },
 }
 
 pub(crate) struct Inner {
@@ -413,6 +459,10 @@ pub(crate) struct Inner {
     pub(crate) cast: Screencast,
     /// Who is told once the engine has ended, however it ended.
     ends: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Who judges where its pages may go (#2018), when anyone does.
+    judge: Option<Judge>,
+    /// Whether the person drives (#2014): every request is then theirs (#2018).
+    person_drives: AtomicBool,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -457,19 +507,42 @@ pub struct Browser {
 impl Browser {
     /// Drives `engine`'s pages within `limits`. The engine's events are the browser's from now.
     #[cfg(unix)]
-    pub fn new(mut engine: crate::process::Engine, limits: Limits) -> Result<Self, Refusal> {
+    pub fn new(engine: crate::process::Engine, limits: Limits) -> Result<Self, Refusal> {
+        Self::driving(engine, limits, None)
+    }
+
+    /// [`Browser::new`], every request of every page held until `judge` has said whether it
+    /// goes (#2018). Refused where the engine will not hold them, so a browser never runs
+    /// unjudged that was meant to be judged.
+    #[cfg(unix)]
+    pub fn judged(
+        engine: crate::process::Engine,
+        limits: Limits,
+        judge: Judge,
+    ) -> Result<Self, Refusal> {
+        Self::driving(engine, limits, Some(judge))
+    }
+
+    #[cfg(unix)]
+    fn driving(
+        mut engine: crate::process::Engine,
+        limits: Limits,
+        judge: Option<Judge>,
+    ) -> Result<Self, Refusal> {
         let events = engine.take_events().ok_or(Refusal::Ended)?;
         let devtools: Arc<dyn DevTools> = engine.devtools_shared();
-        let mut browser = Self::over(devtools, events, limits)?;
+        let mut browser = Self::over(devtools, events, limits, judge)?;
         browser.engine = Mutex::new(Some(engine));
         Ok(browser)
     }
 
-    /// Drives the pages `devtools` reaches, reading their events from `events`.
+    /// Drives the pages `devtools` reaches, reading their events from `events`, each request
+    /// told to `judge` where there is one.
     pub(crate) fn over(
         devtools: Arc<dyn DevTools>,
         events: Receiver<Event>,
         limits: Limits,
+        judge: Option<Judge>,
     ) -> Result<Self, Refusal> {
         let inner = Arc::new(Inner {
             devtools,
@@ -478,6 +551,8 @@ impl Browser {
             limits: limits.clone(),
             cast: Screencast::new(),
             ends: Mutex::new(None),
+            judge,
+            person_drives: AtomicBool::new(false),
         });
         Screencast::start(&inner);
         let reading = inner.clone();
@@ -495,6 +570,18 @@ impl Browser {
                 }
             })
             .map_err(|e| Refusal::Engine(e.to_string()))?;
+        // Held browser-wide, before any page is known, so no page sends anything unjudged:
+        // every frame's, every worker's.
+        if inner.judge.is_some() {
+            inner
+                .devtools
+                .call(
+                    "Fetch.enable",
+                    json!({ "patterns": [{ "urlPattern": "*", "requestStage": "Request" }] }),
+                    None,
+                )
+                .map_err(refusal)?;
+        }
         inner
             .devtools
             .call(
@@ -561,13 +648,16 @@ impl Browser {
         // is kept by id.
         if call.only_reads() {
             let _one = lock(&self.acting);
-            return self.run_at(epoch, call);
+            return self
+                .run_at(epoch, call)
+                .map(|answer| self.with_asked(answer));
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
                 let answer = {
                     let _one = lock(&self.acting);
                     self.run_at(epoch, call)
+                        .map(|answer| self.with_asked(answer))
                 };
                 ticket.finish(answer.clone());
                 answer
@@ -578,6 +668,42 @@ impl Browser {
             }),
             Begin::Reused => Err(Refusal::IdReused(id.as_str().to_owned())),
         }
+    }
+
+    /// `answer`, with the sites the judge asked about since the last answer (#2018).
+    fn with_asked(&self, mut answer: Answer) -> Answer {
+        answer.asked = std::mem::take(&mut lock(&self.inner.state).asked);
+        answer
+    }
+
+    /// Where the agent is about to type on `target`'s page (#2018): judged as something sent to
+    /// the page's site. Where the judge asks, nothing is typed, and the answer says so.
+    fn typing_held(&self, target: &str) -> Option<Answer> {
+        let judge = self.inner.judge.as_ref()?;
+        let address = lock(&self.inner.state).page(target)?.url.clone();
+        let outbound = Outbound {
+            address,
+            method: String::new(),
+            why: Why::Sends,
+            by: Driver::Agent,
+        };
+        let Gate::Ask { site } = judge(&outbound) else {
+            return None;
+        };
+        lock(&self.inner.state).ask(&site);
+        let mut answer = self.answer_now(target, Content::Nothing);
+        answer.note = Some(format!(
+            "nothing was typed: this page is on {site}, a site new to this project, and purlis \
+             asked the person whether this browser may send to it"
+        ));
+        Some(answer)
+    }
+
+    /// Marks `target`'s page as the one the agent's act is sending to an address, until the
+    /// mark is dropped (#2018).
+    fn addressing(&self, target: &str) -> Addressing<'_> {
+        lock(&self.inner.state).addressing = Some(target.to_owned());
+        Addressing(&self.inner)
     }
 
     /// The engine's own pid, while this browser holds its engine.
@@ -659,6 +785,7 @@ impl Browser {
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;
+                let _addressing = self.addressing(&target);
                 self.acting_on(&target, || self.navigate(&session, &address))
             }
             Call::Snapshot {
@@ -730,6 +857,9 @@ impl Browser {
             Call::Type { page, fields } => self.type_into(page.as_ref(), &fields),
             Call::Press { page, keys } => {
                 let target = self.target(page.as_ref())?;
+                if let Some(held) = self.typing_held(&target) {
+                    return Ok(held);
+                }
                 let session = self.page_session(&target)?;
                 let mut events = Vec::new();
                 for chord in &keys {
@@ -771,6 +901,7 @@ impl Browser {
                         content: Content::Nothing,
                         note: None,
                         repeated: false,
+                        asked: Vec::new(),
                     },
                 };
                 answer.content = Content::Pages(pages);
@@ -875,6 +1006,7 @@ impl Browser {
         drop(state);
         let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
+        let _addressing = self.addressing(&target);
         self.acting_on(&target, || self.navigate(&session, address))
     }
 
@@ -968,6 +1100,7 @@ impl Browser {
             content,
             note,
             repeated: false,
+            asked: Vec::new(),
         }
     }
 
@@ -1359,6 +1492,9 @@ impl Browser {
             Some(first) if page.is_none() => self.locate(first)?.target,
             _ => self.target(page)?,
         };
+        if let Some(held) = self.typing_held(&target) {
+            return Ok(held);
+        }
         let session = self.page_session(&target)?;
         let mut located = Vec::new();
         for field in fields {
@@ -1425,6 +1561,9 @@ impl Browser {
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
         let at = self.locate(target)?;
         let page = at.target.clone();
+        if let Some(held) = self.typing_held(&page) {
+            return Ok(held);
+        }
         let resolved = self
             .devtools()
             .call(
@@ -1897,6 +2036,40 @@ impl Inner {
                         state.frame_seen(session, &params["frame"], true);
                     }
                 }
+                // A form submitted (#2018): its request, when it comes, sends what was typed.
+                "Page.frameRequestedNavigation" => {
+                    if text("/reason").is_some_and(|reason| reason.starts_with("formSubmission"))
+                        && let Some(url) = text("/url")
+                    {
+                        if state.forms.len() >= FORMS_KEPT {
+                            state.forms.pop_front();
+                        }
+                        state.forms.push_back(without_fragment(&url).to_owned());
+                    }
+                }
+                "Fetch.requestPaused" => {
+                    if let Some(request) = text("/requestId") {
+                        let address = text("/request/url").unwrap_or_default();
+                        let method = text("/request/method").unwrap_or_default();
+                        let document = text("/resourceType").as_deref() == Some("Document");
+                        let frame = text("/frameId");
+                        let why = state.why(&address, &method, document, frame.as_deref());
+                        let by = if self.person_drives.load(Ordering::SeqCst) {
+                            Driver::Person
+                        } else {
+                            Driver::Agent
+                        };
+                        follow.push(FollowUp::Judge {
+                            request,
+                            outbound: Outbound {
+                                address,
+                                method,
+                                why,
+                                by,
+                            },
+                        });
+                    }
+                }
                 "Page.frameDetached" => {
                     let swapped = text("/reason").as_deref() == Some("swap");
                     if !swapped
@@ -1969,6 +2142,32 @@ impl Inner {
                 self.changed.notify_all();
                 let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
             }
+            FollowUp::Judge { request, outbound } => {
+                // Requests are held only where there is a judge, so this always has one.
+                let gate = self
+                    .judge
+                    .as_ref()
+                    .map_or(Gate::Go, |judge| judge(&outbound));
+                let said = match gate {
+                    Gate::Go => devtools.call_within(
+                        "Fetch.continueRequest",
+                        json!({ "requestId": request }),
+                        None,
+                        JUDGED_WITHIN,
+                    ),
+                    Gate::Ask { site } => {
+                        lock(&self.state).ask(&site);
+                        devtools.call_within(
+                            "Fetch.failRequest",
+                            json!({ "requestId": request, "errorReason": "BlockedByClient" }),
+                            None,
+                            JUDGED_WITHIN,
+                        )
+                    }
+                };
+                // A request whose page has gone went with it: there is nothing more to say.
+                let _ = said;
+            }
             FollowUp::Release(session) => {
                 let on = Some(session.as_str());
                 let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
@@ -1980,6 +2179,20 @@ impl Inner {
             }
         }
     }
+}
+
+/// The mark of an act addressing a page (#2018), taken off when the act is done.
+struct Addressing<'a>(&'a Inner);
+
+impl Drop for Addressing<'_> {
+    fn drop(&mut self) {
+        lock(&self.0.state).addressing = None;
+    }
+}
+
+/// `address` without its fragment, which no request carries.
+fn without_fragment(address: &str) -> &str {
+    address.split_once('#').map_or(address, |(bare, _)| bare)
 }
 
 /// The live element `written` names: its page and node.

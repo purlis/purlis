@@ -26,6 +26,14 @@
 //!   chat's reach while it runs, its browsers end ([`ChatBrowsers::narrowed`]); the next call
 //!   opens one on what the chat reaches then, and says why.
 //! - **Keep off** refuses every call of the chat's, in words that say not to retry.
+//! - **A site new to the project asks, once allowed** (#2018): each act tells the browser what
+//!   its chat reaches now ([`Driver::act`]), so an Allow since it started reaches it at its next
+//!   act. Where the browser's judge held something back (an address the agent wrote for a site
+//!   new to the project, a form or a body sent there, or typing on a page of it), the act's
+//!   answer names the site; the chat is told it was asked about, and the site is asked about
+//!   as a host the chat's sandbox refused (`crate::chats::Chats::ask_for_its_browser`): the
+//!   one Ask a chat's hosts are asked by, every such host of the chat on one Notice with one
+//!   Allow, and the one Granted list.
 //!
 //! **In memory only**, like the other Asks a chat raises: a relaunch starts with none, and the
 //! chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
@@ -58,8 +66,15 @@ pub enum Refused {
 pub trait Driver: Send + Sync + 'static {
     /// Starts a browser in the project at `root` reaching `reach`, and answers its program.
     fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, String>;
-    /// Carries `act` out on browser `program` under its own id `call_id`.
-    fn act(&self, program: &str, call_id: &str, act: Act) -> Result<Browsed, Refused>;
+    /// Carries `act` out on browser `program` under its own id `call_id`, the browser reaching
+    /// `reach` from then on (#2018).
+    fn act(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: Act,
+        reach: BrowserReach,
+    ) -> Result<Browsed, Refused>;
     /// Ends browser `program`, and forgets it.
     fn close(&self, program: &str) -> Result<(), String>;
     /// Ends browser `program` by its id, with its reach proxy: what is tried when a close did
@@ -209,6 +224,19 @@ fn end(driver: &dyn Driver, program: &str) -> bool {
 pub const ASKED: &str = "purlis asked the person what this chat's browser may reach, and opened \
                          nothing. You will be told their answer on your next turn: don't retry \
                          a browser tool until then, and go on with what needs no browser.";
+
+/// What a chat is told of the sites its browser asked the person about (#2018).
+fn asked_about(sites: &[String]) -> String {
+    format!(
+        "{} new to this project, so purlis held back what this browser would have opened, sent \
+         or typed there, and asked the person whether it may: you will be told their answer on \
+         your next turn. Don't retry it until then; go on with what needs no new site",
+        match sites {
+            [one] => format!("{one} is a site"),
+            many => format!("{} are sites", many.join(", ")),
+        }
+    )
+}
 
 /// What a chat whose browser the person kept off is told.
 pub const KEPT_OFF: &str = "The person kept this chat's browser off: don't retry or work around \
@@ -600,6 +628,16 @@ impl ChatBrowsers {
         let persona = as_persona();
         self.follow_always(driver, browse.chat, &persona);
         let (mut answer, raised) = self.answer_now(driver, root, browse, reach, persona, now);
+        // What the browser held back for the person says so first (#2018).
+        if let Answer::Browsed { browsed, .. } = &mut answer
+            && !browsed.asked.is_empty()
+        {
+            let asked = asked_about(&browsed.asked);
+            browsed.note = Some(match browsed.note.take() {
+                Some(note) => format!("{asked}. {note}"),
+                None => asked,
+            });
+        }
         // The first answer after its browsers were ended for a narrowed reach says why.
         if let Answer::Browsed { browsed, .. } = &mut answer
             && let Some(chat) = self.lock().get_mut(&browse.chat)
@@ -771,7 +809,11 @@ impl ChatBrowsers {
         };
         // The act may wait on its page a while: never under the lock.
         drop(chats);
-        match driver.act(&program, &browse.call_id, act) {
+        let reach_now = BrowserReach {
+            open_web,
+            ..reach()
+        };
+        match driver.act(&program, &browse.call_id, act, reach_now) {
             Ok(browsed) => (
                 Answer::Browsed {
                     browser: name,
@@ -904,6 +946,13 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         now,
     );
     held.browsers_listed_since(listing);
+    // Each site the browser held back is asked about as the chat's own hosts are (#2018).
+    if let Answer::Browsed { browsed, .. } = &answer
+        && !browsed.asked.is_empty()
+    {
+        held.chats()
+            .ask_for_its_browser(browse.chat, &browsed.asked);
+    }
     if raised {
         tracing::info!(
             "purlis: chat {} asked for a browser; the person is asked what it may reach",

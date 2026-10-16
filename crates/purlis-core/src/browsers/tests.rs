@@ -136,6 +136,7 @@ fn the_drivers_answer_is_said_back_whole() {
         content: Content::Text("- heading \"Docs\" [e1]".into()),
         note: Some("the page did not load".into()),
         repeated: true,
+        asked: vec!["news.example.org:443".into()],
     };
 
     let said = PageSaid {
@@ -154,6 +155,7 @@ fn the_drivers_answer_is_said_back_whole() {
             text: Some("- heading \"Docs\" [e1]".into()),
             note: Some("the page did not load".into()),
             repeated: true,
+            asked: vec!["news.example.org:443".into()],
             ..Browsed::default()
         }
     );

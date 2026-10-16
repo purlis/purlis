@@ -17,6 +17,10 @@ use super::{AsPersona, ChatBrowsers, Driver, Ended, Posture, Refused};
 struct Hosted {
     started: Mutex<Vec<BrowserReach>>,
     acts: Mutex<Vec<(String, String, Act)>>,
+    /// What each act was told its browser reaches from then on (#2018).
+    reached: Mutex<Vec<BrowserReach>>,
+    /// The sites each act answers it asked about (#2018).
+    asks: Mutex<Vec<String>>,
     closed: Mutex<Vec<String>>,
     /// Programs ended by their id, when a close did not end them.
     stopped: Mutex<Vec<String>>,
@@ -41,7 +45,13 @@ impl Driver for Hosted {
         Ok(format!("program-{}", started.len()))
     }
 
-    fn act(&self, program: &str, call_id: &str, act: Act) -> Result<Browsed, Refused> {
+    fn act(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: Act,
+        reach: BrowserReach,
+    ) -> Result<Browsed, Refused> {
         if self.ended.lock().unwrap().iter().any(|one| one == program) {
             return Err(Refused::Gone);
         }
@@ -49,8 +59,10 @@ impl Driver for Hosted {
             .lock()
             .unwrap()
             .push((program.to_owned(), call_id.to_owned(), act));
+        self.reached.lock().unwrap().push(reach);
         Ok(Browsed {
             settled: true,
+            asked: self.asks.lock().unwrap().clone(),
             ..Browsed::default()
         })
     }
@@ -880,4 +892,46 @@ fn a_browser_a_chat_uses_is_known_as_one_and_one_it_no_longer_uses_is_not() {
 
     answered(&browsers, &hosted, &ask(3, Browsing::Close));
     assert!(!browsers.is_in_use("program-1"));
+}
+
+// ---- Reach Asks (#2018) ----
+
+#[test]
+fn every_act_tells_the_browser_what_its_chat_reaches_now() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, true));
+    answered(&browsers, &hosted, &ask(3, click()));
+    answered(&browsers, &hosted, &ask(3, click()));
+    let open_web = BrowserReach {
+        open_web: true,
+        ..reach()
+    };
+    assert_eq!(
+        *hosted.reached.lock().unwrap(),
+        [open_web.clone(), open_web],
+        "the chat's reach as it is at each act, with what the person allowed"
+    );
+}
+
+#[test]
+fn an_act_that_asked_about_a_new_site_tells_the_chat_it_asked_and_not_to_retry() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["news.example.org:443".into()];
+    let (answer, raised) = answered(&browsers, &hosted, &ask(3, click()));
+    assert!(!raised, "the browser's Ask was answered already");
+    match answer {
+        Answer::Browsed { browsed, .. } => {
+            assert_eq!(browsed.asked, ["news.example.org:443"]);
+            let note = browsed.note.unwrap();
+            assert!(note.contains("news.example.org:443"), "{note}");
+            assert!(note.contains("asked the person"), "{note}");
+            assert!(note.contains("Don't retry"), "{note}");
+        }
+        other => panic!("{other:?}"),
+    }
 }

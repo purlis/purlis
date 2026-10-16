@@ -23,8 +23,10 @@
 //! - **Public sites are readable; a site new to the project asks.** An address the agent writes
 //!   for a site new to the project, or a form it posts there, asks the person once (#2018); a
 //!   link the page offered does not. By host and port the proxy cannot tell these apart, so it
-//!   tells every new site to [`NewSites`], which the browser's broker answers.
-//!   [`NewSites::refusing`] is the interim default until #2018: it refuses every new site.
+//!   tells every new site to [`NewSites`], which the browser's broker answers
+//!   (`crate::browsers::sites`): it carries a site new to the project only where the browser's
+//!   driver judged a request to it to go. A browser started with no reach refuses every new
+//!   site ([`NewSites::refusing`]).
 //! - **It fails closed.** The engine resolves no name and sends every request to this proxy
 //!   (`purlis_browser_engine::launch`). When the proxy is dropped it stops listening and ends
 //!   every connection it carries, tunnels included, so every load fails; where this machine's
@@ -246,7 +248,7 @@ pub enum Route {
 }
 
 /// A public site nothing in the browser's lane lists, as the connection named it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NewSite {
     pub host: String,
     pub port: u16,
@@ -281,8 +283,8 @@ impl NewSites {
         Self(Arc::new(hear))
     }
 
-    /// Refuses every new site: the interim default until the browser's Ask answers here
-    /// (#2018), so a browser reaches only what its chat's reach lists.
+    /// Refuses every new site: a browser started with no reach reaches only what its chat's
+    /// reach lists.
     pub fn refusing() -> Self {
         Self::new(|_| false)
     }

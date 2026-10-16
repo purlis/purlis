@@ -20,6 +20,7 @@ use crate::drive::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, Ref, Refusal, Settled,
 };
 
+mod reach;
 mod takeover;
 
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
@@ -251,6 +252,15 @@ fn browser() -> (Browser, Arc<Engine>) {
 }
 
 fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
+    browser_over(limits, None)
+}
+
+/// A browser over the stand-in whose every request is told to `judge` (#2018).
+fn browser_judged(judge: crate::drive::Judge) -> (Browser, Arc<Engine>) {
+    browser_over(limits(), Some(judge))
+}
+
+fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser, Arc<Engine>) {
     let (events, receiver) = mpsc::sync_channel(1024);
     let nodes = |text: &str| serde_json::from_str::<Value>(text).unwrap()["nodes"].clone();
     let engine = Arc::new(Engine {
@@ -284,7 +294,7 @@ fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
     });
-    let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits).unwrap();
+    let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.
     let start = std::time::Instant::now();
     while engine
