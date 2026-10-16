@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792171157341,
+  "lastUpdate": 1792176920680,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14448,6 +14448,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9749655,
             "unit": "ms",
             "extra": "median of 5 runs: 100.849, 101.325, 101.975, 102.061, 103.128 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8025ddc826e1b3d1d68371212919f39c1b5e57d3",
+          "message": "Browsers: taking over (#2291)\n\n* Browsers: the driver lease, the person's input and blanking in the engine\n\nA browser has one driver at a time. Taking it over starts a new epoch\nheld by the person: the agent's call in flight is cut and answers\ninterrupted, state unknown, whatever it had read; every later call is\nrefused in words; no act of a cut call reaches a page. The person's\ninput reaches the current page only where a frame aimed it (its page\nand document); before a key that edits, the focused element is blanked,\nand the page is read again after it. The hand-back is explicit and\nvoids every reference dealt before it. Frames name what they show.\nA size the person sets applies to every page.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the session protocol takes a browser over (1.12)\n\ntake_over and hand_back, answered driving with who drives now;\nbrowser_input, one event of the person's aimed at what a frame showed,\nrefused not_driving unless they drive and input_missed where the page\nhas moved on; size_browser; a listed browser's driver; and the aimed\nJPEG frame format, which names the page and document a frame shows.\nEach is local-ui's alone, with its own grants row for every scope, and\nkeeps its order in the browser's program lane, never behind an act.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the session host holds a browser's driver lease\n\nThe host holds each browser's lease: the agent's until the person takes\nit over, then the person's until they hand it back. No link's end\nchanges it, so it stays with the person across a crash of the window,\nand a listed browser says who drives it. While the person drives, every\nact is refused in words and only their input reaches the browser; an\nact is carried out under the epoch of the lease it was checked against.\nA 1.12 link's browser views are sent frames that name what they show.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the binaries' engine screen takes the person's lease and input\n\nThe engine screen the window's binary and purlis serve hand the host\ncarries each act under the epoch the host checked, takes the browser\nover and hands it back through the driver's own lease, turns the\nperson's input into the driver's own event aimed where they aimed it,\nsets the pages' size, and names what each frame shows.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a click or a key in a browser view takes it over\n\nClicking or typing into a browser view takes the browser over at once;\nthe bar purlis draws above the page says the agent is paused, and the\nperson's clicks, moves, wheel and keys go to the page, each aimed at\nwhat the frame they saw showed, in order. Done, or the one chord\n(Cmd+Shift+Enter, Ctrl+Shift+Enter off a Mac), hands it back. A view\nopened again says the person still drives. Picking a size preset takes\nthe browser over too. While the person drives, a Control chord stays\nwith the page and the palette's pass-through key, pressed again,\nreaches it. The commands are the window's alone.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: ADR 0068 amended for taking a browser over; the glossary's hand-back\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: each run the person typed stays out of later answers as typed\n\nEach run of characters the person types while driving is kept out of\nevery later answer about its page as they typed it, whatever became of\nits field, as well as the field's own content.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the browser view's bar is listed among the live regions that are not Notices\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a click or key let go before its take-over answered is let go on the page too\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: what the person types or pastes stays out of every answer about every page\n\nWhat a field holds is read from the field itself after each key that\nmay change it, a paste included, and again at a press of the mouse and\nat the hand-back; with the person's runs of typed characters, it is\nkept out of every later answer about every page of the browser, a page\nopened later included. A key waits, and the person is told, when the\ndocument has something focused that its tree does not show. A\ncharacter typed with Alt or AltGr (Option on a Mac) types, after the\nfield is blanked.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the hand-back follows the keys before it; an aim changes with any frame\n\nThe window sends the hand-back after every key already queued, and a\nview watched again starts with nothing queued. A frame's aim changes\nwhen the page or any frame inside it loads another document, so input\naimed at one frame's document never lands on another's. The size\npicker shows the size the host says. The glossary defines driver lease\nand aim; the bar's states are drawn in the views' tests; the focus ring\nuses its token.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a text kept out is taken out whole, and painted over in screenshots\n\nA text kept out of answers is taken out whole, the longest first. A\nscreenshot paints over every element whose text shows a text kept out,\nbefore and after the picture, as it paints a blanked field. Shift+Insert\ncounts as a paste.\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the screenshot test names what it covers: text the page shows as text\n\nRefs #2014\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T22:53:56+04:00",
+          "tree_id": "916854adcba340be28175c942e44982f8666a11c",
+          "url": "https://github.com/purlis/purlis/commit/8025ddc826e1b3d1d68371212919f39c1b5e57d3"
+        },
+        "date": 1792176919581,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4542695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.441, 0.451, 0.454, 0.461, 0.464 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.541205500000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.438, 16.472, 16.541, 16.572, 16.617 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8546235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.959, 101.502, 101.855, 102.209, 102.437 ms"
           }
         ]
       }
