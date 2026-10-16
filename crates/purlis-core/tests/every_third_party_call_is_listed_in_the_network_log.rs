@@ -434,6 +434,15 @@ mod review {
     }
 }
 
+/// PROBE #1929, removed before review: the two native cases, one after the other, 200 times.
+#[test]
+fn probe_1929_the_native_cases_200_times_in_one_thread() {
+    purlis_core::unsteered!();
+    for _ in 0..200 {
+        in_a_child("listed::a_native", "bin");
+    }
+}
+
 #[test]
 fn every_forge_call_is_listed_in_a_child_with_a_store_of_its_own() {
     purlis_core::unsteered!();

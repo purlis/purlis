@@ -84,8 +84,14 @@ pub fn in_a_child(filter: &str, bin_name: &str) {
         assert_eq!(ran.status.code(), Some(97), "the stand-in {cli}: {ran:?}");
     }
 
+    // PROBE #1929, removed before review: one thread, so a pooled mock server one test hands
+    // back is the next test's.
+    let mut probe = Command::new(std::env::current_exe().expect("the test binary"));
+    if filter.starts_with("listed::a_native") {
+        probe.env("RUST_TEST_THREADS", "1");
+    }
     let out = purlis_core::forklock::output(
-        Command::new(std::env::current_exe().expect("the test binary"))
+        probe
             .args([filter, "--nocapture"])
             .env(CHILD, "1")
             .env(BIN, &bin)
