@@ -68,6 +68,7 @@ fn reach() -> BrowserReach {
             layer: purlis_session_protocol::session::Layer::Open,
         }],
         never: Vec::new(),
+        withdrawn: Vec::new(),
         open_web: false,
     }
 }
@@ -244,19 +245,76 @@ fn a_browser_of_another_chat_is_never_reached_by_its_name() {
 }
 
 #[test]
-fn a_chat_holds_at_most_three_browsers() {
+fn a_project_holds_at_most_three_browsers_across_its_chats() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    for chat in [3, 4] {
+        answered(&browsers, &hosted, &ask(chat, click()));
+        browsers.allow(chat, false);
+    }
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    answered(&browsers, &hosted, &ask(4, Browsing::New));
+
+    let why = refusal(answered(&browsers, &hosted, &ask(4, Browsing::New)).0);
+
+    assert!(why.contains("this project"), "{why}");
+    assert!(why.contains("browser_close"), "{why}");
+    assert_eq!(hosted.started.lock().unwrap().len(), 3);
+    // One closed makes room, whichever chat it was of.
+    answered(&browsers, &hosted, &ask(3, Browsing::Close));
+    answered(&browsers, &hosted, &ask(4, Browsing::New));
+    assert_eq!(hosted.started.lock().unwrap().len(), 4);
+}
+
+#[test]
+fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_what_it_is_now() {
     let browsers = ChatBrowsers::default();
     let hosted = Arc::new(Hosted::default());
     answered(&browsers, &hosted, &ask(3, click()));
     browsers.allow(3, false);
-    for _ in 0..3 {
-        answered(&browsers, &hosted, &ask(3, Browsing::New));
-    }
+    answered(&browsers, &hosted, &ask(3, click()));
+    answered(&browsers, &hosted, &ask(4, click()));
+    browsers.allow(4, false);
+    answered(&browsers, &hosted, &ask(4, click()));
+    let driver: Arc<dyn Driver> = hosted.clone();
 
-    let why = refusal(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+    let ended = browsers.narrowed(Some(&driver), 3);
 
-    assert!(why.contains("browser_close"), "{why}");
-    assert_eq!(hosted.started.lock().unwrap().len(), 3);
+    assert_eq!(ended, 1);
+    assert_eq!(
+        *hosted.closed.lock().unwrap(),
+        ["program-1"],
+        "only chat 3's"
+    );
+    assert_eq!(
+        browsers.narrowed(Some(&driver), 3),
+        0,
+        "nothing left to end"
+    );
+    let narrower = BrowserReach {
+        withdrawn: vec![5173],
+        ..reach()
+    };
+    let (answer, _) = browsers.answer(
+        Some(&driver),
+        Path::new("/p"),
+        &ask(3, click()),
+        &|| narrower.clone(),
+        1000,
+    );
+    let Answer::Browsed { browsed, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(
+        browsed
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("withdrew")),
+        "{browsed:?}"
+    );
+    assert_eq!(hosted.started.lock().unwrap().last(), Some(&narrower));
+    assert_eq!(browsers.posture(3), Posture::Allowed { open_web: false });
 }
 
 #[test]

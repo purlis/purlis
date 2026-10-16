@@ -214,15 +214,19 @@ pub struct Browsed {
 }
 
 /// What a browser may reach, given as it starts (1.9): the hosts its chat's sandbox lists, each
-/// with the layer that lists it, the hosts policy pins as never allowed, and whether a public
-/// site nothing lists is carried too (the open web). Absent from a start, a browser reaches
-/// nothing listed and every site new to the project is refused.
+/// with the layer that lists it, the hosts policy pins as never allowed, the ports of this
+/// machine the person withdrew from the chat while it runs, and whether a public site nothing
+/// lists is carried too (the open web). Absent from a start, a browser reaches nothing listed
+/// and every site new to the project is refused.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowserReach {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub listed: Vec<Listed>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub never: Vec<String>,
+    /// Ports of this machine carried no longer, whatever lists them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withdrawn: Vec<u16>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_web: bool,
 }

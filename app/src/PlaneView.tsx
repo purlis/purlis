@@ -361,6 +361,7 @@ import type {
   ExtensionView,
   Offered,
   PanelView,
+  BrowsersEnded,
   Rescreened,
   RowAction,
   SavedRecord,
@@ -440,6 +441,7 @@ import {
   type Arrived,
   type ByHandNote,
   type StartNotes,
+  withNote,
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 
@@ -5177,6 +5179,29 @@ export const PlaneView = memo(function PlaneView({
           const told = event.payload;
           if (gone || told.plane !== plane) return;
           redrawRescreened.current(told);
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane]);
+  // **A chat whose browsers ended because the person narrowed its reach** (#2013): its tab
+  // says so, once. Filtered on the plane, as `chat-moved` is.
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<BrowsersEnded>("chat-browsers-ended", (event) => {
+          const told = event.payload;
+          if (gone || told.plane !== plane) return;
+          setStartNotes((was) => withNote(was, told.session, told.note));
         });
         if (gone) unlisten();
         else stop = unlisten;

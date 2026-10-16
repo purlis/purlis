@@ -3650,7 +3650,7 @@ fn serve(
                 if let Ok(asker) = writer.try_clone() {
                     tokens.answering(this, asker);
                 }
-                let answer = (hearing.answer)(this, ask);
+                let answer = framed::on_a_line((hearing.answer)(this, ask));
                 tokens.answered(this);
                 let Ok(mut said) = serde_json::to_vec(&answer) else {
                     return;

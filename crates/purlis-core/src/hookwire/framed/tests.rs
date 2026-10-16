@@ -445,3 +445,32 @@ fn a_browsers_screenshot_goes_back_as_an_image_after_its_answer_and_never_inside
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn on_a_line_a_browsers_screenshot_is_left_out_and_the_answer_says_so() {
+    use purlis_session_protocol::browsing::Browsed;
+    let answer = Answer::Browsed {
+        browser: "b1".into(),
+        browsed: Box::new(Browsed {
+            settled: true,
+            png: Some(vec![0x89, b'P', b'N', b'G']),
+            ..Browsed::default()
+        }),
+    };
+
+    let line = super::on_a_line(answer);
+
+    match line {
+        Answer::Browsed { browsed, .. } => {
+            assert_eq!(browsed.png, None);
+            assert!(
+                browsed
+                    .note
+                    .as_deref()
+                    .is_some_and(|note| note.contains("purlis mcp")),
+                "{browsed:?}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}

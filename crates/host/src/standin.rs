@@ -497,9 +497,13 @@ impl StandInScreen {
         self.shown().answers.push_back(answer);
     }
 
-    /// The engine ended by itself.
+    /// The engine ended by itself: it acts no more.
     pub fn ends(&self, exit: Exit) {
-        let tell = self.shown().ends.take();
+        let tell = {
+            let mut shown = self.shown();
+            shown.stopped = true;
+            shown.ends.take()
+        };
         if let Some(tell) = tell {
             tell(exit);
         }
@@ -551,18 +555,22 @@ impl crate::browsers::Screen for StandInScreen {
         &self,
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
-    ) -> Result<purlis_session_protocol::browsing::Browsed, String> {
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
         let mut shown = self.shown();
         if shown.stopped {
-            return Err("the browser has ended: open a new one".into());
+            return Err(crate::browsers::NotActed::Ended);
         }
         shown.acts.push((call_id.to_owned(), act));
-        shown.answers.pop_front().unwrap_or_else(|| {
-            Ok(purlis_session_protocol::browsing::Browsed {
-                settled: true,
-                ..Default::default()
+        shown
+            .answers
+            .pop_front()
+            .unwrap_or_else(|| {
+                Ok(purlis_session_protocol::browsing::Browsed {
+                    settled: true,
+                    ..Default::default()
+                })
             })
-        })
+            .map_err(crate::browsers::NotActed::Refused)
     }
 }
 

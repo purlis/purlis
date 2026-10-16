@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use purlis_session_protocol::session::{Exit, ViewKind, ViewRole};
 
-use super::{Browser, FrameSink, Screen};
+use super::{Browser, FrameSink, NotActed, Screen};
 use crate::hosting::Running;
 
 /// A screen whose `hide` waits at a barrier the first time, so a test can put an attach in the
@@ -50,8 +50,8 @@ impl Screen for Slow {
         &self,
         _call_id: &str,
         _act: purlis_session_protocol::browsing::Act,
-    ) -> Result<purlis_session_protocol::browsing::Browsed, String> {
-        Err("a stand-in".into())
+    ) -> Result<purlis_session_protocol::browsing::Browsed, NotActed> {
+        Err(NotActed::Refused("a stand-in".into()))
     }
 }
 

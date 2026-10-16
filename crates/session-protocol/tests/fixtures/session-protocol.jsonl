@@ -85,7 +85,7 @@
 {"call":{"id":43,"command":"mid_turn","question":7,"chats":["alpha 1"]}}
 {"pushed":{"who_is_mid_turn":{"question":7,"project":"01J9PRJCT00000000000000000","workspace":"alpha"}}}
 {"reply":{"re":81,"refused":{"code":"not_recorded","why":"the session host keeps no event log on this machine, so nothing was recorded"}}}
-{"call":{"id":44,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","reach":{"listed":[{"host":"docs.example.com","layer":"open"},{"host":"127.0.0.1:5173","layer":"you"}],"never":["tracker.example.com"],"open_web":true}}}
+{"call":{"id":44,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","reach":{"listed":[{"host":"docs.example.com","layer":"open"},{"host":"127.0.0.1:5173","layer":"you"}],"never":["tracker.example.com"],"withdrawn":[5173],"open_web":true}}}
 {"call":{"id":45,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-7","act":{"do":"click","target":"e12"}}}
 {"call":{"id":46,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-8","act":{"do":"type","fields":[{"into":"e4","text":"hello","replace":true},{"text":"!"}]}}}
 {"call":{"id":47,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-9","act":{"do":"drag","from":"e3","to":{"offset":{"x":40,"y":-8}}}}}
@@ -93,3 +93,4 @@
 {"reply":{"re":45,"ok":{"browsed":{"page":{"page":"p1","address":"https://docs.example.com/","title":"Docs","current":true},"settled":true,"opened":[{"page":"p2","address":"https://docs.example.com/new","title":"New","current":true}]}}}}
 {"reply":{"re":48,"ok":{"browsed":{"page":{"page":"p2","address":"https://docs.example.com/new","title":"New","current":true},"settled":false,"waiting_for":["a request still open"],"png":"iVBORw0KGgo=","note":"the screenshot was halved to 640×400 to fit"}}}}
 {"reply":{"re":46,"refused":{"code":"browser_refused","why":"e4 is from an earlier document of its page: take a new snapshot"}}}
+{"reply":{"re":47,"refused":{"code":"browser_ended","why":"the browser has ended: open a new one"}}}

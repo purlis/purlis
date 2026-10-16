@@ -1949,6 +1949,8 @@ pub struct Planes {
     vault_refused: crate::vaultroute::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
+    /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
+    browsers_ended: crate::chatbrowsers::Teller,
     /// Where the chats' browsers run (#2013): the window's session host, once it is given.
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each step of a smart close in any plane (ADR 0064).
@@ -2205,6 +2207,7 @@ impl Planes {
             project_settings: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
+            browsers_ended: Arc::new(|_| {}),
             browser_driver: None,
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
@@ -2426,6 +2429,13 @@ impl Planes {
     /// holds, so the window can show the ways forward on the chat's tab (#1430).
     pub fn telling_vault_refusals(mut self, refused: crate::vaultroute::Teller) -> Self {
         self.vault_refused = refused;
+        self
+    }
+
+    /// Tells `ended` each chat whose browsers ended because the person narrowed its reach, so
+    /// the window says so on its tab (#2013).
+    pub fn telling_browsers_ended(mut self, ended: crate::chatbrowsers::Teller) -> Self {
+        self.browsers_ended = ended;
         self
     }
 
@@ -2923,6 +2933,18 @@ impl Planes {
         // purlis's word on a chat's held connections (#1666) is handed to its next turn on
         // the road the person's words take: the app's memory, never a file. Weak for the
         // handoff's reason.
+        // A chat whose reach the person narrowed while it runs: its browsers end, and its tab
+        // says so (#2013). Weak for the handoff's reason.
+        held.chats().tell_narrowed_to({
+            let weak = Arc::downgrade(&held);
+            let plane = id.clone();
+            let told = Arc::clone(&self.browsers_ended);
+            Arc::new(move |session| {
+                if let Some(strong) = weak.upgrade() {
+                    crate::chatbrowsers::narrowed(&strong, &plane, session, &*told);
+                }
+            })
+        });
         held.chats().tell_network_words_to({
             let weak = Arc::downgrade(&held);
             Arc::new(move |session, word| {

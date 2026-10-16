@@ -2708,6 +2708,7 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::RefusedMore>()
         // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
         .typ::<projectsettings::Rescreened>()
+        .typ::<chatbrowsers::BrowsersEnded>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chat-stop` carries (#1448).
@@ -3657,6 +3658,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             vaultroute::REFUSED,
+                            &told,
+                        );
+                    })
+                })
+                // A chat whose browsers ended because the person narrowed its reach: the
+                // window says so on its tab (#2013).
+                .telling_browsers_ended({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: chatbrowsers::BrowsersEnded| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            chatbrowsers::ENDED,
                             &told,
                         );
                     })

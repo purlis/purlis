@@ -167,6 +167,7 @@ fn a_browser_reaches_what_its_chat_lists_and_a_new_site_only_on_the_open_web() {
             layer: Layer::Open,
         }],
         never: Vec::new(),
+        withdrawn: Vec::new(),
         open_web: false,
     };
 
@@ -187,9 +188,24 @@ fn a_browser_reaches_what_its_chat_lists_and_a_new_site_only_on_the_open_web() {
 }
 
 #[test]
-fn an_act_on_an_ended_browser_is_refused_in_the_words_the_window_reads_as_gone() {
-    assert_eq!(
-        purlis_browser_engine::drive::Refusal::Ended.to_string(),
-        super::ENDED
-    );
+fn a_browser_reaches_no_port_of_this_machine_its_chat_had_withdrawn() {
+    let given = BrowserReach {
+        listed: vec![
+            Listed {
+                host: "127.0.0.1:5173".into(),
+                layer: Layer::You,
+            },
+            Listed {
+                host: "127.0.0.1:8080".into(),
+                layer: Layer::You,
+            },
+        ],
+        withdrawn: vec![5173],
+        ..BrowserReach::default()
+    };
+
+    let (reach, _) = reach_of(Some(&given)).unwrap();
+
+    assert!(!reach.decide("127.0.0.1", 5173, &[], &[]).carries());
+    assert!(reach.decide("127.0.0.1", 8080, &[], &[]).carries());
 }

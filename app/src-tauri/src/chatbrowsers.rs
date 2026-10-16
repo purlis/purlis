@@ -18,9 +18,13 @@
 //! - **Once allowed, the chat's browser is started in the session host** with what it may reach
 //!   ([`Driver::start`]), and each act is handed on as it is ([`Driver::act`]); the host's
 //!   browser carries it out and enforces the reach. A chat has one browser by default, more on
-//!   `browser_new` (each apart, its cookies and storage its own), at most
-//!   [`AT_MOST_PER_CHAT`]; each is named to the chat as `b1`, `b2`, and is looked up only
-//!   among the chat's own. A chat's browsers end with it.
+//!   `browser_new` (each apart, its cookies and storage its own); the project's chats hold at
+//!   most [`AT_MOST_PER_PROJECT`] together. Each is named to the chat as `b1`, `b2`, and is
+//!   looked up only among the chat's own. A chat's browsers end with it.
+//! - **A browser's reach follows its chat's reach, including what the person withdraws**: a
+//!   browser is given what its chat reaches as it starts, and when the person narrows the
+//!   chat's reach while it runs, its browsers end ([`ChatBrowsers::narrowed`]); the next call
+//!   opens one on what the chat reaches then, and says why.
 //! - **Keep off** refuses every call of the chat's, in words that say not to retry.
 //!
 //! **In memory only**, like the other Asks a chat raises: a relaunch starts with none, and the
@@ -35,9 +39,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
 
-/// The most browsers one chat holds at once: the project's default cap (spec #2008), until the
+/// The most browsers the chats of one project hold at once (spec #2008, Limits), until the
 /// limits are settings (#2023).
-pub const AT_MOST_PER_CHAT: usize = 3;
+pub const AT_MOST_PER_PROJECT: usize = 3;
 
 /// Why the session host did not carry an act out.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +96,8 @@ struct Chat {
     current: Option<String>,
     /// The number the next browser is named by.
     next: u32,
+    /// Its browsers were ended because the person narrowed its reach, and it is not told yet.
+    narrowed: bool,
 }
 
 impl Default for Chat {
@@ -102,6 +108,7 @@ impl Default for Chat {
             browsers: Vec::new(),
             current: None,
             next: 1,
+            narrowed: false,
         }
     }
 }
@@ -138,7 +145,14 @@ pub const KEPT_OFF: &str = "The person kept this chat's browser off: don't retry
                             it.";
 
 const NO_HOST: &str = "This window has no session host to run a browser in, so this chat has \
-                       no browser.";
+                       no browser: go on with what needs no browser, and tell the person if the \
+                       task needs one.";
+
+/// What a chat whose browsers were ended because the person narrowed its reach is told, with
+/// the first answer after.
+const NARROWED: &str = "the person withdrew part of what this chat may reach, so purlis ended \
+                        its browsers and what they held: this is a new one, reaching what the \
+                        chat reaches now";
 
 impl ChatBrowsers {
     fn lock(&self) -> MutexGuard<'_, HashMap<u32, Chat>> {
@@ -188,6 +202,33 @@ impl ChatBrowsers {
         }
     }
 
+    /// **The person narrowed chat `session`'s reach while it runs**: a port withdrawn, an Allow
+    /// removed. Its browsers end, since each was given the chat's reach as it started; the
+    /// person's answer to its Ask stands, and its next call opens a browser on what the chat
+    /// reaches then, and says why. Answers how many ended.
+    pub fn narrowed(&self, driver: Option<&Arc<dyn Driver>>, session: u32) -> usize {
+        let programs: Vec<String> = {
+            let mut chats = self.lock();
+            let Some(chat) = chats.get_mut(&session) else {
+                return 0;
+            };
+            let programs: Vec<String> = chat
+                .browsers
+                .drain(..)
+                .map(|(_, program)| program)
+                .collect();
+            chat.current = None;
+            chat.narrowed |= !programs.is_empty();
+            programs
+        };
+        if let Some(driver) = driver {
+            for program in &programs {
+                driver.close(program);
+            }
+        }
+        programs.len()
+    }
+
     /// Chat `session` has closed: its browsers end, and nothing of it is kept.
     pub fn forget(&self, driver: Option<&Arc<dyn Driver>>, session: u32) {
         let gone = self.lock().remove(&session);
@@ -211,10 +252,37 @@ impl ChatBrowsers {
         reach: &dyn Fn() -> BrowserReach,
         now: u64,
     ) -> (Answer, bool) {
+        let (mut answer, raised) = self.answer_now(driver, root, browse, reach, now);
+        // The first answer after its browsers were ended for a narrowed reach says why.
+        if let Answer::Browsed { browsed, .. } = &mut answer
+            && let Some(chat) = self.lock().get_mut(&browse.chat)
+            && std::mem::take(&mut chat.narrowed)
+        {
+            browsed.note = Some(match browsed.note.take() {
+                Some(note) => format!("{NARROWED}. {note}"),
+                None => NARROWED.to_owned(),
+            });
+        }
+        (answer, raised)
+    }
+
+    fn answer_now(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        root: &Path,
+        browse: &BrowseAsk,
+        reach: &dyn Fn() -> BrowserReach,
+        now: u64,
+    ) -> (Answer, bool) {
         let no = |why: &str| Answer::No {
             why: why.to_owned(),
         };
         let mut chats = self.lock();
+        let elsewhere: usize = chats
+            .iter()
+            .filter(|(session, _)| **session != browse.chat)
+            .map(|(_, chat)| chat.browsers.len())
+            .sum();
         let chat = chats.entry(browse.chat).or_default();
         let open_web = match chat.posture {
             Posture::Unasked => {
@@ -231,10 +299,11 @@ impl ChatBrowsers {
         };
         let named = browse.browser.clone().or_else(|| chat.current.clone());
         let start = |chat: &mut Chat| -> Result<String, String> {
-            if chat.browsers.len() >= AT_MOST_PER_CHAT {
+            if elsewhere + chat.browsers.len() >= AT_MOST_PER_PROJECT {
                 return Err(format!(
-                    "this chat has {AT_MOST_PER_CHAT} browsers open, the most it may: close one \
-                     with browser_close first"
+                    "this project's chats have {AT_MOST_PER_PROJECT} browsers open, the most \
+                     it may: close one of this chat's with browser_close first, or go on \
+                     without one"
                 ));
             }
             let program = driver
@@ -245,7 +314,12 @@ impl ChatBrowsers {
                         ..reach()
                     },
                 )
-                .map_err(|why| format!("the browser did not start: {why}"))?;
+                .map_err(|why| {
+                    format!(
+                        "the browser did not start: {why}. Try once more; if it fails again, \
+                         go on with what needs no browser and tell the person what it said"
+                    )
+                })?;
             let name = format!("b{}", chat.next);
             chat.next += 1;
             chat.browsers.push((name.clone(), program));
@@ -337,6 +411,44 @@ impl ChatBrowsers {
     }
 }
 
+/// The event the window hears a chat's browsers ended on, because the person narrowed its
+/// reach.
+pub const ENDED: &str = "chat-browsers-ended";
+
+/// What a chat's tab says once its browsers ended because the person narrowed its reach.
+pub const ENDED_ON_ITS_TAB: &str = "purlis ended this chat's browsers, since you withdrew part \
+                                    of what it may reach. Its next browser call opens one on \
+                                    what it reaches now.";
+
+/// **A chat whose browsers ended because the person narrowed its reach**, as its tab says so.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct BrowsersEnded {
+    pub plane: crate::planes::PlaneId,
+    pub session: u32,
+    /// What its tab says, in purlis's words.
+    pub note: String,
+}
+
+/// Told each [`BrowsersEnded`], as the window shows it.
+pub type Teller = Arc<dyn Fn(BrowsersEnded) + Send + Sync + 'static>;
+
+/// **The person narrowed chat `session`'s reach while it runs, in project `held`**: its
+/// browsers end ([`ChatBrowsers::narrowed`]), and where any did, `told` hears it for its tab.
+pub fn narrowed(
+    held: &crate::planes::Held,
+    plane: &crate::planes::PlaneId,
+    session: u32,
+    told: &dyn Fn(BrowsersEnded),
+) {
+    if held.browsers().narrowed(held.browser_driver(), session) > 0 {
+        told(BrowsersEnded {
+            plane: plane.clone(),
+            session,
+            note: ENDED_ON_ITS_TAB.to_owned(),
+        });
+    }
+}
+
 /// **Chat `browse.chat`'s browser call, in project `held`** (#2013): answered by
 /// [`ChatBrowsers::answer`], with the chat's reach read from the app's record of its sandbox as
 /// one of its browsers starts. Raising its Ask tells the registry.
@@ -348,7 +460,11 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         .any(|open| open.session == browse.chat)
     {
         return Answer::No {
-            why: format!("chat {} is not one this app has open", browse.chat),
+            why: format!(
+                "chat {} is not one this purlis window has open, and only such a chat has \
+                 browser tools: go on with what needs no browser",
+                browse.chat
+            ),
         };
     }
     let reach = || reach_of(held.chats(), browse.chat);

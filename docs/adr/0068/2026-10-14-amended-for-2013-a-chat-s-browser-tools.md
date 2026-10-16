@@ -15,10 +15,11 @@ implementation, to be confirmed** (D-2013-1 to D-2013-6).
    session host. Only the driver itself turns an act into its own call. *D-2013-1, to be
    confirmed.*
 2. **Session protocol 1.9, a minor.** `browse` carries one act to a browser under the act's own
-   id, answered `browsed`, or refused `browser_refused` with the driver's sentence. A browser's
-   start may carry `reach`: the hosts its chat's sandbox lists, each at its layer, the hosts
-   policy pins as never allowed, and `open_web`; absent, nothing is listed and every site new
-   to the project is refused, as before. `browse` is `local-ui`'s alone (FD-27's `browser` row),
+   id, answered `browsed`, refused `browser_refused` with the driver's sentence, or refused
+   `browser_ended` where the browser has ended. A browser's start may carry `reach`: the hosts
+   its chat's sandbox lists, each at its layer, the hosts policy pins as never allowed, the
+   ports of this machine withdrawn from the chat while it runs, and `open_web`; absent, nothing
+   is listed and every site new to the project is refused, as before. `browse` is `local-ui`'s alone (FD-27's `browser` row),
    and its acts keep their order per browser in a lane of their own, apart from the browser's
    views. Recorded in the protocol's fixture. *D-2013-2, to be confirmed.*
 3. **The window decides; the host enforces.** The window answers a chat's browser call: it asks
@@ -26,9 +27,12 @@ implementation, to be confirmed** (D-2013-1 to D-2013-6).
    open web", "Keep off"; the chat's later calls ask nothing more), starts the chat's browser in
    its session host reaching what the chat's sandbox lists (never its floor), and hands each act
    on. The host's browser carries it out, and its reach proxy holds what it may reach. The
-   answer reaches the chat in the one line of every Ask. A chat holds at most three browsers,
-   named to it `b1`, `b2`, looked up among its own alone, and they end with it. Held in memory:
-   a relaunch asks again. *D-2013-3, to be confirmed.*
+   answer reaches the chat in the one line of every Ask. A project's chats hold at most three
+   browsers together (spec #2008's Limits), each named to its chat `b1`, `b2`, looked up among
+   its own alone, and they end with it. A browser's reach follows its chat's reach, including
+   what the person withdraws: when the person narrows a chat's reach while it runs, its
+   browsers end and its tab says so, and its next call opens one on what the chat reaches then.
+   Held in memory: a relaunch asks again. *D-2013-3, D-2013-7, D-2013-11, to be confirmed.*
 4. **A screenshot fits the control lane.** A browser's answer crosses the session protocol, whose
    control frames are bounded, so a screenshot's PNG past 600 KiB is halved until it fits, and
    the answer says so. On the hook socket it is attached as `image/png` after the answer, and the

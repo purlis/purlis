@@ -89,8 +89,12 @@ mod hosted {
                 Ok(other) => Err(Refused::Said(format!(
                     "the session host answered a browser's act with {other:?}"
                 ))),
-                Err(refusal) if refusal.code == session::NO_SUCH_CHAT => Err(Refused::Gone),
-                Err(refusal) if refusal.why == purlis_core::browsers::ENDED => Err(Refused::Gone),
+                Err(refusal)
+                    if refusal.code == session::NO_SUCH_CHAT
+                        || refusal.code == session::BROWSER_ENDED =>
+                {
+                    Err(Refused::Gone)
+                }
                 Err(refusal) => Err(Refused::Said(refusal.why)),
             }
         }

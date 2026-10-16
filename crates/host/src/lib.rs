@@ -59,7 +59,9 @@ mod serving;
 pub mod standin;
 
 #[cfg(unix)]
-pub use browsers::{Browsers, FrameSink, NoBrowsers, Screen, THUMBNAIL_EVERY};
+pub use browsers::{
+    AN_ENDED_BROWSER, Browsers, FrameSink, NoBrowsers, NotActed, Screen, THUMBNAIL_EVERY,
+};
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfine};
 #[cfg(unix)]

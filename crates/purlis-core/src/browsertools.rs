@@ -22,11 +22,10 @@ pub use purlis_session_protocol::browsing::{Act, Browsed, DragTo, PageSaid, Type
 use serde_json::{Map, Value, json};
 
 use purlis_session_protocol::browsing::BrowserReach;
-use purlis_session_protocol::session::Layer;
 
 use crate::chattools::Tool;
 use crate::hookwire::Browsing;
-use crate::sandbox::reach::{By, Reach};
+use crate::sandbox::reach::{Reach, layer_of};
 
 /// The prefix every browser tool's name starts with.
 pub const PREFIX: &str = "browser_";
@@ -244,29 +243,8 @@ pub fn browser_reach(reach: &Reach, open_web: bool) -> BrowserReach {
             })
             .collect(),
         never: written.never,
+        withdrawn: written.withdrawn,
         open_web,
-    }
-}
-
-/// A layer the session protocol names, as the core names it.
-pub fn by_of(layer: Layer) -> By {
-    match layer {
-        Layer::Open => By::Open,
-        Layer::Persona => By::Persona,
-        Layer::You => By::You,
-        Layer::Chat => By::Chat,
-        Layer::Project => By::Project,
-    }
-}
-
-/// A layer as the session protocol names it.
-pub fn layer_of(by: By) -> Layer {
-    match by {
-        By::Open => Layer::Open,
-        By::Persona => Layer::Persona,
-        By::You => Layer::You,
-        By::Chat => Layer::Chat,
-        By::Project => Layer::Project,
     }
 }
 

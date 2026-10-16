@@ -3842,6 +3842,14 @@ export type BrowserWatching = {
 	height: number,
 };
 
+/**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
+export type BrowsersEnded = {
+	plane: PlaneId,
+	session: number,
+	/**  What its tab says, in purlis's words. */
+	note: string,
+};
+
 /**  What kind of build this is, which decides which section is shown. */
 export type Build = 
 /**  The changelog has a section for this version. */

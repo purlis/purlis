@@ -6144,7 +6144,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     "call_id": "<the act's own id>", "asked": {"act": <an act, as the session protocol's
     `browse` carries one>} | "new" | "close"}}`, answered `{"browsed": {"browser": "<b1>",
     "browsed": <the browser's answer>}}` or a `no`; a screenshot travels as one `image/png`
-    attachment, never inside the answer. **It is never stored**, as no line is.
+    attachment on the framed stream, never inside the answer, and an answer on a line leaves
+    it out and says so. **It is never stored**, as no line is.
 - **Connections:** served from a bounded pool (#991): at most 32 at once from one process (by
   the pid the socket reports; processes it cannot name share one count) and 128 from all
   processes together. A connection past either is answered at once with one `no` line saying

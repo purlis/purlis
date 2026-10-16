@@ -166,6 +166,9 @@ pub const NOT_RECORDED: &str = "not_recorded";
 /// A browser's driver refused an act, or could not tell whether it acted (1.9): its `why` is
 /// the driver's sentence, which says what to do.
 pub const BROWSER_REFUSED: &str = "browser_refused";
+/// The browser an act was for has ended: stopped, closed, or its engine ended (1.9). Nothing
+/// was done; a new browser is opened for the next act.
+pub const BROWSER_ENDED: &str = "browser_ended";
 
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
@@ -179,6 +182,7 @@ pub const REFUSALS: &[&str] = &[
     STOPPED,
     NOT_RECORDED,
     BROWSER_REFUSED,
+    BROWSER_ENDED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add

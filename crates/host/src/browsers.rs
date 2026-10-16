@@ -60,10 +60,23 @@ pub trait Screen: Send + Sync + 'static {
     /// Calls `tell` once, as the engine ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
     /// Carries out `act` under its own id `call_id` (#2013), and answers what the browser
-    /// answered, or its driver's refusal in words. It waits on the engine, so the host calls it
-    /// off its runtime.
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, String>;
+    /// answered, or why it did not act. It waits on the engine, so the host calls it off its
+    /// runtime.
+    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed>;
 }
+
+/// Why a browser did not carry an act out (#2013).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotActed {
+    /// The browser has ended: stopped, closed, or its engine ended. Refused
+    /// `browser_ended`, in [`AN_ENDED_BROWSER`]'s words.
+    Ended,
+    /// The driver refused it, or could not tell whether it acted, in words that say what to do.
+    Refused(String),
+}
+
+/// What an act on a browser that has ended is refused with (#2013).
+pub const AN_ENDED_BROWSER: &str = "the browser has ended: open a new one";
 
 /// Starts browsers: the binary's, built on the engine and the core.
 pub trait Browsers: Send + Sync + 'static {
@@ -284,7 +297,7 @@ impl Running for Browser {
         Some(self.hub.screen.size())
     }
 
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, String> {
+    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
         self.hub.screen.act(call_id, act)
     }
 

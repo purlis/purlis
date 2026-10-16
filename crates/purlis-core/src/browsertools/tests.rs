@@ -229,3 +229,15 @@ fn a_browser_is_given_what_its_chat_lists_at_each_layer_and_never_its_floor() {
     assert!(given.open_web);
     // A browser's reach has no floor to carry: what it is given is what is listed.
 }
+
+#[test]
+fn a_port_withdrawn_from_the_chat_is_withdrawn_from_the_browser_it_is_given() {
+    use crate::sandbox::reach::{By, Reach};
+
+    let chat = Reach::anything().and([("127.0.0.1:5173".to_owned(), By::You)]);
+    chat.withdraw(5173);
+
+    let given = browser_reach(&chat, false);
+
+    assert_eq!(given.withdrawn, [5173]);
+}

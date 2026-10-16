@@ -4,7 +4,9 @@
   snapshot of a page with a reference for each element, clicks, typing, drags, waits and a
   screenshot the model sees as an image, on a browser purlis runs and no script the model
   writes. A chat's first browser tool asks you once what its browser may reach: this project's
-  sites and its dev servers, also the open web, or Keep off (#2013).
+  sites and its dev servers, also the open web, or Keep off. A project's chats hold at most
+  three browsers together, and a browser's reach follows its chat's reach, including what you
+  withdraw (#2013).
 
 ### Changed
 

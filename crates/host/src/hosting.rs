@@ -240,9 +240,11 @@ pub trait Running: Send + Sync + 'static {
         &self,
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
-    ) -> Result<purlis_session_protocol::browsing::Browsed, String> {
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
         let _ = (call_id, act);
-        Err("this program is not a browser, so it takes no browser's act".into())
+        Err(crate::browsers::NotActed::Refused(
+            "this program is not a browser, so it takes no browser's act".into(),
+        ))
     }
 }
 
@@ -1136,9 +1138,15 @@ impl Hosting {
             .await
             .map_err(|why| not_started(why.to_string()))?
             .map(|browsed| Answer::Browsed(Box::new(browsed)))
-            .map_err(|why| Refusal {
-                code: session::BROWSER_REFUSED.into(),
-                why,
+            .map_err(|not| match not {
+                crate::browsers::NotActed::Ended => Refusal {
+                    code: session::BROWSER_ENDED.into(),
+                    why: crate::browsers::AN_ENDED_BROWSER.into(),
+                },
+                crate::browsers::NotActed::Refused(why) => Refusal {
+                    code: session::BROWSER_REFUSED.into(),
+                    why,
+                },
             })
     }
 

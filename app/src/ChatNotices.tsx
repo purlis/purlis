@@ -143,6 +143,18 @@ export function ByHandBanner({
  *  `AGENTS.md` they name as the operator's and hidden by charter's line (NO-4). */
 export type StartNotes = { notes: readonly string[]; agentsMd: readonly TheirAgentsMd[] };
 
+/** `held` with `note` said on chat `session`'s tab after its start's own lines, once (#2013):
+ *  a line purlis has to say while the chat runs, such as its browsers ending. */
+export function withNote(
+  held: Record<number, StartNotes>,
+  session: number,
+  note: string,
+): Record<number, StartNotes> {
+  const was = held[session] ?? { notes: [], agentsMd: [] };
+  if (was.notes.includes(note)) return held;
+  return { ...held, [session]: { ...was, notes: [...was.notes, note] } };
+}
+
 /** A branch in a sentence or a button: the repo for its own folder, `repo/piece` for a piece.
  *  Every file one start names is in the same repository, so this tells them apart. */
 export const branchName = (at: TheirAgentsMd) =>

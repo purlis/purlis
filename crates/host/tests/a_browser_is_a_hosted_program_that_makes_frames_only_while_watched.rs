@@ -374,6 +374,7 @@ async fn a_browser_is_started_with_the_reach_the_window_gives_it() {
             layer: session::Layer::Open,
         }],
         never: Vec::new(),
+        withdrawn: vec![5173],
         open_web: true,
     };
 
@@ -450,6 +451,23 @@ async fn an_act_the_browser_refuses_is_refused_in_its_words() {
         refusal.why,
         "e3 is not shown on the page now: take a new snapshot"
     );
+}
+
+#[tokio::test]
+async fn an_act_on_a_browser_whose_engine_ended_is_refused_as_ended_by_its_code() {
+    let linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    screen.ends(Exit::Code(0));
+
+    let refused = linked
+        .client
+        .browse(&program, "c-4", Act::Pages)
+        .await
+        .unwrap_err();
+
+    let refusal = refused.refusal().expect("a refusal");
+    assert_eq!(refusal.code, session::BROWSER_ENDED);
+    assert_eq!(refusal.why, purlis_host::AN_ENDED_BROWSER);
 }
 
 #[tokio::test]

@@ -37,7 +37,7 @@ use purlis_browser_engine::launch::{self, Launch, PAGE_SIZE};
 use purlis_browser_engine::process::{Engine, Keeper};
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
-use purlis_host::{Browsers, FrameSink, Screen};
+use purlis_host::{Browsers, FrameSink, NotActed, Screen};
 
 use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
 use crate::sandbox::reach::{Reach, Written};
@@ -155,10 +155,6 @@ impl Browsers for EngineBrowsers {
 /// well inside one control frame of the session protocol
 /// (`purlis_host::protocol::link::MOST_CONTROL_FRAME_BYTES`), so a larger one is halved to fit
 /// (`drive::fit`).
-/// What an act on a browser that has ended is refused with: the driver's own words, which the
-/// window reads as the browser being gone (#2013).
-pub const ENDED: &str = "the browser has ended: open a new one";
-
 pub const MOST_SCREENSHOT_BYTES: usize = 600 * 1024;
 
 /// **What a browser reaches** (#2013): the hosts `reach` lists, each at its layer, and the hosts
@@ -176,12 +172,12 @@ pub fn reach_of(reach: Option<&BrowserReach>) -> Result<(Reach, NewSites), Strin
             .map(|listed| {
                 (
                     listed.host.clone(),
-                    crate::browsertools::by_of(listed.layer),
+                    crate::sandbox::reach::by_of(listed.layer),
                 )
             })
             .collect(),
         never: reach.never.clone(),
-        withdrawn: Vec::new(),
+        withdrawn: reach.withdrawn.clone(),
         anything: false,
     };
     let read = Reach::from_written(&written)
@@ -405,9 +401,9 @@ impl Screen for EngineScreen {
         }
     }
 
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, String> {
-        let id = CallId::new(call_id).map_err(|why| why.to_string())?;
-        let call = call_of(act)?;
+    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
+        let id = CallId::new(call_id).map_err(|why| NotActed::Refused(why.to_string()))?;
+        let call = call_of(act).map_err(NotActed::Refused)?;
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
         let browser = self.with(Arc::clone);
@@ -416,7 +412,10 @@ impl Screen for EngineScreen {
                 browser.call(&id, call)
             })
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
-            .map_err(|refusal| refusal.to_string())
+            .map_err(|refusal| match refusal {
+                drive::Refusal::Ended => NotActed::Ended,
+                other => NotActed::Refused(other.to_string()),
+            })
     }
 
     /// Told once the engine has ended, however it ended; at once when it was stopped already.

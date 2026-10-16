@@ -586,6 +586,8 @@ pub struct Chats {
     /// the project records its network.
     reached: Arc<Mutex<Option<ProxyReached>>>,
     /// Who keeps purlis's word on a chat's held connections for its next turn (#1666).
+    /// Told each open chat whose reach the person narrowed while it runs (#2013).
+    narrowed: Mutex<Option<Narrowed>>,
     network_words: Mutex<Option<NetworkWords>>,
     /// The session record the app last wrote for each open chat, project-relative (#1436): what
     /// a task's report names as its record. The app's own knowledge of what it wrote, so a
@@ -975,6 +977,7 @@ impl Chats {
             refused_more: Arc::new(Mutex::new(None)),
             reached: Arc::new(Mutex::new(None)),
             network_words: Mutex::new(None),
+            narrowed: Mutex::new(None),
             records: Mutex::new(HashMap::new()),
             briefs: crate::rebrief::Sent::default(),
             dispatching: Mutex::new(()),
@@ -1607,6 +1610,8 @@ impl Chats {
     /// for itself. `chat` is the chat's id. The chats it was withdrawn from, by number; or, where
     /// a chat's proxy in the session host could not be told (#1999), what was said of each, once
     /// every chat was tried. Such a chat's proxy was ended rather than left carrying the port.
+    /// Each chat it was withdrawn from is told narrowed ([`Self::tell_narrowed_to`]), whose
+    /// browsers end, and a browser it opens after is given the port withdrawn (#2013).
     pub fn withdraw_port(&self, chat: Option<&str>, port: u16) -> Result<Vec<u32>, String> {
         let what = purlis_core::sandbox::grant::What::Port(port);
         let holding: Vec<String> = lock(&self.grants)
@@ -1616,6 +1621,7 @@ impl Chats {
             .collect();
         let open = lock(&self.open);
         let mut failed: Vec<String> = Vec::new();
+        let mut narrowed: Vec<u32> = Vec::new();
         let mut withdrawn: Vec<u32> = open
             .iter()
             .filter(|(_, running)| match chat {
@@ -1628,6 +1634,11 @@ impl Chats {
                     .is_some_and(|id| holding.contains(id)),
             })
             .filter_map(|(number, running)| {
+                // What the chat is now is what a browser it opens after is given (#2013).
+                if let Some(confines) = &running.confines {
+                    confines.reach.withdraw(port);
+                }
+                narrowed.push(*number);
                 match running.confinement.as_ref()?.withdraw_port(port) {
                     Ok(()) => Some(*number),
                     Err(why) => {
@@ -1637,7 +1648,9 @@ impl Chats {
                 }
             })
             .collect();
+        drop(open);
         withdrawn.sort_unstable();
+        self.narrowed(&narrowed);
         if failed.is_empty() {
             Ok(withdrawn)
         } else {
@@ -1867,14 +1880,27 @@ impl Chats {
         host: &purlis_core::sandbox::hosts::Host,
         level: purlis_core::sandbox::grant::Level,
     ) {
-        let boards: Vec<Arc<dyn purlis_core::sandbox::Board>> = lock(&self.open)
-            .values()
-            .filter(|running| chat.is_none() || running.chat.identity.id.as_deref() == chat)
-            .filter_map(|running| running.confinement.as_ref()?.asks().cloned())
-            .collect();
+        let (narrowed, boards): (Vec<u32>, Vec<Arc<dyn purlis_core::sandbox::Board>>) = {
+            let open = lock(&self.open);
+            let reached: Vec<(&u32, &Running)> = open
+                .iter()
+                .filter(|(_, running)| {
+                    chat.is_none() || running.chat.identity.id.as_deref() == chat
+                })
+                .collect();
+            (
+                reached.iter().map(|(number, _)| **number).collect(),
+                reached
+                    .iter()
+                    .filter_map(|(_, running)| running.confinement.as_ref()?.asks().cloned())
+                    .collect(),
+            )
+        };
         for board in boards {
             board.forget(host, level.into());
         }
+        // A browser of the chat was given what it allowed live: it ends (#2013).
+        self.narrowed(&narrowed);
     }
 
     /// **The person kept `host` blocked for chat `session`, from the window** (#1666): what its
@@ -1899,6 +1925,22 @@ impl Chats {
     /// Who keeps purlis's word on a chat's Asks for its next turn (#1666, #1987).
     pub fn tell_network_words_to(&self, keep: NetworkWords) {
         *lock(&self.network_words) = Some(keep);
+    }
+
+    /// Who is told, from now on, each open chat whose reach the person narrowed while it runs
+    /// (#2013): a port withdrawn from it, an Allow of it removed. Its browsers end, so none
+    /// reaches what the chat no longer may.
+    pub fn tell_narrowed_to(&self, told: Narrowed) {
+        *lock(&self.narrowed) = Some(told);
+    }
+
+    fn narrowed(&self, sessions: &[u32]) {
+        let Some(tell) = lock(&self.narrowed).clone() else {
+            return;
+        };
+        for session in sessions {
+            tell(*session);
+        }
     }
 
     /// The sandbox blocks each open chat is held on now (#1508).
@@ -4896,6 +4938,9 @@ pub struct Live {
 /// What keeps purlis's word on a chat's held connections for its next turn (#1666).
 pub type NetworkWords = Arc<dyn Fn(u32, purlis_core::askoutcome::Outcome) + Send + Sync + 'static>;
 
+/// What is told each open chat whose reach the person narrowed while it runs (#2013).
+pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
+
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
@@ -7490,6 +7535,66 @@ pub(crate) mod tests {
     /// #2157: **chats started differently are compiled each for itself**: a chat the person
     /// allowed a host for is compared under its own grants, never under its neighbour's
     /// compile, and only the chat whose sandbox fell behind is listed.
+    /// #2013: **what a chat is now is what its browser is given**: a port withdrawn while the
+    /// chat runs is withdrawn from a browser it opens after, as from its own proxy.
+    #[test]
+    fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after() {
+        let plane = a_sandboxed_plane();
+        let chats = restartable_chats_of(plane.path(), Pretend::default());
+        let decided = purlis_core::sandbox::decide_granted(
+            Harness::ClaudeCode,
+            plane.path(),
+            &a_machine(),
+            &|_| true,
+            &purlis_core::sandbox::Person {
+                opt_out: None,
+                level_as: None,
+                made: &purlis_core::sandbox::Made::Relaunch,
+            },
+            None,
+            &purlis_core::sandbox::grant::Grants::default(),
+        )
+        .expect("compiles");
+        let Some(purlis_core::sandbox::Decided::Sandboxed(applied)) = decided else {
+            panic!("not sandboxed");
+        };
+        lock(&chats.open).insert(
+            1,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: Some(applied.confines().clone()),
+                started_with: StartedWith::default(),
+            },
+        );
+
+        let narrowed = Arc::new(Mutex::new(Vec::new()));
+        chats.tell_narrowed_to({
+            let narrowed = Arc::clone(&narrowed);
+            Arc::new(move |session| narrowed.lock().unwrap().push(session))
+        });
+
+        chats.withdraw_port(None, 50795).expect("withdrawn");
+
+        let given = purlis_core::browsertools::browser_reach(
+            &chats.confines_now(1).expect("sandboxed").decides(),
+            false,
+        );
+        assert_eq!(given.withdrawn, [50795]);
+        // Its running browsers are told to end, as they are when an Allow it had is removed.
+        assert_eq!(*narrowed.lock().unwrap(), [1]);
+        chats.forget_live(
+            None,
+            &purlis_core::sandbox::grant::host("docs.example.com").expect("a host"),
+            purlis_core::sandbox::grant::Level::Chat,
+        );
+        assert_eq!(*narrowed.lock().unwrap(), [1, 1]);
+    }
+
     #[test]
     fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
         let plane = a_sandboxed_plane();
