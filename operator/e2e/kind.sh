@@ -4,10 +4,11 @@
 
 # The operator's end-to-end tests on a kind cluster (#2054, #2237): a cluster of the oldest
 # Kubernetes purlis supports, a registry beside it so images are named by digest as a Pool names
-# them, the pinned upstream agent-sandbox, then purlis's definitions, policy and operator
-# installed by the Helm chart (charts/purlis-cluster-operator/), as docs/cluster-operator.md
-# installs them. The cluster then shows the plain manifests in deploy/ would change nothing, and
-# `tests/on_a_kind_cluster.rs` runs. Everything it started is removed when it ends, unless KEEP=1.
+# them, doctor before and after the pinned upstream agent-sandbox, then purlis's definitions,
+# policy and operator installed by the Helm chart (charts/purlis-cluster-operator/), as
+# docs/cluster-operator.md installs them. The cluster then shows the plain manifests in deploy/
+# would change nothing, and `tests/on_a_kind_cluster.rs` runs. Everything it started is removed
+# when it ends, unless KEEP=1.
 #
 #   operator/e2e/kind.sh <runner image> <operator image>
 #
@@ -98,9 +99,30 @@ operator=$(by_digest "$operator_local" purlis-cluster-operator)
 echo "runner image: $runner"
 echo "operator image: $operator"
 
+# Doctor (#2236) with the cluster's admin credentials, as a team admin runs it before installing.
+doctor() {
+  kubectl config use-context "$context" >/dev/null
+  cargo run --manifest-path "$here/Cargo.toml" --locked --quiet -- doctor
+}
+
+step "doctor on a bare cluster: upstream agent-sandbox is missing"
+if found=$(doctor); then
+  echo "$found" >&2
+  echo "doctor found nothing missing on a cluster without upstream agent-sandbox" >&2
+  exit 1
+fi
+echo "$found"
+echo "$found" | grep -q "^missing: upstream agent-sandbox v1.0.6: not installed" || {
+  echo "doctor did not name upstream agent-sandbox as missing" >&2
+  exit 1
+}
+
 step "upstream agent-sandbox v1.0.6"
 kubectl --context "$context" apply --server-side -f "$upstream" >/dev/null
 kubectl --context "$context" -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
+
+step "doctor with the pinned upstream: nothing missing"
+doctor
 
 step "purlis's definitions, policy and operator, by the chart"
 # The release's namespace, made as docs/cluster-operator.md makes it: only pods that meet the

@@ -22,6 +22,7 @@
 //! built without the websocket feature those would need.
 
 mod admission;
+pub mod doctor;
 mod reconcile;
 mod resources;
 pub mod upstream;
