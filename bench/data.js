@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792147029569,
+  "lastUpdate": 1792148260936,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -13944,6 +13944,48 @@ window.BENCHMARK_DATA = {
             "value": 101.417224,
             "unit": "ms",
             "extra": "median of 5 runs: 100.828, 101.350, 101.417, 102.252, 102.471 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "07d63403fc96da617c8259a7b4e920c8ff4366e5",
+          "message": "Browsers: browser tools for chats (#2232)\n\n* Browsers: the session protocol carries a chat's browser acts (1.9)\n\nA browser's start may say what it reaches, and `browse` carries one act\nto it under its own id, answered `browsed` or refused `browser_refused`\nin the driver's words. The host carries each act to its browser off its\nruntime; the core turns an act into the driver's own call and its answer\ninto the protocol's words, a screenshot made to fit the control lane.\n\nRefs #2013\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a chat's browser tools in purlis mcp, a screenshot as an image\n\nEvery harness's tool server offers the browser_ tools; each call is one\nBrowse ask on the hook socket's framed stream, and a browser's screenshot\ngoes back as an image attached after its answer. A sandboxed Claude Code\nchat is offered none of its own browser tools.\n\nRefs #2013\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a chat's first browser call asks the person what it may reach\n\nThe window answers a chat's browser calls: the first asks the person one\nAsk in the registry (this project's sites and its dev servers, also the\nopen web, or Keep off), and once allowed the chat's browser starts in the\nsession host reaching what its sandbox lists, each act handed on. The\nchat is told the answer in the one line of every Ask. Docs: ADR 0068\namendment, plane format, harnesses, glossary, changelog.\n\nRefs #2013\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the tests that list purlis's tools and Claude Code's denials name the browser's\n\nRefs #2013\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: browse has its own grants row; 1.9's fixture frames take the next free ids\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a browser's reach follows its chat's, three per project, an ended browser by its code\n\nA browser's reach follows its chat's reach, including what the person\nwithdraws: a browser's start carries the ports withdrawn from its chat,\nand when the person narrows a chat's reach while it runs, its browsers\nend, its tab says so, and its next call opens one on what it reaches now.\nA project's chats hold at most three browsers together (spec #2008).\nAn act on an ended browser is refused `browser_ended`, which the window\nreads by its code. On a line, an answer carries no screenshot. Refusals\nsay what to do next.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a browser whose chat's reach narrowed is ended, retried until it is\n\nA close that does not end a chat's browser is tried once more, then the\nhost ends the program by its id. One that still cannot be ended stays\nknown: no call of the chat's reaches it, it counts toward the project's\nthree, it is tried again at every browser call and narrowing, and the\nchat's tab says so. The window forgets a browser only once its host has\nended it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T14:40:07+04:00",
+          "tree_id": "41d9583f41d8a2a472dd97c59ffdf76fb18aa5f0",
+          "url": "https://github.com/purlis/purlis/commit/07d63403fc96da617c8259a7b4e920c8ff4366e5"
+        },
+        "date": 1792148259501,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5267090000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.520, 0.527, 0.533, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.168671,
+            "unit": "ms",
+            "extra": "median of 5 runs: 17.045, 17.077, 17.169, 17.232, 17.553 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.29297650000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.793, 103.412, 104.293, 105.339, 105.940 ms"
           }
         ]
       }
