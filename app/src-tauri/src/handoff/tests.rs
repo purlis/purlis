@@ -474,7 +474,7 @@ fn the_start_for_a_persona_falls_back_from_an_unoffered_profile_and_refuses_an_u
 #[test]
 fn a_claude_chat_hands_off_to_a_persona_on_a_codex_profile_and_codex_gets_the_brief() {
     let plane = Plane::new().with_a_codex_persona();
-    let planes = planes();
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     // The asking chat runs as `ops` itself: a handoff to its own persona needs no
@@ -592,7 +592,7 @@ fn a_handoff_to_a_persona_on_a_profile_nobody_approved_opens_nothing() {
         format!("{text}env = {{ CODEX_HOME = \"/elsewhere\" }}\n"),
     )
     .expect("changed");
-    let planes = planes();
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     // The asking chat runs as `ops` itself: a handoff to its own persona needs no
@@ -1062,7 +1062,7 @@ fn a_handoff_counts_toward_the_running_limit_of_a_chat_nobody_is_at_and_of_no_ot
 #[test]
 fn a_codex_chat_hands_off_to_its_own_persona_though_its_harness_reports_its_prompts_off() {
     let plane = Plane::new().with_a_codex_persona();
-    let planes = planes();
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let start = purlis_core::start::Start {

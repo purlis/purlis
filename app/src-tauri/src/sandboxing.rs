@@ -717,7 +717,8 @@ pub struct GrantsHeld {
 /// Whether `persona`'s hosts in the project at `root` wait for the person's Allow on this
 /// machine: it lists hosts a chat would reach, or tools, and they are not allowed as they stand.
 /// **In a test of something else: no sandbox for this project's chats on this machine**, as a
-/// person sets it in Settings (`[sandbox] level = "off"` in the local file, confirmed in this
+/// person sets it in Settings, which a `Planes` keeping an event log records
+/// ([`keeping_events_for_tests`]) (`[sandbox] level = "off"` in the local file, confirmed in this
 /// machine's record). Codex and opencode run inside purlis's own wrap on macOS and Linux
 /// (#1040), at the floor too, and a test about typing, a handoff or a relaunch starts its
 /// stand-in harness without it.
@@ -726,11 +727,27 @@ pub(crate) fn no_sandbox_here_for_tests(root: &std::path::Path) {
     use purlis_core::sandbox::personal::{self, Choice};
     let local = root.join(purlis_core::profiles::LOCAL_FILE);
     let text = std::fs::read_to_string(&local).unwrap_or_default();
+    // First in the file, so what a test later appends to its last table stays in that table.
     if !text.contains("[sandbox]") {
-        std::fs::write(&local, format!("{text}\n[sandbox]\nlevel = \"off\"\n"))
+        std::fs::write(&local, format!("[sandbox]\nlevel = \"off\"\n\n{text}"))
             .expect("the local file");
     }
     personal::set_by_you(root, None, Some(Choice::Off)).expect("your level");
+}
+
+/// **In a test: `planes`, keeping an event log at `at`**, so a chat started without the
+/// sandbox is started once that is recorded (ADR 0067 §7).
+#[cfg(test)]
+pub(crate) fn keeping_events_for_tests(
+    planes: crate::planes::Planes,
+    at: &std::path::Path,
+) -> crate::planes::Planes {
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    let events = crate::hooks::Events::here(Recorder::new(
+        Log::open(at, "DEVICE").expect("a log"),
+        ArgsKey::open(at).expect("a key"),
+    ));
+    planes.recording_events(Some(events))
 }
 
 pub(crate) fn persona_hosts_wait(root: &std::path::Path, persona: Option<&str>) -> bool {

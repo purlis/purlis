@@ -297,10 +297,30 @@ impl Chat<'_> {
         }
         if let Ok(pid) = std::str::from_utf8(bytes).unwrap_or("").parse::<i32>()
             && !self.world.inside(pid)
+            && !public(names)
         {
             return Err(Errno::EACCES);
         }
         Ok(name)
+    }
+}
+
+/// What any process may read of a process outside the sandbox, as the kernel lets any process
+/// of the same user read it with no right to trace it: its folder's names, and its `stat`,
+/// `status`, `statm`, `comm` and `cmdline`, and the same of each of its threads. Everything
+/// else (its environment, memory, open files, working folder) needs that right, which a
+/// process inside the sandbox never has over one outside it.
+fn public(rest: &VecDeque<Vec<u8>>) -> bool {
+    const READ: [&[u8]; 5] = [b"stat", b"status", b"statm", b"comm", b"cmdline"];
+    let rest: Vec<&[u8]> = rest.iter().map(Vec::as_slice).collect();
+    match rest.as_slice() {
+        [] => true,
+        [file] => READ.contains(file) || *file == b"task",
+        [task, tid] => *task == b"task" && tid.iter().all(u8::is_ascii_digit),
+        [task, tid, file] => {
+            *task == b"task" && tid.iter().all(u8::is_ascii_digit) && READ.contains(file)
+        }
+        _ => false,
     }
 }
 

@@ -460,7 +460,8 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
     assert_eq!(said, "ok");
     // The wrap's own process: the probe's parent.
     let script = format!(
-        "{PROBE} read /proc/$PPID/environ; {PROBE} read /proc/1/environ; {PROBE} read /proc/$$/status"
+        "{PROBE} read /proc/$PPID/environ; {PROBE} read /proc/1/environ; {PROBE} read /proc/$$/status; \
+         {PROBE} read /proc/$PPID/stat; {PROBE} read /proc/$PPID/cwd/x; {PROBE} read /proc/$PPID/task/$PPID/environ"
     );
     let out = Command::new(PROBE)
         .args(purlis_linux_sandbox::line(
@@ -476,7 +477,13 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
         .expect("the wrap ran");
     let said = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = said.lines().collect();
-    assert_eq!(lines, vec!["EACCES", "EACCES", "ok"], "{said}");
+    // What any process reads of another, `ps` as it were, is read; what needs the right to
+    // trace it is not.
+    assert_eq!(
+        lines,
+        vec!["EACCES", "EACCES", "ok", "ok", "EACCES", "EACCES"],
+        "{said}"
+    );
 }
 
 #[test]

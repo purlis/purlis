@@ -556,7 +556,8 @@ mod tests {
     #[test]
     fn start_a_chat_here_on_opencode_starts_it_and_copies_the_reference() {
         let project = Project::new("opencode");
-        let planes = planes();
+        let planes =
+            crate::sandboxing::keeping_events_for_tests(planes(), &project.root.join("events"));
         let held = planes.held(&planes.open(&project.root)).expect("held");
         let copied = Mutex::new(Vec::<String>::new());
 
