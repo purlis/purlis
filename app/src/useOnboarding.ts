@@ -107,14 +107,22 @@ export function useOnboarding({
       .catch(() => undefined);
   }, []);
 
-  // Kept whole on every change, once the kept place has been read.
+  // Kept whole on every change, once the kept place has been read. One write at a time, in
+  // the order the changes came: the core writes each off its own thread, so two at once could
+  // land in either order. A place changed again before its turn to be written is not written.
   const kept = JSON.stringify(progress);
+  const writing = useRef<Promise<void>>(Promise.resolve());
+  const latest = useRef(kept);
   useEffect(() => {
     if (!read) return;
-    void commands
-      .keepOnboardingProgress(JSON.parse(kept) as Progress)
-      .then((answer) => setTrouble(answer?.status === "error" ? answer.error : undefined))
-      .catch((err: unknown) => setTrouble(String(err)));
+    latest.current = kept;
+    writing.current = writing.current.then(async () => {
+      if (latest.current !== kept) return;
+      await commands
+        .keepOnboardingProgress(JSON.parse(kept) as Progress)
+        .then((answer) => setTrouble(answer?.status === "error" ? answer.error : undefined))
+        .catch((err: unknown) => setTrouble(String(err)));
+    });
   }, [kept, read]);
 
   const dispatch = useCallback((event: Event) => {

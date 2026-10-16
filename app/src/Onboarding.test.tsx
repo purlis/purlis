@@ -409,3 +409,42 @@ describe("a relaunch", () => {
     await waitFor(() => expect(projectDrawn()).toBe(true));
   });
 });
+
+describe("the place it keeps", () => {
+  it("is the last place the person was at, however slowly the core keeps an earlier one", async () => {
+    // A core that keeps each place as its write finishes, and whose first write is slow: the
+    // window's next place must not be put under it.
+    let onDisk: OnboardingProgress | null = null;
+    let finishFirst = () => {};
+    let writes = 0;
+    machine({
+      answers: (cmd, args) => {
+        if (cmd !== "keep_onboarding_progress") return undefined;
+        const progress = args.progress as OnboardingProgress;
+        writes += 1;
+        if (writes > 1) {
+          onDisk = progress;
+          return null;
+        }
+        return new Promise((resolve) => {
+          finishFirst = () => {
+            onDisk = progress;
+            resolve(null);
+          };
+        });
+      },
+    });
+    render(<App />);
+    await stepSays("Step 1 of 4: Welcome");
+    await waitFor(() => expect(writes).toBe(1));
+
+    const person = userEvent.setup();
+    await person.click(
+      await screen.findByRole("button", { name: "Get a project from your forge" }),
+    );
+    await screen.findByRole("heading", { level: 1, name: "Get a project from your forge" });
+    finishFirst();
+
+    await waitFor(() => expect(onDisk).toMatchObject({ step: "project", door: "get" }));
+  });
+});

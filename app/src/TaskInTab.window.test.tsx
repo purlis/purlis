@@ -74,6 +74,10 @@ declare global {
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
+// These tests render the whole app: about 1–2 s each on an idle machine, and just over 5 s on a
+// runner with every core busy. This is the budget a test is given, not a wait for anything.
+vi.setConfig({ testTimeout: 15_000 });
+
 const PLANE = "/home/dev/plane";
 
 type Lineage = NonNullable<OpenChat["from"]>;
@@ -1725,24 +1729,30 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     expect(await cardOf(tree, "drop commons")).toContain("from steward 1");
   });
 
-  it("follows a rename of either chat", async () => {
+  // One rename to a test: each card read waits out the card's own rest and leave, real time.
+  /** Renames the chat called `was`, on its tab, as a person does. */
+  const rename = async (was: string, to: string) => {
+    await userEvent.dblClick(tab(was));
+    await within(strip()).findByRole("textbox", { name: /^Rename chat/ });
+    await userEvent.keyboard(`{Control>}a{/Control}${to}{Enter}`);
+    await waitFor(() => expect(tabNames()).toContain(to));
+  };
+
+  it("follows a rename of the chat it went to", async () => {
     const { tree } = await drawn(moved());
-    /** Renames the chat called `was`, on its tab, as a person does. */
-    const rename = async (was: string, to: string) => {
-      await userEvent.dblClick(tab(was));
-      await within(strip()).findByRole("textbox", { name: /^Rename chat/ });
-      await userEvent.keyboard(`{Control>}a{/Control}${to}{Enter}`);
-      await waitFor(() => expect(tabNames()).toContain(to));
-    };
 
     await rename("drop commons", "ship it");
     await waitFor(() => expect(row(tree, "ship it")).toBeTruthy());
     expect(await cardOf(tree, "steward 1")).toContain("handed off to ship it");
+  });
+
+  it("follows a rename of the chat it came from", async () => {
+    const { tree } = await drawn(moved());
 
     await rename("steward 1", "lead");
     await waitFor(() => expect(row(tree, "lead")).toBeTruthy());
-    expect(await cardOf(tree, "ship it")).toContain("from lead");
-    expect(await cardOf(tree, "lead")).toContain("handed off to ship it");
+    expect(await cardOf(tree, "drop commons")).toContain("from lead");
+    expect(await cardOf(tree, "lead")).toContain("handed off to drop commons");
   });
 });
 
