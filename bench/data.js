@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792189902534,
+  "lastUpdate": 1792191119675,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14658,6 +14658,48 @@ window.BENCHMARK_DATA = {
             "value": 104.758114,
             "unit": "ms",
             "extra": "median of 5 runs: 103.295, 104.583, 104.758, 104.903, 105.198 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b895f8cc83bf00eafd14cc52a84bb464b7d12c6e",
+          "message": "test(app): wait for a handed-off chat's row, not only its tab (#2158) (#2356)\n\nCause: \"arrives as a row and no tab, where a handoff arrives as a tab\"\nwaited for the handoff's tab, then read the Chats tree once. The tab is\nopened synchronously in the `handoff-arrived` listener (PlaneView,\nopenTabBehind), but the row is drawn from the sidebar the window reads\nagain after that tab change (`plane_sidebar`, an async IPC answer). On a\nslow runner the read had not answered yet, so the tree still held two\nrows. The assertion now waits on that state with waitFor.\n\nReproduced by delaying the mocked `plane_sidebar` answer by 40 ms: the\nold test fails with the CI message, the new one passes.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T02:32:21+04:00",
+          "tree_id": "e0245f9a56008e577de3d07511263a0a548d60ce",
+          "url": "https://github.com/purlis/purlis/commit/b895f8cc83bf00eafd14cc52a84bb464b7d12c6e"
+        },
+        "date": 1792191118478,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5326975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.508, 0.530, 0.533, 0.538, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0302025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.425, 17.015, 17.030, 17.033, 17.232 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.2614045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.893, 104.108, 104.261, 104.420, 105.795 ms"
           }
         ]
       }
