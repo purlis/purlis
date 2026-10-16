@@ -10,9 +10,9 @@
 //! credentials it minted, refuses everyone else, and serves the session protocol: it holds
 //! projects, and starts, views, drives, stops and closes the programs a client starts in them
 //! ([`Hosting`]). While chats run in it, it is the event log's one writer, and keeps what each
-//! program's end leaves, window or no window (#2003, [`Record`]). How a start is composed is
-//! the binary's ([`Compose`]), and so is how a chat's confinement, its egress proxy, is started from the window's plan (#1999, [`Confine`]), each
-//! built on the core, so this crate links none of it.
+//! program's end leaves, window or no window (#2003, [`Record`]). How a start is composed is the
+//! binary's ([`Compose`]), and so is how a chat's confinement, its egress proxy, is started from
+//! the window's plan (#1999, [`Confine`]), each built on the core, so this crate links none of it.
 //!
 //! **How it starts, in order, each step failing closed:**
 //!

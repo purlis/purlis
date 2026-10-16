@@ -1917,7 +1917,9 @@ impl Hooks {
                     // was not. Where the session host writes the event log (#2003), the event
                     // above is written there once this hearing returns, after the window is
                     // told and before the hook is told its line is taken: nothing the window
-                    // is told reads the event log.
+                    // is told reads the event log. It is not sent ahead as `record`, because
+                    // only the host thread that heard the line tells it from its spooled copy
+                    // (#952, D-2003-4).
                     if let Some(id) = applied.followed {
                         let listener = following
                             .lock()

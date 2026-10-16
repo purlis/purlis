@@ -5863,8 +5863,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   app accepts its report or closes it. While chats run in the session host, the host (the
   app's own binary) closes one as a task that went without its report, owed to its asking
   chat, where the persona chat's program ended by itself with no window holding the project
-  (`purlis_core::dispatchrecord::ended_unwatched`, #2003). `conversation` is written by the same hand as the
-  record ends, and `cleared` by the window's Clear finished and Reopen
+  (`purlis_core::dispatchrecord::ended_unwatched`, #2003). `conversation` is written by the same
+  hand as the record ends, and `cleared` by the window's Clear finished and Reopen
   (`app/src-tauri/src/finished.rs`), which only the person runs, and by the app as the asking
   chat closes. **No line on the hook channel
   names a record, an asker or a cost**, so no line a chat sends makes a record or points one

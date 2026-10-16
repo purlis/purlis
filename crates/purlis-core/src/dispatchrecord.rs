@@ -39,8 +39,8 @@
 //! record, an asker, an outcome or a cost. While chats run in the session host, the host (the
 //! app's own binary) ends one whose chat's program ended with no window there
 //! ([`ended_unwatched`], #2003), from the program's end it saw itself. Three things in a record
-//! are still a chat's. The brief, the report's text and each message the two chats sent each other ([`Said`], #1495)
-//! are its words, stored as written and held to a cap ([`cut`]). And what its
+//! are still a chat's. The brief, the report's text and each message the two chats sent each other
+//! ([`Said`], #1495) are its words, stored as written and held to a cap ([`cut`]). And what its
 //! harness reported of tokens and cost ([`crate::usage::spent`]) is relayed by the chat's
 //! status line, which its harness runs outside the sandbox, into a file of the app's folder
 //! kept by the chat's id, where no sandboxed chat can write (#1457). It is shown as the harness
