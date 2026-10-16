@@ -217,10 +217,16 @@ export function BrowserView({ program }: { program: string }) {
     void takeOver().then((took) => took && send(pressed));
   };
 
+  /** Sends `input` while the person drives, or once a take-over under way answers. */
+  const whileDriving = (input: BrowserInput) => {
+    if (drives.current) send(input);
+    else void taking.current?.then((took) => took && send(input));
+  };
+
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     const point = pointAt(e);
-    if (!drives.current || point === undefined) return;
-    send(mouseInput(aim.current, "released", point, e));
+    if (point === undefined) return;
+    whileDriving(mouseInput(aim.current, "released", point, e));
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
@@ -250,9 +256,9 @@ export function BrowserView({ program }: { program: string }) {
   };
 
   const onKeyUp = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!drives.current || handsBack(e.nativeEvent, mac)) return;
+    if (handsBack(e.nativeEvent, mac)) return;
     e.preventDefault();
-    send(keyInput(aim.current, false, e));
+    whileDriving(keyInput(aim.current, false, e));
   };
 
   const pickSize = (id: string) => {

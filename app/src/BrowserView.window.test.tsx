@@ -247,6 +247,20 @@ describe("taking a browser over from its view (#2014)", () => {
     );
   });
 
+  it("lets go of a click that took the browser over, even when let go before the take-over answered", async () => {
+    const host = await drawn();
+    const surface = screen.getByTestId("browser-surface");
+    const at = { clientX: 640, clientY: 400, button: 0, detail: 1, pointerId: 1 };
+
+    fireEvent.pointerDown(surface, at);
+    fireEvent.pointerUp(surface, at);
+
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(2));
+    expect(
+      host.asked("browser_input").map(({ input }) => (input as { action: string }).action),
+    ).toEqual(["pressed", "released"]);
+  });
+
   it("takes the browser over with a key, and Done hands it back", async () => {
     const host = await drawn();
 
