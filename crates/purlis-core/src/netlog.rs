@@ -66,6 +66,10 @@ pub enum Feature {
     /// repos and the project's own sync. Its line names the host and the git operation as the
     /// method, and keeps no path: the repo, a ref and a credential are never listed.
     Git,
+    /// The browser engine's own download (#2009, #2073): Chrome for Testing's archive of the
+    /// version a trusted manifest names, from Chrome for Testing's bucket. The manifest and its
+    /// bundle are the updater's reads.
+    BrowserEngine,
 }
 
 impl Feature {
@@ -73,7 +77,7 @@ impl Feature {
     /// line says Charter only when its address is Charter's too ([`is_charters`]).
     pub fn party(self) -> Party {
         match self {
-            Feature::Forge | Feature::Git => Party::ThirdParty,
+            Feature::Forge | Feature::Git | Feature::BrowserEngine => Party::ThirdParty,
             Feature::Updater | Feature::Report => Party::Charter,
         }
     }
@@ -422,20 +426,26 @@ pub fn record(call: Call<'_>) {
 /// the weekly manifest, when they exist) are the only Charter addresses a run without an account
 /// reaches (ADR 0083 §9). `answered` is whether an answer came back.
 pub fn updater_read(url: &str, answered: bool, took: Duration) {
+    fetched(Feature::Updater, url, None, answered, took);
+}
+
+/// List one GET of `url` by `feature` over purlis's own HTTPS client: a redirect is a line of
+/// its own. `status` is what came back, if anything did, and `answered` whether the answer was
+/// read whole.
+pub fn fetched(feature: Feature, url: &str, status: Option<u16>, answered: bool, took: Duration) {
     let Ok(uri) = url.parse::<http::Uri>() else {
         return;
     };
     let Some(host) = host_of(&uri) else {
         return;
     };
-    let host = host.as_str();
     record(Call {
-        feature: Feature::Updater,
+        feature,
         via: Via::Https,
-        host,
+        host: &host,
         method: "GET",
         path: uri.path(),
-        status: None,
+        status,
         answered,
         took,
     });

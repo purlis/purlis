@@ -290,3 +290,92 @@ fn a_frame_names_its_page_and_document_in_the_protocols_words() {
         }
     );
 }
+
+// ---- The engine kept current in the background (#2073) ----
+
+use std::cell::RefCell;
+
+use purlis_browser_engine::install::{
+    EngineSettings, Engines, Fetch, Manifest, NoSigner, PUBLISHED_BUNDLE, PUBLISHED_MANIFEST,
+    Platform, Refused,
+};
+
+use super::keep_current;
+use crate::netlog::{Feature, Party};
+
+/// Serves only the published manifest, and remembers what it was asked for.
+#[derive(Default)]
+struct Asked(RefCell<Vec<String>>);
+
+impl Fetch for Asked {
+    fn fetch(&self, url: &str) -> std::io::Result<Box<dyn std::io::Read + '_>> {
+        self.0.borrow_mut().push(url.to_owned());
+        if url == PUBLISHED_MANIFEST {
+            Ok(Box::new(std::io::Cursor::new(b"{}".to_vec())))
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "404"))
+        }
+    }
+}
+
+fn engines(root: &Path) -> Engines {
+    Engines::new(
+        root,
+        Platform::Linux64,
+        Manifest::shipped(),
+        Box::new(NoSigner),
+    )
+}
+
+#[test]
+fn a_machine_that_never_used_the_pinned_engine_is_never_checked_for_one() {
+    let root = tempfile::tempdir().unwrap();
+    let asked = Asked::default();
+    let checked = keep_current(
+        &engines(&root.path().join("engines")),
+        &EngineSettings::default(),
+        &asked,
+        &asked,
+        chrono::Utc::now(),
+    );
+    assert!(checked.is_none());
+    assert!(asked.0.borrow().is_empty(), "nothing reached the network");
+}
+
+#[test]
+fn a_machine_with_the_pinned_engine_installed_reads_the_published_manifest_and_its_bundle() {
+    let root = tempfile::tempdir().unwrap();
+    let installed = root.path().join("155.0.8059.79-linux64");
+    std::fs::create_dir_all(&installed).unwrap();
+    std::fs::write(installed.join("installed.json"), r#"{"sha256":"ab"}"#).unwrap();
+    let (manifests, archives) = (Asked::default(), Asked::default());
+    let checked = keep_current(
+        &engines(root.path()),
+        &EngineSettings::default(),
+        &manifests,
+        &archives,
+        chrono::Utc::now(),
+    );
+    assert!(
+        matches!(checked, Some(Err(Refused::Download(_)))),
+        "{checked:?}"
+    );
+    assert_eq!(
+        *manifests.0.borrow(),
+        [PUBLISHED_MANIFEST.to_owned(), PUBLISHED_BUNDLE.to_owned()]
+    );
+    assert!(archives.0.borrow().is_empty());
+}
+
+#[test]
+fn the_engines_archive_is_a_third_partys_and_the_manifest_is_purliss_own() {
+    assert_eq!(Feature::BrowserEngine.party(), Party::ThirdParty);
+    assert_eq!(
+        serde_json::to_value(Feature::BrowserEngine).unwrap(),
+        "browser-engine"
+    );
+    let path = PUBLISHED_MANIFEST
+        .strip_prefix("https://github.com")
+        .unwrap();
+    assert!(crate::netlog::is_charters("github.com", path));
+}

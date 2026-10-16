@@ -8,7 +8,18 @@
 //!
 //! - **Which engine**: the pinned Chrome for Testing, downloaded into
 //!   `<data>/engines/chrome-for-testing` on first use and checked against the pin this build
-//!   ships before it runs.
+//!   ships before it runs, or against a newer manifest the manifest workflow signed
+//!   ([`Sigstore`], #2073).
+//! - **Kept current apart from purlis's releases** ([`keep_current`]): once the pinned engine
+//!   has been used on this machine, the host reads the newest published manifest and its
+//!   Sigstore bundle [`FIRST_CHECK`] after it starts and every [`CHECK_EVERY`] after, and a
+//!   browser that would start on an engine behind past its warning checks first. A manifest
+//!   is taken only when its bundle verifies; anything else leaves the engine in use as it is,
+//!   and a check that failed or was refused is written to the host's log. The manifest and
+//!   bundle are read within [`MANIFEST_READ`], before anything waits on another install. Every
+//!   request is listed in the network log, redirects included: the manifest's as the
+//!   updater's, an archive's as the browser engine's ([`manifest_reads`], [`archive_reads`],
+//!   ADR 0083 §9).
 //! - **Its keeper is this binary**, started again with [`KEEPER`]: the first thing each binary's
 //!   `main` does is [`keep_if_asked`], so the keeper runs before anything else of the program.
 //! - **This runs in the session host.** The window's host is the window's own binary, so with
@@ -27,17 +38,18 @@
 //!   event ([`input_of`]), and each frame names what it shows ([`aim_of`]).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, Once, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{self, Browser, CallId, Limits, PageId, Ref};
 use purlis_browser_engine::install::{
-    EngineSettings, Engines, Https, Manifest, NoSigner, Platform,
+    Age, EngineSettings, Engines, Fetch, Hop, Https, Manifest, Platform, Ready, Refused,
 };
 use purlis_browser_engine::launch::{self, Launch, PAGE_SIZE};
 use purlis_browser_engine::process::{Engine, Keeper};
+use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
 use purlis_host::{Browsers, FrameSink, NotActed, NotTaken, Screen};
@@ -73,7 +85,124 @@ pub fn browsers_in(data: &Path) -> PathBuf {
 /// `hosting`, starting its browsers on the pinned engine with this binary as their keeper, and
 /// making their data folders under `<data>/browsers`. Nothing is read until a browser starts.
 pub fn given_to(hosting: purlis_host::Hosting) -> purlis_host::Hosting {
+    keep_engines_current_in_the_background();
     hosting.with_browsers(EngineBrowsers::here())
+}
+
+/// How long after the session host starts it first checks for a newer engine.
+pub const FIRST_CHECK: Duration = Duration::from_secs(5 * 60);
+
+/// How often it checks again. The manifest workflow signs one a day.
+pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// The longest the published manifest and its bundle may take to read, each.
+pub const MANIFEST_READ: Duration = Duration::from_secs(60);
+
+/// **The background check** (#2073): when the pinned engine has been used on this machine,
+/// read the newest published manifest and its bundle through `manifests`, and take it as
+/// [`Engines::update`] does, its archive downloaded through `archives`. A machine that never
+/// used it reads nothing.
+pub fn keep_current(
+    engines: &Engines,
+    settings: &EngineSettings,
+    manifests: &dyn Fetch,
+    archives: &dyn Fetch,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<Result<Ready, Refused>> {
+    if !engines.in_use() {
+        return None;
+    }
+    Some(update(engines, settings, manifests, archives, now))
+}
+
+/// The published manifest read through `manifests`, then taken as [`Engines::update`] does.
+fn update(
+    engines: &Engines,
+    settings: &EngineSettings,
+    manifests: &dyn Fetch,
+    archives: &dyn Fetch,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Ready, Refused> {
+    let (manifest, bundle) = Engines::published(manifests)?;
+    engines.update(&manifest, &bundle, settings, archives, now)
+}
+
+/// The published manifest and its bundle are read within [`MANIFEST_READ`], each request
+/// listed in the network log as the updater's.
+pub fn manifest_reads() -> Https {
+    Https::within(MANIFEST_READ).listening(listed_as(crate::netlog::Feature::Updater))
+}
+
+/// An engine's archive is read within [`Https::ARCHIVE`], each request listed in the network
+/// log as the browser engine's.
+pub fn archive_reads() -> Https {
+    Https::default().listening(listed_as(crate::netlog::Feature::BrowserEngine))
+}
+
+/// Each request a download makes, listed in the network log under `feature`.
+fn listed_as(feature: crate::netlog::Feature) -> Arc<dyn Fn(Hop<'_>) + Send + Sync> {
+    Arc::new(move |hop: Hop<'_>| {
+        crate::netlog::fetched(feature, hop.url, hop.status, hop.answered, hop.took);
+    })
+}
+
+/// A check of the engine that failed or was refused, in the host's log. One that found
+/// nothing newer says nothing.
+fn report(checked: &Result<Ready, Refused>) {
+    match checked {
+        Ok(ready) => tracing::info!(
+            version = ready.version().unwrap_or_default(),
+            "the browser engine was updated"
+        ),
+        Err(Refused::Older { .. }) => {}
+        Err(why) => tracing::warn!("the browser engine's update check did not update it: {why}"),
+    }
+}
+
+/// The engines under `<data>` on `platform`, trusting the pin this build ships and the
+/// manifests the manifest workflow signed.
+fn engines_here(data: &Path, platform: Platform) -> Engines {
+    Engines::new(
+        engines_in(data),
+        platform,
+        Manifest::shipped(),
+        Box::new(Sigstore::engine_manifests()),
+    )
+}
+
+/// Starts the background check once in this process: [`FIRST_CHECK`] after now, then every
+/// [`CHECK_EVERY`]. It reads the data home at each check, and never fails the host.
+fn keep_engines_current_in_the_background() {
+    static STARTED: Once = Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new()
+            .name("engine-updates".into())
+            .spawn(|| {
+                std::thread::sleep(FIRST_CHECK);
+                loop {
+                    check_here();
+                    std::thread::sleep(CHECK_EVERY);
+                }
+            });
+    });
+}
+
+/// One background check of this machine's engines.
+fn check_here() {
+    let (Some(data), Some(platform)) = (crate::datahome::root(), Platform::current()) else {
+        return;
+    };
+    let engines = engines_here(&data, platform);
+    let checked = keep_current(
+        &engines,
+        &EngineSettings::default(),
+        &manifest_reads(),
+        &archive_reads(),
+        chrono::Utc::now(),
+    );
+    if let Some(checked) = checked {
+        report(&checked);
+    }
 }
 
 /// Starts each browser on the pinned engine, with this binary as its keeper.
@@ -128,15 +257,8 @@ impl Browsers for EngineBrowsers {
         let (home, program) = self.places()?;
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
-        let engines = Engines::new(
-            engines_in(&home),
-            platform,
-            Manifest::shipped(),
-            Box::new(NoSigner),
-        );
-        let ready = engines
-            .prepare(&EngineSettings::default(), &Https, chrono::Utc::now())
-            .map_err(|why| why.to_string())?;
+        let engines = engines_here(&home, platform);
+        let ready = prepared(&engines).map_err(|why| why.to_string())?;
         let (reach, new_sites) = reach_of(reach)?;
         let proxy = ReachProxy::start(Lane::of(reach), new_sites)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
@@ -152,6 +274,26 @@ impl Browsers for EngineBrowsers {
             })),
         }))
     }
+}
+
+/// The engine a browser starts on: the trusted one, after reading the published manifest first
+/// when that engine is behind past its warning or refused for its age, so a machine whose
+/// background check has not run yet is not refused for an engine already superseded.
+fn prepared(engines: &Engines) -> Result<Ready, Refused> {
+    let settings = EngineSettings::default();
+    let archives = archive_reads();
+    let now = chrono::Utc::now();
+    let first = engines.prepare(&settings, &archives, now);
+    let behind = match &first {
+        Ok(ready) => matches!(ready.age(), Age::Behind { .. }),
+        Err(refused) => matches!(refused, Refused::Outdated { .. }),
+    };
+    if !behind {
+        return first;
+    }
+    let checked = update(engines, &settings, &manifest_reads(), &archives, now);
+    report(&checked);
+    checked.or(first)
 }
 
 /// The most bytes a screenshot's PNG is carried as: with its base64 and the answer around it,
