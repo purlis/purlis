@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792161020603,
+  "lastUpdate": 1792162974484,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14280,6 +14280,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7484795,
             "unit": "ms",
             "extra": "median of 5 runs: 101.238, 101.423, 101.748, 101.978, 102.528 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "aa54a965895112429d077e8e2c7a6727c44a4098",
+          "message": "Behaviour: a change written while the window is gone is committed by the host process (#2305)\n\nA window on a real git plane has its session host save it and is killed\noutright; a file written in the plane afterwards is committed by the host\nprocess within the grace period, and the test ends the host it started.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-16T19:01:43+04:00",
+          "tree_id": "b0481892aec092e21bf673c47ff8af0c8f0aaed7",
+          "url": "https://github.com/purlis/purlis/commit/aa54a965895112429d077e8e2c7a6727c44a4098"
+        },
+        "date": 1792162973381,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.273714,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.263, 0.271, 0.274, 0.278, 0.279 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.563230500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.491, 16.554, 16.563, 16.597, 16.598 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.47833800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.523, 101.094, 101.478, 101.580, 101.613 ms"
           }
         ]
       }
