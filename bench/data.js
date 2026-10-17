@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792224324011,
+  "lastUpdate": 1792225634777,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15162,6 +15162,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4117775,
             "unit": "ms",
             "extra": "median of 5 runs: 100.726, 101.240, 101.412, 101.807, 102.126 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8fff76e63e8b5dfe528fade71f7baa7082a62026",
+          "message": "Counts agree everywhere: no shipped string says \"N thing(s)\" (#2399)\n\n* test: move ten modules' _tests.rs files into <module>/tests.rs (move only)\n\nCONTRIBUTING \"Where tests live\": a module's old <module>_tests.rs moves when the module is next\nchanged, as a move alone. #2358 changes these ten modules, so their tests move first; no test's\nname or body changes. stats_tests.rs keeps its module name, `recorded`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* test: share the old-name guard's literal lexer as tests/shipped_literals\n\nThe lexer that reads shipped Rust's string literals (and leaves out test-only items and files)\nmoves out of no_old_name_is_spelled_outside_the_name_module into a module of its own, so a\nsecond guard (#2358's) reads exactly what this one reads. No behaviour changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Counts agree everywhere: no shipped string says \"N thing(s)\" (#2358)\n\ndocs/ui-copy.md: counts are digits and plurals agree. Every remaining \"N file(s)\",\n\"repo(s)\", \"harness(es)\", \"memory(ies)\" ... in shipped Rust now goes through one helper,\n`purlis_core::counts::counted` (\"1 file\", \"2 files\"), with `plural` for the word the count\ngoverns (\"1 repo has\", \"2 repos have\"; \"it\"/\"them\"). The two private copies,\n`dispatchlimits::counted` and `planegit/update.rs::plural`, and persona-statistics' own\n`plural`, are folded into it.\n\n`crates/purlis-core/tests/no_count_says_thing_s.rs` reads every string literal in shipped Rust\n(the old-name guard's lexer) and fails on a word written into \"(s)\", \"(es)\" or \"(ies)\". Four\nliterals in three files other open work is changing are allowed by exact count, tracked in\n#2396.\n\nTests that pinned the old sentences are updated to the new ones.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* tools: a bless may move the stderr lines a scenario sets apart; VaultTab's mock formatted\n\nThe replay re-records `expect.stderr.dropped` (replay.rs) when a scenario's set-apart stderr\nlines change, as #2358's `purlis save` rows do, but recorded-bless-check refused it as a\nverdict change. It is text, as stdout and stderr are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* recorded: 123 rows re-recorded for counts that agree with their noun (#2358)\n\nThe contract that moved: the wording of each count in the doctor, vault, status, recall, save,\ndiscover, clone, snapshot, restore and workspace scenarios (\"3 profile(s)\" -> \"3 profiles\",\n\"1 secret(s)\" -> \"1 secret\", \"1 repo(s) have\" -> \"1 repo has\"). No exit code, file, tree or\nother line moved. The rows are CI's recorded-behaviour-blessed artifact (run 39009970240),\nheld by tools/recorded-bless-check.mjs to those 123 rows and their text; six rows the artifact\nonly re-serialised are kept byte for byte.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* recorded: the unshared-memory row's claim says the count as it is now said (#2358)\n\n`sessionstart-says-memory-is-unshared-on-a-plane-that-commits-it` holds a claim (`expect.says`),\nwhich a bless never moves: its \"1 persona memory/ref file(s) are\" is now \"1 persona memory/ref\nfile is\", by hand, the one hand edit in this fixture and only in the claim.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* app: the keychain move writes its count as the number it is (#2358)\n\nCode scanning read `moved.secrets` (a count of values moved, never a value) passing through\n`counts::counted` into a test's assertion message as cleartext logging of a secret. The\nsentence now writes the integer itself beside `counts::plural`'s noun, as it did before #2358,\nand says what the field is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* app: the keychain-move test asserts without echoing its sentence\n\nCode scanning's two cleartext-logging alerts on this test (open on main as #215 and #216) read\n`Moved::secrets`, a count, as a secret and the assertion's `{said}` message as a log. The\ntest now checks the sentence, count wording included, without printing it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T12:12:16+04:00",
+          "tree_id": "d23ae0d995491a1d4c74eaceba17633dde0fcb77",
+          "url": "https://github.com/purlis/purlis/commit/8fff76e63e8b5dfe528fade71f7baa7082a62026"
+        },
+        "date": 1792225633663,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5167484999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.501, 0.514, 0.517, 0.520, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0724975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.598, 16.690, 17.072, 17.097, 17.359 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.71075200000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.571, 104.480, 104.711, 105.108, 105.258 ms"
           }
         ]
       }
