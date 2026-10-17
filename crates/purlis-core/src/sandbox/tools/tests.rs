@@ -1193,33 +1193,25 @@ fn a_tool_named_as_its_program_is_handed_no_other_name() {
     assert!(!text.contains("exec -a"), "{text}");
 }
 
-/// The shim with no app to ask runs the program itself, under the declared name where the shell
-/// can say one (`exec -a`, bash's and zsh's; a shell without it runs the program by its path).
+/// The shim with no app to ask, run as a chat runs it (through its own `#!/bin/sh`), runs the
+/// program itself: under the declared name where that shell has `exec -a` (macOS's `sh` is
+/// bash), and by its own path where it has not (dash, Debian's and Ubuntu's `sh`), which still
+/// runs and fails nothing.
 #[test]
-fn a_shim_with_no_app_runs_its_program_under_the_declared_name() {
-    let Some(xz) = crate::secrets::exec::tests::xz() else {
+fn a_shim_with_no_app_names_its_program_where_its_own_shell_can_and_runs_it_where_it_cannot() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(xz) = crate::testmulticall::xz() else {
         let _ =
             std::io::Write::write_all(&mut std::io::stderr(), b"skipped: no xz on this machine\n");
         return;
     };
-    let Some(bash) = ["/bin/bash", "/usr/bin/bash"]
-        .into_iter()
-        .map(Path::new)
-        .find(|path| path.is_file())
-    else {
-        let _ = std::io::Write::write_all(
-            &mut std::io::stderr(),
-            b"skipped: no bash on this machine\n",
-        );
-        return;
-    };
     let tmp = tempfile::tempdir().unwrap();
-    let file = crate::secrets::exec::tests::packed(&xz, tmp.path(), "unpacked\n");
+    let file = crate::testmulticall::packed(&xz, tmp.path(), "unpacked\n");
     let script = tmp.path().join("unxz");
     std::fs::write(&script, shim(Path::new("/purlis"), "devops", &unxz_at(&xz))).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     let out = crate::forklock::output(
-        std::process::Command::new(bash)
-            .arg(&script)
+        std::process::Command::new(&script)
             .arg("-c")
             .arg(&file)
             .env_remove("PURLIS_HOOK_SOCKET")
@@ -1227,6 +1219,16 @@ fn a_shim_with_no_app_runs_its_program_under_the_declared_name() {
     )
     .unwrap();
     assert!(out.status.success(), "{out:?}");
-    // `xz -c` would pack it again.
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "unpacked\n");
+    let names = crate::forklock::status(
+        std::process::Command::new("/bin/sh").args(["-c", "(exec -a probe true) 2>/dev/null"]),
+    )
+    .unwrap()
+    .success();
+    if names {
+        // Started as `unxz`: unpacked. `xz -c` would pack it again.
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "unpacked\n");
+    } else {
+        // Started by its own name: xz packed the file again, as `xz -c` does.
+        assert!(out.stdout.starts_with(b"\xfd7zXZ\0"), "{out:?}");
+    }
 }

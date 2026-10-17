@@ -682,7 +682,7 @@ impl Drop for Termination {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
 
 #[cfg(test)]
 mod keychain_tests;
