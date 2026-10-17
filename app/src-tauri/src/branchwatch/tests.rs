@@ -275,7 +275,13 @@ fn watch_with(reader: Reader) -> (BranchWatch<Source>, Heard) {
             let _ = tx.lock().unwrap().send((window.to_string(), branches));
         }),
         reader,
-        notify::Config::default().with_poll_interval(Duration::from_millis(50)),
+        // The poller keeps mtimes to the second (notify 8): a ref rewritten within the
+        // second it was made, as a commit right after `checkout -b` does, looks unchanged
+        // to it. Its contents are compared too, so the test hears what FSEvents would
+        // (#2463).
+        notify::Config::default()
+            .with_poll_interval(Duration::from_millis(50))
+            .with_compare_contents(true),
     );
     (watch, rx)
 }
@@ -391,12 +397,18 @@ fn a_branch_whose_check_hangs_holds_up_no_other_branch() {
     let other = purlis_core::worktree::add(&root, "alpha", "thing", "other", None)
         .unwrap()
         .path;
-    // An ignore file that blocks whoever opens it: the check of this branch hangs.
+    // An ignore file that blocks whoever opens it: the check of this branch hangs. The write
+    // goes in a folder git does not track yet, below it (#2463): a write in `src/deep` also
+    // names `src/deep`, a folder holding tracked files, which matters without reading any
+    // ignore file, so whenever that was asked first the check answered at once, and the two
+    // branches were told in either order. Nothing in `src/fresh` is tracked, so whichever
+    // path is asked first, its check reads `src/.gitignore` and hangs.
     let made = purlis_core::forklock::output(
         std::process::Command::new("mkfifo").arg(piece.join("src/.gitignore")),
     )
     .unwrap();
     assert!(made.status.success());
+    std::fs::create_dir(piece.join("src/fresh")).unwrap();
     let deadline = Duration::from_secs(6);
     let (watch, told) = watch_with(crate::reader().deadline(deadline));
     let listened = ["piece", "other"]
@@ -406,7 +418,7 @@ fn a_branch_whose_check_hangs_holds_up_no_other_branch() {
     std::thread::sleep(Duration::from_millis(300));
 
     let started = std::time::Instant::now();
-    std::fs::write(piece.join("src/deep/hangs.rs"), "\n").unwrap();
+    std::fs::write(piece.join("src/fresh/hangs.rs"), "\n").unwrap();
     std::fs::write(other.join("src/deep/moves.rs"), "\n").unwrap();
 
     // The other branch is told while the first one's check still hangs.
@@ -418,6 +430,8 @@ fn a_branch_whose_check_hangs_holds_up_no_other_branch() {
         .recv_timeout(PATIENCE)
         .expect("the hung branch was told");
     assert_eq!(then, [named("piece")]);
+    // Told because its read ran into the reader's deadline, not because it answered (#2463).
+    assert!(started.elapsed() >= deadline, "{:?}", started.elapsed());
 }
 
 /// A watch on [`crate::watchset::raw::Raw`], listening to the piece whole: the test plays
@@ -1161,10 +1175,15 @@ fn a_re_find_that_panics_lets_its_folder_be_found_again() {
         .refinding
         .insert(at.clone(), false);
     let handle = Arc::downgrade(&watch.inner);
+    let told: Told = Arc::new(|_: &str, _| {});
 
     let ran = std::thread::spawn({
         let at = at.clone();
-        move || refind(&handle, &at, || panic!("the reader's answer did not read"))
+        move || {
+            refind(&handle, &at, &told, || {
+                panic!("the reader's answer did not read")
+            })
+        }
     })
     .join();
 
@@ -1217,6 +1236,82 @@ fn a_checkout_in_the_cockpit_has_its_new_branchs_commits_heard() {
     let (window, branches) = told.recv_timeout(PATIENCE).expect("the window was told");
     assert_eq!(window, "main");
     assert_eq!(branches, [branch()]);
+}
+
+/// #2463: a commit made right after a checkout in the cockpit, before the new branch's ref
+/// is watched, moves a file no watch holds yet: the folder of `refs/heads/topic/one` is
+/// watched only once the cockpit's refs are found again, and a platform reports nothing
+/// from before a watch. So once that watch holds, the window is told the cockpit moved, and
+/// reads it again. The test plays the platform: it reports only the `HEAD` move.
+#[test]
+fn a_commit_before_the_new_branchs_ref_is_watched_is_told_once_it_is() {
+    use crate::watchset::raw;
+    use notify::event::{EventKind, ModifyKind};
+    let (_dir, root, piece) = plane();
+    let found = root_of(&root, "piece");
+    let head = found
+        .refs()
+        .iter()
+        .find(|file| file.ends_with("HEAD"))
+        .cloned()
+        .expect("the cockpit's HEAD is among its refs");
+    let topic = found
+        .refs()
+        .iter()
+        .find(|file| file.ends_with("refs/heads/piece"))
+        .and_then(|file| file.parent())
+        .expect("the branch's ref is among its refs")
+        .join("topic");
+    // Each tell says whether the new branch's ref folder was watched when it was sent.
+    let (tx, told) = mpsc::channel();
+    let tx = Mutex::new(tx);
+    let new_ref = topic.clone();
+    let watch = BranchWatch::<raw::Raw>::with_config(
+        Arc::new(move |window: &str, branches| {
+            let watched = raw::watched(&new_ref) > 0;
+            let _ = tx
+                .lock()
+                .unwrap()
+                .send((window.to_string(), branches, watched));
+        }),
+        crate::reader(),
+        notify::Config::default(),
+    );
+    // The re-find waits until the `HEAD` move has been told, so what is told after it is the
+    // re-find's own doing, whatever the timing.
+    let refind = Latch::default();
+    let watch = watch.holding_refinds(refind.clone());
+    watch
+        .set_from("main", watch.ticket(), vec![(branch(), found, How::Whole)])
+        .unwrap();
+    watch.focus("main", Some(branch()));
+
+    // Both land before the watch hears the checkout: nothing reports the commit's ref.
+    git(&piece, &["checkout", "-q", "-b", "topic/one"]);
+    git(
+        &piece,
+        &["commit", "-q", "--allow-empty", "-m", "no file written"],
+    );
+    raw::raw(EventKind::Modify(ModifyKind::Any), &head);
+
+    // The `HEAD` move, told at once, before the new branch's ref is watched.
+    let (window, branches, watched) = told.recv_timeout(PATIENCE).expect("the HEAD move was told");
+    assert_eq!(
+        (window.as_str(), branches.as_slice()),
+        ("main", [branch()].as_slice())
+    );
+    assert!(!watched, "the re-find is held");
+    refind.open();
+
+    // Once the new ref is watched, the window is told again: the commit is read.
+    let (window, branches, watched) = told
+        .recv_timeout(PATIENCE)
+        .expect("the window was told once the new branch's ref was watched");
+    assert_eq!(
+        (window.as_str(), branches.as_slice()),
+        ("main", [branch()].as_slice())
+    );
+    assert!(watched, "told before the new branch's ref was watched");
 }
 
 /// #1152, with a real watcher (first run on CI: it needs git): a commit that writes no file

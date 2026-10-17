@@ -44,9 +44,11 @@
 //! (`purlis_core::files::Root::refs`) are watched one by one, and a burst naming one of those
 //! files tells the window as a move in the folder would. A burst naming the cockpit's `HEAD` (a
 //! checkout in its folder) has its refs found again, off the watch's thread, so the branch
-//! checked out now is the one whose ref is watched. A ref that moved touches no shared save
-//! standing (`purlis_core::planegit::touch`): the standing's own stamp holds the clone's `HEAD`
-//! and refs (`purlis_core::standings::Stamp`), so its next read has the move anyway (D-1152-6).
+//! checked out now is the one whose ref is watched; once it is, the window is told the cockpit
+//! moved, since a commit made before that watch held was heard by nothing (#2463). A ref that
+//! moved touches no shared save standing (`purlis_core::planegit::touch`): the standing's own
+//! stamp holds the clone's `HEAD` and refs (`purlis_core::standings::Stamp`), so its next read
+//! has the move anyway (D-1152-6).
 //!
 //! **Every burst is told by what it named** ([`crate::watchset::bursts`], #1139): a file made
 //! and removed inside one is still a move. A burst that is everything — the platform lost
@@ -193,6 +195,9 @@ struct Inner<W: notify::Watcher> {
     /// The cockpits' folders whose refs are being found again after their `HEAD` moved, by
     /// folder, and whether it moved again meanwhile ([`find_refs_again`]).
     refinding: HashMap<PathBuf, bool>,
+    /// For a test: each re-find of refs waits for this to open before it reads ([`Latch`]).
+    #[cfg(test)]
+    refind_held: Option<Latch>,
     /// Until when no watcher is made again on the watch's own account, after one could not be
     /// made (#874): a clone the standing asks for, and a branch found late, wait it out.
     unmade_until: Option<Instant>,
@@ -367,6 +372,8 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                 refused: HashMap::new(),
                 cockpits: HashMap::new(),
                 refinding: HashMap::new(),
+                #[cfg(test)]
+                refind_held: None,
                 unmade_until: None,
                 rewatching: Rewatching::default(),
                 stale: HashSet::new(),
@@ -377,6 +384,17 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
             tickets: std::sync::atomic::AtomicU64::new(0),
             how_of: how,
         }
+    }
+
+    /// The same watch, whose re-finds of refs wait for `latch` to open: for a test to order a
+    /// re-find after what the watch's own thread tells.
+    #[cfg(test)]
+    fn holding_refinds(self, latch: Latch) -> Self {
+        self.inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .refind_held = Some(latch);
+        self
     }
 
     /// The same watch, listening to the clones kept for their standing `how_of`'s way: for a
@@ -671,7 +689,7 @@ fn heard<W: notify::Watcher + Send + 'static>(
         (roots, refs_moved, heads_moved)
     };
     for root in heads_moved {
-        find_refs_again(inner, reader, root);
+        find_refs_again(inner, reader, told, root);
     }
     // The cockpit's branch moved in git's own folder only: nothing in it is the status's to
     // sort (`Root::matters` passes over git's folder), so it is told as it is.
@@ -957,18 +975,40 @@ impl<W: notify::Watcher> Inner<W> {
             .map(|one| &one.root)
             .filter(move |root| seen.insert(root.path()))
     }
+
+    /// The windows whose cockpit, while they listen to it, is the folder `at`, each with that
+    /// branch.
+    fn cockpits_in(&self, at: &Path) -> HashMap<String, Vec<WatchedBranch>> {
+        let mut told: HashMap<String, Vec<WatchedBranch>> = HashMap::new();
+        for (window, listened) in &self.by_window {
+            let cockpit = self.cockpits.get(window);
+            for one in listened {
+                if Some(&one.branch) == cockpit && one.root.path() == at {
+                    let branches = told.entry(window.clone()).or_default();
+                    if !branches.contains(&one.branch) {
+                        branches.push(one.branch.clone());
+                    }
+                }
+            }
+        }
+        told
+    }
 }
 
 /// Finds `root`'s refs again, by the bounded reader on a thread of its own, after its `HEAD`
 /// moved (#1152): a checkout in the cockpit's folder puts another branch there, whose ref is
-/// then watched in place of the old one's. Once per folder at a time; a move heard meanwhile
-/// finds them once more when this one is done. A folder the reader no longer finds keeps what
-/// it had: the window's next set says what it listens to.
+/// then watched in place of the old one's, and the cockpit is told as moved once that watch
+/// holds ([`refind`], #2463). Once per folder at a time; a move heard meanwhile finds them once
+/// more when this one is done. A folder the reader no longer finds keeps what it had: the
+/// window's next set says what it listens to.
 fn find_refs_again<W: notify::Watcher + Send + 'static>(
     inner: &Arc<Mutex<Inner<W>>>,
     reader: &Reader,
+    told: &Told,
     root: Root,
 ) {
+    #[cfg(test)]
+    let held_by: Option<Latch>;
     {
         let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
         match held.refinding.get_mut(root.path()) {
@@ -980,15 +1020,26 @@ fn find_refs_again<W: notify::Watcher + Send + 'static>(
                 held.refinding.insert(root.path().to_path_buf(), false);
             }
         }
+        #[cfg(test)]
+        {
+            held_by = held.refind_held.clone();
+        }
     }
     let handle = Arc::downgrade(inner);
     let reader = reader.clone();
+    let told = Arc::clone(told);
     let at = root.path().to_path_buf();
     let started = std::thread::Builder::new()
         .name("purlis-cockpit-refs".into())
         .spawn({
             let at = at.clone();
-            move || refind(&handle, &at, || past_busy(|| root.again(&reader)))
+            move || {
+                #[cfg(test)]
+                if let Some(latch) = held_by {
+                    latch.wait();
+                }
+                refind(&handle, &at, &told, || past_busy(|| root.again(&reader)))
+            }
         });
     // No thread: the next move asks again.
     if started.is_err() {
@@ -997,13 +1048,40 @@ fn find_refs_again<W: notify::Watcher + Send + 'static>(
     }
 }
 
+/// A gate a test opens once: whoever waits on it waits until then.
+#[cfg(test)]
+#[derive(Clone, Default)]
+struct Latch(Arc<(Mutex<bool>, std::sync::Condvar)>);
+
+#[cfg(test)]
+impl Latch {
+    fn open(&self) {
+        *self.0.0.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.0.1.notify_all();
+    }
+
+    fn wait(&self) {
+        let mut open = self.0.0.lock().unwrap_or_else(PoisonError::into_inner);
+        while !*open {
+            open = self.0.1.wait(open).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+}
+
 /// [`find_refs_again`]'s thread: `again` finds the refs of the cockpit folder `at` once more,
 /// and every listened branch with that folder takes them; again while a move was heard
 /// meanwhile. A read that panics lets go of the folder ([`Refinding`]), so the next move heard
 /// finds them again.
+///
+/// **Refs that changed are told as moved once they are watched** (#2463). Between the checkout
+/// and this watch, the branch checked out now has a ref nothing watches: a commit made right
+/// after `git checkout -b` moves only that file, and a platform reports nothing from before a
+/// watch (FSEvents also restarts its stream to add one). So each window whose cockpit is in
+/// `at` is told it moved, after the watch is made, and reads its status again.
 fn refind<W: notify::Watcher>(
     handle: &Weak<Mutex<Inner<W>>>,
     at: &Path,
+    told: &Told,
     mut again: impl FnMut() -> Option<Root>,
 ) {
     let _letting_go = Refinding { handle, at };
@@ -1014,6 +1092,7 @@ fn refind<W: notify::Watcher>(
             return;
         };
         let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut moved: HashMap<String, Vec<WatchedBranch>> = HashMap::new();
         if let Some(found) = found.filter(|found| found.path() == at) {
             let mut changed = false;
             for one in held.by_window.values_mut().flatten() {
@@ -1024,14 +1103,23 @@ fn refind<W: notify::Watcher>(
             }
             if changed {
                 held.follow();
+                moved = held.cockpits_in(at);
             }
         }
-        if held.refinding.get(at) == Some(&true) {
+        let more = held.refinding.get(at) == Some(&true);
+        if more {
             held.refinding.insert(at.to_path_buf(), false);
-            continue;
+        } else {
+            held.refinding.remove(at);
         }
-        held.refinding.remove(at);
-        return;
+        // Outside the lock, as the watch's own thread tells.
+        drop(held);
+        for (window, branches) in moved {
+            told(&window, branches);
+        }
+        if !more {
+            return;
+        }
     }
 }
 
