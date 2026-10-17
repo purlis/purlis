@@ -7,40 +7,62 @@
 //! [`crate::extension::project::theme::resolve`]; this answers what that pick, and everything
 //! else this machine has, draw:
 //!
-//! 1. **What the project picked**: a built-in, the built-in matching the operating system's
-//!    appearance, or the extension theme it names, which is drawn only while the project has that
+//! 1. **What the project picked**: an appearance of Purlis Classic by the id a pick names it by;
+//!    `system`, the person's own theme in the appearance the operating system has when it has a
+//!    dark and a light one, else Purlis Classic's; or the extension theme it names, which is drawn only while the project has that
 //!    extension on and this machine approved it. A pick that cannot be drawn draws the default.
 //! 2. With no pick, **the person's own theme file**, the one theme they wrote for this machine.
 //!    A project's pick is more specific than a machine's file, which is why it comes first.
 //! 3. With neither, the first theme from an extension the project has on, or the default.
 //!
-//! An extension theme whose text is not JSON at all is dropped: with no pick the window keeps
-//! what it draws, and a pick of it draws the default (keeping it would leave the last project's
-//! theme on this one).
+//! **Following the system works with any theme that has a dark and a light appearance**: the
+//! window is told it follows, and asks again when the system turns. [`follow`] of a theme with
+//! only one appearance draws that one, and [`Drawn::note`] says that following the system stays
+//! there. A `system` pick with a person's theme of one appearance follows with Purlis Classic,
+//! as it did before format 2, until Settings › Theme can show that note (#2331). With no
+//! `system` pick a theme draws its first appearance, as Purlis Classic draws its dark. With no
+//! pick, the first extension theme in force that is not refused is drawn.
+//!
+//! **One rule for every source**: a theme that is not one — text that is not JSON, a document
+//! that is not an object, a value outside its type or bound — is refused whole, and Purlis is
+//! drawn in its place with the complaints that say why (ADR 0097 §2).
 
 use std::sync::Arc;
 
-use super::{Appearance, Complaint, Resolved, ResolvedTheme, built_in, default_theme};
+use super::{
+    Appearance, Complaint, Resolved, ResolvedTheme, Theme, built_in, classic, default_theme,
+};
 use crate::extension::project::theme::Pick;
 
 /// One theme an approved extension contributes, resolved from the text its fingerprint was taken
-/// over. `theme` is `None` when that text is not JSON at all.
+/// over: refused, as any theme is, when that text is not one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Offered {
     /// The extension it comes from.
     pub extension: String,
     /// The theme's name in that extension's manifest.
     pub name: String,
-    pub theme: Option<Resolved>,
+    pub theme: Resolved,
 }
 
 impl Offered {
     /// An extension's theme, resolved from its text.
+    /// Text past the one cap every theme file is read under ([`crate::windowprefs::MAX_BYTES`])
+    /// is refused unread, as a theme folder's and the person's own are.
     pub fn of(extension: String, name: String, text: &str) -> Self {
+        let most = crate::windowprefs::MAX_BYTES;
+        let theme = if text.len() as u64 > most {
+            Resolved::refused_for(format!(
+                "{name} is {} bytes, and a theme is never larger than {most}",
+                text.len()
+            ))
+        } else {
+            super::load_text(text)
+        };
         Self {
             extension,
             name,
-            theme: super::load_text(text),
+            theme,
         }
     }
 }
@@ -68,7 +90,7 @@ pub struct Inputs<'a> {
     /// What the project or workspace in front picked, in force; `None` when nothing picked.
     pub pick: Option<&'a Pick>,
     /// The person's own theme, when there is one in force.
-    pub theirs: Option<&'a ResolvedTheme>,
+    pub theirs: Option<&'a Theme>,
     /// Whose extension themes may be drawn.
     pub on: On<'a>,
     /// The operating system's appearance right now.
@@ -78,13 +100,17 @@ pub struct Inputs<'a> {
 /// What the window draws.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Drawn {
-    /// The theme to draw, or `None` to keep the one the window draws.
+    /// The theme to draw. Always one: `None`, which keeps what the window draws, is no longer
+    /// answered, and the field stays an option so the window's wire type is unchanged.
     pub theme: Option<ResolvedTheme>,
     /// What resolving it had to put right.
     pub complaints: Vec<Complaint>,
     /// Whether it follows the operating system's appearance: the window asks again when that
     /// changes.
     pub follows_system: bool,
+    /// What to tell the person about what they chose: that following the system stays in the
+    /// one appearance a theme has.
+    pub note: Option<String>,
 }
 
 impl Drawn {
@@ -93,8 +119,42 @@ impl Drawn {
             theme: Some(theme.clone()),
             complaints: Vec::new(),
             follows_system: false,
+            note: None,
         }
     }
+
+    /// [`follow`].
+    fn following(theme: &Theme, system: Appearance) -> Self {
+        let (Some(dark), Some(light)) = (theme.of(Appearance::Dark), theme.of(Appearance::Light))
+        else {
+            let only = theme.first();
+            let word = match only.appearance {
+                Appearance::Dark => "dark",
+                Appearance::Light => "light",
+            };
+            return Self {
+                note: Some(format!(
+                    "{} has only a {word} appearance, so following the system stays {word}",
+                    theme.name
+                )),
+                ..Self::of(only)
+            };
+        };
+        Self {
+            follows_system: true,
+            ..Self::of(match system {
+                Appearance::Dark => dark,
+                Appearance::Light => light,
+            })
+        }
+    }
+}
+
+/// **`theme` following the operating system**, whose appearance is `system` now: the theme's
+/// appearance of that tag, and the window told it follows, when it has a dark and a light one;
+/// its one appearance otherwise, with a note that following the system stays there.
+pub fn follow(theme: &Theme, system: Appearance) -> Drawn {
+    Drawn::following(theme, system)
 }
 
 /// **Resolves the theme the window draws** from `inputs`. `offered` is every theme approved
@@ -102,12 +162,14 @@ impl Drawn {
 /// answer needs it, because a survey reads and fingerprints every extension's files.
 pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) -> Drawn {
     match inputs.pick {
+        // `system` is the spec's old id for "the picked theme, following the OS": the person's
+        // own theme, the machine's level, else Purlis Classic.
         Some(Pick::System) => {
-            let theme = super::built_in_for(inputs.system);
-            return Drawn {
-                follows_system: true,
-                ..Drawn::of(theme)
+            let two = |theme: &&Theme| {
+                theme.of(Appearance::Dark).is_some() && theme.of(Appearance::Light).is_some()
             };
+            let theme = inputs.theirs.filter(two).unwrap_or_else(|| classic());
+            return Drawn::following(theme, inputs.system);
         }
         Some(Pick::BuiltIn(id)) => {
             return Drawn::of(built_in(id).unwrap_or_else(default_theme));
@@ -115,7 +177,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         Some(Pick::Extension { .. }) => {}
         None => {
             if let Some(theirs) = inputs.theirs {
-                return Drawn::of(theirs);
+                return Drawn::of(theirs.first());
             }
         }
     }
@@ -127,20 +189,15 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
             .iter()
             .filter(may)
             .find(|one| &one.extension == id && &one.name == name),
-        _ => offered.iter().find(may),
+        // With no pick, a refused theme is passed over: it would draw Purlis in the place of
+        // the next one in force.
+        _ => offered.iter().filter(may).find(|one| !one.theme.refused),
     };
-    match chosen.map(|one| one.theme.as_ref()) {
+    match chosen.map(|one| &one.theme) {
         None => Drawn::of(default_theme()),
-        Some(Some(resolved)) => Drawn {
-            theme: Some(resolved.theme.clone()),
+        Some(resolved) => Drawn {
             complaints: resolved.complaints.clone(),
-            follows_system: false,
-        },
-        Some(None) if inputs.pick.is_some() => Drawn::of(default_theme()),
-        Some(None) => Drawn {
-            theme: None,
-            complaints: Vec::new(),
-            follows_system: false,
+            ..Drawn::of(resolved.theme.first())
         },
     }
 }

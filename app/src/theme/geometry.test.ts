@@ -85,7 +85,7 @@ describe("the core geometry", () => {
         .filter((name) => name !== "--radius-full")
         .map((n) => px(values.get(n) ?? "missing"));
     expect(scale("space")).toEqual([0, 2, 4, 6, 8, 12, 16, 24, 32]);
-    expect(scale("type")).toEqual([11, 12, 13, 14, 16, 20]);
+    expect(scale("type")).toEqual([10, 11, 12, 13, 14, 16, 20]);
     expect(scale("radius")).toEqual([3, 4, 6, 8]);
     expect(scale("size")).toEqual([28, 21]);
     expect(scale("focus")).toEqual([2, 2, -2]);
@@ -97,7 +97,7 @@ describe("the core geometry", () => {
     // The window's own line height (`:root`), and a compact line's: nothing moves.
     expect(of("leading")).toEqual(["1.2", "1.4"]);
     const root = /:root\s*\{([^}]*)\}/.exec(read(join(SRC, "App.css")))?.[1] ?? "";
-    expect(root).toContain(`line-height: ${values.get("--line-height-body")};`);
+    expect(root).toContain("line-height: var(--line-height-body);");
     expect(of("family")).toEqual(["ui-monospace, Menlo, Consolas, monospace"]);
   });
 

@@ -332,7 +332,7 @@ fn a_blanked_element_the_engine_ignores_is_still_blanked() {
 fn text_blanked_before_is_taken_out_of_the_title_the_lines_and_the_addresses_whatever_its_case() {
     let mut frames = frames();
     frames[1].url = "http://other.test/pay.html?q=OPEN+SESAME".into();
-    let blanked = ["open sesame".to_owned(), "frames and".to_owned()];
+    let blanked = ["open sesame", "frames and"];
     let snapshot = build(&frames, &HashSet::new(), &blanked);
     assert_eq!(snapshot.title(), "(blanked) fields");
     let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
@@ -363,7 +363,7 @@ fn the_focused_element_is_known_so_the_field_typed_into_can_be_blanked() {
     assert_eq!(snapshot.focused(), &[key("MAIN-FRAME", 20)]);
 }
 
-fn find_pay(frames: &[FrameAx], blanked: &[String]) -> String {
+fn find_pay(frames: &[FrameAx], blanked: &[&str]) -> String {
     build(frames, &HashSet::new(), blanked)
         .find(
             &Query {
@@ -386,7 +386,7 @@ fn an_unnamed_frame_labelled_by_an_address_holding_blanked_text_shows_none_of_it
     };
     let holder = nodes.iter_mut().find(|n| n["nodeId"] == "20").unwrap();
     holder["name"]["value"] = Value::from("");
-    let found = find_pay(&frames, &["open sesame".to_owned()]);
+    let found = find_pay(&frames, &["open sesame"]);
     assert_eq!(
         found,
         "- button \"Pay now\" [e1] (line 9, in frame \"http://other.test/pay.html?q=(blanked)\")\n"
@@ -397,7 +397,7 @@ fn an_unnamed_frame_labelled_by_an_address_holding_blanked_text_shows_none_of_it
 fn a_frame_named_with_blanked_text_shows_none_of_it() {
     let mut frames = frames();
     frames[1].name = "Open Sesame".into();
-    let found = find_pay(&frames, &["open sesame".to_owned()]);
+    let found = find_pay(&frames, &["open sesame"]);
     assert!(found.contains("in frame \"(blanked)\""), "{found}");
     assert!(!found.to_lowercase().contains("sesame"), "{found}");
 }

@@ -19,6 +19,13 @@ struct Slow {
 }
 
 impl Screen for Slow {
+    fn reach_now(
+        &self,
+        _reach: &purlis_session_protocol::browsing::BrowserReach,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
     fn show(&self, _frames: FrameSink) {
         self.showing.store(true, Ordering::SeqCst);
     }

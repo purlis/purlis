@@ -56,6 +56,11 @@ impl HarnessAdapter for Codex {
     ///   so a raw client's refused lookup, a refused socket or a refusal it printed raises a
     ///   block in a Codex chat too. Codex has no `PostToolUseFailure`. Adding the word changes
     ///   the hooks Codex asks the operator to trust, so it asks once more.
+    /// * **A child agent's end, `SubagentStop`** (#1086, read from the same source, not measured
+    ///   live): a thread-spawned child's turn ends in it, naming the child's `agent_id` under the
+    ///   root's `session_id`, so a Codex child reads done when it finishes rather than working
+    ///   until the chat ends ([`crate::plugin::CODEX`] has the citations). Arming it is one more
+    ///   hook to trust, so Codex asks once more.
     /// * `SessionStart` fires inside the FIRST TURN, not at launch (X1): an idle TUI
     ///   reported nothing at all until a prompt was typed.
     /// * A hook is inert until Codex trusts it. For these, the TUI itself asks at

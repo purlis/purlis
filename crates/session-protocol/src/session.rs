@@ -135,9 +135,13 @@ use crate::view::{Limits, Views};
 /// ([`crate::browsing::Input`]), refused `not_driving` unless the person drives and
 /// `input_missed` where the page has moved on; `size_browser`; a listed browser's `driver`; and
 /// a browser view's frames name what they show ([`crate::view::frames::AIMED_JPEG`]).
+///
+/// 1.15 added a browser's reach Asks (#2018): `browse` may carry what the browser reaches from
+/// that act on (`reach`), and `browsed` says the sites new to the project it asked about
+/// (`asked`).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 14,
+    minor: 15,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -377,6 +381,11 @@ pub enum Command {
         program: String,
         call_id: String,
         act: crate::browsing::Act,
+        /// What the browser may reach from this act on (1.15, #2018): its chat's reach as it is
+        /// now, with what the person allowed since the browser started. Absent, it reaches what
+        /// it reached before.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reach: Option<crate::browsing::BrowserReach>,
     },
     /// Every program a held project still has, running or ended, that no client has closed
     /// (1.13): what a window that comes back to the host takes back. Answered
@@ -1083,6 +1092,23 @@ impl Command {
     }
 }
 
+impl Pushed {
+    /// **The power a link needs to be pushed this** ([`crate::grants`]), or none for what every
+    /// subscriber is pushed: a held project's hook lines need [`Power::Heard`], how saving it
+    /// goes [`Power::Save`], and what a chat's sandbox did [`Power::Confine`].
+    pub fn heard_with(&self) -> Option<Power> {
+        match self {
+            Pushed::Heard { .. } => Some(Power::Heard),
+            Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
+            Pushed::Sandbox { .. } => Some(Power::Confine),
+            Pushed::Event(_)
+            | Pushed::Missed { .. }
+            | Pushed::Ended { .. }
+            | Pushed::ViewEnded { .. } => None,
+        }
+    }
+}
+
 wire_words!(Answer {
     Chats => "chats",
     Attached => "attached",
@@ -1675,6 +1701,21 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
+        && start
+            .launch
+            .as_ref()
+            .is_some_and(|launch| launch.harness.is_some())
+        && !scope.may(Power::LaunchAHarness)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a chat's harness on this host is started by its names, composed here with this \
+                 machine's own sandbox, and never from a launch a `{scope}` link hands it"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
         && start.without_sandbox
         && !scope.may(Power::OptOut)
     {
@@ -2135,6 +2176,7 @@ impl Client {
                 program: program.into(),
                 call_id: call_id.into(),
                 act,
+                reach: None,
             })
             .await?
         {

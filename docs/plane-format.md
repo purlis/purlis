@@ -5183,6 +5183,13 @@ down rather than read off the code.
   Settings lists it as held by policy) and removes the answer from the Ask. Remove in Settings ›
   Sandbox ends the browsers of the chats it allowed and their next browser call asks again; it is
   also listed in `granted` with `"what": "browser"` and the persona as `target`;
+  `browser_sites_mine` — the browser sites you allowed for every chat's browser of this project on
+  this machine (#2018, ruled 2026-10-17), each written `host:port` (an IPv6 address in
+  brackets): a browser of any chat here reaches it, its agent may write addresses for it, type on
+  it and post to it, with no Ask. Read by the browser's judge and its reach proxy alone, never by
+  a chat's own commands; an entry that does not read as a site reaches nothing. Remove in
+  Settings › Sandbox ends the project's chats' browsers. Also listed in `granted` with
+  `"what": "browser-site"` and the site as `target`;
   `persona_hosts_mine` — each persona whose `[sandbox.personas.<persona>].hosts` and `tools`
   you allowed in this project on this machine (#1362, D-1362-7; tools D-PE-ruling-1),
   `[{"persona", "digest", "changed"?}]`, the digest the SHA-256 of what the Notice showed (the

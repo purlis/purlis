@@ -273,7 +273,9 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
     let mut want = wanted(
         project.path(),
         "team",
-        sh(r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$KEPT]""#),
+        sh(
+            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$KEPT]""#,
+        ),
     );
     want.env = vec!["X=TOKEN".into()];
     for (name, value) in [
@@ -281,13 +283,17 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         ("DYLD_INSERT_LIBRARIES", "/work/mine.dylib"),
         ("LD_PRELOAD", "/work/mine.so"),
         ("PYTHONPATH", "/work"),
+        ("GCONV_PATH", "/work/gconv"),
+        ("LOCPATH", "/work/locale"),
+        ("GIO_EXTRA_MODULES", "/work/gio"),
+        ("GTK_MODULES", "mine"),
         ("KEPT", "kept"),
     ] {
         want.environment.push((name.into(), value.into()));
     }
     let frames = served(&asker(project.path(), Some("devops")), want);
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
-    assert_eq!(stdout(&frames), "[][][][][kept]\n");
+    assert_eq!(stdout(&frames), "[][][][][][][][][kept]\n");
 }
 
 /// #1667 with #1350: a run's ssh signs with the chat's own agent. The run hands the chat's
@@ -938,6 +944,163 @@ fn a_wrapped_child_reads_its_credential_and_not_the_vault() {
         root.join("work/ran").exists(),
         "the chat's folder is written"
     );
+}
+
+/// On Linux a run is wrapped by purlis's own program (#2342), the one the chat's own start
+/// checked and held. A chat recorded with none runs nothing: no value is read and no credential
+/// file is made.
+#[test]
+fn a_run_wrapped_by_purlis_for_a_chat_whose_start_held_no_wrap_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = None;
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(refusal(&frames), NO_WRAP_RECORDED, "{frames:?}");
+    assert!(!marker.exists(), "nothing ran");
+    let exec_dir = Ctx::new(&root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    assert!(
+        std::fs::read_dir(&exec_dir).map_or(true, |mut d| d.next().is_none()),
+        "no credential file was made"
+    );
+}
+
+/// A run wrapped by purlis's own program refuses one the chat may write: the program the
+/// chat's start recorded is checked again as the run starts.
+#[test]
+fn a_run_wrapped_by_a_purlis_program_the_chat_may_write_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let planted = root.join("work/purlis");
+    std::fs::write(&planted, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = Some(planted.clone());
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        refusal(&frames).contains(&planted.display().to_string()),
+        "{frames:?}"
+    );
+    assert!(!marker.exists(), "nothing ran");
+}
+
+/// At the floor the chat writes all but what its start held, so a run is wrapped only by a
+/// program the start held unwritten.
+#[test]
+fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let program = elsewhere.path().canonicalize().unwrap().join("purlis");
+    std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    let confines = asker.confines.as_mut().unwrap();
+    confines.level = crate::sandbox::Level::Floor;
+    confines.held.clear();
+    confines.wrap = Some(program);
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        refusal(&frames).contains("is not one this chat's start kept it from writing"),
+        "{frames:?}"
+    );
+    assert!(!marker.exists(), "nothing ran");
+}
+
+/// The credential file and a login's folder are given back after every denial of the profile,
+/// the vaults of every project among them (#2071), at both levels: read as the last matching
+/// rule decides, by the same reading purlis's Linux wrap judges by. Nothing else of the vaults
+/// class is.
+#[test]
+fn a_runs_own_credential_file_is_given_back_after_every_denial_and_nothing_else_is() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let vaults = Ctx::new(&root, Env::of(&[])).vaults_dir();
+    let file = vaults.join("exec/charter-secret-given");
+    let other = vaults.join("exec/charter-secret-another");
+    let login = vaults.join("exec/login-given");
+    for level in [crate::sandbox::Level::Full, crate::sandbox::Level::Floor] {
+        let confines = Confines {
+            level,
+            ..compiled(&root)
+        };
+        let profile = profile_on(
+            &confines,
+            std::slice::from_ref(&file),
+            std::slice::from_ref(&login),
+            &root.join("work"),
+            &root.join("tmp"),
+            &[4242],
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("it reads");
+        let may = |what: FileOp, path: &Path| {
+            read.allows(&Op::File {
+                what,
+                path,
+                kind: Kind::Regular,
+            })
+        };
+        assert!(may(FileOp::ReadData, &file), "{level:?}: {profile}");
+        assert!(!may(FileOp::WriteData, &file), "{level:?}");
+        assert!(may(FileOp::WriteData, &login.join("state")), "{level:?}");
+        assert!(!may(FileOp::ReadData, &other), "{level:?}");
+        assert!(!may(FileOp::ReadData, &root.join("team.json")), "{level:?}");
+        assert!(
+            !may(FileOp::ReadData, &vaults.join("team.json")),
+            "{level:?}"
+        );
+    }
 }
 
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
@@ -2076,7 +2239,7 @@ fn a_sandboxed_chat_is_refused_reading_a_value_with_the_route_that_works() {
     let project = project();
     let root = project.path();
     let chat = Ctx::new(root, Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]));
-    let route = if cfg!(target_os = "macos") {
+    let route = if runs_a_chats_command_here() {
         "purlis secret exec team --env NAME=key -- <tool>"
     } else {
         "terminal outside the chat"

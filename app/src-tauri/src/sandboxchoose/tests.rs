@@ -268,7 +268,9 @@ fn asks_a_block(chats: &crate::chats::Chats) -> bool {
         .blocks()
         .every_since()
         .iter()
-        .any(|(session, block, _)| crate::asking::sandbox_block(*session, block, &locks).is_some())
+        .any(|(session, block, _)| {
+            crate::asking::sandbox_block(*session, block, &locks, &Default::default()).is_some()
+        })
 }
 
 #[test]

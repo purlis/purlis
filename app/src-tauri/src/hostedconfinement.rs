@@ -7,8 +7,9 @@
 //! **One plan, one start, wherever it runs.** The window compiles the chat's sandbox as it
 //! always has and plans its confinement from it (`purlis_core::sandbox::Applied::plan`). With
 //! chats in the window, it starts that plan itself; with chats in the host, it hands the host
-//! the plan ([`wire`]), the host reads it back exactly ([`plan_of`]) and starts it with the same
-//! core code ([`ConfinesHere`]), so the proxy carries, refuses and asks about the same hosts.
+//! the plan ([`wire`]), and the host reads it back exactly and starts it with the same core
+//! code (`purlis_core::sandbox::hosted::start`, through [`ConfinesHere`]; `purlis serve` starts
+//! one with the same function), so the proxy carries, refuses and asks about the same hosts.
 //!
 //! **What the proxy does reaches the window by the same closures.** The host's proxy tells the
 //! host, which pushes each refusal, connection and ask to the window (`sandbox`, 1.4); the
@@ -20,16 +21,15 @@
 //! host, so a chat keeps reaching its hosts while the window is gone. The window lets go of it
 //! when it closes the chat ([`HeldInTheHost`]).
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use purlis_core::sandbox::asks::{self, Asks, Heard};
+use purlis_core::sandbox::asks::{self, Heard};
 use purlis_core::sandbox::hosts::Host;
-use purlis_core::sandbox::plan::{Asking, Hearing, Plan, Telling};
+use purlis_core::sandbox::plan::{Hearing, Plan};
 use purlis_core::sandbox::reach::{By, Decision, by_of, layer_of};
-use purlis_core::sandbox::{Board, Confinement, HeldElsewhere, Placed, egress};
+use purlis_core::sandbox::{Board, HeldElsewhere, Placed, egress};
 use purlis_session_protocol::session::{
-    Answer, Command, ConfinePlan, Confined, Listed, ReachChange, ReachNow, SandboxTold,
+    Answer, Command, ConfinePlan, Confined, ReachChange, ReachNow, SandboxTold,
 };
 
 use crate::hostedsessions::HostLink;
@@ -45,10 +45,8 @@ pub fn plan_of(wired: &ConfinePlan) -> Result<Plan, String> {
 }
 
 /// **Starts each chat's confinement in the session host** (#1999): the window's binary's
-/// [`purlis_host::Confine`], the core's start of the plan the window sent, its proxy telling the
-/// window through the host, its board holding a connection only while the host says a window
-/// is there to ask, and finding a host already allowed in the project's files as the window's
-/// board does.
+/// [`purlis_host::Confine`], the core's start of the plan the window sent
+/// ([`purlis_core::sandbox::hosted::start`]), the same `purlis serve` starts one with.
 pub struct ConfinesHere;
 
 impl purlis_host::Confine for ConfinesHere {
@@ -58,126 +56,30 @@ impl purlis_host::Confine for ConfinesHere {
         tell: purlis_host::Tell,
         askable: purlis_host::Askable,
     ) -> Result<Box<dyn purlis_host::Confining>, String> {
-        let plan = plan_of(&confining.confine.plan)?;
-        let root = confining.project_path.to_path_buf();
-        let board = confining.confine.asks.then(|| {
-            Asking {
-                tell: {
-                    let tell = Arc::clone(&tell);
-                    Arc::new(move |heard: Heard| {
-                        tell(match heard {
-                            Heard::Asked(targets) => SandboxTold::Asked { targets },
-                            Heard::TimedOut(target) => SandboxTold::TimedOut { target },
-                        });
-                    })
-                },
-                askable: Arc::new(move || askable()),
-                known: Arc::new(move |host| {
-                    purlis_core::sandbox::grant::allowed_already(&root, host).map(By::from)
-                }),
-            }
-            .board()
-        });
-        let telling = Telling {
-            refusals: egress::Refusals::telling({
-                let tell = Arc::clone(&tell);
-                Arc::new(move |host: &str, port: u16| {
-                    tell(SandboxTold::Refused {
-                        host: host.to_owned(),
-                        port,
-                    });
-                })
-            })
-            .telling_local({
-                let tell = Arc::clone(&tell);
-                Arc::new(move |host: &str, port: u16| {
-                    tell(SandboxTold::RefusedLocal {
-                        host: host.to_owned(),
-                        port,
-                    });
-                })
-            })
-            .telling_more({
-                let tell = Arc::clone(&tell);
-                Arc::new(move |count: usize| {
-                    tell(SandboxTold::RefusedMore {
-                        count: u64::try_from(count).unwrap_or(u64::MAX),
-                    });
-                })
-            }),
-            reached: Some(Arc::new(
-                move |target: Option<&str>, by: &'static str, times: u64| {
-                    tell(SandboxTold::Reached {
-                        target: target.map(str::to_owned),
-                        by: by.to_owned(),
-                        times,
-                    });
-                },
-            )),
-            asks: board.clone(),
-        };
-        let confinement = plan.start(telling).map_err(|why| why.to_string())?;
-        Ok(Box::new(HeldHere { confinement, board }))
+        purlis_core::sandbox::hosted::start(
+            confining.project_path,
+            confining.confine,
+            tell,
+            askable,
+        )
+        .map(|hosted| Box::new(HeldHere(hosted)) as Box<dyn purlis_host::Confining>)
     }
 }
 
 /// A confinement the host holds: its proxy and folders end as this is dropped.
-struct HeldHere {
-    confinement: Confinement,
-    board: Option<Arc<Asks>>,
-}
+struct HeldHere(purlis_core::sandbox::hosted::Hosted);
 
 impl purlis_host::Confining for HeldHere {
     fn confined(&self) -> Confined {
-        let placed = self.confinement.placed();
-        let shown = |path: Option<PathBuf>| path.map(|path| path.display().to_string());
-        Confined {
-            confinement: String::new(),
-            http: placed.http,
-            socks: placed.socks,
-            tmp: shown(placed.tmp),
-            routed: shown(placed.routed),
-            ssh: shown(placed.ssh),
-        }
+        self.0.confined()
     }
 
     fn change(&self, change: &ReachChange) -> Result<Vec<String>, String> {
-        if let ReachChange::WithdrawPort { port } = change {
-            self.confinement.withdraw_port(*port)?;
-            return Ok(Vec::new());
-        }
-        let Some(board) = &self.board else {
-            return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());
-        };
-        Ok(match change {
-            ReachChange::Allow { host, layer } => board.allow(&Host::parse(host)?, by_of(*layer)),
-            ReachChange::Forget { host, layer } => {
-                board.forget(&Host::parse(host)?, by_of(*layer));
-                Vec::new()
-            }
-            ReachChange::KeepBlocked { host } => {
-                board.keep_blocked(&Host::parse(host)?);
-                Vec::new()
-            }
-            ReachChange::WithdrawPort { .. } => Vec::new(),
-        })
+        self.0.change(change)
     }
 
     fn now(&self) -> ReachNow {
-        self.board
-            .as_ref()
-            .map(|board| ReachNow {
-                asked: board.asked(),
-                allowed_live: board
-                    .allowed_live()
-                    .into_iter()
-                    .map(|(host, by)| Listed {
-                        host,
-                        layer: layer_of(by),
-                    })
-                    .collect(),
-            })
-            .unwrap_or_default()
+        self.0.now()
     }
 }
 
