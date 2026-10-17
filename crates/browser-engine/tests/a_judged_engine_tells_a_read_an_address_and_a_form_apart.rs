@@ -34,6 +34,14 @@ fn call(browser: &Browser, call: Call) -> Answer {
         .unwrap_or_else(|why| panic!("{what}: {why}"))
 }
 
+/// One judged engine at a time in this binary: each test waits on its engine's answers, and
+/// several engines starting at once on a busy runner make those answers late.
+fn one_engine_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static ONE: Mutex<()> = Mutex::new(());
+    ONE.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// What a judge was told: each address and why it was sent.
 type Told = Arc<Mutex<Vec<(String, Why)>>>;
 
@@ -105,6 +113,7 @@ fn told_about(told: &Mutex<Vec<(String, Why)>>, address: &str) -> Vec<Why> {
 #[test]
 fn a_link_the_page_offered_is_a_read_and_loads() {
     let (judge, told) = judge();
+    let _one = one_engine_at_a_time();
     let Some((browser, _data, _site)) = started_judged(judge) else {
         return;
     };
@@ -130,6 +139,7 @@ fn a_link_the_page_offered_is_a_read_and_loads() {
 #[test]
 fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
     let (judge, told) = judge();
+    let _one = one_engine_at_a_time();
     let Some((browser, _data, _site)) = started_judged(judge) else {
         return;
     };
@@ -155,6 +165,7 @@ fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
 #[test]
 fn a_form_submitted_to_the_site_sends_whether_by_get_or_by_post() {
     let (judge, told) = judge();
+    let _one = one_engine_at_a_time();
     let Some((browser, _data, _site)) = started_judged(judge) else {
         return;
     };

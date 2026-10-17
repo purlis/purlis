@@ -392,7 +392,8 @@ describe("the Allowed list", () => {
     expect(grantSaid(site)).toBe(
       "Browsers open, send and type on news.example.org:443 (browsers only; chats' commands still ask) · This project on this machine · allowed by you, from qa 8",
     );
-    expect(grantSaid({ ...site, what: "host", id: "you\u001fhost\u001fnews.example.org:443" })).toBe(
+    const host: SandboxGrant = { ...site, what: "host", id: "you\u001fhost\u001fsite" };
+    expect(grantSaid(host)).toBe(
       "Reach news.example.org:443 · This project on this machine · allowed by you, from qa 8",
     );
   });
