@@ -931,3 +931,299 @@ fn at_the_floor_on_linux_nothing_a_session_starts_at_login_is_written() {
     }
     assert!(made("/home/op/notes.txt", Kind::Regular));
 }
+
+/// purlis's own plugin and git hooks, laid out outside the project: `(install, data, plugin,
+/// git hooks)`, the two folders kept alive by the first two.
+fn a_kit_outside() -> (tempfile::TempDir, tempfile::TempDir, PathBuf, PathBuf) {
+    let install = tempfile::tempdir().expect("an install folder");
+    let data = tempfile::tempdir().expect("a data folder");
+    let plugin = real(install.path()).join("plugin");
+    let git_hooks = real(data.path()).join("git-hooks");
+    std::fs::create_dir_all(plugin.join("hooks")).expect("the plugin");
+    std::fs::create_dir_all(&git_hooks).expect("the git hooks");
+    (install, data, plugin, git_hooks)
+}
+
+/// What purlis arms a chat with, by where each lies.
+fn armed<'a>(
+    binary: Option<&'a Path>,
+    plugin: Option<&'a Path>,
+    git_hooks: Option<&'a Path>,
+) -> ArmedWith<'a> {
+    ArmedWith {
+        binary,
+        plugin,
+        git_hooks,
+    }
+}
+
+/// An app bundle outside the project, laid out as purlis's ships on a Mac, and its program.
+fn an_app_bundle() -> (tempfile::TempDir, PathBuf) {
+    let install = tempfile::tempdir().expect("an install folder");
+    let contents = real(install.path()).join("purlis.app/Contents");
+    std::fs::create_dir_all(contents.join("MacOS")).expect("the bundle");
+    std::fs::create_dir_all(contents.join("Resources/plugin")).expect("its plugin");
+    std::fs::write(contents.join("Info.plist"), "").expect("its Info.plist");
+    let binary = contents.join("MacOS/purlis");
+    std::fs::write(&binary, "").expect("its program");
+    (install, binary)
+}
+
+#[test]
+fn the_floor_holds_the_whole_app_bundle_or_the_package_purlis_runs_from() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let (install, binary) = an_app_bundle();
+    let bundle = real(install.path()).join("purlis.app");
+    assert_eq!(install_root(&binary), bundle);
+    let mut applied = floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_with(bin.path()),
+    ));
+    let plugin = bundle.join("Contents/Resources/plugin");
+    applied
+        .hold_kit(armed(Some(&binary), Some(&plugin), None), &root, &[])
+        .expect("a bundle outside what the chat writes");
+    assert!(
+        applied.confines().held.contains(&bundle),
+        "{:?}",
+        applied.confines().held
+    );
+    let deny_write = strings(&settings_of(&applied).sandbox["filesystem"]["denyWrite"]);
+    assert!(
+        deny_write.contains(&bundle.display().to_string()),
+        "{deny_write:?}"
+    );
+    // A program that is not in a bundle: the folder it is in.
+    let elsewhere = tempfile::tempdir().expect("an install folder");
+    let program = real(elsewhere.path()).join("bin/purlis");
+    std::fs::create_dir_all(program.parent().expect("a folder")).expect("its folder");
+    std::fs::write(&program, "").expect("a program");
+    assert_eq!(install_root(&program), real(elsewhere.path()).join("bin"));
+}
+
+#[test]
+fn purlis_s_own_program_where_the_chat_writes_is_refused_at_either_level() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let in_project = root.join("target/debug/purlis");
+    std::fs::create_dir_all(in_project.parent().expect("a folder")).expect("a build folder");
+    std::fs::write(&in_project, "").expect("a program in the project");
+    let mut floor = floor_of(decided(Harness::Codex, &root, &machine_with(bin.path())));
+    assert_eq!(
+        floor.hold_kit(armed(Some(&in_project), None, None), &root, &[]),
+        Err(NotStarted::KitWritable(in_project.clone()))
+    );
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n",
+    )
+    .expect("charter.toml");
+    let (_app, binary) = an_app_bundle();
+    let mut full = floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_with(bin.path()),
+    ));
+    assert_eq!(full.level(), Level::Full);
+    assert_eq!(
+        full.hold_kit(armed(Some(&binary), None, None), &root, &[]),
+        Err(NotStarted::KitWritable(binary.clone())),
+        "a program in a temp folder"
+    );
+}
+
+#[test]
+fn what_a_chat_is_armed_with_is_held_inside_a_folder_a_person_let_it_write_too() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let (_install, data, plugin, git_hooks) = a_kit_outside();
+    let mut applied = floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_with(bin.path()),
+    ));
+    // A person let the chat write the whole data folder.
+    applied.confines.writable.push(real(data.path()));
+    applied
+        .hold_kit(armed(None, Some(&plugin), Some(&git_hooks)), &root, &[])
+        .expect("held");
+    assert!(applied.confines().held.contains(&git_hooks));
+    let deny_write = strings(&settings_of(&applied).sandbox["filesystem"]["denyWrite"]);
+    assert!(
+        deny_write.contains(&git_hooks.display().to_string()),
+        "{deny_write:?}"
+    );
+}
+
+#[test]
+fn the_floor_holds_the_plugin_and_git_hooks_a_chat_is_armed_with() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let (_install, _data, plugin, git_hooks) = a_kit_outside();
+    for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
+        let mut applied = floor_of(decided(harness, &root, &machine_with(bin.path())));
+        applied
+            .hold_kit(armed(None, Some(&plugin), Some(&git_hooks)), &root, &[])
+            .expect("a kit outside what the chat writes");
+        // Held for a run for the chat too.
+        for folder in [&plugin, &git_hooks] {
+            assert!(
+                applied.confines().held.contains(folder),
+                "{harness:?}: {}",
+                folder.display()
+            );
+        }
+        match applied.form() {
+            Form::ClaudeCode(settings) => {
+                let deny_write = strings(&settings.sandbox["filesystem"]["denyWrite"]);
+                for folder in [&plugin, &git_hooks] {
+                    assert!(
+                        deny_write.contains(&folder.display().to_string()),
+                        "{deny_write:?}"
+                    );
+                    assert!(
+                        settings
+                            .deny
+                            .contains(&format!("Edit(/{}/**)", folder.display())),
+                        "{:?}",
+                        settings.deny
+                    );
+                }
+            }
+            form => {
+                let profile = match form {
+                    Form::Codex(wrap) => codex::floor_profile(wrap, &[], None),
+                    Form::Opencode(wrap) => opencode::floor_profile(wrap, &[], None),
+                    Form::ClaudeCode(_) => unreachable!(),
+                }
+                .expect("a profile");
+                assert!(writes(&profile, &root.join("notes.txt")), "{harness:?}");
+                for not in [
+                    plugin.join("hooks/hooks.json"),
+                    git_hooks.join("pre-commit"),
+                ] {
+                    assert!(
+                        !writes(&profile, &not),
+                        "{harness:?}: {} is writable",
+                        not.display()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_plugin_where_the_chat_writes_is_refused_at_either_level() {
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let (_install, _data, plugin, git_hooks) = a_kit_outside();
+    let in_project = root.join("tools/plugin");
+    std::fs::create_dir_all(&in_project).expect("a plugin in the project");
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        let mut floor = floor_of(decided(harness, &root, &machine_with(bin.path())));
+        assert_eq!(
+            floor.hold_kit(armed(None, Some(&in_project), Some(&git_hooks)), &root, &[]),
+            Err(NotStarted::KitWritable(in_project.clone())),
+            "{harness:?}"
+        );
+    }
+    // The full sandbox lets a chat write the temp folders: a plugin there is refused too.
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n",
+    )
+    .expect("charter.toml");
+    let mut full = floor_of(decided(
+        Harness::ClaudeCode,
+        &root,
+        &machine_with(bin.path()),
+    ));
+    assert_eq!(full.level(), Level::Full);
+    let refused = full
+        .hold_kit(armed(None, Some(&plugin), Some(&git_hooks)), &root, &[])
+        .expect_err("a plugin in a temp folder");
+    assert_eq!(refused, NotStarted::KitWritable(plugin.clone()));
+    let said = refused.to_string();
+    assert!(said.contains(&plugin.display().to_string()), "{said}");
+    assert!(
+        said.contains("Install purlis outside the project and outside what a chat may write"),
+        "{said}"
+    );
+}
+
+/// The plugin and git hooks a chat at the floor is armed with, held where this Mac applies the
+/// profile for real; the project beside them is still written.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_chat_at_the_floor_on_a_mac_writes_neither_the_plugin_nor_the_git_hooks() {
+    let can_apply =
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let (_dir, root) = project();
+    let (_install, _data, plugin, git_hooks) = a_kit_outside();
+    let (_app, binary) = an_app_bundle();
+    let mut applied = floor_of(decided(
+        Harness::Codex,
+        &root,
+        &machine_with(Path::new("/opt/none")),
+    ));
+    applied
+        .hold_kit(
+            armed(Some(&binary), Some(&plugin), Some(&git_hooks)),
+            &root,
+            &[],
+        )
+        .expect("a kit outside what the chat writes");
+    let bundle = install_root(&binary);
+    let Form::Codex(wrap) = applied.form() else {
+        panic!("not Codex's");
+    };
+    let profile = codex::floor_profile(wrap, &[], None).expect("a profile");
+    let tried = |script: &str| -> bool {
+        crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/bin/sh", "-c", script])
+                .current_dir(&root),
+        )
+        .expect("it runs")
+        .status
+        .success()
+    };
+    assert!(tried(&format!("echo x > {}/notes.txt", root.display())));
+    for refused in [
+        format!("echo x > {}/hooks/hooks.json", plugin.display()),
+        format!("echo x > {}/pre-commit", git_hooks.display()),
+        format!("mv {} {}.aside", plugin.display(), plugin.display()),
+        format!("mv {} {}.aside", git_hooks.display(), git_hooks.display()),
+        // A folder above one held is never moved aside with it.
+        format!(
+            "mv {0} {0}.aside",
+            plugin.parent().expect("a parent").display()
+        ),
+        format!(
+            "mv {0} {0}.aside",
+            git_hooks.parent().expect("a parent").display()
+        ),
+        // purlis's own program, and everything else its bundle ships.
+        format!("echo x > {}", binary.display()),
+        format!("echo x > {}/Contents/Info.plist", bundle.display()),
+        format!("mv {0} {0}.aside", bundle.display()),
+    ] {
+        assert!(!tried(&refused), "{refused} was let through");
+    }
+}

@@ -137,3 +137,77 @@ fn each_profile_a_wrapped_chat_starts_under_holds_on_linux() {
         }
     }
 }
+
+/// At the floor, the plugin and the git hooks a wrapped chat is armed with are never written by
+/// it, applied for real; what nothing holds beside them still is.
+#[test]
+fn a_wrapped_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed_with() {
+    purlis_core::unsteered!();
+    assert!(
+        purlis_linux_sandbox::abi() >= purlis_linux_sandbox::MIN_ABI,
+        "this kernel's Landlock is version {}, and purlis's Linux sandbox needs {}",
+        purlis_linux_sandbox::abi(),
+        purlis_linux_sandbox::MIN_ABI
+    );
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    let bin = out.join("bin");
+    let plugin = out.join("install/plugin");
+    let git_hooks = out.join("data/git-hooks");
+    for folder in [&home, &bin, &plugin.join("hooks"), &git_hooks] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    let root = out.join("project");
+    let tmp = out.join("tmp");
+    lay_out(&root, "schema = 1\n");
+    fs::create_dir_all(&tmp).expect("a temporary folder");
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let decided = sandbox::decide(harness, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+            .expect("a sandbox in force");
+        let Decided::Sandboxed(mut applied) = decided else {
+            panic!("not sandboxed: {decided:?}");
+        };
+        assert_eq!(applied.level(), Level::Floor, "{harness:?}");
+        applied
+            .hold_kit(
+                sandbox::ArmedWith {
+                    binary: None,
+                    plugin: Some(&plugin),
+                    git_hooks: Some(&git_hooks),
+                },
+                &root,
+                &[],
+            )
+            .expect("a kit outside what the chat writes");
+        let profile = match applied.form() {
+            Form::Codex(wrap) => sandbox::codex::profile(wrap, &root, &tmp, &[4040], None),
+            Form::Opencode(wrap) => sandbox::opencode::profile(wrap, &root, &tmp, &[4040], None),
+            Form::ClaudeCode(_) => panic!("Claude Code is not wrapped"),
+        }
+        .expect("a profile");
+        let script = [
+            tries(&format!("touch {}/hooks/hooks.json", plugin.display())),
+            tries(&format!("touch {}/pre-commit", git_hooks.display())),
+            tries(&format!(
+                "mv {0} {0}.aside",
+                plugin.parent().expect("a parent").display()
+            )),
+            tries(&format!("touch {}/outside", home.display())),
+        ]
+        .join("; ");
+        let said = under(&profile, &root, &script);
+        assert_eq!(
+            said.lines().collect::<Vec<_>>(),
+            vec!["no", "no", "no", "yes"],
+            "{harness:?}: the plugin, the git hooks, the folder above the plugin, a file outside \
+             nothing holds"
+        );
+    }
+}
