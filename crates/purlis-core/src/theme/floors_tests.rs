@@ -87,12 +87,14 @@ fn danger_words_that_vanish_into_the_danger_surface_are_drawn_as_purlis_s_and_th
             "danger.text": "#301010",
             "danger.surface": "#301010",
             "text.primary": "#eeeeee",
+            "accent.base": "#4fa3e0",
         }),
     );
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(drawn.value("danger.text"), ours("danger.text"));
     assert_eq!(drawn.value("danger.surface"), ours("danger.surface"));
     assert_eq!(drawn.value("text.primary"), "#eeeeee");
+    assert_eq!(drawn.value("accent.base"), "#4fa3e0");
     let held = held.expect("the floor was held");
     assert_eq!(held.theme, "Ember");
     assert_eq!(held.floors, [Floor::Danger]);
@@ -179,7 +181,7 @@ fn the_notice_names_the_theme_and_each_floor_it_breaks_once() {
 fn a_theme_that_clears_the_floors_is_drawn_exactly_as_written() {
     let mine = theme(
         "Calm",
-        json!({ "danger.text": "#ffb3b3", "text.secondary": "#c8c8c0", "state.running": "#58a6ff" }),
+        json!({ "accent.base": "#4fa3e0", "danger.base": "#e88080", "state.running": "#58a6ff" }),
     );
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(held, None);
@@ -249,23 +251,6 @@ fn a_theme_folder_s_appearances_are_each_held_against_purlis_s_of_their_own_tag(
         assert_eq!(held.tokens, ["state.failed"]);
         assert!(held.theme.starts_with("Duo ("), "{}", held.theme);
     }
-}
-
-#[test]
-fn an_accent_that_only_meets_danger_under_a_workspace_s_tint_is_drawn_as_purlis_s() {
-    // As far from purlis's danger as can be as written, and its own colour once a workspace's
-    // tint turns it to danger's hue: the same lightness and colourfulness, another hue.
-    let danger = ours("danger.base");
-    let accent = tint_hex(danger, 200.0);
-    let mine = theme("Shift", json!({ "accent.base": accent }));
-    assert!(floors::apart(mine.first()) >= DANGER_APART);
-    let (drawn, held) = drawn_of(&mine);
-    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
-    assert_eq!(drawn.value("danger.base"), danger);
-    let held = held.expect("the floor was held");
-    assert_eq!(held.floors, [Floor::DangerApart]);
-    assert_eq!(held.tokens, ["accent.base"]);
-    assert_eq!(draw(&drawn).held, None, "what is drawn clears every floor");
 }
 
 #[test]

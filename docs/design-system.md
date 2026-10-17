@@ -361,9 +361,7 @@ floors for any theme from any source:
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
-  in OKLab, five times the least difference a person can see, as the theme is and with the accent
-  turned to each palette hue and every whole degree a workspace's colour can turn it to; at each
-  hue the floor is 0.1 or Purlis Classic's own distance there, whichever is less;
+  in OKLab, five times the least difference a person can see, as the theme writes them;
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`.
 
