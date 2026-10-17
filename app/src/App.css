@@ -2860,7 +2860,7 @@ button.show-more:focus-visible {
 .inbox-chain {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   letter-spacing: 0.06em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
@@ -3315,32 +3315,24 @@ button.show-more:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.explorer [data-mark] > .file-node > .spot-name {
-  color: var(--change-colour);
-}
-
 .explorer .change-mark,
-.explorer [data-mark] {
-  --change-colour: var(--state-waiting);
+.explorer [data-mark] > .file-node > .spot-name {
+  color: var(--state-waiting);
 }
 
-.explorer .change-mark {
-  color: var(--change-colour);
+.explorer .change-mark[data-mark="added"],
+.explorer [data-mark="added"] > .file-node > .spot-name {
+  color: var(--diff-inserted-text);
 }
 
-.explorer [data-mark="added"],
-.explorer .change-mark[data-mark="added"] {
-  --change-colour: var(--diff-inserted-text);
+.explorer .change-mark[data-mark="deleted"],
+.explorer [data-mark="deleted"] > .file-node > .spot-name {
+  color: var(--diff-deleted-text);
 }
 
-.explorer [data-mark="deleted"],
-.explorer .change-mark[data-mark="deleted"] {
-  --change-colour: var(--diff-deleted-text);
-}
-
-.explorer [data-mark="renamed"],
-.explorer .change-mark[data-mark="renamed"] {
-  --change-colour: var(--accent-base);
+.explorer .change-mark[data-mark="renamed"],
+.explorer [data-mark="renamed"] > .file-node > .spot-name {
+  color: var(--accent-base);
 }
 
 .explorer [data-mark="deleted"] > .file-node > .spot-name {
@@ -3588,9 +3580,9 @@ h2.sidebar-title .node-icon {
 /* The hand a session's row wears for a task of it that needs you: a button of its own beside
    the row, as on a row of the Chats section. */
 .explorer .needs-you-mark.rolled-up {
-  padding: 0.1rem;
+  padding: var(--space-1);
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: none;
   vertical-align: top;
   cursor: default;
@@ -4033,7 +4025,7 @@ h2.sidebar-title .node-icon {
 }
 
 .state-bar .repo {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
 }
 
@@ -5504,7 +5496,7 @@ h2.sidebar-title .node-icon {
 }
 
 .notice-list .notice-inbox {
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-2) var(--space-3);
   font-size: inherit;
   background: none;
   border: 0;
@@ -5517,12 +5509,12 @@ h2.sidebar-title .node-icon {
 .notice-list .notice-inbox .notice-says {
   display: flex;
   flex: 1 1 100%;
-  gap: 0.45rem;
+  gap: var(--space-3);
   align-items: baseline;
 }
 
 .notice-list .notice-under-inbox {
-  padding: 0 0.5rem 0.35rem;
+  padding: 0 var(--space-3) var(--space-2);
 }
 
 /* An alert's mark (`InboxAlerts.tsx`): a warning's colour, or a failure's. */
@@ -5535,7 +5527,7 @@ h2.sidebar-title .node-icon {
 }
 
 .alert-subject {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .alert-detail {
@@ -5551,7 +5543,7 @@ h2.sidebar-title .node-icon {
 /* What the row's last press answered: a fix's refusal, or what it could not do. */
 .alert-said {
   display: block;
-  margin-top: 0.2rem;
+  margin-top: var(--space-1);
   color: var(--text-primary);
 }
 
@@ -7559,7 +7551,7 @@ h2.sidebar-title .node-icon {
 
 .search-project {
   padding: var(--space-4) var(--space-5) var(--space-1);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .search-branch {
@@ -7576,7 +7568,7 @@ h2.sidebar-title .node-icon {
 }
 
 .search-file-name {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .search-file-folder,
@@ -7603,7 +7595,7 @@ h2.sidebar-title .node-icon {
    colour. Its number is the row's lead, a column wide enough that the text starts under the
    file's name. */
 .search-line {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   white-space: pre;
   cursor: pointer;
@@ -7630,7 +7622,7 @@ h2.sidebar-title .node-icon {
   border-radius: var(--radius-sm);
   background: var(--accent-surface);
   color: var(--text-primary);
-  font-weight: 700;
+  font-weight: var(--font-weight-strong);
   text-decoration: underline;
 }
 
