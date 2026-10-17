@@ -72,7 +72,7 @@ use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 
 use crate::hooks::Relayed;
-use crate::host::{Ends, Named, Opening, Readiness, SessionHost, Sink, Watching};
+use crate::host::{Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching};
 use crate::sessions::{ENDED, STOPPED, Utf8Stream};
 
 /// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
@@ -430,7 +430,13 @@ struct Shared {
     /// Who says which chats are mid-turn in a workspace of a project the host saves, by the
     /// project's id: its plane's board (#2002).
     turns: Mutex<HashMap<String, Turns>>,
+    /// Who is told that the link the host relays this one over is down, `true`, or back,
+    /// `false` (#2496).
+    relinks: Mutex<Vec<Relinks>>,
 }
+
+/// Told that the link a host relays a window's link over is down, `true`, or back, `false`.
+type Relinks = Arc<dyn Fn(bool) + Send + Sync>;
 
 /// The most a reply to a hook line may be on the link, its frame's envelope aside: a larger
 /// answer is refused with a sentence rather than sent.
@@ -672,6 +678,20 @@ impl HostLink {
     fn hear_project(&self, project: &str, relayed: Arc<Relayed>) {
         relayed.linked(self.id);
         lock(&self.shared.hearing).insert(project.to_owned(), relayed);
+    }
+
+    /// Tell `tell` each time the host says the link it relays this one over is down or back.
+    fn when_relinking(&self, tell: Relinks) {
+        lock(&self.shared.relinks).push(tell);
+    }
+}
+
+/// The host this link reaches relays it to another, and says the link there is down, `true`,
+/// or back, `false` (#2496): whoever asked is told.
+fn relinking(shared: &Shared, down: bool) {
+    let tell: Vec<Relinks> = lock(&shared.relinks).clone();
+    for tell in tell {
+        tell(down);
     }
 }
 
@@ -978,6 +998,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     hears.told(told);
                 }
             }
+            Told::Pushed(Pushed::LinkDown { .. }) => relinking(&shared, true),
+            Told::Pushed(Pushed::LinkBack {}) => relinking(&shared, false),
             Told::Pushed(Pushed::ViewEnded { view, .. }) => {
                 let drained = lock(&shared.views)
                     .drawing
@@ -1035,6 +1057,9 @@ pub struct HostedSessions {
     /// Why the board the host kept could not be taken as the window held the project, where it
     /// could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
+    /// Who is told which chats are reconnecting, while the link to the runner they run on is
+    /// down (#2496).
+    reconnecting: Arc<Mutex<Option<Reconnecting>>>,
 }
 
 /// A project held on a link: its stable id, and which link.
@@ -1059,6 +1084,7 @@ impl HostedSessions {
             lost: Arc::default(),
             left: Arc::default(),
             untaken: Arc::default(),
+            reconnecting: Arc::default(),
         }
     }
 
@@ -1086,7 +1112,26 @@ impl HostedSessions {
             left: Arc::clone(&self.left),
             untaken: Arc::clone(&self.untaken),
             root: self.root.clone(),
+            relinks: self.relinks(),
         }
+    }
+
+    /// What tells whoever asked that every chat of this project is reconnecting while the link
+    /// the host relays its link over is down, and drawn again once it is back (#2496): its
+    /// chats all run where that link goes.
+    fn relinks(&self) -> Relinks {
+        let (running, reconnecting) = (Arc::clone(&self.running), Arc::clone(&self.reconnecting));
+        Arc::new(move |down| {
+            let Some(tell) = lock(&reconnecting).clone() else {
+                return;
+            };
+            let mut chats: Vec<u32> = lock(&running).keys().copied().collect();
+            if chats.is_empty() {
+                return;
+            }
+            chats.sort_unstable();
+            tell(chats, down);
+        })
     }
 
     /// Holds the project in the session host now, and takes the board the host keeps for it
@@ -1182,6 +1227,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         left,
         untaken,
         root,
+        relinks,
     } = holding;
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
@@ -1196,6 +1242,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     if let Some(relayed) = lock(relayed).clone() {
         link.hear_project(&project, relayed);
     }
+    link.when_relinking(Arc::clone(relinks));
     link.call(Command::HoldProject {
         project: project.clone(),
         project_path: root.display().to_string(),
@@ -1281,6 +1328,8 @@ struct Holding {
     /// Why the board the host kept could not be taken, where it could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
     root: PathBuf,
+    /// Told that the link the host relays the project's link over is down or back (#2496).
+    relinks: Relinks,
 }
 
 /// A project the session host saves for the window (#2002): asked for once the link is ready,
@@ -1793,6 +1842,10 @@ impl SessionHost for HostedSessions {
 
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
+    }
+
+    fn when_reconnecting(&self, tell: Reconnecting) {
+        *lock(&self.reconnecting) = Some(tell);
     }
 
     fn lost_with_its_host(&self, id: u32) -> bool {

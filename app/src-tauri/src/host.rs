@@ -149,6 +149,10 @@ pub type Sink = Box<dyn FnMut(String) + Send>;
 /// can hold it for as long as its program runs.
 pub type Ends = Arc<dyn Fn(u32, Exit) + Send + Sync>;
 
+/// Told which sessions are reconnecting, `true`, while the link to the session host they run
+/// on is down, and which are drawn again, `false`, once it is back (#2496).
+pub type Reconnecting = Arc<dyn Fn(Vec<u32>, bool) + Send + Sync>;
+
 /// A view the UI has open, and the size the screen it opened on was drawn for.
 #[derive(Debug, Clone, Copy)]
 pub struct Watching {
@@ -274,6 +278,13 @@ pub trait SessionHost: Send + Sync {
     /// No hook reports a program dying, and none can — the process is gone. This is the
     /// operating system telling the app, not charter reading a screen (ADR 0018).
     fn when_one_ends(&self, tell: Ends);
+
+    /// Tell `tell` which sessions are reconnecting while the link to the host they run on is
+    /// down, and when it is back (#2496): a host that relays to a runner says so. Never, where
+    /// chats run in the window's own process.
+    fn when_reconnecting(&self, tell: Reconnecting) {
+        let _ = tell;
+    }
 
     /// Whether session `id`'s program ended with the session host it ran in, which ended
     /// unexpectedly (#2007), rather than by itself or by the window's act: so until it is

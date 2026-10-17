@@ -1284,6 +1284,33 @@ button.show-more:focus-visible {
   right: var(--space-4);
 }
 
+/* **A runner's chat while its link is down** (#2496, `SessionPane.tsx`): its last screen dimmed
+   under one quiet word, until the link is back and the screen draws again. The word is a
+   sibling of the terminal like the find bar, over the whole body and under the corners, and it
+   takes no pointer: the pane's own controls stay where they are. */
+.pane.reconnecting {
+  opacity: 0.45;
+}
+
+.pane-reconnecting {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.pane-reconnecting-said {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
    sibling of the terminal like the corners, positioned against the same frame — and under the
    end corner rather than in it, so the pane's own controls, which appear there on hover, never
