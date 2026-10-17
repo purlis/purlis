@@ -26,7 +26,8 @@
 //!   A field keeps its latest value: a read drops the field's short earlier values that the new
 //!   one contains ([`KEPT_WHOLE_FROM`](super::super::kept::KEPT_WHOLE_FROM)), so what was typed
 //!   key by key is kept out whole, not as each short part on the way. What a key that neither
-//!   types nor deletes put into the field (a paste) is kept as it was put in, like a run.
+//!   types nor deletes put into the field (a paste), and what the field holds after it, are
+//!   kept as they were, like a run.
 //!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
@@ -330,8 +331,11 @@ impl Browser {
                     let after = self.field_holds(&field);
                     let mut held = Kept::default();
                     if let Some(before) = before {
-                        // What the key put in is kept as it was put in, like a run.
-                        held.run(&[put_in(&before, &after)]);
+                        // What the key put in is kept as it was put in, like a run, and so is
+                        // what the field holds after it: a paste over a selection may share its
+                        // ends with what it replaced.
+                        let [first, last] = put_in(&before, &after);
+                        held.run(&[first, last, after.clone()]);
                     }
                     held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);
@@ -529,22 +533,28 @@ impl Typing {
 }
 
 /// What `after` holds that `before` did not: `after` without the beginning and the end the two
-/// share. Empty when nothing was put in (a selection alone, or a deletion).
-fn put_in(before: &str, after: &str) -> String {
+/// share, matched from the beginning first and from the end first (they differ where what was
+/// put in begins or ends like what is next to it). Empty when nothing was put in (a selection
+/// alone, or a deletion).
+fn put_in(before: &str, after: &str) -> [String; 2] {
     let before: Vec<char> = before.chars().collect();
     let after: Vec<char> = after.chars().collect();
-    let start = before
-        .iter()
-        .zip(&after)
-        .take_while(|(b, a)| b == a)
-        .count();
-    let end = before[start..]
-        .iter()
-        .rev()
-        .zip(after[start..].iter().rev())
-        .take_while(|(b, a)| b == a)
-        .count();
-    after[start..after.len() - end].iter().collect()
+    let shared = |a: &mut dyn Iterator<Item = &char>, b: &mut dyn Iterator<Item = &char>| {
+        a.zip(b).take_while(|(a, b)| a == b).count()
+    };
+    let start = shared(&mut before.iter(), &mut after.iter());
+    let end = shared(
+        &mut before[start..].iter().rev(),
+        &mut after[start..].iter().rev(),
+    );
+    let first: String = after[start..after.len() - end].iter().collect();
+    let end = shared(&mut before.iter().rev(), &mut after.iter().rev());
+    let start = shared(
+        &mut before[..before.len() - end].iter(),
+        &mut after[..after.len() - end].iter(),
+    );
+    let last: String = after[start..after.len() - end].iter().collect();
+    [first, last]
 }
 
 /// Whether the keys held make a chord rather than a character: Meta, or Control without Alt
@@ -620,5 +630,20 @@ fn button_bit(button: MouseButton) -> i64 {
         MouseButton::Left => 1,
         MouseButton::Right => 2,
         MouseButton::Middle => 4,
+    }
+}
+
+#[cfg(test)]
+mod put_in_tests {
+    use super::put_in;
+
+    #[test]
+    fn what_was_put_in_is_found_from_either_end() {
+        assert_eq!(put_in("ab", "abQb"), ["Qb".to_owned(), "bQ".to_owned()]);
+        assert_eq!(put_in("hello", "hello"), [String::new(), String::new()]);
+        assert_eq!(
+            put_in("", "zq7kp"),
+            ["zq7kp".to_owned(), "zq7kp".to_owned()]
+        );
     }
 }

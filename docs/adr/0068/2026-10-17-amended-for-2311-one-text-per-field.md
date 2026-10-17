@@ -12,8 +12,9 @@ session protocol does not.
    short still shows nothing of it. A value typed key by key is kept out as the value, not as each
    short part of it on the way. An earlier value the new one does not contain (one the person
    deleted back from) stays kept out. A read of a page's tree drops nothing. Each run of
-   characters as the person typed it, and what a key such as a paste put into the field, are kept
-   out as they were entered and never dropped, nor is a text read from another element. This is
+   characters as the person typed it, what a key such as a paste put into the field, and what the
+   field held right after that key, are kept out as they were entered and never dropped, nor is a
+   text read from another element. This is
    the person's ruling of 2026-10-17. *D-2311-1, ruled.*
 2. **A text is kept on the site of the document its page shows.** The site a text is kept out on,
    whose pages' screenshots paint over what cannot be read (the amendment for #2303, item 2), is

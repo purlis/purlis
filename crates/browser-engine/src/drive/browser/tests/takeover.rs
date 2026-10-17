@@ -726,6 +726,41 @@ fn what_the_person_pasted_stays_out_once_they_edit_around_it() {
     assert!(text.contains("Code (blanked) saved"), "{text}");
 }
 
+/// The field holds `held`; the person selects all of it, pastes `pasted` over it, goes to its
+/// end and types `typed`; the page then says it saved `pasted`.
+fn paste_over_a_selection(held: &str, pasted: &'static str, typed: &str) -> String {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    super::super::lock(&engine.model).value = held.into();
+    engine.on(move |sent, engine| {
+        if sent.method == "Input.dispatchKeyEvent" && sent.params["key"] == "v" {
+            super::super::lock(&engine.model).value = pasted.into();
+        }
+        None
+    });
+    browser.person_input(&chord(&aim, "a", 4)).unwrap();
+    browser.person_input(&chord(&aim, "v", 4)).unwrap();
+    browser.person_input(&key(&aim, "End", true)).unwrap();
+    super::super::lock(&engine.model).value = format!("{pasted}{typed}");
+    browser.person_input(&key(&aim, typed, true)).unwrap();
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", &format!("Code {pasted} saved"));
+    snapshot(&browser, 1)
+}
+
+#[test]
+fn what_the_person_pasted_over_a_selection_stays_out_once_they_edit_after_it() {
+    let text = paste_over_a_selection("zq7kpx", "zq7kp", "9");
+    assert!(text.contains("Code (blanked) saved"), "{text}");
+}
+
+#[test]
+fn a_code_pasted_over_the_one_before_it_stays_out_once_they_edit_after_it() {
+    let text = paste_over_a_selection("123456", "123789", "0");
+    assert!(text.contains("Code (blanked) saved"), "{text}");
+}
+
 #[test]
 fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it_as_text() {
     let (browser, engine) = browser();
