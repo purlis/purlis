@@ -482,7 +482,7 @@ enum FollowUp {
     Release(String),
     /// A request held until the judge says whether it goes (#2018).
     Judge {
-        request: String,
+        paused: Paused,
         outbound: Outbound,
     },
 }
@@ -501,7 +501,7 @@ pub(crate) struct Inner {
     /// Whether the person drives (#2014): every request is then theirs (#2018).
     person_drives: AtomicBool,
     /// Where each held request is sent to be judged, on a thread of its own (#2018).
-    judging: Mutex<Option<std::sync::mpsc::Sender<(String, Outbound)>>>,
+    judging: Mutex<Option<std::sync::mpsc::Sender<(Paused, Outbound)>>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -596,16 +596,16 @@ impl Browser {
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
-            let (judging, held) = std::sync::mpsc::channel::<(String, Outbound)>();
+            let (judging, held) = std::sync::mpsc::channel::<(Paused, Outbound)>();
             let judge_for = Arc::downgrade(&inner);
             thread::Builder::new()
                 .name("browser-judge".to_owned())
                 .spawn(move || {
-                    for (request, outbound) in held {
+                    for (paused, outbound) in held {
                         let Some(inner) = judge_for.upgrade() else {
                             break;
                         };
-                        inner.judged(&request, &outbound);
+                        inner.judged(&paused, &outbound);
                     }
                 })
                 .map_err(|e| Refusal::Engine(e.to_string()))?;
@@ -2162,11 +2162,12 @@ impl Inner {
                         let method = text("/request/method").unwrap_or_default();
                         let frame = text("/frameId");
                         let redirected_from = text("/redirectedRequestId");
+                        let document = text("/resourceType").as_deref() == Some("Document");
                         let why = state.why(&Held {
                             request: &request,
                             address: &address,
                             method: &method,
-                            document: text("/resourceType").as_deref() == Some("Document"),
+                            document,
                             frame: frame.as_deref(),
                             redirected_from: redirected_from.as_deref(),
                         });
@@ -2176,7 +2177,10 @@ impl Inner {
                             Driver::Agent
                         };
                         follow.push(FollowUp::Judge {
-                            request,
+                            paused: Paused {
+                                id: request,
+                                document,
+                            },
                             outbound: Outbound {
                                 address,
                                 method,
@@ -2211,8 +2215,11 @@ impl Inner {
         }
     }
 
-    /// Judges held request `request` (#2018), and lets it on or fails it as the judge says.
-    fn judged(&self, request: &str, outbound: &Outbound) {
+    /// Judges held request `paused` (#2018), and lets it on or holds it back as the judge says:
+    /// a document held back is answered with no content, so its frame stays on the page it
+    /// showed; anything else is failed.
+    fn judged(&self, paused: &Paused, outbound: &Outbound) {
+        let request = paused.id.as_str();
         // Requests are held only where there is a judge, so this always has one.
         let gate = self
             .judge
@@ -2227,12 +2234,21 @@ impl Inner {
             ),
             Gate::Ask { site } => {
                 lock(&self.state).ask(&site);
-                self.devtools.call_within(
-                    "Fetch.failRequest",
-                    json!({ "requestId": request, "errorReason": "BlockedByClient" }),
-                    None,
-                    JUDGED_WITHIN,
-                )
+                if paused.document {
+                    self.devtools.call_within(
+                        "Fetch.fulfillRequest",
+                        json!({ "requestId": request, "responseCode": 204 }),
+                        None,
+                        JUDGED_WITHIN,
+                    )
+                } else {
+                    self.devtools.call_within(
+                        "Fetch.failRequest",
+                        json!({ "requestId": request, "errorReason": "BlockedByClient" }),
+                        None,
+                        JUDGED_WITHIN,
+                    )
+                }
             }
         };
         // A request whose page has gone went with it: there is nothing more to say.
@@ -2286,15 +2302,15 @@ impl Inner {
                 self.changed.notify_all();
                 let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
             }
-            FollowUp::Judge { request, outbound } => {
+            FollowUp::Judge { paused, outbound } => {
                 // Judged on a thread of its own, so a request is never held up behind another
                 // follow-up's calls; where that thread is gone, judged here.
                 let unsent = match &*lock(&self.judging) {
-                    Some(judging) => judging.send((request, outbound)).err().map(|e| e.0),
-                    None => Some((request, outbound)),
+                    Some(judging) => judging.send((paused, outbound)).err().map(|e| e.0),
+                    None => Some((paused, outbound)),
                 };
-                if let Some((request, outbound)) = unsent {
-                    self.judged(&request, &outbound);
+                if let Some((paused, outbound)) = unsent {
+                    self.judged(&paused, &outbound);
                 }
             }
             FollowUp::Release(session) => {
@@ -2317,6 +2333,12 @@ impl Drop for Addressing<'_> {
     fn drop(&mut self) {
         lock(&self.0.state).addressing = None;
     }
+}
+
+/// A request the engine holds for the judge (#2018): its id, and whether it is a document.
+struct Paused {
+    id: String,
+    document: bool,
 }
 
 /// A request held for the judge, as the engine said it (#2018).

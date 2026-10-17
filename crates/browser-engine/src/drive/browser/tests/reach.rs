@@ -51,6 +51,7 @@ fn answered(engine: &super::Engine, request: &str) -> String {
         for (method, said) in [
             ("Fetch.continueRequest", "continue"),
             ("Fetch.failRequest", "fail"),
+            ("Fetch.fulfillRequest", "no content"),
         ] {
             if engine
                 .sent(method)
@@ -208,7 +209,15 @@ fn an_address_the_agent_writes_and_where_it_redirects_are_told_as_addressed() {
         )
         .unwrap();
     assert_eq!(answered(&engine, "R1"), "continue");
-    assert_eq!(answered(&engine, "R2"), "fail");
+    assert_eq!(
+        answered(&engine, "R2"),
+        "no content",
+        "a document held back leaves its frame where it was"
+    );
+    assert_eq!(
+        engine.sent("Fetch.fulfillRequest")[0].params["responseCode"],
+        204
+    );
     assert_eq!(
         whys(&told)
             .into_iter()

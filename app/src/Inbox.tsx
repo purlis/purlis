@@ -618,6 +618,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "sandbox-only": "Asks you to make a sandbox-only profile",
   browser: "Asks what its browser may reach",
   "browser-needs-you": "Needs you in its browser",
+  "browser-site": "Asks to let its browser reach a new site",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };
