@@ -492,3 +492,67 @@ async fn a_window_that_ends_while_host_a_dials_sends_host_b_nothing_and_its_link
         "host B was sent a command of a gone window"
     );
 }
+
+/// Host B reached as by [`as_its_window`], over a line the test cuts with `lines`.
+fn cuttable(b: Hosting, lines: Arc<std::sync::Mutex<Vec<tokio::task::AbortHandle>>>) -> Dial {
+    Arc::new(move || {
+        let (b, lines) = (b.clone(), Arc::clone(&lines));
+        Box::pin(async move {
+            let (a_end, a_line) = duplex(256 * 1024);
+            let (b_line, b_end) = duplex(256 * 1024);
+            let line = tokio::spawn(async move {
+                let (mut a_line, mut b_line) = (a_line, b_line);
+                let _ = tokio::io::copy_bidirectional(&mut a_line, &mut b_line).await;
+            });
+            lines.lock().unwrap().push(line.abort_handle());
+            let (client, served) = tokio::join!(
+                link::connect(
+                    a_end,
+                    session::speaks(),
+                    Scope::LocalUi,
+                    HELD.of(Scope::LocalUi)
+                ),
+                link::serve_any(b_end, session::speaks(), &HELD)
+            );
+            tokio::spawn(session::serve(served.unwrap(), b, None));
+            client.map_err(|why| why.to_string())
+        })
+    })
+}
+
+#[tokio::test]
+async fn a_dialed_link_that_ends_is_told_to_the_window_and_so_is_the_next_one_up() {
+    let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut window = a_window(|b| cuttable(b, Arc::clone(&lines))).await;
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+
+    for line in lines.lock().unwrap().drain(..) {
+        line.abort();
+    }
+    let told = timeout(PATIENCE, window.events.recv())
+        .await
+        .expect("the window is told")
+        .unwrap();
+    assert!(
+        matches!(told, Told::Pushed(Pushed::LinkDown { .. })),
+        "{told:?}"
+    );
+
+    // The next command dials again, and the window is told the link is back.
+    timeout(PATIENCE, async {
+        while window.client.list().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("host A dials again");
+    let told = timeout(PATIENCE, window.events.recv())
+        .await
+        .expect("the window is told")
+        .unwrap();
+    assert_eq!(told, Told::Pushed(Pushed::LinkBack {}));
+}

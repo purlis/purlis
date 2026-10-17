@@ -25,10 +25,13 @@
 //! client's commands until the new one carries all of that, and only then ends; after a drop,
 //! the client's commands wait while it is carried over. **No command the client sent is sent
 //! again**: one the link ended under is refused as unanswered, and while no link is up every
-//! command is refused in words saying so, and is not kept. A view the other host will not
-//! attach again has ended for good, and the client is told so. What the other host named to the
-//! link that ended, a chat's confinement among them, is not named again by this: the other host
-//! names a link only what that link made or took back (#2511).
+//! command is refused in words saying so, and is not kept. **The client is told the link is
+//! down**, pushed `link_down` once each time no link is up, and `link_back` once one is up again
+//! and carries what its link stands on (#2496): a link renewed ahead of its limit is neither, and
+//! a relay made with [`Relay::new`] tells its client both as a kept one does. A view the other
+//! host will not attach again has ended for good, and the client is told so. What the other host
+//! named to the link that ended, a chat's confinement among them, is not named again by this:
+//! the other host names a link only what that link made or took back (#2511).
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
@@ -298,13 +301,15 @@ fn not_linked(why: &str) -> Refusal {
 
 /// Take `source`'s links for a client link, one after another, and carry what the client's
 /// link stands on over to each that comes up. When no more come, wait for a command to ask for
-/// links again.
+/// links again. The client is told once each time no link is up, and once one is back
+/// ([`LinkTold`]); a link renewed ahead of its limit is neither.
 async fn keep(
     source: Source,
     client: Arc<ClientLink>,
     tell: watch::Sender<Standing>,
     again: Arc<Notify>,
 ) {
+    let mut told = LinkTold::default();
     loop {
         let mut links = source();
         let mut up: Option<Arc<Upstream>> = None;
@@ -338,6 +343,7 @@ async fn keep(
                                 // answered: the kept link is told the relay has moved then.
                                 retiring = up.replace(Arc::clone(&upstream));
                                 tell.send_replace(Standing::Up(upstream));
+                                told.back(&client).await;
                                 if retiring.is_none() {
                                     links.moved();
                                 }
@@ -349,9 +355,9 @@ async fn keep(
                                     tell.send_replace(Standing::Up(Arc::clone(old)));
                                 }
                                 None => {
-                                    tell.send_replace(Standing::Down(
-                                        "the link to it ended as it came up".into(),
-                                    ));
+                                    let why = "the link to it ended as it came up";
+                                    tell.send_replace(Standing::Down(why.into()));
+                                    told.down(&client, why).await;
                                 }
                             },
                         }
@@ -359,6 +365,7 @@ async fn keep(
                     Some(Linked::Down(why)) => {
                         up = None;
                         retiring = None;
+                        told.down(&client, &why).await;
                         tell.send_replace(Standing::Down(why));
                     }
                     None => no_more = true,
@@ -369,13 +376,39 @@ async fn keep(
                 }
                 () = link_ended => {
                     up = None;
-                    tell.send_replace(Standing::Down("the link to it ended".into()));
+                    let why = "the link to it ended";
+                    tell.send_replace(Standing::Down(why.into()));
+                    told.down(&client, why).await;
                 }
             }
         }
         tell.send_replace(Standing::Over);
         again.notified().await;
         tell.send_replace(Standing::Linking);
+    }
+}
+
+/// What the client was last told of the link to the other host (#2496): that it is down, or
+/// nothing since it was last up.
+#[derive(Default)]
+struct LinkTold {
+    down: bool,
+}
+
+impl LinkTold {
+    /// No link is up, for `why`: the client is told, unless it was told already.
+    async fn down(&mut self, client: &ClientLink, why: &str) {
+        if !std::mem::replace(&mut self.down, true) {
+            client.tell(Pushed::LinkDown { why: why.into() }).await;
+        }
+    }
+
+    /// A link is up and carries what the client's link stands on: a client told it was down is
+    /// told it is back.
+    async fn back(&mut self, client: &ClientLink) {
+        if std::mem::take(&mut self.down) {
+            client.tell(Pushed::LinkBack {}).await;
+        }
     }
 }
 
