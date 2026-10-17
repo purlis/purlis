@@ -125,11 +125,7 @@ export function ActivityBar({
                   }
                   onClick={() => onPick(view)}
                 >
-                  {icon ? (
-                    <RailIcon view={view} paths={icon.paths} />
-                  ) : (
-                    <Mark aria-hidden="true" />
-                  )}
+                  {icon ? <RailIcon view={view} paths={icon.paths} /> : <Mark aria-hidden="true" />}
                   {badge !== undefined && (
                     <span id={described} className="activity-badge">
                       {badge}

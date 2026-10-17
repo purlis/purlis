@@ -30,7 +30,8 @@ const GLYPHS = [..."✓✔✗✘✕✖×▸▹▶►▾▿▼◂◀◄▴▲⚠�
 
 /** Files that draw an `<svg>` of their own, and why it is not a stray icon. */
 const OWN_SVG: Record<string, string> = {
-  "FileIcon.tsx": "the icon theme's and a theme's icon set's symbols, rebuilt from checked path data",
+  "FileIcon.tsx":
+    "the icon theme's and a theme's icon set's symbols, rebuilt from checked path data",
   "ChatGauge.tsx": "a gauge drawn to its numbers, not an icon",
   "editor/imagePreview.ts": "a one-pixel SVG decoded as bytes to ask the webview, never drawn",
 };
