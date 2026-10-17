@@ -64,6 +64,7 @@ impl Host for OneProgram {
                 program: SHELL.into(),
                 number: None,
                 process: None,
+                confined: None,
             }),
             Command::AttachView {
                 program,
