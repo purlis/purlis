@@ -1800,6 +1800,13 @@ pub fn the_proxy_tells_hosts(harness: Option<&str>) -> bool {
     )
 }
 
+/// **Whether `block` is purlis's proxy's to tell** where a harness purlis wraps runs behind it
+/// ([`the_proxy_tells_hosts`]): a refused connection to an internet host, which the proxy names
+/// by host. Neither the chat's hook nor its wrap's supervisor ([`supervised`]) tells one.
+pub fn is_the_proxys(block: &Block) -> bool {
+    (block.operation, block.kind) == (Operation::Connect, Kind::Host)
+}
+
 /// What a block hook of a chat of `harness` on `os` tells the app of `found`: all of it, but for
 /// a refused host where purlis's own proxy tells that itself ([`the_proxy_tells_hosts`]), and,
 /// where purlis wraps the chat on Linux, every file, local socket and service its supervisor
@@ -1817,7 +1824,7 @@ pub fn the_hooks_own(
         .is_some_and(|harness| os.purlis_wraps(harness));
     found
         .into_iter()
-        .filter(|(block, _)| (block.operation, block.kind) != (Operation::Connect, Kind::Host))
+        .filter(|(block, _)| !is_the_proxys(block))
         .filter(|(block, _)| !(supervised && supervised::tells(block)))
         .collect()
 }
@@ -2273,7 +2280,6 @@ pub mod denial;
 #[path = "sandboxblock_background.rs"]
 pub mod background;
 
-#[path = "sandboxblock_supervised.rs"]
 pub mod supervised;
 
 #[path = "sandboxblock_drivers.rs"]

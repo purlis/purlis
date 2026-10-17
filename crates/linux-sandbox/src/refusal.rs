@@ -12,8 +12,11 @@
 //!
 //! **Telling never changes the answer.** The chat is refused before anything is told, and the
 //! [`Teller`] hands what it tells to a thread of its own through a short queue it never waits
-//! on: a listener that is slow, never returns or fails holds up no call, and a refusal it could
-//! not take is a refusal all the same.
+//! on: a listener that is slow or never returns holds up no call, and a refusal it could not
+//! take is a refusal all the same. The wrap starts the teller once it holds itself, so its
+//! thread is held as the wrap is. A listener that panics, in a build that unwinds, is let go
+//! and the next refusal told; a release build aborts on a panic, which ends the wrap and its
+//! chat with it.
 //!
 //! **No flood.** The same operation on the same target is told once a [`WINDOW`], and at most
 //! [`PER_WINDOW`] different ones are told in one: a build that fails on a thousand files is
@@ -30,6 +33,9 @@ pub const WINDOW: Duration = Duration::from_secs(60);
 /// The most different refusals told in one [`WINDOW`].
 pub const PER_WINDOW: usize = 10;
 
+/// The most refusals waiting to be told.
+pub const QUEUED: usize = PER_WINDOW;
+
 /// One call the supervisor refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
@@ -41,7 +47,7 @@ pub struct Refusal {
     pub process: Option<String>,
 }
 
-/// What is told each refusal let through.
+/// What each refusal the [`Teller`] lets through is told to, on the teller's own thread.
 pub type Tell = Box<dyn Fn(&Refusal) + Send + Sync + 'static>;
 
 /// Tells refusals to a [`Tell`] on a thread of its own, once each a [`WINDOW`] and at most
@@ -56,7 +62,7 @@ pub struct Teller {
 impl Teller {
     /// A teller telling `tell`.
     pub fn new(tell: Tell) -> Teller {
-        let (queue, told) = sync_channel(PER_WINDOW);
+        let (queue, told) = sync_channel(QUEUED);
         let pending = Arc::new(AtomicUsize::new(0));
         let left = Arc::clone(&pending);
         std::thread::spawn(move || tell_each(&told, &tell, &left));
@@ -67,16 +73,34 @@ impl Teller {
         }
     }
 
-    /// Tells `refusal`, refused at `now`, unless it was told in its window or the window is
-    /// full. Returns at once whatever the listener does.
-    pub fn refused(&self, refusal: Refusal, now: Instant) {
-        if !self.lets(&refusal, now) {
+    /// Tells `operation` refused on `target` at `now`, by the process `process` names, unless
+    /// it was told in its window or the window is full; `process` is asked only for one that is
+    /// told. Returns at once whatever the listener does.
+    pub fn refused(
+        &self,
+        operation: &'static str,
+        target: String,
+        process: impl FnOnce() -> Option<String>,
+        now: Instant,
+    ) {
+        if !self.lets(operation, &target, now) {
             return;
         }
-        // A full queue or a listener gone: the refusal stands, untold.
+        let refusal = Refusal {
+            operation,
+            target,
+            process: process(),
+        };
         self.pending.fetch_add(1, Ordering::SeqCst);
-        if self.queue.try_send(refusal).is_err() {
+        if let Err(not_taken) = self.queue.try_send(refusal) {
+            // A full queue or a listener gone: the refusal stands, untold, and is told when it
+            // comes again.
             self.pending.fetch_sub(1, Ordering::SeqCst);
+            let refusal = match not_taken {
+                std::sync::mpsc::TrySendError::Full(it)
+                | std::sync::mpsc::TrySendError::Disconnected(it) => it,
+            };
+            self.forget(refusal.operation, &refusal.target);
         }
     }
 
@@ -89,24 +113,34 @@ impl Teller {
         }
     }
 
-    fn lets(&self, refusal: &Refusal, now: Instant) -> bool {
-        let mut seen = self
-            .seen
+    fn seen(&self) -> std::sync::MutexGuard<'_, Vec<(&'static str, String, Instant)>> {
+        self.seen
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn lets(&self, operation: &'static str, target: &str, now: Instant) -> bool {
+        let mut seen = self.seen();
         seen.retain(|(_, _, at)| now.saturating_duration_since(*at) < WINDOW);
-        if seen.iter().any(|(operation, target, _)| {
-            *operation == refusal.operation && *target == refusal.target
-        }) || seen.len() >= PER_WINDOW
+        if seen
+            .iter()
+            .any(|(was, on, _)| *was == operation && on == target)
+            || seen.len() >= PER_WINDOW
         {
             return false;
         }
-        seen.push((refusal.operation, refusal.target.clone(), now));
+        seen.push((operation, target.to_owned(), now));
         true
+    }
+
+    fn forget(&self, operation: &'static str, target: &str) {
+        self.seen()
+            .retain(|(was, on, _)| !(*was == operation && on == target));
     }
 }
 
-/// Each refusal `told` brings, to `tell`; one that fails is let go, and the next is told.
+/// Each refusal `told` brings, to `tell`; where a build unwinds, one that panics is let go and
+/// the next is told.
 fn tell_each(told: &Receiver<Refusal>, tell: &Tell, pending: &AtomicUsize) {
     while let Ok(refusal) = told.recv() {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tell(&refusal)));
@@ -115,5 +149,4 @@ fn tell_each(told: &Receiver<Refusal>, tell: &Tell, pending: &AtomicUsize) {
 }
 
 #[cfg(test)]
-#[path = "refusal_tests.rs"]
 mod tests;

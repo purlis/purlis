@@ -16,9 +16,11 @@
 mod support;
 
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Mutex, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use purlis_core::harness::Harness;
 use purlis_core::hookwire::{
@@ -35,6 +37,32 @@ struct Ran {
 }
 
 fn wrapped(profile: &str, chat: &Path, home: &Path, script: &str, listening: bool) -> Ran {
+    let (out, blocked) = telling(profile, chat, home, script, listening, |command| {
+        command.output().expect("purlis ran")
+    });
+    assert!(
+        out.status.success(),
+        "{:?}: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Ran {
+        said: String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+        blocked,
+    }
+}
+
+/// `run` given the command that wraps `sh -c script` in `chat` under `profile`, with the
+/// environment the app starts a chat with and its hook socket bound (and read, where
+/// `listening`); what it answered, and the blocks the app heard.
+fn telling<T>(
+    profile: &str,
+    chat: &Path,
+    home: &Path,
+    script: &str,
+    listening: bool,
+    run: impl FnOnce(&mut Command) -> T,
+) -> (T, Vec<SandboxBlocked>) {
     let sockets = tempfile::tempdir().expect("a folder for the socket");
     let path = sockets.path().join("hooks.sock");
     let listener = Listener::bind(sockets.path(), &path).expect("a socket");
@@ -64,7 +92,8 @@ fn wrapped(profile: &str, chat: &Path, home: &Path, script: &str, listening: boo
         "/bin/sh".to_owned(),
         vec!["-c".to_owned(), script.to_owned()],
     );
-    let out = support::purlis()
+    let mut command = support::purlis();
+    command
         .args(&words)
         .current_dir(chat)
         .env("HOME", home)
@@ -73,20 +102,10 @@ fn wrapped(profile: &str, chat: &Path, home: &Path, script: &str, listening: boo
         .env(CHAT_ENV, "7")
         .env(TOKEN_ENV, token.expose())
         .env(HARNESS_ENV, "codex")
-        .env(CHAT_DIR_ENV, chat)
-        .output()
-        .expect("purlis ran");
-    assert!(
-        out.status.success(),
-        "{:?}: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
+        .env(CHAT_DIR_ENV, chat);
+    let answered = run(&mut command);
     let blocked = std::iter::from_fn(|| heard.recv_timeout(Duration::from_secs(2)).ok()).collect();
-    Ran {
-        said: String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-        blocked,
-    }
+    (answered, blocked)
 }
 
 /// A project at `<out>/project`, the folder of a chat in its workspace `a`, and the Codex
@@ -214,4 +233,131 @@ fn a_write_refused_again_and_again_is_one_block_and_stays_refused_with_no_app_li
     assert_eq!(unheard.said, "done", "refused with nobody listening");
     assert!(unheard.blocked.is_empty());
     assert!(!elsewhere.exists());
+}
+
+/// The signals the wrap leaves to its one waiter, which passes an ending on to the chat: INT,
+/// QUIT, TERM and HUP, as a `SigBlk` mask.
+const LEFT_TO_THE_WAITER: u64 = bit(1) | bit(2) | bit(3) | bit(15);
+
+/// Signal `signal`'s bit in a `SigBlk` mask: HUP 1, INT 2, QUIT 3, TERM 15.
+const fn bit(signal: u32) -> u64 {
+    1 << (signal - 1)
+}
+
+/// Each thread of process `pid` now: whether it has no new privileges, and its blocked signals.
+fn threads_of(pid: u32) -> Vec<(bool, u64)> {
+    let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .filter_map(|task| fs::read_to_string(task.path().join("status")).ok())
+        .map(|status| {
+            let field = |name: &str| {
+                status
+                    .lines()
+                    .find_map(|line| line.strip_prefix(name))
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_owned()
+            };
+            (
+                field("NoNewPrivs:") == "1",
+                u64::from_str_radix(&field("SigBlk:"), 16).unwrap_or(0),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn with_telling_on_every_thread_of_the_wrap_is_held_as_the_wrap_is() {
+    purlis_core::unsteered!();
+    landlock();
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    fs::create_dir_all(&home).expect("a home");
+    let (root, chat, profile) = a_codex_chat(&out, &home);
+    let script = format!(
+        "touch {} 2>/dev/null; echo ready; sleep 3",
+        root.join("workspaces/b/notes.md").display()
+    );
+    let (seen, blocked) = telling(&profile, &chat, &home, &script, true, |command| {
+        let mut child = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("purlis runs");
+        // Once the chat runs, and so the wrap holds itself: read while the refusal is told,
+        // and after, every thread the wrap has meanwhile.
+        let mut said = BufReader::new(child.stdout.take().expect("its output"));
+        let mut ready = String::new();
+        said.read_line(&mut ready).expect("a line");
+        assert_eq!(ready.trim(), "ready");
+        let until = Instant::now() + Duration::from_secs(2);
+        let mut seen = Vec::new();
+        while Instant::now() < until {
+            seen.push(threads_of(child.id()));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let _ = child.wait();
+        seen
+    });
+    assert_eq!(blocked.len(), 1, "the refusal was told: {blocked:?}");
+    assert!(seen.iter().any(|threads| threads.len() > 2), "{seen:?}");
+    for threads in &seen {
+        assert!(
+            threads.iter().all(|(held, _)| *held),
+            "a thread of the wrap without no-new-privileges: {threads:?}"
+        );
+        let unblocked = threads
+            .iter()
+            .filter(|(_, blocked)| blocked & LEFT_TO_THE_WAITER != LEFT_TO_THE_WAITER)
+            .count();
+        assert!(
+            unblocked <= 1,
+            "more than the waiter takes the signals it passes on: {threads:x?}"
+        );
+    }
+}
+
+#[test]
+fn with_telling_on_an_ending_asked_of_the_wrap_reaches_the_chat_every_time() {
+    purlis_core::unsteered!();
+    landlock();
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    fs::create_dir_all(&home).expect("a home");
+    let (root, chat, profile) = a_codex_chat(&out, &home);
+    let script = format!(
+        "trap 'echo trapped; exit 0' TERM; touch {} 2>/dev/null; echo ready; \
+         while :; do sleep 0.05; done",
+        root.join("workspaces/b/notes.md").display()
+    );
+    for round in 0..20 {
+        let ((said, ended), _) = telling(&profile, &chat, &home, &script, true, |command| {
+            let mut child = command
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("purlis runs");
+            let mut said = BufReader::new(child.stdout.take().expect("its output"));
+            let mut ready = String::new();
+            said.read_line(&mut ready).expect("a line");
+            assert_eq!(ready.trim(), "ready", "round {round}");
+            // While the refusal is being told.
+            std::thread::sleep(Duration::from_millis(20));
+            let killed = Command::new("kill")
+                .args(["-TERM", &child.id().to_string()])
+                .status()
+                .expect("kill runs");
+            assert!(killed.success());
+            let mut rest = String::new();
+            let _ = said.read_to_string(&mut rest);
+            (rest, child.wait().expect("the wrap ends"))
+        });
+        assert_eq!(said.trim(), "trapped", "round {round}: {ended:?}");
+        assert!(ended.success(), "round {round}: {ended:?}");
+    }
 }

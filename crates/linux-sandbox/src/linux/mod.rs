@@ -55,8 +55,8 @@ pub fn entry(words: &[String], tell: impl FnOnce() -> Option<crate::refusal::Tel
     let Some((profile, program)) = crate::read_line(words) else {
         return refuse("the sandbox was started without a profile and a program");
     };
-    let told = tell().map(|tell| Arc::new(crate::refusal::Teller::new(tell)));
-    match supervise(&profile, &program, told) {
+    // Read now, while nothing holds the wrap; its teller is started once the wrap holds itself.
+    match supervise(&profile, &program, tell()) {
         Ok(code) => code,
         Err(why) => refuse(&why),
     }
@@ -70,7 +70,7 @@ fn refuse(why: &str) -> i32 {
 fn supervise(
     profile: &str,
     program: &[String],
-    told: Option<Arc<crate::refusal::Teller>>,
+    tell: Option<crate::refusal::Tell>,
 ) -> Result<i32, String> {
     let profile = Profile::parse(profile).map_err(|why| why.to_string())?;
     let abi = abi();
@@ -136,6 +136,9 @@ fn supervise(
         }
     });
 
+    // Started only now, so its thread, and every thread it starts, is held as this one is: by
+    // the wrap's own Landlock layer, and with the signals above left to the waiter.
+    let told = tell.map(|tell| Arc::new(crate::refusal::Teller::new(tell)));
     if let Some(listener) = received(&ours) {
         match supervisor::Supervisor::new(listener, profile, told.clone()) {
             Ok(supervisor) => {

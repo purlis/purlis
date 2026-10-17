@@ -43,7 +43,7 @@ use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 use super::notify;
 use super::walk::{self, Chat, Found, World, named, named_in};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
-use crate::refusal::{Refusal, Teller};
+use crate::refusal::Teller;
 
 /// What a call is answered with.
 enum Answer {
@@ -110,12 +110,11 @@ impl Supervisor {
         if Path::new(&target).starts_with("/proc") {
             return;
         }
+        let tgid = chat.tgid;
         told.refused(
-            Refusal {
-                operation,
-                target,
-                process: process_name(chat.tgid),
-            },
+            operation,
+            target,
+            || process_name(tgid),
             std::time::Instant::now(),
         );
     }
@@ -873,7 +872,11 @@ impl Supervisor {
                     ip: remote.ip(),
                     port: remote.port(),
                 })) {
-                    self.tell(chat, CONNECT, remote.to_string());
+                    // A service on this machine; an internet address is the proxy's to tell, by
+                    // host.
+                    if is_this_machine(remote.ip()) {
+                        self.tell(chat, CONNECT, remote.to_string());
+                    }
                     return Err(REFUSED);
                 }
                 let (family, address): (AddressFamily, Box<dyn nix::sys::socket::SockaddrLike>) =
@@ -967,6 +970,11 @@ fn outside_process_stat_only(chat: &Chat<'_>, path: &Path) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether `ip` is this machine's own loopback address, as a grant of a service here names it.
+fn is_this_machine(ip: IpAddr) -> bool {
+    ip == IpAddr::V4(Ipv4Addr::LOCALHOST) || ip == IpAddr::V6(Ipv6Addr::LOCALHOST)
 }
 
 /// The name the kernel keeps for process `tgid` (its `comm`), where it can be read.

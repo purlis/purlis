@@ -21,9 +21,10 @@
 //! that cannot be told (no app listening, a chat not started sandboxed) is a refusal all the
 //! same.
 //!
-//! **One refusal, one Notice.** A connection to an internet address is left to purlis's proxy,
-//! which tells each host it refuses by name; an address a program dialled past it names no host
-//! to allow. A chat purlis wraps on Linux has its files, sockets and services told here, so its
+//! **One refusal, one Notice.** A connection to an internet address is left to purlis's proxy
+//! ([`super::is_the_proxys`]), which tells each host it refuses by name; the supervisor tells
+//! only this machine's own loopback address, and an address a program dialled past the proxy
+//! names no host to allow. A chat purlis wraps on Linux has its files, sockets and services told here, so its
 //! hook leaves those to the supervisor ([`super::the_hooks_own`]).
 
 use std::path::{Path, PathBuf};
@@ -34,8 +35,9 @@ use super::denial::{Denial, Witness};
 use super::{Block, CHAT_DIR_ENV, Kind, Operation, Place};
 
 /// **The block `refusal` is, and what a grant would name for it**, sorted against `place` as
-/// macOS's kernel line of the same refusal is. None for a connection to an internet address,
-/// which purlis's proxy tells by host.
+/// macOS's kernel line of the same refusal is. None for what purlis's proxy tells by host
+/// ([`super::is_the_proxys`]); the supervisor tells no internet address, and this holds if it
+/// ever did.
 pub fn block_of(refusal: &Refusal, place: &Place<'_>) -> Option<(Block, Option<String>)> {
     let denial = Denial {
         witness: Witness::Kernel,
@@ -44,7 +46,7 @@ pub fn block_of(refusal: &Refusal, place: &Place<'_>) -> Option<(Block, Option<S
         target: &refusal.target,
     };
     let (block, target) = denial.block(place);
-    ((block.operation, block.kind) != (Operation::Connect, Kind::Host)).then_some((block, target))
+    (!super::is_the_proxys(&block)).then_some((block, target))
 }
 
 /// Whether the supervisor tells blocks such as `block` itself: every refused file operation,
@@ -126,5 +128,4 @@ fn tell(
 }
 
 #[cfg(test)]
-#[path = "sandboxblock_supervised_tests.rs"]
 mod tests;
