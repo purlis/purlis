@@ -195,6 +195,7 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearance_and_source() {
     let ran = rig.run(&["list", "--json"]);
 
     assert_eq!(ran.code, 0, "{}", ran.err);
+    assert_eq!(ran.json()["schema"], 1);
     let themes = ran.json()["themes"].clone();
     assert_eq!(
         themes[0],
@@ -314,6 +315,7 @@ fn the_check_as_json_has_errors_warnings_and_hard_floors_for_a_chat() {
 
     assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
     let said = ran.json();
+    assert_eq!(said["schema"], 1);
     assert_eq!(
         said["theme"],
         serde_json::json!({

@@ -18,15 +18,18 @@ window only draws what the engine hands it. The full format is in the repository
 `purlis theme list` shows every theme available here:
 
 ```
-  ID                  NAME            APPEARANCE  FROM
-  purlis-dark         purlis-dark     dark        built-in
-  purlis-light        purlis-light    light       built-in
-  mine                Late            dark        /home/me/.config/purlis/theme.json
-  solarized/Solarized Solarized Dark  dark        extension solarized
+  ID                        NAME            APPEARANCE  FROM
+  purlis-dark               purlis-dark     dark        built-in
+  purlis-light              purlis-light    light       built-in
+  mine                      Late            dark        /home/me/.config/purlis/theme.json
+  solarized/Solarized Dark  Solarized Dark  dark        extension solarized
 ```
 
+An id may hold a space, as an extension's theme name can: quote it on the command line
+(`purlis theme check "solarized/Solarized Dark"`).
+
 Then `refused:`, one line per theme purlis could not read and why. `--json` answers
-`{"themes": [{"id", "name", "appearance", "from", "refused"}]}`, where `from` is
+`{"schema": 1, "themes": [{"id", "name", "appearance", "from", "refused"}]}`, where `from` is
 `{"kind": "built-in"}`, `{"kind": "mine", "path"}` or `{"kind": "extension", "extension"}`,
 and `refused` is `null` or why.
 
@@ -63,6 +66,7 @@ an error or is refused, **2** when there is no such theme.
 
 ```json
 {
+  "schema": 1,
   "theme": {"id": "mine", "name": "Dim", "appearance": "dark",
             "from": {"kind": "mine", "path": "/home/me/.config/purlis/theme.json"}},
   "refused": null,
@@ -79,7 +83,9 @@ A warning's `kind` is `contrast` (a `pair`, its `ratio`, and `under` when the ba
 laid over another token), `ansi` (a terminal colour too close to the terminal's background:
 `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row drawn exactly as `other`).
 `tint` is the workspace colour it was found in, or `null` for the theme as it is.
-`hard_floors` is `null` until purlis checks them. `clean` is true with no error and no warning.
+`hard_floors` is `null` until purlis checks them. `clean` is true with no error and no warning;
+it covers errors and warnings only, never hard floors, which `hard_floors` reports on its own.
+`schema` is the version of this shape, in both answers: a reader checks it first.
 
 ## An extension's theme
 

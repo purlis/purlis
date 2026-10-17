@@ -28,6 +28,10 @@ use purlis_core::theme::{self, Finding, Resolved};
 use purlis_core::{extension, shown};
 use serde_json::{Value, json};
 
+/// The version of the JSON `list --json` and `check --json` answer, as `hook --list --json`
+/// carries one: a reader checks it before it reads the rest.
+pub const SCHEMA: u64 = 1;
+
 /// The id of the person's own theme, `theme.json` beside `machine.json`.
 pub const MINE: &str = "mine";
 
@@ -47,9 +51,12 @@ pub enum ThemeCommand {
     /// and its hard floors. Exits 0 with no errors, 1 with an error or when the theme is
     /// refused, 2 when there is no such theme.
     Check {
-        /// A theme's id from `purlis theme list`, or the path of a theme file.
+        /// A theme's id from `purlis theme list`, or the path of a theme file. An id may hold a
+        /// space (`solarized/Solarized Dark`): quote it.
         theme: String,
-        /// Answer as JSON, for a chat or a script.
+        /// Answer as JSON, for a chat or a script. Its `clean` is true with no error and no
+        /// warning; it does not cover hard floors, which `hard_floors` reports on its own
+        /// (`null` until purlis checks them).
         #[arg(long)]
         json: bool,
     },
@@ -134,7 +141,7 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             let found = available(config.as_deref());
             if *json {
                 let themes: Vec<Value> = found.iter().map(Found::summary_json).collect();
-                println!("{}", json!({ "themes": themes }));
+                println!("{}", json!({ "schema": SCHEMA, "themes": themes }));
             } else {
                 print!("{}", table(&found));
             }
@@ -245,6 +252,10 @@ fn find(config: Option<&Path>, asked: &str) -> Option<Found> {
 
 /// A theme file named on the command line, held to the envelope the person's own is: no larger
 /// than a theme file may be, JSON, and an object.
+///
+/// A link is followed, on purpose: this is a path the person typed, and checking the file it
+/// leads to is what they asked for. The person's own `theme.json`, which purlis reads unasked
+/// at every launch, is read link-refusing (`windowprefs::read_theme`).
 fn read_file(path: &Path) -> Result<Resolved, String> {
     use std::io::Read;
     let most = purlis_core::windowprefs::MAX_BYTES;
@@ -483,7 +494,8 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
 
 /// The check as a chat reads it: the theme, why it is refused (or `null`), its errors, its
 /// warnings as the engine reports them, its hard floors (`null` until the engine keeps them),
-/// and whether it is clean: no error and no warning.
+/// and whether it is clean: no error and no warning. `clean` does not cover hard floors, which
+/// are reported on their own.
 fn checked_json(found: &Found, report: Option<&theme::Report>) -> Value {
     let summary = found.summary_json();
     let (errors, refused) = match &found.read {
@@ -501,6 +513,7 @@ fn checked_json(found: &Found, report: Option<&theme::Report>) -> Value {
         && errors.as_array().is_some_and(Vec::is_empty)
         && warnings.as_array().is_some_and(Vec::is_empty);
     json!({
+        "schema": SCHEMA,
         "theme": {
             "id": summary["id"],
             "name": summary["name"],
