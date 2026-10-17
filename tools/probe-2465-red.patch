@@ -1,0 +1,21 @@
+diff --git a/crates/purlis-core/src/hookwire.rs b/crates/purlis-core/src/hookwire.rs
+index 0fc237e8..cb86639a 100644
+--- a/crates/purlis-core/src/hookwire.rs
++++ b/crates/purlis-core/src/hookwire.rs
+@@ -8417,8 +8417,15 @@ mod tests {
+                 let written = socket.write_all(&line);
+                 // Asked to say it has closed, it must have sent its line first: else a refusal
+                 // would be a line never sent.
+-                if closed.is_some() {
++                if let Some(closed) = &closed {
+                     written.expect("the line, written");
++                    // PROBE (red): a sender that waits for the app, so it is named and heard.
++                    std::fs::write(closed, b"").expect("said");
++                    let _ = socket.shutdown(std::net::Shutdown::Write);
++                    socket
++                        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
++                        .expect("a deadline");
++                    let _ = std::io::Read::read_to_end(&mut socket, &mut Vec::new());
+                 }
+             } else {
+                 assert!(closed.is_none(), "the line, sent");
