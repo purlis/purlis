@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792273280418,
+  "lastUpdate": 1792274704905,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16044,6 +16044,48 @@ window.BENCHMARK_DATA = {
             "value": 104.32722849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.355, 103.843, 104.327, 105.046, 105.410 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9594017f335783d0f70bd0f6f80fa23ffdee2af2",
+          "message": "A runner checks a relayed plan against its own folders and ports (#2502)\n\n* Move: sandbox::plan's tests to plan/tests.rs (#2445)\n\nA move alone, as CONTRIBUTING.md asks of a module next changed: only the\npaths the tests are reached by change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* A runner starts a chat's confinement only from a plan that fits it (#2445)\n\nA plan from any link but the host's own window is held to the project as\nthe host holds it before anything starts: the ssh route in the host's own\nroutes folder for the project, every given service one the host's own\nsandbox for the project gives, and this machine's addresses listed only\nas its loopback on such a port. One that does not fit is refused\nnot_allowed with a sentence. The host crate's Confine seam gains fits;\nboth binaries use the core's sandbox::hosted::fits_here.\n\nCloses #2445\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Behaviour: a service a chat reaches through a link is one the project gives there (#2445)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Move: sandbox::egress's tests to egress/tests.rs (#2445)\n\nA move alone, as CONTRIBUTING.md asks of a module next changed: only the\npaths the tests are reached by change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Move: sandbox::hosts's tests to hosts/tests.rs (#2445)\n\nA move alone, as CONTRIBUTING.md asks of a module next changed: only the\npaths the tests are reached by change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A runner's chat reaches its internal networks only as its policy lists (#2445)\n\nRuled 2026-10-17: a relayed plan's private, cluster and link-local\naddresses, a name resolving to one included, fit the runner only where\nits own policy's sandbox.hosts lists them; public hosts as planned. The\nsame rule is held at every connect of the chat's proxy (connect_held),\nsince a name can resolve later. A plan does not fit where the runner\ncannot read its own addresses. The host tells the binary where a plan was\nmade (ToConfine::planned); the app's tests run the real fits_here through\nthe host over the link between hosts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Move: sandbox::policy's tests to policy/tests.rs (#2445)\n\nA move alone, as CONTRIBUTING.md asks of a module next changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A relayed chat's internal services are the runner's relayed-internal list (#2445)\n\nRuled 2026-10-18: the runner's machine policy lists the internal services\na relayed chat reaches under a key of its own, sandbox.relayed-internal;\nsandbox.hosts keeps its meaning. The policy is read at every connection.\nEvery loopback address but 127.0.0.1 and ::1 is internal, and so is every\naddress on a network the runner's interfaces are on; NAT64's local-use\nprefix is decoded.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T01:49:32+04:00",
+          "tree_id": "49b0a9ca5a845334a9ae9854d0525fe275efa9c2",
+          "url": "https://github.com/purlis/purlis/commit/9594017f335783d0f70bd0f6f80fa23ffdee2af2"
+        },
+        "date": 1792274703824,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.538804,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.537, 0.539, 0.539, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.971633500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.956, 16.969, 16.972, 17.228, 17.320 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.24697,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.015, 103.786, 104.247, 105.733, 106.182 ms"
           }
         ]
       }
