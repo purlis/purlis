@@ -148,6 +148,11 @@ if ! diff=$(kubectl --context "$context" diff --server-side --force-conflicts \
   exit 1
 fi
 
+step "the policy settles"
+# The operator acts only on Claims made more than 30 seconds after the policy's binding
+# (SETTLE in src/admission.rs); the tests make theirs at once.
+sleep 32
+
 step "the tests"
 kubectl config use-context "$context" >/dev/null
 PURLIS_RUNNER_IMAGE=$runner cargo test --manifest-path "$here/Cargo.toml" --locked \

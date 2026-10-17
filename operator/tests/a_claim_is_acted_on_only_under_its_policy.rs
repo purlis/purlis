@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The operator acts only on Claims admitted under its policy, however it was installed: a
-//! Claim made after the policy's binding is acted on; one made before it, or in the same second,
-//! is refused for good; and with no binding in force, no Claim is acted on at all.
+//! Claim made more than `SETTLE` (30 s) after the policy's binding is acted on; one made before
+//! it, or within that time, is refused for good; and with no binding in force, no Claim is acted
+//! on at all.
 
 use k8s_openapi::api::admissionregistration::v1::{
     ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
@@ -52,8 +53,8 @@ fn in_force(time: &str) -> ValidatingAdmissionPolicyBinding {
 }
 
 #[test]
-fn a_claim_made_after_the_binding_is_acted_on() {
-    let claim = claim_made(Some("2026-10-17T10:00:01Z"));
+fn a_claim_made_after_the_binding_has_settled_is_acted_on() {
+    let claim = claim_made(Some("2026-10-17T10:00:31Z"));
     let binding = in_force("2026-10-17T10:00:00Z");
     assert_eq!(admission(&claim, Some(&binding)), Admission::UnderPolicy);
     assert!(Admission::UnderPolicy.status().is_none());
@@ -67,6 +68,22 @@ fn a_claim_made_before_the_binding_is_refused() {
         admission(&claim, Some(&binding)),
         Admission::MadeBeforePolicy
     );
+}
+
+#[test]
+fn a_claim_made_while_the_binding_settles_is_refused() {
+    let binding = in_force("2026-10-17T10:00:00Z");
+    for made in [
+        "2026-10-17T10:00:01Z",
+        "2026-10-17T10:00:29Z",
+        "2026-10-17T10:00:30Z",
+    ] {
+        assert_eq!(
+            admission(&claim_made(Some(made)), Some(&binding)),
+            Admission::MadeBeforePolicy,
+            "{made}"
+        );
+    }
 }
 
 #[test]
@@ -90,13 +107,13 @@ fn a_claim_with_no_creation_time_is_refused() {
 
 #[test]
 fn with_no_binding_no_claim_is_acted_on() {
-    let claim = claim_made(Some("2026-10-17T10:00:01Z"));
-    assert_eq!(admission(&claim, None), Admission::NoPolicy);
+    let claim = claim_made(Some("2026-10-17T10:00:31Z"));
+    assert_eq!(admission(&claim, None), Admission::PolicyNotInForce);
 }
 
 #[test]
 fn a_binding_that_does_not_deny_with_purlis_policy_is_no_binding() {
-    let claim = claim_made(Some("2026-10-17T10:00:01Z"));
+    let claim = claim_made(Some("2026-10-17T10:00:31Z"));
     for binding in [
         binding("2026-10-17T10:00:00Z", POLICY, &["Warn"]),
         binding("2026-10-17T10:00:00Z", POLICY, &["Audit"]),
@@ -105,7 +122,7 @@ fn a_binding_that_does_not_deny_with_purlis_policy_is_no_binding() {
     ] {
         assert_eq!(
             admission(&claim, Some(&binding)),
-            Admission::NoPolicy,
+            Admission::PolicyNotInForce,
             "{binding:?}"
         );
     }
@@ -135,8 +152,12 @@ fn a_refused_claim_says_to_delete_it_and_make_it_again() {
 
 #[test]
 fn a_claim_waiting_for_the_policy_says_so() {
-    let (status, reason, message) = ready(Admission::NoPolicy);
+    let (status, reason, message) = ready(Admission::PolicyNotInForce);
     assert_eq!(status, "False");
     assert_eq!(reason, "PolicyNotInForce");
     assert!(message.contains(POLICY), "{message}");
+    assert!(
+        message.contains("delete this claim and make it again"),
+        "{message}"
+    );
 }

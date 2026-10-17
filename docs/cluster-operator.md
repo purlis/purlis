@@ -229,8 +229,13 @@ Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
 **The operator acts only on Claims admitted under its policy, however it was installed.** It
 reads the policy's binding before it acts on any Claim. While no binding puts the policy in
-force, it acts on no Claim, and each says `PolicyNotInForce`. A Claim made before the binding,
-or in the same second, is never acted on: it says `MadeBeforePolicy`; delete it and make it
+force, it acts on no Claim, and each says `PolicyNotInForce`. The policy is taken to be in force
+30 seconds after its binding was made, the time every API server takes to enforce it. A Claim
+made before then is never acted on: it says `MadeBeforePolicy`; delete it and make it again.
+So wait 30 seconds after installing before making the first Claims.
+
+Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses
+every Claim that already exists: each says `MadeBeforePolicy` and has to be deleted and made
 again.
 
 ## What it makes

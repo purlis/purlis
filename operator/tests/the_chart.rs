@@ -14,17 +14,31 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::Command;
 
-/// The image the plain manifests name until an install sets the real one: a digest no registry
-/// holds, so a manifest applied without it starts nothing. `e2e/kind.sh` and
-/// `.github/workflows/operator-image.yml` replace exactly this line.
-const PLACEHOLDER: &str = "ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000";
+/// The digest the plain manifests name until an install sets the real one: one no registry
+/// holds, so a manifest applied without it starts nothing.
+macro_rules! placeholder_digest {
+    () => {
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    };
+}
+/// A digest the tests install with.
+macro_rules! digest {
+    () => {
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    };
+}
+
+const PLACEHOLDER_DIGEST: &str = placeholder_digest!();
+/// The image the plain manifests name. `e2e/kind.sh` and `.github/workflows/operator-image.yml`
+/// replace exactly this line.
+const PLACEHOLDER: &str = concat!(
+    "ghcr.io/purlis/purlis-cluster-operator@",
+    placeholder_digest!()
+);
+const DIGEST: &str = digest!();
+const DIGEST_VALUE: &str = concat!("image.digest=", digest!());
 /// The oldest Kubernetes purlis supports (spec #2041), which the chart requires.
 const KUBERNETES: &str = "1.36.0";
-const PLACEHOLDER_DIGEST: &str =
-    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-const DIGEST: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
-const DIGEST_VALUE: &str =
-    "image.digest=sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
 fn operator_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -228,12 +242,17 @@ fn the_definitions_are_left_out_of_the_charts_templates() {
     }
 }
 
-fn container(documents: &[Value]) -> Value {
+/// The operator's pod, as the chart's Deployment holds it.
+fn pod(documents: &[Value]) -> Value {
     let deployment = documents
         .iter()
         .find(|d| d["kind"] == "Deployment")
         .expect("the operator's deployment");
-    deployment["spec"]["template"]["spec"]["containers"][0].clone()
+    deployment["spec"]["template"]["spec"].clone()
+}
+
+fn container(documents: &[Value]) -> Value {
+    pod(documents)["containers"][0].clone()
 }
 
 #[test]
@@ -315,22 +334,14 @@ fn the_values_set_only_what_they_name() {
         "resources.requests.memory=64Mi",
         "resources.limits.memory=1Gi",
     ]));
-    let deployment = documents
-        .iter()
-        .find(|d| d["kind"] == "Deployment")
-        .expect("deployment");
-    let pod = &deployment["spec"]["template"]["spec"];
-    assert_eq!(pod["imagePullSecrets"], json!([{ "name": "ghcr" }]));
+    let set = pod(&documents);
+    assert_eq!(set["imagePullSecrets"], json!([{ "name": "ghcr" }]));
     assert_eq!(
-        pod["containers"][0]["resources"],
+        set["containers"][0]["resources"],
         json!({ "requests": { "cpu": "50m", "memory": "64Mi" }, "limits": { "memory": "1Gi" } })
     );
-    let defaults = rendered(&with_digest(&[]));
-    let pod = &defaults
-        .iter()
-        .find(|d| d["kind"] == "Deployment")
-        .expect("deployment")["spec"]["template"]["spec"];
-    assert!(pod.get("imagePullSecrets").is_none(), "{pod}");
+    let defaults = pod(&rendered(&with_digest(&[])));
+    assert!(defaults.get("imagePullSecrets").is_none(), "{defaults}");
 }
 
 #[test]

@@ -6,15 +6,14 @@
 //! what upstream says of it. A Claim not admitted under the policy ([`crate::admission`]) is
 //! never acted on: only its status says why.
 
-use crate::admission::{Admission, POLICY, admission};
-use crate::resources::{Claim, ClaimStatus, Pool};
+use crate::admission::{POLICY, admission};
+use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
     self, SandboxClaim, SandboxTemplate, SandboxWarmPool, sandbox_claim_for, template_for,
     warm_pool_for,
 };
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
 use kube::api::{Api, Patch, PatchParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::reflector::ObjectRef;
@@ -26,8 +25,6 @@ use std::time::Duration;
 /// Who the operator's server-side applies are from.
 pub const FIELD_MANAGER: &str = "purlis-cluster-operator";
 
-const READY: &str = "Ready";
-
 /// Why a Claim could not be brought to what it asks for. It is tried again.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -35,17 +32,6 @@ pub enum Error {
     Kube(#[from] kube::Error),
     #[error("the claim {0} has no namespace")]
     NoNamespace(String),
-}
-
-pub(crate) fn condition(status: &str, reason: &str, message: String) -> Condition {
-    Condition {
-        type_: READY.to_owned(),
-        status: status.to_owned(),
-        reason: reason.to_owned(),
-        message,
-        last_transition_time: Time(k8s_openapi::jiff::Timestamp::now()),
-        observed_generation: None,
-    }
 }
 
 /// A Claim's status from its upstream claim: `Ready` is upstream's `Ready`, with upstream's own
@@ -113,16 +99,7 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
         .await?;
     let admitted = admission(&claim, binding.as_ref());
     if let Some(refused) = admitted.status() {
-        match admitted {
-            Admission::NoPolicy => tracing::warn!(
-                claim = %name, %namespace, policy = POLICY,
-                "not acted on: the policy on claims is not in force"
-            ),
-            _ => tracing::warn!(
-                claim = %name, %namespace, policy = POLICY,
-                "refused: the claim was made before the policy on claims was in force"
-            ),
-        }
+        admitted.log(&name, &namespace);
         write_status(client, &claim, &namespace, refused).await?;
         return Ok(Action::await_change());
     }

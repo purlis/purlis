@@ -439,6 +439,11 @@ async fn upstream_claims_in(client: &Client, namespace: &str) -> usize {
         .len()
 }
 
+/// Long enough after a binding is made for a claim to be acted on (`SETTLE`, and two seconds).
+fn settled() -> Duration {
+    Duration::from_secs(purlis_cluster_operator::SETTLE.as_secs().unsigned_abs() + 2)
+}
+
 /// The installed binding made again as a new object, unless it is there: from then on the
 /// policy is in force.
 async fn restore_binding(
@@ -527,8 +532,8 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
         .await;
         assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
 
-        // Creation times are whole seconds: a claim in the binding's own second is refused too.
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // A claim made while the binding settles is refused too: wait past it.
+        tokio::time::sleep(settled()).await;
         claims
             .create(&PostParams::default(), &claim("ada-2", "e2e-policy"))
             .await
@@ -551,8 +556,8 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
     .catch_unwind()
     .await;
     restore_binding(&bindings, &installed).await;
-    // The tests after this one make claims at once: past the binding's own second.
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // The tests after this one make claims at once: past the binding's settling time.
+    tokio::time::sleep(settled()).await;
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }

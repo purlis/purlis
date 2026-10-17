@@ -20,6 +20,7 @@ on:
       - deny.toml
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
+      - .github/actions/helm/**
       - .github/workflows/operator.yml
   push:
     branches: [main]
@@ -29,6 +30,7 @@ on:
       - deny.toml
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
+      - .github/actions/helm/**
       - .github/workflows/operator.yml
   # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that
   # breaks the runner image the kind run builds, is reported though nothing here changed.
@@ -67,19 +69,8 @@ jobs:
         with:
           workspaces: operator
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Helm, one exact release, checked against the SHA-256 it publishes, in place of any the
-      # runner image carries: the chart's tests render it with Helm itself.
-      - name: Install Helm
-        env:
-          HELM_VERSION: v4.3.0
-          HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
-        run: |
-          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/helm.tgz" \
-            "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          echo "$HELM_SHA256  $RUNNER_TEMP/helm.tgz" | sha256sum --check --strict
-          tar -xzf "$RUNNER_TEMP/helm.tgz" -C "$RUNNER_TEMP"
-          sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
-          helm version
+      # Helm, for the chart's tests (.github/actions/helm pins it).
+      - uses: ./.github/actions/helm
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets
       - run: cargo test --locked
@@ -123,19 +114,8 @@ jobs:
             "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
           echo "$KIND_SHA256  $RUNNER_TEMP/kind" | sha256sum --check --strict
           sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
-      # Helm, one exact release, checked against the SHA-256 it publishes, in place of any the
-      # runner image carries: the chart's tests render it with Helm itself.
-      - name: Install Helm
-        env:
-          HELM_VERSION: v4.3.0
-          HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
-        run: |
-          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/helm.tgz" \
-            "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          echo "$HELM_SHA256  $RUNNER_TEMP/helm.tgz" | sha256sum --check --strict
-          tar -xzf "$RUNNER_TEMP/helm.tgz" -C "$RUNNER_TEMP"
-          sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
-          helm version
+      # Helm, which installs the operator's chart on the kind cluster.
+      - uses: ./.github/actions/helm
       # The runner image of this commit, from runner-image/Dockerfile, as `runner-image.yml`
       # builds it but in a debug build: the operator is under test here, not the binary.
       - name: The runner image
