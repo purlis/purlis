@@ -53,13 +53,13 @@ pub enum Beside {
 
 /// **What a plan made on another machine is held to on the runner that starts it** (#2445):
 /// the runner's own folder for the project's ssh routes, the services on the runner its
-/// sandbox for the project gives, the runner's interface addresses, the internal services its
+/// sandbox for the project gives, the networks its interfaces are on, the internal services its
 /// policy lists, and how it resolves a name.
 #[derive(Clone, Copy)]
 pub struct Here<'a> {
     pub routes: &'a std::path::Path,
     pub given: &'a [u16],
-    pub own: &'a [IpAddr],
+    pub own: &'a [super::hosts::Network],
     pub internal: &'a Internal,
     pub resolve: &'a dyn Fn(&str, u16) -> Vec<IpAddr>,
 }
@@ -287,6 +287,7 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
             None => Ok(()),
         };
     };
+    // `127.0.0.1` and `::1` alone: the rest of the loopback network is internal, below.
     if ip == Ipv4Addr::LOCALHOST || ip == Ipv6Addr::LOCALHOST {
         return match port {
             Some(port) if here.given.contains(&port) => Ok(()),

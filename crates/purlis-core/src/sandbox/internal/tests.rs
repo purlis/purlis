@@ -6,7 +6,8 @@
 use std::net::{IpAddr, SocketAddr};
 
 use super::{Internal, private_address};
-use crate::sandbox::hosts::Host;
+use crate::sandbox::hosts::{Host, Network};
+use crate::sandbox::policy::{self, Locks};
 
 fn ip(text: &str) -> IpAddr {
     text.parse().expect("an address")
@@ -84,7 +85,7 @@ fn a_private_address_is_carried_only_where_this_machines_policy_lists_it() {
 
 #[test]
 fn an_address_of_this_machine_is_held_as_a_private_one() {
-    let own = [ip("203.0.113.9")];
+    let own = [Network::host(ip("203.0.113.9"))];
 
     assert!(!listing(&[]).carries("me.example.com", at("203.0.113.9:22"), Some(&own)));
     assert!(listing(&["203.0.113.9:22"]).carries(
@@ -117,4 +118,81 @@ fn where_this_machines_addresses_cannot_be_read_only_what_policy_lists_is_carrie
 
     assert!(!listed.carries("other.example.com", at("203.0.113.7:443"), None));
     assert!(listed.carries("api.example.com", at("203.0.113.7:443"), None));
+}
+
+/// Only `127.0.0.1` and `::1` are the services a chat is given: the rest of `127/8` is held.
+#[test]
+fn the_rest_of_the_loopback_network_is_held_as_internal() {
+    for one in [
+        "127.0.0.2:5432",
+        "127.255.255.254:22",
+        "[::ffff:127.0.0.1]:5432",
+    ] {
+        assert!(
+            !listing(&[]).carries("localhost", at(one), Some(&[])),
+            "{one}"
+        );
+    }
+    assert!(listing(&[]).carries("localhost", at("[::1]:5432"), Some(&[])));
+}
+
+/// The runner's own networks are its cluster's (#2445): every address on a network one of its
+/// interfaces is on is held, whatever range it is in.
+#[test]
+fn an_address_on_a_network_of_this_machines_is_held_as_internal() {
+    let own = [
+        Network::of(ip("2600:1f14::42"), 64),
+        Network::of(ip("198.51.100.20"), 24),
+    ];
+
+    for one in ["[2600:1f14::99]:443", "198.51.100.200:443"] {
+        assert!(
+            !listing(&[]).carries("node.example", at(one), Some(&own)),
+            "{one}"
+        );
+    }
+    for one in ["[2600:1f15::99]:443", "198.51.101.200:443"] {
+        assert!(
+            listing(&[]).carries("elsewhere.example", at(one), Some(&own)),
+            "{one}"
+        );
+    }
+}
+
+#[test]
+fn an_address_nat64_carries_from_a_private_network_is_private() {
+    assert!(private_address(ip("64:ff9b:1::a00:5")));
+    assert!(!private_address(ip("64:ff9b:1::cb00:7107")));
+}
+
+/// The runner's policy for relayed chats is a key of its own (ruled 2026-10-18): `hosts`
+/// opens no internal address to them.
+#[test]
+fn only_the_policys_relayed_internal_list_opens_an_internal_address() {
+    let project = tempfile::tempdir().expect("a project");
+    policy::set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"hosts": ["*.corp.example"], "relayed-internal": ["10.96.0.1:443"]}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    ));
+    let internal = Internal::of(project.path());
+
+    assert!(internal.carries("kubernetes.default", at("10.96.0.1:443"), Some(&[])));
+    assert!(!internal.carries("db.corp.example", at("10.0.0.9:5432"), Some(&[])));
+    policy::set_for_this_test(Locks::none());
+}
+
+/// A policy narrowed while a relayed chat runs holds its next connection.
+#[test]
+fn the_runners_policy_is_read_again_at_every_connection() {
+    let project = tempfile::tempdir().expect("a project");
+    policy::set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"relayed-internal": ["10.96.0.1:443"]}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    ));
+    let internal = Internal::of(project.path());
+    assert!(internal.carries("kubernetes.default", at("10.96.0.1:443"), Some(&[])));
+
+    policy::set_for_this_test(Locks::none());
+
+    assert!(!internal.carries("kubernetes.default", at("10.96.0.1:443"), Some(&[])));
 }

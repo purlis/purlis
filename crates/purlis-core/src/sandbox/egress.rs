@@ -949,7 +949,7 @@ impl Teller {
 impl Allowed {
     /// Whether `host`, reached at `at`, is carried past what its runner's policy lists, for a
     /// chat planned on another machine (#2445): always, for any other.
-    fn carries(&self, host: &str, at: SocketAddr, own: Option<&[std::net::IpAddr]>) -> bool {
+    fn carries(&self, host: &str, at: SocketAddr, own: Option<&[super::hosts::Network]>) -> bool {
         self.internal
             .as_ref()
             .is_none_or(|internal| internal.carries(host, at, own))
@@ -1141,9 +1141,9 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         );
         return;
     }
-    // This machine's addresses, read once for the decision and the connect.
-    let read = super::hosts::own_addresses_read();
-    let own = read.clone().unwrap_or_default();
+    // This machine's networks, read once for the decision and the connect.
+    let read = super::hosts::own_networks_read();
+    let own: Vec<std::net::IpAddr> = read.iter().flatten().map(|one| one.address).collect();
     let tunnel = request.forward.is_none();
     let decision = allowed.decide(&request.host, request.port, tunnel, &own);
     let decision = match allowed.asked(&request.host, request.port, tunnel, decision) {
@@ -1242,8 +1242,8 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         Ok(target) => target,
         Err(code) => return socks_reply(&mut client, code),
     };
-    let read = super::hosts::own_addresses_read();
-    let own = read.clone().unwrap_or_default();
+    let read = super::hosts::own_networks_read();
+    let own: Vec<std::net::IpAddr> = read.iter().flatten().map(|one| one.address).collect();
     let decision = match allowed.asked(&host, port, true, allowed.decide(&host, port, true, &own)) {
         Ok(decision) => decision,
         Err(_) => return socks_reply(&mut client, reply::NOT_ALLOWED),

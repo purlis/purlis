@@ -141,17 +141,17 @@ pub fn fits_here(project_path: &Path, wired: &session::ConfinePlan) -> Result<()
     fits_with(
         project_path,
         wired,
-        super::hosts::own_addresses_read(),
+        super::hosts::own_networks_read(),
         &resolve,
     )
 }
 
-/// [`fits_here`], with this machine's addresses `own` as they were read (`None` where they
+/// [`fits_here`], with this machine's networks `own` as they were read (`None` where they
 /// could not be) and names resolved by `resolve`.
 pub(crate) fn fits_with(
     project_path: &Path,
     wired: &session::ConfinePlan,
-    own: Option<Vec<std::net::IpAddr>>,
+    own: Option<Vec<super::hosts::Network>>,
     resolve: &dyn Fn(&str, u16) -> Vec<std::net::IpAddr>,
 ) -> Result<(), String> {
     let refused = |why: String| format!("the runner does not start the chat's confinement: {why}");

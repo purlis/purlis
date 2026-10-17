@@ -1582,5 +1582,5 @@ fn a_proxy_for_a_chat_planned_on_another_machine_refuses_an_internal_address() {
     assert_eq!(said, "HTTP/1.1 403 Forbidden");
     assert_eq!(socks_connect(&mut to_socks(&proxy), "10.255.255.1", 443), 2);
     proxy.settled();
-    assert_eq!(heard.local(), ["10.255.255.1:443", "10.255.255.1:443"]);
+    assert_eq!(heard.local(), ["10.255.255.1:443"], "told once");
 }

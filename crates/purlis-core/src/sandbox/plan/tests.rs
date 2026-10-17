@@ -163,7 +163,7 @@ mod made_elsewhere {
 
     use super::super::{Beside, Here, Plan};
     use super::plan;
-    use crate::sandbox::hosts::Host;
+    use crate::sandbox::hosts::{Host, Network};
     use crate::sandbox::internal::Internal;
     use crate::sandbox::reach::{By, Reach};
 
@@ -193,7 +193,7 @@ mod made_elsewhere {
         )
     }
 
-    fn held_to<'a>(given: &'a [u16], own: &'a [IpAddr], internal: &'a Internal) -> Here<'a> {
+    fn held_to<'a>(given: &'a [u16], own: &'a [Network], internal: &'a Internal) -> Here<'a> {
         Here {
             routes: Path::new(ROUTES),
             given,
@@ -203,7 +203,7 @@ mod made_elsewhere {
         }
     }
 
-    fn here<'a>(given: &'a [u16], own: &'a [IpAddr]) -> Here<'a> {
+    fn here<'a>(given: &'a [u16], own: &'a [Network]) -> Here<'a> {
         static NONE: std::sync::LazyLock<Internal> = std::sync::LazyLock::new(Internal::default);
         held_to(given, own, &NONE)
     }
@@ -263,9 +263,15 @@ mod made_elsewhere {
 
     #[test]
     fn a_plan_listing_a_port_of_the_runner_it_does_not_give_does_not_fit() {
-        for entry in ["127.0.0.1:22", "[::1]:22", "[::ffff:127.0.0.1]:22"] {
-            let refused = listing(&[entry], Vec::new())
-                .fits(&here(&[], &[]))
+        for entry in [
+            "127.0.0.1:22",
+            "[::1]:22",
+            "[::ffff:127.0.0.1]:22",
+            "127.0.0.2:5432",
+            "127.255.255.254:5432",
+        ] {
+            let refused = listing(&[entry], vec![5432])
+                .fits(&here(&[5432], &[]))
                 .expect_err(entry);
 
             assert!(refused.contains(entry), "{refused}");
@@ -274,7 +280,7 @@ mod made_elsewhere {
 
     #[test]
     fn a_plan_listing_an_internal_address_its_policy_does_not_list_does_not_fit() {
-        let own = [ip("203.0.113.9")];
+        let own = [Network::of(ip("203.0.113.9"), 24)];
         for entry in [
             "203.0.113.9:5432",
             "10.96.0.1:443",
@@ -284,6 +290,7 @@ mod made_elsewhere {
             "169.254.169.254:80",
             "0.0.0.0:5432",
             "[fe80::1]:22",
+            "203.0.113.200:443",
         ] {
             let refused = listing(&[entry], vec![5432])
                 .fits(&here(&[5432], &own))
