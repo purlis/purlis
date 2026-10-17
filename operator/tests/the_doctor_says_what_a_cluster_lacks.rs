@@ -9,6 +9,7 @@
 mod common;
 
 use purlis_cluster_operator::doctor::{self, Cluster, Controller, Unanswered, Version};
+use purlis_cluster_operator::upstream::{CONTROLLER_DIGEST, CONTROLLER_IMAGE};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A cluster as the doctor's checks see it: what its API server would answer.
@@ -73,8 +74,12 @@ fn with_upstream(mut fake: Fake, tag: &str) -> Fake {
     fake
 }
 
+/// The pinned upstream release applied as the install applies it: its controller named by the
+/// pinned digest.
 fn ready() -> Fake {
-    with_upstream(bare(), "v1.0.6")
+    let mut fake = with_upstream(bare(), "v1.0.6");
+    fake.controller = controller(vec![format!("{CONTROLLER_IMAGE}@{CONTROLLER_DIGEST}")]);
+    fake
 }
 
 impl Cluster for Fake {
@@ -172,9 +177,7 @@ fn a_cluster_without_upstream_names_it_and_the_manifest_to_apply() {
     let line = finding(&report, "agent-sandbox v1.0.6").to_string();
     assert!(line.contains("not installed"), "{line}");
     assert!(
-        line.contains(
-            "kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml"
-        ),
+        line.contains("kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6"),
         "{line}"
     );
 }
@@ -184,7 +187,10 @@ fn another_upstream_release_is_named_with_the_one_purlis_is_tested_against() {
     let report = run(&with_upstream(bare(), "v1.1.0"));
     let line = finding(&report, "agent-sandbox v1.0.6").to_string();
     assert!(line.contains("v1.1.0"), "{line}");
-    assert!(line.contains("sandbox-with-extensions.yaml"), "{line}");
+    assert!(
+        line.contains("kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6"),
+        "{line}"
+    );
 }
 
 #[test]
@@ -245,12 +251,39 @@ fn a_controller_named_by_digest_alone_is_one_it_cannot_tell_the_release_of() {
 }
 
 #[test]
-fn a_controller_tagged_and_pinned_by_digest_is_read_by_its_tag() {
+fn a_controller_named_by_the_pinned_digest_is_the_pinned_release_with_or_without_its_tag() {
     let mut cluster = ready();
-    cluster.controller = controller(vec![
-        "registry.k8s.io/agent-sandbox/agent-sandbox-controller:v1.0.6@sha256:0123".into(),
-    ]);
-    assert!(run(&cluster).findings.is_empty());
+    assert!(run(&cluster).findings.is_empty(), "{}", run(&cluster));
+    cluster.controller = controller(vec![format!(
+        "{CONTROLLER_IMAGE}:v1.0.6@{CONTROLLER_DIGEST}"
+    )]);
+    assert!(run(&cluster).findings.is_empty(), "{}", run(&cluster));
+}
+
+#[test]
+fn the_pinned_release_by_tag_alone_is_a_finding_naming_the_install_by_digest() {
+    let mut cluster = ready();
+    cluster.controller = controller(vec![format!("{CONTROLLER_IMAGE}:v1.0.6")]);
+    let report = run(&cluster);
+    assert_eq!(report.findings.len(), 1, "{report}");
+    let line = finding(&report, "agent-sandbox v1.0.6").to_string();
+    assert!(line.contains("by its tag"), "{line}");
+    assert!(
+        line.contains("kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6"),
+        "{line}"
+    );
+}
+
+#[test]
+fn the_pinned_tag_at_another_digest_is_a_finding() {
+    let mut cluster = ready();
+    cluster.controller = controller(vec![format!(
+        "{CONTROLLER_IMAGE}:v1.0.6@sha256:{}",
+        "0".repeat(64)
+    )]);
+    let report = run(&cluster);
+    let line = finding(&report, "agent-sandbox v1.0.6").to_string();
+    assert!(line.contains("not the pinned release's"), "{line}");
 }
 
 #[test]
