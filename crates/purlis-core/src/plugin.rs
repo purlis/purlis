@@ -128,12 +128,22 @@ pub const HOOKS_FILE: &str = "hooks/hooks.json";
 /// than filtered by event, because each one is a hook the operator is asked to trust.
 ///
 /// The four state events Codex was measured firing (codex-cli 0.147.0, `harness.rs`), the
-/// Bash guard, and the block word after a command (#1663). Codex has no `Notification`;
-/// `SubagentStop` is not measured on Codex, so a Codex child agent is shown from its first tool
-/// call and never heard to finish: it reads working until its chat ends, and the chat says so
-/// (`Harness::unreported`, #1086); and the other tool hooks match Claude Code's tool names
-/// (`Read|Grep`, `Write|Edit`, `Task|Agent`), which Codex's tools are not called, so arming
-/// them would ask for trust in hooks that never fire.
+/// Bash guard, the block word after a command (#1663), and a child agent's end. Codex has no
+/// `Notification`; and the other tool hooks match Claude Code's tool names (`Read|Grep`,
+/// `Write|Edit`, `Task|Agent`), which Codex's tools are not called, so arming them would ask
+/// for trust in hooks that never fire.
+///
+/// **A child agent's end, read from Codex's source** (`rust-v0.147.0`, read only, #1086; the
+/// same in `rust-v0.163.0`): a thread-spawned child's turn ends in `SubagentStop` where a root
+/// turn's ends in `Stop` (`codex-rs/core/src/hook_runtime.rs`, `run_turn_stop_hooks`), with
+/// `agent_id` the child's thread id, the id its tool hooks carry (`subagent_hook_context`), and
+/// `session_id` the root's, "the identity shared by the root thread and all descendant
+/// threads" (`session/session.rs`, `Session::session_id`), so it is heard as the chat's own
+/// report naming its child. `agent_id` is required in its input schema
+/// (`hooks/schema/generated/subagent-stop.command.input.schema.json`), and its matcher is the
+/// agent's type, which the registry's `None` matches whatever it is. The hook prints nothing,
+/// so it never blocks the child from ending. A Codex child that reads done is one whose turn
+/// ended; the parent may give it another (#2455).
 ///
 /// **The block word, read from Codex's source** (`rust-v0.147.0`, read only): its shell tools
 /// (`shell_command`, `exec_command`, and a `write_stdin` poll that sees one finish) are all
@@ -148,12 +158,13 @@ pub const HOOKS_FILE: &str = "hooks/hooks.json";
 /// Codex has no `PostToolUseFailure` (the eleven events, `harness/codex.rs`), so
 /// `posttoolusefailure-blocked` is not armed. The hook only reads and tells: Codex lets a
 /// `PostToolUse` block a result, and this one never does.
-pub const CODEX: [&str; 6] = [
+pub const CODEX: [&str; 7] = [
     "sessionstart",
     "userpromptsubmit",
     "pretooluse",
     "posttooluse-blocked",
     "stop",
+    "subagentstop",
     "sessionend",
 ];
 

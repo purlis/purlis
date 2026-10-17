@@ -398,5 +398,4 @@ impl Ctx {
 }
 
 #[cfg(test)]
-#[path = "program_tests.rs"]
 mod tests;

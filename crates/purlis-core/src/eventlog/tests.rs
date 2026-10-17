@@ -609,8 +609,8 @@ fn a_sub_agents_child_run_ends_with_its_parents_run() {
     by_agent.agent = Some("agent-1".to_owned());
     let before = host.tool(plane, &by_agent, Instant::now()).unwrap();
 
-    // `/clear`: the parent run ends, and a Codex sub-agent, whose `SubagentStop` charter does
-    // not arm, ends with it.
+    // `/clear`: the parent run ends, and a sub-agent whose `SubagentStop` was not heard ends
+    // with it.
     host.report(plane, &report(5, SessionStart), Followed::Moved)
         .unwrap();
     let after_clear = host.tool(plane, &by_agent, Instant::now()).unwrap();
