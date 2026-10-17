@@ -998,8 +998,8 @@ describe("the explorer", () => {
     expect(sent).toBe(true);
     const menu = await $('[role="menu"]');
     await menu.waitForDisplayed({ timeout: 20_000 });
-    await expect(menu).toHaveText("Copy absolute path", { containing: true });
-    await menu.$('[role="menuitem"][aria-label="Open a shell tab here"]').click();
+    expect((await menuNames())[0]).toContain(ROW.copyAbsolutePath);
+    await pressMenuPath(ROW.shellHere);
     await menu.waitForDisplayed({ timeout: 20_000, reverse: true });
 
     await browser.waitUntil(async () => (await tabInFront()).startsWith("shell"), {

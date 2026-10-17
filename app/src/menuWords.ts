@@ -8,7 +8,7 @@
  * thing's name again: *Rename…*, not *Rename chat console-developer 16…*. The catalogue's title
  * (`actions.ts`) still names it, for the palette, where a row stands among every other row of
  * the window. `menuModel.ts` gives each catalogue row its words from here, and the menu-only
- * builders of `actions.ts` (`viewRows`) read them from here too.
+ * builders of `actions.ts` (`viewRows`, `fileRows`) read them from here too.
  *
  * **Nothing is imported here**, so the end-to-end specs read the same words the window draws
  * (`e2e/menus.ts`), and a rename is one edit.
@@ -56,8 +56,13 @@ export const SAID = {
   forget: "Forget",
   resume: "Resume",
   browseFiles: "Browse files",
+  // A file's or folder's rows, and a branch's own folder's (`actions.ts`, `fileRows`).
+  copyRelativePath: "Copy relative path",
   copyAbsolutePath: "Copy absolute path",
   shellHere: "Open a shell tab here",
+  openInEditor: "Open in your editor",
+  startAChatHere: "Start a chat here",
+  addToChat: "Add to a chat's context",
   removeFolder: "Remove folder",
   discardAnyway: "Discard that work and remove anyway",
   clone: "Clone",
