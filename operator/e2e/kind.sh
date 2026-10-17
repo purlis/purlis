@@ -32,8 +32,14 @@ registry_image=registry:3@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636
 # The pinned upstream release, applied as its kustomization there applies it: the vendored
 # manifest with the controller named by the release's digest (#2261).
 upstream=$here/vendor/agent-sandbox/v1.0.6
-controller_image=registry.k8s.io/agent-sandbox/agent-sandbox-controller
-controller_tag=v1.0.6
+# The controller's image, tag and digest, as that record names them.
+controller_image=$(sed -n 's/^ *- name: //p' "$upstream/kustomization.yaml")
+controller_tag=$(sed -n 's/^ *newTag: //p' "$upstream/kustomization.yaml")
+recorded=$(sed -n 's/^ *digest: //p' "$upstream/kustomization.yaml")
+if [ -z "$controller_image" ] || [ -z "$controller_tag" ] || [ -z "$recorded" ]; then
+  echo "$upstream/kustomization.yaml names no controller image, tag and digest" >&2
+  exit 1
+fi
 context=kind-$cluster
 # A kubeconfig of the run's own: the person's own is never read or written.
 KUBECONFIG=$(mktemp "${TMPDIR:-/tmp}/purlis-operator-e2e.XXXXXX")
@@ -123,12 +129,11 @@ echo "$found" | grep -q "^missing: upstream agent-sandbox v1.0.6: not installed"
 }
 
 step "the recorded digest is what the registry holds under the pinned tag"
-recorded=$(sed -n 's/^ *digest: //p' "$upstream/kustomization.yaml")
 docker pull -q "$controller_image:$controller_tag" >/dev/null
 published=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$controller_image:$controller_tag" |
   grep "^$controller_image@sha256:" | head -n 1)
-if [ -z "$recorded" ] || [ "${published#*@}" != "$recorded" ]; then
-  what="$controller_image:$controller_tag is ${published#*@} in the registry; the record beside the vendored release names ${recorded:-nothing}"
+if [ "${published#*@}" != "$recorded" ]; then
+  what="$controller_image:$controller_tag is ${published#*@} in the registry; the record beside the vendored release names $recorded"
   echo "$what" >&2
   annotate "the recorded controller digest is not the pinned release's" "$what"
   exit 1

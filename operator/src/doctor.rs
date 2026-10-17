@@ -179,10 +179,18 @@ impl fmt::Display for Report {
     }
 }
 
-/// The one command that applies the pinned upstream release.
-/// Step 1 of the install: the pinned release, its controller named by digest.
+/// Step 1 of the install, the one command that applies the pinned upstream release, its
+/// controller named by digest.
 fn apply_upstream() -> String {
     format!("kubectl apply --server-side -k operator/vendor/agent-sandbox/{VERSION}")
+}
+
+/// The next step when the controller is not the pinned release by its digest.
+fn apply_by_digest() -> String {
+    format!(
+        "apply the pinned release, which names its controller by digest: {}",
+        apply_upstream()
+    )
 }
 
 fn ask_again(error: &str) -> String {
@@ -314,17 +322,14 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
     let Some(image) = image else {
         report.lacks(
             format!("{wanted}: doctor cannot tell which release runs, since deployment {namespace}/{name} names no image"),
-            format!("apply the pinned release, which names its controller by digest: {}", apply_upstream()),
+            apply_by_digest(),
         );
         return;
     };
-    let pinned = digest_of(image) == Some(CONTROLLER_DIGEST);
-    if !pinned {
-        let next = format!(
-            "apply the pinned release, which names its controller by digest: {}",
-            apply_upstream()
-        );
-        match (tag_of(image), digest_of(image)) {
+    let digest = digest_of(image);
+    if digest != Some(CONTROLLER_DIGEST) {
+        let next = apply_by_digest();
+        match (tag_of(image), digest) {
             (Some(VERSION), None) => report.lacks(
                 format!("{wanted}: its controller runs {VERSION} by its tag, not by the pinned release's digest"),
                 next,
