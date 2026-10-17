@@ -8516,17 +8516,14 @@ export type ThemeOption = {
 
 /**
  *  What is wrong with one colour theme an extension is contributing (#2321), in the theme
- *  engine's words: what it had to put right, or that the theme is not JSON at all.
+ *  engine's words: why it is refused, or what it left out of a theme it draws.
  */
 export type ThemeTrouble = {
 	/**  The theme's name, as the manifest gives it. */
 	name: string,
-	/**
-	 *  What the engine had to put right, one sentence each; each value is drawn as the
-	 *  built-in's. Empty when the theme is refused.
-	 */
+	/**  The engine's sentences, one each: why it is refused, or what it left out. */
 	complaints: string[],
-	/**  Whether the theme is not JSON at all, so it is not drawn. */
+	/**  Whether the engine refused the theme, so Purlis is drawn in its place. */
 	refused: boolean,
 };
 

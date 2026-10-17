@@ -162,15 +162,14 @@ pub struct InstalledExtensions {
 }
 
 /// What is wrong with one colour theme an extension is contributing (#2321), in the theme
-/// engine's words: what it had to put right, or that the theme is not JSON at all.
+/// engine's words: why it is refused, or what it left out of a theme it draws.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct ThemeTrouble {
     /// The theme's name, as the manifest gives it.
     pub name: String,
-    /// What the engine had to put right, one sentence each; each value is drawn as the
-    /// built-in's. Empty when the theme is refused.
+    /// The engine's sentences, one each: why it is refused, or what it left out.
     pub complaints: Vec<String>,
-    /// Whether the theme is not JSON at all, so it is not drawn.
+    /// Whether the engine refused the theme, so Purlis is drawn in its place.
     pub refused: bool,
 }
 
@@ -504,24 +503,19 @@ fn theme_trouble_of(row: &extension::Surveyed) -> Vec<ThemeTrouble> {
         .filter_map(|theme| {
             let text = found.theme_text(theme)?;
             let offered = purlis_core::theme::Offered::of(row.id.clone(), theme.name.clone(), text);
-            let trouble = match offered.theme {
-                None => ThemeTrouble {
-                    name: offered.name,
-                    complaints: Vec::new(),
-                    refused: true,
-                },
-                Some(resolved) if resolved.complaints.is_empty() => return None,
-                Some(resolved) => ThemeTrouble {
-                    name: offered.name,
-                    complaints: resolved
-                        .complaints
-                        .into_iter()
-                        .map(|one| one.said)
-                        .collect(),
-                    refused: false,
-                },
-            };
-            Some(trouble)
+            let resolved = offered.theme;
+            if resolved.complaints.is_empty() && !resolved.refused {
+                return None;
+            }
+            Some(ThemeTrouble {
+                name: offered.name,
+                complaints: resolved
+                    .complaints
+                    .into_iter()
+                    .map(|one| one.said)
+                    .collect(),
+                refused: resolved.refused,
+            })
         })
         .collect()
 }
@@ -1336,7 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn an_approved_extension_s_theme_says_what_the_engine_put_right_on_its_row() {
+    fn an_approved_extension_s_refused_theme_says_why_on_its_row() {
         // #2321: an extension theme's complaints reach the person, on the row its other
         // complaints are on, instead of being dropped.
         let (_dir, at, config) = made();
@@ -1353,10 +1347,38 @@ mod tests {
         let trouble = &listed.extensions[0].theme_trouble;
         assert_eq!(trouble.len(), 1, "{trouble:?}");
         assert_eq!(trouble[0].name, "Solarized Dark");
-        assert!(!trouble[0].refused);
+        assert!(
+            trouble[0].refused,
+            "a value outside its type refuses the theme"
+        );
         assert_eq!(trouble[0].complaints.len(), 1, "{trouble:?}");
         assert!(
             trouble[0].complaints[0].starts_with("text.primary is \"red\", which is not #rgb"),
+            "{trouble:?}"
+        );
+    }
+
+    #[test]
+    fn an_approved_extension_s_drawn_theme_says_what_was_left_out_on_its_row() {
+        let (_dir, at, config) = made();
+        std::fs::write(
+            at.join("dark.json"),
+            r##"{"name":"Solarized Dark","appearance":"dark","tokens":{"text.primry":"#ffffff"}}"##,
+        )
+        .expect("a theme");
+        let found =
+            extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+        extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
+
+        let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        let trouble = &listed.extensions[0].theme_trouble;
+        assert_eq!(trouble.len(), 1, "{trouble:?}");
+        assert!(
+            !trouble[0].refused,
+            "an unknown name is left out, not a refusal"
+        );
+        assert!(
+            trouble[0].complaints[0].starts_with("text.primry is not a purlis token"),
             "{trouble:?}"
         );
     }
@@ -1370,13 +1392,13 @@ mod tests {
         extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
 
         let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
-        assert_eq!(
-            listed.extensions[0].theme_trouble,
-            [ThemeTrouble {
-                name: "Solarized Dark".to_owned(),
-                complaints: Vec::new(),
-                refused: true,
-            }]
+        let trouble = &listed.extensions[0].theme_trouble;
+        assert_eq!(trouble.len(), 1, "{trouble:?}");
+        assert_eq!(trouble[0].name, "Solarized Dark");
+        assert!(trouble[0].refused);
+        assert!(
+            trouble[0].complaints[0].starts_with("a theme is JSON"),
+            "{trouble:?}"
         );
     }
 

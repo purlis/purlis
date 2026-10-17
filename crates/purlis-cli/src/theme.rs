@@ -4,27 +4,27 @@
 //! `purlis theme list` and `purlis theme check` (spec #2313, #2321): every theme available on
 //! this machine and where it comes from, and the theme check of any one of them.
 //!
-//! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, puts right
-//! what it can and says so, and checks it; this module finds the themes there are, asks the
-//! engine about each, and prints its answer, as a table for a person or as JSON for a chat.
-//! Nothing is written: a theme command reads the built-ins, the person's `theme.json` and the
-//! approved extensions' themes, and leaves every file as it found it.
+//! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it
+//! or says what it left out, and checks each appearance; this module finds the themes there are,
+//! asks the engine about each, and prints its answer, as a table for a person or as JSON for a
+//! chat. Nothing is written: a theme command reads Purlis Classic, the person's `theme.json`
+//! and the approved extensions' themes, and leaves every file as it found it.
 //!
-//! **Where a theme comes from, today:** built in, the person's own `theme.json` (its id is
-//! [`MINE`]), or an approved extension that is on (its id is `<extension>/<theme>`, as a
-//! project's pick names it). A theme file anywhere else can be checked by its path. The levels
-//! the spec adds (machine, project and workspace theme folders) are more sources in the same
-//! list, with the same `from`.
+//! **Where a theme comes from, today:** built in (Purlis Classic, `purlis-classic`), the
+//! person's own `theme.json` (its id is [`MINE`]), or an approved extension that is on (its id
+//! is `<extension>/<theme>`, as a project's pick names it). A theme file or a theme folder
+//! anywhere else can be checked by its path. The levels the spec adds (machine, project and
+//! workspace theme folders) are more sources in the same list, with the same `from`.
 //!
-//! **The exit is a linter's.** `check` exits 0 when the theme has no errors, warnings or not
-//! (a contrast finding is the author's call, ADR 0097 §2); 1 when it has an error or is
-//! refused; 2 when there is no such theme here.
+//! **The exit is a linter's.** `check` exits 0 when the theme is drawn, notes and warnings or
+//! not (a contrast finding is the author's call, ADR 0097 §2); 1 when it is refused; 2 when
+//! there is no such theme here.
 
 use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use purlis_core::theme::{self, Finding, Resolved};
+use purlis_core::theme::{self, Complaint, Finding, Resolved, Theme};
 use purlis_core::{extension, shown};
 use serde_json::{Value, json};
 
@@ -38,25 +38,25 @@ pub const MINE: &str = "mine";
 /// `purlis theme …`.
 #[derive(Subcommand)]
 pub enum ThemeCommand {
-    /// Every theme available here, with its id, its appearance and where it comes from: built
-    /// in, your own theme.json (`mine`), or an approved extension (`<extension>/<theme>`).
-    /// A theme purlis cannot read is listed as refused, with why.
+    /// Every theme available here, with its id, its appearances and where it comes from:
+    /// built in (`purlis-classic`), your own theme.json (`mine`), or an approved extension
+    /// (`<extension>/<theme>`). A theme purlis refuses is listed as refused, with why.
     List {
         /// Answer as JSON, for a chat or a script.
         #[arg(long)]
         json: bool,
     },
-    /// The theme check of one theme: its errors (values purlis had to put right), its contrast
-    /// warnings (each pair with its ratio and its floor, as it is and in every workspace tint)
-    /// and its hard floors. Exits 0 with no errors, 1 with an error or when the theme is
-    /// refused, 2 when there is no such theme.
+    /// The theme check of one theme: why it is refused, if it is; what purlis left out of it;
+    /// its contrast warnings in each appearance (each pair with its ratio and its floor, as it
+    /// is and in every workspace tint); and its hard floors. Exits 0 when the theme is drawn,
+    /// 1 when it is refused, 2 when there is no such theme.
     Check {
-        /// A theme's id from `purlis theme list`, or the path of a theme file. An id may hold a
-        /// space (`solarized/Solarized Dark`): quote it.
+        /// A theme's id from `purlis theme list`, or the path of a theme file or a theme
+        /// folder. An id may hold a space (`solarized/Solarized Dark`): quote it.
         theme: String,
-        /// Answer as JSON, for a chat or a script. Its `clean` is true with no error and no
-        /// warning; it does not cover hard floors, which `hard_floors` reports on its own
-        /// (`null` until purlis checks them).
+        /// Answer as JSON, for a chat or a script. Its `clean` is true with no error, no note
+        /// and no warning; it does not cover hard floors, which `hard_floors` reports on its
+        /// own (`null` until purlis checks them).
         #[arg(long)]
         json: bool,
     },
@@ -73,6 +73,8 @@ enum From {
     Extension(String),
     /// A theme file named by its path on the command line.
     File(String),
+    /// A theme folder named by its path on the command line.
+    Folder(String),
 }
 
 impl From {
@@ -80,7 +82,7 @@ impl From {
     fn said(&self) -> String {
         match self {
             Self::BuiltIn => "built-in".to_owned(),
-            Self::Mine(path) | Self::File(path) => shown::short(path),
+            Self::Mine(path) | Self::File(path) | Self::Folder(path) => shown::short(path),
             Self::Extension(id) => format!("extension {}", shown::short(id)),
         }
     }
@@ -91,44 +93,92 @@ impl From {
             Self::Mine(path) => json!({ "kind": "mine", "path": path }),
             Self::Extension(id) => json!({ "kind": "extension", "extension": id }),
             Self::File(path) => json!({ "kind": "file", "path": path }),
+            Self::Folder(path) => json!({ "kind": "folder", "path": path }),
         }
     }
 }
 
-/// One theme found here: what the engine made of it, or why it is not a theme at all.
+/// One theme found here, as the engine read it.
 struct Found {
     id: String,
     from: From,
-    read: Result<Resolved, String>,
+    /// The theme, when it is drawn; `None` when the engine refused it.
+    theme: Option<Theme>,
+    /// Why it is refused, as one sentence; `None` when it is drawn.
+    refused: Option<String>,
+    /// What refused it, one complaint each.
+    errors: Vec<Complaint>,
+    /// What the engine left out of a theme it draws: a token or key purlis does not have.
+    notes: Vec<Complaint>,
 }
 
 impl Found {
-    fn built_in(theme: &theme::ResolvedTheme) -> Self {
-        Self {
-            id: theme.name.clone(),
-            from: From::BuiltIn,
-            read: Ok(Resolved {
-                theme: theme.clone(),
-                complaints: Vec::new(),
-            }),
+    /// What the engine answered for a theme.
+    fn of(id: String, from: From, resolved: Resolved) -> Self {
+        if resolved.refused {
+            let why: Vec<&str> = resolved
+                .complaints
+                .iter()
+                .map(|one| one.said.as_str())
+                .collect();
+            Self {
+                id,
+                from,
+                theme: None,
+                refused: Some(why.join("; ")),
+                errors: resolved.complaints,
+                notes: Vec::new(),
+            }
+        } else {
+            Self {
+                id,
+                from,
+                theme: Some(resolved.theme),
+                refused: None,
+                errors: Vec::new(),
+                notes: resolved.complaints,
+            }
         }
     }
 
+    fn classic() -> Self {
+        Self::of(
+            theme::CLASSIC.to_owned(),
+            From::BuiltIn,
+            Resolved {
+                theme: theme::classic().clone(),
+                complaints: Vec::new(),
+                refused: false,
+            },
+        )
+    }
+
     fn summary_json(&self) -> Value {
-        let (name, appearance, refused) = match &self.read {
-            Ok(resolved) => (
-                Value::from(resolved.theme.name.clone()),
-                json!(resolved.theme.appearance),
-                Value::Null,
+        let (name, appearances) = match &self.theme {
+            Some(theme) => (
+                Value::from(theme.name.clone()),
+                Value::from(
+                    theme
+                        .appearances
+                        .iter()
+                        .map(|one| {
+                            json!({
+                                "id": one.id,
+                                "appearance": one.appearance,
+                                "high_contrast": one.high_contrast,
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                ),
             ),
-            Err(why) => (Value::Null, Value::Null, Value::from(why.clone())),
+            None => (Value::Null, Value::Null),
         };
         json!({
             "id": self.id,
             "name": name,
-            "appearance": appearance,
+            "appearances": appearances,
             "from": self.from.json(),
-            "refused": refused,
+            "refused": self.refused,
         })
     }
 }
@@ -151,30 +201,26 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             let Some(found) = find(config.as_deref(), theme) else {
                 eprintln!(
                     "purlis: there is no theme '{}' here — `purlis theme list` lists the themes \
-                     there are, and `purlis theme check <path>` checks a theme file",
+                     there are, and `purlis theme check <path>` checks a theme file or folder",
                     shown::short(theme)
                 );
                 return ExitCode::from(2);
             };
-            let report = found.read.as_ref().ok().map(|it| theme::check(&it.theme));
+            let checked = checks(&found);
             if *json {
-                println!("{}", checked_json(&found, report.as_ref()));
+                println!("{}", checked_json(&found, &checked));
             } else {
-                print!("{}", checked_text(&found, report.as_ref()));
+                print!("{}", checked_text(&found, &checked));
             }
-            let failed = match &found.read {
-                Ok(resolved) => !resolved.complaints.is_empty(),
-                Err(_) => true,
-            };
-            ExitCode::from(u8::from(failed))
+            ExitCode::from(u8::from(found.refused.is_some()))
         }
     }
 }
 
-/// Every theme there is here, in the order a person reads them: the built-ins, the person's
+/// Every theme there is here, in the order a person reads them: Purlis Classic, the person's
 /// own, then each approved extension's in the order the survey found them.
 fn available(config: Option<&Path>) -> Vec<Found> {
-    let mut found: Vec<Found> = theme::built_ins().iter().map(Found::built_in).collect();
+    let mut found = vec![Found::classic()];
     let Some(config) = config else {
         return found;
     };
@@ -189,23 +235,42 @@ fn mine(config: &Path) -> Option<Found> {
     if !theirs.found {
         return None;
     }
-    let read = match (theirs.trouble, theirs.theme) {
-        (Some(trouble), _) => Err(trouble),
-        (None, Some(theme)) => Ok(Resolved {
-            theme,
-            complaints: theirs.complaints,
-        }),
-        (None, None) => Err("is not a theme".to_owned()),
-    };
-    Some(Found {
-        id: MINE.to_owned(),
-        from: From::Mine(theirs.path),
-        read,
+    let from = From::Mine(theirs.path);
+    Some(match (theirs.trouble, theirs.theme) {
+        (None, Some(theme)) => Found {
+            id: MINE.to_owned(),
+            from,
+            theme: Some(theme),
+            refused: None,
+            errors: Vec::new(),
+            notes: theirs.complaints,
+        },
+        // Refused, or not readable at all: the trouble is the window's own sentence, and the
+        // complaints (when it was read) say each value.
+        (trouble, _) => {
+            let why = trouble.unwrap_or_else(|| "purlis cannot draw it".to_owned());
+            let errors = if theirs.complaints.is_empty() {
+                vec![Complaint {
+                    said: why.clone(),
+                    token: None,
+                }]
+            } else {
+                theirs.complaints
+            };
+            Found {
+                id: MINE.to_owned(),
+                from,
+                theme: None,
+                refused: Some(why),
+                errors,
+                notes: Vec::new(),
+            }
+        }
     })
 }
 
-/// The themes approved extensions that are on contribute, each resolved from the text its
-/// fingerprint was taken over. One whose text is not JSON is refused.
+/// The themes approved extensions that are on contribute, each resolved by the engine from the
+/// text its fingerprint was taken over.
 fn extensions(config: &Path) -> Vec<Found> {
     let seen = extension::survey(config, &extension::BuiltIn::of_this_program());
     let mut found = Vec::new();
@@ -216,23 +281,22 @@ fn extensions(config: &Path) -> Vec<Found> {
                 continue;
             };
             let offered = theme::Offered::of(row.id.clone(), one.name.clone(), text);
-            found.push(Found {
-                id: format!("{}/{}", offered.extension, offered.name),
-                from: From::Extension(offered.extension),
-                read: offered
-                    .theme
-                    .ok_or_else(|| "is not JSON, so it is not drawn".to_owned()),
-            });
+            found.push(Found::of(
+                format!("{}/{}", offered.extension, offered.name),
+                From::Extension(offered.extension),
+                offered.theme,
+            ));
         }
     }
     found
 }
 
-/// The theme `asked` names: a built-in by its id (or an id it had before), the person's own,
-/// an extension's by `<extension>/<theme>`, or else a theme file by its path.
+/// The theme `asked` names: Purlis Classic by its id or any id its appearances have had, the
+/// person's own, an extension's by `<extension>/<theme>`, or else a theme file or a theme
+/// folder by its path.
 fn find(config: Option<&Path>, asked: &str) -> Option<Found> {
-    if let Some(built) = theme::built_in(asked) {
-        return Some(Found::built_in(built));
+    if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+        return Some(Found::classic());
     }
     if let Some(config) = config {
         if asked == MINE {
@@ -243,19 +307,37 @@ fn find(config: Option<&Path>, asked: &str) -> Option<Found> {
         }
     }
     let path = Path::new(asked);
-    path.is_file().then(|| Found {
-        id: asked.to_owned(),
-        from: From::File(path.display().to_string()),
-        read: read_file(path),
+    let shown = path.display().to_string();
+    if path.is_dir() {
+        return Some(read_folder(path, shown));
+    }
+    path.is_file().then(|| {
+        Found::of(
+            asked.to_owned(),
+            From::File(shown),
+            read_file(path).unwrap_or_else(refusal),
+        )
     })
 }
 
-/// A theme file named on the command line, held to the envelope the person's own is: no larger
-/// than a theme file may be, JSON, and an object.
+/// The engine's refusal of a theme for `why`, Purlis in its place.
+fn refusal(why: String) -> Resolved {
+    Resolved {
+        theme: theme::classic().clone(),
+        complaints: vec![Complaint {
+            said: why,
+            token: None,
+        }],
+        refused: true,
+    }
+}
+
+/// A theme file named on the command line, read under the one cap every theme file is read
+/// under and handed to the engine as text, which judges the rest.
 ///
 /// A link is followed, on purpose: this is a path the person typed, and checking the file it
 /// leads to is what they asked for. The person's own `theme.json`, which purlis reads unasked
-/// at every launch, is read link-refusing (`windowprefs::read_theme`).
+/// at every launch, is read link-refusing (`windowprefs::read_theme_text`).
 fn read_file(path: &Path) -> Result<Resolved, String> {
     use std::io::Read;
     let most = purlis_core::windowprefs::MAX_BYTES;
@@ -269,33 +351,78 @@ fn read_file(path: &Path) -> Result<Resolved, String> {
             most / 1024
         ));
     }
-    let document: Value =
-        serde_json::from_str(&text).map_err(|why| format!("is not JSON: {why}"))?;
-    if !document.is_object() {
-        return Err("is not a theme: it is not a JSON object".to_owned());
+    Ok(theme::load_text(&text))
+}
+
+/// A theme folder named on the command line, read by the engine inside the folder that holds
+/// it, as a level's `themes/` folder is: the folders beside it are the themes it may `extend`.
+/// The engine refuses a folder or a `theme.json` that is a link.
+fn read_folder(path: &Path, shown: String) -> Found {
+    let from = From::Folder(shown);
+    let (Some(themes), Some(name)) = (path.parent(), path.file_name().and_then(|it| it.to_str()))
+    else {
+        return Found::of(
+            path.display().to_string(),
+            from,
+            refusal("is not a theme folder purlis can name".to_owned()),
+        );
+    };
+    let themes = if themes.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        themes
+    };
+    let mut library = theme::Library::new();
+    for beside in std::fs::read_dir(themes).into_iter().flatten().flatten() {
+        if let Some(other) = beside.file_name().to_str()
+            && other != name
+            && beside.file_type().is_ok_and(|it| it.is_dir())
+        {
+            library = library.with_folder(themes, other);
+        }
     }
-    Ok(theme::load(&document))
+    Found::of(name.to_owned(), from, library.load_folder(themes, name))
+}
+
+/// A theme's appearances as the table says them: each id, with its tag when the id is not it,
+/// and `high contrast` when it is tagged so.
+fn appearances(theme: &Theme) -> String {
+    theme
+        .appearances
+        .iter()
+        .map(|one| {
+            let tag = appearance(one.appearance);
+            match (one.id == tag, one.high_contrast) {
+                (true, false) => one.id.clone(),
+                (true, true) => format!("{} (high contrast)", one.id),
+                (false, false) => format!("{} ({tag})", one.id),
+                (false, true) => format!("{} ({tag}, high contrast)", one.id),
+            }
+        })
+        .map(|it| shown::short(&it))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The listing: one row per theme, its columns sized from its cells, and the refused ones
 /// after it with why.
 fn table(found: &[Found]) -> String {
-    let header = ["ID", "NAME", "APPEARANCE", "FROM"];
+    let header = ["ID", "NAME", "APPEARANCES", "FROM"];
     let mut rows: Vec<[String; 4]> = Vec::new();
     let mut refused = Vec::new();
     for one in found {
-        match &one.read {
-            Ok(resolved) => rows.push([
+        match (&one.theme, &one.refused) {
+            (Some(theme), None) => rows.push([
                 shown::short(&one.id),
-                shown::short(&resolved.theme.name),
-                appearance(resolved.theme.appearance).to_owned(),
+                shown::short(&theme.name),
+                appearances(theme),
                 one.from.said(),
             ]),
-            Err(why) => refused.push(format!(
+            (_, why) => refused.push(format!(
                 "  {} ({}): {}",
                 shown::short(&one.id),
                 one.from.said(),
-                shown::short(why)
+                shown::short(why.as_deref().unwrap_or_default())
             )),
         }
     }
@@ -337,48 +464,70 @@ fn appearance(appearance: theme::Appearance) -> &'static str {
 /// What the check says about hard floors until the engine keeps them (#2332): not a pass.
 const FLOORS_NOT_CHECKED: &str = "not checked by this purlis yet";
 
+/// The check of each appearance, by its id, in the theme's order. A refused theme has none.
+fn checks(found: &Found) -> Vec<(String, theme::Report)> {
+    found.theme.as_ref().map_or_else(Vec::new, |theme| {
+        theme
+            .appearances
+            .iter()
+            .map(|one| (one.id.clone(), theme::check(one)))
+            .collect()
+    })
+}
+
 /// The check as a person reads it.
-fn checked_text(found: &Found, report: Option<&theme::Report>) -> String {
+fn checked_text(found: &Found, checked: &[(String, theme::Report)]) -> String {
     let mut out = String::new();
-    let resolved = match &found.read {
-        Err(why) => {
-            // The person's own is the one the window would have drawn: it draws Purlis instead.
-            let instead = match found.from {
-                From::Mine(_) => " — the window draws Purlis in its place",
-                _ => "",
-            };
-            out.push_str(&format!(
-                "{} — {}\nrefused: {}{instead}\n",
-                shown::short(&found.id),
-                found.from.said(),
-                shown::short(why)
-            ));
-            return out;
+    let Some(theme) = &found.theme else {
+        // The person's own is the one the window would have drawn: it draws Purlis instead.
+        let instead = match found.from {
+            From::Mine(_) => " — the window draws Purlis in its place",
+            _ => "",
+        };
+        out.push_str(&format!(
+            "{} — {}\nrefused{instead}:\n",
+            shown::short(&found.id),
+            found.from.said(),
+        ));
+        for error in &found.errors {
+            out.push_str(&format!("  {}\n", shown::readable(&error.said, 240)));
         }
-        Ok(resolved) => resolved,
+        return out;
     };
     out.push_str(&format!(
         "{} — {}, {}\n",
-        shown::short(&resolved.theme.name),
+        shown::short(&theme.name),
         found.from.said(),
-        appearance(resolved.theme.appearance)
+        appearances(theme)
     ));
-    if resolved.complaints.is_empty() {
-        out.push_str("errors: none\n");
+    if found.notes.is_empty() {
+        out.push_str("left out: nothing\n");
     } else {
-        out.push_str(&format!("errors ({}):\n", resolved.complaints.len()));
-        for complaint in &resolved.complaints {
-            out.push_str(&format!("  {}\n", shown::readable(&complaint.said, 240)));
+        out.push_str(&format!("left out ({}):\n", found.notes.len()));
+        for note in &found.notes {
+            out.push_str(&format!("  {}\n", shown::readable(&note.said, 240)));
         }
     }
-    let findings = report.map_or(&[][..], |it| it.findings.as_slice());
-    if findings.is_empty() {
+    // An appearance is named on its lines only when there is more than one to tell apart.
+    let named = checked.len() > 1;
+    let said: Vec<String> = checked
+        .iter()
+        .flat_map(|(id, report)| {
+            warnings(&report.findings).into_iter().map(move |warning| {
+                if named {
+                    format!("{}: {}", shown::short(id), warning.line())
+                } else {
+                    warning.line()
+                }
+            })
+        })
+        .collect();
+    if said.is_empty() {
         out.push_str("warnings: none\n");
     } else {
-        let said = warnings(findings);
         out.push_str(&format!("warnings ({}):\n", said.len()));
-        for warning in said {
-            out.push_str(&format!("  {}\n", warning.line()));
+        for line in said {
+            out.push_str(&format!("  {line}\n"));
         }
     }
     out.push_str(&format!("hard floors: {FLOORS_NOT_CHECKED}\n"));
@@ -492,36 +641,39 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
     found
 }
 
-/// The check as a chat reads it: the theme, why it is refused (or `null`), its errors, its
-/// warnings as the engine reports them, its hard floors (`null` until the engine keeps them),
-/// and whether it is clean: no error and no warning. `clean` does not cover hard floors, which
-/// are reported on their own.
-fn checked_json(found: &Found, report: Option<&theme::Report>) -> Value {
+/// The check as a chat reads it: the theme and its appearances, why it is refused (or `null`),
+/// what refused it (`errors`), what was left out of it (`notes`), each appearance's warnings as
+/// the engine reports them with the appearance's id added, its hard floors (`null` until the
+/// engine keeps them), and whether it is clean: no error, no note and no warning. `clean` does
+/// not cover hard floors, which are reported on their own.
+fn checked_json(found: &Found, checked: &[(String, theme::Report)]) -> Value {
     let summary = found.summary_json();
-    let (errors, refused) = match &found.read {
-        Ok(resolved) => (
-            serde_json::to_value(&resolved.complaints).unwrap_or_default(),
-            Value::Null,
-        ),
-        Err(why) => (json!([]), Value::from(why.clone())),
-    };
-    let warnings = report.map_or_else(
-        || json!([]),
-        |it| serde_json::to_value(&it.findings).unwrap_or_default(),
-    );
-    let clean = refused.is_null()
-        && errors.as_array().is_some_and(Vec::is_empty)
-        && warnings.as_array().is_some_and(Vec::is_empty);
+    let errors = serde_json::to_value(&found.errors).unwrap_or_default();
+    let notes = serde_json::to_value(&found.notes).unwrap_or_default();
+    let warnings: Vec<Value> = checked
+        .iter()
+        .flat_map(|(id, report)| {
+            report.findings.iter().map(move |finding| {
+                let mut said = serde_json::to_value(finding).unwrap_or_default();
+                if let Some(fields) = said.as_object_mut() {
+                    fields.insert("appearance".to_owned(), Value::from(id.clone()));
+                }
+                said
+            })
+        })
+        .collect();
+    let clean = found.refused.is_none() && found.notes.is_empty() && warnings.is_empty();
     json!({
         "schema": SCHEMA,
         "theme": {
             "id": summary["id"],
             "name": summary["name"],
-            "appearance": summary["appearance"],
+            "appearances": summary["appearances"],
             "from": summary["from"],
         },
-        "refused": refused,
+        "refused": summary["refused"],
         "errors": errors,
+        "notes": notes,
         "warnings": warnings,
         "hard_floors": Value::Null,
         "clean": clean,

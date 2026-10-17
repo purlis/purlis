@@ -226,7 +226,7 @@ describe("what a contributed icon theme got wrong (#1145)", () => {
 describe("what an extension's colour theme got wrong (#2321)", () => {
   const approved = { ...newRow, standing: "approved", ask: null, themes_in_force: ["Dim"] };
 
-  it("says on the extension's row what the theme engine put right", async () => {
+  it("says on the extension's row what the theme engine left out", async () => {
     core({
       rows: [
         {
@@ -234,7 +234,7 @@ describe("what an extension's colour theme got wrong (#2321)", () => {
           theme_trouble: [
             {
               name: "Dim",
-              complaints: ['text.primary is "red", which is not #rgb; used #d8d8d8'],
+              complaints: ["text.primry is not a purlis token, so it is left out"],
               refused: false,
             },
           ],
@@ -247,21 +247,30 @@ describe("what an extension's colour theme got wrong (#2321)", () => {
     const row = (await screen.findByText("Solarized")).closest("li") as HTMLElement;
     expect(
       within(row).getByText(
-        'Theme “Dim”, drawn as purlis’s own where it is wrong: text.primary is "red", which is not #rgb; used #d8d8d8.',
+        "Theme “Dim” is drawn without what purlis left out: text.primry is not a purlis token, so it is left out.",
       ),
     ).toHaveAttribute("role", "status");
     const other = screen.getByText("Persona statistics").closest("li") as HTMLElement;
     expect(within(other).queryByText(/^Theme “/)).toBeNull();
   });
 
-  it("says a theme that is not JSON is not drawn", async () => {
+  it("says a refused theme is not drawn, and why", async () => {
     core({
-      rows: [{ ...approved, theme_trouble: [{ name: "Dim", complaints: [], refused: true }] }],
+      rows: [
+        {
+          ...approved,
+          theme_trouble: [
+            { name: "Dim", complaints: ["a theme is JSON: expected value"], refused: true },
+          ],
+        },
+      ],
     });
     render(<Extensions onClose={() => undefined} />);
 
     expect(
-      await screen.findByText("Theme “Dim” is not JSON, so it is not drawn."),
+      await screen.findByText(
+        "Theme “Dim” is not drawn, and Purlis is: a theme is JSON: expected value.",
+      ),
     ).toBeInTheDocument();
   });
 

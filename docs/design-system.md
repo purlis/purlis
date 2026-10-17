@@ -346,14 +346,15 @@ contrast suite stays in `contrast.test.ts`, which reads the engine's `PAIRS` and
 a stylesheet draws that the list does not hold.
 
 **The command line asks the same engine** (#2321). `purlis theme list` shows every theme
-available on the machine and where it comes from (built in, the person's `theme.json` as
-`mine`, an approved extension's as `<extension>/<theme>`), and `purlis theme check <theme>`
-prints the check: the values `load` had to put right as errors, each contrast finding with
-its pair and ratio as a warning, and the hard floors, as text or as `--json` for a chat. It
-exits 0 with no errors, 1 with an error or a refused file, 2 when there is no such theme.
+available on the machine, its appearances and where it comes from (Purlis Classic built in,
+the person's `theme.json` as `mine`, an approved extension's as `<extension>/<theme>`), and
+`purlis theme check <theme>` (an id, or the path of a theme file or folder) prints the check:
+why the theme is refused, what was left out of it, each appearance's contrast findings with
+the pair and ratio as warnings, and the hard floors, as text or as `--json` for a chat. It
+exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
 `purlis docs show themes` has the JSON's shape. **An extension's theme says what is wrong
-with it** on its row in Extensions, beside the row's other complaints: what the engine put
-right, or that it is not JSON and is not drawn.
+with it** on its row in Extensions, beside the row's other complaints: why the engine refused
+it, or what it left out.
 
 ### Where a user's theme lives
 

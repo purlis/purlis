@@ -121,7 +121,7 @@ fn every_file(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 #[test]
-fn the_built_ins_are_listed_with_where_they_come_from() {
+fn purlis_classic_is_listed_with_its_appearances_and_where_it_comes_from() {
     let rig = Rig::new();
 
     let ran = rig.run(&["list"]);
@@ -129,14 +129,13 @@ fn the_built_ins_are_listed_with_where_they_come_from() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     assert_eq!(
         ran.out,
-        "  ID            NAME          APPEARANCE  FROM\n\
-         \x20 purlis-dark   purlis-dark   dark        built-in\n\
-         \x20 purlis-light  purlis-light  light       built-in\n"
+        "  ID              NAME            APPEARANCES  FROM\n\
+         \x20 purlis-classic  Purlis Classic  dark, light  built-in\n"
     );
 }
 
 #[test]
-fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_ins() {
+fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_in() {
     let rig = Rig::new();
     let path = rig.mine(&a_theme("Late", &serde_json::json!({})));
     rig.extension_theme(
@@ -149,18 +148,18 @@ fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_ins() {
 
     assert_eq!(ran.code, 0, "{}", ran.err);
     let lines: Vec<&str> = ran.out.lines().collect();
-    assert_eq!(lines.len(), 5, "{}", ran.out);
+    assert_eq!(lines.len(), 4, "{}", ran.out);
     let words = |line: &str| {
         line.split_whitespace()
             .map(str::to_owned)
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        words(lines[3]),
+        words(lines[2]),
         ["mine", "Late", "dark", &path.display().to_string()]
     );
     assert_eq!(
-        words(lines[4]),
+        words(lines[3]),
         [
             "solarized/Solarized",
             "Light",
@@ -174,7 +173,7 @@ fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_ins() {
 }
 
 #[test]
-fn a_theme_that_is_not_one_is_listed_as_refused_with_why() {
+fn a_theme_that_is_refused_is_listed_as_refused_with_why() {
     let rig = Rig::new();
     rig.mine("this is not json");
 
@@ -183,11 +182,11 @@ fn a_theme_that_is_not_one_is_listed_as_refused_with_why() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let (_, refused) = ran.out.split_once("refused:\n").expect("a refused section");
     assert!(refused.starts_with("  mine ("), "{refused}");
-    assert!(refused.contains("is not JSON"), "{refused}");
+    assert!(refused.contains("a theme is JSON"), "{refused}");
 }
 
 #[test]
-fn the_listing_as_json_says_each_theme_s_id_name_appearance_and_source() {
+fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
     let rig = Rig::new();
     rig.mine("[]");
     rig.extension_theme("nord", "Nord", &a_theme("Nord", &serde_json::json!({})));
@@ -200,67 +199,100 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearance_and_source() {
     assert_eq!(
         themes[0],
         serde_json::json!({
-            "id": "purlis-dark", "name": "purlis-dark", "appearance": "dark",
+            "id": "purlis-classic", "name": "Purlis Classic",
+            "appearances": [
+                { "id": "dark", "appearance": "dark", "high_contrast": false },
+                { "id": "light", "appearance": "light", "high_contrast": false }
+            ],
             "from": { "kind": "built-in" }, "refused": null
         })
     );
-    assert_eq!(themes[2]["id"], "mine");
-    assert_eq!(themes[2]["from"]["kind"], "mine");
-    assert_eq!(themes[2]["name"], serde_json::Value::Null);
+    assert_eq!(themes[1]["id"], "mine");
+    assert_eq!(themes[1]["from"]["kind"], "mine");
+    assert_eq!(themes[1]["name"], serde_json::Value::Null);
     assert!(
-        themes[2]["refused"]
+        themes[1]["refused"]
             .as_str()
-            .is_some_and(|why| why.contains("not a JSON object")),
+            .is_some_and(|why| why.contains("a theme is a JSON object")),
         "{themes}"
     );
     assert_eq!(
-        themes[3],
+        themes[2],
         serde_json::json!({
-            "id": "nord/Nord", "name": "Nord", "appearance": "dark",
+            "id": "nord/Nord", "name": "Nord",
+            "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
             "from": { "kind": "extension", "extension": "nord" }, "refused": null
         })
     );
 }
 
 #[test]
-fn a_built_in_checks_clean_and_exits_zero() {
+fn purlis_classic_checks_clean_in_both_appearances_and_exits_zero() {
     let rig = Rig::new();
 
-    let ran = rig.run(&["check", "purlis-light"]);
+    let ran = rig.run(&["check", "purlis-classic"]);
 
     assert_eq!(ran.code, 0, "{}", ran.err);
     assert_eq!(
         ran.out,
-        "purlis-light — built-in, light\n\
-         errors: none\n\
+        "Purlis Classic — built-in, dark, light\n\
+         left out: nothing\n\
          warnings: none\n\
          hard floors: not checked by this purlis yet\n"
     );
 }
 
 #[test]
-fn a_value_purlis_had_to_put_right_is_an_error_and_exits_one() {
+fn a_value_outside_its_type_refuses_the_theme_and_exits_one() {
     let rig = Rig::new();
     rig.mine(&a_theme(
         "Typo",
-        &serde_json::json!({ "text.primary": "red", "text.primry": "#ffffff" }),
+        &serde_json::json!({ "text.primary": "red" }),
     ));
 
     let ran = rig.run(&["check", "mine"]);
 
     assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
-    assert!(ran.out.contains("errors (2):\n"), "{}", ran.out);
+    assert!(
+        ran.out
+            .contains("refused — the window draws Purlis in its place:\n"),
+        "{}",
+        ran.out
+    );
     assert!(
         ran.out
             .contains("  text.primary is \"red\", which is not #rgb"),
         "{}",
         ran.out
     );
+    let json = rig.run(&["check", "mine", "--json"]).json();
+    assert_eq!(json["errors"][0]["token"], "text.primary");
+    assert_eq!(json["theme"]["name"], serde_json::Value::Null);
+    assert_eq!(json["clean"], false);
+}
+
+#[test]
+fn a_name_purlis_does_not_have_is_left_out_as_a_note_and_exits_zero() {
+    let rig = Rig::new();
+    rig.mine(&a_theme(
+        "Typo",
+        &serde_json::json!({ "text.primry": "#ffffff" }),
+    ));
+
+    let ran = rig.run(&["check", "mine"]);
+
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    assert!(ran.out.contains("left out (1):\n"), "{}", ran.out);
     assert!(
-        ran.out.contains("  text.primry is not a purlis token\n"),
+        ran.out
+            .contains("  text.primry is not a purlis token, so it is left out\n"),
         "{}",
         ran.out
     );
+    let json = rig.run(&["check", "mine", "--json"]).json();
+    assert_eq!(json["errors"], serde_json::json!([]));
+    assert_eq!(json["notes"][0]["token"], "text.primry");
+    assert_eq!(json["clean"], false, "a note is not clean");
 }
 
 #[test]
@@ -280,7 +312,7 @@ fn a_contrast_failure_is_a_warning_with_its_pair_and_ratio_and_exits_zero() {
     let ran = rig.run(&["check", &file.display().to_string()]);
 
     assert_eq!(ran.code, 0, "a warning is the author's call: {}", ran.out);
-    assert!(ran.out.contains("errors: none\n"), "{}", ran.out);
+    assert!(ran.out.contains("left out: nothing\n"), "{}", ran.out);
     // One line per pair: the theme as it is, then every workspace tint it fails in too.
     let line = ran
         .out
@@ -300,7 +332,49 @@ fn a_contrast_failure_is_a_warning_with_its_pair_and_ratio_and_exits_zero() {
 }
 
 #[test]
-fn the_check_as_json_has_errors_warnings_and_hard_floors_for_a_chat() {
+fn a_theme_folder_is_checked_in_each_of_its_appearances() {
+    let rig = Rig::new();
+    let themes = rig.dir.path().join("themes");
+    std::fs::create_dir_all(themes.join("dusk")).expect("a theme folder");
+    std::fs::write(
+        themes.join("dusk/theme.json"),
+        serde_json::json!({
+            "name": "Dusk",
+            "extends": "purlis-classic",
+            "palette": { "grey": "#555555" },
+            "appearances": [
+                { "id": "dark", "appearance": "dark", "tokens": { "text.muted": "grey" } },
+                { "id": "light", "appearance": "light" }
+            ]
+        })
+        .to_string(),
+    )
+    .expect("a theme.json");
+
+    let ran = rig.run(&["check", &themes.join("dusk").display().to_string()]);
+
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    assert!(ran.out.starts_with("Dusk — "), "{}", ran.out);
+    assert!(
+        ran.out.contains("\n  dark: text.muted on surface.base: "),
+        "a finding names its appearance when there is more than one: {}",
+        ran.out
+    );
+    assert!(!ran.out.contains("light: "), "{}", ran.out);
+    let json = rig
+        .run(&[
+            "check",
+            &themes.join("dusk").display().to_string(),
+            "--json",
+        ])
+        .json();
+    assert_eq!(json["theme"]["id"], "dusk");
+    assert_eq!(json["theme"]["from"]["kind"], "folder");
+    assert_eq!(json["warnings"][0]["appearance"], "dark");
+}
+
+#[test]
+fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
     let rig = Rig::new();
     rig.extension_theme(
         "dim",
@@ -313,22 +387,25 @@ fn the_check_as_json_has_errors_warnings_and_hard_floors_for_a_chat() {
 
     let ran = rig.run(&["check", "dim/Dim", "--json"]);
 
-    assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
     let said = ran.json();
     assert_eq!(said["schema"], 1);
     assert_eq!(
         said["theme"],
         serde_json::json!({
-            "id": "dim/Dim", "name": "Dim", "appearance": "dark",
+            "id": "dim/Dim", "name": "Dim",
+            "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
             "from": { "kind": "extension", "extension": "dim" }
         })
     );
     assert_eq!(said["refused"], serde_json::Value::Null);
+    assert_eq!(said["errors"], serde_json::json!([]));
     assert_eq!(
-        said["errors"],
-        serde_json::json!([{ "said": "bogus is not a purlis token", "token": "bogus" }])
+        said["notes"],
+        serde_json::json!([{ "said": "bogus is not a purlis token, so it is left out", "token": "bogus" }])
     );
     let first = &said["warnings"][0];
+    assert_eq!(first["appearance"], "dark");
     assert_eq!(first["kind"], "contrast");
     assert_eq!(first["tint"], serde_json::Value::Null);
     assert_eq!(first["pair"]["front"], "text.muted");
@@ -351,8 +428,7 @@ fn a_theme_that_is_not_json_is_refused_and_exits_one() {
     let ran = rig.run(&["check", "mine"]);
 
     assert_eq!(ran.code, 1, "{}", ran.out);
-    assert!(ran.out.contains("\nrefused: "), "{}", ran.out);
-    assert!(ran.out.contains("is not JSON"), "{}", ran.out);
+    assert!(ran.out.contains("a theme is JSON"), "{}", ran.out);
     assert!(
         ran.out.contains("the window draws Purlis in its place"),
         "{}",
@@ -362,7 +438,7 @@ fn a_theme_that_is_not_json_is_refused_and_exits_one() {
     assert!(
         json["refused"]
             .as_str()
-            .is_some_and(|why| why.contains("not JSON"))
+            .is_some_and(|why| why.contains("a theme is JSON"))
     );
     assert_eq!(json["clean"], false);
 }
@@ -380,13 +456,16 @@ fn a_theme_that_is_not_here_is_said_and_exits_two() {
 }
 
 #[test]
-fn an_old_id_checks_the_built_in_it_names_now() {
+fn an_old_id_checks_purlis_classic() {
     let rig = Rig::new();
 
-    let ran = rig.run(&["check", "charter-dark", "--json"]);
+    for old in ["charter-dark", "purlis-light"] {
+        let ran = rig.run(&["check", old, "--json"]);
 
-    assert_eq!(ran.code, 0, "{}", ran.err);
-    assert_eq!(ran.json()["theme"]["name"], "purlis-dark");
+        assert_eq!(ran.code, 0, "{}", ran.err);
+        assert_eq!(ran.json()["theme"]["id"], "purlis-classic", "{old}");
+        assert_eq!(ran.json()["clean"], true, "{old}");
+    }
 }
 
 #[test]

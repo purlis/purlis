@@ -376,14 +376,14 @@ export function troubleSaid({ name, complaints }: IconTrouble): string {
 }
 
 /**
- * One colour theme's trouble as a sentence, bounded as an icon theme's is: what the theme
- * engine put right in it, or that it is not JSON and so is not drawn. The words are the
- * engine's; `purlis theme check` says them in full.
+ * One colour theme's trouble as a sentence, bounded as an icon theme's is: why the theme engine
+ * refused it, so Purlis is drawn in its place, or what it left out of a theme it draws. The
+ * words are the engine's; `purlis theme check` says them in full.
  */
 export function themeTroubleSaid({ name, complaints, refused }: ThemeTrouble): string {
   const theme = `Theme “${plainLine(name)}”`;
-  if (refused) return `${theme} is not JSON, so it is not drawn.`;
-  return `${theme}, drawn as purlis’s own where it is wrong: ${complaintsSaid(complaints)}.`;
+  if (refused) return `${theme} is not drawn, and Purlis is: ${complaintsSaid(complaints)}.`;
+  return `${theme} is drawn without what purlis left out: ${complaintsSaid(complaints)}.`;
 }
 
 /** What a standing says, in the words to put in front of the operator. */
