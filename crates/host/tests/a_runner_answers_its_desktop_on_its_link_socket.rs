@@ -37,7 +37,7 @@ fn identity(device: &str) -> Identity {
     }
 }
 
-fn pin(identity: &Identity) -> Pinned {
+fn pinned_of(identity: &Identity) -> Pinned {
     Pinned {
         device: identity.device.clone(),
         key: identity.key.public(),
@@ -135,11 +135,11 @@ async fn the_desktop_a_runner_is_paired_with_is_linked_and_served() {
     let dir = tempfile::tempdir().unwrap();
     let place = place_in(dir.path());
     let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
-    let runner_pin = pin(&runner);
-    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pin(&desktop))))));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
     let (_stop, _host) = hosting(&place, &paired).await;
 
-    let mut linked = link(&place, &desktop, &runner_pin)
+    let mut linked = link(&place, &desktop, &runner_pinned)
         .await
         .expect("the paired desktop is linked");
     assert_eq!(
@@ -153,11 +153,14 @@ async fn a_desktop_the_runner_is_not_paired_with_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let place = place_in(dir.path());
     let runner = identity(RUNNER);
-    let runner_pin = pin(&runner);
-    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pin(&identity(DESKTOP)))))));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((
+        runner,
+        pinned_of(&identity(DESKTOP)),
+    )))));
     let (_stop, _host) = hosting(&place, &paired).await;
 
-    let refused = link(&place, &identity(DESKTOP), &runner_pin)
+    let refused = link(&place, &identity(DESKTOP), &runner_pinned)
         .await
         .err()
         .expect("another desktop's key is refused");
@@ -169,17 +172,17 @@ async fn a_runner_that_is_not_paired_or_cannot_read_its_pairing_links_nobody() {
     let dir = tempfile::tempdir().unwrap();
     let place = place_in(dir.path());
     let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
-    let runner_pin = pin(&runner);
+    let runner_pinned = pinned_of(&runner);
     let paired: Paired = Arc::new(Mutex::new(Ok(None)));
     let (_stop, _host) = hosting(&place, &paired).await;
-    assert!(link(&place, &desktop, &runner_pin).await.is_err());
+    assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 
     *paired.lock().unwrap() = Err("the runner's link-key could not be read safely".into());
-    assert!(link(&place, &desktop, &runner_pin).await.is_err());
+    assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 
     // Paired while the host runs: in force at the next link.
-    *paired.lock().unwrap() = Ok(Some((runner, pin(&desktop))));
-    assert!(link(&place, &desktop, &runner_pin).await.is_ok());
+    *paired.lock().unwrap() = Ok(Some((runner, pinned_of(&desktop))));
+    assert!(link(&place, &desktop, &runner_pinned).await.is_ok());
 }
 
 #[tokio::test]

@@ -1525,6 +1525,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             for daemon in crate::names::DAEMON_DIR.spellings() {
                 deny(Class::HumanPowers, home.join(daemon), Access::ReadWrite);
             }
+            // A runner's one peer (ADR 0078 §8, #2044): chats touch none of the link's
+            // records, reading included.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::PEERS_FILE),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).

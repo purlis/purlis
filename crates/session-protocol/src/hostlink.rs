@@ -439,20 +439,28 @@ pub async fn answer_local(
     liveness: Liveness,
 ) -> Result<Answered, LinkRefused> {
     let pid = peer.pid();
-    match crate::local::inside_a_chat(pid, std::sync::Arc::clone(chats)).await {
-        Ok(None) => {}
-        Ok(Some(chat)) => {
-            return Err(LinkRefused::InsideAChat(format!(
-                "process {pid} is inside chat program {chat}"
-            )));
-        }
-        Err(why) => {
-            return Err(LinkRefused::InsideAChat(format!(
-                "whether process {pid} is inside a chat could not be read ({why})"
-            )));
-        }
+    let verdict = crate::local::inside_a_chat(pid, std::sync::Arc::clone(chats)).await;
+    if let Some(refused) = refused_inside(pid, verdict) {
+        // Dropped unread: not a byte of the connection is taken in.
+        return Err(refused);
     }
     answer(peer.into_stream(), handshake, ours, desktop, liveness).await
+}
+
+/// Why a connection from process `pid` to a runner's link socket is refused before a byte of it
+/// is read, given what was found of where it runs (`verdict`): inside a chat, or a doubt about
+/// it, which is refused the same way; `None` admits it to the handshake.
+#[cfg(unix)]
+fn refused_inside(pid: u32, verdict: std::io::Result<Option<u32>>) -> Option<LinkRefused> {
+    match verdict {
+        Ok(None) => None,
+        Ok(Some(chat)) => Some(LinkRefused::InsideAChat(format!(
+            "process {pid} is inside chat program {chat}"
+        ))),
+        Err(why) => Some(LinkRefused::InsideAChat(format!(
+            "whether process {pid} is inside a chat could not be read ({why})"
+        ))),
+    }
 }
 
 /// One deadline over the hello, the handshake and the answering host's word.
@@ -463,3 +471,6 @@ async fn within_the_handshake<T>(
         .await
         .unwrap_or(Err(LinkRefused::TimedOut))
 }
+
+#[cfg(all(test, unix))]
+mod tests;

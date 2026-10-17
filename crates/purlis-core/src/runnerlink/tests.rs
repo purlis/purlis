@@ -14,7 +14,7 @@ fn desktop() -> Pinned {
 }
 
 #[test]
-fn a_runners_first_pairing_makes_its_key_and_pins_the_desktop() {
+fn a_runners_pairing_makes_its_key_and_keeps_the_desktop_as_its_one_peer() {
     let folder = tempfile::tempdir().unwrap();
     let desktop = desktop();
     let runner = pair(folder.path(), RUNNER, &desktop).unwrap();
@@ -26,23 +26,33 @@ fn a_runners_first_pairing_makes_its_key_and_pins_the_desktop() {
 }
 
 #[test]
-fn pairing_again_with_the_same_desktop_keeps_the_runners_key() {
+fn a_runner_is_paired_once_whichever_desktop_asks_again() {
     let folder = tempfile::tempdir().unwrap();
-    let desktop = desktop();
-    let first = pair(folder.path(), RUNNER, &desktop).unwrap();
-    let again = pair(folder.path(), RUNNER, &desktop).unwrap();
-    assert_eq!(first, again);
+    let first = desktop();
+    let runner = pair(folder.path(), RUNNER, &first).unwrap();
+    for again in [first.clone(), desktop()] {
+        let refused = pair(folder.path(), RUNNER, &again).unwrap_err();
+        assert!(refused.contains("already holds"), "{refused}");
+    }
+    let (ours, peer) = answering(folder.path(), RUNNER).unwrap().unwrap();
+    assert_eq!((ours.key.public(), peer), (runner.key, first));
 }
 
 #[test]
-fn a_runner_paired_with_a_desktop_refuses_to_pair_with_another() {
-    let folder = tempfile::tempdir().unwrap();
-    let first = desktop();
-    pair(folder.path(), RUNNER, &first).unwrap();
-    let refused = pair(folder.path(), RUNNER, &desktop()).unwrap_err();
-    assert!(refused.contains("already paired"), "{refused}");
-    let (_, peer) = answering(folder.path(), RUNNER).unwrap().unwrap();
-    assert_eq!(peer, first);
+fn a_home_that_already_holds_a_link_key_or_a_peers_file_is_not_paired() {
+    type Folder = fn(&std::path::Path) -> std::path::PathBuf;
+    for (folder_of, name) in [
+        (crate::machine::charterd as Folder, KEY_FILE),
+        (crate::machine::dir as Folder, PEERS_FILE),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        purlis_same_user::PrivateDirectory::open(&folder_of(folder.path()))
+            .unwrap()
+            .replace_file(name, b"brought by the image")
+            .unwrap();
+        let refused = pair(folder.path(), RUNNER, &desktop()).unwrap_err();
+        assert!(refused.contains("already holds"), "{name}: {refused}");
+    }
 }
 
 #[test]
@@ -91,7 +101,7 @@ fn a_kept_key_that_is_not_one_key_is_refused() {
 }
 
 #[test]
-fn a_pin_is_written_and_read_as_a_device_and_a_hex_key() {
+fn a_device_id_and_key_are_written_and_read_as_one_line() {
     let pinned = desktop();
     let line = to_line(&pinned);
     assert_eq!(from_line(&line).unwrap(), pinned);
@@ -150,5 +160,29 @@ fn a_peers_file_with_more_than_one_desktop_or_of_another_shape_links_nobody() {
         write_peers(folder.path(), &text);
         assert!(answering(folder.path(), RUNNER).is_err(), "{text} was taken");
         assert!(pair(folder.path(), RUNNER, &desktop()).is_err(), "{text} let a pairing in");
+    }
+}
+
+#[test]
+fn of_two_pairings_at_once_one_is_made_and_the_other_refused() {
+    for _ in 0..20 {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path().to_path_buf();
+        let (a, b) = (desktop(), desktop());
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let racing = |desktop: Pinned| {
+            let (root, barrier) = (root.clone(), std::sync::Arc::clone(&barrier));
+            std::thread::spawn(move || {
+                barrier.wait();
+                pair(&root, RUNNER, &desktop).map(|runner| (runner, desktop))
+            })
+        };
+        let (first, second) = (racing(a), racing(b));
+        let results = [first.join().unwrap(), second.join().unwrap()];
+        let made: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+        assert_eq!(made.len(), 1, "{results:?}");
+        let (runner, desktop) = made[0];
+        let (ours, peer) = answering(&root, RUNNER).unwrap().unwrap();
+        assert_eq!((ours.key.public(), &peer), (runner.key, desktop));
     }
 }

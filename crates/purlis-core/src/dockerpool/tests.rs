@@ -34,6 +34,8 @@ fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges
     );
     assert!(has_pair(&args, "--user", "10001:10001"), "{args:?}");
     assert!(has_pair(&args, "--network", "bridge"), "{args:?}");
+    assert!(has_pair(&args, "--ipc", "private"), "{args:?}");
+    assert!(has_pair(&args, "--cgroupns", "private"), "{args:?}");
 }
 
 #[test]
@@ -178,12 +180,16 @@ fn inspected() -> serde_json::Value {
             "Binds": null,
             "VolumesFrom": null,
             "ReadonlyRootfs": false,
-            "Runtime": "runc"
+            "Runtime": "runc",
+            "PortBindings": {},
+            "PublishAllPorts": false
         },
+        "NetworkSettings": { "Networks": { "bridge": {} } },
         "Mounts": [{
             "Type": "volume",
             "Name": "purlis-runner-first-home",
             "Destination": "/home/purlis",
+            "Driver": "local",
             "RW": true
         }],
         "Config": {
@@ -375,6 +381,45 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             "a field of another shape",
             Box::new(|c| c["HostConfig"]["SecurityOpt"] = "no-new-privileges".into()),
         ),
+        (
+            "a port of this machine",
+            Box::new(|c| {
+                c["HostConfig"]["PortBindings"] =
+                    serde_json::json!({ "22/tcp": [{ "HostIp": "", "HostPort": "2222" }] })
+            }),
+        ),
+        (
+            "every port published",
+            Box::new(|c| c["HostConfig"]["PublishAllPorts"] = true.into()),
+        ),
+        (
+            "a second network",
+            Box::new(|c| {
+                c["NetworkSettings"]["Networks"] = serde_json::json!({ "bridge": {}, "team": {} })
+            }),
+        ),
+        (
+            "another network",
+            Box::new(|c| c["NetworkSettings"]["Networks"] = serde_json::json!({ "team": {} })),
+        ),
+        (
+            "a memory-backed folder",
+            Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::json!({ "/run": "" })),
+        ),
+        (
+            "a kernel setting",
+            Box::new(|c| {
+                c["HostConfig"]["Sysctls"] = serde_json::json!({ "net.ipv4.ip_forward": "1" })
+            }),
+        ),
+        (
+            "a home on another driver",
+            Box::new(|c| c["Mounts"][0]["Driver"] = "nfs".into()),
+        ),
+        (
+            "shareable memory",
+            Box::new(|c| c["HostConfig"]["IpcMode"] = "shareable".into()),
+        ),
     ];
     for (case, change) in cases {
         assert!(
@@ -432,9 +477,11 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
     );
 }
 
-/// A stand-in for `docker`: a script that logs each call's words, answers `run` with [`ID`],
-/// `container inspect` with what `inspect` holds, `image inspect` with what `image` holds,
-/// and `exec` with what `paired` holds, after keeping its standard input.
+/// A stand-in for `docker`: a script that logs each call's words and answers from the files
+/// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
+/// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
+/// `exec` with `paired`, after keeping its standard input. `rm` exits with what `rm-fails`
+/// holds, 0 when there is none.
 struct FakeDocker {
     dir: tempfile::TempDir,
 }
@@ -443,19 +490,40 @@ impl FakeDocker {
     fn new(inspect: &serde_json::Value) -> FakeDocker {
         let dir = tempfile::tempdir().unwrap();
         let at = |name: &str| dir.path().join(name).display().to_string();
-        std::fs::write(dir.path().join("inspect"), inspect.to_string()).unwrap();
         let script = format!(
-            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  'run '*) echo {ID} ;;\n  \
-             'container inspect') cat '{inspect}' ;;\n  'image inspect') cat '{image}' ;;\n  \
-             'exec '*) cat > '{input}'; cat '{paired}' ;;\nesac\n",
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
+             'run '*) cat '{id}' ;;\n  \
+             'container inspect') cat '{inspect}' ;;\n  \
+             'volume inspect') cat '{volume}' ;;\n  \
+             'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
+             'info '*) cat '{info}' ;;\n  \
+             'image inspect') cat '{image}' ;;\n  \
+             'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
+             *' rm') exit $(cat '{rm_fails}' 2>/dev/null || echo 0) ;;\nesac\n",
             log = at("log"),
+            id = at("id"),
             inspect = at("inspect"),
+            volume = at("volume"),
+            volumes = at("volumes"),
+            info = at("info"),
             image = at("image"),
             input = at("input"),
             paired = at("paired"),
+            rm_fails = at("rm-fails"),
         );
         stand_in::program(dir.path(), "docker", &script);
-        FakeDocker { dir }
+        let fake = FakeDocker { dir };
+        fake.set("id", &format!("{ID}\n"));
+        fake.set("inspect", &inspect.to_string());
+        fake.set(
+            "volume",
+            r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+        );
+        fake.set(
+            "info",
+            r#"["name=seccomp,profile=builtin","name=cgroupns"]"#,
+        );
+        fake
     }
 
     fn docker(&self) -> Docker {
@@ -472,17 +540,147 @@ impl FakeDocker {
 }
 
 #[test]
+fn a_runner_is_not_made_on_a_home_volume_that_is_already_there() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "volumes",
+        "purlis-runner-first-home-old\npurlis-runner-first-home\n",
+    );
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("already there"), "{refused}");
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+}
+
+#[test]
+fn a_volume_whose_name_only_begins_like_the_homes_is_not_the_home() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("volumes", "purlis-runner-first-home-old\n");
+    assert!(fake.docker().make(&runner()).is_ok());
+}
+
+#[test]
+fn a_daemon_without_its_built_in_seccomp_profile_makes_no_runner() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        r#"["name=seccomp,profile=unconfined","name=cgroupns"]"#,
+    );
+    assert!(fake.docker().make(&runner()).is_err());
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+}
+
+#[test]
+fn the_daemons_seccomp_profile_must_be_its_built_in_one() {
+    for passes in [
+        serde_json::json!(["name=seccomp,profile=builtin", "name=cgroupns"]),
+        serde_json::json!(["name=apparmor", "name=seccomp,profile=default"]),
+    ] {
+        assert_eq!(check_daemon(&passes), Ok(()), "{passes}");
+    }
+    for refused in [
+        serde_json::json!(["name=seccomp,profile=unconfined"]),
+        serde_json::json!(["name=seccomp,profile=/etc/docker/seccomp.json"]),
+        serde_json::json!(["name=cgroupns"]),
+        serde_json::json!([]),
+        serde_json::json!([
+            "name=seccomp,profile=builtin",
+            "name=seccomp,profile=unconfined"
+        ]),
+        serde_json::json!(null),
+        serde_json::json!("name=seccomp,profile=builtin"),
+    ] {
+        assert!(check_daemon(&refused).is_err(), "{refused} passed");
+    }
+}
+
+#[test]
+fn a_home_volume_must_be_dockers_own_with_no_options() {
+    let volume = |driver: &str, options: serde_json::Value| serde_json::json!([{ "Name": "purlis-runner-first-home", "Driver": driver, "Options": options }]);
+    assert_eq!(
+        check_volume(&volume("local", serde_json::Value::Null), &made()),
+        Ok(())
+    );
+    assert_eq!(
+        check_volume(&volume("local", serde_json::json!({})), &made()),
+        Ok(())
+    );
+    for refused in [
+        volume(
+            "local",
+            serde_json::json!({ "type": "none", "o": "bind", "device": "/Users" }),
+        ),
+        volume("nfs", serde_json::Value::Null),
+        serde_json::json!([{ "Name": "other", "Driver": "local", "Options": null }]),
+        serde_json::json!([]),
+    ] {
+        assert!(check_volume(&refused, &made()).is_err(), "{refused} passed");
+    }
+}
+
+#[test]
+fn a_runner_whose_home_volume_was_made_with_options_is_removed() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "volume",
+        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":{"o":"bind","device":"/Users","type":"none"}}]"#,
+    );
+    assert!(fake.docker().make(&runner()).is_err());
+    assert!(
+        fake.file("log")
+            .contains(&format!("container rm --force --volumes {ID}"))
+    );
+}
+
+#[test]
+fn a_container_whose_id_cannot_be_read_is_removed_by_its_name() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("id", "WARNING: something\n");
+    assert!(fake.docker().make(&runner()).is_err());
+    let log = fake.file("log");
+    assert!(
+        log.contains("container rm --force --volumes purlis-runner-first\n"),
+        "{log}"
+    );
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_removal_that_fails_is_said_with_the_refusal() {
+    let fake = FakeDocker::new(&with(|c| c["HostConfig"]["Privileged"] = true.into()));
+    fake.set("rm-fails", "1");
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("privileged"), "{refused}");
+    assert!(refused.0.contains("could not all be removed"), "{refused}");
+}
+
+#[test]
+fn a_pairing_that_prints_more_than_one_line_of_its_length_is_refused() {
+    use purlis_session_protocol::hostlink::{LinkKey, Pinned};
+    let fake = FakeDocker::new(&inspected());
+    fake.set("paired", &"x".repeat(5000));
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap().public(),
+    };
+    let refused = fake.docker().pair(&made(), &desktop).unwrap_err();
+    assert!(refused.0.contains("printed more"), "{refused}");
+}
+
+#[test]
 fn a_runner_made_and_confined_as_it_should_be_is_handed_back_by_its_container_id() {
     let fake = FakeDocker::new(&inspected());
     let made = fake.docker().make(&runner()).unwrap();
     assert_eq!(made, self::made());
     let log = fake.file("log");
     assert!(
-        log.starts_with("run --detach --name purlis-runner-first"),
+        log.contains("\nrun --detach --name purlis-runner-first"),
         "{log}"
     );
     assert!(log.contains(&format!("container inspect {ID}")), "{log}");
-    assert!(!log.contains("rm"), "{log}");
+    assert!(!log.contains(" rm "), "{log}");
 }
 
 #[test]
@@ -502,7 +700,7 @@ fn a_runner_whose_container_fails_the_check_is_removed_with_its_volume() {
 }
 
 #[test]
-fn pairing_hands_the_desktops_pin_to_the_runner_and_keeps_the_runners() {
+fn pairing_hands_the_desktops_key_to_the_runner_and_answers_the_runners() {
     use purlis_session_protocol::hostlink::{LinkKey, Pinned};
     let fake = FakeDocker::new(&inspected());
     let desktop = Pinned {

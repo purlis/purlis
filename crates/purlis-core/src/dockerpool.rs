@@ -23,8 +23,8 @@
 //! image and the user pinned when it was made. Anything else, a field missing or one that
 //! cannot be read included, refuses the link.
 //!
-//! **Each runner has its own link key, pinned** ([`pair_args`]): the runner's host makes its
-//! key on its first pairing, inside the container, and the desktop pins it with the
+//! **Each runner has its own link key, pinned** ([`pair_args`]): the runner makes its key at
+//! its one pairing, inside the container, and the desktop keeps its public half with the
 //! runner's device id; a new container is a new runner with a new key.
 
 use std::fmt;
@@ -74,7 +74,7 @@ impl Image {
         };
         let (name, digest) = reference.rsplit_once('@').ok_or_else(not_pinned)?;
         let hex = digest.strip_prefix("sha256:").ok_or_else(not_pinned)?;
-        if hex.len() != 64 || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        if !crate::runnerlink::is_lower_hex(hex, 64) {
             return Err(not_pinned());
         }
         let first = name.bytes().next().ok_or_else(not_pinned)?;
@@ -203,6 +203,8 @@ impl Runner {
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());
         pair("--network", "bridge".into());
+        pair("--ipc", "private".into());
+        pair("--cgroupns", "private".into());
         pair(
             "--mount",
             format!("type=volume,source={},target={}", self.volume(), self.home),
@@ -222,7 +224,7 @@ pub struct ContainerId(String);
 
 impl ContainerId {
     pub fn new(id: &str) -> Result<ContainerId, Refused> {
-        if id.len() == 64 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        if crate::runnerlink::is_lower_hex(id, 64) {
             Ok(ContainerId(id.to_owned()))
         } else {
             Err(refused(format!("\"{id}\" is not a container's full id")))
@@ -376,15 +378,18 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
             )));
         }
     }
-    for (pointer, what) in [
-        ("/HostConfig/IpcMode", "shared memory"),
-        ("/HostConfig/CgroupnsMode", "cgroups"),
-    ] {
-        if !matches!(text(pointer)?, "private" | "") {
-            return Err(not(&format!(
-                "shares its {what} with the machine or another container"
-            )));
-        }
+    if text("/HostConfig/IpcMode")? != "private" {
+        return Err(not(
+            "may share its memory with other containers (its IPC namespace is not private); \
+             purlis makes runners with `--ipc private`, and a daemon that changes that is \
+             refused",
+        ));
+    }
+    if text("/HostConfig/CgroupnsMode")? != "private" {
+        return Err(not(
+            "shares the machine's cgroup namespace; purlis needs a Docker on cgroup v2 that \
+             gives each container a cgroup namespace of its own (`--cgroupns private`)",
+        ));
     }
     if !list("/HostConfig/Devices")?.is_empty() || !list("/HostConfig/DeviceRequests")?.is_empty() {
         return Err(not("is given a device of this machine"));
@@ -393,6 +398,33 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         return Err(not(
             "is given another container's or this machine's folders",
         ));
+    }
+    let ports_given = match one.pointer("/HostConfig/PortBindings") {
+        Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::Object(bound)) => !bound.is_empty(),
+        _ => return Err(unreadable("/HostConfig/PortBindings")),
+    };
+    if ports_given || truth("/HostConfig/PublishAllPorts")? {
+        return Err(not("publishes a port on this machine"));
+    }
+    let networks = one
+        .pointer("/NetworkSettings/Networks")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| unreadable("/NetworkSettings/Networks"))?;
+    if networks.len() != 1 || !networks.contains_key("bridge") {
+        return Err(not("is on a network other than Docker's default bridge"));
+    }
+    // Absent, `null` or empty: Docker writes none of them for a container made without them.
+    for (pointer, what) in [
+        ("/HostConfig/Tmpfs", "a memory-backed folder"),
+        ("/HostConfig/Sysctls", "a kernel setting of its own"),
+    ] {
+        match one.pointer(pointer) {
+            None | Some(serde_json::Value::Null) => {}
+            Some(serde_json::Value::Object(set)) if set.is_empty() => {}
+            Some(serde_json::Value::Object(_)) => return Err(not(&format!("is given {what}"))),
+            Some(_) => return Err(unreadable(pointer)),
+        }
     }
     if !matches!(
         text("/HostConfig/Runtime")?,
@@ -408,6 +440,7 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
                     == Some(made.runner.volume().as_str())
                 && home.get("Destination").and_then(serde_json::Value::as_str)
                     == Some(made.runner.home.as_str())
+                && home.get("Driver").and_then(serde_json::Value::as_str) == Some("local")
         }
         _ => false,
     };
@@ -418,6 +451,65 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         return Err(not("is not running"));
     }
     Ok(())
+}
+
+/// Whether the Docker daemon, by what `docker info --format '{{json .SecurityOptions}}'`
+/// printed (`options`), gives containers its built-in seccomp profile: a daemon-wide profile
+/// of another name, or none, applies to every container without a word in what
+/// `docker inspect` says of it, so anything but `name=seccomp,profile=builtin` (or
+/// `profile=default`, as older daemons write it) is refused, the entry missing included.
+pub fn check_daemon(options: &serde_json::Value) -> Result<(), Refused> {
+    let options = options
+        .as_array()
+        .ok_or_else(|| refused("docker info did not say which security options its daemon has"))?;
+    let seccomp: Vec<&str> = options
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|option| option.split(',').any(|part| part == "name=seccomp"))
+        .collect();
+    match seccomp.as_slice() {
+        [one]
+            if one
+                .split(',')
+                .any(|part| matches!(part, "profile=builtin" | "profile=default")) =>
+        {
+            Ok(())
+        }
+        _ => Err(refused(
+            "this Docker does not give containers its built-in seccomp profile (its daemon is \
+             set to another profile, or to none), so purlis makes no runner on it; set the \
+             daemon's seccomp profile back to its default",
+        )),
+    }
+}
+
+/// Whether `inspected`, what `docker volume inspect <volume>` printed, is `made`'s home
+/// volume as Docker made it for the container: the `local` driver with no options, so its
+/// data is the volume's own and no folder of this machine.
+pub fn check_volume(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> {
+    let not = || {
+        refused(format!(
+            "runner {}'s home volume is not one of Docker's own, made with no options, so purlis \
+             does not link to it; remove the runner and add it again",
+            made.runner.name
+        ))
+    };
+    let one = match inspected.as_array().map(Vec::as_slice) {
+        Some([one]) => one,
+        _ => return Err(not()),
+    };
+    let named = one.get("Name").and_then(serde_json::Value::as_str) == Some(&made.runner.volume());
+    let local = one.get("Driver").and_then(serde_json::Value::as_str) == Some("local");
+    let no_options = match one.get("Options") {
+        Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::Object(options)) => options.is_empty(),
+        _ => false,
+    };
+    if named && local && no_options {
+        Ok(())
+    } else {
+        Err(not())
+    }
 }
 
 /// Whether a security option is `no-new-privileges`, as Docker takes and writes it.
@@ -435,8 +527,11 @@ fn is_no_new_privileges(option: &str) -> bool {
 pub struct Docker(pub std::path::PathBuf);
 
 impl Docker {
-    fn run(&self, args: &[String], input: Option<&str>) -> Result<String, Refused> {
-        use std::io::Write;
+    /// Runs `docker` with `args`, handing it `input`, and answers what it printed, read up to
+    /// `most` bytes: one that prints more is ended and refused. What it says on standard error
+    /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
+    fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
+        use std::io::{Read, Write};
         let mut command = std::process::Command::new(&self.0);
         command
             .args(args)
@@ -452,30 +547,57 @@ impl Docker {
         if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
             let _ = stdin.write_all(input.as_bytes());
         }
-        let done = child
-            .wait_with_output()
+        let said = child.stderr.take().map(|stderr| {
+            std::thread::spawn(move || {
+                let mut kept = Vec::new();
+                let mut stderr = stderr;
+                let _ = (&mut stderr).take(MOST_SAID).read_to_end(&mut kept);
+                // What is past the limit is read and let go of, so the command never waits.
+                let _ = std::io::copy(&mut stderr, &mut std::io::sink());
+                kept
+            })
+        });
+        let mut out = Vec::new();
+        if let Some(stdout) = child.stdout.take() {
+            let _ = stdout.take(most + 1).read_to_end(&mut out);
+        }
+        if out.len() as u64 > most {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(refused(format!(
+                "docker {} printed more than the {most} bytes purlis reads of it, so it was ended",
+                args.first().map(String::as_str).unwrap_or_default()
+            )));
+        }
+        let status = child
+            .wait()
             .map_err(|why| refused(format!("{} did not finish: {why}", self.0.display())))?;
-        if !done.status.success() {
+        let said = said.and_then(|said| said.join().ok()).unwrap_or_default();
+        if !status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
             return Err(refused(format!(
                 "docker {} failed: {}",
                 args.first().map(String::as_str).unwrap_or_default(),
-                String::from_utf8_lossy(&done.stderr).trim()
+                String::from_utf8_lossy(&said).trim()
             )));
         }
-        String::from_utf8(done.stdout)
+        String::from_utf8(out)
             .map_err(|_| refused("docker answered with something that is not text"))
+    }
+
+    fn json(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Refused> {
+        let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let out = self.run(&args, None, MOST_INSPECTED)?;
+        serde_json::from_str(&out).map_err(|_| refused(format!("{what} did not answer JSON")))
     }
 
     /// The user and home `image` declares, for the runner made from it: its `USER` must be a
     /// user and a group by number, neither root, and its `HOME` an absolute plain path.
     pub fn declared(&self, image: &Image) -> Result<(User, String), Refused> {
-        let out = self.run(
-            &["image".into(), "inspect".into(), image.as_str().into()],
-            None,
+        let inspected = self.json(
+            &["image", "inspect", image.as_str()],
+            "docker image inspect",
         )?;
-        let inspected: serde_json::Value = serde_json::from_str(&out)
-            .map_err(|_| refused("docker image inspect did not answer JSON"))?;
         let config = inspected
             .pointer("/0/Config")
             .ok_or_else(|| refused(format!("the runner image {} has no config", image.as_str())))?;
@@ -504,38 +626,85 @@ impl Docker {
         Ok((user, home.to_owned()))
     }
 
-    /// Make and start `runner`'s container, and check it is confined as it was made. One that
-    /// fails the check is removed, with its volume.
+    /// The daemon's security options, held to [`check_daemon`].
+    fn check_daemon(&self) -> Result<(), Refused> {
+        let options = self.json(
+            &["info", "--format", "{{json .SecurityOptions}}"],
+            "docker info",
+        )?;
+        check_daemon(&options)
+    }
+
+    /// Make and start `runner`'s container on a home volume made for it, and check it is
+    /// confined as it was made. A daemon that does not give containers its built-in seccomp
+    /// profile makes none, and neither does a volume of the home's name that is already there.
+    /// A container that fails the check, or whose id cannot be read, is removed with its
+    /// volume, and a removal that fails is said with the refusal.
     pub fn make(&self, runner: &Runner) -> Result<Made, Refused> {
-        let out = self.run(&runner.create_args(), None)?;
-        let made = Made {
-            container: ContainerId::new(out.trim())?,
-            runner: runner.clone(),
+        self.check_daemon()?;
+        let volume = runner.volume();
+        let listed = self.run(
+            &[
+                "volume".into(),
+                "ls".into(),
+                "--quiet".into(),
+                "--filter".into(),
+                format!("name={volume}"),
+            ],
+            None,
+            MOST_INSPECTED,
+        )?;
+        if listed.lines().any(|line| line.trim() == volume) {
+            return Err(refused(format!(
+                "a volume named {volume} is already there, and a runner's home is a volume made \
+                 for it alone; remove that volume, or name the runner otherwise"
+            )));
+        }
+        let out = self.run(&runner.create_args(), None, MOST_INSPECTED)?;
+        let made = match ContainerId::new(out.trim()) {
+            Ok(container) => Made {
+                container,
+                runner: runner.clone(),
+            },
+            Err(why) => {
+                return Err(self.and_removed(why, &runner.container(), &volume));
+            }
         };
         if let Err(why) = self.check(&made) {
-            let _ = self.remove(&made);
-            return Err(why);
+            return Err(self.and_removed(why, made.container.as_str(), &volume));
         }
         Ok(made)
     }
 
-    /// What Docker says of `made`'s container, held to [`check`].
+    /// `why`, after removing the container `container` names and the volume `volume`; a
+    /// removal that fails is said with it.
+    fn and_removed(&self, why: Refused, container: &str, volume: &str) -> Refused {
+        match self.remove_named(container, volume) {
+            Ok(()) => why,
+            Err(left) => refused(format!(
+                "{why}; and what was made could not all be removed ({left}): remove the \
+                 container {container} and the volume {volume} with docker"
+            )),
+        }
+    }
+
+    /// What Docker says of `made`'s container, its home volume and the daemon, held to
+    /// [`check`], [`check_volume`] and [`check_daemon`].
     pub fn check(&self, made: &Made) -> Result<(), Refused> {
-        let out = self.run(
-            &[
-                "container".into(),
-                "inspect".into(),
-                made.container.as_str().into(),
-            ],
-            None,
+        self.check_daemon()?;
+        let inspected = self.json(
+            &["container", "inspect", made.container.as_str()],
+            "docker container inspect",
         )?;
-        let inspected: serde_json::Value = serde_json::from_str(&out)
-            .map_err(|_| refused("docker container inspect did not answer JSON"))?;
-        check(&inspected, made)
+        check(&inspected, made)?;
+        let volume = made.runner.volume();
+        let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
+        check_volume(&inspected, made)
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's
-    /// own pin, for the desktop to keep.
+    /// device id and public key, for the desktop to keep. What the runner prints is read up to
+    /// the length of one such line.
     pub fn pair(
         &self,
         made: &Made,
@@ -543,34 +712,46 @@ impl Docker {
     ) -> Result<purlis_session_protocol::hostlink::Pinned, Refused> {
         self.check(made)?;
         let line = format!("{}\n", crate::runnerlink::to_line(desktop));
-        let out = self.run(&made.pair_args(), Some(&line))?;
+        let out = self.run(&made.pair_args(), Some(&line), crate::runnerlink::MOST_LINE)?;
         crate::runnerlink::from_line(&out).map_err(refused)
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.
     pub fn remove(&self, made: &Made) -> Result<(), Refused> {
+        self.remove_named(made.container.as_str(), &made.runner.volume())
+    }
+
+    fn remove_named(&self, container: &str, volume: &str) -> Result<(), Refused> {
         let container = self.run(
             &[
                 "container".into(),
                 "rm".into(),
                 "--force".into(),
                 "--volumes".into(),
-                made.container.as_str().into(),
+                container.into(),
             ],
             None,
+            MOST_INSPECTED,
         );
         let volume = self.run(
             &[
                 "volume".into(),
                 "rm".into(),
                 "--force".into(),
-                made.runner.volume(),
+                volume.into(),
             ],
             None,
+            MOST_INSPECTED,
         );
         container.and(volume).map(drop)
     }
 }
+
+/// The most of what `docker` prints that purlis reads, for an answer that is not a pairing's.
+const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
+
+/// The most of what `docker` says on standard error that purlis keeps to show.
+const MOST_SAID: u64 = 64 * 1024;
 
 #[cfg(test)]
 mod tests;
