@@ -9,14 +9,15 @@
 //!
 //! A child has three states only (ADR 0076 §6): it is `working` from the first hook that names
 //! it, `completed` at its own `SubagentStop`, or it ends with its parent, in the parent's end
-//! state, when the parent ends first. A completed child its parent gives another turn (Codex's
-//! `send_input`, a resumed Claude Code sub-agent) is heard again under the same `agent_id`
-//! (#2455): that turn is a **second child run** of the same agent, `working` again from the
-//! hook that says it is at work, and `completed` at its next `SubagentStop`. The run that
-//! completed stays completed, as ADR 0076 ends a run exactly once; the board shows the agent's
-//! latest run. The board's words for those are [`State::Running`],
+//! state, when the parent ends first. The board's words for those are [`State::Running`],
 //! [`State::Done`] and whatever the chat ended as. **No child move changes the chat's own
 //! state**: a child's asks come on its parent's hooks and are the chat's.
+//!
+//! A completed child its parent gives another turn (Codex's `send_input`, a resumed Claude Code
+//! sub-agent) is heard again under the same `agent_id` (#2455): that turn is a **second child
+//! run** of the same agent, `working` again from the hook that says it is at work, and
+//! `completed` at its next `SubagentStop` (ADR 0076, amended 2026-10-17). The run that completed
+//! stays completed, as ADR 0076 ends a run exactly once; the board shows the agent's latest run.
 
 use super::State;
 
