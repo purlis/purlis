@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792255751655,
+  "lastUpdate": 1792257311151,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15498,6 +15498,48 @@ window.BENCHMARK_DATA = {
             "value": 104.30461449999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.317, 103.113, 104.305, 104.939, 105.697 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9844d14db2f3592b4c644ad0727345c5cebd5d65",
+          "message": "Browsers: reach Asks (#2365)\n\n* Browsers: reach Asks (#2018)\n\nA chat's browser holds every request of its pages until its judge has\nheard what it is: a read, an address the agent wrote, or something sent.\nA public site new to the project is readable; an address the agent\nwrites for it, a form or a body sent there, or typing on a page of it,\nasks the person as the chat's own host Ask, one Notice with one Allow.\nThe reach proxy carries a new site only where a request to it was let\non. Each act carries the chat's reach as it is now (session protocol\n1.15), so an Allow reaches a running browser at its next act.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: held requests are judged on a thread of their own (#2018)\n\nA held request is no longer held up behind another follow-up's calls on\nthe engine's event thread. The real-engine test picks the form's fields\nand buttons by their role.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the real-engine reach test says what its judge heard when a page does not open (#2018)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: only web requests are held for the judge (#2018)\n\nThe engine's own pages and extensions load as they are; only http and\nhttps requests go out through the reach proxy, and only they are held.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Move chatbrowsers' tests to chatbrowsers/tests.rs (#2018)\n\nMove only.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a browser site is a grant of its own, for the browser alone (#2018)\n\nRuled 2026-10-17: a browser site's Allow covers the browser only. A\nchat's sites wait as one Ask in the registry (Allow for this chat,\nAlways allow in this project on this machine, Keep blocked); an Allow is\nkept as a browser site, read by the browser's judge and reach proxy\nalone, never by the chat's own commands, and listed apart in Granted.\nRemoving one ends the browsers it reached.\n\n- A chat without the sandbox is asked nothing, and told its browser\n  reaches only what it was given (#2242).\n- Typing, keys and choices are judged by the document they go into:\n  the field's own frame, or every document where the focus is unknown.\n- A document request with a query and no word of how it began sends;\n  redirects inherit the judgement of the request they came from.\n- The judge is SiteJudge in browsers::judge; a site is a typed Site.\n- ADR 0067 amendment items 3 to 5 mark what is decided in\n  implementation; the glossary adds Browser site and Judge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a page held back stays where it was; browser sites are the window's to answer (#2018)\n\nA document the judge holds back is answered with no content, so its frame\nstays on the page it showed. Allow and Keep blocked on a browser's sites\nare the window's alone, and the Inbox names the new kind of ask.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the UI RPC's client answers a browser's sites in the window alone (#2018)\n\nRegenerated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the judged real-engine tests run one engine at a time; a test's format (#2018)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: each held form is tested in a browser of its own (#2018, #2442)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a browser site for everyone in the project comes in #2443 (#2018)\n\nRuled 2026-10-17: this ships with this chat and this project on this\nmachine; a request for the committed scope says it is coming.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a frame at no web address is judged by its nearest web ancestor; policy holds a kept browser site (#2018)\n\n- A frame at about:blank or srcdoc is judged by its nearest ancestor at a\n  web address; an unknown frame by every document the page shows.\n- A browser site kept on this machine is held where policy later leaves\n  its scope out or never allows its host, as a kept host is.\n- The real-engine tests check the fixture server heard nothing from the\n  other site; a stand-in test drives the form's own event alone.\n- ADR 0067 -16 item 3 supersedes the lane's \"nothing is listed for the\n  browser alone\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a judged browser's follow-ups run off its event reader (#2018)\n\nThe event reader stays free to hear every held request, so a page's load\nnever waits on a call that waits on the load. Kept browser sites under\npolicy are reads; format.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T21:13:45+04:00",
+          "tree_id": "ef35bedee56d7180a0ccded84c479e713dc8a53a",
+          "url": "https://github.com/purlis/purlis/commit/9844d14db2f3592b4c644ad0727345c5cebd5d65"
+        },
+        "date": 1792257309763,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5159635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.482, 0.513, 0.516, 0.526, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.15952,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.471, 16.976, 17.160, 17.165, 17.173 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.6912465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.655, 103.682, 104.691, 105.261, 106.529 ms"
           }
         ]
       }
