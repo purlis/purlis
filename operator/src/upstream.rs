@@ -102,7 +102,7 @@ pub enum Found {
 /// Whether `held`, the object the cluster holds under the name the operator would use, is one
 /// the operator made for `owner`: it names `owner` as its controller, by uid. Anything else is
 /// in the way, however it is named or owned.
-pub fn found<K>(held: Option<&ObjectMeta>, owner: &K) -> Found
+pub fn made_for<K>(held: Option<&ObjectMeta>, owner: &K) -> Found
 where
     K: Resource,
     K::DynamicType: Default,
@@ -134,20 +134,45 @@ fn owners(owner: Option<OwnerReference>) -> Option<Vec<OwnerReference>> {
     })
 }
 
+/// Whether `reference` is to a purlis Claim, by its kind and API version.
+pub fn is_purlis_claim(reference: &OwnerReference) -> bool {
+    reference.kind == Claim::kind(&()) && reference.api_version == Claim::api_version(&())
+}
+
+/// Whether `reference` names one of `claims`, the Claims the operator knows: a purlis Claim of
+/// that name and uid in `namespace`, on the pool named `pool`.
+fn names_a_known_claim(
+    reference: &OwnerReference,
+    namespace: Option<&str>,
+    pool: &str,
+    claims: &[&Claim],
+) -> bool {
+    is_purlis_claim(reference)
+        && claims.iter().any(|claim| {
+            claim.metadata.uid.as_deref() == Some(reference.uid.as_str())
+                && claim.metadata.name.as_deref() == Some(reference.name.as_str())
+                && claim.metadata.namespace.as_deref() == namespace
+                && claim.spec.pool == pool
+        })
+}
+
 /// The owners of a pool's template or warm pool in a namespace once `claim` is among them: the
-/// purlis Claims that own `held`, the object as the cluster holds it, and `claim`, in a stable
-/// order. None is its controller: the garbage collector removes the object once every one of
-/// them is gone, and not before, whatever becomes of the pool, so a runner whose pool is deleted
-/// keeps its template and what upstream makes of the template for its pods. Each Claim adds
-/// itself; the garbage collector drops a Claim that is gone.
-pub fn owners_with(held: Option<&ObjectMeta>, claim: &Claim) -> Vec<OwnerReference> {
-    let claim_kind = Claim::kind(&());
-    let claim_version = Claim::api_version(&());
+/// Claims among `claims`, the ones the operator knows, that own `held` (the object as the
+/// cluster holds it), and `claim`, in a stable order. None is its controller: the garbage
+/// collector removes the object once every one of them is gone, and not before, whatever
+/// becomes of the pool, so a runner whose pool is deleted keeps its template and what upstream
+/// makes of the template for its pods. Each Claim adds itself; any other owner is dropped.
+pub fn owners_with(
+    held: Option<&ObjectMeta>,
+    claim: &Claim,
+    claims: &[&Claim],
+) -> Vec<OwnerReference> {
+    let namespace = claim.metadata.namespace.as_deref();
     let mut owners: Vec<OwnerReference> = held
         .and_then(|held| held.owner_references.as_ref())
         .into_iter()
         .flatten()
-        .filter(|owner| owner.kind == claim_kind && owner.api_version == claim_version)
+        .filter(|owner| names_a_known_claim(owner, namespace, &claim.spec.pool, claims))
         .filter(|owner| Some(&owner.uid) != claim.metadata.uid.as_ref())
         .cloned()
         .chain(claim.controller_owner_ref(&()))
@@ -172,28 +197,31 @@ fn owned_by(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> Object
 }
 
 /// Whether `held`, the object the cluster holds under the name of `pool`'s template or warm pool
-/// in a namespace, is one the operator made: one owned by a purlis Claim, whichever Claims own it
-/// now, or controlled by `pool` itself, as the operator made them before its Claims owned them.
-/// Anything else is in the way.
-pub fn found_for_pool(held: Option<&ObjectMeta>, pool: &Pool) -> Found {
+/// in a namespace, is one the operator made: one owned by a Claim among `claims`, the ones the
+/// operator knows, in that namespace on that pool, by name and uid; or one `pool` itself
+/// controls, as the operator made them before its Claims owned them. Anything else is in the
+/// way, whatever it says of its owners.
+pub fn made_for_pool(held: Option<&ObjectMeta>, pool: &Pool, claims: &[&Claim]) -> Found {
     let Some(held) = held else {
         return Found::Nothing;
     };
-    let claim_kind = Claim::kind(&());
-    let claim_version = Claim::api_version(&());
-    let by_a_claim =
-        held.owner_references.iter().flatten().any(|reference| {
-            reference.kind == claim_kind && reference.api_version == claim_version
-        });
-    match (&held.uid, by_a_claim) {
+    let pool_name = pool.name_any();
+    let namespace = held.namespace.as_deref();
+    let by_a_known_claim = held
+        .owner_references
+        .iter()
+        .flatten()
+        .any(|reference| names_a_known_claim(reference, namespace, &pool_name, claims));
+    match (&held.uid, by_a_known_claim) {
         (Some(uid), true) => Found::Ours { uid: uid.clone() },
-        _ => found(Some(held), pool),
+        _ => made_for(Some(held), pool),
     }
 }
 
-/// The template of a pool's runners in `namespace`, owned by `owners` ([`owners_with`]): one container running the pool's image with
-/// its own entrypoint (`purlis serve` under an init, the runner image contract), as a user who is
-/// not root, with no added privilege, no Kubernetes credential and no service addresses.
+/// The template of a pool's runners in `namespace`, owned by `owners` ([`owners_with`]): one
+/// container running the pool's image with its own entrypoint (`purlis serve` under an init,
+/// the runner image contract), as a user who is not root, with no added privilege, no
+/// Kubernetes credential and no service addresses.
 pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxTemplate {
     let runner = Container {
         name: RUNNER_CONTAINER.to_owned(),
@@ -229,8 +257,8 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
     }
 }
 
-/// A pool's warm pool in `namespace`, owned by `owners` ([`owners_with`]). It keeps no runner started ahead of a claim: every claim
-/// starts one from the template.
+/// A pool's warm pool in `namespace`, owned by `owners` ([`owners_with`]). It keeps no runner
+/// started ahead of a claim: every claim starts one from the template.
 pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxWarmPool {
     SandboxWarmPool {
         metadata: owned_by(pool, namespace, owners),

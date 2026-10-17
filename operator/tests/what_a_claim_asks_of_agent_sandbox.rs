@@ -47,7 +47,7 @@ fn a_claims_runner_runs_the_pools_image_and_its_own_command_as_a_user_who_is_not
     let template = json_of(&upstream::template_for(
         &pool(),
         "ada",
-        upstream::owners_with(None, &claim()),
+        upstream::owners_with(None, &claim(), &[&claim()]),
     ));
     let pod = &template["spec"]["podTemplate"]["spec"];
     let containers = pod["containers"].as_array().expect("containers");
@@ -69,7 +69,7 @@ fn a_runner_gets_no_kubernetes_credential_and_no_service_addresses() {
     let template = json_of(&upstream::template_for(
         &pool(),
         "ada",
-        upstream::owners_with(None, &claim()),
+        upstream::owners_with(None, &claim(), &[&claim()]),
     ));
     let pod = &template["spec"]["podTemplate"]["spec"];
     assert_eq!(pod["automountServiceAccountToken"], false, "{pod}");
@@ -86,8 +86,16 @@ fn another_claim() -> Claim {
 #[test]
 fn a_pools_template_and_warm_pool_live_in_the_claims_namespace_and_belong_to_its_claims_there() {
     // The second claim joins the first, which owns the object as the cluster holds it.
-    let first = upstream::template_for(&pool(), "ada", upstream::owners_with(None, &claim()));
-    let owners = upstream::owners_with(Some(&first.metadata), &another_claim());
+    let first = upstream::template_for(
+        &pool(),
+        "ada",
+        upstream::owners_with(None, &claim(), &[&claim()]),
+    );
+    let owners = upstream::owners_with(
+        Some(&first.metadata),
+        &another_claim(),
+        &[&claim(), &another_claim()],
+    );
     for object in [
         json_of(&upstream::template_for(&pool(), "ada", owners.clone())),
         json_of(&upstream::warm_pool_for(&pool(), "ada", owners.clone())),
@@ -142,7 +150,7 @@ fn a_claim_joins_the_claims_that_own_its_pools_objects_once_and_only_purlis_clai
         ]),
         ..ObjectMeta::default()
     };
-    let owners = upstream::owners_with(Some(&held), &claim());
+    let owners = upstream::owners_with(Some(&held), &claim(), &[&claim(), &another_claim()]);
     let named: Vec<(&str, &str)> = owners
         .iter()
         .map(|owner| (owner.name.as_str(), owner.uid.as_str()))
@@ -162,7 +170,7 @@ fn a_pool_keeps_no_runner_warm() {
     let warm = json_of(&upstream::warm_pool_for(
         &pool(),
         "ada",
-        upstream::owners_with(None, &claim()),
+        upstream::owners_with(None, &claim(), &[&claim()]),
     ));
     assert_eq!(warm["spec"]["replicas"], 0, "{warm}");
     assert_eq!(
@@ -272,12 +280,12 @@ fn an_owner_reference_never_blocks_its_owners_deletion() {
         json_of(&upstream::template_for(
             &pool(),
             "ada",
-            upstream::owners_with(None, &claim()),
+            upstream::owners_with(None, &claim(), &[&claim()]),
         )),
         json_of(&upstream::warm_pool_for(
             &pool(),
             "ada",
-            upstream::owners_with(None, &claim()),
+            upstream::owners_with(None, &claim(), &[&claim()]),
         )),
         json_of(&upstream::sandbox_claim_for(&claim())),
     ] {

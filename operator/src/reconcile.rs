@@ -6,26 +6,28 @@
 //! what upstream says of it. A Claim not admitted under the policy ([`crate::admission`]) is
 //! never acted on: only its status says why.
 //!
-//! It changes only upstream objects it made ([`upstream::found`]). Each is read first: one it did
-//! not make is left as it is, and nothing is written for the Claim until that object is gone.
+//! It changes only upstream objects it made ([`upstream::made_for`],
+//! [`upstream::made_for_pool`]). Each is read first: one it did not make is left as it is, and
+//! nothing is written for the Claim until that object is gone.
 
 use crate::admission::{POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
-    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, found, found_for_pool,
+    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
     owners_with, sandbox_claim_for, template_for, warm_pool_for,
 };
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::runtime::controller::{Action, Controller};
-use kube::runtime::reflector::ObjectRef;
+use kube::runtime::reflector::{ObjectRef, Store};
 use kube::runtime::watcher;
 use kube::{Client, Resource, ResourceExt};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Who the operator's server-side applies are from.
@@ -137,6 +139,11 @@ pub fn settled(previous: Option<&ClaimStatus>, mut next: ClaimStatus) -> ClaimSt
 
 struct Context {
     client: Client,
+    /// Every Claim, as the operator's own watch holds them: the Claims a pool's template or
+    /// warm pool may be owned by.
+    claims: Store<Claim>,
+    /// How many times in a row each Claim met an object changed under it.
+    conflicts: Mutex<HashMap<ObjectRef<Claim>, u32>>,
 }
 
 async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, Error> {
@@ -163,7 +170,9 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
         None => {
             let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
             match upstream_claims.get_opt(&name).await? {
-                Some(held) if matches!(found(Some(held.meta()), &*claim), Found::Ours { .. }) => {
+                Some(held)
+                    if matches!(made_for(Some(held.meta()), &*claim), Found::Ours { .. }) =>
+                {
                     status_of_a_deleted_pool(&claim, &held)
                 }
                 _ => status_of_a_missing_pool(&claim),
@@ -179,21 +188,26 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
             let template_held = templates.get_opt(&pool_object).await?.map(meta);
             let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
             let claim_held = upstream_claims.get_opt(&name).await?.map(meta);
-            let template_found = found_for_pool(template_held.as_ref(), &pool);
-            let warm_found = found_for_pool(warm_held.as_ref(), &pool);
-            let claim_found = found(claim_held.as_ref(), &*claim);
+            let known = claims_on_the_pool(&context.claims, &claim);
+            let known: Vec<&Claim> = known.iter().map(|known| &**known).collect();
+            let template_found = made_for_pool(template_held.as_ref(), &pool, &known);
+            let warm_found = made_for_pool(warm_held.as_ref(), &pool, &known);
+            let claim_found = made_for(claim_held.as_ref(), &*claim);
             // The pool's two objects are shared by its Claims in the namespace, each adding
             // itself as an owner: each is applied only to the version read, so a Claim that
             // added itself in the meantime is never dropped.
             let mut template = template_for(
                 &pool,
                 &namespace,
-                owners_with(template_held.as_ref(), &claim),
+                owners_with(template_held.as_ref(), &claim, &known),
             );
             template.metadata.resource_version =
                 template_held.and_then(|held| held.resource_version);
-            let mut warm =
-                warm_pool_for(&pool, &namespace, owners_with(warm_held.as_ref(), &claim));
+            let mut warm = warm_pool_for(
+                &pool,
+                &namespace,
+                owners_with(warm_held.as_ref(), &claim, &known),
+            );
             warm.metadata.resource_version = warm_held.and_then(|held| held.resource_version);
             let in_the_way = [
                 (
@@ -220,26 +234,31 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
                 .await?;
                 return Ok(Action::requeue(LOOK_AGAIN));
             }
-            put(&templates, template, template_found).await?;
-            put(&warm_pools, warm, warm_found).await?;
-            let applied = put(&upstream_claims, wanted, claim_found).await?;
+            write_ours(&templates, template, template_found).await?;
+            write_ours(&warm_pools, warm, warm_found).await?;
+            let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
             status_of(Some(&applied))
         }
     };
     write_status(client, &claim, &namespace, status).await?;
+    context
+        .conflicts
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&ObjectRef::from_obj(&*claim));
     Ok(Action::await_change())
 }
 
-/// An object's metadata, which is all [`found`] reads of it.
+/// An object's metadata, which is all [`made_for`] and [`made_for_pool`] read of it.
 fn meta<K: Resource>(object: K) -> ObjectMeta {
     object.meta().clone()
 }
 
-/// `wanted` written to the cluster as it was `found`: made when nothing holds its name, and
+/// `wanted` written to the cluster as it was found: made when nothing holds its name, and
 /// applied server-side to the object the operator made, by its uid (and the resource version
 /// `wanted` names, if any), so an object made again or changed under that name since it was
 /// looked at is refused and looked at again. Never called for an object in the way.
-async fn put<K>(api: &Api<K>, mut wanted: K, found: Found) -> Result<K, Error>
+async fn write_ours<K>(api: &Api<K>, mut wanted: K, found: Found) -> Result<K, Error>
 where
     K: Resource + Clone + DeserializeOwned + Serialize + Debug,
 {
@@ -270,6 +289,21 @@ where
     }
 }
 
+/// The Claims the operator knows in `claim`'s namespace on its pool, `claim` among them: the
+/// only owners of the pool's template and warm pool there it takes for its own.
+fn claims_on_the_pool(claims: &Store<Claim>, claim: &Arc<Claim>) -> Vec<Arc<Claim>> {
+    claims
+        .state()
+        .into_iter()
+        .filter(|other| {
+            other.namespace() == claim.namespace()
+                && other.spec.pool == claim.spec.pool
+                && other.uid() != claim.uid()
+        })
+        .chain([claim.clone()])
+        .collect()
+}
+
 /// `status` written on the Claim, unless it says what the Claim already says.
 async fn write_status(
     client: &Client,
@@ -297,13 +331,30 @@ const RETRY: Duration = Duration::from_secs(10);
 /// operator does not watch objects it did not make.
 const LOOK_AGAIN: Duration = Duration::from_secs(15);
 
-/// How long a claim waits before it is tried again after an object changed under it between
-/// reading and writing it: soon, from what the cluster holds now.
-const READ_AGAIN: Duration = Duration::from_secs(1);
+/// The status code of a request refused because the object changed since it was read, or was
+/// made since it was found missing.
+const CONFLICT: u16 = 409;
 
-fn error_policy(claim: Arc<Claim>, error: &Error, _: Arc<Context>) -> Action {
+/// How long a claim waits before it is tried again after its `attempts`-th conflict in a row:
+/// one second, doubling each time, and never longer than [`RETRY`]. Claims sharing an object
+/// take turns, and an object changed over and over does not keep them at one try a second.
+pub fn retry_after_conflict(attempts: u32) -> Duration {
+    Duration::from_secs(1)
+        .saturating_mul(2u32.saturating_pow(attempts.saturating_sub(1)))
+        .min(RETRY)
+}
+
+fn error_policy(claim: Arc<Claim>, error: &Error, context: Arc<Context>) -> Action {
     let retry = match error {
-        Error::Kube(kube::Error::Api(status)) if status.code == 409 => READ_AGAIN,
+        Error::Kube(kube::Error::Api(status)) if status.code == CONFLICT => {
+            let mut conflicts = context
+                .conflicts
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let attempts = conflicts.entry(ObjectRef::from_obj(&*claim)).or_insert(0);
+            *attempts = attempts.saturating_add(1);
+            retry_after_conflict(*attempts)
+        }
         _ => RETRY,
     };
     tracing::warn!(claim = %claim.name_any(), %error, ?retry, "trying again");
@@ -318,6 +369,7 @@ pub async fn run(client: Client) {
     );
     let claims = controller.store();
     let every_claim = controller.store();
+    let known_claims = controller.store();
     controller
         .owns(
             Api::<SandboxClaim>::all(client.clone()),
@@ -349,7 +401,15 @@ pub async fn run(client: Client) {
             },
         )
         .shutdown_on_signal()
-        .run(reconcile, error_policy, Arc::new(Context { client }))
+        .run(
+            reconcile,
+            error_policy,
+            Arc::new(Context {
+                client,
+                claims: known_claims,
+                conflicts: Mutex::new(HashMap::new()),
+            }),
+        )
         .for_each(|result| async move {
             match result {
                 Ok((claim, _)) => tracing::info!(claim = %claim, "reconciled"),

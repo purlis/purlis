@@ -91,12 +91,12 @@ fn written() -> Vec<Value> {
         serde_json::to_value(upstream::template_for(
             &pool,
             "ada",
-            upstream::owners_with(None, &claim),
+            upstream::owners_with(None, &claim, &[&claim]),
         )),
         serde_json::to_value(upstream::warm_pool_for(
             &pool,
             "ada",
-            upstream::owners_with(None, &claim),
+            upstream::owners_with(None, &claim, &[&claim]),
         )),
         serde_json::to_value(upstream::sandbox_claim_for(&claim)),
     ]

@@ -261,8 +261,9 @@ never while a Claim in the namespace still has a runner from them. Upstream's co
 from the template and writes the upstream claim's status, which the operator reads.
 
 **It changes only objects it made.** Before it writes any of the three, it reads what the
-cluster holds under that name. An upstream claim it made names its Claim as its controller, and
-a template or warm pool it made is owned by a Claim; any other object under that name, one made by hand or by another tool, is left
+cluster holds under that name. An upstream claim it made names its Claim as its controller, by
+uid, and a template or warm pool it made is owned by one of the pool's Claims in that
+namespace, by name and uid; any other object under that name, one made by hand or by another tool, is left
 exactly as it is. The Claim then says `UpstreamObjectInTheWay`, naming the object's kind and
 name, and nothing is made for it. Remove or rename that object and the Claim goes on: the
 operator looks again every 15 seconds.
