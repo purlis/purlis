@@ -490,7 +490,7 @@ impl PersonInForce {
 /// layout's `appearance` as JSON text.
 #[tauri::command]
 #[specta::specta]
-pub fn theme_person(appearance: Option<String>) -> PersonInForce {
+pub async fn theme_person(appearance: Option<String>) -> PersonInForce {
     // As JSON text, as the layout itself crosses (`write_layout`): what is not JSON is read as
     // a value of no setting's type, and said.
     let value = appearance.map(|text| {
