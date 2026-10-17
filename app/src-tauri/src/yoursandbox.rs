@@ -36,17 +36,16 @@ fn listed(plain: Vec<tokeyring::PlainFile>) -> Vec<PlainFileVault> {
         .collect()
 }
 
-/// What a move says, as the person reads it.
+/// What a move says, as the person reads it. `moved.secrets` is how many values moved, never
+/// one of them: it is written as the number it is, beside the noun that agrees with it.
 fn said(name: &str, moved: &tokeyring::Moved) -> String {
+    let count: usize = moved.secrets;
+    let noun = purlis_core::counts::plural(count, "secret", "secrets");
     match &moved.file_kept {
-        None => format!(
-            "Moved {name} into the keychain: {}, and its file is gone.",
-            purlis_core::counts::counted(moved.secrets, "secret", "secrets")
-        ),
+        None => format!("Moved {name} into the keychain: {count} {noun}, and its file is gone."),
         Some(file) => format!(
-            "Moved {name} into the keychain: {}. Its old file at {file} could not be \
-             removed, and it still holds the values: remove it yourself.",
-            purlis_core::counts::counted(moved.secrets, "secret", "secrets")
+            "Moved {name} into the keychain: {count} {noun}. Its old file at {file} could not be \
+             removed, and it still holds the values: remove it yourself."
         ),
     }
 }
