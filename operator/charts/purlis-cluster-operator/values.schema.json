@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "purlis-cluster-operator values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "digest"],
+      "properties": {
+        "repository": {
+          "description": "Where the operator's image is pulled from, without a tag or a digest.",
+          "type": "string",
+          "pattern": "^([^/@\\s]+/)*[^/:@\\s]+$"
+        },
+        "digest": {
+          "description": "The image's digest: sha256: and 64 hex digits. Required at install.",
+          "type": "string",
+          "pattern": "^(sha256:[0-9a-f]{64})?$"
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "description": "Secrets in the release's namespace that pull the image.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "resources": {
+      "description": "The operator's CPU and memory, as a container's resources.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "$ref": "#/definitions/quantities" },
+        "limits": { "$ref": "#/definitions/quantities" }
+      }
+    }
+  },
+  "definitions": {
+    "quantities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": ["string", "number"] },
+        "memory": { "type": ["string", "number"] },
+        "ephemeral-storage": { "type": ["string", "number"] }
+      }
+    }
+  }
+}

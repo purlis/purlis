@@ -45,8 +45,9 @@ export const AGAINST_MAIN = 1.15;
 
 // **Whether a change's cold start is slower than main's, measured in the same job** (#1866).
 //
-// A pass is rounds `{ base, head }` in ms, each one launch of main's build and one of the
-// change's, in alternating order. Its ratio is the median of its rounds' ratios, the change over
+// A pass is rounds `{ base, head }`, each one launch of main's build and one of the change's,
+// in alternating order, each a launch as the bench keeps it (`{ ms, appMs, use, ... }`; only `ms`
+// is judged). Its ratio is the median of its rounds' ratios, the change over
 // main, so one slow launch of either is never the verdict. A pass past `threshold` asks for a
 // second (`confirm`); the change has REGRESSED only when every pass is past it. A first pass
 // past it that a second does not confirm passes, said as `unconfirmed`. No rounds at all is
@@ -59,7 +60,7 @@ export function coldStartAgainstMain({ passes, threshold = AGAINST_MAIN }) {
   const judged = passes
     .filter((rounds) => rounds.length > 0)
     .map((rounds) => {
-      const ratio = medianOf(rounds.map(({ base, head }) => head / base));
+      const ratio = medianOf(rounds.map(({ base, head }) => head.ms / base.ms));
       return { ratio: Math.round(ratio * 1000) / 1000, past: ratio > threshold };
     });
   if (judged.length === 0) return { verdict: "no baseline" };
@@ -94,10 +95,18 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
   const relative = againstMain && againstMain.verdict !== "no baseline";
   const met = relative ? againstMain.verdict !== "regressed" : absolute.met;
   const ms = (value) => `${Math.round(value)} ms`;
+  const split = (launch) => `${ms(launch.ms - launch.appMs)} before the app's clock + ${ms(launch.appMs)} in the app`;
+  const use = ({ cpuMs, majorFaults, processes }) =>
+    `CPU ${ms(cpuMs)} in ${processes} processes, ${majorFaults} major faults`;
+  // A round's launch: its time, then its split and what its process tree used where it has them.
+  const inRound = (launch) => {
+    const parts = [...(Number.isFinite(launch.appMs) ? [split(launch)] : []), ...(launch.use ? [use(launch.use)] : [])];
+    return parts.length > 0 ? `${ms(launch.ms)} (${parts.join("; ")})` : ms(launch.ms);
+  };
   const one = (launch) => {
     const parts = [ms(launch.ms)];
-    if (Number.isFinite(launch.appMs))
-      parts.push(`= ${ms(launch.ms - launch.appMs)} before the app's clock + ${ms(launch.appMs)} in the app`);
+    if (Number.isFinite(launch.appMs)) parts.push(`= ${split(launch)}`);
+    if (launch.use) parts.push(use(launch.use));
     if (Number.isFinite(launch.load)) parts.push(`load ${launch.load.toFixed(2)}`);
     if (launch.steps?.length > 0)
       parts.push(`steps: ${launch.steps.map(({ ms: at, step }) => `${step} ${at}`).join(", ")}`);
@@ -117,7 +126,10 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
           (againstMain.unconfirmed ? " (one pass past the line, not confirmed)" : ""),
         ...againstMain.passes
           .at(-1)
-          .map((round, n) => `round ${n + 1}: main ${ms(round.base)}, this change ${ms(round.head)}`),
+          .map(
+            (round, n) =>
+              `round ${n + 1}: main ${inRound(round.base)}, this change ${inRound(round.head)}`,
+          ),
       ]
     : [];
   const lines = [
@@ -129,6 +141,49 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
   ];
   const level = met ? "notice" : evidence ? "warning" : "error";
   return annotation(level, `Cold start, ${name}`, lines.join("\n"));
+}
+
+// **What a launch's processes used by its first frame** (#1866): the CPU time and the major page
+// faults of the launched process and every process below it (WebKit's do most of a first frame's
+// work), read from `/proc/<pid>/stat` on Linux. Two of 524 pull request runs held one build
+// steadily slower than the other through a whole job on unchanged launch code. The round lines
+// carry this for both builds, so the next one says whether that build read its binary off the
+// disk on every launch (major faults), ran more code (CPU), or waited on a busy runner (neither).
+//
+// `stats` are the text of each process's `stat` file, `root` the launched pid and `ticksPerSecond`
+// the kernel's clock (`getconf CLK_TCK`). `undefined` when the launched process is not among them.
+export function processTreeUse(stats, root, ticksPerSecond) {
+  const processes = new Map();
+  for (const text of stats) {
+    // The name is in parentheses and may hold either, so the fields start after the last `)`.
+    const close = text.lastIndexOf(")");
+    if (close < 0) continue;
+    const pid = Number(text.slice(0, text.indexOf(" ")));
+    // fields[0] is field 3 (state): ppid is field 4, majflt 12, utime 14 and stime 15.
+    const fields = text.slice(close + 1).trim().split(/\s+/);
+    processes.set(pid, {
+      ppid: Number(fields[1]),
+      majorFaults: Number(fields[9]),
+      ticks: Number(fields[11]) + Number(fields[12]),
+    });
+  }
+  if (!processes.has(root)) return undefined;
+  const tree = new Set([root]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [pid, { ppid }] of processes)
+      if (!tree.has(pid) && tree.has(ppid)) {
+        tree.add(pid);
+        grew = true;
+      }
+  }
+  let ticks = 0;
+  let majorFaults = 0;
+  for (const pid of tree) {
+    ticks += processes.get(pid).ticks;
+    majorFaults += processes.get(pid).majorFaults;
+  }
+  return { cpuMs: Math.round((ticks * 1000) / ticksPerSecond), majorFaults, processes: tree.size };
 }
 
 /** One workflow command: an annotation on the run, with its title and text escaped. */

@@ -210,6 +210,50 @@ fn a_persona_the_project_already_has_is_left_whole() {
     assert!(root.join("personas/go-engineer/persona.md").is_file());
 }
 
+/// The steward is scaffolded before a template lays its personas in, and is never rewritten
+/// by one (it is the operator's file), so its routing text has to stay true either way: it
+/// points at where the personas are instead of saying there are none (#882).
+#[test]
+fn a_project_made_from_a_template_has_a_steward_that_points_to_its_personas() {
+    purlis_core::unsteered!();
+    for one in template::all() {
+        let (_dir, root) = new_project();
+
+        template::apply(&root, one, None).expect("laid out");
+
+        let steward = read(&root.join("personas/steward/persona.md"));
+        assert!(
+            !steward.contains("no other personas"),
+            "{}: the steward still says there are none\n{steward}",
+            one.id
+        );
+        // As the plane spells the program: `charter` until it migrates, `purlis` after.
+        let list = format!(
+            "`{} persona list`",
+            purlis_core::names::BINARY.writes_for(&root)
+        );
+        assert!(
+            steward.contains(&list),
+            "{}: the steward does not say how to list them\n{steward}",
+            one.id
+        );
+        assert!(
+            steward.contains("`personas/<name>/persona.md`"),
+            "{}: the steward does not say where they are\n{steward}",
+            one.id
+        );
+        // What it points at holds the template's personas.
+        let listed = purlis_core::workspaces::Plane::open(&root)
+            .personas()
+            .expect("listed");
+        assert!(
+            listed.iter().filter(|p| p.as_str() != "steward").count() >= 2,
+            "{}: {listed:?}",
+            one.id
+        );
+    }
+}
+
 #[test]
 fn applying_a_template_twice_is_applying_it_once() {
     purlis_core::unsteered!();

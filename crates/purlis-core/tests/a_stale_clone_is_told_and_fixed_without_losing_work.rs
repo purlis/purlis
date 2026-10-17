@@ -8,7 +8,7 @@ mod support;
 
 use std::path::Path;
 
-use purlis_core::staleclone::{self, Fix, Stale};
+use purlis_core::staleclone::{self, Fix, Pushes, Stale};
 
 /// The fixture's repo, given a remote of its own (a bare repository beside the plane) with
 /// `origin/HEAD` set, as a clone from a forge has it.
@@ -114,6 +114,7 @@ fn a_repo_the_forge_said_moved_is_found_and_pointed_at_the_new_address() {
         [Stale::RemoteMoved {
             origin: "https://github.com/acme/widget.git".into(),
             now: "https://github.com/purlis/widget.git".into(),
+            pushes: Pushes::Origin,
         }]
     );
 
@@ -166,4 +167,111 @@ fn a_fetch_with_no_redirect_lets_a_kept_move_go() {
     staleclone::heard(&f.clone, "");
 
     assert_eq!(staleclone::found(&f.plane).found, []);
+}
+
+/// The fixture's repo with `origin` at the old address, a push URL for each of `pushes`, and
+/// the forge's word that it moved.
+fn moved_pushing_to(f: &support::Fixture, pushes: &[&str]) {
+    support::git(
+        &f.clone,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/widget.git",
+        ],
+    );
+    for push in pushes {
+        support::git(
+            &f.clone,
+            &["config", "--add", "remote.origin.pushurl", push],
+        );
+    }
+    staleclone::heard(
+        &f.clone,
+        "warning: redirecting to https://github.com/purlis/widget.git/\n",
+    );
+}
+
+/// Where the repo pushes, as git reads it: its push URLs, or `origin`'s own where it has none.
+fn pushes_to(at: &Path) -> Vec<String> {
+    let out = support::git(at, &["remote", "get-url", "--push", "--all", "origin"]);
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn a_push_url_naming_the_old_place_moves_with_origin() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("widget");
+    // origin's own address, as git reads it however it is written.
+    moved_pushing_to(
+        &f,
+        &[
+            "https://GitHub.com/acme/widget/",
+            "https://github.com/acme/widget.git",
+        ],
+    );
+    let found = staleclone::found(&f.plane).found;
+    assert_eq!(
+        found[0].stale,
+        [Stale::RemoteMoved {
+            origin: "https://github.com/acme/widget.git".into(),
+            now: "https://github.com/purlis/widget.git".into(),
+            pushes: Pushes::Follow,
+        }]
+    );
+
+    let shown = Some("https://github.com/purlis/widget.git");
+    let fixed = staleclone::fix(&f.plane, &f.ws, "widget", Fix::Remote, shown).expect("set");
+    assert_eq!(
+        fixed.said,
+        "widget fetches from and pushes to github.com/purlis/widget."
+    );
+    assert_eq!(
+        pushes_to(&f.clone),
+        ["https://github.com/purlis/widget.git"]
+    );
+    assert_eq!(staleclone::found(&f.plane).found, []);
+}
+
+#[test]
+fn a_push_url_naming_another_place_or_reaching_it_another_way_is_left_and_said() {
+    purlis_core::unsteered!();
+    for pushes in [
+        // Another place beside the old one.
+        &[
+            "https://github.com/acme/widget.git",
+            "https://gitlab.example/mirror/widget.git",
+        ][..],
+        // The old place over SSH: dropping it would push over HTTPS instead.
+        &["git@github.com:acme/widget.git"][..],
+        // The old place as another user: dropping it would push as someone else.
+        &["https://git@github.com/acme/widget.git"][..],
+    ] {
+        let f = support::plane_with_clone("widget");
+        moved_pushing_to(&f, pushes);
+        let found = staleclone::found(&f.plane).found;
+        assert_eq!(
+            found[0].stale,
+            [Stale::RemoteMoved {
+                origin: "https://github.com/acme/widget.git".into(),
+                now: "https://github.com/purlis/widget.git".into(),
+                pushes: Pushes::Kept(pushes.iter().map(|&url| url.to_owned()).collect()),
+            }],
+            "{pushes:?}"
+        );
+
+        let shown = Some("https://github.com/purlis/widget.git");
+        let fixed = staleclone::fix(&f.plane, &f.ws, "widget", Fix::Remote, shown).expect("set");
+        assert_eq!(fixed.said, "widget fetches from github.com/purlis/widget.");
+        assert_eq!(pushes_to(&f.clone), pushes, "{pushes:?}");
+        let url = support::git(&f.clone, &["config", "--get", "remote.origin.url"]);
+        assert_eq!(
+            String::from_utf8_lossy(&url.stdout).trim(),
+            "https://github.com/purlis/widget.git"
+        );
+    }
 }

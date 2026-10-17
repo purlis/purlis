@@ -839,7 +839,7 @@ pub fn merge_as_seen(
     if let Some(changed) = changed_since(seen, &head, now.as_ref()) {
         return Err(changed);
     }
-    merge_as_it_stands(root, caller, say)
+    merge_as_it_stands(root, caller, seen, say)
 }
 
 /// **What the window's Fix hands a chat about the project's red pull request** (the operator's
@@ -920,9 +920,15 @@ pub fn look(root: &Path, caller: &forge::Caller, say: Sink) -> Result<Looked, St
 /// included. The person's own action in the window, and only there: no save, no look and no
 /// chat ever calls this (the operator's ruling P1, 2026-10-13). Every other rule still holds: a
 /// conflict, a review the branch requires and whatever the forge itself enforces refuse it.
-pub fn merge_as_it_stands(
+///
+/// Private, and reached only from [`merge_as_seen`] (#1978): the press that showed the
+/// request's checks. `seen` is what that press showed, and it is checked again under this
+/// merge's own claim: a request at another commit by now, or one whose standing changed since
+/// (its checks failed after the look), is refused.
+fn merge_as_it_stands(
     root: &Path,
     caller: &forge::Caller,
+    seen: &Seen,
     say: Sink,
 ) -> Result<MergedAsItStands, String> {
     let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
@@ -936,7 +942,8 @@ pub fn merge_as_it_stands(
             "this project is on {here}, and its saves go into {branch}"
         ));
     }
-    let merged = prsave::merge_as_it_stands(root, &plane, &branch, plane.sign.value, caller, say);
+    let merged =
+        prsave::merge_as_it_stands(root, &plane, &branch, plane.sign.value, seen, caller, say);
     touch(root);
     merged
 }

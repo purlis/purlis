@@ -372,9 +372,10 @@ jobs:
           if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
           mkdir -p "$RUNNER_TEMP/record"
           echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/operator-image.txt"
-          placeholder="image: $IMAGE:main"
+          # The placeholder digest operator/tests/the_chart.rs holds the plain manifest to.
+          placeholder="image: $IMAGE@sha256:0000000000000000000000000000000000000000000000000000000000000000"
           if [ "$(grep -cxF "          $placeholder" operator/deploy/operator.yaml)" != 1 ]; then
-            echo "::error::operator/deploy/operator.yaml does not name $IMAGE:main exactly once"
+            echo "::error::operator/deploy/operator.yaml does not name the placeholder image exactly once"
             exit 1
           fi
           sed "s|^          $placeholder\$|          image: $IMAGE@$DIGEST|" operator/deploy/operator.yaml \

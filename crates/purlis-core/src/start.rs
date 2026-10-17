@@ -765,43 +765,118 @@ pub fn sandbox_ahead(
     os_release: &str,
     probe: Option<&crate::sandbox::program::Probe<'_>>,
 ) -> Option<crate::sandbox::Ahead> {
-    let harness = Harness::of_kind(&profile.kind)?;
-    let gated_in = may_check_program(profile, root);
-    let check = |applied: &crate::sandbox::Applied| -> Result<(), crate::sandbox::NotStarted> {
-        if !gated_in {
-            return Ok(());
-        }
-        let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
-        // A program that is not there is the start's own refusal, not the sandbox's.
-        let Ok(words) = crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-        else {
-            return Ok(());
-        };
-        let env = environment(profile, root, None, false, &Standing::of(root, root));
-        let mut writable = applied.writable();
-        // At the floor a program outside the project is held unwritten instead (#2071, Q4).
-        if applied.level() == crate::sandbox::Level::Full {
-            writable.extend(crate::sandbox::program::temp_roots(&env));
-        }
-        crate::sandbox::program::checked(
-            harness,
-            &words,
-            applied.root(),
-            crate::sandbox::program::Chat {
-                cwd: root,
-                writable: &writable,
-                env: &env,
-            },
+    AheadOnce::new(root, machine, has, os_release, probe).of(profile)
+}
+
+/// [`sandbox_ahead`] for every row of one picker (#2179): **each harness's sandbox is compiled
+/// once**, however many profiles of it the picker lists.
+///
+/// The picker asks for every profile it lists each time a New tab opens, and a compile cost
+/// about 200 ms on the macOS runner, so a compile per row made every open pay one per profile.
+/// The compile ([`crate::sandbox::decide`]) reads the harness, the project, the machine and
+/// what is installed, and nothing of the profile, so every row of one harness is given the one
+/// answer.
+///
+/// **Each profile's program is still checked for itself.** The check runs the program with the
+/// profile's own environment, which names the profile (`PURLIS_HARNESS_PROFILE`), so no two
+/// rows ask it the same thing.
+///
+/// Held for one ask only: the files a compile reads are edited by hand and by chats, and an
+/// answer kept past the ask would be one nothing invalidates.
+pub struct AheadOnce<'a> {
+    root: &'a Path,
+    machine: &'a crate::sandbox::Machine,
+    has: &'a dyn Fn(&str) -> bool,
+    os_release: &'a str,
+    probe: Option<&'a crate::sandbox::program::Probe<'a>>,
+    compiled: std::cell::RefCell<Vec<(Harness, Compiled)>>,
+}
+
+/// What [`crate::sandbox::decide`] answered for one harness, as [`AheadOnce`] keeps it.
+type Compiled = Result<Option<crate::sandbox::Decided>, crate::sandbox::NotStarted>;
+
+impl<'a> AheadOnce<'a> {
+    /// One picker's ask for the project at `root` on `machine`, `has` saying what is installed,
+    /// `os_release` the text of `/etc/os-release` and `probe` answering `--version` in place of
+    /// running a program (`None` runs it).
+    pub fn new(
+        root: &'a Path,
+        machine: &'a crate::sandbox::Machine,
+        has: &'a dyn Fn(&str) -> bool,
+        os_release: &'a str,
+        probe: Option<&'a crate::sandbox::program::Probe<'a>>,
+    ) -> Self {
+        Self {
+            root,
+            machine,
+            has,
+            os_release,
             probe,
-        )
-        .map(|_| ())
-    };
-    // A sandboxed Codex chat on a profile for every chat is refused at its start, which leaves
-    // the Ask that makes a sandbox-only one (#2037): nothing is offered here that would start it
-    // without the sandbox instead.
-    Some(crate::sandbox::ahead(
-        harness, root, machine, has, os_release, &check,
-    ))
+            compiled: std::cell::RefCell::default(),
+        }
+    }
+
+    /// [`sandbox_ahead`] for `profile`.
+    pub fn of(&self, profile: &Profile) -> Option<crate::sandbox::Ahead> {
+        let harness = Harness::of_kind(&profile.kind)?;
+        let root = self.root;
+        let gated_in = may_check_program(profile, root);
+        let check = |applied: &crate::sandbox::Applied| -> Result<(), crate::sandbox::NotStarted> {
+            if !gated_in {
+                return Ok(());
+            }
+            let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
+            // A program that is not there is the start's own refusal, not the sandbox's.
+            let Ok(words) =
+                crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
+            else {
+                return Ok(());
+            };
+            let env = environment(profile, root, None, false, &Standing::of(root, root));
+            let mut writable = applied.writable();
+            // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+            if applied.level() == crate::sandbox::Level::Full {
+                writable.extend(crate::sandbox::program::temp_roots(&env));
+            }
+            crate::sandbox::program::checked(
+                harness,
+                &words,
+                applied.root(),
+                crate::sandbox::program::Chat {
+                    cwd: root,
+                    writable: &writable,
+                    env: &env,
+                },
+                self.probe,
+            )
+            .map(|_| ())
+        };
+        // A sandboxed Codex chat on a profile for every chat is refused at its start, which
+        // leaves the Ask that makes a sandbox-only one (#2037): nothing is offered here that
+        // would start it without the sandbox instead.
+        Some(crate::sandbox::ahead_decided(
+            self.compiled(harness),
+            root,
+            self.os_release,
+            &check,
+        ))
+    }
+
+    /// What the compile answers for `harness`, compiled on the first ask.
+    fn compiled(&self, harness: Harness) -> Compiled {
+        if let Some((_, decided)) = self
+            .compiled
+            .borrow()
+            .iter()
+            .find(|(one, _)| *one == harness)
+        {
+            return decided.clone();
+        }
+        let decided =
+            crate::sandbox::decide(harness, self.root, self.machine, self.has, None, None);
+        self.compiled.borrow_mut().push((harness, decided.clone()));
+        decided
+    }
 }
 
 /// Where a chat starts, as the plane has it — and so what the chat is told about its
@@ -1215,108 +1290,4 @@ fn startable_persona(who: &str, root: &Path) -> Result<String, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_path_the_profile_declared_is_the_path_the_chat_gets_whole() {
-        // The escape hatch charter-app#136 was asked to keep: the operator's own line wins,
-        // and charter appends nothing to it.
-        let declared = vec![
-            ("FOO".to_owned(), "bar".to_owned()),
-            ("PATH".to_owned(), "/only/this".to_owned()),
-        ];
-        assert_eq!(
-            with_chat_path(declared.clone(), Some(Path::new("/app/charter"))),
-            declared
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_chat_with_no_declared_path_is_given_one_starting_in_charters_own_directory() {
-        let env = with_chat_path(
-            vec![("CHARTER_ROOT".to_owned(), "/plane".to_owned())],
-            Some(Path::new("/app/bundle/charter")),
-        );
-        let path = env
-            .iter()
-            .find(|(name, _)| name == "PATH")
-            .map(|(_, value)| value.as_str())
-            .expect("a PATH was added");
-        assert!(path.starts_with("/app/bundle:"), "{path}");
-        assert!(path.contains("/usr/local/bin"), "{path}");
-        let mut sorted = env.clone();
-        sorted.sort();
-        assert_eq!(env, sorted, "the same chat is the same launch");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_persona_s_tools_go_first_in_front_of_charters_own_directory_and_a_declared_path() {
-        let tools = (
-            crate::sandbox::tools::FIRST_ON_PATH.to_owned(),
-            "/p/.purlis/app/tools/devops/bin".to_owned(),
-        );
-        let path_of = |env: &[(String, String)]| {
-            assert!(
-                !env.iter()
-                    .any(|(name, _)| name == crate::sandbox::tools::FIRST_ON_PATH),
-                "the hand-over never reaches the chat"
-            );
-            env.iter()
-                .find(|(name, _)| name == "PATH")
-                .map(|(_, value)| value.clone())
-                .expect("a PATH")
-        };
-        let given = with_chat_path(vec![tools.clone()], Some(Path::new("/app/bundle/charter")));
-        assert!(
-            path_of(&given).starts_with("/p/.purlis/app/tools/devops/bin:/app/bundle:"),
-            "{given:?}"
-        );
-        let declared = with_chat_path(
-            vec![tools, ("PATH".to_owned(), "/only/this".to_owned())],
-            Some(Path::new("/app/charter")),
-        );
-        assert_eq!(
-            path_of(&declared),
-            "/p/.purlis/app/tools/devops/bin:/only/this"
-        );
-    }
-
-    #[test]
-    fn a_sandboxed_codex_chat_starts_only_on_a_sandbox_only_profile_and_says_the_way_out() {
-        // #2037, ruled 2026-10-15.
-        let refused = profile_refusal(Some(Harness::Codex), "codex", false, true).expect("refused");
-        assert!(
-            refused.contains("Make or choose a sandbox-only Codex profile"),
-            "{refused}"
-        );
-        assert!(
-            refused.contains(crate::profilestore::sandbox_only::ASK),
-            "{refused}"
-        );
-        assert_eq!(
-            profile_refusal(Some(Harness::Codex), "codex-sandbox", true, true),
-            None
-        );
-        // Without the sandbox, a Codex chat runs on the person's own profiles as before.
-        assert_eq!(
-            profile_refusal(Some(Harness::Codex), "codex", false, false),
-            None
-        );
-        // Another harness is not held to it.
-        assert_eq!(
-            profile_refusal(Some(Harness::ClaudeCode), "claude", false, true),
-            None
-        );
-    }
-
-    #[test]
-    fn a_sandbox_only_profile_never_starts_a_chat_without_the_sandbox() {
-        let refused =
-            profile_refusal(Some(Harness::Codex), "codex-sandbox", true, false).expect("refused");
-        assert!(refused.contains("for sandboxed chats only"), "{refused}");
-        assert!(refused.contains("Start it sandboxed"), "{refused}");
-    }
-}
+mod tests;

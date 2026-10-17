@@ -14,10 +14,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::{Mutex, mpsc};
-use std::time::Duration;
 
 use purlis_core::githooks::GitHooks;
-use purlis_core::hookwire::{CHAT_ENV, CommitRefused, Hearing, Listener, SOCKET_ENV, TOKEN_ENV};
+use purlis_core::hookwire::{
+    CHAT_ENV, CommitRefused, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, spool,
+};
 
 const CHARTER: &str = support::PURLIS;
 
@@ -28,10 +29,13 @@ fn key() -> String {
 /// A repository outside any plane, a chat's armed environment, and an app listening.
 ///
 /// **The reading is dropped first**: it wakes its own thread by connecting to the socket, which
-/// has to still be there.
+/// has to still be there. Before it, a stalled app's hold is let go ([`Chat::with_a_stalled_app`]).
 struct Chat {
+    /// Held while the app's hearer of refusals is to stall; dropped, it lets the hearer go.
+    stall: Option<mpsc::Sender<()>>,
     _reading: purlis_core::hookwire::Reading,
     heard: mpsc::Receiver<CommitRefused>,
+    socket: PathBuf,
     env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     repo: PathBuf,
     dir: tempfile::TempDir,
@@ -39,15 +43,37 @@ struct Chat {
 
 impl Chat {
     fn new() -> Self {
+        Self::hearing(false)
+    }
+
+    /// A chat whose app stalls on every refusal it hears until [`Chat::let_the_app_go`], far past
+    /// the 250 ms a hook waits (`A_NOTICE_TAKES_AT_MOST`): each refusal's hook spools its line.
+    fn with_a_stalled_app() -> Self {
+        Self::hearing(true)
+    }
+
+    /// The stalled app's hearer, let go: what it holds it then records live.
+    fn let_the_app_go(&mut self) {
+        drop(self.stall.take());
+    }
+
+    fn hearing(stalled: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let hooks = GitHooks::at(root.join("app").join("git-hooks"));
         hooks.write(Path::new(CHARTER)).unwrap();
-        let socket = root.join("app").join("hooks.sock");
+        // Where the app's is, in the folder a sandboxed chat is denied: the one place a hook
+        // spools a line the app does not take in time (`spool::covered`). Anywhere else that line
+        // is lost, and a loaded runner loses it (#2255).
+        let socket = root.join(".purlis").join("app").join("hooks.sock");
+        std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
         let listener = Listener::bind(&root, &socket).expect("a socket");
         let token = listener.tokens().issue_to_this_process(7).expect("a token");
         let (tx, heard) = mpsc::channel();
         let tx = Mutex::new(tx);
+        let (stall, held) = mpsc::channel::<()>();
+        let held = Mutex::new(held);
+        let stall = stalled.then_some(stall);
         let reading = listener.hear(Hearing {
             secret_exec: Box::new(|_, _, writer| {
                 purlis_core::secrets::brokered::not_answered(writer)
@@ -61,7 +87,12 @@ impl Chat {
             noticed: Box::new(|_| {}),
             saved: Box::new(|_| {}),
             refused: Box::new(move |refused| {
-                tx.lock().unwrap().send(refused).unwrap();
+                if stalled {
+                    // Until the test lets go; only ever disconnected, never sent to.
+                    let _ = held.lock().unwrap().recv();
+                }
+                // A stalled hearer can be let go as the chat is dropped, with no one to hear.
+                let _ = tx.lock().unwrap().send(refused);
                 Ok(())
             }),
             tool: Box::new(|_| Ok(())),
@@ -79,6 +110,8 @@ impl Chat {
             repo,
             env,
             heard,
+            socket,
+            stall,
             _reading: reading,
         };
         chat.git(&["init", "-q", "-b", "main", "."]);
@@ -122,6 +155,52 @@ impl Chat {
         String::from_utf8_lossy(&self.git(&["rev-parse", "HEAD"]).stdout).into_owned()
     }
 
+    /// What the app was told of refusals, once the git that refused has returned: the lines its
+    /// hearer recorded live, and the lines the hook spooled beside the socket.
+    ///
+    /// **Nothing is waited for.** git returns once its hook has exited, and the hook exits only
+    /// once the app has said it recorded the line, which is after its hearer ran, or once the
+    /// line is durable in the chat's spool (`hookwire::deliver`, FD-30). On a loaded machine the
+    /// app can be slower than the hook waits (`A_NOTICE_TAKES_AT_MOST`, 250 ms), and the line is
+    /// then the spool's: a test that listened on the live channel alone waited for a line that
+    /// was never coming (#2255).
+    ///
+    /// A line can be in both: the hook stopped waiting and spooled it, and the app, only slow,
+    /// read it later and recorded it too. The app's drain knows that copy by the delivery id it
+    /// carries (#952), which neither copy hands a hearer, so here the copies are told apart by
+    /// what they say: this answers each distinct refusal once.
+    fn told(&self) -> Vec<CommitRefused> {
+        let mut told: Vec<CommitRefused> = self.heard.try_iter().collect();
+        spool::drain(&spool::dir_for(&self.socket), &mut |item| {
+            match item {
+                spool::Drained::Line {
+                    line: spool::Spooled::Refused(refused),
+                    ..
+                } => told.push(refused),
+                spool::Drained::Spool { .. } => {}
+                // A line that did not check, a number with no line, or a kind no git hook
+                // spools: never the quiet answer a test reads as "nothing was told".
+                other => panic!("the spool held more than refusals: {other:?}"),
+            }
+            Ok(())
+        })
+        .expect("the spool drains");
+        let mut once = Vec::new();
+        for refused in told {
+            if !once.contains(&refused) {
+                once.push(refused);
+            }
+        }
+        once
+    }
+
+    /// The one refusal the app was told of ([`Chat::told`]).
+    fn refused(&self) -> CommitRefused {
+        let mut told = self.told();
+        assert_eq!(told.len(), 1, "one refusal, live or spooled: {told:?}");
+        told.remove(0)
+    }
+
     /// The repository's own hook `name`, which writes a mark when git runs it.
     fn own_hook(&self, name: &str) -> PathBuf {
         let mark = self.dir.path().join(format!("{name} ran"));
@@ -161,7 +240,7 @@ fn a_planted_key_and_email_are_refused_before_commit_on_a_repo_outside_the_plane
         "{said}"
     );
 
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert_eq!(heard.chat, 7);
     assert!(heard.commit_refused.contains("config.py:1"), "{heard:?}");
     assert!(heard.commit_refused.contains("and 1 more"), "{heard:?}");
@@ -184,7 +263,7 @@ fn a_credential_in_a_commits_own_message_is_refused_before_commit() {
     let said = String::from_utf8_lossy(&ran.stderr);
     assert!(said.contains("the commit message:3"), "{said}");
     assert!(!said.contains(&key()), "{said}");
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert!(
         heard.commit_refused.contains("the commit message:3"),
         "{heard:?}"
@@ -314,7 +393,7 @@ fn a_planted_iban_id_and_vendor_token_are_refused_and_never_shown() {
             "the refusal showed a value: {said}"
         );
     }
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     for value in [&iban, &cpf, &token] {
         assert!(!heard.commit_refused.contains(value.as_str()), "{heard:?}");
     }
@@ -347,7 +426,8 @@ fn a_clean_commit_goes_through_and_the_repositorys_own_hooks_still_run() {
     assert!(ran.status.success(), "{ran:?}");
     assert!(pre.exists(), "the repository's own pre-commit ran");
     assert!(msg.exists(), "the repository's own commit-msg ran");
-    assert!(chat.heard.recv_timeout(Duration::from_millis(300)).is_err());
+    let told = chat.told();
+    assert!(told.is_empty(), "{told:?}");
 }
 
 #[test]
@@ -412,7 +492,7 @@ fn a_chat_cannot_commit_an_allowlist_entry_for_its_own_finding() {
     assert_eq!(chat.head(), before);
     let said = String::from_utf8_lossy(&ran.stderr);
     assert!(said.contains("only a commit made outside a chat"), "{said}");
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert!(heard.commit_refused.contains("allowlist"), "{heard:?}");
 
     // Nor on its own, in a commit that finds nothing else.
@@ -511,7 +591,7 @@ fn a_planted_secret_the_commit_scan_never_saw_is_refused_before_push() {
     assert!(said.contains("ghp_****"), "{said}");
     assert!(!said.contains(&key()), "{said}");
 
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert_eq!(heard.chat, 7);
     assert!(
         heard.commit_refused.starts_with("push refused in"),
@@ -617,7 +697,7 @@ fn a_chat_cannot_push_an_allowlist_change_even_one_the_operator_committed() {
         said.contains("The operator pushes an allowlist change themselves"),
         "{said}"
     );
-    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    let heard = chat.refused();
     assert!(
         heard.commit_refused.starts_with("push refused in")
             && heard.commit_refused.contains("allowlist"),
@@ -629,4 +709,29 @@ fn a_chat_cannot_push_an_allowlist_change_even_one_the_operator_committed() {
             .success(),
         "the operator's own terminal is not armed"
     );
+}
+
+/// #2255: an app slower than a hook waits is told of the refusal by the spool. The hook does not
+/// wait past `A_NOTICE_TAKES_AT_MOST`; it spools the line and exits, and git returns. The app
+/// here records nothing until the test lets it go, so only the spool can hold the line.
+#[test]
+fn a_refusal_the_app_is_too_slow_to_take_is_in_the_spool_when_git_returns() {
+    let mut chat = Chat::with_a_stalled_app();
+    let before = chat.head();
+    std::fs::write(chat.repo.join("deploy.sh"), format!("TOKEN={}\n", key())).unwrap();
+    chat.git(&["add", "deploy.sh"]);
+
+    let ran = chat.git(&["commit", "-q", "-m", "deploy"]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.head(), before, "nothing was committed");
+    assert!(
+        spool::holds_lines(&spool::dir_for(&chat.socket), 7),
+        "the hook spooled the line the app did not take in time"
+    );
+    let heard = chat.refused();
+    assert_eq!(heard.chat, 7);
+    assert!(heard.commit_refused.contains("deploy.sh:1"), "{heard:?}");
+    assert!(!heard.commit_refused.contains(&key()), "{heard:?}");
+    chat.let_the_app_go();
 }

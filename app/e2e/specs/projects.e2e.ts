@@ -5,14 +5,10 @@ import { existsSync, realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { THE_RUNS_TREE, anEmptyRecord, copyFixturePlane } from "../harness.js";
-import {
-  answerTheAsk,
-  closeProject,
-  noDialogIsLeftUp,
-  openThroughTheTrustQuestion,
-  pressAndStart,
-} from "../opening.js";
+import { closeProject, noDialogIsLeftUp, openThroughTheTrustQuestion } from "../opening.js";
 import { attributesOfEach } from "../reading.js";
+import { projectInFront, runningIn } from "../running.js";
+import { endChatById, startAChat } from "../started.js";
 
 /**
  * A window holding more than one project, in the built app (ADR 0033, decision 23).
@@ -187,26 +183,44 @@ describe("a window holding more than one project", function () {
   /** How many chat tabs it was showing then. Read rather than assumed: specs share one app
    *  process and run in name order, so whatever ran before this one decides the number. */
   let chatsBefore = 0;
-  /** Whether this spec is the one that opened a chat, and so owes it a close. */
-  let mine = false;
+  /** The chat this spec started, by the number the core gave it, which it owes a close; or
+   *  none, where the launch's project already ran one. */
+  let mySession: number | undefined;
+  /** Whether this spec pressed for a chat at all: set BEFORE the press, so a start that throws
+   *  once its session is up (its pane never drawn, say) still leaves `after` a chat to end. */
+  let pressed = false;
 
   before(async () => {
     // No record of its own, so opening it starts nothing: this spec is about tabs, and a chat
     // appearing in the second project would be a session the next spec inherits.
     anEmptyRecord(second);
     first = (await ask<string[]>("open_planes"))[0];
-    // At least one chat in the launch's project, so "the first project kept its sessions" is
-    // a claim about something rather than about an empty list.
-    if ((await chatTabs()) === 0) {
-      await pressAndStart("New tab");
-      mine = true;
-      await browser.waitUntil(async () => (await chatTabs()) > 0, {
-        timeout: 30_000,
-        timeoutMsg: "the chat this spec opened never got a tab",
-      });
+    // At least one chat RUNNING in the launch's project, so "the first project kept its
+    // sessions" is a claim about something rather than about an empty list.
+    //
+    // **Asked of the core, not counted on the strip** (#1941). This used to start a chat only
+    // where the strip drew no tab, and wait for a tab — then assert the core's
+    // `running_sessions`. A tab is not a running chat: the strip also holds view tabs, and the
+    // tab of a chat the guard ended by id (`chatsLeft.ts`: that end takes no tab away), so an
+    // earlier spec's leftovers skipped the start and the list came back empty; and a fresh tab
+    // can be drawn before its session is listed. So the decision and the wait are both on the
+    // list the assertion reads: `startAChat` waits (bounded) until the core lists the new chat
+    // and its pane is in front.
+    running = await runningIn(first);
+    if (running.length === 0) {
+      // `startAChat` starts in the project in front: that has to be `first`, or the chat is
+      // started in one project and read and ended in another.
+      expect(await projectInFront()).toBe(first);
+      pressed = true;
+      const started = await startAChat("New tab");
+      expect(started.plane).toBe(first);
+      mySession = started.session;
+      running = await runningIn(first);
     }
+    // Read once the strip has drawn what it will: a chat this spec started has its pane in front
+    // by now (`startAChat`). A stale read could only make `chatTabsBecome(chatsBefore)` below
+    // time out (bounded, and failing), never pass on a wrong count.
     chatsBefore = await chatTabs();
-    running = await ask<number[]>("running_sessions", { plane: first });
     expect(running.length).toBeGreaterThan(0);
   });
 
@@ -215,14 +229,14 @@ describe("a window holding more than one project", function () {
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first)) {
       await ask("close_plane", { plane });
     }
-    if (!mine) return;
-    const closer = await $(`${TABS} button[aria-label^="End chat "]`);
-    if (!(await closer.isExisting())) return;
-    // Ending a chat asks first, and a spec that leaves the question on screen hands the
-    // next spec file a modal it never opened — one app process serves the whole run.
-    const name = (await closer.getAttribute("aria-label")) ?? "";
-    await closer.click();
-    await answerTheAsk(name);
+    // Its own chat, by its number and through the window, never the strip's first `×`: that
+    // can be a chat another spec left (`started.ts`). It answers the question ending asks, so
+    // no modal is handed to the next spec file — one app process serves the whole run. Where
+    // the start threw before naming its chat, `first` ran nothing before the press, so every
+    // chat it runs now is this spec's.
+    if (!pressed) return;
+    const mine = mySession === undefined ? await runningIn(first) : [mySession];
+    for (const session of mine) await endChatById(session, first);
   });
 
   it("opens a second project beside the first, through the same trust gate", async () => {
@@ -260,7 +274,7 @@ describe("a window holding more than one project", function () {
   it("leaves the first project's sessions running while the second is in front", async () => {
     // The whole reason the operator wanted one window per project, which tabs have to keep
     // rather than trade away. The tab strip cannot prove it; the core's own list can.
-    expect(await ask<number[]>("running_sessions", { plane: first })).toEqual(running);
+    expect(await runningIn(first)).toEqual(running);
   });
 
   it("brings the first project back with its chats, having ended none of them", async () => {
@@ -272,7 +286,7 @@ describe("a window holding more than one project", function () {
       { path: second, front: false },
     ]);
     await chatTabsBecome(chatsBefore);
-    expect(await ask<number[]>("running_sessions", { plane: first })).toEqual(running);
+    expect(await runningIn(first)).toEqual(running);
   });
 
   it("writes down what it holds, so a cold launch can put it back", async () => {
@@ -290,7 +304,7 @@ describe("a window holding more than one project", function () {
 
     await stripBecomes([{ path: first, front: true }]);
     expect(await ask<string[]>("open_planes")).toEqual([first]);
-    expect(await ask<number[]>("running_sessions", { plane: first })).toEqual(running);
+    expect(await runningIn(first)).toEqual(running);
     // And what it writes down follows, so the next launch does not put back a project the
     // operator closed.
     await remembers([first]);

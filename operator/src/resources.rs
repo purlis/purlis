@@ -5,7 +5,7 @@
 //! beta (spec #2041). `deploy/crds.yaml` is generated from these types, and a test fails until
 //! it is regenerated.
 
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
 use kube::{CustomResource, KubeSchema};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -60,4 +60,19 @@ pub struct ClaimStatus {
     /// `Ready`: whether the claim's runner is running, and if not, why.
     #[serde(default)]
     pub conditions: Vec<Condition>,
+}
+
+/// The condition that says whether a Claim's runner is running, and if not, why.
+pub(crate) const READY: &str = "Ready";
+
+/// A Claim's `Ready` condition, moving now.
+pub(crate) fn condition(status: &str, reason: &str, message: String) -> Condition {
+    Condition {
+        type_: READY.to_owned(),
+        status: status.to_owned(),
+        reason: reason.to_owned(),
+        message,
+        last_transition_time: Time(k8s_openapi::jiff::Timestamp::now()),
+        observed_generation: None,
+    }
 }
