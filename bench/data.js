@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792258400719,
+  "lastUpdate": 1792259538449,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15582,6 +15582,48 @@ window.BENCHMARK_DATA = {
             "value": 105.856566,
             "unit": "ms",
             "extra": "median of 5 runs: 103.299, 104.132, 105.857, 105.996, 106.280 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1e5c085c6e0d5edf2b587ab40d96c68ecfea6e81",
+          "message": "A chat's confinement is acted on and heard by the links it is named to (#2444) (#2461)\n\nA session host names a confinement to the link that made it, and to each\nwindow that takes its chat back; one it made for a chat it composed is\nnamed to no link. change_reach, reach_of and let_go_of_confinement act\nonly on a confinement named to the calling link that is its own, or whose\nprogram's project the link holds at the place it runs; any other is\nrefused no_such_chat and left as it is. A proxy's sandbox notices and its\nasks reach only those links. The same holds for the links a runner's peer\nrelays. ADR 0068 amended for #2444, D-2444-1 to D-2444-4.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T21:42:22+04:00",
+          "tree_id": "3ce5ae591ded60bee85637345a245e7bdceabbd4",
+          "url": "https://github.com/purlis/purlis/commit/1e5c085c6e0d5edf2b587ab40d96c68ecfea6e81"
+        },
+        "date": 1792259537226,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.507308,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.504, 0.507, 0.520, 0.520 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0773835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.893, 16.967, 17.077, 17.089, 17.237 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.93995100000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.771, 103.878, 103.940, 106.508, 106.845 ms"
           }
         ]
       }
