@@ -1183,6 +1183,15 @@ button.show-more:focus-visible {
   max-width: 100%;
 }
 
+/* **The line is one height** (#2484): each chip on it is the chrome height, as the ways to end
+   a task beside them are, so no chip stands shorter than its neighbour. What each says is
+   centred in it (`align-items` or `align-content` in the chip's own rule). The heights guard
+   holds every chip here (`PANE_LINE_CHIPS`). */
+.pane-chips
+  > :is(.pane-crumbs, .pane-brief, .chat-gauge, .pane-harness, .pane-from, .pane-work-item) {
+  height: var(--size-chrome);
+}
+
 /* **A pane's row of Notices, above its terminal** (`NoticePaneRow`, #1647): the stack, and
    beside it "+N more" while more than two have something to say.
 
@@ -1324,6 +1333,7 @@ button.show-more:focus-visible {
    unchanged — in particular it is always drawn, and never takes the controls' hover rule. */
 .chat-gauge {
   display: flex;
+  align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-2);
   font-size: var(--font-size-xs);
@@ -1347,6 +1357,7 @@ button.show-more:focus-visible {
 .pane-from {
   max-width: 24rem;
   overflow: hidden;
+  align-content: center;
   padding: 0 var(--space-2);
   font-size: var(--font-size-xs);
   white-space: nowrap;
@@ -1387,6 +1398,7 @@ button.show-more:focus-visible {
 .pane-work-item {
   max-width: 24rem;
   overflow: hidden;
+  align-content: center;
   padding: 0 var(--space-2);
   font-size: var(--font-size-xs);
   white-space: nowrap;

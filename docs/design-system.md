@@ -1027,7 +1027,12 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   segment are their list's). A strip or a pane header is a class named for one (`-bar`,
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
-  as part of itself (`.pane-task-ends`, `.tab-tasks`). A height that is its content's or its
+  as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's
+  top line is one height** (#2484): every chip on it (the breadcrumb, Brief, the gauge, the
+  harness, where the chat came from, its work item: `PANE_LINE_CHIPS`) is set to
+  `--size-chrome`, and the guard fails a chip that is not. A strip's part is the strip's height
+  even when it is a button. The guard reads what `LayoutPanes.tsx` draws in the line, so a new
+  chip fails until it is listed and held. A height that is its content's or its
   container's (`auto`, `100%`) passes. Heights are held where a rule declares one: a control
   with no declared height (one its padding makes tall) is not checked, and a custom property is
   held by its value, not by the scope it is declared in. The exceptions are named with their
