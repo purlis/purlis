@@ -692,8 +692,8 @@ mod the_server_says_it {
         socket: std::path::PathBuf,
         token: String,
         heard: mpsc::Receiver<Report>,
-        /// Every report told so far, each once.
-        told: RefCell<Vec<Report>>,
+        /// Reports told by the spool whose live copy has not come yet ([`support::paired`]).
+        awaiting: RefCell<Vec<Report>>,
         /// Held while the hearer is to stall; dropped, it lets the hearer go. Before the
         /// reading, which waits for its hearer as it is dropped.
         stall: RefCell<Option<mpsc::Sender<()>>>,
@@ -748,7 +748,7 @@ mod the_server_says_it {
             socket,
             token,
             heard,
-            told: RefCell::new(Vec::new()),
+            awaiting: RefCell::new(Vec::new()),
             stall: RefCell::new(Some(stall)),
             _reading: reading,
         }
@@ -779,27 +779,26 @@ mod the_server_says_it {
         /// the line or it is durable in the spool (FD-30). So once the harness has read that
         /// answer, no append is in progress for the strict drain to meet half written.
         fn told(&self) -> Vec<Heard> {
-            let mut heard: Vec<Heard> =
-                support::spooled_running(&self.socket, CHAT, |line| match line {
-                    spool::Spooled::Report(report) => Some(report),
-                    _ => None,
-                })
-                .into_iter()
-                .map(Heard::Spooled)
-                .collect();
-            heard.extend(self.heard.try_iter().map(Heard::Live));
-            // A report can be in both: the drain hands on a line the host is still recording,
-            // erring on a line twice, never none (#952). Its live copy can come by a later read.
-            let mut told = self.told.borrow_mut();
-            heard.retain(|heard| {
-                let report: &Report = heard;
-                let new = !told.contains(report);
-                if new {
-                    told.push(report.clone());
-                }
-                new
+            let spooled = support::spooled_running(&self.socket, CHAT, |line| match line {
+                spool::Spooled::Report(report) => Some(report),
+                _ => None,
             });
+            // A report the server spooled because the host was slow is recorded live too once
+            // the host gets to it, maybe by a later read: that copy is not said again. Two
+            // live copies are two reports said (`support::paired`).
+            let (spooled, live) = support::paired(
+                spooled,
+                self.heard.try_iter(),
+                &mut self.awaiting.borrow_mut(),
+            );
+            let mut heard: Vec<Heard> = spooled.into_iter().map(Heard::Spooled).collect();
+            heard.extend(live.into_iter().map(Heard::Live));
             heard
+        }
+
+        /// Whether every report told by the spool has had its live copy recorded too.
+        fn every_late_copy_came(&self) -> bool {
+            self.awaiting.borrow().is_empty()
         }
 
         /// The one report told since the host was last asked.
@@ -868,6 +867,17 @@ mod the_server_says_it {
         let ends = host.said();
         assert_eq!(ends.detail.notified, Notified::Answered);
         host.nothing_more(&mut server);
+        // The hearer let go records the wait it held: it comes, and is not said again.
+        let late = std::time::Instant::now();
+        while !host.every_late_copy_came() {
+            assert!(
+                late.elapsed() < std::time::Duration::from_secs(10),
+                "the hearer let go records the wait it held"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let told = host.told();
+            assert!(told.is_empty(), "the late copy is not said again: {told:?}");
+        }
     }
 
     /// A report said twice is two reports, though they are equal: the server says the wait

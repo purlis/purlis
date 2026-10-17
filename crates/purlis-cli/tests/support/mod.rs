@@ -92,6 +92,32 @@ pub fn distinct<T: PartialEq>(lines: Vec<T>) -> Vec<T> {
     once
 }
 
+/// What one read told a host still running: `spooled`, then `live`, with each spooled line
+/// cancelling **at most one** live copy of itself, in this read or a later one.
+///
+/// A line spooled because the host was slow is often recorded live too, once the host gets to
+/// it, maybe only by a later read. `awaiting` holds the spooled lines whose live copy has not
+/// come yet, from one read to the next. **Nothing else is merged**: two live lines that are
+/// equal, or two spooled ones, are two lines said, and a test that allows one sees both.
+pub fn paired<T: PartialEq + Clone>(
+    spooled: Vec<T>,
+    live: impl IntoIterator<Item = T>,
+    awaiting: &mut Vec<T>,
+) -> (Vec<T>, Vec<T>) {
+    awaiting.extend(spooled.iter().cloned());
+    let live = live
+        .into_iter()
+        .filter(|line| match awaiting.iter().position(|copy| copy == line) {
+            Some(at) => {
+                awaiting.remove(at);
+                false
+            }
+            None => true,
+        })
+        .collect();
+    (spooled, live)
+}
+
 /// The lines of one kind spooled beside the host's `socket`, drained. `kind` picks the line
 /// out of a spooled one.
 ///
