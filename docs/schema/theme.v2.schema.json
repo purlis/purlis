@@ -1,6 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
   "title": "A purlis theme folder's theme.json (format 2)",
   "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, and its appearances, each tagged dark or light and optionally high contrast. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
   "type": "object",

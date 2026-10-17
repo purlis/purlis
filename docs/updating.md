@@ -243,7 +243,8 @@ What a release brought is written as it merges, one changelog fragment per pull 
 git switch main && git pull
 git tag vX.Y.Z && git push origin vX.Y.Z      # this, and only this, publishes a stable release
 # 2. afterwards, bump both version fields to the NEXT version and merge, so dev builds are
-#    X.Y.(Z+1)-dev.N
+#    X.Y.(Z+1)-dev.N; with them, PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core
+#    the_published_schema moves Purlis Classic's `$schema` to the new version's address
 ```
 
 The `## [X.Y.Z]` section is the release: it becomes the GitHub release's body and the notes in

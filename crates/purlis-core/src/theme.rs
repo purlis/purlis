@@ -36,7 +36,8 @@
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
-//!   vocabulary (`docs/schema/theme.schema.json`, held to it by a test).
+//!   vocabulary (`docs/schema/theme.v2.schema.json`, held to it by a test), and [`SCHEMA_URL`]
+//!   its address at this release, which a format only ever grows at (`published`).
 //!
 //! The spec's later steps (theme options, the choice levels, geometry and fonts, import and
 //! export) grow these same entries: `resolve` takes more inputs, `check` covers more
@@ -58,6 +59,7 @@ use serde_json::Value;
 mod check;
 mod format;
 mod icons;
+mod published;
 mod resolve;
 mod schema;
 mod tint;
@@ -67,7 +69,8 @@ pub use check::{Finding, PAIRS, Pair, Report};
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
-pub use schema::{SCHEMA_URL, schema, schema_text};
+pub use published::{SCHEMA_FILE, SCHEMA_URL};
+pub use schema::{schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
 use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
 
@@ -75,6 +78,8 @@ use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names
 mod format_tests;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod published_tests;
 #[cfg(test)]
 mod tests;
 
