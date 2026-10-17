@@ -66,8 +66,7 @@ fn nothing_under_the_name_is_free_to_make() {
 
 #[test]
 fn an_object_whose_controller_is_its_owner_is_the_operators_by_its_uid() {
-    let template = upstream::template_for(&pool(), "ada");
-    let made = held("held-uid", template.metadata.owner_references.clone());
+    let made = held("held-uid", Some(vec![owner("pool-uid", Some(true))]));
     assert_eq!(
         upstream::found(Some(&made), &pool()),
         Found::Ours {
@@ -106,10 +105,72 @@ fn an_object_without_the_operators_controller_reference_is_in_the_way() {
             "{object:?}"
         );
     }
-    // A pool's template is never taken for a claim's, nor a claim's for a pool's.
-    let template = upstream::template_for(&pool(), "ada");
+    // A pool's template is never taken for a claim's upstream claim.
+    let template = upstream::template_for(&pool(), "ada", upstream::owners_with(None, &claim()));
     let made = held("u", template.metadata.owner_references.clone());
     assert_eq!(upstream::found(Some(&made), &claim()), Found::InTheWay);
+}
+
+fn claim_owner(api_version: &str) -> OwnerReference {
+    OwnerReference {
+        api_version: api_version.into(),
+        kind: "Claim".into(),
+        name: "ada-1".into(),
+        uid: "claim-uid".into(),
+        controller: None,
+        block_owner_deletion: None,
+    }
+}
+
+#[test]
+fn a_pools_template_or_warm_pool_is_the_operators_when_a_claim_owns_it() {
+    let template = upstream::template_for(&pool(), "ada", upstream::owners_with(None, &claim()));
+    let made = held("held-uid", template.metadata.owner_references.clone());
+    assert_eq!(
+        upstream::found_for_pool(Some(&made), &pool()),
+        Found::Ours {
+            uid: "held-uid".into()
+        }
+    );
+    // Whichever claims own it now: the claims that made it may be gone.
+    let made = held(
+        "held-uid",
+        Some(vec![claim_owner("runners.purlis.dev/v1alpha1")]),
+    );
+    assert_eq!(
+        upstream::found_for_pool(Some(&made), &pool()),
+        Found::Ours {
+            uid: "held-uid".into()
+        }
+    );
+    // One the pool itself controlled, as the operator made them before its claims owned them.
+    let made = held("held-uid", Some(vec![owner("pool-uid", Some(true))]));
+    assert_eq!(
+        upstream::found_for_pool(Some(&made), &pool()),
+        Found::Ours {
+            uid: "held-uid".into()
+        }
+    );
+    assert_eq!(upstream::found_for_pool(None, &pool()), Found::Nothing);
+}
+
+#[test]
+fn a_pools_template_or_warm_pool_owned_by_nothing_of_the_operators_is_in_the_way() {
+    let in_the_way = [
+        held("u", None),
+        held("u", Some(vec![])),
+        held("u", Some(vec![owner("pool-uid", None)])),
+        held("u", Some(vec![owner("another-uid", Some(true))])),
+        // A Claim of another API group is not purlis's.
+        held("u", Some(vec![claim_owner("example.com/v1")])),
+    ];
+    for object in &in_the_way {
+        assert_eq!(
+            upstream::found_for_pool(Some(object), &pool()),
+            Found::InTheWay,
+            "{object:?}"
+        );
+    }
 }
 
 #[test]

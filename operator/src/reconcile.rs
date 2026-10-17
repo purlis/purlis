@@ -12,12 +12,12 @@
 use crate::admission::{POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
-    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, found, sandbox_claim_for,
-    template_for, warm_pool_for,
+    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, found, found_for_pool,
+    owners_with, sandbox_claim_for, template_for, warm_pool_for,
 };
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
-use kube::api::{Api, Patch, PatchParams, PostParams};
+use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::reflector::ObjectRef;
 use kube::runtime::watcher;
@@ -69,6 +69,33 @@ pub fn status_of_a_missing_pool(claim: &Claim) -> ClaimStatus {
             "PoolNotFound",
             format!("There is no pool named {}.", claim.spec.pool),
         )],
+    }
+}
+
+/// A Claim's status when its pool was deleted after its runner was asked for: the runner keeps
+/// running until the Claim is deleted, so `Ready` is still what upstream says of it, with the
+/// reason `PoolDeleted`.
+pub fn status_of_a_deleted_pool(claim: &Claim, upstream: &SandboxClaim) -> ClaimStatus {
+    let ready = upstream
+        .status
+        .as_ref()
+        .and_then(|status| status.conditions.iter().find(|c| c.type_ == READY));
+    let mut message = format!(
+        "The pool {} was deleted. This claim's runner keeps running, as the pool last defined \
+         it, until the claim is deleted; no new claim is served from the pool.",
+        claim.spec.pool
+    );
+    let status = match ready {
+        Some(ready) => {
+            if !ready.message.is_empty() {
+                message.push_str(&format!(" The runner: {}", ready.message));
+            }
+            ready.status.as_str()
+        }
+        None => "False",
+    };
+    ClaimStatus {
+        conditions: vec![condition(status, "PoolDeleted", message)],
     }
 }
 
@@ -131,18 +158,43 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
         .get_opt(&claim.spec.pool)
         .await?;
     let status = match pool {
-        None => status_of_a_missing_pool(&claim),
+        // The runner it was given, if any, keeps running: the operator changes nothing for it,
+        // and says what upstream says of it.
+        None => {
+            let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
+            match upstream_claims.get_opt(&name).await? {
+                Some(held) if matches!(found(Some(held.meta()), &*claim), Found::Ours { .. }) => {
+                    status_of_a_deleted_pool(&claim, &held)
+                }
+                _ => status_of_a_missing_pool(&claim),
+            }
+        }
         Some(pool) => {
             let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &namespace);
             let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &namespace);
             let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
-            let template = template_for(&pool, &namespace);
-            let warm = warm_pool_for(&pool, &namespace);
-            let wanted = sandbox_claim_for(&claim);
             // All three are looked at before any is written: one in the way stops them all.
-            let template_found = look(&templates, &template, &pool).await?;
-            let warm_found = look(&warm_pools, &warm, &pool).await?;
-            let claim_found = look(&upstream_claims, &wanted, &*claim).await?;
+            let wanted = sandbox_claim_for(&claim);
+            let pool_object = upstream::name_for(&pool.name_any());
+            let template_held = templates.get_opt(&pool_object).await?.map(meta);
+            let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
+            let claim_held = upstream_claims.get_opt(&name).await?.map(meta);
+            let template_found = found_for_pool(template_held.as_ref(), &pool);
+            let warm_found = found_for_pool(warm_held.as_ref(), &pool);
+            let claim_found = found(claim_held.as_ref(), &*claim);
+            // The pool's two objects are shared by its Claims in the namespace, each adding
+            // itself as an owner: each is applied only to the version read, so a Claim that
+            // added itself in the meantime is never dropped.
+            let mut template = template_for(
+                &pool,
+                &namespace,
+                owners_with(template_held.as_ref(), &claim),
+            );
+            template.metadata.resource_version =
+                template_held.and_then(|held| held.resource_version);
+            let mut warm =
+                warm_pool_for(&pool, &namespace, owners_with(warm_held.as_ref(), &claim));
+            warm.metadata.resource_version = warm_held.and_then(|held| held.resource_version);
             let in_the_way = [
                 (
                     &template_found,
@@ -178,22 +230,15 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
     Ok(Action::await_change())
 }
 
-/// What the cluster holds under the name of `wanted`, an upstream object the operator would make
-/// for `owner`, read from the API server itself.
-async fn look<K, O>(api: &Api<K>, wanted: &K, owner: &O) -> Result<Found, Error>
-where
-    K: Resource + Clone + DeserializeOwned + Debug,
-    O: Resource,
-    O::DynamicType: Default,
-{
-    let held = api.get_opt(&wanted.name_any()).await?;
-    Ok(found(held.as_ref().map(|held| held.meta()), owner))
+/// An object's metadata, which is all [`found`] reads of it.
+fn meta<K: Resource>(object: K) -> ObjectMeta {
+    object.meta().clone()
 }
 
-/// `wanted` written to the cluster as [`look`] found it: made when nothing holds its name, and
-/// applied server-side to the object the operator made, by its uid, so an object made again under
-/// that name since it was looked at is refused and looked at again. Never called for an object
-/// in the way.
+/// `wanted` written to the cluster as it was `found`: made when nothing holds its name, and
+/// applied server-side to the object the operator made, by its uid (and the resource version
+/// `wanted` names, if any), so an object made again or changed under that name since it was
+/// looked at is refused and looked at again. Never called for an object in the way.
 async fn put<K>(api: &Api<K>, mut wanted: K, found: Found) -> Result<K, Error>
 where
     K: Resource + Clone + DeserializeOwned + Serialize + Debug,
@@ -252,9 +297,17 @@ const RETRY: Duration = Duration::from_secs(10);
 /// operator does not watch objects it did not make.
 const LOOK_AGAIN: Duration = Duration::from_secs(15);
 
+/// How long a claim waits before it is tried again after an object changed under it between
+/// reading and writing it: soon, from what the cluster holds now.
+const READ_AGAIN: Duration = Duration::from_secs(1);
+
 fn error_policy(claim: Arc<Claim>, error: &Error, _: Arc<Context>) -> Action {
-    tracing::warn!(claim = %claim.name_any(), %error, retry = ?RETRY, "trying again");
-    Action::requeue(RETRY)
+    let retry = match error {
+        Error::Kube(kube::Error::Api(status)) if status.code == 409 => READ_AGAIN,
+        _ => RETRY,
+    };
+    tracing::warn!(claim = %claim.name_any(), %error, ?retry, "trying again");
+    Action::requeue(retry)
 }
 
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
