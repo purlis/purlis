@@ -649,7 +649,7 @@ mod the_server_says_it {
     use super::*;
     use purlis_core::harness::model::Prompt;
     use purlis_core::hookwire::{
-        CHAT_ENV, HARNESS_ENV, Hearing, Listener, Report, SOCKET_ENV, TOKEN_ENV, spool,
+        CHAT_ENV, ChatToken, HARNESS_ENV, Hearing, Listener, Report, SOCKET_ENV, TOKEN_ENV, spool,
     };
     use purlis_core::state::{Event, Notified};
     use std::cell::RefCell;
@@ -868,6 +868,40 @@ mod the_server_says_it {
         let ends = host.said();
         assert_eq!(ends.detail.notified, Notified::Answered);
         host.nothing_more(&mut server);
+    }
+
+    /// A report said twice is two reports, though they are equal: the server says the wait
+    /// once and its end once (#1089), and only a spooled report's own live copy is not
+    /// counted again.
+    #[test]
+    fn a_report_said_twice_live_is_not_taken_for_one() {
+        let p = project();
+        let host = host();
+        let mut server = host.server(p.path(), "codex");
+        server.initialize(true);
+        ask(&mut server, "Merge the train?");
+        let waits = host.said();
+        assert!(matches!(waits, Heard::Live(_)), "{waits:?}");
+
+        // The same wait, said twice more, each on a line of its own.
+        let token = ChatToken::read(&|name| (name == TOKEN_ENV).then(|| host.token.clone()))
+            .expect("a token");
+        let say = || {
+            let said = purlis_core::hookwire::deliver_report(&host.socket, Some(&token), &waits);
+            assert!(said.is_ok(), "{said:?}");
+        };
+        say();
+        say();
+        let told = host.told();
+        assert_eq!(told.len(), 2, "two reports said: {told:?}");
+
+        say();
+        say();
+        let one = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host.said()));
+        assert!(
+            one.is_err(),
+            "a report said twice is not the one report said"
+        );
     }
 
     #[test]
