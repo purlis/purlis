@@ -4064,7 +4064,8 @@ impl Planes {
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
-            browsers: crate::chatbrowsers::ChatBrowsers::default(),
+            browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .telling(Arc::clone(&browsers_listed)),
             browser_driver: self.browser_driver.clone(),
             browsers_listed,
             proposals: crate::proposals::Proposals::default(),
