@@ -18,6 +18,7 @@
 //! right to `exec` or `attach` to a pod and reads no Secret; this crate's Kubernetes client is
 //! built without the websocket feature those would need.
 
+pub mod doctor;
 mod reconcile;
 mod resources;
 pub mod upstream;

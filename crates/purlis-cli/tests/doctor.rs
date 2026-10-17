@@ -806,7 +806,7 @@ fn bare_fix_never_removes_a_generated_sub_agent_and_the_row_offers_the_fix() {
         personas["detail"]
             .as_str()
             .unwrap()
-            .contains("2 generated sub-agent file(s) remain in .claude/agents/"),
+            .contains("2 generated sub-agent files remain in .claude/agents/"),
         "{personas}"
     );
 }

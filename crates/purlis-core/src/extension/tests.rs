@@ -3037,8 +3037,10 @@ fn a_workspace_folder_is_one_plain_name_of_at_most_sixty_four_bytes_and_none_of_
             "{why}"
         );
     }
-    let why = folder("todos").expect_err("charter's own");
-    assert!(why.contains("one of purlis's own in a workspace"), "{why}");
+    for own in ["todos", "themes"] {
+        let why = folder(own).expect_err("charter's own");
+        assert!(why.contains("one of purlis's own in a workspace"), "{why}");
+    }
 }
 
 /// A protocol-2 extension `teller` that hears `hears` and keeps `folder` in each workspace,

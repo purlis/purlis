@@ -24,7 +24,9 @@ The rule, in one line each:
   focus rings and elevation are the core tokens in `app/src/theme/geometry.css`, the same in
   every theme. A theme sets colour, shadow colour and motion, and nothing else;
   `app/src/theme/geometry.test.ts` fails if a theme could set one. See
-  [Geometry is core](#geometry-is-core) and ADR 0094.
+  [Geometry is core](#geometry-is-core) and ADR 0094. ADR 0097 supersedes that rule: a theme
+  is bounded data and may set every token. The window holds 0094's rule until the theme engine
+  of spec #2313 is built.
 
 ## Why a theme is data and not CSS
 
@@ -692,6 +694,7 @@ rings stay in px. The px below are at the default 14px text.
 | `--font-size-lg`        | 16px                                       | the title role; nothing drew it before the [text roles](#text-roles)     |
 | `--font-size-xl`        | 20px                                       | on the scale; nothing draws it and no role reads it (#1920 rules on it)  |
 | `--font-weight-regular` | 400                                        | the weight of the window's words                                         |
+| `--font-weight-medium`  | 500                                        | a form's label: a setting's name, a choice's name                        |
 | `--font-weight-strong`  | 600                                        | the one strong weight: a title, a heading, a label, a row's strong line  |
 | `--line-height-tight`   | 1.2                                        | a compact line: a count, a chip. A share of the text's size, so no unit  |
 | `--line-height-body`    | 1.4                                        | the window's own line (`:root`)                                          |
@@ -794,6 +797,20 @@ number. The list only shrinks:
 The surface tickets migrate a view and delete its lines in the same change. Two of them editing
 one file's list touch different lines, so their removals merge.
 
+**A migration snaps to the scale** (the operator, 2026-10-17, #2313). A spacing, corner, type
+size or weight with no exact token takes the nearest one, by computed px at the 14px root (a tie
+goes to the smaller), and a px literal may become a rem token. Three more rules go with it:
+
+- **An evenly stepped series takes a multiple of one token** (`calc(var(--space-5) * 3)`), so its
+  steps stay even rather than flattening onto the top of the scale.
+- **A corner that draws the same is the pill.** A radius at or above half its box's height
+  becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
+- **Line heights are outside the snap**, as is a structural size that is no step of the scale,
+  such as an icon's box or a strip's cap on a tab's width: each keeps its literal and its line.
+
+Each snap is listed with its change in px in the pull request, and the window is looked at
+before and after.
+
 ## Text roles
 
 **Every word in the window has a rank, and a rank is one class** (#1920). An audit on
@@ -827,7 +844,7 @@ view wears one.
    `0.65rem` become it.
 4. **One colour for a word that says something is wrong:** `danger.text`. `state.failed` is a
    state's mark, not a word's colour.
-5. **Two weights.** Regular and strong, and no third.
+5. **Three weights.** Regular 400, medium 500 and strong 600, and no fourth.
 6. **A role sets no line height.** A word keeps the line of what it sits in:
    `--line-height-body` is the window's, `--line-height-tight` a compact line's.
 
@@ -854,8 +871,12 @@ window differ, the window was kept and the difference is recorded here for the m
   steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
   role.
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
-- **Counts and matches are weight 700** (five rules) and Settings' form labels 500 (two): no
-  token names either, and both stay in the allowance until #1920 rules on them.
+- **Counts and matches were weight 700** (five rules), which no token names. The geometry snap
+  rule (#2313, 2026-10-17) takes a weight with no token to the nearest one, so the counts on the
+  strips, the rail and the title bar's hand are `--font-weight-strong` now (#2315); the rest move
+  with their surfaces. **Settings' form labels were 500** (two rules): the type scale has three
+  weights, regular 400, medium 500 and strong 600, since the foundation draws 500 throughout, and
+  those labels are `--font-weight-medium` (#2317).
 - **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
   It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
 - **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's

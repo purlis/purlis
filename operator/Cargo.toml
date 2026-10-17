@@ -35,6 +35,11 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 [dev-dependencies]
 # The manifests in `deploy/` and the vendored upstream definitions are read as YAML.
 serde_yaml = "0.9"
+# The doctor's tests answer its kube client with an API server of their own, in process: the
+# same versions the kube client already builds on, so the lock gains no package.
+http = "1"
+http-body-util = "0.1"
+tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [lints.rust]
 unsafe_code = "forbid"

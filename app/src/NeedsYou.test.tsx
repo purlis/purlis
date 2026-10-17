@@ -154,7 +154,10 @@ describe("the needs-you count's colours", () => {
 
   it("draws no coloured border on the button (charter-app#249)", () => {
     expect(rule(".needs-you-button")).toMatch(/border:\s*none/);
-    expect(rule(".needs-you-button")).not.toMatch(/border[a-z-]*:[^;]*var\(--(?!border-subtle)/);
+    // A corner is geometry, not a colour: `border-radius` reads a core token.
+    expect(rule(".needs-you-button")).not.toMatch(
+      /border(?![a-z-]*radius)[a-z-]*:[^;]*var\(--(?!border-subtle)/,
+    );
   });
 
   it("fills the number with needs-you.base under needs-you.text, the measured pair", () => {

@@ -19,10 +19,10 @@ pub(super) fn personas(d: &Doctor) -> Row {
     if leftover.is_empty() {
         return row;
     }
-    let said = format!(
-        "{} generated sub-agent file(s) remain in .claude/agents/",
-        leftover.len()
-    );
+    let said = match leftover.len() {
+        1 => "1 generated sub-agent file remains in .claude/agents/".to_owned(),
+        n => format!("{n} generated sub-agent files remain in .claude/agents/"),
+    };
     let detail = match row.status {
         super::Status::Ok => said,
         _ => format!("{} · {said}", row.detail),
@@ -62,26 +62,30 @@ fn roster(d: &Doctor) -> Row {
         }
     }
     if errors.is_empty() && warns.is_empty() {
-        return Row::ok(NAME, format!("{} persona(s), all clean", names.len()));
+        let personas = match names.len() {
+            1 => "1 persona".to_owned(),
+            n => format!("{n} personas"),
+        };
+        return Row::ok(NAME, format!("{personas}, all clean"));
     }
     let mut bits = Vec::new();
     if !errors.is_empty() {
         bits.push(format!(
-            "{} with error(s): {}",
+            "{} with errors: {}",
             errors.len(),
             errors.join(", ")
         ));
     }
     if !drafts.is_empty() {
-        bits.push(format!("{} draft: {}", drafts.len(), drafts.join(", ")));
+        let counted = match drafts.len() {
+            1 => "1 draft".to_owned(),
+            n => format!("{n} drafts"),
+        };
+        bits.push(format!("{counted}: {}", drafts.join(", ")));
     }
     let soft: Vec<&str> = warns.into_iter().filter(|n| !drafts.contains(n)).collect();
     if !soft.is_empty() {
-        bits.push(format!(
-            "{} with warning(s): {}",
-            soft.len(),
-            soft.join(", ")
-        ));
+        bits.push(format!("{} with warnings: {}", soft.len(), soft.join(", ")));
     }
     Row::warn(
         NAME,

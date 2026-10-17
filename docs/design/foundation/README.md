@@ -142,9 +142,9 @@ Two families: **IBM Plex Sans** for the interface, **JetBrains Mono** for code a
 
 Proposals against today's geometry (`app/src/theme/geometry.css`, at its 14 px root): 11, 12, 13
 and 16 are `--font-size-xs`, `-sm`, `-md` and `-lg` exactly; **12.5 has no size token**. 600 is
-`--font-weight-strong`; **500 has no weight token**. The line heights 20.15 (13 × 1.55), 20.8
-(13 × 1.6) and 21 (12.5 × 1.68) are the frame's; which line-height tokens they become is the
-theme's work.
+`--font-weight-strong` and 500 is `--font-weight-medium` (#2317). The line heights 20.15
+(13 × 1.55), 20.8 (13 × 1.6) and 21 (12.5 × 1.68) are the frame's; which line-height tokens they
+become is the theme's work.
 
 Code colours (JetBrains Mono 12.5 / 21): keys `#c3baf5`, strings `#9fcfa8`, literals
 (`true`) `#e5c08a`, punctuation `#77757f`, line numbers `#55535f`. The frame's export shows the mono
