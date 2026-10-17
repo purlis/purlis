@@ -15,7 +15,10 @@
 use serde_json::{Map, Value, json};
 
 use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
-use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
+use super::vocabulary::{
+    CLEAR_IS_UNSET, CURSOR_STYLE, CURSOR_STYLES, DURATIONS, EASINGS, FLAGS, LINE_HEIGHT,
+    LINE_HEIGHTS, LONGEST, TOKENS,
+};
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
 pub const SCHEMA_URL: &str =
@@ -30,10 +33,38 @@ const NAME: &str = "^[a-z][a-z0-9-]{0,31}$";
 
 /// **The schema**, as a JSON value.
 pub fn schema() -> Value {
-    let tokens: Map<String, Value> = TOKENS
+    let mut tokens: Map<String, Value> = TOKENS
         .iter()
-        .map(|token| ((*token).to_owned(), json!({ "$ref": "#/$defs/colour" })))
+        .map(|token| {
+            let colour = if CLEAR_IS_UNSET.contains(token) {
+                json!({
+                    "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
+                    "$ref": "#/$defs/colour"
+                })
+            } else {
+                json!({ "$ref": "#/$defs/colour" })
+            };
+            ((*token).to_owned(), colour)
+        })
         .collect();
+    // The tokens that are not colours (#2327), each of its own type.
+    for flag in FLAGS {
+        tokens.insert((*flag).to_owned(), json!({ "type": "boolean" }));
+    }
+    tokens.insert(
+        CURSOR_STYLE.to_owned(),
+        json!({ "description": "The terminal cursor's shape.", "enum": CURSOR_STYLES }),
+    );
+    let (least, most) = LINE_HEIGHTS;
+    tokens.insert(
+        LINE_HEIGHT.to_owned(),
+        json!({
+            "description": "The terminal's line height, a multiple of its text size.",
+            "type": "number",
+            "minimum": least,
+            "maximum": most
+        }),
+    );
     let mut motion: Map<String, Value> = DURATIONS
         .iter()
         .map(|name| {
@@ -129,7 +160,7 @@ pub fn schema() -> Value {
                 }
             },
             "tokens": {
-                "description": "Token values; a token not named is the parent's, or Purlis Classic's of the same appearance.",
+                "description": "Token values: a colour, or for a flag, the terminal cursor's shape or its line height, a value of that type. A token not named is the parent's, or Purlis Classic's of the same appearance.",
                 "type": "object",
                 "additionalProperties": false,
                 "properties": tokens

@@ -78,7 +78,7 @@ fn every_built_in_appearance_holds_an_id_a_tag_colours_and_motion_and_no_geometr
         assert_eq!(keys, ["appearance", "id", "motion", "tokens"]);
         let tokens = one["tokens"].as_object().unwrap();
         assert!(tokens.keys().all(|key| !vocabulary::names_geometry(key)));
-        assert_eq!(tokens.len(), TOKENS.len());
+        assert_eq!(tokens.len(), TOKENS.len() + typed::all().count());
     }
 }
 
@@ -89,7 +89,20 @@ fn the_two_built_ins_differ_everywhere_a_theme_is_allowed_to() {
         .copied()
         .filter(|token| dark().value(token) == light().value(token))
         .collect();
-    assert_eq!(same, ["needs-you.text"]);
+    // And what both leave to the platform, clear in each (#2327).
+    assert_eq!(
+        same,
+        [
+            "needs-you.text",
+            "terminal.selection-foreground",
+            "selection.background",
+            "selection.text",
+            "caret",
+            "placeholder",
+            "scrollbar.thumb",
+            "scrollbar.track",
+        ]
+    );
 }
 
 #[test]

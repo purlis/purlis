@@ -49,7 +49,8 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. Seventy-nine names in fifteen groups:
+means. A hundred and nineteen colour names in twenty-three groups, and the typed tokens below
+them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -68,6 +69,31 @@ means. Seventy-nine names in fifteen groups:
 | `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active` | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`) |
 | `terminal.ansi.*`                      | the eight, and the eight bright                                                                 |                                                                                                   |
 | `icon.*`                               | `folder` `motive` `grey` `red` `orange` `yellow` `green` `teal` `blue` `purple` `pink`          | a file's or a folder's icon in a tree; the only colours an icon theme names (FM-3)                 |
+| `terminal.*` (#2327)                   | `selection-foreground` `selection-inactive` `scrollbar` `scrollbar-hover` `scrollbar-active`    | selected text (clear: each cell keeps its colour), a selection while the pane is unfocused, and the terminal's scrollbar at rest, under the pointer and held |
+| `syntax.*`                             | `keyword` `string` `number` `constant` `comment` `function` `type` `property` `attribute` `tag` `heading` `invalid` `variable` `operator` `punctuation` | code in the light editor (`editor/look.ts`), one colour per role, each with an italic and a bold flag |
+| `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                    | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)       |
+| `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                             | the window's text selection and its words, a field's caret and its placeholder; clear is the platform's |
+| `scrollbar.*`                          | `thumb` `track`                                                                                 | the window's scrollbars; a clear thumb is the platform's, and the track is drawn only with a thumb |
+| `chart.*`                              | `1` … `8`                                                                                       | a chart's series, a categorical palette: a chart draws one series today, in `chart.1`             |
+| `window.*`                             | `background`                                                                                    | what is behind everything, and the native window's colour before the first frame                  |
+
+**Tokens that are not colours** (#2327) sit in an appearance's `tokens` beside the colours, each
+held to its own type: `syntax.<role>.italic` and `syntax.<role>.bold` are `true` or `false`;
+`terminal.cursor-style` is `block`, `underline` or `bar`; `terminal.cursor-blink` and
+`terminal.bold-as-bright` are `true` or `false`; `terminal.line-height` is a number from 1 to 2.
+A value of the wrong type refuses the theme, as a colour that is not hex does.
+
+**A clear colour is the platform's, for six tokens** (#2327): `selection.background`,
+`selection.text`, `caret`, `placeholder`, `scrollbar.thumb` and `terminal.selection-foreground`
+fully clear (`#0000` or `#00000000`) mean "draw what purlis drew before a theme could say": the
+platform's selection, caret, placeholder and scrollbars, and each terminal cell's own colour when
+selected. The window writes no rule for one while it is clear (`data-theme-draws`), and the
+contrast check does not measure what the platform draws. Purlis Classic leaves all six clear.
+Purlis Classic gives every other new token the colour the window drew before it: a syntax role
+the ANSI colour the editor borrowed for it, a markdown link and `chart.1` the accent (and both
+turn with a workspace's colour, as the accent does), markdown's code, quotes and headings the
+words' colour, `window.background` the window's surface, and the terminal's extras xterm's own
+defaults.
 
 **Two tokens may look like one token and are not.** `needs-you.base` and `danger.base` were a
 single value before this — `--stop`, `#c05c5c`, "purlis's red" — and splitting them by meaning

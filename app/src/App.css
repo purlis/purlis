@@ -10,12 +10,40 @@
      size below is in rem or em, so the whole window scales from that one number. */
   line-height: var(--line-height-body);
   color: var(--text-primary);
-  background: var(--surface-base);
+  /* The window's own background (#2327), what the native window is painted in before the
+     first frame too. Purlis Classic's is its window surface. */
+  background: var(--window-background);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
+}
+
+/* **What the platform draws until a theme says otherwise** (#2327): the text selection and its
+   words, the caret in a field, a field's placeholder, and the scrollbars. A theme that leaves
+   one of these tokens fully clear leaves it to the platform, and `theme.apply` names the ones it
+   sets in `data-theme-draws`, so no rule here is written for the rest: Purlis Classic draws
+   them as the platform always has. `scrollbar-color` is inherited, so it is set once. The light
+   editor and the terminal draw their own selection and caret (`editor/look.ts`, xterm). */
+:root[data-theme-draws~="selection.background"] ::selection {
+  background-color: var(--selection-background);
+}
+
+:root[data-theme-draws~="selection.text"] ::selection {
+  color: var(--selection-text);
+}
+
+:root[data-theme-draws~="caret"] :is(input, textarea, [contenteditable]) {
+  caret-color: var(--caret);
+}
+
+:root[data-theme-draws~="placeholder"] ::placeholder {
+  color: var(--placeholder);
+}
+
+:root[data-theme-draws~="scrollbar.thumb"] {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* **Nothing in the window rubber-bands** — the operator: *"our charter app scroll now bouncing -
@@ -5838,8 +5866,32 @@ h2.sidebar-title .node-icon {
   margin: var(--space-1) 0;
 }
 
+/* A markdown render's own colours (#2327): its links, inline code, code blocks, quotes and
+   headings. Purlis Classic's link is the accent and the rest are the words' own colour. */
 .release-notes a {
-  color: var(--accent-base);
+  color: var(--markdown-link);
+}
+
+.release-notes code {
+  color: var(--markdown-code);
+}
+
+/* Code inside a link is the link's. */
+.release-notes a code {
+  color: inherit;
+}
+
+.release-notes pre,
+.release-notes pre code {
+  color: var(--markdown-code-block);
+}
+
+.release-notes blockquote {
+  color: var(--markdown-quote);
+}
+
+.release-notes :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--markdown-heading);
 }
 
 /* =====================================================================================
@@ -6955,9 +7007,10 @@ h2.sidebar-title .node-icon {
   overflow: hidden;
 }
 
+/* A chart's one series is the first of the chart palette (#2327). */
 .chart-bar {
   display: block;
-  background: var(--accent-base);
+  background: var(--chart-1);
 }
 
 /* Bars: label, track, value on one line each, the labels in a column of their own so every

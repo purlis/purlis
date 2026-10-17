@@ -32,7 +32,7 @@ const CLASSIC = join(
 
 type Appearance = {
   appearance: string;
-  tokens: Record<string, string>;
+  tokens: Record<string, string | boolean | number>;
   motion: Record<string, number | number[]>;
 };
 
@@ -46,10 +46,25 @@ function resolved(from: Appearance, at: number) {
     if (Array.isArray(value)) easings[token] = value;
     else durations[token] = value;
   }
+  // A token is a colour, or one that is not (#2327): a flag, the cursor's shape by name, or a
+  // number, as `purlis_core::theme::Typed` holds them.
+  const values: Record<string, string> = {};
+  const typed = {
+    flags: {} as Record<string, boolean>,
+    choices: {} as Record<string, string>,
+    numbers: {} as Record<string, number>,
+  };
+  for (const [token, value] of Object.entries(from.tokens)) {
+    if (typeof value === "boolean") typed.flags[token] = value;
+    else if (typeof value === "number") typed.numbers[token] = value;
+    else if (value.startsWith("#")) values[token] = value;
+    else typed.choices[token] = value;
+  }
   return {
     name: PICKS[at],
     appearance: from.appearance,
-    values: from.tokens,
+    values,
+    typed,
     motion: { durations, easings },
     // Classic names no icon set, so the rails draw the window's own marks (#2337).
     icons: {},

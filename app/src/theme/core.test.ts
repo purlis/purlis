@@ -8,7 +8,15 @@ import { describe, expect, it } from "vitest";
 import { VIEW_MARKS } from "../ActivityBar";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { DURATIONS, EASINGS } from "./motion";
-import { TINTED_TABS, TOKENS } from "./theme";
+import {
+  CLEAR_IS_UNSET,
+  CURSOR_STYLE,
+  CURSOR_STYLES,
+  FLAGS,
+  LINE_HEIGHT,
+  TINTED_TABS,
+  TOKENS,
+} from "./theme";
 import { PALETTE } from "./tint";
 
 /**
@@ -41,6 +49,17 @@ describe("the engine's vocabulary", () => {
 
   it("names the window's tokens, in the window's order", () => {
     expect(list(vocabulary, "TOKENS")).toEqual([...TOKENS]);
+  });
+
+  it("names the window's tokens that are not colours (#2327)", () => {
+    expect(list(vocabulary, "FLAGS")).toEqual([...FLAGS]);
+    expect(list(vocabulary, "CURSOR_STYLES")).toEqual([...CURSOR_STYLES]);
+    expect(vocabulary).toContain(`pub const CURSOR_STYLE: &str = "${CURSOR_STYLE}";`);
+    expect(vocabulary).toContain(`pub const LINE_HEIGHT: &str = "${LINE_HEIGHT}";`);
+  });
+
+  it("leaves the same tokens to the platform when they are clear (#2327)", () => {
+    expect(list(vocabulary, "CLEAR_IS_UNSET")).toEqual([...CLEAR_IS_UNSET]);
   });
 
   it("names the window's motion tokens", () => {

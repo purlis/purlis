@@ -22,7 +22,16 @@
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
-use super::{ResolvedTheme, tint, vocabulary::TOKENS};
+use super::vocabulary::{CLEAR_IS_UNSET, TOKENS, is_clear};
+use super::{ResolvedTheme, tint};
+
+/// What a clear token of [`CLEAR_IS_UNSET`] is measured as when it is drawn on something: selected
+/// text the theme leaves alone keeps the words' own colour. A clear token with no stand-in is the
+/// platform's, and a pair with one in it is not measured.
+const STANDS_IN: &[(&str, &str)] = &[
+    ("selection.text", "text.primary"),
+    ("terminal.selection-foreground", "terminal.foreground"),
+];
 
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
 /// a `back` that is a wash with alpha. A `front` with alpha is measured laid over the `back`.
@@ -241,6 +250,83 @@ pub const PAIRS: &[Pair] = &[
     p("text.secondary", "control.hover", TEXT),
     // - A vault's eye under the pointer: a muted mark on the control's hover.
     p("text.muted", "control.hover", 3.0),
+    // #2327: the tokens that are not the window's chrome.
+    // - The editor's code (`editor/look.ts`): each syntax role on the editor's ground and on the
+    //   line the caret is on. Held as the ANSI colours they were drawn in before are held: a mark
+    //   that has to be told apart, at 3:1.
+    p("syntax.keyword", "terminal.background", 3.0),
+    p("syntax.string", "terminal.background", 3.0),
+    p("syntax.number", "terminal.background", 3.0),
+    p("syntax.constant", "terminal.background", 3.0),
+    p("syntax.comment", "terminal.background", 3.0),
+    p("syntax.function", "terminal.background", 3.0),
+    p("syntax.type", "terminal.background", 3.0),
+    p("syntax.property", "terminal.background", 3.0),
+    p("syntax.attribute", "terminal.background", 3.0),
+    p("syntax.tag", "terminal.background", 3.0),
+    p("syntax.heading", "terminal.background", 3.0),
+    p("syntax.invalid", "terminal.background", 3.0),
+    p("syntax.variable", "terminal.background", 3.0),
+    p("syntax.operator", "terminal.background", 3.0),
+    p("syntax.punctuation", "terminal.background", 3.0),
+    p("syntax.keyword", "surface.hover", 3.0),
+    p("syntax.string", "surface.hover", 3.0),
+    p("syntax.number", "surface.hover", 3.0),
+    p("syntax.constant", "surface.hover", 3.0),
+    p("syntax.comment", "surface.hover", 3.0),
+    p("syntax.function", "surface.hover", 3.0),
+    p("syntax.type", "surface.hover", 3.0),
+    p("syntax.property", "surface.hover", 3.0),
+    p("syntax.attribute", "surface.hover", 3.0),
+    p("syntax.tag", "surface.hover", 3.0),
+    p("syntax.heading", "surface.hover", 3.0),
+    p("syntax.invalid", "surface.hover", 3.0),
+    p("syntax.variable", "surface.hover", 3.0),
+    p("syntax.operator", "surface.hover", 3.0),
+    p("syntax.punctuation", "surface.hover", 3.0),
+    // - A markdown render's link, code, quote and heading (`.release-notes`), words on the
+    //   window, a pane and a dialog.
+    p("markdown.link", "surface.base", TEXT),
+    p("markdown.link", "surface.raised", TEXT),
+    p("markdown.link", "surface.overlay", TEXT),
+    p("markdown.code", "surface.base", TEXT),
+    p("markdown.code", "surface.raised", TEXT),
+    p("markdown.code", "surface.overlay", TEXT),
+    p("markdown.code-block", "surface.base", TEXT),
+    p("markdown.code-block", "surface.raised", TEXT),
+    p("markdown.code-block", "surface.overlay", TEXT),
+    p("markdown.quote", "surface.base", TEXT),
+    p("markdown.quote", "surface.raised", TEXT),
+    p("markdown.quote", "surface.overlay", TEXT),
+    p("markdown.heading", "surface.base", TEXT),
+    p("markdown.heading", "surface.raised", TEXT),
+    p("markdown.heading", "surface.overlay", TEXT),
+    // - The window's own text selection, caret and placeholder, on a field's ground. A token
+    //   left clear is the platform's, which is not measured (`CLEAR_IS_UNSET`); clear selected
+    //   text keeps its own colour, measured as the window's words.
+    p("selection.text", "selection.background", TEXT).over("surface.base"),
+    p("placeholder", "surface.sunken", TEXT),
+    p("caret", "surface.sunken", 3.0),
+    // - A scrollbar's thumb on its track, laid over the window: a hairline's floor.
+    p("scrollbar.thumb", "scrollbar.track", 1.2).over("surface.base"),
+    // - A chart's bars, on the track they are drawn in: marks.
+    p("chart.1", "surface.sunken", 3.0),
+    p("chart.2", "surface.sunken", 3.0),
+    p("chart.3", "surface.sunken", 3.0),
+    p("chart.4", "surface.sunken", 3.0),
+    p("chart.5", "surface.sunken", 3.0),
+    p("chart.6", "surface.sunken", 3.0),
+    p("chart.7", "surface.sunken", 3.0),
+    p("chart.8", "surface.sunken", 3.0),
+    // - The terminal's selected text, focused and not, on the selection laid over the
+    //   terminal; clear, it keeps the cells' own colour, measured as the terminal's words.
+    p("terminal.selection-foreground", "terminal.selection", TEXT).over("terminal.background"),
+    p("terminal.selection-foreground", "terminal.selection-inactive", TEXT)
+        .over("terminal.background"),
+    // - The terminal's scrollbar, a hairline on the terminal.
+    p("terminal.scrollbar", "terminal.background", 1.2),
+    // - The window's own words are drawn on the window's background.
+    p("text.primary", "window.background", 4.5),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.
@@ -320,13 +406,16 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {
     for pair in PAIRS {
-        let back = theme.value(pair.back);
+        let Some((front, back)) = measured(theme, pair) else {
+            continue;
+        };
+        let back = theme.value(back);
         let drawn = match pair.under {
             Some(under) => onto(back, theme.value(under)),
             None => back.to_owned(),
         };
         // A see-through front is drawn laid over its ground, and measured as drawn.
-        let front = onto(theme.value(pair.front), &drawn);
+        let front = onto(theme.value(front), &drawn);
         let ratio = two_places(contrast(&front, &drawn));
         if ratio < pair.floor {
             findings.push(Finding::Contrast {
@@ -355,6 +444,22 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
             findings.push(Finding::SelectedNotApart { tint, other });
         }
     }
+}
+
+/// The tokens `pair` is measured between in `theme`: its own, a clear front's stand-in, or `None`
+/// when the platform draws one of them ([`CLEAR_IS_UNSET`]).
+fn measured(theme: &ResolvedTheme, pair: &Pair) -> Option<(&'static str, &'static str)> {
+    let unset = |token: &str| CLEAR_IS_UNSET.contains(&token) && is_clear(theme.value(token));
+    if unset(pair.back) {
+        return None;
+    }
+    if !unset(pair.front) {
+        return Some((pair.front, pair.back));
+    }
+    STANDS_IN
+        .iter()
+        .find(|(token, _)| *token == pair.front)
+        .map(|(_, stand_in)| (*stand_in, pair.back))
 }
 
 /// A ratio to two places, as it is said and compared: 4.495 is under 4.5 only once rounded.
