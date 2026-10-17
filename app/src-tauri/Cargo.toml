@@ -86,6 +86,16 @@ sha2 = "0.11"
 # notify-debouncer-full, which drops a file made and removed inside one fold (#1139).
 notify = "8.2"
 
+# The theme specimen's picture (#2330, `specimen.rs`): WebKit's own snapshot of the hidden
+# window's webview, as a PNG. The crates and versions wry already brings in on macOS, with the
+# few more of their features the snapshot and the PNG need, so nothing new is in the tree.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+block2 = "0.6"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
+
 # The desktop portal, asked on the session bus before GTK asks it (charter-app#24,
 # `portal.rs`). The version `tauri-plugin-single-instance` already brings in on Linux, so
 # nothing new is in the tree.

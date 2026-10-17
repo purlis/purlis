@@ -19,11 +19,10 @@
 //!
 //! **How it is drawn.** A hidden window of [`themepreview::WIDTH`] × [`themepreview::HEIGHT`]
 //! loads the page, which draws itself and then sets its title to [`READY`]; the webview is then
-//! photographed (`webkit_web_view_get_snapshot` on Linux, which paints the page in the web
-//! process rather than reading the screen, so a hidden window is drawn whole) and the window
-//! destroyed. macOS and Windows are told their webview takes no picture yet ([`photograph`]).
-//! One specimen at a time, each within [`themepreview::BUDGET`]; past it the window is closed
-//! and the ask answered no.
+//! photographed (WebKit's `takeSnapshotWithConfiguration` on macOS, `webkit_web_view_get_snapshot`
+//! on Linux, each of which paints the page in the web process rather than reading the screen,
+//! so a hidden window is drawn whole) and the window destroyed. One specimen at a time, each
+//! within [`themepreview::BUDGET`]; past it the window is closed and the ask answered no.
 
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Instant;
@@ -279,6 +278,80 @@ mod photograph {
 
     use super::Picture;
 
+    #[cfg(target_os = "macos")]
+    pub fn take(webview: tauri::webview::PlatformWebview, done: Sender<Result<Picture, String>>) {
+        let Some(main) = objc2::MainThreadMarker::new() else {
+            let _ = done.send(Err(
+                "the specimen was photographed off the main thread".into()
+            ));
+            return;
+        };
+        snapshot(&webview, main, done);
+    }
+
+    /// **WebKit's snapshot of the specimen's webview**, made a PNG and answered on `done`: one of
+    /// the workspace's audited blocks (see the workspace `Cargo.toml`).
+    #[cfg(target_os = "macos")]
+    #[allow(
+        unsafe_code,
+        reason = "the fourth audited block, WebKit's snapshot of the specimen; see the SAFETY comment"
+    )]
+    fn snapshot(
+        webview: &tauri::webview::PlatformWebview,
+        main: objc2::MainThreadMarker,
+        done: Sender<Result<Picture, String>>,
+    ) {
+        use objc2::rc::Retained;
+        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+        use objc2_foundation::{NSDictionary, NSError};
+        use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
+
+        // SAFETY: on macOS Tauri's platform webview is wry's `WKWebView`, a valid object for as
+        // long as its window, which is destroyed only after the snapshot answers; it is only
+        // borrowed here. Every call is made on the main thread (`main`), as WebKit and AppKit
+        // require. The configuration is made here and the block is copied by WebKit. The block's
+        // two pointers are WebKit's: each is null or a valid object for the call, and each is
+        // retained before it is read. `representationUsingType:properties:` is handed an empty
+        // dictionary of the key type it reads.
+        unsafe {
+            let view: &WKWebView = &*webview.inner().cast::<WKWebView>();
+            let configuration = WKSnapshotConfiguration::new(main);
+            // The page has said it is drawn; a hidden window has no screen update to wait for,
+            // and WebKit paints the snapshot in the web process from the page as it is.
+            configuration.setAfterScreenUpdates(false);
+            let handler = block2::RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+                let picture = match Retained::retain(image) {
+                    None => Err(Retained::retain(error).map_or_else(
+                        || "WebKit took no picture of the specimen".to_owned(),
+                        |error| {
+                            format!(
+                                "WebKit took no picture of the specimen: {}",
+                                error.localizedDescription()
+                            )
+                        },
+                    )),
+                    Some(image) => image
+                        .TIFFRepresentation()
+                        .and_then(|tiff| NSBitmapImageRep::imageRepWithData(&tiff))
+                        .and_then(|rep| {
+                            rep.representationUsingType_properties(
+                                NSBitmapImageFileType::PNG,
+                                &NSDictionary::new(),
+                            )
+                            .map(|png| Picture {
+                                png: png.to_vec(),
+                                width: u32::try_from(rep.pixelsWide()).unwrap_or(0),
+                                height: u32::try_from(rep.pixelsHigh()).unwrap_or(0),
+                            })
+                        })
+                        .ok_or_else(|| "the specimen's picture could not be made a PNG".to_owned()),
+                };
+                let _ = done.send(picture);
+            });
+            view.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &handler);
+        }
+    }
+
     #[cfg(target_os = "linux")]
     pub fn take(webview: tauri::webview::PlatformWebview, done: Sender<Result<Picture, String>>) {
         use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
@@ -310,10 +383,7 @@ mod photograph {
         );
     }
 
-    /// macOS takes its picture through WebKit's own snapshot, which is called through an
-    /// `unsafe` block, and the workspace holds exactly the audited blocks the operator allowed.
-    /// Until that one is allowed, a Mac is told it takes no picture, as other platforms are.
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     pub fn take(_: tauri::webview::PlatformWebview, done: Sender<Result<Picture, String>>) {
         let _ = done.send(Err(
             "this platform's webview takes no picture of the theme specimen yet".to_owned(),
