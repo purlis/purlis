@@ -209,7 +209,7 @@ pub(crate) fn through_a_link() -> Target {
 pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
     let kept = {
         let data = data.to_path_buf();
-        crate::sessionhost::Kept::opening(move || an_event_log(&data))
+        purlis_core::hookchannel::EventLog::opening(move || an_event_log(&data))
     };
     purlis_host::Hosting::kept(
         folder,

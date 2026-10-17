@@ -3032,7 +3032,7 @@ fn refuse_beside_the_old_app() {
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
         // The event log, opened as the host first holds a project (#2003).
-        let kept = sessionhost::Kept::on_this_machine();
+        let kept = purlis_core::hookchannel::EventLog::on_this_machine();
         let hosting = purlis_host::Hosting::kept(
             &place.credentials,
             sessionhost::Composes::shipped(),
