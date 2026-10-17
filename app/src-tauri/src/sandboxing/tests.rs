@@ -2069,7 +2069,8 @@ fn a_port_on_this_mac_is_one_port_for_this_chat_or_this_project_here() {
     }
     // An unaudited grant is no grant.
     assert!(refused("50795", GrantLevel::You).contains("event log"));
-    assert!(refused("50795", GrantLevel::Chat).contains("event log"));
+    // For a chat that is not open, refused before any audit is tried (#2454).
+    assert!(refused("50795", GrantLevel::Chat).contains("not open"));
     assert!(sandbox::local::granted_ports(project.path()).is_empty());
     assert!(!chats.holds_for(3, &sandbox::grant::What::Port(50795)));
 }
@@ -2338,5 +2339,182 @@ fn a_port_added_in_settings_is_audited_kept_and_listed_as_allowed() {
     assert_eq!(
         *seen.lock().unwrap(),
         [(None, true, "port".to_owned(), "50795".to_owned(), "you")]
+    );
+}
+
+// ---- an Allow for one chat is audited only once it is kept (#2454) ----
+
+/// Chats on a host that runs nothing, and one chat open on it.
+fn one_open_chat() -> (crate::chats::Chats, u32) {
+    let chats = crate::chats::Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(crate::host::pretend::Pretend::default()),
+        crate::chats::tests::no_project(),
+    );
+    let session = chats
+        .start(
+            &purlis_core::reopen::Chat {
+                program: "/nowhere/a-program-nothing-runs".to_owned(),
+                name: "ide.7".to_owned(),
+                ..Default::default()
+            },
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("the host opens it");
+    (chats, session)
+}
+
+/// What an audit was asked to write: the chat, the target and the level.
+type Seen = std::sync::Mutex<Vec<(Option<u32>, String, &'static str)>>;
+
+fn recording(
+    seen: &Seen,
+) -> impl Fn(Option<u32>, &sandbox::grant::Audited<'_>) -> Result<(), String> {
+    |chat, audited| {
+        seen.lock()
+            .unwrap()
+            .push((chat, audited.target.to_owned(), audited.level.word()));
+        Ok(())
+    }
+}
+
+/// The level a chat's grant of `what` `target` is listed at, if one holds it.
+fn held_at(
+    root: &std::path::Path,
+    chats: &crate::chats::Chats,
+    (what, target): (GrantWhat, &str),
+) -> Option<GrantLevel> {
+    grants_of(root, chats, &crate::chatbrowsers::ChatBrowsers::default())
+        .into_iter()
+        .find(|one| one.what == what && one.target == target && one.chat.is_some())
+        .map(|one| one.level)
+}
+
+const HOST: (GrantWhat, &str) = (GrantWhat::Host, "api.example.com");
+const SERVICE: (GrantWhat, &str) = (GrantWhat::Service, "com.example.helper");
+
+/// #2454: an Allow for one chat that is not open is refused before anything is audited, where
+/// the audit used to record an Allow that `hold_grant` then refused to keep.
+#[test]
+fn an_allow_for_a_chat_that_is_not_open_is_neither_audited_nor_kept() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let seen = Seen::default();
+    for ((what, target), level) in [
+        (HOST, GrantLevel::Chat),
+        (SERVICE, GrantLevel::Chat),
+        (SERVICE, GrantLevel::Once),
+    ] {
+        let refused = judged_and_kept(
+            project.path(),
+            &machine(),
+            &chats,
+            Some(3),
+            (what, target, level),
+            &recording(&seen),
+            100,
+        )
+        .expect_err("chat 3 is not open")
+        .to_string();
+        assert!(
+            refused.contains("not open"),
+            "{target} {level:?}: {refused}"
+        );
+    }
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "nothing refused is audited"
+    );
+    assert!(chats.chat_grants().is_empty());
+}
+
+/// #2454: an Allow for one open chat whose audit cannot be written keeps nothing, and a grant
+/// once that the audit could not make lasting stays once.
+#[test]
+fn an_allow_for_one_chat_that_cannot_be_audited_is_not_kept() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let (chats, session) = one_open_chat();
+    let allow = |(what, target): (GrantWhat, &str), level, audit: Audit<'_>| {
+        judged_and_kept(
+            root,
+            &machine(),
+            &chats,
+            Some(session),
+            (what, target, level),
+            audit,
+            100,
+        )
+    };
+    for (asked, level) in [
+        (HOST, GrantLevel::Chat),
+        (SERVICE, GrantLevel::Chat),
+        (SERVICE, GrantLevel::Once),
+    ] {
+        let refused = allow(asked, level, &no_audit())
+            .expect_err("unaudited")
+            .to_string();
+        assert!(
+            refused.contains("event log"),
+            "{asked:?} {level:?}: {refused}"
+        );
+        assert_eq!(held_at(root, &chats, asked), None, "{asked:?} {level:?}");
+    }
+    assert!(chats.chat_grants().is_empty());
+    let seen = Seen::default();
+    allow(SERVICE, GrantLevel::Once, &recording(&seen)).expect("allowed once");
+    allow(SERVICE, GrantLevel::Chat, &no_audit()).expect_err("unaudited");
+    assert_eq!(
+        held_at(root, &chats, SERVICE),
+        Some(GrantLevel::Once),
+        "an unaudited Allow for the chat leaves the grant once"
+    );
+}
+
+/// #2454: an Allow for one open chat is audited once and kept; allowed again it is neither kept
+/// nor audited twice, and a grant once made lasting for the chat is audited as such.
+#[test]
+fn an_allow_for_one_open_chat_is_audited_once_and_kept() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let (chats, session) = one_open_chat();
+    let seen = Seen::default();
+    let allow = |(what, target): (GrantWhat, &str), level| {
+        judged_and_kept(
+            root,
+            &machine(),
+            &chats,
+            Some(session),
+            (what, target, level),
+            &recording(&seen),
+            100,
+        )
+        .expect("allowed")
+        .2
+    };
+    assert!(!allow(HOST, GrantLevel::Chat).already);
+    assert!(allow(HOST, GrantLevel::Chat).already);
+    assert_eq!(held_at(root, &chats, HOST), Some(GrantLevel::Chat));
+    assert!(!allow(SERVICE, GrantLevel::Once).already);
+    assert!(allow(SERVICE, GrantLevel::Once).already);
+    assert!(
+        !allow(SERVICE, GrantLevel::Chat).already,
+        "once, made lasting"
+    );
+    assert!(
+        allow(SERVICE, GrantLevel::Once).already,
+        "lasting covers once"
+    );
+    assert_eq!(held_at(root, &chats, SERVICE), Some(GrantLevel::Chat));
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            (Some(session), "api.example.com".to_owned(), "chat"),
+            (Some(session), "com.example.helper".to_owned(), "once"),
+            (Some(session), "com.example.helper".to_owned(), "chat"),
+        ]
     );
 }
