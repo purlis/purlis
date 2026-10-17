@@ -4925,49 +4925,9 @@ fn the_host_s_stop(
     }
 }
 
-/// **The end state and cause of a chat's run whose program ended with `exit`**, stopped by the
-/// host for `by` where it was (ADR 0076 §2): a stop the host caused is `stopped` whatever the
-/// code says; otherwise code 0 is `completed` and anything else, a signal included, `failed`,
-/// for `exited`.
-pub(crate) fn how_its_run_ended(
-    by: Option<purlis_core::state::run::StopBy>,
-    exit: &purlis_core::session::Exit,
-) -> (
-    purlis_core::state::run::RunState,
-    purlis_core::state::run::Cause,
-) {
-    use purlis_core::state::run::{Cause, Exit, RunState};
-    if let Some(by) = by {
-        return (RunState::Stopped, Cause::Stop(by));
-    }
-    let exit = match hooks::code_of(exit) {
-        Some(code) => Exit::Code(code),
-        None => Exit::Signal,
-    };
-    let state = if exit == Exit::Code(0) {
-        RunState::Completed
-    } else {
-        RunState::Failed
-    };
-    (state, Cause::Exited(exit))
-}
-
-/// **Every sub-agent of chat `session` still live ends with its run** (ADR 0076 §6, #1084): a
-/// `run.ended` under each child run, in `state` for `cause`, written under the event log's
-/// lock. Nothing where none is live. A write that fails is warned of, and never holds up the
-/// rest of the chat's end.
-pub(crate) fn its_children_end(
-    events: &Mutex<purlis_core::eventlog::Recorder>,
-    plane: &Path,
-    session: u32,
-    state: purlis_core::state::run::RunState,
-    cause: purlis_core::state::run::Cause,
-) {
-    let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Err(why) = log.end_children_with(plane, session, state, cause) {
-        tracing::warn!("purlis: a sub-agent's end was not written to the event log ({why})");
-    }
-}
+/// What a chat's end leaves in the event log, read and written as both binaries' session hosts
+/// do (#2494).
+pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 
 #[cfg(test)]
 mod tests;
