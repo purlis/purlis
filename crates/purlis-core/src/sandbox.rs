@@ -5907,8 +5907,6 @@ mod claude_tests;
 #[cfg(test)]
 mod codex_tests;
 #[cfg(test)]
-mod egress_tests;
-#[cfg(test)]
 mod floor_tests;
 #[cfg(test)]
 mod hosts_tests;

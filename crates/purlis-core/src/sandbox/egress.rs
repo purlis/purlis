@@ -1673,3 +1673,6 @@ fn pump(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

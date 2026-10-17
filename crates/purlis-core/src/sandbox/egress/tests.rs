@@ -8,10 +8,10 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
-use super::egress::{
+use super::{
     Limits, MORE_COUNTED_AT_MOST, Proxy, REFUSALS_KEPT, Refusals, allows, allows_on, reachable,
 };
-use super::reach::{By, Reach};
+use crate::sandbox::reach::{By, Reach};
 
 /// A reach that lists nothing exactly: no local address is let through.
 fn none() -> Reach {
@@ -752,19 +752,19 @@ fn a_proxys_count_past_the_kept_hosts_stops_at_its_bound() {
 struct Heard {
     refused: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     local: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-    reached: std::sync::Arc<std::sync::Mutex<Vec<super::egress::Line>>>,
+    reached: std::sync::Arc<std::sync::Mutex<Vec<super::Line>>>,
 }
 
 impl Heard {
-    fn serving(&self, reach: Reach) -> super::egress::Serving {
+    fn serving(&self, reach: Reach) -> super::Serving {
         let push = |into: &std::sync::Arc<std::sync::Mutex<Vec<String>>>| {
             let into = std::sync::Arc::clone(into);
             std::sync::Arc::new(move |host: &str, port: u16| {
                 into.lock().unwrap().push(format!("{host}:{port}"));
-            }) as super::egress::Told
+            }) as super::Told
         };
         let reached = std::sync::Arc::clone(&self.reached);
-        super::egress::Serving {
+        super::Serving {
             refusals: Refusals::telling(push(&self.refused)).telling_local(push(&self.local)),
             reached: Some(std::sync::Arc::new(move |target, by, times| {
                 reached
@@ -772,7 +772,7 @@ impl Heard {
                     .unwrap()
                     .push((target.map(str::to_owned), by, times));
             })),
-            ..super::egress::Serving::of(reach)
+            ..super::Serving::of(reach)
         }
     }
 
@@ -784,7 +784,7 @@ impl Heard {
         self.local.lock().unwrap().clone()
     }
 
-    fn reached(&self) -> Vec<super::egress::Line> {
+    fn reached(&self) -> Vec<super::Line> {
         self.reached.lock().unwrap().clone()
     }
 }
@@ -849,7 +849,7 @@ fn a_socks_connect_to_a_listed_host_is_tunnelled_to() {
     let (listener, port) = an_echo_server();
     let echoed = echo_once(listener);
     let heard = Heard::default();
-    let proxy = Proxy::serving(super::egress::Serving {
+    let proxy = Proxy::serving(super::Serving {
         tunnel_ports: vec![port],
         ..heard.serving(Reach::of(vec![(exactly(port), By::You)]))
     })
@@ -974,8 +974,8 @@ fn a_connection_is_the_chat_whose_port_it_came_in_on_whatever_it_says() {
     assert_eq!(mine.reached(), [(Some(exactly(port)), "refused", 1)]);
 }
 
-fn heard_on(heard: &Heard, reach: Reach, port: u16) -> super::egress::Serving {
-    super::egress::Serving {
+fn heard_on(heard: &Heard, reach: Reach, port: u16) -> super::Serving {
+    super::Serving {
         tunnel_ports: vec![port],
         plain_ports: vec![port],
         ..heard.serving(reach)
@@ -1137,7 +1137,7 @@ fn the_connection_limit_counts_both_ports_together() {
 
 #[test]
 fn every_connection_carried_is_told_once_a_window_with_how_many() {
-    use super::egress::{TALLY_HOSTS, TALLY_WINDOW, Tally};
+    use super::{TALLY_HOSTS, TALLY_WINDOW, Tally};
     let start = std::time::Instant::now();
     let mut tally = Tally::default();
     let a = "registry.npmjs.org:443";
@@ -1181,7 +1181,7 @@ fn every_connection_carried_is_told_once_a_window_with_how_many() {
 /// since, so the record's line is timed at the window's end, not at the next connection.
 #[test]
 fn a_bursts_count_is_told_once_its_window_passes_with_no_connection_since() {
-    use super::egress::{TALLY_WINDOW, Tally};
+    use super::{TALLY_WINDOW, Tally};
     let start = std::time::Instant::now();
     let mut tally = Tally::default();
     let a = "registry.npmjs.org:443";
@@ -1213,9 +1213,9 @@ fn a_chats_profile_reaches_only_its_own_two_ports() {
     let (cwd, tmp) = (dir.path().join("chat"), dir.path().join("tmp"));
     std::fs::create_dir_all(&cwd).expect("cwd");
     std::fs::create_dir_all(&tmp).expect("tmp");
-    let profile = super::seatbelt::profile(
+    let profile = crate::sandbox::seatbelt::profile(
         &[],
-        &super::seatbelt::Own::default(),
+        &crate::sandbox::seatbelt::Own::default(),
         &cwd,
         &tmp,
         &[4040, 4041],
@@ -1241,14 +1241,14 @@ fn a_chats_profile_reaches_only_its_own_two_ports() {
 /// A proxy whose asks hold for `hold`, and the board the window answers on. `.invalid` never
 /// resolves (RFC 2606), so a held connection that is let on is answered 502 by the proxy trying
 /// it, and one that is refused 403 without a try: which of the two says what the hold decided.
-fn asking(hold: Duration) -> (Proxy, std::sync::Arc<super::asks::Asks>, Heard) {
+fn asking(hold: Duration) -> (Proxy, std::sync::Arc<crate::sandbox::asks::Asks>, Heard) {
     let heard = Heard::default();
-    let asks = std::sync::Arc::new(super::asks::Asks::timed(
+    let asks = std::sync::Arc::new(crate::sandbox::asks::Asks::timed(
         std::sync::Arc::new(|_| {}),
         hold,
         Duration::from_millis(20),
     ));
-    let proxy = Proxy::serving(super::egress::Serving {
+    let proxy = Proxy::serving(super::Serving {
         asks: Some(std::sync::Arc::clone(&asks)),
         ..heard.serving(none())
     })
@@ -1256,7 +1256,7 @@ fn asking(hold: Duration) -> (Proxy, std::sync::Arc<super::asks::Asks>, Heard) {
     (proxy, asks, heard)
 }
 
-fn until_held(asks: &super::asks::Asks) {
+fn until_held(asks: &crate::sandbox::asks::Asks) {
     for _ in 0..1000 {
         if asks.holding() == 1 {
             return;
@@ -1277,7 +1277,10 @@ fn a_held_tunnel_goes_on_the_moment_its_host_is_allowed() {
         )
     });
     until_held(&asks);
-    asks.allow(&super::hosts::Host::parse("held.invalid").unwrap(), By::You);
+    asks.allow(
+        &crate::sandbox::hosts::Host::parse("held.invalid").unwrap(),
+        By::You,
+    );
     // Carried: the proxy tried the host, which never resolves.
     assert_eq!(answered.join().unwrap(), "HTTP/1.1 502 Bad Gateway");
     assert!(heard.refused().is_empty(), "no Block for a host let on");
@@ -1290,7 +1293,7 @@ fn a_held_socks_connect_goes_on_the_moment_its_host_is_allowed() {
     let answered = std::thread::spawn(move || socks_connect(&mut client, "held.invalid", 443));
     until_held(&asks);
     asks.allow(
-        &super::hosts::Host::parse("held.invalid").unwrap(),
+        &crate::sandbox::hosts::Host::parse("held.invalid").unwrap(),
         By::Chat,
     );
     // Host unreachable: carried, and tried.
@@ -1317,7 +1320,10 @@ fn a_held_connection_nobody_answers_is_refused_recorded_and_told_to_retry_later(
             .any(|(target, by, _)| target.as_deref() == Some("held.invalid:443") && *by == "ask"),
     );
     assert!(heard.refused().is_empty());
-    let retry = asks.allow(&super::hosts::Host::parse("held.invalid").unwrap(), By::You);
+    let retry = asks.allow(
+        &crate::sandbox::hosts::Host::parse("held.invalid").unwrap(),
+        By::You,
+    );
     assert_eq!(retry, vec!["held.invalid:443".to_owned()]);
 }
 
@@ -1337,16 +1343,16 @@ fn without_a_board_an_ask_is_refused_at_once_as_before() {
 
 /// A chat's proxy as the app arms it (#1666, #1709): nothing listed when the chat started, and
 /// a board that holds an ask for `hold` and lets on at once a host the project's files allow
-/// already ([`super::grant::allowed_already`], read from disk at each connection). The board
+/// already ([`crate::sandbox::grant::allowed_already`], read from disk at each connection). The board
 /// tells what it asks into the list answered.
 fn armed_in(
     root: &std::path::Path,
     hold: Duration,
 ) -> (
     Proxy,
-    std::sync::Arc<super::asks::Asks>,
+    std::sync::Arc<crate::sandbox::asks::Asks>,
     Heard,
-    std::sync::Arc<std::sync::Mutex<Vec<super::asks::Heard>>>,
+    std::sync::Arc<std::sync::Mutex<Vec<crate::sandbox::asks::Heard>>>,
 ) {
     let heard = Heard::default();
     let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1356,13 +1362,13 @@ fn armed_in(
     };
     let root = root.to_path_buf();
     let asks = std::sync::Arc::new(
-        super::asks::Asks::timed(tell, hold, Duration::from_millis(20)).knowing(
+        crate::sandbox::asks::Asks::timed(tell, hold, Duration::from_millis(20)).knowing(
             std::sync::Arc::new(move |host| {
-                super::grant::allowed_already(&root, host).map(By::from)
+                crate::sandbox::grant::allowed_already(&root, host).map(By::from)
             }),
         ),
     );
-    let proxy = Proxy::serving(super::egress::Serving {
+    let proxy = Proxy::serving(super::Serving {
         asks: Some(std::sync::Arc::clone(&asks)),
         ..heard.serving(none())
     })
@@ -1390,7 +1396,7 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
         "[sandbox]\nhosts = [\"mine.invalid\"]\n",
     )
     .expect("this machine's file");
-    super::local::confirm_host(root.path(), "mine.invalid").expect("confirmed");
+    crate::sandbox::local::confirm_host(root.path(), "mine.invalid").expect("confirmed");
 
     for host in ["team.invalid", "mine.invalid"] {
         let started = std::time::Instant::now();
@@ -1422,7 +1428,7 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
     assert!(
         told.lock()
             .unwrap()
-            .contains(&super::asks::Heard::Asked(vec![
+            .contains(&crate::sandbox::asks::Heard::Asked(vec![
                 "other.invalid:443".to_owned()
             ])),
         "{:?}",
@@ -1434,10 +1440,10 @@ fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_ask
 
 /// A Claude Code chat's proxy holding `port` for the chat, as its start compiles it.
 fn holding(heard: &Heard, port: u16) -> Proxy {
-    Proxy::serving(super::egress::Serving {
+    Proxy::serving(super::Serving {
         any_port: true,
         ..heard.serving(Reach::of(
-            super::localport::reach_entries(port)
+            crate::sandbox::localport::reach_entries(port)
                 .into_iter()
                 .map(|entry| (entry, By::Chat))
                 .collect(),
@@ -1453,7 +1459,7 @@ fn this_mac_by_name_is_tunnelled_to_a_granted_port_and_each_connection_recorded(
     let heard = Heard::default();
     let proxy = holding(&heard, port);
     let mut client = to(&proxy);
-    let name = format!("{}:{port}", super::localport::THIS_MAC);
+    let name = format!("{}:{port}", crate::sandbox::localport::THIS_MAC);
     let said = status(
         &mut client,
         &format!("CONNECT {name} HTTP/1.1\r\nHost: {name}\r\n\r\n"),
@@ -1478,7 +1484,7 @@ fn this_mac_by_name_is_refused_on_a_port_not_granted_and_once_withdrawn() {
     let proxy = holding(&heard, port);
     let other = format!(
         "{}:{}",
-        super::localport::THIS_MAC,
+        crate::sandbox::localport::THIS_MAC,
         port.wrapping_add(1).max(1)
     );
     assert_eq!(
@@ -1489,7 +1495,7 @@ fn this_mac_by_name_is_refused_on_a_port_not_granted_and_once_withdrawn() {
         "HTTP/1.1 403 Forbidden"
     );
     proxy.withdraw_port(port);
-    let name = format!("{}:{port}", super::localport::THIS_MAC);
+    let name = format!("{}:{port}", crate::sandbox::localport::THIS_MAC);
     assert_eq!(
         status(&mut to(&proxy), &format!("CONNECT {name} HTTP/1.1\r\n\r\n")),
         "HTTP/1.1 403 Forbidden"
@@ -1515,7 +1521,7 @@ fn this_mac_by_name_is_refused_on_a_port_not_granted_and_once_withdrawn() {
 #[test]
 fn a_name_of_this_mac_is_pinned_to_loopback_at_connect_and_never_looked_up() {
     let reach = Reach::of(
-        super::localport::reach_entries(6443)
+        crate::sandbox::localport::reach_entries(6443)
             .into_iter()
             .map(|entry| (entry, By::Chat))
             .collect(),
@@ -1530,9 +1536,9 @@ fn a_name_of_this_mac_is_pinned_to_loopback_at_connect_and_never_looked_up() {
             vec![SocketAddr::from(([203, 0, 113, 5], port))]
         }
     };
-    for name in super::localport::NAMES_OF_THIS_MAC {
+    for name in crate::sandbox::localport::NAMES_OF_THIS_MAC {
         assert_eq!(
-            super::egress::addresses(name, 6443, &reach, &[], &rebinding),
+            super::addresses(name, 6443, &reach, &[], &rebinding),
             [SocketAddr::from(([127, 0, 0, 1], 6443))],
             "{name}"
         );
@@ -1541,12 +1547,12 @@ fn a_name_of_this_mac_is_pinned_to_loopback_at_connect_and_never_looked_up() {
     // Any other name is looked up at connect, and only its addresses a chat may reach are kept.
     asked.set(1);
     assert_eq!(
-        super::egress::addresses("evil.example", 6443, &reach, &[], &rebinding),
+        super::addresses("evil.example", 6443, &reach, &[], &rebinding),
         [SocketAddr::from(([203, 0, 113, 5], 6443))]
     );
     asked.set(0);
     assert_eq!(
-        super::egress::addresses("evil.example", 6443, &Reach::default(), &[], &rebinding),
+        super::addresses("evil.example", 6443, &Reach::default(), &[], &rebinding),
         Vec::<SocketAddr>::new()
     );
 }
