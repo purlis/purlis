@@ -1736,9 +1736,10 @@ pub(crate) struct Kept {
     pub already: bool,
 }
 
-/// **Keeps a grant [`judged`] made for chat `session`**: audited first, then kept where
-/// `level` keeps it, and the chat owed a restart on its conversation unless its proxy took it
-/// live (#1666). An audit that cannot be written keeps nothing.
+/// **Keeps a grant [`judged`] made for chat `session`**: audited, then kept where `level`
+/// keeps it, and the chat owed a restart on its conversation unless its proxy took it live
+/// (#1666). For the chat alone it is held first and audited after, so a chat that closed is
+/// refused before anything is audited (#2454). An audit that cannot be written keeps nothing.
 pub(crate) fn kept(
     root: &std::path::Path,
     chats: &crate::chats::Chats,
@@ -1784,10 +1785,23 @@ pub(crate) fn kept_for(
                 .to_owned(),
         );
     }
+    // **For one chat, held first and audited after** (#2454): the hold is the one check that
+    // the chat is open, made under the lock its closing takes, so a chat that closed is refused
+    // before anything is audited; and a hold whose audit cannot be written is let go, so no
+    // grant for a chat is ever kept unaudited. Allowed already is what the hold left as it was:
+    // a grant once that this Allow makes lasting is a new grant, and audited.
+    let held = match (level, session) {
+        (Level::Once | Level::Chat, Some(session)) => {
+            Some(chats.hold_grant_as(session, what.clone(), at, level == Level::Once)?)
+        }
+        _ => None,
+    };
     let already = match (what, level, session) {
         (What::Host(host), Level::You | Level::Project, _) => grant::allowed_already(root, host)
             .is_some_and(|held| held == level || held == Level::Project),
-        (_, Level::Once | Level::Chat, Some(session)) => chats.holds_for(session, what),
+        (_, Level::Once | Level::Chat, Some(_)) => {
+            held.as_ref().is_some_and(|held| !held.changed())
+        }
         (What::Socket(socket), Level::You, _) => {
             sandbox::local::granted_sockets(root).contains(socket)
         }
@@ -1803,8 +1817,8 @@ pub(crate) fn kept_for(
         (What::Port(port), Level::You, _) => sandbox::local::granted_ports(root).contains(port),
         _ => false,
     };
-    if !already {
-        audit(
+    if !already
+        && let Err(why) = audit(
             session,
             &grant::Audited {
                 granted: true,
@@ -1812,7 +1826,12 @@ pub(crate) fn kept_for(
                 target: &target,
                 level,
             },
-        )?;
+        )
+    {
+        if let Some(held) = held {
+            chats.let_go(held);
+        }
+        return Err(why);
     }
     let told = grant::told(what, level);
     // A Claude Code chat reaches a service on this Mac by name alone (qw384b): told which.
@@ -1823,9 +1842,8 @@ pub(crate) fn kept_for(
         _ => told,
     };
     match (what, level, session) {
-        (_, Level::Once, Some(session)) => chats.hold_grant_once(session, what.clone(), at)?,
-        (_, Level::Chat, Some(session)) => chats.hold_grant(session, what.clone(), at)?,
-        (_, Level::Once | Level::Chat, None) => {}
+        // Held above, before the audit.
+        (_, Level::Once | Level::Chat, _) => {}
         // For every project on this machine (R2): this machine's one file, with when it was
         // allowed, never a project's or a clone's.
         (What::Socket(socket), Level::Machine, _) => {
