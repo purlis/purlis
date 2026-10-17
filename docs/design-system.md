@@ -273,11 +273,12 @@ rewrites the file; the next pick made in Settings writes the new id.
   `high-contrast`, with their `tokens` and `motion`. One whose id its parent has layers over
   that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
   first appearance is what a theme draws when nothing chose another; following the system works
-  with any theme that has a dark and a light one, and a theme with only one says that following
-  the system stays there. A theme has at most 64.
+  with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
+  follows with Purlis Classic until Settings › Theme can say that following would stay in it
+  (#2331). A theme has at most 64.
 - **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
-  draws Purlis and says what is wrong. Geometry, fonts, icons, options and tint are not read yet,
-  so naming one refuses the theme.
+  draws Purlis and says what is wrong. Geometry and fonts (#2326), icons (#2337), options
+  (#2325) and tint (#2329) are not read yet, so naming one refuses the theme.
 
 **Format 1**, a single file with one appearance, keeps loading as a theme with that one
 appearance:
@@ -305,9 +306,11 @@ appearance:
 - **A partial theme is normal.** Name the tokens you are changing; the rest come from
   Purlis Classic's appearance of the same tag.
 - **A theme that breaks its grammar is refused whole, in either format and from any source**
-  (ADR 0097 §2): a value outside its type or bound, a token purlis does not have, or a file that
-  is not a theme. purlis draws Purlis in its place and a Notice names each value. A token the
-  theme does not name is not an error: it is Purlis Classic's.
+  (ADR 0097 §2): a value outside its type or bound, a key the format does not have, geometry,
+  or a file that is not a theme. purlis draws Purlis in its place and a Notice names each value.
+  A token the theme does not name is not an error: it is Purlis Classic's. A token or motion
+  name purlis does not have is said and left out, and the rest is drawn: a teammate's purlis may
+  know a token this one does not yet.
 - **Nothing in a theme file can stop the window.** The theme engine's `load` always answers with
   a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
   because a colour was spelled wrong is worse than every possible wrong colour.

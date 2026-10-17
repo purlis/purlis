@@ -13,4 +13,4 @@
 - **A theme with a value purlis cannot read is refused whole** (#2322, ADR 0097 §2), whichever
   format it is in and wherever it comes from: purlis draws its own theme and the Notice names
   each value, instead of drawing the theme with that value replaced. A token a theme does not
-  name is still purlis's, silently.
+  name is still purlis's, silently, and a token name purlis does not know is said and left out.

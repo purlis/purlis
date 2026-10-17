@@ -29,11 +29,13 @@
 //!   Purlis Classic's of its tag, so a theme holds only what it changes.
 //!
 //! **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): it draws
-//! Purlis, and every complaint says what is wrong. Geometry, fonts, icons, options and tint are
-//! not read yet (#2325, #2326), so naming one refuses the theme rather than drawing something
-//! other than what it says.
+//! Purlis, and every complaint says what is wrong. A token or motion name purlis does not have is
+//! said and left out instead: a name reaches nothing, and a teammate's purlis may know a token
+//! this one does not yet. Geometry and fonts (#2326), icons (#2337), options (#2325) and tint
+//! (#2329) are not read yet, so naming one refuses the theme rather than drawing something other
+//! than what it says.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{Map, Value};
@@ -54,14 +56,21 @@ pub const MOST_APPEARANCES: usize = 64;
 /// The most colours a palette may name.
 const MOST_COLOURS: usize = 256;
 
-/// The largest `theme.json` purlis reads.
-const MOST_BYTES: u64 = 512 * 1024;
+/// The largest `theme.json` purlis reads: the one cap every theme file is read under, the
+/// person's own included.
+const MOST_BYTES: u64 = crate::windowprefs::MAX_BYTES;
 
 /// The keys of a format 2 `theme.json` this purlis reads.
 const KEYS: &[&str] = &["$schema", "name", "extends", "palette", "appearances"];
 
-/// The keys the spec gives format 2 that this purlis does not read yet.
-const NOT_YET: &[&str] = &["fonts", "icons", "options", "tint"];
+/// The keys the spec gives format 2 that this purlis does not read yet, each with the ticket
+/// that reads it: fonts #2326, icons #2337, options #2325, tint #2329.
+const NOT_YET: &[(&str, &str)] = &[
+    ("fonts", "#2326"),
+    ("icons", "#2337"),
+    ("options", "#2325"),
+    ("tint", "#2329"),
+];
 
 /// The keys of an appearance.
 const APPEARANCE_KEYS: &[&str] = &["id", "appearance", "high-contrast", "tokens", "motion"];
@@ -82,8 +91,12 @@ pub(super) fn is_name(name: &str) -> bool {
 /// their ids (a folder's name). Purlis Classic's ids are its own: no folder takes them.
 #[derive(Debug, Clone, Default)]
 pub struct Library {
-    folders: BTreeMap<String, Value>,
+    /// Each folder's `theme.json`, or why it could not be read.
+    folders: BTreeMap<String, Result<Value, String>>,
 }
+
+/// A theme read: the theme, and the names it gave that purlis left out.
+type Read = (Theme, Vec<Complaint>);
 
 /// Why a theme could not be read.
 struct Refused {
@@ -119,21 +132,18 @@ impl Library {
     /// The library with `document` as the theme `id`.
     #[must_use]
     pub fn with(mut self, id: impl Into<String>, document: Value) -> Self {
-        self.folders.insert(id.into(), document);
+        self.folders.insert(id.into(), Ok(document));
         self
     }
 
-    /// The library with the theme folder at `folder`, by its name. A folder whose `theme.json`
-    /// cannot be read is held as nothing, and a theme that extends it is told so.
+    /// The library with the theme folder `name` inside `themes`, a level's `themes/` folder. A
+    /// folder whose `theme.json` cannot be read is held with why, and a theme that extends it is
+    /// told that.
     #[must_use]
-    pub fn with_folder(self, folder: &Path) -> Self {
-        let Some(id) = folder.file_name().and_then(|name| name.to_str()) else {
-            return self;
-        };
-        match read_folder(folder) {
-            Ok(document) => self.with(id, document),
-            Err(_) => self,
-        }
+    pub fn with_folder(mut self, themes: &Path, name: &str) -> Self {
+        self.folders
+            .insert(name.to_owned(), read_folder(themes, name));
+        self
     }
 
     /// **Reads one theme document**, `id` the theme's own id when it has one (a folder's name),
@@ -147,9 +157,9 @@ impl Library {
         }
         let mut path: Vec<String> = id.into_iter().map(str::to_owned).collect();
         match self.format_2(from, &mut path) {
-            Ok(theme) => Resolved {
+            Ok((theme, notes)) => Resolved {
                 theme,
-                complaints: Vec::new(),
+                complaints: notes,
                 refused: false,
             },
             Err(refused) => Resolved::refusal(refused.complaints),
@@ -159,34 +169,34 @@ impl Library {
     /// [`Self::load`] of the theme the library holds as `id`.
     pub fn load_id(&self, id: &str) -> Resolved {
         match self.folders.get(id) {
-            Some(document) => self.load(Some(id), document),
+            Some(Ok(document)) => self.load(Some(id), document),
+            Some(Err(why)) => Resolved::refusal(vec![Complaint::said(why.clone())]),
             None => Resolved::refusal(vec![Complaint::said(format!(
                 "\"{id}\" is not a theme purlis has"
             ))]),
         }
     }
 
-    /// **Reads the theme folder at `folder`**: its `theme.json`, which may sit alone or beside
-    /// `fonts/`, `icons/`, a preview and a licence. Its id is the folder's name.
-    pub fn load_folder(&self, folder: &Path) -> Resolved {
-        match read_folder(folder) {
-            Ok(document) => self.load(folder.file_name().and_then(|name| name.to_str()), &document),
+    /// **Reads the theme folder `name` inside `themes`**, a level's `themes/` folder: its
+    /// `theme.json`, which may sit alone or beside `fonts/`, `icons/`, a preview and a licence.
+    /// Its id is `name`. A folder that is a link, a name that is not one plain folder name, and
+    /// a `theme.json` that is a link, not a plain file, or larger than the cap are refused.
+    pub fn load_folder(&self, themes: &Path, name: &str) -> Resolved {
+        match read_folder(themes, name) {
+            Ok(document) => self.load(Some(name), &document),
             Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
         }
     }
 
     /// A format 2 theme, or why not. `path` is the ids of the themes being read, the one that
     /// extends first, so a circle is seen when it closes.
-    fn format_2(
-        &self,
-        from: &Map<String, Value>,
-        path: &mut Vec<String>,
-    ) -> Result<Theme, Refused> {
+    fn format_2(&self, from: &Map<String, Value>, path: &mut Vec<String>) -> Result<Read, Refused> {
         let mut complaints = Vec::new();
+        let mut notes = Vec::new();
         for key in from.keys() {
-            if NOT_YET.contains(&key.as_str()) {
+            if let Some((_, ticket)) = NOT_YET.iter().find(|(it, _)| it == key) {
                 complaints.push(Complaint::said(format!(
-                    "{key} is not read by this purlis yet, so the theme cannot be drawn as written"
+                    "{key} is not read yet ({ticket}), so the theme cannot be drawn as written"
                 )));
             } else if !KEYS.contains(&key.as_str()) {
                 complaints.push(Complaint::said(format!("{key} is not a key of theme.json")));
@@ -209,7 +219,10 @@ impl Library {
         let mut appearances: Vec<ResolvedTheme> = match from.get("extends") {
             None => Vec::new(),
             Some(Value::String(parent)) => match self.parent(parent, path) {
-                Ok(theme) => theme.appearances,
+                Ok((theme, parents)) => {
+                    notes.extend(from_theme(parent, parents));
+                    theme.appearances
+                }
                 Err(refused) if refused.why == Why::Circle => return Err(refused),
                 Err(refused) if refused.why == Why::Missing => {
                     complaints.push(Complaint::said(format!(
@@ -221,7 +234,7 @@ impl Library {
                     complaints.push(Complaint::said(format!(
                         "{called} extends \"{parent}\", which purlis cannot draw"
                     )));
-                    complaints.extend(refused.complaints);
+                    complaints.extend(from_theme(parent, refused.complaints));
                     Vec::new()
                 }
             },
@@ -239,8 +252,16 @@ impl Library {
                 &[]
             }
         };
+        // The cap is held before anything is read, so a list of any length costs one count.
+        if given.len() > MOST_APPEARANCES {
+            complaints.push(Complaint::said(format!(
+                "{called} has {} appearances, and a theme has at most {MOST_APPEARANCES}",
+                given.len()
+            )));
+            return Err(Refused::because(complaints));
+        }
         let inherited = appearances.len();
-        let mut seen: Vec<String> = Vec::new();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
                 complaints.push(Complaint::said(format!(
@@ -252,11 +273,10 @@ impl Library {
             let Some(id) = appearance_id(one, at, &mut complaints) else {
                 continue;
             };
-            if seen.contains(&id) {
+            if !seen.insert(id.clone()) {
                 complaints.push(Complaint::said(format!("two appearances are called {id}")));
                 continue;
             }
-            seen.push(id.clone());
             let parents = appearances[..inherited].iter().position(|it| it.id == id);
             let layered = appearance(
                 one,
@@ -264,6 +284,7 @@ impl Library {
                 parents.map(|at| &appearances[at]),
                 &palette,
                 &mut complaints,
+                &mut notes,
             );
             match (layered, parents) {
                 (Some(layered), Some(at)) => appearances[at] = layered,
@@ -274,9 +295,11 @@ impl Library {
         if appearances.is_empty() && complaints.is_empty() {
             complaints.push(Complaint::said(format!("{called} has no appearance")));
         }
+        // A parent's appearances and this theme's new ones are held to the cap together.
         if appearances.len() > MOST_APPEARANCES {
             complaints.push(Complaint::said(format!(
-                "{called} has {} appearances, and a theme has at most {MOST_APPEARANCES}",
+                "{called} has {} appearances with the theme it extends, and a theme has at most \
+                 {MOST_APPEARANCES}",
                 appearances.len()
             )));
         }
@@ -286,11 +309,11 @@ impl Library {
         for one in &mut appearances {
             one.name.clone_from(&name);
         }
-        Ok(Theme { name, appearances })
+        Ok((Theme { name, appearances }, notes))
     }
 
     /// The theme `parent` names, read, or why not.
-    fn parent(&self, parent: &str, path: &mut Vec<String>) -> Result<Theme, Refused> {
+    fn parent(&self, parent: &str, path: &mut Vec<String>) -> Result<Read, Refused> {
         if path.iter().any(|id| id == parent) {
             let from = path.iter().position(|id| id == parent).unwrap_or_default();
             let mut circle: Vec<&str> = path[from..].iter().map(String::as_str).collect();
@@ -304,13 +327,17 @@ impl Library {
             });
         }
         if is_classic(parent) {
-            return Ok(classic().clone());
+            return Ok((classic().clone(), Vec::new()));
         }
-        let Some(document) = self.folders.get(parent) else {
-            return Err(Refused {
-                complaints: Vec::new(),
-                why: Why::Missing,
-            });
+        let document = match self.folders.get(parent) {
+            None => {
+                return Err(Refused {
+                    complaints: Vec::new(),
+                    why: Why::Missing,
+                });
+            }
+            Some(Err(why)) => return Err(Refused::because(vec![Complaint::said(why.clone())])),
+            Some(Ok(document)) => document,
         };
         let Some(from) = document.as_object() else {
             return Err(Refused::because(vec![Complaint::said(
@@ -319,10 +346,10 @@ impl Library {
         };
         if !is_format_2(from) {
             let loaded = load_format_1(from);
-            return if loaded.complaints.is_empty() {
-                Ok(loaded.theme)
-            } else {
+            return if loaded.refused {
                 Err(Refused::because(loaded.complaints))
+            } else {
+                Ok((loaded.theme, loaded.complaints))
             };
         }
         path.push(parent.to_owned());
@@ -340,13 +367,27 @@ fn is_classic(id: &str) -> bool {
             .any(|name| name.recognises(id) || name.write == id)
 }
 
-/// A folder's `theme.json`, parsed, or why not. Read without following a link, as a plain file
-/// and under a size cap: a theme folder may be anybody's.
-fn read_folder(folder: &Path) -> Result<Value, String> {
+/// The theme folder `name` inside `themes`'s `theme.json`, parsed, or why not. `themes` is the
+/// containment root: `name` is one plain folder name, nothing on the way from `themes` to the
+/// file is a link, the file is a plain file under the cap, and the read itself stops at the cap.
+/// A theme folder may be anybody's.
+fn read_folder(themes: &Path, name: &str) -> Result<Value, String> {
     use std::io::Read;
+    let plain = !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\'])
+        && Path::new(name).components().count() == 1;
+    if !plain {
+        return Err(format!(
+            "{} is not the name of a theme folder",
+            stringify(&Value::String(name.to_owned()))
+        ));
+    }
+    let folder = themes.join(name);
     let file = folder.join(THEME_JSON);
     let shown = file.display();
-    let mut open = match crate::contain::open_no_link(folder, &file) {
+    let mut open = match crate::contain::open_no_link(themes, &file) {
         Ok(open) => open,
         Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => {
             return Err(format!("{} has no {THEME_JSON}", folder.display()));
@@ -359,16 +400,37 @@ fn read_folder(folder: &Path) -> Result<Value, String> {
     if !found.file_type().is_file() {
         return Err(format!("{shown} is not a plain file"));
     }
+    let too_big = |bytes: u64| {
+        format!("{shown} is {bytes} bytes, and a theme is never larger than {MOST_BYTES}")
+    };
     if found.len() > MOST_BYTES {
-        return Err(format!(
-            "{shown} is {} bytes, and a theme is never larger than {MOST_BYTES}",
-            found.len()
-        ));
+        return Err(too_big(found.len()));
     }
+    // The file can grow after its size was asked: the read stops one byte past the cap.
     let mut text = String::new();
-    open.read_to_string(&mut text)
+    (&mut open)
+        .take(MOST_BYTES + 1)
+        .read_to_string(&mut text)
         .map_err(|why| format!("purlis could not read {shown}: {why}"))?;
-    serde_json::from_str(&text).map_err(|why| format!("{shown} is not JSON: {why}"))
+    if text.len() as u64 > MOST_BYTES {
+        return Err(too_big(text.len() as u64));
+    }
+    match super::load_text_document(&text) {
+        Ok(document) => Ok(document),
+        Err(why) => Err(format!("{shown}: {why}")),
+    }
+}
+
+/// `complaints` said about the theme `id`, each saying so: a parent's complaints reach its child
+/// and keep their source.
+fn from_theme(id: &str, complaints: Vec<Complaint>) -> Vec<Complaint> {
+    complaints
+        .into_iter()
+        .map(|one| Complaint {
+            said: format!("in \"{id}\": {}", one.said),
+            ..one
+        })
+        .collect()
 }
 
 /// A theme's palette, each name to its hex, saying what is wrong with any of it.
@@ -439,6 +501,7 @@ fn appearance(
     parent: Option<&ResolvedTheme>,
     palette: &BTreeMap<String, String>,
     complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
 ) -> Option<ResolvedTheme> {
     let before = complaints.len();
     for key in one.keys() {
@@ -496,14 +559,19 @@ fn appearance(
         Some(Value::Object(tokens)) => {
             for (token, value) in tokens {
                 let Some(known) = TOKENS.iter().copied().find(|it| *it == token) else {
-                    complaints.push(Complaint::about(
-                        token,
-                        if names_geometry(token) {
-                            format!("{token} in appearance {id} {GEOMETRY_IS_CORE}")
-                        } else {
-                            format!("{token} in appearance {id} is not a purlis token")
-                        },
-                    ));
+                    if names_geometry(token) {
+                        complaints.push(Complaint::about(
+                            token,
+                            format!("{token} in appearance {id} {GEOMETRY_IS_CORE}"),
+                        ));
+                    } else {
+                        notes.push(Complaint::about(
+                            token,
+                            format!(
+                                "{token} in appearance {id} is not a purlis token, so it is left out"
+                            ),
+                        ));
+                    }
                     continue;
                 };
                 match colour(value, palette) {
@@ -526,7 +594,7 @@ fn appearance(
         ))),
     }
     let mut said = Vec::new();
-    let motion = load_motion(one.get("motion"), &base.motion, &mut said);
+    let motion = load_motion(one.get("motion"), &base.motion, &mut said, notes);
     complaints.extend(said);
     if complaints.len() != before {
         return None;

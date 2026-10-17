@@ -206,15 +206,31 @@ fn a_token_the_file_did_not_mention_is_the_built_in_s_silently() {
 }
 
 #[test]
-fn a_token_purlis_does_not_have_is_named() {
-    let resolved = load(&file(json!({ "tokens": { "gray.800": "#123456" } })));
-    assert!(resolved.refused);
+fn a_token_purlis_does_not_have_is_named_and_left_out_and_the_rest_is_drawn() {
+    // A name reaches nothing, and a teammate's purlis may have a token this one does not.
+    let resolved = load(&file(json!({ "tokens": {
+        "gray.800": "#123456", "accent.base": "#654321"
+    } })));
+    assert!(!resolved.refused);
+    assert_eq!(resolved.theme.first().value("accent.base"), "#654321");
+    assert!(!resolved.theme.first().values.contains_key("gray.800"));
     assert_eq!(
         resolved.complaints,
         [Complaint {
-            said: "gray.800 is not a purlis token".to_owned(),
+            said: "gray.800 is not a purlis token, so it is left out".to_owned(),
             token: Some("gray.800".to_owned()),
         }]
+    );
+}
+
+#[test]
+fn a_key_format_1_does_not_have_refuses_the_theme() {
+    // A misspelled key is not read as anything: `appearences` is not format 2's `appearances`.
+    let resolved = load(&json!({ "name": "Typo", "appearences": [], "tokens": {} }));
+    assert!(resolved.refused);
+    assert_eq!(
+        said(&resolved),
+        ["appearences is not a key of a theme file"]
     );
 }
 
@@ -225,13 +241,9 @@ fn geometry_is_refused_by_key_and_never_read() {
         "geometry": { "space.4": 99 },
     })));
     let said = said(&resolved);
-    assert!(
-        said.contains(
-            &"space.4 is geometry, which is the same in every theme; a theme sets colour, shadow \
-          colour and motion"
-                .to_owned()
-        )
-    );
+    assert!(said.contains(
+        &"space.4 is geometry, which this purlis does not read from a theme yet (#2326)".to_owned()
+    ));
     assert!(
         said.iter()
             .any(|one| one.starts_with("radius.md is geometry"))
@@ -426,7 +438,11 @@ fn motion_that_is_not_an_object_or_names_no_token_is_said() {
     );
     let resolved = load(&json!({ "name": "x", "appearance": "dark",
         "motion": { "duration.200": 200 } }));
-    assert!(said(&resolved).contains(&"duration.200 is not a purlis motion token".to_owned()));
+    assert!(!resolved.refused);
+    assert_eq!(
+        said(&resolved),
+        ["duration.200 is not a purlis motion token, so it is left out"]
+    );
 }
 
 #[test]
@@ -640,7 +656,7 @@ fn an_extension_pick_draws_its_theme_only_while_the_extension_is_on() {
 }
 
 #[test]
-fn an_extension_theme_that_is_not_json_draws_purlis_and_says_why_picked_or_not() {
+fn an_extension_theme_that_is_not_json_is_passed_over_unless_it_was_picked() {
     let acme = ["acme".to_owned()];
     let only_broken =
         || -> Arc<[Offered]> { Arc::from(vec![Offered::of("acme".into(), "Broken".into(), "{")]) };
@@ -653,8 +669,31 @@ fn an_extension_theme_that_is_not_json_draws_purlis_and_says_why_picked_or_not()
         },
         only_broken,
     );
+    // Nothing else in force: Purlis, with nothing to say about a theme nobody picked.
     assert_eq!(unpicked.theme.as_ref(), Some(default_theme()));
-    assert_eq!(unpicked.complaints.len(), 1);
+    assert!(unpicked.complaints.is_empty());
+    // A refused theme does not stand in front of the next one in force.
+    let then_good = || -> Arc<[Offered]> {
+        Arc::from(vec![
+            Offered::of("acme".into(), "Broken".into(), "{"),
+            Offered::of(
+                "acme".into(),
+                "Good".into(),
+                &json!({ "name": "Good", "appearance": "dark" }).to_string(),
+            ),
+        ])
+    };
+    let skipped = resolve(
+        &Inputs {
+            pick: None,
+            theirs: None,
+            on: On::Only(&acme),
+            system: Appearance::Dark,
+        },
+        then_good,
+    );
+    assert_eq!(name_of(&skipped), Some("Good"));
+    // Picked, it draws Purlis and says why.
     let picked = drawn(Some("acme/Broken"), None, On::Every);
     assert_eq!(name_of(&picked), Some("purlis-dark"));
     assert_eq!(picked.complaints.len(), 1);

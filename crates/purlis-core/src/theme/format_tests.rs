@@ -158,6 +158,22 @@ fn a_format_1_file_loads_as_a_theme_with_one_appearance() {
 }
 
 #[test]
+fn purlis_classic_by_its_own_id_is_its_first_appearance_for_a_pick_and_a_lookup() {
+    assert_eq!(built_in(CLASSIC), Some(classic_dark()));
+    assert_eq!(Pick::parse(CLASSIC), Some(Pick::BuiltIn(CLASSIC)));
+    let it = resolve(
+        &Inputs {
+            pick: Some(&Pick::BuiltIn(CLASSIC)),
+            theirs: None,
+            on: On::Every,
+            system: Appearance::Light,
+        },
+        || unreachable!("no survey for a built-in"),
+    );
+    assert_eq!(it.theme.as_ref(), Some(classic_dark()));
+}
+
+#[test]
 fn the_old_ids_draw_purlis_classic_s_appearances() {
     for (old, appearance) in [
         ("purlis-dark", Appearance::Dark),
@@ -365,12 +381,13 @@ fn a_refused_parent_refuses_its_child_and_says_why() {
     let library = Library::new().with("bad", dark_only("Bad", json!({ "accent.base": "nope" })));
     let loaded = library.load(Some("kid"), &json!({ "name": "Kid", "extends": "bad" }));
     assert!(loaded.refused);
+    // The parent's complaint keeps its source.
     assert_eq!(
         said(&loaded),
         [
             "Kid extends \"bad\", which purlis cannot draw",
-            "accent.base in appearance dark is \"nope\", which is neither a hex colour nor a \
-             name in this theme's palette",
+            "in \"bad\": accent.base in appearance dark is \"nope\", which is neither a hex \
+             colour nor a name in this theme's palette",
         ]
     );
 }
@@ -458,12 +475,33 @@ fn geometry_fonts_icons_options_and_tint_stay_refused_for_now() {
     assert_eq!(
         said(&loaded),
         [
-            "fonts is not read by this purlis yet, so the theme cannot be drawn as written",
-            "icons is not read by this purlis yet, so the theme cannot be drawn as written",
-            "options is not read by this purlis yet, so the theme cannot be drawn as written",
-            "tint is not read by this purlis yet, so the theme cannot be drawn as written",
-            "radius.md in appearance dark is geometry, which is the same in every theme; a theme \
-             sets colour, shadow colour and motion",
+            "fonts is not read yet (#2326), so the theme cannot be drawn as written",
+            "icons is not read yet (#2337), so the theme cannot be drawn as written",
+            "options is not read yet (#2325), so the theme cannot be drawn as written",
+            "tint is not read yet (#2329), so the theme cannot be drawn as written",
+            "radius.md in appearance dark is geometry, which this purlis does not read from a \
+             theme yet (#2326)",
+        ]
+    );
+}
+
+#[test]
+fn a_token_or_motion_name_purlis_does_not_have_is_left_out_and_said() {
+    let loaded = load(&json!({
+        "name": "Ahead",
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": { "syntax.keyword": "#ff00ff", "accent.base": "#123456" },
+            "motion": { "duration.linger": 400 }
+        }]
+    }));
+    assert!(!loaded.refused);
+    assert_eq!(loaded.theme.first().value("accent.base"), "#123456");
+    assert_eq!(
+        said(&loaded),
+        [
+            "syntax.keyword in appearance dark is not a purlis token, so it is left out",
+            "duration.linger is not a purlis motion token, so it is left out",
         ]
     );
 }
@@ -504,7 +542,7 @@ fn a_theme_folder_is_its_theme_json_and_may_carry_more() {
     std::fs::write(folder.join("LICENSE"), "MIT").unwrap();
     std::fs::write(folder.join("preview.png"), [0u8; 4]).unwrap();
     std::fs::write(folder.join("theme.json"), both("Dusk").to_string()).unwrap();
-    let loaded = Library::new().load_folder(&folder);
+    let loaded = Library::new().load_folder(dir.path(), "dusk");
     assert_eq!(said(&loaded), Vec::<String>::new());
     assert_eq!(loaded.theme.name, "Dusk");
     assert_eq!(loaded.theme.appearances.len(), 2);
@@ -513,13 +551,14 @@ fn a_theme_folder_is_its_theme_json_and_may_carry_more() {
 #[test]
 fn a_lone_colours_only_theme_json_is_still_a_theme_folder() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("lone")).unwrap();
     std::fs::write(
-        dir.path().join("theme.json"),
+        dir.path().join("lone/theme.json"),
         json!({ "name": "Lone", "appearance": "dark", "tokens": { "accent.base": "#abcdef" } })
             .to_string(),
     )
     .unwrap();
-    let loaded = Library::new().load_folder(dir.path());
+    let loaded = Library::new().load_folder(dir.path(), "lone");
     assert_eq!(said(&loaded), Vec::<String>::new());
     assert_eq!(loaded.theme.first().value("accent.base"), "#abcdef");
 }
@@ -527,7 +566,8 @@ fn a_lone_colours_only_theme_json_is_still_a_theme_folder() {
 #[test]
 fn a_folder_without_a_readable_theme_json_is_refused_and_said() {
     let dir = tempfile::tempdir().unwrap();
-    let missing = Library::new().load_folder(dir.path());
+    std::fs::create_dir(dir.path().join("empty")).unwrap();
+    let missing = Library::new().load_folder(dir.path(), "empty");
     assert!(missing.refused);
     assert_eq!(missing.complaints.len(), 1);
     assert!(
@@ -536,14 +576,89 @@ fn a_folder_without_a_readable_theme_json_is_refused_and_said() {
         said(&missing)
     );
 
-    std::fs::write(dir.path().join("theme.json"), "{ nope").unwrap();
-    let broken = Library::new().load_folder(dir.path());
+    std::fs::write(dir.path().join("empty/theme.json"), "{ nope").unwrap();
+    let broken = Library::new().load_folder(dir.path(), "empty");
     assert!(broken.refused);
-    assert!(
-        broken.complaints[0].said.contains("is not JSON"),
-        "{:?}",
-        said(&broken)
+    // The sentence every source says about text that is not JSON.
+    let one = &broken.complaints[0].said;
+    assert_eq!(
+        one.rsplit_once("theme.json: ").map(|(_, it)| it),
+        Some(load_text("{ nope").complaints[0].said.as_str())
     );
+}
+
+#[test]
+fn a_theme_json_past_the_cap_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("big")).unwrap();
+    let padding = " ".repeat(usize::try_from(crate::windowprefs::MAX_BYTES).unwrap());
+    std::fs::write(
+        dir.path().join("big/theme.json"),
+        format!("{}{padding}", both("Big")),
+    )
+    .unwrap();
+    let loaded = Library::new().load_folder(dir.path(), "big");
+    assert!(loaded.refused);
+    assert!(
+        loaded.complaints[0]
+            .said
+            .contains("never larger than 65536"),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
+fn a_folder_name_is_one_plain_name_inside_the_level_s_themes_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let themes = dir.path().join("themes");
+    std::fs::create_dir(&themes).unwrap();
+    std::fs::create_dir(dir.path().join("outside")).unwrap();
+    std::fs::write(
+        dir.path().join("outside/theme.json"),
+        both("Out").to_string(),
+    )
+    .unwrap();
+    for name in ["..", ".", "", "../outside", "a/b", "/abs"] {
+        let loaded = Library::new().load_folder(&themes, name);
+        assert!(loaded.refused, "{name}");
+        assert!(
+            loaded.complaints[0]
+                .said
+                .contains("is not the name of a theme folder"),
+            "{name}: {:?}",
+            said(&loaded)
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_theme_folder_that_is_a_link_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let themes = dir.path().join("themes");
+    std::fs::create_dir(&themes).unwrap();
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("theme.json"), both("Far").to_string()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, themes.join("far")).unwrap();
+    let loaded = Library::new().load_folder(&themes, "far");
+    assert!(loaded.refused);
+    assert_eq!(&loaded.theme, classic());
+}
+
+#[test]
+fn a_parent_folder_that_cannot_be_read_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("broken")).unwrap();
+    std::fs::write(dir.path().join("broken/theme.json"), "{ nope").unwrap();
+    let library = Library::new().with_folder(dir.path(), "broken");
+    let child = library.load(None, &json!({ "name": "Kid", "extends": "broken" }));
+    assert!(child.refused);
+    let said = said(&child);
+    assert_eq!(said[0], "Kid extends \"broken\", which purlis cannot draw");
+    assert!(said[1].starts_with("in \"broken\": "), "{said:?}");
+    assert!(said[1].contains("a theme is JSON: "), "{said:?}");
 }
 
 #[cfg(unix)]
@@ -555,7 +670,7 @@ fn a_theme_json_that_is_a_link_is_not_read() {
     let folder = dir.path().join("linked");
     std::fs::create_dir(&folder).unwrap();
     std::os::unix::fs::symlink(&elsewhere, folder.join("theme.json")).unwrap();
-    let loaded = Library::new().load_folder(&folder);
+    let loaded = Library::new().load_folder(dir.path(), "linked");
     assert!(loaded.refused);
     assert_eq!(&loaded.theme, classic());
 }
@@ -566,7 +681,7 @@ fn a_folder_in_the_library_is_extended_by_its_folder_name() {
     let parent = dir.path().join("dusk");
     std::fs::create_dir(&parent).unwrap();
     std::fs::write(parent.join("theme.json"), both("Dusk").to_string()).unwrap();
-    let library = Library::new().with_folder(&parent);
+    let library = Library::new().with_folder(dir.path(), "dusk");
     let child = library.load(None, &json!({ "name": "Kid", "extends": "dusk" }));
     assert_eq!(said(&child), Vec::<String>::new());
     assert_eq!(child.theme.appearances[1].value("surface.base"), "#fafafa");
@@ -667,7 +782,7 @@ fn following_the_system_with_a_two_appearance_theme_draws_the_one_the_system_has
 fn a_dark_only_theme_says_that_following_the_system_stays_dark() {
     let mine = load(&dark_only("Night Owl", json!({}))).theme;
     for system in [Appearance::Light, Appearance::Dark] {
-        let drawn = follow(&mine, system);
+        let drawn = super::follow(&mine, system);
         assert_eq!(
             drawn.theme.as_ref().map(|it| it.appearance),
             Some(Appearance::Dark)
@@ -683,11 +798,21 @@ fn a_dark_only_theme_says_that_following_the_system_stays_dark() {
 #[test]
 fn a_light_only_theme_says_that_following_the_system_stays_light() {
     let mine = load(&json!({ "name": "Paper", "appearance": "light", "tokens": {} })).theme;
-    let drawn = follow(&mine, Appearance::Dark);
+    let drawn = super::follow(&mine, Appearance::Dark);
     assert_eq!(
         drawn.note.as_deref(),
         Some("Paper has only a light appearance, so following the system stays light")
     );
+}
+
+#[test]
+fn a_system_pick_with_a_one_appearance_theme_of_the_person_s_follows_with_purlis_classic() {
+    // As before format 2, until Settings › Theme can say that following stays in one (#2331).
+    let mine = load(&dark_only("Night Owl", json!({}))).theme;
+    let drawn = follow(&mine, Appearance::Light);
+    assert_eq!(drawn.theme.as_ref(), Some(classic_light()));
+    assert!(drawn.follows_system);
+    assert_eq!(drawn.note, None);
 }
 
 #[test]
@@ -768,6 +893,14 @@ fn the_person_s_format_2_theme_that_is_refused_is_trouble_and_draws_purlis() {
     let mine = read_theirs(Some(home.path()));
     assert!(mine.found);
     assert!(mine.theme.is_none());
+    // What refused it is kept as found, beside the sentence the window shows.
+    assert_eq!(
+        mine.complaints
+            .iter()
+            .map(|one| one.said.as_str())
+            .collect::<Vec<_>>(),
+        ["Mine extends \"nowhere\", which is not a theme purlis has"]
+    );
     let trouble = mine.trouble.expect("trouble");
     assert!(
         trouble.contains("Mine extends \"nowhere\", which is not a theme purlis has"),
