@@ -593,8 +593,10 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
     let harness = stand_in::claude_code(
         bin.path(),
         "claude",
-        "#!/bin/sh\nprintf 'COMPOSED as %s:' \"$PURLIS_PERSONA\"\nprintf ' %s' \"$@\"\nprintf \
-         ' :END'\nread line\n",
+        // The first message is the last argument. It is drawn alone on a line of its own, so the
+        // pane holds it whole however long the arguments before it grow.
+        "#!/bin/sh\nprintf 'COMPOSED as %s:' \"$PURLIS_PERSONA\"\nfor arg; do last=\"$arg\"; done\n\
+         printf '\\n%s :END' \"$last\"\nread line\n",
     );
     a_profile(&target.root, "work", &harness);
     if target.host.is_none() {
@@ -634,7 +636,8 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
     let harness = stand_in::claude_code(
         bin.path(),
         "claude",
-        "#!/bin/sh\nprintf ' %s' \"$@\"\nprintf ' :END'\nread line\n",
+        // The first message, alone on a line of its own (see the test above).
+        "#!/bin/sh\nfor arg; do last=\"$arg\"; done\nprintf '\\n%s :END' \"$last\"\nread line\n",
     );
     a_profile(&target.root, "work", &harness);
 
