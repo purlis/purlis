@@ -28,6 +28,10 @@
 //! kept bus is asked again, backing off, until it answers (`listen_again`), and then the
 //! window offers to start again on it. It never does so by itself.
 //!
+//! **Once per login session.** A silence is remembered in `$XDG_RUNTIME_DIR` until the next
+//! login, or until the kept bus answers, so only the session's first launch pays [`BUDGET`] for
+//! it ([`LoginSession`], #2432).
+//!
 //! **X11 without a session bus.** With no `DBUS_SESSION_BUS_ADDRESS` and no
 //! `$XDG_RUNTIME_DIR/bus` — `startx` into i3, say — GIO does not give up: it runs
 //! `dbus-launch --autolaunch` and uses the bus the X display holds, starting one if there is
@@ -131,6 +135,98 @@ pub fn decide(
             },
         },
     }
+}
+
+/// The login session's memory of a silent portal (#2432, ADR 0026 as amended 2026-10-17).
+///
+/// A portal that was silent at one launch is silent at the next on most machines that have one
+/// (CI runners, containers, a bare window manager), and each launch would pay [`BUDGET`] to hear
+/// it again. So the first silence in a login session is written down in `$XDG_RUNTIME_DIR`,
+/// which is per login and emptied at logout, and later launches in the session start without
+/// the bus at once. A portal that comes up later is still found: `listen_again` forgets the
+/// silence when the kept bus answers, and the next login starts over. With no runtime directory
+/// nothing is remembered, and every launch asks.
+///
+/// What is written is the address the silence was heard on (empty for the bus the standard
+/// lookup finds), and nothing else: the bus a chat is given is never read back from the file.
+#[derive(Debug, Clone)]
+pub struct LoginSession {
+    marker: Option<std::path::PathBuf>,
+}
+
+impl LoginSession {
+    /// The login session whose runtime directory is `runtime` (`$XDG_RUNTIME_DIR`).
+    pub fn at(runtime: Option<&std::path::Path>) -> Self {
+        Self {
+            marker: runtime.map(|dir| {
+                dir.join(format!(
+                    "{}.portal-silent",
+                    purlis_core::names::BUNDLE_ID.write
+                ))
+            }),
+        }
+    }
+
+    /// This login session's, from the environment.
+    pub fn this_one() -> Self {
+        let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|dir| !dir.is_empty())
+            .map(std::path::PathBuf::from);
+        Self::at(runtime.as_deref())
+    }
+
+    /// Whether the portal on `address` was silent earlier in this session.
+    fn was_silent(&self, address: Option<&str>) -> bool {
+        self.marker
+            .as_ref()
+            .and_then(|marker| std::fs::read_to_string(marker).ok())
+            .is_some_and(|heard_on| heard_on == address.unwrap_or_default())
+    }
+
+    /// The portal on `address` was silent. A marker that cannot be written costs only the next
+    /// launch's [`BUDGET`].
+    fn remember_silence(&self, address: Option<&str>) {
+        if let Some(marker) = &self.marker {
+            let _ = std::fs::write(marker, address.unwrap_or_default());
+        }
+    }
+
+    /// The portal answers after all: the next launch asks it again.
+    pub fn forget(&self) {
+        if let Some(marker) = &self.marker {
+            let _ = std::fs::remove_file(marker);
+        }
+    }
+}
+
+/// [`decide`], asking the portal only when `session` does not remember it silent, and
+/// remembering a silence on the bus the launch was given or the standard lookup found. `ask`
+/// asks that bus's portal.
+pub fn launch(
+    address: Option<&str>,
+    session: &LoginSession,
+    ask: &mut dyn FnMut() -> Heard,
+    x_session_bus: &mut dyn FnMut() -> Option<(String, Heard)>,
+) -> Start {
+    if address == Some(NO_SESSION_BUS) {
+        return Start::AsItIs;
+    }
+    if session.was_silent(address) {
+        return Start::WithoutTheBus {
+            say: format!(
+                "purlis: the desktop portal ({PORTAL}) did not answer on the session bus \
+                 earlier in this login session, so purlis is starting without the session bus \
+                 at once; it asks again at the next login, or once the bus answers. \
+                 {WHAT_IS_OFF}"
+            ),
+            kept: address.unwrap_or_default().to_owned(),
+        };
+    }
+    let heard = ask();
+    if heard == Heard::Silence {
+        session.remember_silence(address);
+    }
+    decide(address, heard, x_session_bus)
 }
 
 fn silent(kept: &str) -> Start {
@@ -273,6 +369,7 @@ fn the_x_sessions_bus() -> Option<(String, Heard)> {
 }
 
 /// Asks the portal, and when it is silent starts this launch again without the session bus.
+/// A portal silent earlier in this login session is not asked again ([`LoginSession`]).
 ///
 /// Returns when the launch goes on as it is. When it restarts, it does not return: `exec`
 /// replaces this process with the same binary, the same arguments and the same process id,
@@ -288,9 +385,10 @@ pub fn start_clear_of_a_silent_portal(reached: impl Fn(&str)) {
     if address.as_deref() == Some(NO_SESSION_BUS) {
         return;
     }
-    let again = match decide(
+    let again = match launch(
         address.as_deref(),
-        listen(None, BUDGET),
+        &LoginSession::this_one(),
+        &mut || listen(None, BUDGET),
         &mut the_x_sessions_bus,
     ) {
         Start::AsItIs => return,
@@ -518,8 +616,8 @@ pub const ANSWERS: &str = "session-bus://answers";
 
 /// Asks the kept bus again, off the main thread, after each of [`ASKED_AGAIN_AFTER`]'s waits
 /// until it answers: a portal that was only slow — right after login, a cold disk — has come up
-/// by then. When it answers the window is told, and offers the restart; nothing restarts by
-/// itself.
+/// by then. When it answers the login session forgets its silence, so the next launch asks it
+/// again, and the window is told, and offers the restart; nothing restarts by itself.
 #[cfg(target_os = "linux")]
 pub fn listen_again(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
@@ -542,6 +640,7 @@ pub fn listen_again(app: &tauri::AppHandle) {
                 "purlis: the desktop portal answers on the session bus now; the window offers \
                  to restart on it."
             );
+            LoginSession::this_one().forget();
             let bus = app.state::<SessionBus>();
             bus.answered();
             if let Some(now) = bus.now() {
