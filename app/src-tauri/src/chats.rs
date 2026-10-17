@@ -848,12 +848,14 @@ fn told_first(
     mut ready: purlis_core::start::Ready,
     told: Option<&str>,
 ) -> purlis_core::start::Ready {
-    if let Some(first) = told.and_then(|told| {
+    if let Some((told, first)) = told.and_then(|told| {
         ready
             .harness
             .and_then(|harness| purlis_core::handoff::first_message_argv(harness.name(), told))
+            .map(|first| (told, first))
     }) {
         ready.args.extend(first);
+        ready.first_message = Some(told.to_owned());
     }
     ready
 }
@@ -1431,6 +1433,7 @@ impl Chats {
             false,
             why,
             ready.sign_in.as_ref(),
+            ready.first_message.as_deref(),
         )?;
         self.floorless_at(session, ready.floorless.clone());
         Ok(session)
@@ -1524,6 +1527,7 @@ impl Chats {
             size,
             false,
             why,
+            None,
             None,
             true,
         )
@@ -2603,6 +2607,8 @@ impl Chats {
             why,
             // A chat on no profile has no sign-in of a profile's.
             None,
+            // Nor a first message.
+            None,
         )
         // Where the floor could not be applied, its tab's sandbox mark says why (#2071, Q2).
         .inspect(|session| self.floorless_at(*session, floorless))
@@ -2693,6 +2699,7 @@ impl Chats {
         operator_shell: bool,
         why: Why,
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
+        first_message: Option<&str>,
     ) -> Result<u32, String> {
         let again = (
             program.clone(),
@@ -2719,6 +2726,7 @@ impl Chats {
             operator_shell,
             why,
             sign_in,
+            first_message,
             false,
         )?;
         if !failed {
@@ -2765,6 +2773,7 @@ impl Chats {
             operator_shell,
             why,
             sign_in,
+            first_message,
             true,
         )
         .map(|(session, _)| session)
@@ -2792,6 +2801,7 @@ impl Chats {
         operator_shell: bool,
         why: Why,
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
+        first_message: Option<&str>,
         limited: bool,
     ) -> Result<(u32, bool), String> {
         // A project being let go of starts nothing more (#1949): its close may be running on
@@ -2809,6 +2819,15 @@ impl Chats {
         // for a start; what a start begins (a run, its trust event, a first message, the
         // credentials it is handed) is not, since nothing starts: it is the run it was.
         let reattaching = self.reattaches(chat, why);
+        // **A harness chat on a runner is started by its names** (#2446): the runner composes
+        // it, with the sandbox, hooks and line it makes for itself, and writes its run and its
+        // sandbox's audit in its own event log. The window composes none of it, and carries on
+        // only the conversation the chat resumes: a new one is the runner's to choose.
+        let on_the_runner = !reattaching
+            && !operator_shell
+            && harness.is_some()
+            && self.sessions.composes_its_harness_chats();
+        let sandbox = sandbox.filter(|_| !on_the_runner);
         // What it is armed with, never written by it, and never where it writes. A chat
         // reattached is not started, so it is never refused here: it is compared with the
         // sandbox it would start in now, held as a start would hold it.
@@ -2829,6 +2848,11 @@ impl Chats {
             }
             None => None,
         };
+        let conversation = match &how {
+            _ if !on_the_runner => conversation,
+            purlis_core::reopen::Reopened::Resumed(id) => Some(id.to_string()),
+            _ => None,
+        };
         // The persona it runs as is the one its environment names, which the core's start put
         // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
         // names none runs as the project's default.
@@ -2842,17 +2866,18 @@ impl Chats {
         // that does not open to it starts nothing, and leaves no event and no hook behind
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
-        let handed = match sign_in.filter(|s| !reattaching && !s.credentials.is_empty()) {
-            Some(sign_in) => purlis_core::profilesignin::read(
-                &purlis_core::secrets::Ctx::new(
-                    &self.project,
-                    purlis_core::secrets::Env::from_process(),
-                ),
-                runs_as.as_deref(),
-                &sign_in.credentials,
-            )?,
-            None => purlis_core::profilesignin::Handed::default(),
-        };
+        let handed =
+            match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
+                Some(sign_in) => purlis_core::profilesignin::read(
+                    &purlis_core::secrets::Ctx::new(
+                        &self.project,
+                        purlis_core::secrets::Env::from_process(),
+                    ),
+                    runs_as.as_deref(),
+                    &sign_in.credentials,
+                )?,
+                None => purlis_core::profilesignin::Handed::default(),
+            };
         // Who the chat is, and the run this start begins (ADR 0066). **The id is minted once**
         // per clone and device (V43: a copy's was minted again before `put_back` got it),
         // when no record holds one, on this device, and a chat put back or started again keeps
@@ -2880,8 +2905,8 @@ impl Chats {
         // What this start means for the sandbox's audit and its count (ADR 0067 §7): off where
         // it starts without the sandbox, back on where its last run did and this one does not,
         // and one more new chat towards the opt-out rate.
-        let (mut trust, counted) = if reattaching {
-            // Nothing starts, so nothing changes for the sandbox's audit or its count.
+        let (mut trust, counted) = if reattaching || on_the_runner {
+            // Nothing starts here, so nothing changes for this machine's audit or its count.
             (None, None)
         } else {
             purlis_core::sandbox::at_start(
@@ -2994,13 +3019,17 @@ impl Chats {
                 ),
             }
         }
-        let (hooks, armed) = self.state_hooks(
-            harness,
-            chat.cwd.as_deref(),
-            plugins,
-            sandbox,
-            runs_as.as_deref(),
-        )?;
+        let (hooks, armed) = if on_the_runner {
+            (Vec::new(), Vec::new())
+        } else {
+            self.state_hooks(
+                harness,
+                chat.cwd.as_deref(),
+                plugins,
+                sandbox,
+                runs_as.as_deref(),
+            )?
+        };
         let hooks = match &settings_watched {
             Some(Err(why)) => {
                 tracing::warn!("purlis: a chat's project settings are not watched ({why})");
@@ -3086,7 +3115,17 @@ impl Chats {
             reached: Some(reached),
             asks,
         };
+        // On a runner, the runner confines it, and its proxy is heard as the one it names.
+        let (hearing, composed_hearing) = if on_the_runner {
+            (
+                purlis_core::sandbox::plan::Hearing::default(),
+                Some(hearing),
+            )
+        } else {
+            (hearing, None)
+        };
         let mut confinement = match sandbox.and_then(purlis_core::sandbox::Applied::plan) {
+            _ if on_the_runner => None,
             _ if reattaching => chat
                 .number
                 .and_then(|number| self.sessions.confined_again(number, hearing))
@@ -3197,7 +3236,8 @@ impl Chats {
             if let Some(starting) = lock(&self.starting).as_ref() {
                 starting(session, harness, conversation.clone());
             }
-            if let Some(beginning) = lock(&self.beginning).as_ref()
+            // A run on a runner is written there, where it runs.
+            if let Some(beginning) = lock(&self.beginning).as_ref().filter(|_| !on_the_runner)
                 && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
             {
                 beginning(
@@ -3211,6 +3251,36 @@ impl Chats {
         };
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
+            _ if on_the_runner => self
+                .sessions
+                .open_named(
+                    chat.number,
+                    &crate::host::Named {
+                        chat: identity.id.clone(),
+                        run: identity.run.clone(),
+                        profile: chat.profile.clone(),
+                        persona: runs_as.clone(),
+                        workspace: workspace_at_start(Some(&self.project), chat.cwd.as_deref()),
+                        resume: conversation.clone(),
+                        first_message: first_message.map(str::to_owned),
+                        // A person's own opt-out, which a runner takes from no link but its own
+                        // window's: such a start is refused there, never run sandboxed silently.
+                        without_sandbox: unsandboxed.is_some_and(|lifted| {
+                            matches!(
+                                lifted.by,
+                                purlis_core::sandbox::By::Person
+                                    | purlis_core::sandbox::By::YourLevel(_)
+                            )
+                        }),
+                        size,
+                    },
+                    composed_hearing.unwrap_or_default(),
+                    &announce,
+                )
+                .map(|(session, composed)| {
+                    confinement = composed;
+                    session
+                }),
             _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put
                 // back keeps the key its workspace pointer and session lock are under; a
@@ -8586,6 +8656,7 @@ pub(crate) mod tests {
             notices: Vec::new(),
             agents_md: Vec::new(),
             sign_in: None,
+            first_message: None,
         }
     }
 
@@ -11099,6 +11170,7 @@ pub(crate) mod tests {
             notices: Vec::new(),
             agents_md: Vec::new(),
             sign_in: None,
+            first_message: None,
         }
     }
 
@@ -11928,6 +12000,7 @@ pub(crate) mod tests {
             notices: Vec::new(),
             agents_md: Vec::new(),
             sign_in: None,
+            first_message: None,
         };
 
         let session = chats
@@ -12049,6 +12122,7 @@ pub(crate) mod tests {
                         .unwrap(),
                 )],
             }),
+            first_message: None,
         };
 
         let refused = chats
@@ -12124,6 +12198,7 @@ pub(crate) mod tests {
             notices: Vec::new(),
             agents_md: Vec::new(),
             sign_in: None,
+            first_message: None,
         };
 
         let session = chats.start_ready(&chat, &ready, SIZE).unwrap();
@@ -12455,6 +12530,102 @@ pub(crate) mod tests {
 
         assert_eq!(host.running(), Vec::<u32>::new());
         assert!(chats.open_now().is_empty());
+    }
+
+    /// What the core's start answers for a Claude Code chat on the profile `work` as `steward`,
+    /// in a new conversation, told `first` where it is told something.
+    fn a_harness_ready(first: Option<&str>) -> purlis_core::start::Ready {
+        let conversation = "0f6c2a1e-aaaa-4bbb-8ccc-123456789abc";
+        let ready = purlis_core::start::Ready {
+            program: "claude".to_owned(),
+            args: vec!["--session-id".to_owned(), conversation.to_owned()],
+            env: vec![(
+                purlis_core::active::PERSONA_ENV.to_owned(),
+                "steward".to_owned(),
+            )],
+            harness: Some(Harness::ClaudeCode),
+            session: Some(SessionId::new(conversation).expect("an id")),
+            how: Reopened::Fresh(Fresh::NoConversationRecorded),
+            ..a_shell_ready()
+        };
+        told_first(ready, first)
+    }
+
+    fn on_the_profile_work() -> Chat {
+        let mut on_a_profile = chat("claude", "steward 1", None);
+        on_a_profile.profile = Some("work".to_owned());
+        on_a_profile.persona = Some("steward".to_owned());
+        on_a_profile
+    }
+
+    /// **A harness chat on a runner is started by its names** (#2446): the runner composes it,
+    /// with the sandbox it compiles for itself, and the window's own launch of it is never sent.
+    /// Its proxy's asks are the window's to answer, as a local chat's are. A shell on the runner
+    /// is still started from the window's launch.
+    #[test]
+    fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_s_launch() {
+        let host = Pretend::default();
+        host.on_a_runner();
+        let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+
+        let session = chats
+            .start_ready(
+                &on_the_profile_work(),
+                &a_harness_ready(Some("carry on with the plan")),
+                SIZE,
+            )
+            .expect("it starts on the runner");
+
+        let named = host.named();
+        assert_eq!(named.len(), 1, "{named:?}");
+        let (number, named, asks) = &named[0];
+        assert_eq!(*number, session);
+        assert_eq!(named.profile.as_deref(), Some("work"));
+        assert_eq!(named.persona.as_deref(), Some("steward"));
+        assert_eq!(
+            named.first_message.as_deref(),
+            Some("carry on with the plan")
+        );
+        assert_eq!(named.resume, None, "a new chat carries on no conversation");
+        assert!(!named.without_sandbox);
+        assert!(*asks, "its proxy asks the window");
+        let identity = chats.record().chats[0].identity.clone();
+        assert_eq!(named.chat, identity.id);
+        assert_eq!(named.run, identity.run);
+        assert!(host.asked().is_empty(), "the window's launch was not sent");
+
+        let shell = chats
+            .start(&chat("/bin/sh", "shell", None), SIZE)
+            .expect("a shell starts");
+        assert_eq!(host.asked(), vec![(shell, "/bin/sh".to_owned())]);
+        assert_eq!(host.named().len(), 1);
+    }
+
+    /// A chat on a runner put back on its conversation carries that conversation on there, and
+    /// one the runner refuses is a start that did not start (#2446).
+    #[test]
+    fn a_runner_chat_put_back_carries_its_conversation_on_and_a_refusal_starts_nothing() {
+        let host = Pretend::default();
+        host.on_a_runner();
+        let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+        let conversation = "0f6c2a1e-aaaa-4bbb-8ccc-123456789abc";
+        let resumed = purlis_core::start::Ready {
+            args: vec!["--resume".to_owned(), conversation.to_owned()],
+            how: Reopened::Resumed(SessionId::new(conversation).expect("an id")),
+            ..a_harness_ready(None)
+        };
+
+        chats
+            .start_ready(&on_the_profile_work(), &resumed, SIZE)
+            .expect("it starts on the runner");
+
+        assert_eq!(host.named()[0].1.resume.as_deref(), Some(conversation));
+        assert_eq!(host.named()[0].1.first_message, None);
+
+        host.refuses(Some("this runner refused it"));
+        let refused = chats.start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE);
+        assert_eq!(refused, Err("this runner refused it".to_owned()));
+        assert_eq!(chats.open_now().len(), 1);
     }
 
     // ----- the sandbox's audit and count (ADR 0067 §7, ruling V78) -----
