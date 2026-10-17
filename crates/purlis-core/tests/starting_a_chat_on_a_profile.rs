@@ -1506,6 +1506,85 @@ fn the_picker_checks_an_approved_program_with_the_starts_own_check() {
     );
 }
 
+/// #2179: **one picker compiles each harness's sandbox once, and still checks each profile's
+/// program for itself**. Four approved Claude Code profiles, two of them running the same
+/// command, cost one compile; each program is asked once per profile, since each is asked with
+/// its own profile's environment; and the one whose program answers wrong is refused alone.
+#[test]
+fn one_picker_compiles_once_per_harness_and_gives_each_profile_its_own_answer() {
+    purlis_core::unsteered!();
+    let outside = stand_in::NoChatWrites::new();
+    let plane = Plane::new();
+    let claude = harness_outside(&plane, &outside, "claude");
+    let other = harness_outside(&plane, &outside, "other");
+    fs::write(
+        plane.root().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    let sh = |script: &Path| format!("[\"/bin/sh\", {:?}]", script.display().to_string());
+    plane.declares(&format!(
+        "[harness.a]\nkind = \"claude\"\ncommand = {c}\n\n\
+         [harness.b]\nkind = \"claude\"\ncommand = {c}\n\n\
+         [harness.c]\nkind = \"claude\"\ncommand = {c}\nenv = {{ CLAUDE_CONFIG_DIR = \"/elsewhere\" }}\n\n\
+         [harness.d]\nkind = \"claude\"\ncommand = {o}\n",
+        c = sh(&claude),
+        o = sh(&other),
+    ));
+    for name in ["a", "b", "c", "d"] {
+        plane.approve(name);
+    }
+    let ran = std::sync::Mutex::new(Vec::<Vec<String>>::new());
+    let other_word = other.display().to_string();
+    let probe = |words: &[String]| {
+        ran.lock().unwrap().push(words.to_vec());
+        Some(if words.contains(&other_word) {
+            "not claude".to_owned()
+        } else {
+            "2.1.288 (Claude Code)".to_owned()
+        })
+    };
+    let compiles_for = |names: &[&str]| {
+        let asked_has = std::sync::atomic::AtomicUsize::new(0);
+        let has = |_: &str| {
+            asked_has.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            true
+        };
+        let mac = a_mac();
+        let set = profiles::current(plane.root());
+        let asked = start::AheadOnce::new(plane.root(), &mac, &has, "", Some(&probe));
+        let said: Vec<_> = names
+            .iter()
+            .map(|name| {
+                asked
+                    .of(set.get(name).expect("declared"))
+                    .expect("a harness")
+            })
+            .collect();
+        (said, asked_has.into_inner())
+    };
+
+    let (_, one) = compiles_for(&["a"]);
+    ran.lock().unwrap().clear();
+    let (said, four) = compiles_for(&["a", "b", "c", "d"]);
+
+    assert!(one > 0, "the picker compiles the sandbox it shows");
+    assert_eq!(four, one, "four profiles of one harness cost one compile");
+    assert_eq!(said[0], purlis_core::sandbox::Ahead::Sandboxed);
+    assert_eq!(said[1], purlis_core::sandbox::Ahead::Sandboxed);
+    assert_eq!(said[2], purlis_core::sandbox::Ahead::Sandboxed);
+    assert!(
+        matches!(&said[3], purlis_core::sandbox::Ahead::Refused { why, .. } if why.contains("does not answer as Claude Code")),
+        "{:?}",
+        said[3]
+    );
+    assert_eq!(
+        ran.lock().unwrap().len(),
+        4,
+        "each profile's program is checked for itself"
+    );
+}
+
 #[test]
 fn the_picker_runs_no_program_nobody_approved() {
     purlis_core::unsteered!();
