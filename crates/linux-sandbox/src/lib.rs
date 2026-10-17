@@ -36,6 +36,22 @@ pub use linux::{abi, entry};
 /// socket.
 pub const MIN_ABI: i32 = 6;
 
+/// What a kernel without [`MIN_ABI`] is told it lacks.
+pub const NEEDS_LANDLOCK: &str = "purlis's sandbox needs Landlock version 6 (Linux 6.12 or later)";
+
+/// What a person can do where this kernel lacks the Landlock the wrap needs: update it, start
+/// the chat on Claude Code, whose own sandbox needs no Landlock, or, where `opt_out` (policy
+/// allows starting a chat without the sandbox), start it without the sandbox.
+pub fn landlock_way_on(opt_out: bool) -> String {
+    if opt_out {
+        "Update to Linux 6.12 or later, start this chat on a Claude Code profile, or start it \
+         without the sandbox from the new-chat picker."
+            .to_owned()
+    } else {
+        "Update to Linux 6.12 or later, or start this chat on a Claude Code profile.".to_owned()
+    }
+}
+
 /// The hidden command a wrapped chat's line starts with, after purlis's own program.
 pub const COMMAND: &str = "_sandbox";
 

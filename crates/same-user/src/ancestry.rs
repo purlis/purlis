@@ -666,6 +666,26 @@ mod tests {
         assert_eq!(pidfd_pid("pos:\t0\n"), None);
     }
 
+    /// Where [`a_listener_that_has_ended_is_told_as_gone`] has this test program listen, when
+    /// it starts it again as the listener.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const LISTEN_AT: &str = "PURLIS_SAME_USER_TEST_LISTEN_AT";
+
+    /// Not a test of its own: this test program, started again by
+    /// [`a_listener_that_has_ended_is_told_as_gone`], listening at [`LISTEN_AT`] until it is
+    /// ended.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    #[ignore = "started by a_listener_that_has_ended_is_told_as_gone"]
+    fn listens_until_ended() {
+        let Some(path) = std::env::var_os(LISTEN_AT) else {
+            return;
+        };
+        let _listening = std::os::unix::net::UnixListener::bind(path).expect("a socket");
+        println!("up");
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+
     /// A listener that has ended is no listener: the pidfd of the far end names it while it
     /// runs, and nobody once it has gone.
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -674,21 +694,28 @@ mod tests {
         use std::io::BufRead;
         let dir = tempfile::tempdir().expect("a folder");
         let path = dir.path().join("s");
-        let mut listener = Command::new("python3")
+        let mut listener = Command::new(std::env::current_exe().expect("this test program"))
             .args([
-                "-c",
-                "import socket,sys,time\n\
-                 s=socket.socket(socket.AF_UNIX)\ns.bind(sys.argv[1])\ns.listen()\n\
-                 print('up',flush=True)\ntime.sleep(30)",
+                "--exact",
+                "ancestry::tests::listens_until_ended",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
             ])
-            .arg(&path)
+            .env(LISTEN_AT, &path)
             .stdout(std::process::Stdio::piped())
             .spawn()
-            .expect("python3 listens");
-        let mut up = String::new();
-        std::io::BufReader::new(listener.stdout.take().expect("its output"))
-            .read_line(&mut up)
-            .expect("it says it is up");
+            .expect("it listens");
+        let mut out = std::io::BufReader::new(listener.stdout.take().expect("its output"));
+        let mut line = String::new();
+        // The test runner prints the test's name first, on the same line.
+        while !line.trim_end().ends_with(" up") && line.trim() != "up" {
+            line.clear();
+            assert!(
+                out.read_line(&mut line).expect("it says") > 0,
+                "it never listened"
+            );
+        }
         let socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
         assert!(listener_is(&socket, listener.id()).expect("read"));
         listener.kill().expect("ended");

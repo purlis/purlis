@@ -66,10 +66,12 @@ fn supervise(profile: &str, program: &[String]) -> Result<i32, String> {
     let profile = Profile::parse(profile).map_err(|why| why.to_string())?;
     let abi = abi();
     if abi < crate::MIN_ABI {
-        return Err(format!(
-            "this Linux kernel's Landlock is version {abi}, and purlis's sandbox needs version {} (Linux 6.12 or later)",
-            crate::MIN_ABI
-        ));
+        eprintln!(
+            "purlis: {}, and this kernel's is version {abi}, so nothing was started. {}",
+            crate::NEEDS_LANDLOCK,
+            crate::landlock_way_on(true)
+        );
+        return Ok(NOT_STARTED);
     }
     notify::check_sizes().map_err(|why| why.to_string())?;
     // A process of the chat whose parent ends is the supervisor's, so it stays below it.

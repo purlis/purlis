@@ -222,7 +222,6 @@ pub fn compose_ready(
     let socket = starting
         .reporting
         .map(|reporting| PathBuf::from(&reporting.socket));
-    let this_program = std::env::current_exe().ok();
     let (program, args, wrapped) = match sandbox {
         Some(applied) => {
             let line = applied.line(
@@ -237,9 +236,8 @@ pub fn compose_ready(
                     hook_socket: socket.as_deref(),
                     confinement: confinement.as_ref(),
                     no_opt_out: false,
-                    // This program, `purlis serve` or the app as its session host: both answer
-                    // the hidden `_sandbox` a wrapped chat's line starts with on Linux (#1040).
-                    purlis: this_program.as_deref(),
+                    // purlis's own program as the start checked it (#1040).
+                    purlis: applied.wrap_program(),
                 },
             )?;
             (line.program, line.args, line.env)

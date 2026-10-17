@@ -476,7 +476,8 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
         "{PROBE} read /proc/$PPID/environ; {PROBE} read /proc/1/environ; {PROBE} read /proc/$$/status; \
          {PROBE} read /proc/$PPID/stat; {PROBE} read /proc/$PPID/cwd/x; {PROBE} read /proc/$PPID/task/$PPID/environ; \
          {PROBE} read /proc/$PPID/cmdline; {PROBE} read /proc/$PPID/status; {PROBE} read-at /proc/$PPID cmdline; \
-         {PROBE} read-at /proc/$PPID stat"
+         {PROBE} read-at /proc/$PPID stat; {PROBE} path-then-read /proc/$PPID/cmdline; \
+         {PROBE} path-then-read /proc/$PPID/stat"
     );
     let out = Command::new(PROBE)
         .args(purlis_linux_sandbox::line(
@@ -492,12 +493,13 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
         .expect("the wrap ran");
     let said = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = said.lines().collect();
-    // Of a process outside the sandbox, its `stat` alone, from the top of `/proc` or from its
-    // own folder held already.
+    // Of a process outside the sandbox, its `stat` alone, from the top of `/proc`, from its own
+    // folder held already, or through a descriptor of one of its files held already.
     assert_eq!(
         lines,
         vec![
-            "EACCES", "EACCES", "ok", "ok", "EACCES", "EACCES", "EACCES", "EACCES", "EACCES", "ok"
+            "EACCES", "EACCES", "ok", "ok", "EACCES", "EACCES", "EACCES", "EACCES", "EACCES", "ok",
+            "EACCES", "ok"
         ],
         "{said}"
     );

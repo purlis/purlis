@@ -183,9 +183,6 @@ pub fn checked_answering(
     Ok((words, None))
 }
 
-/// Whether `path` lies in one of `places`, each given as written and as its real path. The one
-/// test of "where a chat can write", for a harness here and for a provider's program
-/// ([`crate::secrets::program`]).
 /// **purlis's own program, which a wrapped chat's line starts with on Linux** (#1040): this
 /// running program, held as the harness's is — never started from where the chat may write
 /// ([`NotStarted::ProgramWritable`]), and never one replaced while it ran
@@ -197,8 +194,7 @@ pub fn checked_wrap(root: &Path, chat: Chat<'_>) -> Result<PathBuf, NotStarted> 
 
 /// [`checked_wrap`] for the program at `this`.
 pub fn checked_wrap_at(this: &Path, root: &Path, chat: Chat<'_>) -> Result<PathBuf, NotStarted> {
-    use std::os::unix::ffi::OsStrExt;
-    if this.as_os_str().as_bytes().ends_with(b" (deleted)") {
+    if this.to_string_lossy().ends_with(" (deleted)") {
         return Err(NotStarted::WrapReplaced);
     }
     let real = this.canonicalize().map_err(|_| NotStarted::WrapReplaced)?;
@@ -220,6 +216,9 @@ pub fn checked_wrap_at(this: &Path, root: &Path, chat: Chat<'_>) -> Result<PathB
     Ok(real)
 }
 
+/// Whether `path` lies in one of `places`, each given as written and as its real path. The one
+/// test of "where a chat can write", for a harness here and for a provider's program
+/// ([`crate::secrets::program`]).
 pub(crate) fn writable(path: &Path, places: &[(PathBuf, PathBuf)]) -> bool {
     places
         .iter()

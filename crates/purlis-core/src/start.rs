@@ -572,7 +572,7 @@ fn ready_given(
                 },
             )
             .map_err(|refused| refused.to_string())?;
-            applied.hold_programs(&[wrap.display().to_string()]);
+            applied.wrap_with(wrap);
         }
         // Claude Code goes through purlis's proxy from the version that takes its ports, and an
         // older one says once, on its tab, that it keeps its own (#1665).

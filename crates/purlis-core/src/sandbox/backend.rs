@@ -64,9 +64,8 @@ impl fmt::Display for Missing {
             }
             Self::Landlock => write!(
                 f,
-                "purlis's sandbox needs Landlock version {} (Linux 6.12 or later), and this \
-                 kernel does not have it",
-                purlis_linux_sandbox::MIN_ABI
+                "{}, and this kernel does not have it",
+                purlis_linux_sandbox::NEEDS_LANDLOCK
             ),
         }
     }
@@ -102,19 +101,10 @@ pub fn missing_for(os: Os, wrapped: bool, has: &dyn Fn(&str) -> bool) -> Option<
     missing(os, has)
 }
 
-/// What a person can do where this kernel lacks the Landlock purlis's own wrap needs: update
-/// it, start the chat on Claude Code, whose own sandbox needs no Landlock, or, where `opt_out`
-/// (policy allows starting a chat without the sandbox), start it without the sandbox.
+/// What a person can do where this kernel lacks the Landlock purlis's own wrap needs
+/// ([`purlis_linux_sandbox::landlock_way_on`]).
 pub fn landlock_way_on(opt_out: bool) -> String {
-    let claude = crate::harness::Harness::ClaudeCode.title();
-    if opt_out {
-        format!(
-            "Update to Linux 6.12 or later, start this chat on a {claude} profile, or start it \
-             without the sandbox from the new-chat picker."
-        )
-    } else {
-        format!("Update to Linux 6.12 or later, or start this chat on a {claude} profile.")
-    }
+    purlis_linux_sandbox::landlock_way_on(opt_out)
 }
 
 /// SD-30's install action: the command that installs what `missing` names with the package

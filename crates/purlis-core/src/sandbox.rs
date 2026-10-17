@@ -3039,6 +3039,9 @@ pub struct Applied {
     older: Option<(String, ClaudeCodeVersion)>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
+    /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
+    /// ([`program::checked_wrap`], #1040); none until then, and the line is refused.
+    wrap: Option<PathBuf>,
 }
 
 /// The first Claude Code whose sandbox takes a proxy's ports from `--settings` (#1665):
@@ -3133,6 +3136,18 @@ impl Applied {
     /// How much it holds ([`Level`]).
     pub fn level(&self) -> Level {
         self.level
+    }
+
+    /// The checked program the wrap starts this chat under ([`Self::wrap_with`]).
+    pub fn wrap_program(&self) -> Option<&Path> {
+        self.wrap.as_deref()
+    }
+
+    /// Starts this chat's wrap with `program`, as [`program::checked_wrap`] checked it, held at
+    /// the floor as the harness's program is.
+    pub fn wrap_with(&mut self, program: PathBuf) {
+        self.hold_programs(&[program.display().to_string()]);
+        self.wrap = Some(program);
     }
 
     /// Whether this chat's line starts with purlis's own program: a harness purlis holds
@@ -5070,6 +5085,7 @@ pub(crate) fn applied_of(
         through_proxy: harness != Harness::ClaudeCode,
         older: None,
         tools: None,
+        wrap: None,
     })
 }
 

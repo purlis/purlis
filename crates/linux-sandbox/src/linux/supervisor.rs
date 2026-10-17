@@ -186,7 +186,12 @@ impl Supervisor {
                 }
                 super::filter::SYS_FCHMODAT2 => {
                     let flags = int(3);
-                    let path = at(1)?;
+                    // No path, or an empty one, with `AT_EMPTY_PATH` is the descriptor itself.
+                    let path = if a[1] == 0 && flags & libc::AT_EMPTY_PATH != 0 {
+                        Vec::new()
+                    } else {
+                        at(1)?
+                    };
                     if flags & libc::AT_EMPTY_PATH != 0 && path.is_empty() {
                         return self.fchmod(&chat, id, int(0), a[2] as u32);
                     }
@@ -267,6 +272,11 @@ impl Supervisor {
     }
 
     fn allows(&self, chat: &Chat<'_>, what: FileOp, path: &Path, kind: Kind) -> bool {
+        // Wherever a walk arrived from, a process outside the sandbox is read for its `stat`
+        // alone.
+        if !outside_process_stat_only(chat, path) {
+            return false;
+        }
         let one = |path: &Path| {
             self.profile.allows(&Op::File { what, path, kind }) || linux_own(chat, what, path, kind)
         };
@@ -889,6 +899,35 @@ fn linux_own(chat: &Chat<'_>, what: FileOp, path: &Path, kind: Kind) -> bool {
         return chat.world.inside(pid);
     }
     false
+}
+
+/// Whether `path` is no file of a process outside the sandbox but its `stat`: `/proc/<n>/…`
+/// and `/proc/<n>/task/<t>/…` of a process `n` outside are refused unless the rest is `stat`.
+fn outside_process_stat_only(chat: &Chat<'_>, path: &Path) -> bool {
+    let Ok(rest) = path.strip_prefix("/proc") else {
+        return true;
+    };
+    let parts: Vec<&OsStr> = rest.iter().collect();
+    let Some(pid) = parts
+        .first()
+        .and_then(|it| it.to_str())
+        .and_then(|it| it.parse::<i32>().ok())
+    else {
+        return true;
+    };
+    if chat.world.inside(pid) {
+        return true;
+    }
+    let stat = OsStr::new("stat");
+    match parts.as_slice() {
+        [_, last] => *last == stat,
+        [_, task, tid, last] => {
+            *task == OsStr::new("task")
+                && tid.to_str().is_some_and(|it| it.parse::<i32>().is_ok())
+                && *last == stat
+        }
+        _ => false,
+    }
 }
 
 /// The process's file mode creation mask.

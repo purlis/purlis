@@ -1281,7 +1281,7 @@ impl Chats {
                     },
                 )
                 .map_err(|refused| refused.to_string())?;
-                applied.hold_programs(&[wrap.display().to_string()]);
+                applied.wrap_with(wrap);
             }
             return Ok((Some((applied, checked[0].clone())), None, None));
         }
@@ -2977,8 +2977,6 @@ impl Chats {
         // the wrap's program, with its whole line after it (ADR 0067).
         let socket = self.sessions.reports_to();
         // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
-        // This program answers the hidden `_sandbox` a wrapped chat's line starts with on Linux.
-        let this_program = std::env::current_exe().ok();
         let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {
             Some(applied) => {
                 let line = applied.line(
@@ -2993,9 +2991,8 @@ impl Chats {
                         hook_socket: socket.as_deref(),
                         confinement: confinement.as_ref(),
                         no_opt_out: false,
-                        // This program, which answers the hidden `_sandbox` a wrapped chat's line
-                        // starts with on Linux (#1040).
-                        purlis: this_program.as_deref(),
+                        // purlis's own program as the start checked it (#1040).
+                        purlis: applied.wrap_program(),
                     },
                 )?;
                 (line.program, line.args, line.env)
