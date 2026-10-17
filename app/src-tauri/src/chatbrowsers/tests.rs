@@ -33,17 +33,21 @@ struct Hosted {
     /// While set, every close waits until it is let go of: a host that does not answer.
     holding: Mutex<bool>,
     let_go: Condvar,
+    /// How many closes it was asked for, and from which one on it holds them.
+    closes: Mutex<u32>,
+    holds_from: Mutex<Option<u32>>,
     /// How many closes wait now.
     waiting: Mutex<u32>,
 }
 
 impl Hosted {
-    /// Every close from now waits until [`Self::answer_closes`].
-    fn hold_closes(&self) {
-        *self.holding.lock().unwrap() = true;
+    /// Every close from the `nth` on waits until [`Self::answer_closes`].
+    fn hold_closes_from(&self, nth: u32) {
+        *self.holds_from.lock().unwrap() = Some(nth);
     }
 
     fn answer_closes(&self) {
+        *self.holds_from.lock().unwrap() = None;
         *self.holding.lock().unwrap() = false;
         self.let_go.notify_all();
     }
@@ -101,6 +105,19 @@ impl Driver for Hosted {
 
     fn close(&self, program: &str) -> Result<(), String> {
         let mut holding = self.holding.lock().unwrap();
+        let nth = {
+            let mut closes = self.closes.lock().unwrap();
+            *closes += 1;
+            *closes
+        };
+        if self
+            .holds_from
+            .lock()
+            .unwrap()
+            .is_some_and(|from| nth >= from)
+        {
+            *holding = true;
+        }
         if *holding {
             *self.waiting.lock().unwrap() += 1;
             while *holding {
@@ -501,7 +518,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
 
 #[test]
 fn a_browser_whose_chats_reach_narrowed_is_ended_retried_until_it_is() {
-    let browsers = ChatBrowsers::default();
+    let browsers = retrying_quickly();
     let hosted = Arc::new(Hosted::default());
     answered(&browsers, &hosted, &ask(3, click()));
     browsers.allow(3, false);
@@ -531,12 +548,11 @@ fn a_browser_whose_chats_reach_narrowed_is_ended_retried_until_it_is() {
         .map(|(program, _, _)| program.clone())
         .collect();
     assert_eq!(acts, ["program-1", "program-2"]);
-    // Once the host hears, the next call retries it, and it is ended.
+    // Once the host hears, the retry ends it, with no call of the chat's.
     *hosted.closes_fail.lock().unwrap() = 0;
     *hosted.stops_fail.lock().unwrap() = 0;
-    answered(&browsers, &hosted, &ask(3, click()));
+    until(|| browsers.unended().is_empty());
     assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
-    assert!(browsers.unended().is_empty());
 }
 
 #[test]
@@ -963,7 +979,7 @@ fn a_browser_that_ended_by_itself_leaves_the_listing_at_its_chats_next_call() {
 
 #[test]
 fn a_browser_not_ended_yet_stays_listed_under_its_chat_as_not_ended_until_it_ends() {
-    let browsers = ChatBrowsers::default();
+    let browsers = retrying_quickly();
     let hosted = Arc::new(Hosted::default());
     let driver: Arc<dyn Driver> = hosted.clone();
     allowed_and_acting(&browsers, &hosted, 3);
@@ -981,10 +997,10 @@ fn a_browser_not_ended_yet_stays_listed_under_its_chat_as_not_ended_until_it_end
     );
     let before = browsers.listing();
     *hosted.closes_fail.lock().unwrap() = 0;
-    // The chat's next call tries it again first, and it ends.
-    answered(&browsers, &hosted, &ask(3, click()));
+    // The retry tries it again, and it ends.
+    until(|| browsers.unended().is_empty());
     assert_ne!(browsers.listing(), before, "its row moves");
-    assert!(browsers.listed().iter().all(|one| !one.unended));
+    assert!(browsers.listed().is_empty());
 }
 
 #[test]
@@ -1178,20 +1194,12 @@ fn retrying_quickly() -> ChatBrowsers {
 fn one_stuck(browsers: &ChatBrowsers, hosted: &Arc<Hosted>) {
     let driver: Arc<dyn Driver> = hosted.clone();
     allowed_and_acting(browsers, hosted, 3);
+    // Its first try fails (two closes, then a stop by its id); every close after waits.
     *hosted.closes_fail.lock().unwrap() = 2;
     *hosted.stops_fail.lock().unwrap() = 1;
-    hosted.hold_closes();
-    // The first close waits on the host too, so let it go once it waits.
-    std::thread::scope(|scope| {
-        scope.spawn(|| {
-            hosted.until_a_close_waits();
-            *hosted.holding.lock().unwrap() = false;
-            hosted.let_go.notify_all();
-        });
-        browsers.narrowed(Some(&driver), 3);
-    });
+    hosted.hold_closes_from(3);
+    browsers.narrowed(Some(&driver), 3);
     assert_eq!(browsers.unended(), ["program-1"]);
-    hosted.hold_closes();
     hosted.until_a_close_waits();
 }
 
