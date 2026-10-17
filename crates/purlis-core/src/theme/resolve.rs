@@ -47,11 +47,22 @@ pub struct Offered {
 
 impl Offered {
     /// An extension's theme, resolved from its text.
+    /// Text past the one cap every theme file is read under ([`crate::windowprefs::MAX_BYTES`])
+    /// is refused unread, as a theme folder's and the person's own are.
     pub fn of(extension: String, name: String, text: &str) -> Self {
+        let most = crate::windowprefs::MAX_BYTES;
+        let theme = if text.len() as u64 > most {
+            Resolved::refused_for(format!(
+                "{name} is {} bytes, and a theme is never larger than {most}",
+                text.len()
+            ))
+        } else {
+            super::load_text(text)
+        };
         Self {
             extension,
             name,
-            theme: super::load_text(text),
+            theme,
         }
     }
 }

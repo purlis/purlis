@@ -619,7 +619,8 @@ fn a_folder_name_is_one_plain_name_inside_the_level_s_themes_folder() {
         both("Out").to_string(),
     )
     .unwrap();
-    for name in ["..", ".", "", "../outside", "a/b", "/abs"] {
+    // `C:` is a Windows drive-relative name: refused before any path is made of it.
+    for name in ["..", ".", "", "../outside", "a/b", "/abs", "C:", "c:dusk"] {
         let loaded = Library::new().load_folder(&themes, name);
         assert!(loaded.refused, "{name}");
         assert!(

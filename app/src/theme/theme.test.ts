@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BUILT_IN,
+  CLASSIC as CLASSIC_ID,
   DEFAULT_THEME,
   TOKENS,
   apply,
@@ -46,6 +47,15 @@ const [dark, light] = (
 ).appearances;
 
 describe("the themes the core hands the window", () => {
+  it("name Purlis Classic by the engine's own id, which draws its first appearance", () => {
+    const engine = readFileSync(
+      join(process.cwd(), "..", "crates", "purlis-core", "src", "theme.rs"),
+      "utf8",
+    );
+    expect(engine).toContain(`pub const CLASSIC: &str = "${CLASSIC_ID}";`);
+    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+  });
+
   it("are the core's built-ins, complete, the window coming up in the dark one", () => {
     expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-dark", "purlis-light"]);
     expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);

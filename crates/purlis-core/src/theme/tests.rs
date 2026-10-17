@@ -224,14 +224,50 @@ fn a_token_purlis_does_not_have_is_named_and_left_out_and_the_rest_is_drawn() {
 }
 
 #[test]
-fn a_key_format_1_does_not_have_refuses_the_theme() {
-    // A misspelled key is not read as anything: `appearences` is not format 2's `appearances`.
-    let resolved = load(&json!({ "name": "Typo", "appearences": [], "tokens": {} }));
-    assert!(resolved.refused);
+fn a_key_format_1_does_not_have_is_said_and_left_out() {
+    // Format 1 is frozen, and people's files and extensions' themes carry keys of their own.
+    let resolved = load(&json!({
+        "name": "Signed", "appearance": "dark", "author": "Ana", "description": "warm",
+        "$comment": "made by hand", "tokens": { "accent.base": "#123456" }
+    }));
+    assert!(!resolved.refused);
+    assert_eq!(resolved.theme.first().value("accent.base"), "#123456");
     assert_eq!(
         said(&resolved),
-        ["appearences is not a key of a theme file"]
+        [
+            "author is not a key of a theme file, so it is left out",
+            "description is not a key of a theme file, so it is left out",
+            "$comment is not a key of a theme file, so it is left out",
+        ]
     );
+    // Geometry still refuses it, by name.
+    let sized = load(&json!({ "name": "Sized", "appearance": "dark", "radius": { "md": 9 } }));
+    assert!(sized.refused);
+}
+
+#[test]
+fn an_extension_theme_past_the_one_cap_is_refused_unread() {
+    let most = usize::try_from(crate::windowprefs::MAX_BYTES).unwrap();
+    let text = format!(
+        "{}{}",
+        json!({ "name": "Big", "appearance": "dark" }),
+        " ".repeat(most)
+    );
+    let offered = Offered::of("acme".into(), "Big".into(), &text);
+    assert!(offered.theme.refused);
+    assert_eq!(
+        offered.theme.complaints[0].said,
+        format!(
+            "Big is {} bytes, and a theme is never larger than {most}",
+            text.len()
+        )
+    );
+    let small = Offered::of(
+        "acme".into(),
+        "Small".into(),
+        &json!({ "name": "Small", "appearance": "dark" }).to_string(),
+    );
+    assert!(!small.theme.refused);
 }
 
 #[test]

@@ -306,11 +306,12 @@ appearance:
 - **A partial theme is normal.** Name the tokens you are changing; the rest come from
   Purlis Classic's appearance of the same tag.
 - **A theme that breaks its grammar is refused whole, in either format and from any source**
-  (ADR 0097 §2): a value outside its type or bound, a key the format does not have, geometry,
-  or a file that is not a theme. purlis draws Purlis in its place and a Notice names each value.
+  (ADR 0097 §2): a value outside its type or bound, a key format 2 does not have, geometry, or
+  a file that is not a theme. purlis draws Purlis in its place and a Notice names each value.
   A token the theme does not name is not an error: it is Purlis Classic's. A token or motion
-  name purlis does not have is said and left out, and the rest is drawn: a teammate's purlis may
-  know a token this one does not yet.
+  name purlis does not have, and a key format 1 does not have (`author`, `description`), is said
+  and left out, and the rest is drawn: a teammate's purlis may know a token this one does not
+  yet, and format 1 files carry keys of their own.
 - **Nothing in a theme file can stop the window.** The theme engine's `load` always answers with
   a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
   because a colour was spelled wrong is worse than every possible wrong colour.

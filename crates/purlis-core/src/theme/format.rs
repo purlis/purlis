@@ -376,7 +376,7 @@ fn read_folder(themes: &Path, name: &str) -> Result<Value, String> {
     let plain = !name.is_empty()
         && name != "."
         && name != ".."
-        && !name.contains(['/', '\\'])
+        && !name.contains(['/', '\\', ':'])
         && Path::new(name).components().count() == 1;
     if !plain {
         return Err(format!(

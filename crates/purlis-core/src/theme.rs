@@ -20,9 +20,10 @@
 //!     appearance.
 //!
 //!   **One rule for both, and for every source**: a token the theme does not name is Purlis
-//!   Classic's of the same appearance, silently; a token or motion name purlis does not have is
-//!   said and left out; a value that is there and outside its type or bound, a key the format
-//!   does not have, geometry, or a document that is not a theme **refuses the theme whole**
+//!   Classic's of the same appearance, silently; a token or motion name purlis does not have,
+//!   and a key format 1 does not have, is said and left out; a value that is there and outside
+//!   its type or bound, a key format 2 does not have, geometry, or a document that is not a
+//!   theme **refuses the theme whole**
 //!   (ADR 0097 §2). A refused theme draws Purlis, and the complaints name each value.
 //!   **It never fails**: ADR 0026 holds cold start at 2 s, and the window has to come up
 //!   whatever a file says.
@@ -200,6 +201,11 @@ pub struct Resolved {
 }
 
 impl Resolved {
+    /// The document refused for one reason.
+    pub(crate) fn refused_for(why: String) -> Self {
+        Self::refusal(vec![Complaint::said(why)])
+    }
+
     /// The document refused, for `complaints`: Purlis is drawn in its place.
     fn refusal(complaints: Vec<Complaint>) -> Self {
         Self {
@@ -414,8 +420,9 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             ));
         }
     }
-    // A key format 1 does not have refuses the theme: a misspelled key is a value nothing reads,
-    // and geometry is told so by name (ADR 0097 §7).
+    // Format 1 is frozen, and people's files and extensions' themes carry keys of their own
+    // (`author`, `description`, `$comment`): a key it does not have is said and left out, as an
+    // unknown token name is. Geometry still refuses the theme, by name (ADR 0097 §7).
     for key in from.keys() {
         if FORMAT_1_KEYS.contains(&key.as_str()) {
             continue;
@@ -423,8 +430,8 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
         if names_geometry(key) {
             complaints.push(Complaint::said(format!("{key} {GEOMETRY_IS_CORE}")));
         } else {
-            complaints.push(Complaint::said(format!(
-                "{key} is not a key of a theme file"
+            notes.push(Complaint::said(format!(
+                "{key} is not a key of a theme file, so it is left out"
             )));
         }
     }
