@@ -6,8 +6,10 @@
  *
  * The operator: *"workspace collor can add some filter and make same theme but with different
  * collor"*. So a colour is not a second theme and not a palette of its own: it is a **hue**, and
- * a token it tints keeps everything else it had. `theme.ts` decides WHICH tokens (the accent and
- * the tab shades, never the text or the terminal); this file is the arithmetic for one of them.
+ * a token it tints keeps everything else it had. Which tokens, and the hue each workspace colour
+ * gives, are the theme's recipe, which the core's theme engine resolves and hands the window with
+ * the theme (`purlis_core::theme::Tint`, #2329, #2393); this file is only the arithmetic, the
+ * same as the engine's and held to it by the shared fixture (`theme/tint-cases.json`).
  *
  * # Why OKLCH, and why the luminance is kept exactly
  *
@@ -28,22 +30,6 @@
  * Pure functions of strings and numbers; no theme is imported, so `theme.ts` can import this.
  */
 
-/**
- * The palette a workspace names its colour from, as OKLCH hues in degrees
- * (`purlis_core::extension::project::theme::PALETTE` names the same eight, and
- * `tint.test.ts` holds the two lists to each other).
- */
-export const PALETTE: Readonly<Record<string, number>> = {
-  red: 25,
-  orange: 55,
-  yellow: 95,
-  green: 145,
-  teal: 190,
-  blue: 255,
-  purple: 305,
-  pink: 350,
-};
-
 /** How much colour a neutral grey is given: a step a person feels on a strip rather than sees. */
 export const NEUTRAL_CHROMA = 0.03;
 
@@ -56,29 +42,64 @@ const CUSTOM = /^#[0-9a-fA-F]{6}$/;
 type Vec3 = [number, number, number];
 
 /**
- * The hue a workspace's colour tints with: a {@link PALETTE} name's, or the OKLCH hue of a
- * `#rrggbb`. `undefined` for no colour, for one that is neither — the core has already said why
- * in the settings tab — and for a grey, which has no hue to give.
+ * The hue of a workspace's own colour, a `#rrggbb`. `undefined` for anything else (a palette
+ * name's hue is the theme's, `theme.ts`' `hueIn`), and for a grey, which has no hue to give.
  */
 export function hueOf(colour: string | null | undefined): number | undefined {
-  if (colour === null || colour === undefined) return undefined;
-  if (Object.prototype.hasOwnProperty.call(PALETTE, colour)) return PALETTE[colour];
-  if (!CUSTOM.test(colour)) return undefined;
+  if (colour === null || colour === undefined || !CUSTOM.test(colour)) return undefined;
   const [, a, b] = oklab(parse(colour).rgb);
   if (Math.hypot(a, b) < GREY) return undefined;
   return degrees(Math.atan2(b, a));
 }
 
+/** The rule a tint's hue is chosen under, as the engine hands it: `token`, tinted, stays at
+ *  least `distance` from `from` in OKLab. */
+export type Apart = { token: string; from: string; distance: number };
+
+/** The step the chroma a tint gives is lowered by to hold its accent apart from danger. */
+const CHROMA_STEP = 0.005;
+
 /**
- * `hex` turned to `hue`, with the relative luminance it had. `hex` is a theme's value, so it is
- * `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`; an alpha it had, it keeps.
+ * **The most chroma a tint of `accent` at `hue` gives** (`purlis_core::theme::apart_chroma_of`):
+ * no limit (`Infinity`) when `accent`, tinted, stays `distance` from `danger` in OKLab; else the
+ * largest multiple of {@link CHROMA_STEP} under the accent's own chroma that keeps them apart, so
+ * the hue stays the workspace's; `undefined` when not even a grey does.
  */
-export function tintHex(hex: string, hue: number): string {
+export function apartChroma(
+  accent: string,
+  danger: string,
+  hue: number,
+  distance: number,
+): number | undefined {
+  const from = oklab(parse(danger).rgb);
+  const far = (most: number) =>
+    apartIn(oklab(parse(tintHex(accent, hue, most)).rgb), from) >= distance;
+  if (far(Number.POSITIVE_INFINITY)) return Number.POSITIVE_INFINITY;
+  const [, a, b] = oklab(parse(accent).rgb);
+  const had = Math.hypot(a, b);
+  for (let step = 80; step >= 0; step--) {
+    const most = step * CHROMA_STEP;
+    if (most < had && far(most)) return most;
+  }
+  return undefined;
+}
+
+/** The OKLab distance between two colours, written out as the engine's sum is. */
+function apartIn(a: Vec3, b: Vec3): number {
+  const [l, x, y] = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  return Math.sqrt(l * l + x * x + y * y);
+}
+
+/**
+ * `hex` turned to `hue`, with the relative luminance it had and at most `most` chroma. `hex` is a
+ * theme's value, so it is `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`; an alpha it had, it keeps.
+ */
+export function tintHex(hex: string, hue: number, most = Number.POSITIVE_INFINITY): string {
   const { rgb, alpha } = parse(hex);
   const target = luminance(rgb);
   const [, a, b] = oklab(rgb);
   const had = Math.hypot(a, b);
-  const chroma = had < GREY ? NEUTRAL_CHROMA : had;
+  const chroma = Math.min(had < GREY ? NEUTRAL_CHROMA : had, most);
   const at = (lightness: number) => shown(lightness, chroma, hue);
   // Luminance rises with lightness at a fixed chroma and hue, so the lightness that gives the
   // luminance the colour had is found by halving the interval.

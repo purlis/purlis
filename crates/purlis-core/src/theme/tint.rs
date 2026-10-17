@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A workspace's colour, as a hue shift** (charter-app#281): the arithmetic that turns the
-//! tokens of [`super::vocabulary::TINTED`] to a workspace's hue, so [`super::check`] can hold a
-//! theme's pairs at every hue a workspace can name.
+//! tokens a theme's [`Tint`] names to a workspace's hue, so [`super::check`] can hold a theme's
+//! pairs at every hue a workspace can name, and the recipe itself (#2329): whether a theme is
+//! tinted at all, which tokens, and the hue each workspace colour gives.
 //!
 //! The shift is done in OKLCH, and then the lightness is searched for until the tinted colour
 //! has **the relative luminance the original had**, so every contrast ratio a theme cleared its
@@ -11,10 +12,35 @@
 //! [`NEUTRAL_CHROMA`]; a colour keeps its own chroma, lowered (never the lightness) until the
 //! screen can show it.
 //!
-//! The window draws the same tints live (`app/src/theme/tint.ts`), and the two are held to one
-//! fixture of inputs and answers (`theme/tint-cases.json`), which both test suites read.
+//! The window is handed each resolved theme's recipe and draws the same tints live
+//! (`app/src/theme/tint.ts` has the same arithmetic), and the two are held to one fixture of
+//! inputs and answers (`theme/tint-cases.json`), which both test suites read.
+//!
+//! # A theme's `tint`
+//!
+//! ```json
+//! "tint": { "on": true, "tokens": ["accent.base", "surface.raised"], "hues": { "red": "#c0392b" } }
+//! ```
+//!
+//! - **`on`**, `true` or `false`: off, a workspace's colour tints nothing in this theme.
+//! - **`tokens`**, the tokens a workspace's colour turns, from [`TINTABLE`]. It replaces the
+//!   parent's list; a token outside [`TINTABLE`] refuses the theme, and a name purlis does not
+//!   have is said and left out. The strip shades ([`TAB_ONLY`]) are tinted on a workspace's own
+//!   tab and chat strip; the rest on the whole window too, from the workspace in front.
+//! - **`hues`**, a workspace colour's name to a hex colour or a name in the theme's palette,
+//!   whose OKLCH hue that colour gives in this theme. A colour it does not name keeps its
+//!   parent's hue, and a workspace's own `#rrggbb` is always its own hue.
+//!
+//! Each key a theme does not give is its parent's, and a theme with no parent starts from
+//! Purlis Classic's recipe: on, [`TINTED`], and [`PALETTE`]'s hues.
 
-use super::{ResolvedTheme, vocabulary::TINTED};
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+
+use super::vocabulary::{TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
+use super::floors::DANGER_APART;
+use super::{Complaint, ResolvedTheme, stringify};
 
 /// The palette a workspace names its colour from, as OKLCH hues in degrees, in
 /// [`crate::extension::project::theme::PALETTE`]'s order.
@@ -47,24 +73,26 @@ pub fn hue_of(colour: &str) -> Option<f64> {
     if digits.len() != 6 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let [_, a, b] = oklab(parse(colour)?.0);
-    if a.hypot(b) < GREY {
-        return None;
-    }
-    Some(degrees(b.atan2(a)))
+    hue_of_any(colour)
 }
 
 /// `hex` turned to `hue`, with the relative luminance it had. `hex` is a theme's value, so it is
 /// `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`; an alpha it had, it keeps. A value that is not a
 /// colour is answered as it is.
 pub fn tint_hex(hex: &str, hue: f64) -> String {
+    tint_hex_within(hex, hue, f64::INFINITY)
+}
+
+/// [`tint_hex`] with the chroma held to at most `most`: how a tint keeps its accent apart from
+/// the danger colour ([`apart_chroma`]).
+pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
     let Some((rgb, alpha)) = parse(hex) else {
         return hex.to_owned();
     };
     let target = luminance(rgb);
     let [_, a, b] = oklab(rgb);
     let had = a.hypot(b);
-    let chroma = if had < GREY { NEUTRAL_CHROMA } else { had };
+    let chroma = if had < GREY { NEUTRAL_CHROMA } else { had }.min(most);
     let at = |lightness: f64| shown(lightness, chroma, hue);
     // Luminance rises with lightness at a fixed chroma and hue, so the lightness that gives the
     // luminance the colour had is found by halving the interval.
@@ -86,19 +114,326 @@ pub fn tint_hex(hex: &str, hue: f64) -> String {
     )
 }
 
-/// `theme` with a workspace's colour turning [`TINTED`] to its hue; the theme as it is for a
-/// colour with no hue.
+/// One workspace colour's hue in a theme: a [`PALETTE`] name and its OKLCH hue in degrees.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct Hue {
+    pub name: &'static str,
+    pub hue: f64,
+}
+
+/// **A theme's tint recipe** (#2329): whether a workspace's colour tints it, which tokens, and
+/// the hue each workspace colour gives. The same in each of a theme's appearances.
+///
+/// The window is handed it as the tokens it tints on the whole window ([`Self::window`]), the
+/// tokens it tints on a workspace's own tab and chat strip ([`Self::tabs`]), and the hues: a
+/// theme that is off is handed two empty lists.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tint {
+    /// Whether a workspace's colour tints this theme at all.
+    pub on: bool,
+    /// The tokens it turns, in [`TOKENS`]' order, each one of [`TINTABLE`].
+    tokens: Vec<&'static str>,
+    /// Every [`PALETTE`] name's hue, in its order.
+    pub hues: Vec<Hue>,
+}
+
+impl Default for Tint {
+    /// Purlis Classic's recipe, the one a theme starts from.
+    fn default() -> Self {
+        Self {
+            on: true,
+            tokens: TINTED.to_vec(),
+            hues: PALETTE
+                .iter()
+                .map(|(name, hue)| Hue { name, hue: *hue })
+                .collect(),
+        }
+    }
+}
+
+impl Tint {
+    /// The tokens a workspace's colour turns on its own tab and chat strip: none when off.
+    pub fn tabs(&self) -> &[&'static str] {
+        if self.on { &self.tokens } else { &[] }
+    }
+
+    /// The tokens the colour of the workspace in front turns on the whole window: [`Self::tabs`]
+    /// without the strip shades.
+    pub fn window(&self) -> Vec<&'static str> {
+        self.tabs()
+            .iter()
+            .copied()
+            .filter(|token| !TAB_ONLY.contains(token))
+            .collect()
+    }
+
+    /// The hue a workspace's colour gives in this theme: a [`PALETTE`] name's hue here, or the
+    /// OKLCH hue of a `#rrggbb`; `None` for anything else, and for a grey.
+    pub fn hue(&self, colour: &str) -> Option<f64> {
+        if let Some(one) = self.hues.iter().find(|one| one.name == colour) {
+            return Some(one.hue);
+        }
+        colour.starts_with('#').then(|| hue_of(colour)).flatten()
+    }
+}
+
+/// The token a tint holds [`DANGER_APART`] from [`APART_FROM`].
+pub const APART: &str = "accent.base";
+
+/// The colour a tinted [`APART`] is held away from.
+pub const APART_FROM: &str = "danger.base";
+
+/// What the window is handed: the two lists, the hues, and the floor a tint holds.
+#[derive(serde::Serialize)]
+struct Handed<'a> {
+    window: Vec<&'static str>,
+    tabs: &'a [&'static str],
+    hues: &'a [Hue],
+    apart: Apart,
+}
+
+/// The rule a tint's hue is chosen under, as the window applies it: `token`, tinted, stays at
+/// least `distance` from `from` in OKLab.
+#[derive(serde::Serialize)]
+struct Apart {
+    token: &'static str,
+    from: &'static str,
+    distance: f64,
+}
+
+impl serde::Serialize for Tint {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        Handed {
+            window: self.window(),
+            tabs: self.tabs(),
+            hues: &self.hues,
+            apart: Apart {
+                token: APART,
+                from: APART_FROM,
+                distance: DANGER_APART,
+            },
+        }
+        .serialize(to)
+    }
+}
+
+/// The keys of a theme's `tint`.
+const KEYS: &[&str] = &["on", "tokens", "hues"];
+
+/// **Reads a theme's `tint`** over `parent`'s recipe, saying in `complaints` what refuses the
+/// theme and in `notes` a token name purlis does not have, which is left out. `palette` is the
+/// theme's own, which a hue may name a colour of.
+pub(super) fn read(
+    raw: &Value,
+    parent: &Tint,
+    palette: &BTreeMap<String, String>,
+    complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
+) -> Tint {
+    let mut tint = parent.clone();
+    let Some(given) = raw.as_object() else {
+        complaints.push(Complaint::said("tint is an object of on, tokens and hues"));
+        return tint;
+    };
+    for key in given.keys() {
+        if !KEYS.contains(&key.as_str()) {
+            complaints.push(Complaint::said(format!("{key} is not a key of tint")));
+        }
+    }
+    match given.get("on") {
+        None => {}
+        Some(Value::Bool(on)) => tint.on = *on,
+        Some(other) => complaints.push(Complaint::said(format!(
+            "tint's on is {}, which is not true or false",
+            stringify(other)
+        ))),
+    }
+    if let Some(raw) = given.get("tokens")
+        && let Some(tokens) = tokens(raw, complaints, notes)
+    {
+        tint.tokens = tokens;
+    }
+    if let Some(raw) = given.get("hues") {
+        hues(raw, palette, &mut tint.hues, complaints);
+    }
+    tint
+}
+
+/// A `tokens` list, in [`TOKENS`]' order, or `None` (and why) when it is not one.
+fn tokens(
+    raw: &Value,
+    complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
+) -> Option<Vec<&'static str>> {
+    const NOT_A_LIST: &str = "tint's tokens is a list of token names";
+    let Some(given) = raw.as_array() else {
+        complaints.push(Complaint::said(NOT_A_LIST));
+        return None;
+    };
+    // Held before anything is read, so a list of any length costs one count.
+    if given.len() > TOKENS.len() || !given.iter().all(Value::is_string) {
+        complaints.push(Complaint::said(NOT_A_LIST));
+        return None;
+    }
+    let mut named = Vec::new();
+    let before = complaints.len();
+    for token in given.iter().filter_map(Value::as_str) {
+        match TOKENS.iter().find(|it| **it == token) {
+            Some(known) if TINTABLE.contains(known) => named.push(*known),
+            Some(_) => complaints.push(Complaint::about(
+                token,
+                format!("tint's tokens name {token}, which a workspace's colour never tints"),
+            )),
+            None => notes.push(Complaint::about(
+                token,
+                format!(
+                    "tint's tokens name {token}, which is not a purlis token, so it is left out"
+                ),
+            )),
+        }
+    }
+    if complaints.len() != before {
+        return None;
+    }
+    Some(
+        TOKENS
+            .iter()
+            .copied()
+            .filter(|token| named.contains(token))
+            .collect(),
+    )
+}
+
+/// Lays a `hues` object over `hues`, saying what is wrong with any of it.
+fn hues(
+    raw: &Value,
+    palette: &BTreeMap<String, String>,
+    hues: &mut [Hue],
+    complaints: &mut Vec<Complaint>,
+) {
+    let Some(given) = raw.as_object() else {
+        complaints.push(Complaint::said(
+            "tint's hues is an object of workspace colours to colours",
+        ));
+        return;
+    };
+    for (name, value) in given {
+        let Some(one) = hues.iter_mut().find(|one| one.name == name) else {
+            complaints.push(Complaint::said(format!(
+                "tint's hues name {}, which is not a workspace colour",
+                as_written(name)
+            )));
+            continue;
+        };
+        let hex = value.as_str().and_then(|it| {
+            if is_colour(it) {
+                Some(it)
+            } else {
+                palette.get(it).map(String::as_str)
+            }
+        });
+        let Some(hex) = hex else {
+            complaints.push(Complaint::said(format!(
+                "tint's hue for {name} is {}, which is neither a hex colour nor a name in this \
+                 theme's palette",
+                stringify(value)
+            )));
+            continue;
+        };
+        match hue_of_any(hex) {
+            Some(hue) => one.hue = hue,
+            None => complaints.push(Complaint::said(format!(
+                "tint's hue for {name} is {hex}, a grey, which has no hue to give"
+            ))),
+        }
+    }
+}
+
+/// A name a file wrote, as a sentence shows it: bare when it is a plain name, quoted otherwise.
+fn as_written(name: &str) -> String {
+    if super::format::is_name(name) {
+        name.to_owned()
+    } else {
+        stringify(&Value::String(name.to_owned()))
+    }
+}
+
+/// The OKLCH hue of any theme colour (`#rgb` to `#rrggbbaa`, its alpha left out); `None` for a
+/// grey.
+fn hue_of_any(hex: &str) -> Option<f64> {
+    let [_, a, b] = oklab(parse(hex)?.0);
+    if a.hypot(b) < GREY {
+        return None;
+    }
+    Some(degrees(b.atan2(a)))
+}
+
+/// `theme` with a workspace's colour turning the tokens its recipe names to the hue it gives
+/// there ([`Tint`]): what the window draws on that workspace's tab and chat strip. The theme as
+/// it is for a theme that is not tinted, and for a colour with no hue.
+///
+/// **The tinted accent is held apart from the danger colour** ([`DANGER_APART`]): at a hue that
+/// would bring it closer, the tint keeps the hue and gives less colour ([`apart_chroma`]), so a
+/// red workspace stays red and stays apart from danger. A theme with no such amount is drawn
+/// untinted in that colour.
 pub fn tinted(theme: &ResolvedTheme, colour: &str) -> ResolvedTheme {
-    let Some(hue) = hue_of(colour) else {
+    let tokens = theme.tint.tabs();
+    let Some(hue) = theme.tint.hue(colour).filter(|_| !tokens.is_empty()) else {
+        return theme.clone();
+    };
+    let Some(most) = apart_chroma(theme, hue) else {
         return theme.clone();
     };
     let mut tint = theme.clone();
-    for token in TINTED {
+    for token in tokens {
         if let Some(value) = tint.values.get_mut(token) {
-            *value = tint_hex(value, hue);
+            *value = tint_hex_within(value, hue, most);
         }
     }
     tint
+}
+
+/// The step the chroma a tint gives is lowered by to hold its accent apart from danger.
+const CHROMA_STEP: f64 = 0.005;
+
+/// **The most chroma a tint of `theme` at `hue` gives**: no limit (infinity) when the accent,
+/// tinted, stays [`DANGER_APART`] from the danger colour, or the recipe does not tint the accent;
+/// else the largest multiple of [`CHROMA_STEP`] under the accent's own chroma that keeps them
+/// apart; `None` when not even a grey does. The window does the same arithmetic
+/// (`tint.ts`' `apartChroma`), held to it by the shared fixture.
+pub fn apart_chroma(theme: &ResolvedTheme, hue: f64) -> Option<f64> {
+    if !theme.tint.tabs().contains(&APART) {
+        return Some(f64::INFINITY);
+    }
+    apart_chroma_of(theme.value(APART), theme.value(APART_FROM), hue)
+}
+
+/// [`apart_chroma`] of an `accent` and a `danger` colour: what the shared fixture holds.
+pub fn apart_chroma_of(accent: &str, danger: &str, hue: f64) -> Option<f64> {
+    let Some(danger) = oklab_of(danger) else {
+        return Some(f64::INFINITY);
+    };
+    let far = |most: f64| {
+        oklab_of(&tint_hex_within(accent, hue, most))
+            .is_some_and(|tinted| distance(tinted, danger) >= DANGER_APART)
+    };
+    if far(f64::INFINITY) {
+        return Some(f64::INFINITY);
+    }
+    let [_, a, b] = oklab_of(accent)?;
+    let had = a.hypot(b);
+    (0..=80)
+        .rev()
+        .map(|step| f64::from(step) * CHROMA_STEP)
+        .filter(|most| *most < had)
+        .find(|most| far(*most))
+}
+
+/// The OKLab distance between two colours, written out so the window's sum is the same sum:
+/// what the tint holds apart and the consent floors measure ([`super::floors`]).
+pub(super) fn distance(a: Vec3, b: Vec3) -> f64 {
+    let (l, x, y) = (a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    (l * l + x * x + y * y).sqrt()
 }
 
 /// A theme value in OKLab, its alpha left out; `None` for a value that is not a colour.
@@ -150,7 +485,7 @@ fn degrees(rad: f64) -> f64 {
 /// A theme value as linear sRGB, and its alpha as the two hex digits it was written with.
 fn parse(hex: &str) -> Option<(Vec3, String)> {
     let digits = hex.strip_prefix('#')?;
-    if !super::vocabulary::is_colour(hex) {
+    if !is_colour(hex) {
         return None;
     }
     let long: String = if digits.len() <= 4 {

@@ -934,5 +934,354 @@
    "colour": "#c0392b",
    "tinted": "#ffffff"
   }
+ ],
+ "classic": {
+  "window": [
+   "accent.base",
+   "accent.surface",
+   "focus.ring",
+   "tab.active",
+   "list.selected",
+   "list.selected-edge"
+  ],
+  "tabs": [
+   "accent.base",
+   "accent.surface",
+   "focus.ring",
+   "tab.active",
+   "list.selected",
+   "list.selected-edge",
+   "layer.workspace",
+   "layer.chat",
+   "layer.selected"
+  ],
+  "hues": [
+   {
+    "name": "red",
+    "hue": 25.0
+   },
+   {
+    "name": "orange",
+    "hue": 55.0
+   },
+   {
+    "name": "yellow",
+    "hue": 95.0
+   },
+   {
+    "name": "green",
+    "hue": 145.0
+   },
+   {
+    "name": "teal",
+    "hue": 190.0
+   },
+   {
+    "name": "blue",
+    "hue": 255.0
+   },
+   {
+    "name": "purple",
+    "hue": 305.0
+   },
+   {
+    "name": "pink",
+    "hue": 350.0
+   }
+  ],
+  "apart": {
+   "token": "accent.base",
+   "from": "danger.base",
+   "distance": 0.1
+  }
+ },
+ "apart": [
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 25.0,
+   "most": null,
+   "tinted": "#f59891"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 55.0,
+   "most": null,
+   "tinted": "#eca06c"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 95.0,
+   "most": null,
+   "tinted": "#c7b057"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 145.0,
+   "most": null,
+   "tinted": "#7fc181"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 190.0,
+   "most": null,
+   "tinted": "#3fc4bd"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 255.0,
+   "most": null,
+   "tinted": "#7fb4f8"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 305.0,
+   "most": null,
+   "tinted": "#c5a2ef"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 350.0,
+   "most": null,
+   "tinted": "#ec98c0"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 7.5,
+   "most": null,
+   "tinted": "#f397a9"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 37.5,
+   "most": null,
+   "tinted": "#f39b80"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 67.5,
+   "most": null,
+   "tinted": "#e3a560"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 97.5,
+   "most": null,
+   "tinted": "#c4b157"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 127.5,
+   "most": null,
+   "tinted": "#9bbc6c"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 157.5,
+   "most": null,
+   "tinted": "#6ac391"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 187.5,
+   "most": null,
+   "tinted": "#41c4b9"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 217.5,
+   "most": null,
+   "tinted": "#47bfdd"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 247.5,
+   "most": null,
+   "tinted": "#73b7f5"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 277.5,
+   "most": null,
+   "tinted": "#a1acfa"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 307.5,
+   "most": null,
+   "tinted": "#c8a1ed"
+  },
+  {
+   "accent": "#52c4a6",
+   "danger": "#c97474",
+   "hue": 337.5,
+   "most": null,
+   "tinted": "#e599cf"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 25.0,
+   "most": 0.05,
+   "tinted": "#795451"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 55.0,
+   "most": 0.07,
+   "tinted": "#7e5437"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 95.0,
+   "most": null,
+   "tinted": "#6d5c18"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 145.0,
+   "most": null,
+   "tinted": "#39683b"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 190.0,
+   "most": null,
+   "tinted": "#006965"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 255.0,
+   "most": null,
+   "tinted": "#3a5f8e"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 305.0,
+   "most": null,
+   "tinted": "#6b5288"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 350.0,
+   "most": 0.08,
+   "tinted": "#824d67"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 7.5,
+   "most": 0.055,
+   "tinted": "#7b525a"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 37.5,
+   "most": 0.055,
+   "tinted": "#7b5449"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 67.5,
+   "most": null,
+   "tinted": "#7f5421"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 97.5,
+   "most": null,
+   "tinted": "#6b5d18"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 127.5,
+   "most": null,
+   "tinted": "#4e652b"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 157.5,
+   "most": null,
+   "tinted": "#286947"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 187.5,
+   "most": null,
+   "tinted": "#006963"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 217.5,
+   "most": null,
+   "tinted": "#00677b"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 247.5,
+   "most": null,
+   "tinted": "#30618c"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 277.5,
+   "most": null,
+   "tinted": "#535990"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 307.5,
+   "most": null,
+   "tinted": "#6d5286"
+  },
+  {
+   "accent": "#086a56",
+   "danger": "#a83232",
+   "hue": 337.5,
+   "most": null,
+   "tinted": "#804c72"
+  },
+  {
+   "accent": "#777777",
+   "danger": "#777777",
+   "hue": 25.0,
+   "most": "none",
+   "tinted": null
+  }
  ]
 }

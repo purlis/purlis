@@ -465,10 +465,10 @@ fn a_key_format_2_does_not_have_refuses_the_theme() {
 }
 
 #[test]
-fn options_and_tint_stay_refused_for_now() {
+fn options_stay_refused_for_now() {
     let loaded = load(&json!({
         "name": "Ahead",
-        "options": [], "tint": {},
+        "options": [],
         "appearances": [{ "id": "dark", "appearance": "dark" }]
     }));
     assert!(loaded.refused);
@@ -476,7 +476,6 @@ fn options_and_tint_stay_refused_for_now() {
         said(&loaded),
         [
             "options is not read yet (#2325), so the theme cannot be drawn as written",
-            "tint is not read yet (#2329), so the theme cannot be drawn as written",
         ]
     );
 }

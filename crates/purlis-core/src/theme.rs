@@ -84,7 +84,10 @@ pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use person::{Density, Layer, Person};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
-pub use tint::{PALETTE, hue_of, tint_hex, tinted};
+pub use tint::{
+    APART, APART_FROM, Hue, PALETTE, Tint, apart_chroma, apart_chroma_of, hue_of,
+    tint_hex, tint_hex_within, tinted,
+};
 use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
 
 #[cfg(test)]
@@ -97,6 +100,8 @@ mod geometry_tests;
 mod icons_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tint_tests;
 
 /// Whether a theme is drawn on a dark window or a light one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -152,6 +157,9 @@ pub struct ResolvedTheme {
     pub(crate) tuned: Geometry,
     /// The UI, mono and terminal fonts.
     pub fonts: Fonts,
+    /// How a workspace's colour tints the theme (#2329), the same in each of its appearances:
+    /// Purlis Classic's recipe unless the theme says otherwise.
+    pub tint: Tint,
 }
 
 impl ResolvedTheme {
@@ -328,6 +336,7 @@ fn built_in_of(text: &str) -> Theme {
                 compact: geometry::classic_compact(),
                 tuned: Geometry::new(),
                 fonts: Fonts::classic(),
+                tint: Tint::default(),
             }
         })
         .collect();
@@ -533,6 +542,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             compact: base.compact.clone(),
             tuned: base.tuned.clone(),
             fonts: base.fonts.clone(),
+            tint: Tint::default(),
         }),
         complaints: notes,
         refused: false,

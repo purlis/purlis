@@ -8,16 +8,14 @@ import { describe, expect, it } from "vitest";
 import { VIEW_MARKS } from "../ActivityBar";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { DURATIONS, EASINGS } from "./motion";
-import { TINTED_TABS, TOKENS } from "./theme";
-import { PALETTE } from "./tint";
+import { DEFAULT_THEME, TOKENS, WORKSPACE_COLOURS } from "./theme";
 
 /**
  * **The window writes the vocabulary the core's theme engine validates** (spec #2313).
  *
  * The engine (`purlis_core::theme`) decides what a theme may say: the token names, the motion
- * names, the names a theme may not set because they are core geometry, which tokens a
- * workspace's colour turns, and the palette's hues. The window names the same lists to write a
- * resolved theme to the document and to tint it live, and a list that drifted would be a token
+ * names, and the names a theme may not set because they are core geometry. The window names the
+ * same lists to write a resolved theme to the document, and a list that drifted would be a token
  * the engine checks and the window never draws, or one the window draws that no theme can set.
  * So each is read out of the engine's source here, and has to be the window's exactly.
  */
@@ -52,25 +50,35 @@ describe("the engine's vocabulary", () => {
     expect(list(vocabulary, "GEOMETRY")).toEqual([...GEOMETRY_PROPERTIES]);
   });
 
-  it("tints the tokens the window tints on a workspace's tabs", () => {
-    expect(list(vocabulary, "TINTED")).toEqual([...TINTED_TABS]);
-  });
-
   it("lets an icon set draw the window's own views, in the rails' order", () => {
     expect(list(vocabulary, "RAIL_VIEWS")).toEqual(Object.keys(VIEW_MARKS));
   });
 });
 
-describe("the engine's palette", () => {
-  it("is the window's names and hues", () => {
+describe("the engine's tint recipe", () => {
+  // The window keeps no list of tinted tokens or hues (#2393): it is handed each theme's recipe.
+  // Classic's, as the test window is handed it, is the engine's default.
+  it("is handed with Purlis Classic as the engine's default recipe", () => {
+    expect([...DEFAULT_THEME.tint.tabs]).toEqual(list(read("vocabulary.rs"), "TINTED"));
     const at = /pub const PALETTE: \[\(&str, f64\); \d+\] = \[([\s\S]*?)\];/.exec(read("tint.rs"));
     expect(at, "PALETTE was not found").not.toBeNull();
-    const hues = Object.fromEntries(
-      [...(at?.[1] ?? "").matchAll(/\("([^"]+)",\s*([\d.]+)\)/g)].map(([, name, hue]) => [
+    const hues = [...(at?.[1] ?? "").matchAll(/\("([^"]+)",\s*([\d.]+)\)/g)].map(
+      ([, name, hue]) => ({
         name,
-        Number(hue),
-      ]),
+        hue: Number(hue),
+      }),
     );
-    expect(hues).toEqual({ ...PALETTE });
+    expect([...DEFAULT_THEME.tint.hues]).toEqual(hues);
+  });
+
+  it("names the colours a workspace may name", () => {
+    const source = readFileSync(
+      join(process.cwd(), "..", "crates", "purlis-core", "src", "extension", "project", "theme.rs"),
+      "utf8",
+    );
+    const declared = /PALETTE:\s*\[&str;\s*\d+\]\s*=\s*\[([^\]]*)\]/.exec(source);
+    expect(declared, "PALETTE was not found").not.toBeNull();
+    const named = [...(declared?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((hit) => hit[1]);
+    expect([...WORKSPACE_COLOURS]).toEqual(named);
   });
 });

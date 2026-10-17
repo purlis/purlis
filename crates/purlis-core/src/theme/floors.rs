@@ -140,9 +140,11 @@ struct Failure {
 /// workspace colour, and danger apart from primary as the theme writes them.
 fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
     let mut found = Vec::new();
-    let tints = tint::PALETTE
+    let tints = theme
+        .tint
+        .hues
         .iter()
-        .map(|(colour, _)| tint::tinted(theme, colour));
+        .map(|one| tint::tinted(theme, one.name));
     for drawn in std::iter::once(theme.clone()).chain(tints) {
         for (floor, pair) in pairs() {
             if ratio(&drawn, pair) < pair.floor {
@@ -170,11 +172,7 @@ fn apart_of(one: &str, other: &str) -> f64 {
     let (Some(one), Some(other)) = (tint::oklab_of(one), tint::oklab_of(other)) else {
         return 0.0;
     };
-    one.iter()
-        .zip(other)
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<f64>()
-        .sqrt()
+    tint::distance(one, other)
 }
 
 /// How far `danger.base` is from `accent.base` in OKLab, as the theme writes them.
