@@ -397,7 +397,9 @@ describe("the control guard (#1837)", () => {
  * takes `--size-chrome`.
  *
  * Either may also be as tall as its content or its container (`auto`, `100%`, `0`, `none`), or
- * read a custom property that holds one of the two tokens. **A named exception** gives its
+ * read a custom property that holds the token it may take: a property brings its token's rule,
+ * so one holding `--size-chrome` is no way to a full control at the chrome height. The small
+ * form's "inside a strip" is a descendant or a child of one, not a sibling. **A named exception** gives its
  * reason (`HEIGHT_EXCEPTIONS`); the list is exact, as the allowance is, so an exception whose
  * rule is gone fails until it is deleted.
  *
@@ -467,7 +469,10 @@ export function splitList(list: string): string[] {
   let start = 0;
   for (let i = 0; i < list.length; i++) {
     const char = list[i];
-    if (char === "(" || char === "[") depth++;
+    if (char === '"' || char === "'") {
+      const close = list.indexOf(char, i + 1);
+      i = close < 0 ? list.length : close;
+    } else if (char === "(" || char === "[") depth++;
     else if (char === ")" || char === "]") depth--;
     else if (char === "," && depth === 0) {
       parts.push(list.slice(start, i).trim());
@@ -547,40 +552,79 @@ function partsOf(compound: string): { element?: string; classes: string[]; toggl
 const isStrip = (name: string) =>
   (STRIP.test(name) && !NOT_A_STRIP.has(name)) || STRIP_PARTS.has(name);
 
+/** The compounds a selector's subject sits inside: each one a descendant (` `) or child (`>`)
+ *  combinator leads from. A sibling (`+`, `~`) is beside the subject, not around it, though
+ *  what is around the sibling is around the subject too. */
+function ancestorsOf(selector: string): string[] {
+  const compounds: string[] = [];
+  const combinators: string[] = [];
+  let depth = 0;
+  let current = "";
+  let pending = "";
+  for (const char of selector.trim()) {
+    if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    if (depth === 0 && /[\s>+~]/.test(char)) {
+      if (current) {
+        compounds.push(current);
+        current = "";
+        pending = " ";
+      }
+      if (char !== " " && !/\s/.test(char)) pending = char;
+      continue;
+    }
+    if (!current && compounds.length > 0) combinators.push(pending);
+    current += char;
+  }
+  if (current) compounds.push(current);
+  // combinators[i] sits between compounds[i] and compounds[i + 1].
+  return compounds.slice(0, -1).filter((_, i) => !["+", "~"].includes(combinators[i]));
+}
+
 /** What a plain selector's subject is, for this guard: a control (small, when it is the small
- *  class or sits inside a strip), a strip, or neither. */
+ *  class or sits inside a strip), a strip, or neither. A subject whose own class is a control's
+ *  is a control, whatever its other classes are named. */
 export function subjectKind(
   selector: string,
   controls: ReadonlySet<string>,
 ): "a control" | "a small control" | "a strip" | undefined {
-  const start = subjectStart(selector.trim());
-  const subject = selector.trim().slice(start);
+  const subject = selector.trim().slice(subjectStart(selector.trim()));
   if (subject.includes("::")) return undefined;
   const { element, classes, toggle } = partsOf(subject);
-  if (classes.some(isStrip)) return "a strip";
+  const controlClass = classes.some(
+    (name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name),
+  );
+  if (!controlClass && classes.some(isStrip)) return "a strip";
   const control =
+    controlClass ||
     (element === "input" && !toggle) ||
-    (element !== undefined && ["button", "select", "textarea"].includes(element)) ||
-    classes.some((name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name));
+    (element !== undefined && ["button", "select", "textarea"].includes(element));
   if (!control) return undefined;
-  const above = partsOf(selector.trim().slice(0, start)).classes;
-  const small = classes.some((name) => SMALL_CONTROLS.has(name)) || above.some(isStrip);
+  const around = ancestorsOf(selector).flatMap((compound) => partsOf(compound).classes);
+  const small = classes.some((name) => SMALL_CONTROLS.has(name)) || around.some(isStrip);
   return small ? "a small control" : "a control";
 }
 
-/** The custom properties that hold one of the two heights, directly or through another one.
- *  Where a property is declared is not followed: one that holds a token anywhere holds it. */
-function heightCustoms(sheets: readonly string[]): Set<string> {
+type Height = "--size-control" | "--size-chrome";
+
+/** The custom properties that hold one of the two heights, directly or through another one, and
+ *  which one each holds. Where a property is declared is not followed: one that holds a token
+ *  anywhere holds it. */
+function heightCustoms(sheets: readonly string[]): Map<string, Height> {
   const all = sheets
     .flatMap((css) => declarations(css))
     .filter(({ property }) => property.startsWith("--"));
-  const held = new Set(["--size-control", "--size-chrome"]);
+  const held = new Map<string, Height>([
+    ["--size-control", "--size-control"],
+    ["--size-chrome", "--size-chrome"],
+  ]);
   for (let grew = true; grew;) {
     grew = false;
     for (const { property, value } of all) {
       const read = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value)?.[1];
-      if (read && held.has(read) && !held.has(property)) {
-        held.add(property);
+      const token = read === undefined ? undefined : held.get(read);
+      if (token && !held.has(property)) {
+        held.set(property, token);
         grew = true;
       }
     }
@@ -590,14 +634,16 @@ function heightCustoms(sheets: readonly string[]): Set<string> {
 
 type Kind = "a control" | "a small control" | "a strip";
 
-/** Whether a height is on the tokens for what it is set on. */
-function onTheTokens(kind: Kind, value: string, held: ReadonlySet<string>) {
+/** Whether a height is on the tokens for what it is set on, read straight or through a custom
+ *  property that holds one (`heightCustoms`): the chrome height for a strip or a small control,
+ *  the control height for any control. */
+function onTheTokens(kind: Kind, value: string, held: ReadonlyMap<string, Height>) {
   if (AS_TALL_AS.test(value)) return true;
   const read = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value)?.[1];
-  if (kind === "a strip") return read === "--size-chrome";
-  if (read === "--size-control") return true;
-  if (read === "--size-chrome") return kind === "a small control";
-  if (read && held.has(read)) return true;
+  const token = read === undefined ? undefined : held.get(read);
+  if (token === "--size-chrome") return kind !== "a control";
+  if (token === "--size-control") return kind !== "a strip";
+  if (kind === "a strip") return false;
   return /^calc\(\s*var\(--size-control\)\s*\*\s*\d+\s*\)$/.test(value);
 }
 
@@ -606,7 +652,7 @@ function onTheTokens(kind: Kind, value: string, held: ReadonlySet<string>) {
 export function cssHeights(
   css: string,
   controls: ReadonlySet<string>,
-  held: ReadonlySet<string> = heightCustoms([css]),
+  held: ReadonlyMap<string, Height> = heightCustoms([css]),
 ): string[] {
   return declarations(css).flatMap(({ context, property, value }) => {
     if (!HEIGHT_PROPERTY.test(property)) return [];
@@ -753,6 +799,12 @@ describe("the control and chrome heights (#2449)", () => {
       ".activity-bar",
       ".activity-tab svg",
       ".ui-checkbox",
+      ".bar + button",
+      ".bar ~ .x + button",
+      ".bar .x + button",
+      ".bar > .x ~ button",
+      ".ui-button.toolbar-head",
+      ".tab-tasks.task-end",
     ].map((selector) => subjectKind(selector, controls));
     expect(kinds).toEqual([
       "a control",
@@ -777,11 +829,18 @@ describe("the control and chrome heights (#2449)", () => {
       undefined,
       undefined,
       undefined,
+      "a control",
+      "a control",
+      "a small control",
+      "a small control",
+      "a control",
+      "a control",
     ]);
   });
 
   it("splits a list at its own commas, opens :is() and :where(), and follows nesting", () => {
     expect(splitList(".a:is(.b, .c) button, .d")).toEqual([".a:is(.b, .c) button", ".d"]);
+    expect(splitList(`[title="a, b"] button, .d`)).toEqual([`[title="a, b"] button`, ".d"]);
     expect(opened(":where(.x, .y) :is(button, .z)")).toEqual([
       ".x button",
       ".x .z",
@@ -813,7 +872,9 @@ describe("the control and chrome heights (#2449)", () => {
       .ui-button-sm { block-size: var(--size-chrome); }
       .bar button { block-size: var(--size-chrome); }
       textarea { min-block-size: calc(var(--size-control) * 3); }
-      .ui-menu-item { min-block-size: var(--lead); }
+      .ui-menu-item { min-block-size: var(--block); }
+      :root { --block: var(--size-control); }
+      .bar button { min-block-size: var(--lead); }
       .bar { min-height: var(--size-chrome); }
       .ui-button-row > .ui-button { block-size: auto; }
       .pane-head { height: 100%; }
@@ -827,6 +888,13 @@ describe("the control and chrome heights (#2449)", () => {
     expect(cssHeights("button { height: calc(var(--size-control) * 1.5); }", new Set())).toEqual([
       "button | height: calc(var(--size-control) * 1.5) (a control)",
     ]);
+    // A custom property brings its token's rule: a menu's row is at least a control tall.
+    expect(
+      cssHeights(
+        ":root { --lead: var(--size-chrome); } .ui-menu-item { min-block-size: var(--lead); }",
+        new Set(),
+      ),
+    ).toEqual([".ui-menu-item | min-block-size: var(--lead) (a control)"]);
     expect(cssHeights(".panel button { height: var(--size-chrome); }", new Set())).toEqual([
       ".panel button | height: var(--size-chrome) (a control)",
     ]);
