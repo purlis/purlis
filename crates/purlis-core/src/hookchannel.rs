@@ -29,6 +29,9 @@ use purlis_session_protocol::session;
 use crate::eventlog::{Entry, Recorder};
 use crate::hookwire::relay::{Keeping, Relaying};
 
+mod record;
+pub use record::{how_its_run_ended, its_children_end};
+
 /// One line in the host's log: the window keeps what its own host says, and `purlis serve` says
 /// it on its standard error.
 fn host_says(line: &str) {

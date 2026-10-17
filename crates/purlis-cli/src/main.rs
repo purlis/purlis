@@ -796,18 +796,20 @@ fn serve() -> ExitCode {
     );
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone(&place, |place| {
+            // The event log of this machine, opened as the host first holds a project.
+            let log = purlis_core::hookchannel::EventLog::on_this_machine();
             purlis_core::browsers::given_to(
                 purlis_host::Hosting::kept(
                     &place.credentials,
                     Composes(purlis_core::hoststart::Kit::installed_beside_this_binary()),
                     purlis_host::Terminals,
                     // Each held project's hooks, heard as the window's own host hears them
-                    // (#2447), in the event log of this machine, opened as it first holds one.
-                    purlis_core::hookchannel::HookChannels::keeping(
-                        purlis_core::hookchannel::EventLog::on_this_machine(),
-                    ),
+                    // (#2447).
+                    purlis_core::hookchannel::HookChannels::keeping(log.clone()),
                     Confines,
                 )
+                // What a chat's end leaves, kept as the window's own host keeps it (#2494).
+                .recording_with(log)
                 // `purlis stop --all` is heard with no window there (#2190).
                 .heeding(purlis_core::halt::OnDisk(config.clone())),
             )

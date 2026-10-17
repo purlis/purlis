@@ -287,9 +287,21 @@ rewrites the file; the next pick made in Settings writes the new id.
   own mark, so Purlis Classic, which names no set, keeps today's icons. A view name purlis does
   not have is said and left out. Purlis's own set is Lucide's icons, converted
   (`app/src/theme/railIcons.vendor.ts`, with Lucide's licence in the folder).
+- **`options`** are the theme's toggles and choices (#2325): each has an `id`, a `kind`
+  (`toggle` or `choice`), a `label`, an optional `description` and a `default`. A toggle's `on`
+  is a layer drawn when it is on; a choice has at least two named `values`, each a layer. A
+  layer is `tokens` for every appearance and optionally `appearances`, token values for one
+  appearance by its id, drawn over the first; a layer holds what an appearance's `tokens` may,
+  geometry within its bounds included. There are no free-number options. An option
+  nothing chose draws its default. A theme has its parent's options, and one of its own with a
+  parent's id takes that one's place. The theme check covers every appearance × option
+  combination, so a theme has at most 64, and one past that is refused with its count. The
+  theme engine takes the option values as an input (`Theme::with`), by the same precedence as
+  the appearance, and Settings › Appearance shows the drawn theme's options with where each
+  value comes from.
 - **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
-  draws Purlis and says what is wrong. Options (#2325) and tint (#2329) are not read yet, so
-  naming one refuses the theme.
+  draws Purlis and says what is wrong. Tint (#2329) is not read yet, so naming it refuses the
+  theme.
 - **Geometry and fonts** (#2326): an appearance's `tokens` may give a geometry token a number
   inside its bound (`"radius.md": 6`), a `compact` object tunes what compact density draws for
   every appearance, and `fonts` names the UI, mono and terminal fonts from the folder's
@@ -1015,7 +1027,12 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   segment are their list's). A strip or a pane header is a class named for one (`-bar`,
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
-  as part of itself (`.pane-task-ends`, `.tab-tasks`). A height that is its content's or its
+  as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's
+  top line is one height** (#2484): every chip on it (the breadcrumb, Brief, the gauge, the
+  harness, where the chat came from, its work item: `PANE_LINE_CHIPS`) is set to
+  `--size-chrome`, and the guard fails a chip that is not. A strip's part is the strip's height
+  even when it is a button. The guard reads what `LayoutPanes.tsx` draws in the line, so a new
+  chip fails until it is listed and held. A height that is its content's or its
   container's (`auto`, `100%`) passes. Heights are held where a rule declares one: a control
   with no declared height (one its padding makes tall) is not checked, and a custom property is
   held by its value, not by the scope it is declared in. The exceptions are named with their

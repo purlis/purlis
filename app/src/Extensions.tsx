@@ -10,6 +10,7 @@ import {
   type ExtensionTheme,
   type InstalledExtensions,
   type ThemeTrouble,
+  type WindowOption,
 } from "./bindings";
 import { extensionsChanged } from "./extensionsOn";
 import { Choice, SettingActions } from "./settings/components";
@@ -415,6 +416,24 @@ export function drawThemeFor(on: ReadonlySet<string> | "every", pick: string | n
   allowed = on;
   picked = pick;
   return drawWhatIsInForce();
+}
+
+/**
+ * **The options of the theme the window draws** (#2325), each with the value it is drawn with
+ * and whether a choice made it: the core's theme engine answers (`theme_in_force`), for what
+ * the project in front picked and has on. Settings › Appearance shows them; nothing is drawn.
+ * An answer the core cannot give is no options.
+ */
+export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
+  const on = allowed === "every" ? null : [...allowed];
+  try {
+    const answered = await commands.themeInForce(picked, on, systemIsLight(), false);
+    if (answered.status !== "ok") return [];
+    const given = answered.data as typeof answered.data | null;
+    return Array.isArray(given?.options) ? given.options : [];
+  } catch {
+    return [];
+  }
 }
 
 /** For tests: forget what was asked and for whom. */

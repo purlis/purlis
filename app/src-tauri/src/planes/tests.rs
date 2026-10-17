@@ -6236,8 +6236,9 @@ fn a_chat_with_sub_agents(
 #[test]
 fn a_run_s_end_is_read_from_the_host_s_own_stop_and_then_the_exit_status() {
     use purlis_core::session::Exit as Ended;
-    use purlis_core::state::run::{Cause, Exit, RunState, StopBy};
-    // D-1084-1: the host's own stop first, whatever the code says (ADR 0076 §2).
+    use purlis_core::state::run::{Cause, RunState, StopBy};
+    // D-1084-1: the host's own stop first, whatever the code says (ADR 0076 §2). How an exit
+    // ends a run is the core's, which both hosts read (#2494).
     assert_eq!(
         the_host_s_stop(true, true, true, true),
         Some(StopBy::Killed)
@@ -6255,19 +6256,6 @@ fn a_run_s_end_is_read_from_the_host_s_own_stop_and_then_the_exit_status() {
     assert_eq!(
         how_its_run_ended(Some(StopBy::Killed), &Ended::Code(0)),
         (RunState::Stopped, Cause::Stop(StopBy::Killed))
-    );
-    // By itself: 0 completes it, and anything else fails it, a signal included.
-    assert_eq!(
-        how_its_run_ended(None, &Ended::Code(0)),
-        (RunState::Completed, Cause::Exited(Exit::Code(0)))
-    );
-    assert_eq!(
-        how_its_run_ended(None, &Ended::Code(3)),
-        (RunState::Failed, Cause::Exited(Exit::Code(3)))
-    );
-    assert_eq!(
-        how_its_run_ended(None, &Ended::Signal("SIGKILL".to_owned())),
-        (RunState::Failed, Cause::Exited(Exit::Signal))
     );
 }
 

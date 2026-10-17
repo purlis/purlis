@@ -52,6 +52,7 @@ import type { Collection, FileSetting, SettingsFileId, SettingsGroup } from "./g
 import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
+import { themeOptionsRow } from "./themeOptions";
 import { discoverRow } from "./discover";
 import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
@@ -743,6 +744,8 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
           read.iconThemes,
         ),
       ],
+      // The drawn theme's options and where each value comes from (#2325).
+      after: [themeOptionsRow("project.appearance")],
     },
     {
       id: "project.plugins",
