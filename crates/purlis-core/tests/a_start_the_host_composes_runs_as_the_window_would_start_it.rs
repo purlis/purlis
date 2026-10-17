@@ -25,11 +25,12 @@ struct Project {
 
 impl Project {
     fn on(kind: &str) -> Project {
-        Project::on_with(kind, "")
+        Project::on_with(kind, "", None)
     }
 
-    /// [`Project::on`], with `charter` as its committed `charter.toml`.
-    fn on_with(kind: &str, charter: &str) -> Project {
+    /// [`Project::on`], with `charter` as its committed `charter.toml`, and the profile running
+    /// `program` where one is given.
+    fn on_with(kind: &str, charter: &str, program: Option<&Path>) -> Project {
         let project = Project {
             dir: tempfile::tempdir().unwrap(),
             bin: tempfile::tempdir().unwrap(),
@@ -39,7 +40,10 @@ impl Project {
         fs::create_dir_all(root.join("personas/steward")).unwrap();
         fs::write(root.join("personas/steward/persona.md"), "# steward\n").unwrap();
         fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
-        let program = stand_in::claude_code(project.bin.path(), "claude", "#!/bin/sh\n");
+        let program = match program {
+            Some(program) => program.to_path_buf(),
+            None => stand_in::claude_code(project.bin.path(), "claude", "#!/bin/sh\n"),
+        };
         fs::write(
             root.join(profiles::LOCAL_FILE),
             format!(
@@ -590,9 +594,12 @@ fn a_sandboxed_start_runs_in_the_confinement_the_host_started_for_it() {
 #[test]
 fn a_fully_sandboxed_start_runs_in_a_confinement_that_lists_its_hosts() {
     purlis_core::unsteered!();
+    // A program no chat may write: a fully sandboxed chat is not started from a temporary
+    // folder it can write, where the stand-in lives. It is never run here.
     let project = Project::on_with(
         "claude",
         "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n",
+        Some(Path::new("/usr/bin/true")),
     );
     let host = Host::default();
 
