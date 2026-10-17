@@ -1083,6 +1083,23 @@ impl Command {
     }
 }
 
+impl Pushed {
+    /// **The power a link needs to be pushed this** ([`crate::grants`]), or none for what every
+    /// subscriber is pushed: a held project's hook lines need [`Power::Heard`], how saving it
+    /// goes [`Power::Save`], and what a chat's sandbox did [`Power::Confine`].
+    pub fn heard_with(&self) -> Option<Power> {
+        match self {
+            Pushed::Heard { .. } => Some(Power::Heard),
+            Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
+            Pushed::Sandbox { .. } => Some(Power::Confine),
+            Pushed::Event(_)
+            | Pushed::Missed { .. }
+            | Pushed::Ended { .. }
+            | Pushed::ViewEnded { .. } => None,
+        }
+    }
+}
+
 wire_words!(Answer {
     Chats => "chats",
     Attached => "attached",

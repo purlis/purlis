@@ -7,8 +7,9 @@
 //! **One plan, one start, wherever it runs.** The window compiles the chat's sandbox as it
 //! always has and plans its confinement from it (`purlis_core::sandbox::Applied::plan`). With
 //! chats in the window, it starts that plan itself; with chats in the host, it hands the host
-//! the plan ([`wire`]), the host reads it back exactly ([`plan_of`]) and starts it with the same
-//! core code ([`ConfinesHere`]), so the proxy carries, refuses and asks about the same hosts.
+//! the plan ([`wire`]), and the host reads it back exactly and starts it with the same core
+//! code (`purlis_core::sandbox::hosted::start`, through [`ConfinesHere`]; `purlis serve` starts
+//! one with the same function), so the proxy carries, refuses and asks about the same hosts.
 //!
 //! **What the proxy does reaches the window by the same closures.** The host's proxy tells the
 //! host, which pushes each refusal, connection and ask to the window (`sandbox`, 1.4); the

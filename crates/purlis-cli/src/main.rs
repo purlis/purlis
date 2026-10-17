@@ -860,16 +860,16 @@ impl purlis_host::Confine for Confines {
             tell,
             askable,
         )
-        .map(|hosted| Box::new(Confined(hosted)) as Box<dyn purlis_host::Confining>)
+        .map(|hosted| Box::new(HeldByServe(hosted)) as Box<dyn purlis_host::Confining>)
     }
 }
 
 /// A confinement `purlis serve` holds: its proxy and folders end as this is dropped.
 #[cfg(unix)]
-struct Confined(purlis_core::sandbox::hosted::Hosted);
+struct HeldByServe(purlis_core::sandbox::hosted::Hosted);
 
 #[cfg(unix)]
-impl purlis_host::Confining for Confined {
+impl purlis_host::Confining for HeldByServe {
     fn confined(&self) -> purlis_host::protocol::session::Confined {
         self.0.confined()
     }
