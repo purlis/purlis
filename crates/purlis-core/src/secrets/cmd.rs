@@ -956,5 +956,4 @@ fn cp_off_unix(io: &mut dyn Io) -> i32 {
 }
 
 #[cfg(test)]
-#[path = "cmd_tests.rs"]
 pub(crate) mod tests;
