@@ -26,9 +26,9 @@ public site its browser's lane does not list.
    Allow for this chat, Always allow in this project on this machine, and Keep blocked. An Allow
    lists the site in the browser's lane only: the judge and the reach proxy read it, and the
    chat's own commands never do, so they still need their own Allow for that host. It is listed
-   apart in the Granted list, and removing it ends the browsers it reached. *A browser site for
-   everyone in the project (committed) is not offered yet: decided in implementation,
-   2026-10-17, to be confirmed.* *A host allowed for the chat's commands stays a listed site for
+   apart in the Granted list, and removing it ends the browsers it reached. A browser site for
+   everyone in the project (committed) is not offered yet: it comes with #2443 (ruled
+   2026-10-17). *A host allowed for the chat's commands stays a listed site for
    its browser, as the lane was ruled on 2026-10-14 (D-2018-7): decided in implementation,
    2026-10-17, to be confirmed.*
 4. **Widening reaches a running browser at its next act.** Each act carries what the browser

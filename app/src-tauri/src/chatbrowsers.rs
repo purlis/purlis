@@ -1506,7 +1506,7 @@ pub fn sites_allowed(
     if !matches!(level, Level::Chat | Level::You) {
         return Err(
             "purlis allows a browser site for this chat, or for every chat of this project on \
-             this machine."
+             this machine. A browser site for everyone in the project is coming, in #2443."
                 .to_owned(),
         );
     }
