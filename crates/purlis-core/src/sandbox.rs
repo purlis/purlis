@@ -2513,6 +2513,27 @@ fn node_modules_of(file: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// What purlis arms a chat with, by where each lies ([`Applied::hold_kit`]): its own `binary`,
+/// which the chat's hooks run, its `plugin` and its `git_hooks` folder.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ArmedWith<'a> {
+    pub binary: Option<&'a Path>,
+    pub plugin: Option<&'a Path>,
+    pub git_hooks: Option<&'a Path>,
+}
+
+/// **The whole install `program` belongs to**, as the kernel names it: the app bundle it is
+/// inside (the nearest folder named `*.app`, its plugin and every other file it ships among
+/// it), else its [`package_root`].
+pub fn install_root(program: &Path) -> PathBuf {
+    let program = real(program);
+    program
+        .ancestors()
+        .skip(1)
+        .find(|folder| folder.extension().is_some_and(|ext| ext == "app"))
+        .map_or_else(|| package_root(&program), Path::to_path_buf)
+}
+
 /// **The package a program file belongs to**, as far as its path says (#2071): the whole of a
 /// Homebrew keg (`Cellar/<formula>`), an npm package (`node_modules/<name>`, or
 /// `node_modules/@scope/<name>`), a pipx venv (`venvs/<name>`) or a toolchain
@@ -3209,6 +3230,73 @@ impl Applied {
         }
     }
 
+    /// **What purlis arms this chat with, never written by it** ([`ArmedWith`]): purlis's own
+    /// program its hooks run, its plugin and its git hooks, which later chats run too.
+    ///
+    /// - **Refused where the chat writes**, at every level, the program and the plugin, as
+    ///   [`program::checked_wrap`] refuses purlis's own program: the project, the chat's folder
+    ///   `cwd`, what its sandbox lets it write (`env`'s temp folders among them at the full
+    ///   sandbox) and what a person let it write, each asked as written and as the kernel names
+    ///   it.
+    /// - **Held at the floor**: the program and the whole install it belongs to
+    ///   ([`install_root`]: an app bundle, or its [`package_root`]), the plugin and the git
+    ///   hooks, as written and as the kernel names them, also inside a folder a person let the
+    ///   chat write. None that holds the project or is inside it, which the chat writes, and none
+    ///   that holds the home folder. The full sandbox lists what a chat writes, so nothing is
+    ///   added there.
+    pub fn hold_kit(
+        &mut self,
+        kit: ArmedWith<'_>,
+        cwd: &Path,
+        env: &[(String, String)],
+    ) -> Result<(), NotStarted> {
+        let mut places = vec![self.root.clone(), cwd.to_path_buf()];
+        places.extend(self.writable());
+        places.extend(self.confines.writable.iter().cloned());
+        if self.level == Level::Full {
+            places.extend(program::temp_roots(env));
+        }
+        let places: Vec<(PathBuf, PathBuf)> = places
+            .into_iter()
+            .map(|dir| {
+                let real_dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+                (dir, real_dir)
+            })
+            .collect();
+        for refused in kit.binary.into_iter().chain(kit.plugin) {
+            let resolved = real(refused);
+            if let Some(path) = [refused, resolved.as_path()]
+                .into_iter()
+                .find(|path| program::writable(path, &places))
+            {
+                return Err(NotStarted::KitWritable(path.to_path_buf()));
+            }
+        }
+        if self.level != Level::Floor {
+            return Ok(());
+        }
+        let root = real(&self.root);
+        let home = dirs::home_dir().map(|home| real(&home));
+        let mut more: Vec<PathBuf> = Vec::new();
+        let install = kit.binary.map(install_root);
+        for path in kit
+            .binary
+            .into_iter()
+            .chain(install.as_deref())
+            .chain(kit.plugin)
+            .chain(kit.git_hooks)
+            .flat_map(|path| [path.to_path_buf(), real(path)])
+        {
+            let around_root = root.starts_with(&path) || path.starts_with(&root);
+            let above_home = home.as_deref().is_some_and(|home| home.starts_with(&path));
+            if !around_root && !above_home && path.parent().is_some() && !more.contains(&path) {
+                more.push(path);
+            }
+        }
+        self.hold_past_grants(more);
+        Ok(())
+    }
+
     /// Whether this chat's line starts with purlis's own program: a harness purlis holds
     /// whole, on Linux (#1040).
     pub fn wrapped_by_purlis_here(&self) -> bool {
@@ -3245,10 +3333,10 @@ impl Applied {
     }
 
     /// `more` held at the floor besides what was compiled: in the form, and for a run for the chat.
+    /// One inside a folder a person let the chat write is left to that grant.
     fn hold(&mut self, more: Vec<PathBuf>) {
         let more: Vec<PathBuf> = more
             .into_iter()
-            .filter(|path| !self.confines.held.contains(path))
             .filter(|path| {
                 !self
                     .confines
@@ -3256,6 +3344,16 @@ impl Applied {
                     .iter()
                     .any(|folder| path.starts_with(folder))
             })
+            .collect();
+        self.hold_past_grants(more);
+    }
+
+    /// [`Self::hold`], inside a folder a person let the chat write too: a grant lifts a denial
+    /// class's names no more than it lifts these.
+    fn hold_past_grants(&mut self, more: Vec<PathBuf>) {
+        let more: Vec<PathBuf> = more
+            .into_iter()
+            .filter(|path| !self.confines.held.contains(path))
             .collect();
         if more.is_empty() {
             return;
@@ -4511,6 +4609,9 @@ pub enum NotStarted {
     /// purlis's own program, which wraps a chat on Linux, was replaced on disk while it ran
     /// (#1040): the running one is no longer the one a new chat would start.
     WrapReplaced,
+    /// What purlis arms a chat with, its own program or its plugin, as written or as the kernel
+    /// names it, lies where the chat can write ([`Applied::hold_kit`]).
+    KitWritable(PathBuf),
     /// The profile's program is a relative path, which would be found against a folder the
     /// chat can write.
     ProgramRelative,
@@ -4635,6 +4736,12 @@ impl NotStarted {
                 "{lead}, and the program lives where this chat can write: {}, so it was not \
                  started sandboxed. Keep the program outside the project and outside what a chat \
                  may write.",
+                path.display()
+            ),
+            Self::KitWritable(path) => format!(
+                "{lead}, and purlis's own files lie where this chat can write: {}, so it \
+                 was not started sandboxed. Install purlis outside the project and outside \
+                 what a chat may write, then start the chat again.",
                 path.display()
             ),
             Self::ProgramRelative => format!(
@@ -5849,6 +5956,7 @@ pub fn ahead_decided(
             | NotStarted::HeldBack(..)
             | NotStarted::ProgramWritable(_)
             | NotStarted::WrapReplaced
+            | NotStarted::KitWritable(_)
             | NotStarted::ProgramRelative
             | NotStarted::WordWritable(_)
             | NotStarted::WordTooLong
@@ -5921,6 +6029,7 @@ pub mod grant;
 pub mod held;
 pub mod hosted;
 pub mod hosts;
+pub mod internal;
 pub mod kubeconfig;
 pub mod local;
 pub mod localport;
@@ -5947,19 +6056,13 @@ mod claude_tests;
 #[cfg(test)]
 mod codex_tests;
 #[cfg(test)]
-mod egress_tests;
-#[cfg(test)]
 mod floor_tests;
-#[cfg(test)]
-mod hosts_tests;
 #[cfg(test)]
 mod kept_tests;
 #[cfg(test)]
 mod opencode_tests;
 #[cfg(test)]
 mod persona_tests;
-#[cfg(test)]
-mod plan_tests;
 #[cfg(test)]
 mod reach_tests;
 #[cfg(test)]

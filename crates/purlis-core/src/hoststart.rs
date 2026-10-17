@@ -46,6 +46,16 @@ pub struct Kit {
 }
 
 impl Kit {
+    /// Where each part of this kit lies, as a sandbox holds them
+    /// ([`crate::sandbox::Applied::hold_kit`]).
+    pub fn armed_with(&self) -> crate::sandbox::ArmedWith<'_> {
+        crate::sandbox::ArmedWith {
+            binary: self.binary.as_deref(),
+            plugin: self.plugin.as_deref(),
+            git_hooks: self.git_hooks.as_ref().map(crate::githooks::GitHooks::dir),
+        }
+    }
+
     /// What a host on this machine arms a chat with: purlis's own `binary`, the bundled
     /// `plugin` where it was found, and the git hooks the window wrote in its data folder at
     /// its launch, where they are.
@@ -232,7 +242,13 @@ pub fn compose_ready(
 ) -> Result<Launch, String> {
     let (root, start) = (starting.root, starting.start);
     let cwd = ready.cwd.clone().unwrap_or_else(|| root.to_path_buf());
-    let ready = told_first(ready, start.first_message.as_deref())?;
+    let mut ready = told_first(ready, start.first_message.as_deref())?;
+    // What it is armed with, never where it writes, and never written by it.
+    if let Some(applied) = ready.sandbox.as_mut() {
+        applied
+            .hold_kit(kit.armed_with(), &cwd, &ready.env)
+            .map_err(|refused| refused.to_string())?;
+    }
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
     // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
