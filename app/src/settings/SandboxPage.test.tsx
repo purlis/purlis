@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SettingsTab } from "./SettingsTab";
@@ -11,6 +11,7 @@ import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import { personaHostsNotes, whatAChatCanDo } from "./sandbox";
 import { namedIn } from "./project";
+import { sandboxCommandReturned } from "../sandboxAsked";
 import type {
   SandboxPolicy,
   SandboxPreset,
@@ -216,6 +217,8 @@ function core({
 } = {}) {
   const sent: { which: SettingsWhich; edits: SettingsEdit[] }[] = [];
   const allowed: unknown[] = [];
+  /** What `sandbox_state` answers from now on: the state after a change elsewhere. */
+  const now = { sandbox };
   const files: Record<SettingsWhich, SettingsFile> = {
     shared: fileOf("shared", sharedName, shared, hosts),
     local: fileOf("local", localName, []),
@@ -240,13 +243,15 @@ function core({
         case "project_theme_drawn":
           return null;
         case "sandbox_state":
-          return sandbox;
+          return now.sandbox;
         case "allow_persona_hosts":
           allowed.push(given);
           return sandbox;
         case "allow_project_expects":
           allowed.push({ ...given, expects: true });
-          return { ...sandbox, expects: null };
+          // What waits is kept, so nothing waits when the state is read again.
+          now.sandbox = sandbox === null ? null : { ...sandbox, expects: null };
+          return now.sandbox;
         case "save_project_settings": {
           const which = given.which as SettingsWhich;
           const change = given.change as { kind: "edits"; edits: SettingsEdit[] };
@@ -266,7 +271,7 @@ function core({
     },
     { shouldMockEvents: true },
   );
-  return { sent, allowed };
+  return { sent, allowed, now };
 }
 
 beforeEach(() => {
@@ -519,6 +524,40 @@ describe("Settings › Project › Sandbox", () => {
     expect(within(here).queryByRole("button", { name: "Allow on this machine" })).toBeNull();
     // This machine's file, never the committed one.
     expect(sent).toEqual([]);
+  });
+
+  // #1888: an Allow made elsewhere (the project's Notice) left this row offering the same Allow.
+  it("reads what the project expects again when an Allow elsewhere returns", async () => {
+    const { now } = core({
+      sandbox: state({
+        expects: {
+          asked: true,
+          locked: null,
+          items: [
+            {
+              what: "service",
+              target: "com.example.helper",
+              named: "com.example.helper",
+              says: "It is a service on this machine; purlis can't tell what it does.",
+              refused: null,
+            },
+          ],
+        },
+      }),
+    });
+    const here = await within(await atSandbox()).findByRole("group", {
+      name: "This project expects",
+    });
+    expect(within(here).getByRole("button", { name: "Allow on this machine" })).toBeVisible();
+
+    now.sandbox = state({ expects: null });
+    act(() => sandboxCommandReturned());
+
+    await waitFor(() =>
+      expect(within(here).queryByRole("button", { name: "Allow on this machine" })).toBeNull(),
+    );
+    expect(here).not.toHaveTextContent("com.example.helper");
+    expect(here).toHaveTextContent("This machine allows all of it now.");
   });
 
   it("says who locked what the project expects, and why one cannot be allowed here, with no Allow", async () => {

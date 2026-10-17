@@ -113,6 +113,10 @@ const { values: options } = parseArgs({
     // A run that records and decides nothing (a push to main, a nightly): a missed gate is a
     // warning, and the run does not fail for it.
     evidence: { type: "boolean", default: false },
+    // Why a pull request's run has no main to hold the change to (#2388), such as "main's app did
+    // not build in this job". It is evidence then: the limit is reported and nothing is gated,
+    // and the annotation says so as a warning, met or not (ADR 0086 as amended 2026-10-17).
+    "no-baseline": { type: "string" },
     // How long a launch may take to its first frame, in ms, before the run has no measurement.
     "first-frame-timeout": { type: "string", default: `${FIRST_FRAME_MS}` },
     // The session layer's bench (`charter-session-bench`), when it is not this tree's build.
@@ -127,6 +131,12 @@ const { values: options } = parseArgs({
   },
 });
 const only = new Set(options.only.split(","));
+// A pull request with no main build gates nothing (#2388): the runner's speed alone missed the
+// absolute limit in a few percent of cases, and nothing in the job cancels it.
+// With a baseline it would quiet a gate that has one, so the two are refused together.
+if (options["no-baseline"] && options["baseline-app"])
+  throw new Error("--no-baseline and --baseline-app contradict each other: there is a baseline");
+const evidence = options.evidence || Boolean(options["no-baseline"]);
 const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
 const OUT = join(ROOT, "target", "bench", stamp);
 mkdirSync(OUT, { recursive: true });
@@ -453,7 +463,7 @@ async function coldStartOrNone() {
       name: options.case,
       cause: error.message,
       detail: error.detail,
-      evidence: options.evidence,
+      evidence,
       fails: error.fails,
     });
     console.error(`\n${none.title}: ${error.message}`);
@@ -1007,10 +1017,11 @@ if (options.limit && results.coldStart) {
         limit,
         ceiling,
         againstMain,
-        evidence: options.evidence,
+        evidence,
+        noBaseline: options["no-baseline"],
       }),
     );
   const gated = againstMain ? againstMain.verdict !== "regressed" : met;
-  if (!gated && options.evidence) console.log("evidence only: reported, and the run does not fail for it");
+  if (!gated && evidence) console.log("evidence only: reported, and the run does not fail for it");
   else if (!gated) process.exitCode = 1;
 }

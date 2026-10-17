@@ -802,6 +802,74 @@ fn the_check_measures_a_wash_over_what_it_is_laid_on() {
     )));
 }
 
+/// The colours a branch's change marks are drawn in (FM-4): added, deleted, changed, renamed.
+const CHANGE_MARKS: [&str; 4] = [
+    "state.success",
+    "danger.base",
+    "state.waiting",
+    "accent.base",
+];
+
+/// The rows an explorer's change mark is drawn on: the window, the row under the pointer and the
+/// selected row.
+const CHANGE_MARK_GROUNDS: [&str; 3] = ["surface.base", "surface.hover", "list.selected"];
+
+#[test]
+fn the_check_holds_a_change_mark_on_every_row_it_is_drawn_on() {
+    // A mark drawn in its row's own colour is gone: the check names it, at a mark's floor or
+    // higher, as the theme is and in every tint.
+    for mark in CHANGE_MARKS {
+        for ground in CHANGE_MARK_GROUNDS {
+            let mut tokens = serde_json::Map::new();
+            tokens.insert(mark.to_owned(), json!(dark().value(ground)));
+            let gone = load(&file(json!({ "tokens": tokens }))).theme;
+            let report = check(&gone);
+            assert!(
+                report.findings.iter().any(|one| matches!(
+                    one,
+                    Finding::Contrast { tint: None, pair, ratio }
+                        if pair.front == mark && pair.back == ground
+                            && pair.floor >= 3.0 && *ratio < 3.0
+                )),
+                "{mark} on {ground} is not held"
+            );
+        }
+    }
+    // The built-ins clear every one of them (the tints too: see above).
+    for theme in built_ins() {
+        let report = check(theme);
+        assert!(!report.findings.iter().any(|one| matches!(
+            one,
+            Finding::Contrast { pair, .. }
+                if CHANGE_MARKS.contains(&pair.front) && CHANGE_MARK_GROUNDS.contains(&pair.back)
+        )));
+    }
+}
+
+#[test]
+fn the_check_measures_a_see_through_colour_over_what_it_is_drawn_on() {
+    // A mark in a translucent colour is drawn as the colour laid over its row, and that is what
+    // is measured: today's added-line wash as a mark on the dark window is 1.85:1, not the 6.93
+    // its opaque colour would have.
+    let faint = load(&file(json!({ "tokens": { "state.success": "#3fb95055" } }))).theme;
+    let report = check(&faint);
+    let ratio = report.findings.iter().find_map(|one| match one {
+        Finding::Contrast {
+            tint: None,
+            pair,
+            ratio,
+        } if pair.front == "state.success" && pair.back == "surface.base" => Some(*ratio),
+        _ => None,
+    });
+    assert_eq!(ratio, Some(1.85));
+    let solid = load(&file(json!({ "tokens": { "state.success": "#3fb950ff" } }))).theme;
+    assert!(!check(&solid).findings.iter().any(|one| matches!(
+        one,
+        Finding::Contrast { tint: None, pair, .. }
+            if pair.front == "state.success" && pair.back == "surface.base"
+    )));
+}
+
 #[test]
 fn every_pair_names_tokens_that_exist() {
     for pair in PAIRS {
