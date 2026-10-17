@@ -43,7 +43,10 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   command in a sandbox built from what the chat's own sandbox was compiled to when the chat
   started: the same denials (its harness's own among them), the chat's folder and a temp
   directory of its own as the only places it writes, and the network only through a proxy
-  carrying the chat's hosts. A `--file` or `--dotenv` file is kept in the vaults folder, which
+  carrying the chat's hosts. That sandbox is applied as the chat's own is: Seatbelt on macOS,
+  and on Linux purlis's own sandbox, started from the purlis program the chat's start checked
+  and held, which is never one a chat may write (#2342). Where the chat's start held none, or
+  the kernel lacks the Landlock it needs, the run is refused and nothing runs. A `--file` or `--dotenv` file is kept in the vaults folder, which
   every chat is denied, and only that command is given back a read of it. The command leads a
   process group of its own: everything it started that stayed in that group is killed when it
   ends or when the chat goes away. A process that leaves the group on purpose, such as a daemon,
@@ -140,15 +143,15 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   chat's choice, so a tool that can be told to run something else, or to send its credential
   somewhere, hands that value over. Masking matches a value's literal text only. Prefer `--file` to `--env` for a command that can read
   its credential from a file: an environment variable is readable by the same user through `ps
-  eww` while the command runs. On Linux the app refuses for now: running it inside purlis's own Linux sandbox is #2342.
+  eww` while the command runs.
 - **A sandboxed chat never reads the keyring through the command** (#1638). Where the app
   does not take a sandboxed chat's `secret exec` (it is closed, or does not answer), a vault
   whose values come from the keyring (a `keyring` vault, or a 1Password vault whose token is
   kept there) is refused with a sentence saying so, and nothing runs: read in the chat, the
   Keychain would ask you on the chat's behalf. `secret get`, `cp` and every other read of such
   a vault in a sandboxed chat are refused the same way, since the app runs only `exec`. The
-  refusal names what to run instead: `secret exec` through the app on macOS, and a terminal
-  outside the chat where the app runs no command for a chat yet (Linux). Any other vault runs
+  refusal names what to run instead: `secret exec` through the app on macOS and Linux, and a
+  terminal outside the chat where the app runs no command for a chat. Any other vault runs
   as before.
 - **A sandboxed chat lists a vault's key names through the app, and reads no value itself**
   (qw385). `secret list <vault>` (and `persona secret list`) in a sandboxed chat is answered

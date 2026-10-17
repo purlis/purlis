@@ -940,6 +940,113 @@ fn a_wrapped_child_reads_its_credential_and_not_the_vault() {
     );
 }
 
+/// On Linux a run is wrapped by purlis's own program (#2342), the one the chat's own start
+/// checked and held. A chat recorded with none runs nothing: no value is read and no credential
+/// file is made.
+#[test]
+fn a_run_wrapped_by_purlis_for_a_chat_whose_start_held_no_wrap_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = None;
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(refusal(&frames), NO_WRAP_RECORDED, "{frames:?}");
+    assert!(!marker.exists(), "nothing ran");
+    let exec_dir = Ctx::new(&root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    assert!(
+        std::fs::read_dir(&exec_dir).map_or(true, |mut d| d.next().is_none()),
+        "no credential file was made"
+    );
+}
+
+/// A run wrapped by purlis's own program refuses one the chat may write: the program the
+/// chat's start recorded is checked again as the run starts.
+#[test]
+fn a_run_wrapped_by_a_purlis_program_the_chat_may_write_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let planted = root.join("work/purlis");
+    std::fs::write(&planted, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = Some(planted.clone());
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        refusal(&frames).contains(&planted.display().to_string()),
+        "{frames:?}"
+    );
+    assert!(!marker.exists(), "nothing ran");
+}
+
+/// At the floor the chat writes all but what its start held, so a run is wrapped only by a
+/// program the start held unwritten.
+#[test]
+fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let program = elsewhere.path().canonicalize().unwrap().join("purlis");
+    std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    let confines = asker.confines.as_mut().unwrap();
+    confines.level = crate::sandbox::Level::Floor;
+    confines.held.clear();
+    confines.wrap = Some(program);
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(refusal(&frames), NO_WRAP_RECORDED, "{frames:?}");
+    assert!(!marker.exists(), "nothing ran");
+}
+
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
 /// the environment of chat 7 inside it: sandboxed, with its socket and its token.
 fn an_app(
