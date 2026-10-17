@@ -27,7 +27,13 @@ impl Driver for Host {
         Ok(format!("program-{started}"))
     }
 
-    fn act(&self, program: &str, _call_id: &str, act: Act) -> Result<Browsed, Refused> {
+    fn act(
+        &self,
+        program: &str,
+        _call_id: &str,
+        act: Act,
+        _reach: BrowserReach,
+    ) -> Result<Browsed, Refused> {
         if self.ended.lock().unwrap().iter().any(|one| one == program) {
             return Err(Refused::Gone);
         }
@@ -112,6 +118,7 @@ impl Project {
                 Path::new("/p"),
                 asked,
                 &BrowserReach::default,
+                true,
                 &AsPersona::default,
                 1000,
             )

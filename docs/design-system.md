@@ -202,9 +202,9 @@ to change that changes one value rather than hunting for the second one.
 
 ## The brand: Verdigris
 
-purlis ships two themes, `purlis-dark` and `purlis-light`
-(`crates/purlis-core/src/theme/built-in/purlis-dark.json`, `purlis-light.json`), and both are
-drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
+purlis ships **Purlis Classic**, one theme folder with a dark and a light appearance
+(`crates/purlis-core/src/theme/built-in/purlis-classic/theme.json`), picked as `purlis-dark` and
+`purlis-light`. Both appearances are drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
 accent on warm-grey neutrals. It is calm and technical, easy on the eyes in a long session, and
 not the blue most developer tools use.
 
@@ -242,7 +242,46 @@ else in the window; `no_old_name_is_spelled_outside_the_name_module` does the sa
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
 rewrites the file; the next pick made in Settings writes the new id.
 
-## What a theme file looks like
+## What a theme looks like
+
+**A theme is a folder** (format 2, spec #2313): a `theme.json`, and beside it, optionally, its
+`fonts/`, `icons/`, a preview image and a `LICENSE`. A lone `theme.json` is a whole theme.
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
+  "name": "Dusk",
+  "extends": "purlis-classic",
+  "palette": { "lavender": "#b4a7f5" },
+  "appearances": [
+    { "id": "dark", "tokens": { "accent.base": "lavender", "focus.ring": "lavender" } },
+    { "id": "dim", "appearance": "dark", "high-contrast": true, "tokens": { "text.primary": "#ffffff" } }
+  ]
+}
+```
+
+- **`$schema`** names the published schema (`docs/schema/theme.schema.json`), which the theme
+  engine generates from its own vocabulary (`purlis_core::theme::schema`, held to the file by a
+  test): an editor completes every token name and flags a value outside the grammar.
+- **`extends`** names the theme this one starts from: `purlis-classic` (or an id a pick names
+  one of its appearances by), or another theme folder by its name. The theme holds only what
+  differs. A parent that is not there, a parent purlis cannot draw, and themes that extend one
+  another in a circle each refuse the theme with a sentence that names them.
+- **`palette`** is named colours, hex only. A token's value is hex or a palette name: a closed
+  grammar, never CSS. A name is the theme's own; a child cannot name its parent's.
+- **`appearances`** each have an `id`, a tag (`appearance`: `dark` or `light`) and optionally
+  `high-contrast`, with their `tokens` and `motion`. One whose id its parent has layers over
+  that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
+  first appearance is what a theme draws when nothing chose another; following the system works
+  with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
+  follows with Purlis Classic until Settings › Theme can say that following would stay in it
+  (#2331). A theme has at most 64.
+- **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
+  draws Purlis and says what is wrong. Geometry and fonts (#2326), icons (#2337), options
+  (#2325) and tint (#2329) are not read yet, so naming one refuses the theme.
+
+**Format 1**, a single file with one appearance, keeps loading as a theme with that one
+appearance:
 
 ```json
 {
@@ -255,7 +294,8 @@ rewrites the file; the next pick made in Settings writes the new id.
 }
 ```
 
-- **`appearance` is `dark` or `light`.** It decides two things: which built-in fills in the
+- **`appearance` is `dark` or `light`.** It decides two things: which of Purlis Classic's
+  appearances fills in the
   tokens this file does not name, and what `color-scheme` the document gets, which is what
   makes the platform's own scrollbars and form controls match.
 - **A value is hex and only hex** — `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. This is a security
@@ -263,12 +303,18 @@ rewrites the file; the next pick made in Settings writes the new id.
   `red; } body { display: none` in a theme file would be a stylesheet somebody else wrote. The
   grammar removes the question rather than answering it, and every value it allows is one xterm
   also accepts. Converting an `rgb(0 0 0 / 55%)` to `#0000008c` costs an author one lookup.
-- **A partial theme is normal.** Name the tokens you are changing; the rest come from the
-  built-in of the same appearance.
-- **Nothing in a theme file can stop the window.** A token that is missing, misspelled or
-  malformed falls back and the substitution is reported. The theme engine's `load` always
-  answers with a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up because a
-  colour was spelled wrong is worse than every possible wrong colour.
+- **A partial theme is normal.** Name the tokens you are changing; the rest come from
+  Purlis Classic's appearance of the same tag.
+- **A theme that breaks its grammar is refused whole, in either format and from any source**
+  (ADR 0097 §2): a value outside its type or bound, a key format 2 does not have, geometry, or
+  a file that is not a theme. purlis draws Purlis in its place and a Notice names each value.
+  A token the theme does not name is not an error: it is Purlis Classic's. A token or motion
+  name purlis does not have, and a key format 1 does not have (`author`, `description`), is said
+  and left out, and the rest is drawn: a teammate's purlis may know a token this one does not
+  yet, and format 1 files carry keys of their own.
+- **Nothing in a theme file can stop the window.** The theme engine's `load` always answers with
+  a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
+  because a colour was spelled wrong is worse than every possible wrong colour.
 
 ### The theme engine
 
@@ -279,11 +325,14 @@ holding every value to its grammar, filling what is missing from the built-in of
 appearance and saying so, deciding which theme the window draws, and checking whether its words
 can be read. Its interface:
 
-- `load(document)` reads one theme file and always answers with a complete theme and what it had
-  to put right;
-- `resolve(inputs)` answers which theme the window draws, from the project's pick, the person's
-  own theme, the extension themes in force and the operating system's appearance;
-- `check(theme)` holds any theme to every contrast pair (`PAIRS`), the ANSI floors and the
+- `load(document)` reads one theme document, format 1 or 2, and always answers with a complete
+  theme (every appearance) and what it had to put right or why it refused it; a `Library` reads
+  one that extends a theme folder, and `load_folder` reads a folder;
+- `resolve(inputs)` answers which theme and which of its appearances the window draws, from the
+  project's pick, the person's own theme, the extension themes in force and the operating
+  system's appearance;
+- `schema()` is the published JSON Schema of format 2;
+- `check(theme)` holds any appearance to every contrast pair (`PAIRS`), the ANSI floors and the
   selected row's distinctness, as it is and tinted by every workspace colour, and reports each
   finding with its ratio.
 
@@ -311,7 +360,7 @@ has. Nothing about this needs ADR 0040 amended again.
 
 **It is read before the window exists and handed to it as it is created** (M6.7), the same way
 as the layout below, so an operator with a theme of their own never sees the built-in painted
-first. The theme engine (`purlis_core::theme`) judges it token by token, and whatever it had to put right — a
+first. The theme engine (`purlis_core::theme`) judges it, and whatever makes it refuse the theme — a
 misspelled token, a value that is not hex, a file that is not JSON — is said in the Inbox,
 as a Notice about this machine, with the file's path. **It wins over an extension's theme**: it
 is the one theme the operator wrote for this machine themselves, so an approved extension's
@@ -594,7 +643,8 @@ A theme file carries them under `motion`, beside `tokens`:
   would silently vanish — and the `y` range leaves room for an overshoot and none for a curve
   that flings a menu off the window.
 - **A partial `motion` is normal, and so is none.** What a theme does not name moves the way the
-  built-in of its appearance does; a bad value falls back and is reported, exactly as a colour is.
+  built-in of its appearance does; a bad value refuses the theme and is reported, exactly as a
+  colour does.
 - **`0` turns a motion off.** A theme that sets every duration to zero is a still window.
 - **An extension restyles motion the same way it restyles colour** — through the theme it
   contributes (ADR 0041; the panel contract of ADR 0043 is the same registry). Nothing

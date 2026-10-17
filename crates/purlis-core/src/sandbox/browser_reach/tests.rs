@@ -10,8 +10,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use super::{
-    Lane, NewSite, NewSites, Refusal, Route, Verdict, lookup_bounded, lookup_within,
-    public_address, route,
+    Lane, NewSites, Refusal, Route, Site, Verdict, lookup_bounded, lookup_within, public_address,
+    route,
 };
 use crate::sandbox::reach::{By, Decision, Reach};
 
@@ -169,15 +169,15 @@ fn a_host_the_chat_lists_is_carried_on_https_and_http_ports() {
 fn a_site_nothing_lists_is_a_new_site_on_https_and_http_ports_only() {
     assert_eq!(
         decide("new.example.net", 443, true),
-        Verdict::NewSite { at: None }
+        Verdict::Site { at: None }
     );
     assert_eq!(
         decide("new.example.net", 80, false),
-        Verdict::NewSite { at: None }
+        Verdict::Site { at: None }
     );
     assert_eq!(
         decide("93.184.215.14", 443, true),
-        Verdict::NewSite {
+        Verdict::Site {
             at: Some(at("93.184.215.14:443"))
         }
     );
@@ -419,19 +419,19 @@ fn an_address_is_connected_to_as_itself_and_never_looked_up() {
 
 #[test]
 fn a_new_site_is_told_to_whoever_hears_new_sites_and_refused_by_default() {
-    let site = NewSite {
+    let site = Site {
         host: "new.example.net".to_owned(),
         port: 443,
     };
     assert!(!NewSites::refusing().carries(&site));
     let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let hearing = std::sync::Arc::clone(&heard);
-    let sites = NewSites::new(move |site: &NewSite| {
+    let sites = NewSites::new(move |site: &Site| {
         hearing.lock().unwrap().push(site.clone());
         site.host == "new.example.net"
     });
     assert!(sites.carries(&site));
-    assert!(!sites.carries(&NewSite {
+    assert!(!sites.carries(&Site {
         host: "other.example.net".to_owned(),
         port: 443
     }));
@@ -587,8 +587,8 @@ fn a_lookup_that_takes_too_long_is_given_up_on() {
 #[test]
 fn a_new_site_is_named_as_one_spelling() {
     assert_eq!(
-        NewSite::of("New.Example.NET.", 443),
-        NewSite {
+        Site::of("New.Example.NET.", 443),
+        Site {
             host: "new.example.net".to_owned(),
             port: 443
         }
@@ -619,7 +619,7 @@ fn a_browser_never_takes_the_floors_reach_of_a_chat_without_the_sandbox() {
     for (host, port, tunnel) in [("new.example.net", 443, true), ("example.com", 80, false)] {
         assert_eq!(
             lane.decide(host, port, tunnel, &[]),
-            Verdict::NewSite { at: None },
+            Verdict::Site { at: None },
             "{host}"
         );
     }
@@ -659,7 +659,7 @@ fn a_browser_of_a_chat_without_the_sandbox_takes_only_what_the_person_allowed() 
     }
     assert_eq!(
         lane.decide("new.example.net", 443, true, &[]),
-        Verdict::NewSite { at: None }
+        Verdict::Site { at: None }
     );
 }
 
@@ -694,4 +694,33 @@ fn a_lookup_past_the_number_running_at_once_is_refused_at_once() {
         )]),
         Some(vec![at("93.184.215.14:443")])
     );
+}
+
+#[test]
+fn a_site_is_written_host_colon_port_and_read_back_the_same() {
+    for (written, host, port) in [
+        ("news.example.org:443", "news.example.org", 443),
+        ("News.Example.ORG.:8080", "news.example.org", 8080),
+        ("[2606:4700::1111]:443", "2606:4700::1111", 443),
+        ("10.0.0.5:6443", "10.0.0.5", 6443),
+    ] {
+        let site = Site::parse(written).unwrap_or_else(|why| panic!("{written}: {why}"));
+        assert_eq!((site.host.as_str(), site.port), (host, port), "{written}");
+        assert_eq!(Site::parse(&site.to_string()), Ok(site));
+    }
+    assert_eq!(
+        Site::parse("[2606:4700::1111]:443").unwrap().to_string(),
+        "[2606:4700::1111]:443"
+    );
+    for refused in [
+        "news.example.org",
+        "news.example.org:0",
+        "news.example.org:70000",
+        ":443",
+        "a b.example:443",
+        "2606:4700::1111:443x",
+        "[not-v6]:443",
+    ] {
+        assert!(Site::parse(refused).is_err(), "{refused}");
+    }
 }

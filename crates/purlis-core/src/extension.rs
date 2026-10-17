@@ -227,9 +227,10 @@ fn is_a_manifest_name(name: &str) -> bool {
 /// not know.
 pub const VERSION: u32 = 1;
 
-/// The themes purlis itself contributes. They are compiled into this crate's theme engine
-/// (`theme/built-in/*.json`, [`crate::theme::built_ins`]) and are in the survey so that
-/// "what has contributed what" has one answer rather than one per source.
+/// The themes purlis itself contributes: Purlis Classic's appearances, by the ids a pick names
+/// them by. They are compiled into this crate's theme engine (`theme/built-in/purlis-classic/`,
+/// [`crate::theme::built_ins`]) and are in the survey so that "what has contributed what" has
+/// one answer rather than one per source.
 ///
 /// The engine's tests fail when it ships a built-in this does not name, and
 /// `app/src/theme/registry.test.ts` when the window is handed one. Lists that must agree, with

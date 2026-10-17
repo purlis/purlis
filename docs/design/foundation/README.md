@@ -3,7 +3,7 @@
 **The designer's foundation for Purlis, read once from Figma and written down here.** Work on
 the Purlis theme builds from this record and does not call Figma again (#2313, "The two
 shipped themes"). Purlis Classic is not described here: it is today's look, and
-`app/src/theme/purlis-dark.json` and `purlis-light.json` stay its source.
+its theme folder, `crates/purlis-core/src/theme/built-in/purlis-classic/`, is its source.
 
 | what          | value                                                                   |
 | ------------- | ----------------------------------------------------------------------- |

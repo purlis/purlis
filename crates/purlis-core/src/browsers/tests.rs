@@ -40,7 +40,7 @@ use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, 
 use purlis_host::protocol::session::{Layer, Listed};
 
 use super::{aim_of, browsed, call_of, input_of, reach_of};
-use crate::sandbox::browser_reach::NewSite;
+use crate::sandbox::browser_reach::Site;
 
 #[test]
 fn the_acts_a_chat_asks_become_the_drivers_own_calls() {
@@ -136,6 +136,7 @@ fn the_drivers_answer_is_said_back_whole() {
         content: Content::Text("- heading \"Docs\" [e1]".into()),
         note: Some("the page did not load".into()),
         repeated: true,
+        asked: vec!["news.example.org:443".into()],
     };
 
     let said = PageSaid {
@@ -154,6 +155,7 @@ fn the_drivers_answer_is_said_back_whole() {
             text: Some("- heading \"Docs\" [e1]".into()),
             note: Some("the page did not load".into()),
             repeated: true,
+            asked: vec!["news.example.org:443".into()],
             ..Browsed::default()
         }
     );
@@ -173,18 +175,18 @@ fn a_browser_reaches_what_its_chat_lists_and_a_new_site_only_on_the_open_web() {
 
     let (reach, new_sites) = reach_of(Some(&listed)).unwrap();
     assert_eq!(reach.hosts(), ["docs.example.com"]);
-    assert!(!new_sites.carries(&NewSite::of("news.example.org", 443)));
+    assert!(!new_sites.carries(&Site::of("news.example.org", 443)));
 
     let (_, new_sites) = reach_of(Some(&BrowserReach {
         open_web: true,
         ..listed
     }))
     .unwrap();
-    assert!(new_sites.carries(&NewSite::of("news.example.org", 443)));
+    assert!(new_sites.carries(&Site::of("news.example.org", 443)));
 
     let (reach, new_sites) = reach_of(None).unwrap();
     assert!(reach.hosts().is_empty(), "none given, nothing listed");
-    assert!(!new_sites.carries(&NewSite::of("news.example.org", 443)));
+    assert!(!new_sites.carries(&Site::of("news.example.org", 443)));
 }
 
 #[test]
