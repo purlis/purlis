@@ -24,6 +24,8 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
+use super::kept::Kept;
+
 /// One element of a page: its frame, and the engine's id for its node in that frame's document.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct NodeKey {
@@ -114,7 +116,7 @@ pub(crate) struct Snapshot {
     title: String,
     lines: Vec<Line>,
     /// What the blanked elements held when this was built, to keep out of every later answer.
-    blanked_text: Vec<String>,
+    blanked_text: Kept,
     /// Every element the engine says has the focus.
     focused: Vec<NodeKey>,
     /// Every element whose name or value held a text kept out: where the page shows it.
@@ -128,7 +130,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         return Snapshot {
             title: String::new(),
             lines: Vec::new(),
-            blanked_text: Vec::new(),
+            blanked_text: Kept::default(),
             focused: Vec::new(),
             echoes: Vec::new(),
         };
@@ -155,14 +157,24 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         }
     }
     let mut lines = builder.lines;
-    let blanked_text: Vec<String> = builder
-        .blanked_text
-        .into_iter()
-        .filter(|text| text.chars().count() >= SHORTEST_SCRUBBED)
-        .collect();
+    // Each blanked element's texts are one read of it.
+    let mut blanked_text = Kept::default();
+    let mut read = HashSet::new();
+    for (key, _) in &builder.blanked_text {
+        if !read.insert(key) {
+            continue;
+        }
+        let texts: Vec<&str> = builder
+            .blanked_text
+            .iter()
+            .filter(|(by, text)| by == key && text.chars().count() >= SHORTEST_SCRUBBED)
+            .map(|(_, text)| text.as_str())
+            .collect();
+        blanked_text.read(Some(key), &texts);
+    }
     let all: Vec<&str> = blanked_text
-        .iter()
-        .map(String::as_str)
+        .texts()
+        .into_iter()
         .chain(scrub.iter().map(String::as_str))
         .collect();
     title = cut(&scrubbed(&title, &all));
@@ -305,8 +317,9 @@ impl Snapshot {
         &self.title
     }
 
-    /// What the blanked elements held (each at least [`SHORTEST_SCRUBBED`] characters).
-    pub(crate) fn blanked_text(&self) -> &[String] {
+    /// What the blanked elements held (each at least [`SHORTEST_SCRUBBED`] characters), each
+    /// with its element.
+    pub(crate) fn blanked_text(&self) -> &Kept {
         &self.blanked_text
     }
 
@@ -602,8 +615,8 @@ struct Builder<'f> {
     /// The frames already placed.
     used: HashSet<usize>,
     lines: Vec<Line>,
-    /// Text of blanked elements, to take out of every other line.
-    blanked_text: Vec<String>,
+    /// Text of blanked elements, each with its element, to take out of every other line.
+    blanked_text: Vec<(NodeKey, String)>,
     focused: Vec<NodeKey>,
 }
 
@@ -709,7 +722,7 @@ impl Builder<'_> {
         if let Some(key) = &key
             && self.excluded.contains(key)
         {
-            self.blank(tree, node, value);
+            self.blank(key, tree, node, value);
             let index = self.lines.len();
             self.lines.push(Line {
                 depth,
@@ -802,8 +815,9 @@ impl Builder<'_> {
     }
 
     /// Keeps the text a blanked element holds, to take it out of every other line.
-    fn blank(&mut self, tree: &FrameNodes<'_>, node: &Value, value: Option<String>) {
-        self.blanked_text.extend(value);
+    fn blank(&mut self, key: &NodeKey, tree: &FrameNodes<'_>, node: &Value, value: Option<String>) {
+        self.blanked_text
+            .extend(value.map(|value| (key.clone(), value)));
         let mut stack: Vec<&Value> = child_ids(node).filter_map(|c| tree.get(c)).collect();
         let mut seen = HashSet::new();
         while let Some(inside) = stack.pop() {
@@ -816,7 +830,7 @@ impl Builder<'_> {
             for field in ["name", "value"] {
                 let text = text_of(inside.get(field));
                 if !text.is_empty() {
-                    self.blanked_text.push(text);
+                    self.blanked_text.push((key.clone(), text));
                 }
             }
             stack.extend(child_ids(inside).filter_map(|c| tree.get(c)));

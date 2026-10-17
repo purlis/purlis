@@ -651,6 +651,44 @@ fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
     assert!(!page.title.contains("rel9"), "{page:?}");
 }
 
+/// The field the person types into (the Name field) holds `value`, as its tree reads it.
+fn the_field_shows(engine: &super::Engine, value: &str) {
+    let mut model = super::super::lock(&engine.model);
+    let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+    let field = nodes.iter_mut().find(|n| n["nodeId"] == "8").unwrap();
+    field["value"]["value"] = json!(value);
+}
+
+/// Types `value` into the focused field key by key, its tree and its DOM each reading what it
+/// holds as a real page's would: the tree what the keys before typed, the DOM this key too.
+fn type_key_by_key(browser: &super::Browser, engine: &super::Engine, value: &str) {
+    let aim = aim_now(browser);
+    for (typed, letter) in value.char_indices() {
+        the_field_shows(engine, &value[..typed]);
+        super::super::lock(&engine.model).value = value[..typed + letter.len_utf8()].to_owned();
+        browser
+            .person_input(&key(&aim, &letter.to_string(), true))
+            .unwrap();
+    }
+    the_field_shows(engine, value);
+}
+
+#[test]
+fn a_word_the_person_typed_only_on_the_way_to_a_longer_value_is_not_kept_out() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    type_key_by_key(&browser, &engine, "themes");
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", "Pick the one: them, or your themes");
+
+    let text = snapshot(&browser, 1);
+
+    assert!(
+        text.contains("Pick the one: them, or your (blanked)"),
+        "{text}"
+    );
+}
+
 #[test]
 fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it_as_text() {
     let (browser, engine) = browser();

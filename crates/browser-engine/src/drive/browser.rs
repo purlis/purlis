@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use super::blank::{Rect, paint_over};
 use super::drawn::{STYLES, drawn};
+use super::kept::Kept;
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
@@ -136,7 +137,7 @@ struct Page {
     settle: Settle,
     /// What blanked elements of this page held, kept out of every answer while the page lasts,
     /// whatever became of the elements.
-    scrubbed: Vec<String>,
+    scrubbed: Kept,
     /// What the page shows, as a number that changes each time it or any frame in it loads
     /// another document, or a frame in it goes (#2014): the document a frame's aim names.
     shows: u64,
@@ -148,23 +149,17 @@ struct Page {
 impl Page {
     /// `text` with what this page's blanked elements held taken out.
     fn shown(&self, text: &str) -> String {
-        let blanked: Vec<&str> = self.scrubbed.iter().map(String::as_str).collect();
-        scrubbed(text, &blanked)
+        scrubbed(text, &self.scrubbed.texts())
     }
 
     /// [`Page::shown`] for an address, read as its reader would read it (decoded).
     fn shown_address(&self, address: &str) -> String {
-        let blanked: Vec<&str> = self.scrubbed.iter().map(String::as_str).collect();
-        scrubbed_address(address, &blanked)
+        scrubbed_address(address, &self.scrubbed.texts())
     }
 
     /// Keeps `held` out of every later answer about this page.
-    fn keep_out(&mut self, held: &[String]) {
-        for text in held {
-            if !self.scrubbed.iter().any(|t| t.eq_ignore_ascii_case(text)) {
-                self.scrubbed.push(text.clone());
-            }
-        }
+    fn keep_out(&mut self, held: &Kept) {
+        self.scrubbed.take_in(held);
     }
 
     /// The frames between this page and `frame` (itself included) that have sessions of their
@@ -263,7 +258,7 @@ struct State {
     size: Option<(u16, u16)>,
     /// What the person typed while driving (#2014): kept out of every answer about every page
     /// of the browser, a page opened later included.
-    kept: Vec<String>,
+    kept: Kept,
     /// The sites a text was kept out on (#2303): their pages' screenshots paint over what
     /// cannot be read.
     kept_sites: HashSet<String>,
@@ -273,12 +268,17 @@ struct State {
 }
 
 impl State {
-    /// The site `target`'s page is on: its address's, or for a page at an address that is not a
-    /// web address, the site of the page that opened it.
+    /// The site `target`'s page is on: the one of the document it has loaded (not of an address
+    /// it is still loading), or for a document at an address that is not a web address, or none
+    /// known yet, the site of the page that opened it.
     fn site_of(&self, target: &str) -> Option<String> {
         let mut at = self.page(target)?;
         for _ in 0..=self.pages.len() {
-            if let Some(site) = site(&at.url) {
+            let shown = at
+                .frames
+                .get(&at.target)
+                .map_or("", |frame| frame.url.as_str());
+            if let Some(site) = site(shown) {
                 return Some(site);
             }
             at = self.page(at.opener.as_deref()?)?;
@@ -358,12 +358,8 @@ impl State {
     }
 
     /// Keeps `held` out of every later answer about every page, and every page opened later.
-    fn keep_out_everywhere(&mut self, held: &[String]) {
-        for text in held.iter().filter(|text| !text.is_empty()) {
-            if !self.kept.iter().any(|kept| kept.eq_ignore_ascii_case(text)) {
-                self.kept.push(text.clone());
-            }
-        }
+    fn keep_out_everywhere(&mut self, held: &Kept) {
+        self.kept.take_in(held);
         let kept = self.kept.clone();
         for page in &mut self.pages {
             page.keep_out(&kept);
@@ -1260,7 +1256,13 @@ impl Browser {
                     },
                 })
                 .collect();
-            (frames, state.excluded.clone(), page.scrubbed.clone())
+            let scrub: Vec<String> = page
+                .scrubbed
+                .texts()
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+            (frames, state.excluded.clone(), scrub)
         };
         let frames = if frames.is_empty() {
             vec![ToRead {
@@ -1896,7 +1898,7 @@ impl Browser {
             }
             (page.scrubbed.clone(), greys, roots)
         };
-        let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
+        let kept: Vec<&str> = kept.texts();
         // The frame elements whose documents are read in sessions of their own.
         let read_apart: HashSet<(String, i64)> = roots
             .iter()

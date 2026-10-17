@@ -23,6 +23,8 @@
 //!   of typed characters are kept as they typed them; both are kept out of every later answer
 //!   about every page of the browser, a page opened later included, whatever became of the
 //!   field. A press of the mouse and the hand-back read every field the person touched again.
+//!   A field keeps its latest value: a read drops the field's earlier values that the new one
+//!   contains, so what was typed key by key is kept out whole, not as each part on the way.
 //!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
@@ -35,6 +37,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use super::super::kept::Kept;
 use super::super::keys::command_of;
 use super::super::tree::NodeKey;
 use super::{ACTIVE_ELEMENT, READ_VALUE};
@@ -316,8 +319,9 @@ impl Browser {
                 if let Some(field) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
-                    let held = self.field_holds(&field);
-                    lock(&self.inner.state).keep_out_everywhere(&[held]);
+                    let mut held = Kept::default();
+                    held.read(Some(&field.1), &[self.field_holds(&field)]);
+                    lock(&self.inner.state).keep_out_everywhere(&held);
                     lock(&self.typing).touched.insert(field);
                 }
                 Ok(())
@@ -407,15 +411,18 @@ impl Browser {
             let touched: Vec<(String, NodeKey)> = typing.touched.iter().cloned().collect();
             (std::mem::take(&mut typing.dirty), runs, touched)
         };
-        let mut held = runs;
-        for field in &touched {
-            held.push(self.field_holds(field));
-        }
+        let mut held = Kept::default();
+        held.read(None, &runs);
         for target in dirty {
             let _ = self.snapshot_of(&target);
             if let Some(page) = lock(&self.inner.state).page(&target) {
-                held.extend(page.scrubbed.iter().cloned());
+                held.take_in(&page.scrubbed);
             }
+        }
+        // Each field is read last, from the field itself: what it holds now is the latest of
+        // its values, whatever its page's tree read before.
+        for field in &touched {
+            held.read(Some(&field.1), &[self.field_holds(field)]);
         }
         lock(&self.inner.state).keep_out_everywhere(&held);
     }
