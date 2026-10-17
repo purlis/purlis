@@ -2495,19 +2495,13 @@ pub(crate) fn profile_on(
     // own credential files and folders, which purlis made in the vaults folder for it alone.
     // Each under both names the kernel may give it, as the vaults are denied under both: across
     // a macOS firmlink, `/private/var/…` is also `/System/Volumes/Data/private/var/…` (#2489).
-    let named = |path: &Path| -> Result<Vec<String>, &'static str> {
-        crate::sandbox::kernel_names(path)
-            .iter()
-            .map(|name| seatbelt::string(&name.display().to_string()))
-            .collect()
-    };
     for file in files {
-        for name in named(file)? {
+        for name in seatbelt::kernel_strings(file)? {
             profile.push_str(&format!("(allow file-read* (literal {name}))\n"));
         }
     }
     for dir in dirs {
-        for name in named(dir)? {
+        for name in seatbelt::kernel_strings(dir)? {
             profile.push_str(&format!(
                 "(allow file-read* file-write* (subpath {name}))\n"
             ));
