@@ -44,12 +44,12 @@ async fn a_link_to<H: session::Host>(
     hosting: H,
     closed: impl FnOnce() + Send + 'static,
 ) -> Result<HostLink, String> {
-    let client = a_local_ui_link(hosting, closed).await?;
+    let client = a_bare_link_to(hosting, closed).await?;
     HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
 }
 
-/// The link [`a_link_to`] speaks over, bare.
-async fn a_local_ui_link<H: session::Host>(
+/// The link [`a_link_to`] speaks over, bare: for a test that speaks the protocol itself.
+async fn a_bare_link_to<H: session::Host>(
     hosting: H,
     closed: impl FnOnce() + Send + 'static,
 ) -> Result<Link, String> {
@@ -321,11 +321,7 @@ fn a_start_hands_the_host_what_the_window_composed_and_the_host_composes_it_as_t
 fn a_start_carries_the_run_it_begins_and_the_host_lists_it_and_names_it_as_it_ends() {
     // #2172: the run the window minted for this start (ADR 0066) is the host's too, so a
     // window that comes back finds each chat by the run it is in (#2006).
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = a_runtime();
     let runs = StandIns::default();
     let hosting = Hosting::running_with(
         crate::sessionhost::Composes::as_the_tests_ship(),
@@ -335,9 +331,7 @@ fn a_start_carries_the_run_it_begins_and_the_host_lists_it_and_names_it_as_it_en
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
     let (watcher, mut told) = runtime.block_on(async {
-        let link = a_local_ui_link(hosting, || {})
-            .await
-            .expect("a second link");
+        let link = a_bare_link_to(hosting, || {}).await.expect("a second link");
         let (client, _views, events) = Client::new(link);
         client
             .subscribe(session::Since::new())
@@ -1242,7 +1236,7 @@ fn a_project_the_host_saved_is_saved_by_the_host_that_replaces_it() {
     assert_eq!(next.savers.started()[0].1, host.root);
 }
 
-fn a_runtime() -> tokio::runtime::Runtime {
+pub(crate) fn a_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

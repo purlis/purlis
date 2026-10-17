@@ -1595,8 +1595,7 @@ impl SessionHost for HostedSessions {
             .clone()
             .unwrap_or_else(crate::sessions::shell);
         let id = self.number_for(wanted)?;
-        // The run this start begins, as the window minted it (ADR 0066): what the host lists the
-        // chat in and names at its end (#2172).
+        // The run this start begins, as the window minted it (ADR 0066).
         let start = StartProgram {
             number: Some(id),
             run: opening.run.clone(),
