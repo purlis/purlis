@@ -105,7 +105,7 @@ mod options_tests;
 mod tests;
 
 /// Whether a theme is drawn on a dark window or a light one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
     Dark,
