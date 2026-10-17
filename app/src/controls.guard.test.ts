@@ -375,26 +375,35 @@ describe("the control guard (#1837)", () => {
  * in an inline style or a Tailwind class, takes it from those two.
  *
  * **What is a control** is said by the rule's subject, the last part of its selector, where the
- * box it draws is:
- * - a `button`, `select` or `textarea` element, or an `input` that is not a checkbox or a radio;
+ * box it draws is. Each selector of a list is read on its own (a list is split at its own
+ * commas, not those inside brackets), a nested rule as the full selector it stands for, and an
+ * `:is()` or `:where()` as each selector in it. The subject is a control when it is:
+ * - a `button`, `select` or `textarea` element, or an `input` that is not a checkbox or a radio
+ *   (`input:not([type=checkbox])` is one);
  * - a class the primitives draw a control with (`CONTROL_PRIMITIVES`);
  * - a class some component gives a button, a field or a select (`controlClasses`), unless that
  *   tag is a row of a list (`ui-row`, `ui-tree-row`) or a segment of a segmented control, whose
  *   height is the list's or the segmented control's.
  *
- * A control takes `--size-control`, or `--size-chrome` where it is the small form drawn in a
- * strip or a pane header (`.ui-button-sm`, `.ui-segmented-sm`); a field of several lines is a
- * whole number of controls (`calc(var(--size-control) * 3)`). A checkbox, a radio and a switch
- * are drawn at their own mark's size and are not read.
+ * A control takes `--size-control`. It takes `--size-chrome` only as the small form: the subject
+ * is `.ui-button-sm` or `.ui-segmented-sm`, or a part of the selector before it is a strip. A
+ * field of several lines is a whole number of controls (`calc(var(--size-control) * 3)`). A
+ * checkbox, a radio and a switch are drawn at their own mark's size and are not read.
  *
  * **What is a strip or a pane header** is a class named for one (`STRIP`): a bar, a strip, a
- * head or a row of tabs, the three strips by name, the status line, and the two rows of controls a strip
- * or a pane's top line draws as part of itself (`STRIP_PARTS`). It takes `--size-chrome`.
+ * head or a row of tabs, the three strips by name, the pane's top line, the status line, and
+ * the two rows of controls a strip or a pane's top line draws as part of itself
+ * (`STRIP_PARTS`); a chart's bar and the two columns down a side are not (`NOT_A_STRIP`). It
+ * takes `--size-chrome`.
  *
  * Either may also be as tall as its content or its container (`auto`, `100%`, `0`, `none`), or
  * read a custom property that holds one of the two tokens. **A named exception** gives its
  * reason (`HEIGHT_EXCEPTIONS`); the list is exact, as the allowance is, so an exception whose
  * rule is gone fails until it is deleted.
+ *
+ * **What it reads is what a rule declares.** A control with no height of its own (one a
+ * padding makes tall) is not checked, and a custom property is held by its value wherever it
+ * is declared, not by the scope it is declared in.
  */
 
 /** The classes `primitives/controls.css` draws a control with. */
@@ -432,21 +441,46 @@ export function controlClasses(source: string): string[] {
 }
 
 /** A strip or a pane header, by its class's name: a bar, a strip, a head or a row of tabs, the
- *  three strips by name (ADR 0036), and the status line. */
-const STRIP = /^(?:bar|tabs|projects|workspaces|status-line|[\w-]+-(?:bar|strip|head|tabs))$/;
+ *  three strips by name (ADR 0036), the pane's top line and the status line. */
+const STRIP =
+  /^(?:bar|tabs|projects|workspaces|status-line|pane-chips|strip(?:-[\w-]+)?|[\w-]+-(?:bar|strip|head|tabs))$/;
+
+/** Named like a strip and not one: a chart's bar and the two columns down a side. */
+const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
 /** The rows of controls drawn as part of a strip or a pane's top line, as tall as it is: the
  *  ways to end a pane's task (#1488) and the chip a tab wears for its tasks (#1487). */
 const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks"]);
 
+/** The classes that make a control the small one, drawn at the chrome height. */
+const SMALL_CONTROLS = new Set(["ui-button-sm", "ui-segmented-sm"]);
+
 const HEIGHT_PROPERTY = /^(?:min-)?(?:height|block-size)$/;
 
 /** A height that is no length of its own: its content's, its container's, or none. */
-const AS_TALL_AS = /^(?:auto|100%|0|none|fit-content|min-content|max-content|inherit|unset)$/;
+const AS_TALL_AS = /^(?:auto|100%|0|none|fit-content|min-content|max-content)$/;
 
-/** Where the subject's parts start inside a selector: after the last combinator outside
- *  brackets. `.tabs .tab:has(> .tab-tasks)` is `.tab:has(> .tab-tasks)`. */
-function subjectOf(selector: string): string {
+/** `list` split at its commas outside brackets and strings. */
+export function splitList(list: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < list.length; i++) {
+    const char = list[i];
+    if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if (char === "," && depth === 0) {
+      parts.push(list.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(list.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/** Where the subject starts inside a selector: after the last combinator outside brackets.
+ *  `.tabs .tab:has(> .tab-tasks)` is `.tab:has(> .tab-tasks)`. */
+function subjectStart(selector: string): number {
   let depth = 0;
   let start = 0;
   for (let i = 0; i < selector.length; i++) {
@@ -455,33 +489,87 @@ function subjectOf(selector: string): string {
     else if (char === ")" || char === "]") depth--;
     else if (depth === 0 && /[\s>+~]/.test(char)) start = i + 1;
   }
-  return selector.slice(start);
+  return start;
 }
 
-/** What one selector's subject is, for this guard: a control, a strip, or neither. */
+/** The full selectors a nested rule stands for: each level put in its parent's place at `&`,
+ *  or after it as a descendant. At-rules are no level. */
+export function nestedSelectors(context: readonly string[]): string[] {
+  let selectors = [""];
+  for (const level of context.filter((part) => !part.startsWith("@"))) {
+    selectors = selectors.flatMap((parent) =>
+      splitList(level).map((own) =>
+        parent === ""
+          ? own.replace(/&/g, ":root")
+          : own.includes("&")
+            ? own.replace(/&/g, `:is(${parent})`)
+            : `${parent} ${own}`,
+      ),
+    );
+  }
+  return selectors;
+}
+
+/** One selector as plain ones: each `:is()` or `:where()` in it opened, a selector per item of
+ *  its list, until none is left. */
+export function opened(selector: string): string[] {
+  const at = /:(?:is|where)\(/.exec(selector);
+  if (!at) return [selector.trim()];
+  let depth = 1;
+  let end = at.index + at[0].length;
+  for (; end < selector.length && depth > 0; end++) {
+    if (selector[end] === "(") depth++;
+    else if (selector[end] === ")") depth--;
+  }
+  const inner = selector.slice(at.index + at[0].length, end - 1);
+  const before = selector.slice(0, at.index);
+  const after = selector.slice(end);
+  return splitList(inner).flatMap((item) => opened(`${before}${item}${after}`));
+}
+
+/** The classes a compound names, and its element, with what `:not()`, `:has()` and the other
+ *  functional pseudo-classes say about other elements taken out. */
+function partsOf(compound: string): { element?: string; classes: string[]; toggle: boolean } {
+  let own = compound;
+  for (let was = ""; was !== own;) {
+    was = own;
+    own = own.replace(/:[\w-]+\([^()]*\)/g, "");
+  }
+  const toggle = /\[type=["']?(?:checkbox|radio)["']?\]/.test(own);
+  own = own.replace(/\[[^\]]*\]/g, "").replace(/:[\w-]+/g, "");
+  return {
+    element: /^[a-z]+/.exec(own)?.[0],
+    classes: [...own.matchAll(/\.([\w-]+)/g)].map(([, name]) => name),
+    toggle,
+  };
+}
+
+const isStrip = (name: string) =>
+  (STRIP.test(name) && !NOT_A_STRIP.has(name)) || STRIP_PARTS.has(name);
+
+/** What a plain selector's subject is, for this guard: a control (small, when it is the small
+ *  class or sits inside a strip), a strip, or neither. */
 export function subjectKind(
   selector: string,
   controls: ReadonlySet<string>,
-): "a control" | "a strip" | undefined {
-  let subject = subjectOf(selector.trim());
+): "a control" | "a small control" | "a strip" | undefined {
+  const start = subjectStart(selector.trim());
+  const subject = selector.trim().slice(start);
   if (subject.includes("::")) return undefined;
-  const toggle = /\[type=["']?(?:checkbox|radio)["']?\]/.test(subject);
-  for (let was = ""; was !== subject;) {
-    was = subject;
-    subject = subject.replace(/:[\w-]+\([^()]*\)/g, "");
-  }
-  subject = subject.replace(/\[[^\]]*\]/g, "").replace(/:[\w-]+/g, "");
-  const element = /^[a-z]+/.exec(subject)?.[0];
-  const classes = [...subject.matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
-  if (classes.some((name) => STRIP.test(name) || STRIP_PARTS.has(name))) return "a strip";
-  if (element === "input" && !toggle) return "a control";
-  if (element && ["button", "select", "textarea"].includes(element)) return "a control";
-  if (classes.some((name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name)))
-    return "a control";
-  return undefined;
+  const { element, classes, toggle } = partsOf(subject);
+  if (classes.some(isStrip)) return "a strip";
+  const control =
+    (element === "input" && !toggle) ||
+    (element !== undefined && ["button", "select", "textarea"].includes(element)) ||
+    classes.some((name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name));
+  if (!control) return undefined;
+  const above = partsOf(selector.trim().slice(0, start)).classes;
+  const small = classes.some((name) => SMALL_CONTROLS.has(name)) || above.some(isStrip);
+  return small ? "a small control" : "a control";
 }
 
-/** The custom properties that hold one of the two heights, directly or through another one. */
+/** The custom properties that hold one of the two heights, directly or through another one.
+ *  Where a property is declared is not followed: one that holds a token anywhere holds it. */
 function heightCustoms(sheets: readonly string[]): Set<string> {
   const all = sheets
     .flatMap((css) => declarations(css))
@@ -500,18 +588,21 @@ function heightCustoms(sheets: readonly string[]): Set<string> {
   return held;
 }
 
+type Kind = "a control" | "a small control" | "a strip";
+
 /** Whether a height is on the tokens for what it is set on. */
-function onTheTokens(kind: "a control" | "a strip", value: string, held: ReadonlySet<string>) {
+function onTheTokens(kind: Kind, value: string, held: ReadonlySet<string>) {
   if (AS_TALL_AS.test(value)) return true;
   const read = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value)?.[1];
-  if (read === "--size-chrome") return true;
-  if (kind === "a strip") return false;
+  if (kind === "a strip") return read === "--size-chrome";
   if (read === "--size-control") return true;
+  if (read === "--size-chrome") return kind === "a small control";
   if (read && held.has(read)) return true;
   return /^calc\(\s*var\(--size-control\)\s*\*\s*\d+\s*\)$/.test(value);
 }
 
-/** Each height off the tokens in a stylesheet, as `<rule> | <property>: <value> (<kind>)`. */
+/** Each height off the tokens in a stylesheet, as `<rule> | <property>: <value> (<kind>)`: a
+ *  rule fails when any one selector it stands for does, named by the first that does. */
 export function cssHeights(
   css: string,
   controls: ReadonlySet<string>,
@@ -519,11 +610,12 @@ export function cssHeights(
 ): string[] {
   return declarations(css).flatMap(({ context, property, value }) => {
     if (!HEIGHT_PROPERTY.test(property)) return [];
-    const rule = context.filter((part) => !part.startsWith("@")).at(-1) ?? "";
-    const kinds = new Set(rule.split(",").map((selector) => subjectKind(selector, controls)));
-    const kind = kinds.has("a strip") ? "a strip" : kinds.has("a control") ? "a control" : null;
-    if (!kind || onTheTokens(kind, value, held)) return [];
-    return [`${context.join(" › ")} | ${property}: ${value} (${kind})`];
+    const kinds = nestedSelectors(context)
+      .flatMap(opened)
+      .map((selector) => subjectKind(selector, controls));
+    const off = kinds.find((kind) => kind !== undefined && !onTheTokens(kind, value, held));
+    if (!off) return [];
+    return [`${context.join(" › ")} | ${property}: ${value} (${off})`];
   });
 }
 
@@ -563,11 +655,15 @@ const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
     ".title-bar | min-height: 2.1rem (a strip)":
       "the system's title bar: on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the workspaces' row (ADR 0054)",
     ".workspaces | min-height: var(--size-control) (a strip)":
-      "the middle of the three strips (ADR 0036): a control tall, a step above the chats' strip at the chrome height",
+      "the middle of the three strips, kept at the control height pending the operator's look",
     ".workspaces-strip | min-height: var(--size-control) (a strip)":
-      "the middle of the three strips (ADR 0036), as `.workspaces`",
+      "the middle of the three strips, as `.workspaces`, pending the operator's look",
     ".activity-tab | height: 2.5rem (a control)":
-      "a side's icon column is 2.5rem wide (ADR 0038), and each of its tabs is a square of that width",
+      "a square as wide as the side's icon column (`.activity-column`, 2.5rem, #1737)",
+    ".pane-task-ends .task-end, .task-end-confirm button | height: var(--size-chrome) (a control)":
+      "the confirm's two buttons take the place of the pane's ways to end a task, and under a Chats row are drawn the same, at the small control height",
+    ".tasks-menu-place | height: var(--size-chrome) (a control)":
+      "an icon square at the end of a menu's row, the small control height, so the row stays a control tall",
   },
 };
 
@@ -639,7 +735,9 @@ describe("the control and chrome heights (#2449)", () => {
       ".bar button:hover:not(:disabled)",
       "input[type=text]",
       "input[type='checkbox']",
+      "input:not([type=checkbox])",
       ".ui-button-row > .ui-button",
+      ".ui-button-row > .ui-button-sm",
       ".pane-task-ends .task-end",
       ".tab .closer::before",
       ".tabs .tab:has(> .tab-tasks)",
@@ -648,25 +746,63 @@ describe("the control and chrome heights (#2449)", () => {
       ".status-line",
       ".panels .panel-head",
       ".bar",
+      ".pane-chips",
+      ".strip-doing",
+      ".chart-bars .chart-bar",
+      ".state-bar",
+      ".activity-bar",
       ".activity-tab svg",
       ".ui-checkbox",
     ].map((selector) => subjectKind(selector, controls));
     expect(kinds).toEqual([
       "a control",
-      "a control",
-      "a control",
-      undefined,
-      "a control",
+      "a small control",
       "a control",
       undefined,
-      undefined,
-      "a strip",
-      "a strip",
-      "a strip",
-      "a strip",
-      "a strip",
+      "a control",
+      "a control",
+      "a small control",
+      "a small control",
       undefined,
       undefined,
+      "a strip",
+      "a strip",
+      "a strip",
+      "a strip",
+      "a strip",
+      "a strip",
+      "a strip",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("splits a list at its own commas, opens :is() and :where(), and follows nesting", () => {
+    expect(splitList(".a:is(.b, .c) button, .d")).toEqual([".a:is(.b, .c) button", ".d"]);
+    expect(opened(":where(.x, .y) :is(button, .z)")).toEqual([
+      ".x button",
+      ".x .z",
+      ".y button",
+      ".y .z",
+    ]);
+    expect(nestedSelectors(["@media (width > 1px)", ".bar, .rail", "& button", "&:hover"])).toEqual(
+      [":is(:is(.bar) button):hover", ":is(:is(.rail) button):hover"],
+    );
+    expect(nestedSelectors([".tabs", ".tab-tasks"])).toEqual([".tabs .tab-tasks"]);
+    const css = `
+      .rail { :is(button, .x) { height: 1.9rem; } }
+      .bar { & button { height: var(--size-chrome); } }
+      .row { & button { height: var(--size-chrome); } }
+      .a, .b:is(.c, .d) { height: 3px; }
+      :where(.half-head) { min-height: 1.4rem; }
+    `;
+    expect(cssHeights(css, new Set())).toEqual([
+      ".rail › :is(button, .x) | height: 1.9rem (a control)",
+      ".row › & button | height: var(--size-chrome) (a control)",
+      ":where(.half-head) | min-height: 1.4rem (a strip)",
     ]);
   });
 
@@ -675,6 +811,7 @@ describe("the control and chrome heights (#2449)", () => {
       :root { --row: var(--size-chrome); --lead: var(--row); }
       .ui-button { block-size: var(--size-control); }
       .ui-button-sm { block-size: var(--size-chrome); }
+      .bar button { block-size: var(--size-chrome); }
       textarea { min-block-size: calc(var(--size-control) * 3); }
       .ui-menu-item { min-block-size: var(--lead); }
       .bar { min-height: var(--size-chrome); }
@@ -690,6 +827,12 @@ describe("the control and chrome heights (#2449)", () => {
     expect(cssHeights("button { height: calc(var(--size-control) * 1.5); }", new Set())).toEqual([
       "button | height: calc(var(--size-control) * 1.5) (a control)",
     ]);
+    expect(cssHeights(".panel button { height: var(--size-chrome); }", new Set())).toEqual([
+      ".panel button | height: var(--size-chrome) (a control)",
+    ]);
+    expect(
+      cssHeights(".bar { height: inherit; } button { min-height: unset; }", new Set()),
+    ).toEqual([".bar | height: inherit (a strip)", "button | min-height: unset (a control)"]);
   });
 
   it("reads a control's height in an inline style or a Tailwind class", () => {
