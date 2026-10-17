@@ -17,39 +17,54 @@
 //! is a frame of its own, and the operator's arrangement is nothing it needs to be handed.
 
 use std::path::Path;
-use std::sync::Mutex;
 
-use purlis_core::theme::{self, ResolvedTheme, Theirs};
+use purlis_core::theme::{self, Complaint, Theirs, TheirsKept};
 use purlis_core::windowprefs::{self, Reading};
+
+use crate::extensions::WindowTheme;
 
 /// The global the page reads both readings from. `app/src/windowprefs.ts` names it too; the
 /// test below holds the script to it, and `windowprefs.test.ts` holds the page to it.
 pub(crate) const GLOBAL: &str = "__CHARTER_AT_CREATION__";
 
-/// What the page receives.
+/// What the page receives. Every theme in it is a [`WindowTheme`], the one wire shape a
+/// resolved theme has, which `theme_in_force` answers in too.
 #[derive(Debug, serde::Serialize)]
-struct AtCreation<'a> {
+struct AtCreation {
     layout: Reading,
     /// The person's own theme, resolved by the core: what the first frame is drawn in when it
     /// is in force.
-    theme: Theirs,
+    theme: TheirTheme,
     /// The themes purlis ships, resolved: what the first frame is drawn in otherwise.
-    built_in: &'a [ResolvedTheme],
+    built_in: Vec<WindowTheme>,
 }
 
-/// The person's own theme as the last window was handed it, for [`theme_in_force`] to resolve
-/// from after the first frame: read once as a window is created, never again until the next.
-///
-/// [`theme_in_force`]: crate::extensions::theme_in_force
-static THEIRS: Mutex<Option<ResolvedTheme>> = Mutex::new(None);
-
-/// The person's own theme in force, as the window was handed it.
-pub(crate) fn theirs_in_force() -> Option<ResolvedTheme> {
-    THEIRS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+/// [`Theirs`] with its theme in the window's shape.
+#[derive(Debug, serde::Serialize)]
+struct TheirTheme {
+    path: String,
+    found: bool,
+    trouble: Option<String>,
+    theme: Option<WindowTheme>,
+    complaints: Vec<Complaint>,
 }
+
+impl From<Theirs> for TheirTheme {
+    fn from(theirs: Theirs) -> Self {
+        Self {
+            path: theirs.path,
+            found: theirs.found,
+            trouble: theirs.trouble,
+            theme: theirs.theme.as_ref().map(WindowTheme::from),
+            complaints: theirs.complaints,
+        }
+    }
+}
+
+/// **The person's own theme, read once for this process** (`purlis_core::theme::TheirsKept`):
+/// every window's creation script and every `theme_in_force` answer resolve from the same read,
+/// so a later window, or a link that never created one, draws what the first did.
+pub(crate) static THEIRS: TheirsKept = TheirsKept::new();
 
 /// The script that puts what was read on the page before any of the page's own code runs.
 ///
@@ -62,15 +77,15 @@ pub(crate) fn theirs_in_force() -> Option<ResolvedTheme> {
 /// A machine with no config home hands the page an empty layout and no theme of the person's:
 /// the default arrangement and the built-in theme, which is what such a machine has always had.
 pub(crate) fn creation_script(config_root: Option<&Path>) -> String {
-    let theirs = theme::read_theirs(config_root);
-    THEIRS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone_from(&theirs.theme);
+    creation_script_from(&THEIRS, config_root)
+}
+
+/// [`creation_script`], from the person's theme as `kept` holds it.
+fn creation_script_from(kept: &TheirsKept, config_root: Option<&Path>) -> String {
     let at = AtCreation {
         layout: config_root.map_or_else(Reading::default, windowprefs::read_layout),
-        theme: theirs,
-        built_in: theme::built_ins(),
+        theme: kept.get(config_root).into(),
+        built_in: theme::built_ins().iter().map(WindowTheme::from).collect(),
     };
     let json = serde_json::to_string(&at).expect("a reading is plain data serde can always write");
     format!(
@@ -116,10 +131,9 @@ pub async fn use_built_in_theme() -> Result<String, String> {
         tauri::async_runtime::spawn_blocking(move || windowprefs::use_built_in_theme(&root))
             .await
             .map_err(|err| format!("moving the theme aside did not finish: {err}"))??;
-    // From here on there is no theme of the person's to draw.
-    *THEIRS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    // From here on there is no theme of the person's to draw: the next ask reads again, and
+    // finds the file gone.
+    THEIRS.forget();
     Ok(moved)
 }
 
@@ -282,7 +296,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"Mine"}"#).unwrap();
 
-        let script = creation_script(Some(home.path()));
+        let script = creation_script_from(&TheirsKept::new(), Some(home.path()));
         assert!(script.starts_with(&format!("Object.defineProperty(window, \"{GLOBAL}\"")));
         let at = defined(&script);
         assert_eq!(at["layout"]["found"], true);
@@ -303,6 +317,28 @@ mod tests {
     }
 
     #[test]
+    fn every_window_is_handed_the_one_read_of_the_person_s_theme() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"First"}"#).unwrap();
+        let kept = TheirsKept::new();
+        let first = defined(&creation_script_from(&kept, Some(home.path())));
+        std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"Second"}"#).unwrap();
+        let second = defined(&creation_script_from(&kept, Some(home.path())));
+        assert_eq!(second["theme"], first["theme"]);
+        assert_eq!(second["theme"]["theme"]["name"], "First");
+    }
+
+    #[test]
+    fn a_resolved_theme_is_handed_in_one_shape_whatever_hands_it() {
+        // The creation script's built-ins are `WindowTheme`s, as `theme_in_force`'s answer is.
+        let at = defined(&creation_script_from(&TheirsKept::new(), None));
+        let one = serde_json::to_value(WindowTheme::from(theme::default_theme())).unwrap();
+        assert_eq!(at["built_in"][0], one);
+    }
+
+    #[test]
     fn a_hand_edited_file_reaches_the_page_as_data_and_never_as_code() {
         // Whatever the operator — or anybody who can write the file — puts in a string, it is a
         // string when it arrives.
@@ -315,7 +351,7 @@ mod tests {
             format!(r#"{{"name":"{hostile}"}}"#),
         )
         .unwrap();
-        let at = defined(&creation_script(Some(home.path())));
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
         assert_eq!(
             at["theme"]["theme"]["name"],
             "\"}); alert(1); ({\"\u{2028}</script>"
@@ -328,7 +364,7 @@ mod tests {
         let dir = purlis_core::machine::dir(home.path());
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(windowprefs::LAYOUT), "{ nope").unwrap();
-        let at = defined(&creation_script(Some(home.path())));
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
         assert_eq!(at["layout"]["found"], true);
         assert_eq!(at["layout"]["document"], serde_json::Value::Null);
         assert!(
@@ -407,7 +443,7 @@ mod tests {
 
     #[test]
     fn a_machine_with_no_config_home_is_handed_nothing_to_draw_from() {
-        let at = defined(&creation_script(None));
+        let at = defined(&creation_script_from(&TheirsKept::new(), None));
         assert_eq!(at["layout"]["found"], false);
         assert_eq!(at["theme"]["found"], false);
         assert_eq!(at["theme"]["theme"], serde_json::Value::Null);

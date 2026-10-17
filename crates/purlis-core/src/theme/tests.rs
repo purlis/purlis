@@ -670,13 +670,77 @@ fn every_built_in_can_be_read_as_it_ships_and_in_every_tint() {
 }
 
 #[test]
-fn the_check_measures_the_way_wcag_does() {
-    assert!((check::contrast("#ffffff", "#000000") - 21.0).abs() < 1e-9);
-    assert!((check::contrast("#777777", "#ffffff") - 4.478).abs() < 0.001);
-    assert!((check::aa_text(14.0, false) - 4.5).abs() < f64::EPSILON);
-    assert!((check::aa_text(18.66, false) - 4.5).abs() < f64::EPSILON);
-    assert!((check::aa_text(18.66, true) - 3.0).abs() < f64::EPSILON);
-    assert!((check::aa_text(24.0, false) - 3.0).abs() < f64::EPSILON);
+fn the_check_measures_the_way_wcag_does_and_holds_words_to_aa() {
+    // `#777777` on white is WCAG's own worked example: 4.48:1, just under AA's 4.5 for body text.
+    let probe = load(&file(json!({ "tokens": {
+        "surface.base": "#ffffff", "text.muted": "#777777",
+    } })))
+    .theme;
+    let report = check(&probe);
+    let muted = report
+        .findings
+        .iter()
+        .find_map(|one| match one {
+            Finding::Contrast {
+                tint: None,
+                pair,
+                ratio,
+            } if pair.front == "text.muted" && pair.back == "surface.base" => {
+                Some((*ratio, pair.floor))
+            }
+            _ => None,
+        })
+        .expect("muted text on the window is named");
+    assert_eq!(muted, (4.48, 4.5));
+    // Words at the window's 14px are held to AA's body floor, a mark to 3:1.
+    let floor = |front: &str, back: &str| {
+        PAIRS
+            .iter()
+            .find(|pair| pair.front == front && pair.back == back)
+            .map(|pair| pair.floor)
+    };
+    assert_eq!(floor("danger.base", "control.base"), Some(4.5));
+    assert_eq!(floor("state.running", "surface.base"), Some(3.0));
+    // Black on white is the most there is: nothing the check could find.
+    let stark = load(&file(json!({ "tokens": {
+        "surface.base": "#ffffff", "text.primary": "#000000",
+    } })))
+    .theme;
+    assert!(!check(&stark).findings.iter().any(|one| matches!(
+        one,
+        Finding::Contrast { tint: None, pair, .. }
+            if pair.front == "text.primary" && pair.back == "surface.base"
+    )));
+}
+
+#[test]
+fn the_person_s_theme_is_read_once_per_process_until_it_is_forgotten() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = crate::machine::dir(home.path());
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("theme.json"),
+        r#"{ "name": "First", "appearance": "dark" }"#,
+    )
+    .unwrap();
+    let kept = TheirsKept::new();
+    let first = kept.get(Some(home.path()));
+    assert_eq!(
+        first.theme.as_ref().map(|it| it.name.as_str()),
+        Some("First")
+    );
+
+    // A second ask, after the file changed, answers the read the first one took.
+    std::fs::write(
+        dir.join("theme.json"),
+        r#"{ "name": "Second", "appearance": "dark" }"#,
+    )
+    .unwrap();
+    assert_eq!(kept.get(Some(home.path())), first);
+
+    kept.forget();
+    let again = kept.get(Some(home.path()));
+    assert_eq!(again.theme.map(|it| it.name).as_deref(), Some("Second"));
 }
 
 #[test]

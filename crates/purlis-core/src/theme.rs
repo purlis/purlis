@@ -70,7 +70,12 @@ pub struct Motion {
 }
 
 /// **A theme, complete**: what the window draws. Every token in [`TOKENS`] has a value, and so
-/// does every motion token. Serialised as the window's `Theme` reads it.
+/// does every motion token.
+///
+/// **This shape is today's (format 1) and will change for format 2** (spec #2313): typed values
+/// beyond colour and motion (geometry, fonts, icons), keys for each appearance × option
+/// combination, and schema errors beside the findings. Its users are the window's wire types and
+/// the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ResolvedTheme {
     /// What to call it, as a person would.
@@ -458,6 +463,42 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
             .map(|it| it.complaints.clone())
             .unwrap_or_default(),
         theme: resolved.map(|it| it.theme),
+    }
+}
+
+/// **The person's own theme, read once per process** and kept, so every window and every later
+/// answer resolves from the same read, whichever window was created first or whether one was
+/// at all. [`Self::forget`] lets the next ask read the file again: after Use built-in moved it
+/// aside, and for live reload (#2324).
+#[derive(Debug, Default)]
+pub struct TheirsKept {
+    kept: std::sync::Mutex<Option<Theirs>>,
+}
+
+impl TheirsKept {
+    /// Nothing read yet.
+    pub const fn new() -> Self {
+        Self {
+            kept: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// The person's theme under `config_root`: read and resolved on the first ask, the same
+    /// answer on every ask after it until [`Self::forget`].
+    pub fn get(&self, config_root: Option<&std::path::Path>) -> Theirs {
+        self.kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_or_insert_with(|| read_theirs(config_root))
+            .clone()
+    }
+
+    /// Lets the next [`Self::get`] read the file again.
+    pub fn forget(&self) {
+        *self
+            .kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 }
 

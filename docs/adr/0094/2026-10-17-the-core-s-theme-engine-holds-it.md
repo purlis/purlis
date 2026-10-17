@@ -1,8 +1,10 @@
 # Noted 2026-10-17: the core's theme engine holds it (purlis#2320)
 
-The decision stands; where it is held moved. A theme file is now read, validated and resolved by
-one theme engine in the Rust core (`purlis_core::theme`, spec #2313), and the window only applies
-the resolved theme it is handed.
+This record's rule, superseded by [ADR 0097](../0097-a-theme-is-bounded-data-and-may-set-every-token.md),
+is now held by the core's theme engine (`purlis_core::theme`, spec #2313) and no longer by the
+window, until the theme format 2 lands. ADR 0097 §7's interim clause, that geometry stays core's
+until the engine is built, keeps geometry refused meanwhile: a theme file is read, validated and
+resolved by the engine, and the window only applies the resolved theme it is handed.
 
 - **Geometry is refused by the engine.** A theme file that sets a core geometry name, in any
   spelling (`space.4`, `--radius-md`, a `geometry` block), is resolved without it, and the engine

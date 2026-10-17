@@ -198,11 +198,10 @@ pub async fn theme_in_force(
         if reread {
             *offered_kept() = None;
         }
-        let theirs = crate::windowprefs::theirs_in_force();
         theme_in_force_of(
             pick.as_deref(),
             on.as_deref(),
-            theirs.as_ref(),
+            crate::windowprefs::THEIRS.get(Some(&root)).theme.as_ref(),
             light,
             || {
                 offered_kept()
@@ -1399,6 +1398,28 @@ mod tests {
         assert!(
             in_force(&extension::survey(&config, &extension::BuiltIn::none())).is_empty(),
             "a theme that changed after approval was still drawn"
+        );
+    }
+
+    #[test]
+    fn the_theme_in_force_resolves_the_person_s_theme_with_no_window_created_first() {
+        // A link, or a window made after another, asks with no creation script of its own: the
+        // one read the process keeps is taken on the first ask.
+        let home = tempfile::tempdir().expect("a directory");
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).expect("the config home");
+        std::fs::write(
+            dir.join(purlis_core::windowprefs::THEME),
+            r#"{"name":"Mine","appearance":"light"}"#,
+        )
+        .expect("a theme");
+        let kept = purlis_core::theme::TheirsKept::new();
+        let theirs = kept.get(Some(home.path())).theme;
+        let drawn = theme_in_force_of(None, None, theirs.as_ref(), false, || unreachable!());
+        let theme = drawn.theme.expect("the person's theme");
+        assert_eq!(
+            (theme.name.as_str(), theme.appearance.as_str()),
+            ("Mine", "light")
         );
     }
 

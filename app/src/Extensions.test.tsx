@@ -7,7 +7,15 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { drawThemeFor, Extensions, troubleSaid } from "./Extensions";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
+import {
+  BUILT_IN,
+  DEFAULT_THEME,
+  drawIn,
+  inForce,
+  onDrawn,
+  THEME_ALIASES,
+  type Theme,
+} from "./theme/theme";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 
@@ -607,6 +615,20 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       { pick: "solarized/Solarized Dark", on: ["solarized"], light: true, reread: false },
       { pick: null, on: null, light: true, reread: false },
     ]);
+  });
+
+  it("draws a built-in pick at once, from what the window was handed, asking the core nothing", () => {
+    const asked = core({});
+    for (const [pick, drawn] of [
+      ["purlis-light", "purlis-light"],
+      ...Object.entries(THEME_ALIASES),
+      ["purlis-dark", "purlis-dark"],
+    ]) {
+      // No `await`: the switch has drawn by the time it returns, so no frame shows the last one.
+      void drawThemeFor(new Set(["solarized"]), pick);
+      expect(inForce(), pick).toBe(BUILT_IN[drawn]);
+    }
+    expect(asked.some((call) => call.cmd === "theme_in_force")).toBe(false);
   });
 
   it("draws what the core answered, and keeps the window when it answers no theme", async () => {

@@ -116,21 +116,22 @@ describe("the operator's own theme", () => {
     expect(atCreation().theme.complaints).toEqual([]);
   });
 
-  it("is not repainted when the core answers it again", async () => {
+  it("is drawn again at once for a project that picks nothing, asking the core nothing", async () => {
     handed({ theme: MINE });
-    // As `main.tsx` draws it: once, so the core answering the same theme repaints nothing.
+    // As `main.tsx` draws it: once, so drawing it again is the same theme and repaints nothing.
     const theirs = theirThemeOnce();
     if (theirs === undefined) throw new Error("the operator's theme was not read");
     drawIn(theirs);
-    mockIPC((cmd) =>
-      cmd === "theme_in_force"
-        ? { theme: { ...MINE, values: { ...MINE.values } }, complaints: [], follows_system: false }
-        : null,
-    );
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return null;
+    });
 
     await drawWhatIsInForce();
 
     expect(inForce()).toBe(theirs);
+    expect(asked).not.toContain("theme_in_force");
   });
 });
 

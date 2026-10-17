@@ -15,14 +15,16 @@ import { Choice, SettingActions } from "./settings/components";
 import { plainLine } from "./settings/iconsPick";
 import { iconThemeComplaints, offeredIconThemes, projectThemeChanged } from "./projectTheme";
 import {
+  BUILT_IN,
   drawIn,
   inForce,
   PREFERS_LIGHT,
   sameTheme,
   systemIsLight,
+  THEME_ALIASES,
   type Theme,
 } from "./theme/theme";
-import { forgetTheirTheme } from "./windowprefs";
+import { forgetTheirTheme, theirThemeOnce } from "./windowprefs";
 import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
@@ -421,6 +423,20 @@ function followSystem() {
 /** Whether the theme in force follows the system's appearance, as the core last said. */
 let following = false;
 
+/**
+ * **What a project switch draws without asking**: a built-in the project picked (by its id or
+ * an id it had before), or, with no pick, the person's own theme — both resolved by the core and
+ * handed to the window as it was created, and both what the engine answers for those picks
+ * (`purlis_core::theme::resolve`). So the switch repaints in the frame it happens in, with no
+ * frame of the last project's theme while the core is asked. Anything else is the core's to say.
+ */
+function handedFor(pick: string | null): Theme | undefined {
+  const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
+  if (pick === null) return theirThemeOnce();
+  const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
+  return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
+}
+
 /** Puts `theme` in force, unless it is already what is drawn — so the terminal is told only of
  *  a change. */
 function draw(theme: Theme) {
@@ -439,12 +455,20 @@ function draw(theme: Theme) {
  * theme, and the alternative is a slower launch for everybody.
  *
  * The order is the engine's: the project's pick, else the person's own `theme.json`, else the
- * first theme from an extension the project has on, else purlis's own. Nothing here throws; a
+ * first theme from an extension the project has on, else purlis's own. A built-in pick and the
+ * person's own theme are drawn at once from what the window was handed ({@link handedFor}); the
+ * core is asked for the rest. Nothing here throws; a
  * theme the core cannot answer keeps the window as it is.
  */
 export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> {
   const mine = ++drawing;
   if (reread) surveyAgain = true;
+  const handed = handedFor(picked);
+  if (handed !== undefined) {
+    following = false;
+    draw(handed);
+    return;
+  }
   const again = surveyAgain;
   const on = allowed === "every" ? null : [...allowed];
   let answered: Awaited<ReturnType<typeof commands.themeInForce>>;
