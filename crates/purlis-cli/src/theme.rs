@@ -335,7 +335,7 @@ fn appearance(appearance: theme::Appearance) -> &'static str {
 }
 
 /// What the check says about hard floors until the engine keeps them (#2332): not a pass.
-const FLOORS_NOT_CHECKED: &str = "not checked by this purlis yet";
+const FLOORS_NOT_CHECKED: &str = "not checked by this purlis yet (#2332)";
 
 /// The check as a person reads it.
 fn checked_text(found: &Found, report: Option<&theme::Report>) -> String {

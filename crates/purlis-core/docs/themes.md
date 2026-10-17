@@ -44,7 +44,7 @@ errors (1):
 warnings (2):
   text.muted on surface.base: 2.38, under 4.5; in every workspace tint too, down to 2.38
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
-hard floors: not checked by this purlis yet
+hard floors: not checked by this purlis yet (#2332)
 ```
 
 - **Errors** are values purlis had to put right: a token that is not one, a value that is not
@@ -54,7 +54,7 @@ hard floors: not checked by this purlis yet
   with its ratio and the floor it is under, as the theme is and tinted by every workspace
   colour, one line per pair. A warning is the author's call; the theme is drawn.
 - **Hard floors** are the few rules a theme can never break. This purlis does not check them
-  yet, and says so rather than reporting a pass.
+  yet (#2332), and says so rather than reporting a pass.
 - A file that is not a theme at all (not JSON, not an object, too large) is **refused**. When it
   is your own `theme.json`, the window draws Purlis in its place and the Inbox names the
   problem, with **Use built-in** to move the file aside.
