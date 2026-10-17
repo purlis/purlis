@@ -316,6 +316,51 @@ fn an_lsof_answer_that_does_not_show_this_process_is_refused() {
 }
 
 #[test]
+fn a_process_list_that_runs_past_its_deadline_could_not_be_read() {
+    let mut slow = std::process::Command::new("/bin/sleep");
+    slow.arg("30");
+    let started = std::time::Instant::now();
+
+    let read = listed_cwds(&mut slow, std::time::Duration::from_millis(200), "200");
+
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "it waited for the slow program"
+    );
+    assert_eq!(
+        read,
+        Err(
+            "the process list could not be read: lsof gave no answer within 0.2 seconds".to_owned()
+        )
+    );
+}
+
+#[test]
+fn a_process_list_read_within_its_deadline_is_its_answer() {
+    let mut quick = std::process::Command::new("/bin/sh");
+    quick.args([
+        "-c",
+        "printf 'p100\\nfcwd\\nn/tmp/work\\np200\\nfcwd\\nn/tmp\\n'",
+    ]);
+
+    assert_eq!(
+        listed_cwds(&mut quick, std::time::Duration::from_secs(10), "200"),
+        Ok(vec![("process 100".to_owned(), PathBuf::from("/tmp/work"))])
+    );
+}
+
+#[test]
+fn a_process_list_that_fails_could_not_be_read() {
+    let mut failing = std::process::Command::new("/bin/sh");
+    failing.args(["-c", "exit 2"]);
+
+    assert_eq!(
+        listed_cwds(&mut failing, std::time::Duration::from_secs(10), "200"),
+        Err("the process list could not be read: lsof ended with exit status 2".to_owned())
+    );
+}
+
+#[test]
 fn this_process_working_in_a_folder_does_not_make_it_in_use() {
     let dir = tempfile::tempdir().expect("a directory");
 
