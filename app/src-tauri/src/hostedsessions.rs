@@ -473,6 +473,8 @@ impl HostLink {
             .subscribe(session::Since::new())
             .await
             .map_err(|why| format!("the session host refused to tell of its programs: {why}"))?;
+        static LINKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let id = LINKS.fetch_add(1, Ordering::Relaxed);
         let shared = Arc::new(Shared::default());
         runtime.spawn(take_views(views, Arc::clone(&shared)));
         let hearing = hear(
@@ -480,12 +482,11 @@ impl HostLink {
             Arc::clone(&client),
             Arc::clone(&shared),
             HookLines {
+                link: id,
                 client: Arc::clone(&client),
                 runtime: runtime.clone(),
             },
         );
-        static LINKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        let id = LINKS.fetch_add(1, Ordering::Relaxed);
         let lost = Arc::clone(&shared);
         let hearing = runtime
             .spawn(async move {
@@ -703,6 +704,8 @@ fn everything_ended_with_the_host(shared: &Shared, link: u64) {
 /// Where the hook lines the host pushes are heard: each by what hears its project's lines
 /// ([`Relayed::take`]), each reply going back on the link in the order it was made.
 struct HookLines {
+    /// The link they come over.
+    link: u64,
     client: Arc<Client>,
     runtime: tokio::runtime::Handle,
 }
@@ -724,7 +727,7 @@ impl HookLines {
             }
         };
         let reply = self.reply(project, id);
-        relayed.take(id, heard, reply);
+        relayed.take(self.link, id, heard, reply);
     }
 
     /// What replies to line `id` of `project`: each reply sent at once, behind the one before.

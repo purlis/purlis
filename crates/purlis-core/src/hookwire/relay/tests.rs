@@ -30,6 +30,10 @@ impl Window {
     }
 }
 
+/// The link to the host the lines come over, and the one a host started again comes over.
+const LINK: u64 = 1;
+const AGAIN: u64 = 2;
+
 /// The chat whose `secret exec` the window's hearing ends without reading its input.
 const ENDS_UNREAD: u32 = 4;
 
@@ -145,6 +149,7 @@ fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
 /// window's link hears it: one that waits on a thread of its own, every other in order.
 fn relayed(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
     let heeding = Arc::new(Heeding::new(the_windows(window, holding)));
+    heeding.linked(LINK);
     let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
     let relaying = Relaying::new({
         let host = Arc::clone(&host);
@@ -160,9 +165,9 @@ fn relayed(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
             });
             let heeding = Arc::clone(&heeding);
             if Heeding::waits(&heard) {
-                std::thread::spawn(move || heeding.hear(id, heard, reply));
+                std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
             } else {
-                heeding.hear(id, heard, reply);
+                heeding.hear(LINK, id, heard, reply);
             }
             true
         })
@@ -305,6 +310,11 @@ fn a_secret_exec_runs_in_the_window_on_what_its_asker_types() {
 /// link does, and answers what it replied up to its end: a panic naming what it replied where it
 /// does not end within seconds.
 fn an_exec_heard(heeding: &Arc<Heeding>, id: u64, chat: u32) -> Vec<Replied> {
+    an_exec_heard_on(heeding, LINK, id, chat)
+}
+
+/// [`an_exec_heard`], over link `link`.
+fn an_exec_heard_on(heeding: &Arc<Heeding>, link: u64, id: u64, chat: u32) -> Vec<Replied> {
     let (replies, replied) = mpsc::channel();
     let heeding = Arc::clone(heeding);
     std::thread::spawn(move || {
@@ -315,7 +325,7 @@ fn an_exec_heard(heeding: &Arc<Heeding>, id: u64, chat: u32) -> Vec<Replied> {
             chat,
             secret_exec: Default::default(),
         });
-        heeding.hear(id, exec, reply);
+        heeding.hear(link, id, exec, reply);
     });
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut heard = Vec::new();
@@ -342,8 +352,8 @@ fn input(of: u64, line: &str) -> Heard {
 fn a_secret_execs_input_heard_before_it_began_is_still_read_to_its_end() {
     let heeding = a_heeding();
 
-    heeding.hear(8, input(7, "one"), nothing());
-    heeding.hear(9, Heard::InputEnded { of: 7 }, nothing());
+    heeding.hear(LINK, 8, input(7, "one"), nothing());
+    heeding.hear(LINK, 9, Heard::InputEnded { of: 7 }, nothing());
 
     assert_eq!(an_exec_heard(&heeding, 7, ECHOES), ran(&["one"]));
 }
@@ -360,7 +370,9 @@ fn ran(lines: &[&str]) -> Vec<Replied> {
 
 fn a_heeding() -> Arc<Heeding> {
     let (window, holding) = a_window();
-    Arc::new(Heeding::new(the_windows(&window, &holding)))
+    let heeding = Arc::new(Heeding::new(the_windows(&window, &holding)));
+    heeding.linked(LINK);
+    heeding
 }
 
 fn nothing() -> Reply {
@@ -375,10 +387,10 @@ fn a_secret_execs_input_heard_after_it_ended_is_not_kept() {
     let heeding = a_heeding();
 
     assert_eq!(an_exec_heard(&heeding, 1, ENDS_UNREAD), [Replied::Ended]);
-    heeding.hear(2, input(1, "late"), nothing());
-    heeding.hear(3, Heard::InputEnded { of: 1 }, nothing());
-    heeding.hear(4, input(1, "own"), nothing());
-    heeding.hear(5, Heard::InputEnded { of: 1 }, nothing());
+    heeding.hear(LINK, 2, input(1, "late"), nothing());
+    heeding.hear(LINK, 3, Heard::InputEnded { of: 1 }, nothing());
+    heeding.hear(LINK, 4, input(1, "own"), nothing());
+    heeding.hear(LINK, 5, Heard::InputEnded { of: 1 }, nothing());
 
     assert_eq!(an_exec_heard(&heeding, 1, ECHOES), ran(&["own"]));
 }
@@ -388,8 +400,8 @@ fn a_secret_execs_input_heard_after_it_ended_is_not_kept() {
 #[test]
 fn when_the_link_ends_no_secret_execs_input_is_kept() {
     let heeding = a_heeding();
-    heeding.linked(1);
-    heeding.hear(2, input(5, "typed"), nothing());
+    heeding.linked(LINK);
+    heeding.hear(LINK, 2, input(5, "typed"), nothing());
 
     let (replies, replied) = mpsc::channel();
     std::thread::spawn({
@@ -402,10 +414,10 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
                 chat: ECHOES,
                 secret_exec: Default::default(),
             });
-            heeding.hear(6, exec, reply);
+            heeding.hear(LINK, 6, exec, reply);
         }
     });
-    heeding.hear(3, input(6, "first"), nothing());
+    heeding.hear(LINK, 3, input(6, "first"), nothing());
     // It runs: it wrote back what it read.
     assert_eq!(
         replied.recv_timeout(Duration::from_secs(10)),
@@ -414,15 +426,19 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
         })
     );
 
-    heeding.unlinked(1);
+    heeding.unlinked(LINK);
 
     assert_eq!(
         replied.recv_timeout(Duration::from_secs(10)),
         Ok(Replied::Ended),
         "the running exec's input did not end with the link"
     );
-    heeding.hear(4, Heard::InputEnded { of: 5 }, nothing());
-    assert_eq!(an_exec_heard(&heeding, 5, ECHOES), [Replied::Ended]);
+    heeding.linked(AGAIN);
+    heeding.hear(AGAIN, 4, Heard::InputEnded { of: 5 }, nothing());
+    assert_eq!(
+        an_exec_heard_on(&heeding, AGAIN, 5, ECHOES),
+        [Replied::Ended]
+    );
 }
 
 /// A host started again numbers its lines from the start: an exec under a number used before
@@ -430,19 +446,22 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
 #[test]
 fn after_the_window_links_again_a_reused_number_reads_only_its_own_input() {
     let heeding = a_heeding();
-    heeding.linked(1);
+    heeding.linked(LINK);
     assert_eq!(an_exec_heard(&heeding, 1, ENDS_UNREAD), [Replied::Ended]);
-    heeding.hear(2, input(2, "before"), nothing());
+    heeding.hear(LINK, 2, input(2, "before"), nothing());
 
-    heeding.linked(2);
+    heeding.linked(AGAIN);
     // The end of the link before, told late, is not this link's.
-    heeding.unlinked(1);
-    heeding.hear(3, input(1, "own"), nothing());
-    heeding.hear(4, Heard::InputEnded { of: 1 }, nothing());
-    heeding.hear(5, Heard::InputEnded { of: 2 }, nothing());
+    heeding.unlinked(LINK);
+    heeding.hear(AGAIN, 3, input(1, "own"), nothing());
+    heeding.hear(AGAIN, 4, Heard::InputEnded { of: 1 }, nothing());
+    heeding.hear(AGAIN, 5, Heard::InputEnded { of: 2 }, nothing());
 
-    assert_eq!(an_exec_heard(&heeding, 1, ECHOES), ran(&["own"]));
-    assert_eq!(an_exec_heard(&heeding, 2, ECHOES), [Replied::Ended]);
+    assert_eq!(an_exec_heard_on(&heeding, AGAIN, 1, ECHOES), ran(&["own"]));
+    assert_eq!(
+        an_exec_heard_on(&heeding, AGAIN, 2, ECHOES),
+        [Replied::Ended]
+    );
 }
 
 /// An exec from before the window linked again that ends only after an exec under its number
@@ -464,7 +483,7 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
         }
     });
     let heeding = Arc::new(Heeding::new(hearing));
-    heeding.linked(1);
+    heeding.linked(LINK);
     let before = std::thread::spawn({
         let heeding = Arc::clone(&heeding);
         move || an_exec_heard(&heeding, 1, WAITS_FOR_THE_GATE)
@@ -473,7 +492,7 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
         .recv_timeout(Duration::from_secs(10))
         .expect("the exec before began");
 
-    heeding.linked(2);
+    heeding.linked(AGAIN);
     let (replies, replied) = mpsc::channel();
     std::thread::spawn({
         let heeding = Arc::clone(&heeding);
@@ -485,10 +504,10 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
                 chat: ECHOES,
                 secret_exec: Default::default(),
             });
-            heeding.hear(1, exec, reply);
+            heeding.hear(AGAIN, 1, exec, reply);
         }
     });
-    heeding.hear(2, input(1, "x"), nothing());
+    heeding.hear(AGAIN, 2, input(1, "x"), nothing());
     let within = Duration::from_secs(10);
     assert_eq!(
         replied.recv_timeout(within),
@@ -498,8 +517,8 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
     );
     open.send(()).unwrap();
     assert_eq!(before.join().expect("ended"), [Replied::Ended]);
-    heeding.hear(3, input(1, "y"), nothing());
-    heeding.hear(4, Heard::InputEnded { of: 1 }, nothing());
+    heeding.hear(AGAIN, 3, input(1, "y"), nothing());
+    heeding.hear(AGAIN, 4, Heard::InputEnded { of: 1 }, nothing());
 
     assert_eq!(
         replied.recv_timeout(within),
@@ -519,31 +538,115 @@ fn a_secret_exec_that_could_not_begin_ends_and_keeps_no_input() {
     let reply: Reply = Arc::new(move |r| {
         let _ = replies.send(r);
     });
-    heeding.hear(2, input(3, "typed"), nothing());
+    heeding.hear(LINK, 2, input(3, "typed"), nothing());
 
-    heeding.not_begun(3, &reply);
-    heeding.hear(4, input(3, "more"), nothing());
-    heeding.hear(5, Heard::InputEnded { of: 3 }, nothing());
+    heeding.not_begun(LINK, 3, &reply);
+    heeding.hear(LINK, 4, input(3, "more"), nothing());
+    heeding.hear(LINK, 5, Heard::InputEnded { of: 3 }, nothing());
 
     assert_eq!(replied.try_iter().collect::<Vec<_>>(), [Replied::Ended]);
-    heeding.hear(6, input(3, "own"), nothing());
-    heeding.hear(7, Heard::InputEnded { of: 3 }, nothing());
+    heeding.hear(LINK, 6, input(3, "own"), nothing());
+    heeding.hear(LINK, 7, Heard::InputEnded { of: 3 }, nothing());
     assert_eq!(an_exec_heard(&heeding, 3, ECHOES), ran(&["own"]));
 }
 
-/// What waits for a `secret exec` not begun is bounded: a line past
-/// [`AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST`] is dropped and the exec's input ends there (#2271).
+/// A line of a `secret exec`, or its end, that comes over a link other than the current one is
+/// of a host that went or started again: it neither feeds nor ends an exec of its number now,
+/// and an exec from it does not run (#2271).
+#[test]
+fn a_line_from_a_link_that_is_not_the_current_one_is_dropped() {
+    let heeding = a_heeding();
+    heeding.linked(AGAIN);
+
+    heeding.hear(LINK, 2, input(1, "old"), nothing());
+    heeding.hear(LINK, 3, Heard::InputEnded { of: 1 }, nothing());
+    heeding.hear(AGAIN, 4, input(1, "own"), nothing());
+    heeding.hear(AGAIN, 5, Heard::InputEnded { of: 1 }, nothing());
+
+    assert_eq!(
+        an_exec_heard_on(&heeding, LINK, 9, ECHOES),
+        [Replied::Ended]
+    );
+    assert_eq!(an_exec_heard_on(&heeding, AGAIN, 1, ECHOES), ran(&["own"]));
+}
+
+fn bytes(of: char, newline_and_all: usize) -> String {
+    std::iter::repeat_n(of, newline_and_all - 1).collect()
+}
+
+/// What waits for a `secret exec` not begun is bounded: a line that would take it past
+/// [`AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST`] is dropped and the exec's input ends there; one that
+/// brings it to exactly that is kept (#2271).
 #[test]
 fn a_secret_exec_not_begun_is_kept_at_most_so_much_input() {
     let heeding = a_heeding();
-    let half = "a".repeat(AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST / 2);
-    let past = "b".repeat(AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST / 2);
+    let all = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST);
+    let one_more = bytes('b', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST + 1);
 
-    heeding.hear(2, input(7, &half), nothing());
-    heeding.hear(3, input(7, &past), nothing());
-    heeding.hear(4, input(7, "after"), nothing());
+    heeding.hear(LINK, 2, input(7, &all), nothing());
+    heeding.hear(LINK, 3, input(7, "after"), nothing());
+    heeding.hear(LINK, 4, input(8, &one_more), nothing());
+    heeding.hear(LINK, 5, Heard::InputEnded { of: 8 }, nothing());
 
-    assert_eq!(an_exec_heard(&heeding, 7, ECHOES), ran(&[&half]));
+    assert_eq!(an_exec_heard(&heeding, 7, ECHOES), ran(&[&all]));
+    assert_eq!(an_exec_heard(&heeding, 8, ECHOES), [Replied::Ended]);
+}
+
+/// An exec whose input ended at the cap is left a mark: what the host still sends for it is
+/// dropped, not kept again for a later exec of its number (#2271).
+#[test]
+fn input_after_the_cap_is_not_kept() {
+    let heeding = a_heeding();
+    let half = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST / 2);
+    heeding.hear(LINK, 2, input(7, &half), nothing());
+    heeding.hear(LINK, 3, input(7, &half), nothing());
+    heeding.hear(LINK, 4, input(7, "past"), nothing());
+    assert_eq!(an_exec_heard(&heeding, 7, ECHOES), ran(&[&half, &half]));
+
+    heeding.hear(LINK, 5, input(7, "late"), nothing());
+    heeding.hear(LINK, 6, Heard::InputEnded { of: 7 }, nothing());
+    heeding.hear(LINK, 7, input(7, "own"), nothing());
+    heeding.hear(LINK, 8, Heard::InputEnded { of: 7 }, nothing());
+
+    assert_eq!(an_exec_heard(&heeding, 7, ECHOES), ran(&["own"]));
+}
+
+/// An exec that could not begin after its input passed the cap is left a mark too (#2271).
+#[test]
+fn input_after_the_cap_for_an_exec_that_could_not_begin_is_not_kept() {
+    let heeding = a_heeding();
+    let past = bytes('b', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST + 1);
+    heeding.hear(LINK, 2, input(3, &past), nothing());
+
+    heeding.not_begun(LINK, 3, &nothing());
+    heeding.hear(LINK, 3, input(3, "late"), nothing());
+    heeding.hear(LINK, 4, Heard::InputEnded { of: 3 }, nothing());
+    heeding.hear(LINK, 5, input(3, "own"), nothing());
+    heeding.hear(LINK, 6, Heard::InputEnded { of: 3 }, nothing());
+
+    assert_eq!(an_exec_heard(&heeding, 3, ECHOES), ran(&["own"]));
+}
+
+/// What waits for every `secret exec` not begun on a link together is bounded by
+/// [`EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST`]: up to exactly that is kept, and a line past it is
+/// dropped and its exec's input ends there (#2271).
+#[test]
+fn every_secret_exec_not_begun_on_a_link_is_kept_at_most_so_much_input_together() {
+    let heeding = a_heeding();
+    let each = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST);
+    let execs = (EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST / AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST) as u64;
+    for exec in 1..=execs {
+        heeding.hear(LINK, 100 + exec, input(exec, &each), nothing());
+    }
+    heeding.hear(LINK, 200, input(execs + 1, "x"), nothing());
+    for exec in 1..=execs + 1 {
+        heeding.hear(LINK, 300 + exec, Heard::InputEnded { of: exec }, nothing());
+    }
+
+    assert_eq!(an_exec_heard(&heeding, execs + 1, ECHOES), [Replied::Ended]);
+    for exec in 1..=execs {
+        assert_eq!(an_exec_heard(&heeding, exec, ECHOES), ran(&[&each]));
+    }
 }
 
 #[test]
@@ -617,9 +720,15 @@ fn the_window_is_told_an_asker_hung_up_until_its_ask_is_answered() {
     let heeding = Heeding::new(the_windows(&window, &holding));
     let nothing: Reply = Arc::new(|_| {});
 
-    heeding.hear(9, Heard::AskerGone { connection: 42 }, Arc::clone(&nothing));
+    heeding.hear(
+        LINK,
+        9,
+        Heard::AskerGone { connection: 42 },
+        Arc::clone(&nothing),
+    );
     let gone_while_asked = heeding.asker_gone(42);
     heeding.hear(
+        LINK,
         10,
         Heard::Ask {
             connection: 42,
@@ -726,7 +835,7 @@ fn relayed_keeping(window: Hearing, kept: &Arc<Kept>) -> Hearing {
                     let relaying = host.lock().unwrap().clone().unwrap();
                     relaying.replied(id, replied);
                 });
-                heeding.hear(id, heard, reply);
+                heeding.hear(LINK, id, heard, reply);
                 true
             })
         },

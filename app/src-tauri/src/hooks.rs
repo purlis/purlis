@@ -379,20 +379,24 @@ pub struct Relayed {
     waiting: Mutex<Option<Vec<InOrder>>>,
 }
 
-/// A line to hear in order: its number, the line, and what replies to it.
+/// A line to hear in order: the link it came over, its number, the line, and what replies to
+/// it.
 type InOrder = (
+    u64,
     u64,
     purlis_core::hookwire::relay::Heard,
     purlis_core::hookwire::relay::Reply,
 );
 
 impl Relayed {
-    /// Takes line `id` the host handed on, replying through `reply`: a line that may wait as
-    /// long as a person takes (an ask, a permission ask, a `secret exec`) is heard on a thread
-    /// of its own, and every other one after the lines that came before it, on the project's
-    /// own thread ([`purlis_core::hookwire::relay::Heeding::hear`]). Returns at once.
+    /// Takes line `id` the host handed on over link `link`, replying through `reply`: a line
+    /// that may wait as long as a person takes (an ask, a permission ask, a `secret exec`) is
+    /// heard on a thread of its own, and every other one after the lines that came before it,
+    /// on the project's own thread ([`purlis_core::hookwire::relay::Heeding::hear`]). Returns
+    /// at once.
     pub fn take(
         &self,
+        link: u64,
         id: u64,
         heard: purlis_core::hookwire::relay::Heard,
         reply: purlis_core::hookwire::relay::Reply,
@@ -404,7 +408,7 @@ impl Relayed {
             .unwrap_or_else(PoisonError::into_inner)
             .as_mut()
         {
-            waiting.push((id, heard, reply));
+            waiting.push((link, id, heard, reply));
             return;
         }
         if Heeding::waits(&heard) {
@@ -413,13 +417,13 @@ impl Relayed {
             let replies = Arc::clone(&reply);
             let spawned = std::thread::Builder::new()
                 .name("purlis-hook-ask".into())
-                .spawn(move || heeding.hear(id, heard, reply));
+                .spawn(move || heeding.hear(link, id, heard, reply));
             if let Err(why) = spawned {
                 tracing::warn!("purlis: a chat's ask could not be heard ({why})");
                 // A secret exec that will not run keeps no input, and its host is told so
                 // (#2271).
                 if exec {
-                    self.heeding.not_begun(id, &replies);
+                    self.heeding.not_begun(link, id, &replies);
                 }
             }
             return;
@@ -431,8 +435,8 @@ impl Relayed {
             let spawned = std::thread::Builder::new()
                 .name("purlis-hook-lines".into())
                 .spawn(move || {
-                    for (id, heard, reply) in heard_in_order {
-                        heeding.hear(id, heard, reply);
+                    for (link, id, heard, reply) in heard_in_order {
+                        heeding.hear(link, id, heard, reply);
                     }
                 });
             match spawned {
@@ -444,7 +448,7 @@ impl Relayed {
             }
         }
         if let Some(lines) = in_order.as_ref() {
-            let _ = lines.send((id, heard, reply));
+            let _ = lines.send((link, id, heard, reply));
         }
     }
 
@@ -499,8 +503,8 @@ impl Relayed {
             .unwrap_or_else(PoisonError::into_inner)
             .take()
             .unwrap_or_default();
-        for (id, heard, reply) in waited {
-            self.take(id, heard, reply);
+        for (link, id, heard, reply) in waited {
+            self.take(link, id, heard, reply);
         }
     }
 
