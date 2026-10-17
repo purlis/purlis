@@ -336,3 +336,144 @@ fn a_site_asked_about_between_acts_is_told_in_the_next_answer_once() {
     let next = browser.call(&id(2), Call::Pages).unwrap();
     assert!(next.asked.is_empty());
 }
+
+#[test]
+fn typing_into_a_frame_of_a_site_the_judge_asks_about_types_nothing() {
+    // The stand-in's page embeds a frame from http://other.test/pay.html.
+    let (judge, told) = judge(&["http://other.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let text = snapshot(&browser, 1);
+    let name = ref_of(&text, "- textbox \"Name\"");
+    let pay = ref_of(&text, "- button \"Pay now\"");
+    let typed = |n: u32, into: crate::drive::Ref| {
+        browser
+            .call(
+                &id(n),
+                Call::Type {
+                    page: None,
+                    fields: vec![Field {
+                        into: Some(into),
+                        text: "4111".into(),
+                        replace: false,
+                    }],
+                },
+            )
+            .unwrap()
+    };
+    let on_the_page = typed(2, name);
+    assert!(
+        on_the_page.asked.is_empty(),
+        "the page's own field is judged by its own site"
+    );
+    let sent = engine.sent("Input.insertText").len();
+    let in_the_frame = typed(3, pay);
+    assert_eq!(in_the_frame.asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(
+        engine.sent("Input.insertText").len(),
+        sent,
+        "nothing typed in the frame"
+    );
+    assert_eq!(
+        whys(&told).last().unwrap().0,
+        "http://other.test/pay.html",
+        "judged by the frame's own document"
+    );
+}
+
+#[test]
+fn keys_go_by_the_document_with_the_focus_and_by_every_document_when_it_is_unknown() {
+    let (judge, _) = judge(&["http://other.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    let press = |n: u32| {
+        browser
+            .call(
+                &id(n),
+                Call::Press {
+                    page: None,
+                    keys: vec!["a".into()],
+                },
+            )
+            .unwrap()
+    };
+    // The page's own document has the focus: its site is listed, and the key goes.
+    assert!(press(1).asked.is_empty());
+    let sent = engine.sent("Input.dispatchKeyEvent").len();
+    assert!(sent > 0);
+    // Nothing the page shows says it has the focus: every document is judged, the frame's too.
+    {
+        let mut model = super::super::lock(&engine.model);
+        for nodes in model.ax.values_mut() {
+            for node in nodes.as_array_mut().unwrap() {
+                if let Some(properties) = node["properties"].as_array_mut() {
+                    properties.retain(|one| one["name"] != "focused");
+                }
+            }
+        }
+    }
+    assert_eq!(press(2).asked, vec!["new.test:443".to_owned()]);
+    assert_eq!(
+        engine.sent("Input.dispatchKeyEvent").len(),
+        sent,
+        "no key reached the page"
+    );
+}
+
+#[test]
+fn a_document_the_page_asked_for_with_a_query_and_no_word_of_how_sends() {
+    let (judge, told) = judge(&[]);
+    let (_browser, engine) = browser_judged(judge);
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/search?q=typed",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R1"), "continue");
+    assert_eq!(whys(&told)[0].1, Why::Sends);
+}
+
+#[test]
+fn a_link_the_page_followed_reads_and_so_do_its_redirects() {
+    let (judge, told) = judge(&[]);
+    let (_browser, engine) = browser_judged(judge);
+    engine.emit(
+        "Page.frameRequestedNavigation",
+        json!({
+            "frameId": "PAGE-1",
+            "reason": "anchorClick",
+            "url": "https://new.test/go?to=next",
+            "disposition": "currentTab",
+        }),
+        Some("S-PAGE-1"),
+    );
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/go?to=next",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R1"), "continue");
+    engine.emit(
+        "Fetch.requestPaused",
+        json!({
+            "requestId": "R2",
+            "request": { "url": "https://elsewhere.test/landing?from=go", "method": "GET", "headers": {} },
+            "frameId": "PAGE-1",
+            "resourceType": "Document",
+            "redirectedRequestId": "R1",
+        }),
+        None,
+    );
+    assert_eq!(answered(&engine, "R2"), "continue");
+    assert_eq!(
+        whys(&told)
+            .into_iter()
+            .map(|(_, why, _)| why)
+            .collect::<Vec<_>>(),
+        vec![Why::Reads, Why::Reads]
+    );
+}

@@ -1319,6 +1319,10 @@ pub enum GrantWhat {
     /// browser reach in this project on this machine. Allowed from a chat's browser Ask
     /// (`allow_chat_browser`), never from a block's Allow.
     Browser,
+    /// A browser site (#2018, ruled 2026-10-17): a site a chat's browser may open, send and type
+    /// on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
+    /// sites Ask (`allow_browser_sites`), never from a block's Allow.
+    BrowserSite,
 }
 
 impl GrantWhat {
@@ -1332,6 +1336,7 @@ impl GrantWhat {
             Self::Service => "service",
             Self::Port => "port",
             Self::Browser => sandbox::local::BROWSER,
+            Self::BrowserSite => sandbox::local::BROWSER_SITE,
         }
     }
 
@@ -1345,6 +1350,7 @@ impl GrantWhat {
             Self::Service,
             Self::Port,
             Self::Browser,
+            Self::BrowserSite,
         ]
         .into_iter()
         .find(|what| what.word() == word)
@@ -1507,6 +1513,13 @@ pub(crate) fn judged(
         GrantWhat::Browser => {
             return refused(
                 "purlis allows a persona's browser from its chat's browser ask, not from a \
+                 block's."
+                    .to_owned(),
+            );
+        }
+        GrantWhat::BrowserSite => {
+            return refused(
+                "purlis allows a browser site from its chat's browser sites ask, not from a \
                  block's."
                     .to_owned(),
             );
@@ -2031,7 +2044,11 @@ const SEP: char = '\u{1f}';
 
 /// **Every grant in force for the project at `root`** (#1348): each open chat's (a closed
 /// chat's ended with it, D-1348-1), yours (hosts and folders), and the project's own hosts.
-fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<SandboxGrant> {
+fn grants_of(
+    root: &std::path::Path,
+    chats: &crate::chats::Chats,
+    browsers: &crate::chatbrowsers::ChatBrowsers,
+) -> Vec<SandboxGrant> {
     use sandbox::grant::Level;
     let made = sandbox::local::made(root);
     let when = |what: GrantWhat, target: &str, level: Level| {
@@ -2214,6 +2231,28 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
             )
         });
     }
+    // The browser sites (#2018): for one chat's browser, and for every chat's here. Each is the
+    // browser's alone, listed apart from the hosts the chats' commands reach.
+    for (session, site) in browsers.chat_sites() {
+        let target = site.to_string();
+        out.push(SandboxGrant {
+            id: format!("site{SEP}{session}{SEP}{target}"),
+            chat: chats.shown_name(session),
+            ..row(GrantWhat::BrowserSite, target, Level::Chat, None)
+        });
+    }
+    for site in sandbox::local::browser_sites(root) {
+        let target = site.to_string();
+        out.push(SandboxGrant {
+            at: when(GrantWhat::BrowserSite, &target, Level::You),
+            chat: made
+                .iter()
+                .find(|one| one.what == sandbox::local::BROWSER_SITE && one.target == target)
+                .and_then(|one| one.chat.clone()),
+            locked: locks.scope_removed(Level::You),
+            ..row(GrantWhat::BrowserSite, target, Level::You, None)
+        });
+    }
     // What is kept and policy now drops is said, never listed as granted (#1423): a host at
     // the level it is kept at, every folder where policy forbids write grants, and anything
     // kept at a scope policy's `allow-scopes` leaves out (#1927), by the judgement a start
@@ -2241,7 +2280,7 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
                 level,
             ),
             // A vault's row and a browser's were given their own lock as they were listed.
-            GrantWhat::Vault | GrantWhat::Browser => one.locked.take(),
+            GrantWhat::Vault | GrantWhat::Browser | GrantWhat::BrowserSite => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
             GrantWhat::Socket => locks.holds_kept(
@@ -2309,7 +2348,10 @@ fn revoke(
     let grant = match GrantWhat::of_word(what).ok_or_else(gone)? {
         // A vault's grant is named with its persona, and a persona's hosts and browser by it,
         // above.
-        GrantWhat::Vault | GrantWhat::PersonaHosts | GrantWhat::Browser => return Err(gone()),
+        GrantWhat::Vault
+        | GrantWhat::PersonaHosts
+        | GrantWhat::Browser
+        | GrantWhat::BrowserSite => return Err(gone()),
         GrantWhat::Host => What::Host(sandbox::hosts::Host::parse(target).map_err(|_| gone())?),
         GrantWhat::Write => What::Write(std::path::PathBuf::from(target)),
         GrantWhat::Socket => What::Socket(std::path::PathBuf::from(target)),
@@ -2507,7 +2549,7 @@ pub async fn sandbox_grants(
     let held = planes.held(&plane)?;
     // On a blocking thread: naming who committed the project's hosts asks git (#1543).
     crate::off_the_window("reading the sandbox grants", move || {
-        Ok(grants_of(held.root(), held.chats()))
+        Ok(grants_of(held.root(), held.chats(), held.browsers()))
     })
     .await
 }
@@ -2527,20 +2569,108 @@ pub async fn revoke_sandbox_grant(
     // On a blocking thread, as `sandbox_grants` is: the list it answers asks git (#1543).
     crate::off_the_window("revoking a sandbox grant", move || {
         let root = held.root();
-        revoke(
-            root,
-            held.chats(),
-            &id,
-            &held.audit_then_record(network.as_ref()),
-        )?;
+        let audit = held.audit_then_record(network.as_ref());
+        match browser_site_of(&id) {
+            // A browser site's (#2018): its browsers end, as a narrowing ends them.
+            Some(granted) => {
+                revoke_browser_site(&held, &plane, &granted, &audit, &*browsers_ended)?
+            }
+            None => revoke(root, held.chats(), &id, &audit)?,
+        }
         // Removing Always for a persona's browser narrows the chats it allowed (#2241): their
         // browsers end now, D-2013-11.
         if let Some(persona) = browser_always_of(&id) {
             crate::chatbrowsers::always_removed(&held, &plane, persona, &*browsers_ended);
         }
-        Ok(grants_of(root, held.chats()))
+        Ok(grants_of(root, held.chats(), held.browsers()))
     })
     .await
+}
+
+/// A browser site's grant, as its id in the Granted list names it ([`grants_of`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SiteGranted {
+    /// For chat `session`'s browser alone.
+    Chat(u32, sandbox::browser_reach::Site),
+    /// For every chat's browser here, on this machine.
+    You(sandbox::browser_reach::Site),
+}
+
+/// The browser site the grant called `id` is, where it is one: None for any other grant, or
+/// for an id that names no site.
+fn browser_site_of(id: &str) -> Option<SiteGranted> {
+    let site = |written: &str| sandbox::browser_reach::Site::parse(written).ok();
+    match id.split(SEP).collect::<Vec<_>>().as_slice() {
+        ["site", session, written] => {
+            Some(SiteGranted::Chat(session.parse().ok()?, site(written)?))
+        }
+        ["you", sandbox::local::BROWSER_SITE, written] => Some(SiteGranted::You(site(written)?)),
+        _ => None,
+    }
+}
+
+/// **Removes a browser site** (#2018): checked to be there, audited, then taken away, and the
+/// browsers it reached end, their tabs told so; each one's next call opens one on what is
+/// allowed then.
+fn revoke_browser_site(
+    held: &crate::planes::Held,
+    plane: &PlaneId,
+    granted: &SiteGranted,
+    audit: Audit<'_>,
+    told: &dyn Fn(crate::chatbrowsers::BrowsersEnded),
+) -> Result<(), String> {
+    use sandbox::grant::Level;
+    let gone = || "purlis did not remove it: it is no longer there.".to_owned();
+    let (session, site, level) = match granted {
+        SiteGranted::Chat(session, site) => (Some(*session), site, Level::Chat),
+        SiteGranted::You(site) => (None, site, Level::You),
+    };
+    let there = match session {
+        Some(session) => held
+            .browsers()
+            .chat_sites()
+            .contains(&(session, site.clone())),
+        None => sandbox::local::browser_sites(held.root()).contains(site),
+    };
+    if !there {
+        return Err(gone());
+    }
+    audit(
+        session,
+        &sandbox::grant::Audited {
+            granted: false,
+            what: sandbox::local::BROWSER_SITE,
+            target: &site.to_string(),
+            level,
+        },
+    )?;
+    let ended = match session {
+        Some(session) => held
+            .browsers()
+            .chat_site_removed(held.browser_driver(), session, site)
+            .map(|ended| vec![(session, ended)])
+            .unwrap_or_default(),
+        None => {
+            sandbox::local::revoke_browser_site(held.root(), site)
+                .map_err(|why| format!("purlis could not remove {site}: {why}"))?;
+            held.browsers().sites_removed(held.browser_driver())
+        }
+    };
+    for (session, crate::chatbrowsers::Ended { ended, unended }) in ended {
+        let note = if unended > 0 {
+            crate::chatbrowsers::NOT_ENDED_ON_ITS_TAB
+        } else if ended > 0 {
+            crate::chatbrowsers::ENDED_ON_ITS_TAB
+        } else {
+            continue;
+        };
+        told(crate::chatbrowsers::BrowsersEnded {
+            plane: plane.clone(),
+            session,
+            note: note.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 /// The commands of Settings' Granted list that ask git, which answer off the window's thread

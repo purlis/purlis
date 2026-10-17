@@ -122,12 +122,24 @@ fn answered_as(
     browse: &BrowseAsk,
     as_persona: &AsPersona,
 ) -> (Answer, bool) {
+    answered_confined(browsers, hosted, browse, as_persona, true)
+}
+
+/// [`answered_as`] for a chat that has, or has not, a sandbox's record of its reach.
+fn answered_confined(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    browse: &BrowseAsk,
+    as_persona: &AsPersona,
+    confined: bool,
+) -> (Answer, bool) {
     let driver: Arc<dyn Driver> = hosted.clone();
     browsers.answer(
         Some(&driver),
         Path::new("/p"),
         browse,
         &|| reach(),
+        confined,
         &|| as_persona.clone(),
         1000,
     )
@@ -372,6 +384,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         Path::new("/p"),
         &ask(3, click()),
         &|| narrower.clone(),
+        true,
         &AsPersona::default,
         1000,
     );
@@ -435,6 +448,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 Path::new("/p"),
                 &ask(3, click()),
                 &|| reach(),
+                true,
                 &AsPersona::default,
                 0,
             )
@@ -934,4 +948,96 @@ fn an_act_that_asked_about_a_new_site_tells_the_chat_it_asked_and_not_to_retry()
         }
         other => panic!("{other:?}"),
     }
+}
+
+fn site(written: &str) -> purlis_core::sandbox::browser_reach::Site {
+    purlis_core::sandbox::browser_reach::Site::parse(written).unwrap()
+}
+
+#[test]
+fn the_sites_a_browser_asked_about_wait_as_one_ask_and_an_allow_for_the_chat_reaches_its_next_act()
+{
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() =
+        vec!["news.example.org:443".into(), "cdn.example.net:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+
+    let waits = browsers.sites_waiting();
+    assert_eq!(waits.len(), 1, "one ask for the chat, every site on it");
+    assert_eq!(
+        waits[0].sites,
+        [site("news.example.org:443"), site("cdn.example.net:443")]
+    );
+    assert!(
+        browsers
+            .sites_answered(3, &[site("elsewhere.example.org:443")], true)
+            .is_err(),
+        "an answer is to what was shown"
+    );
+    browsers
+        .sites_answered(3, &[site("news.example.org:443")], true)
+        .unwrap();
+    assert_eq!(
+        browsers.sites_waiting()[0].sites,
+        [site("cdn.example.net:443")]
+    );
+
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert!(
+        reached
+            .listed
+            .contains(&purlis_session_protocol::session::Listed {
+                host: "news.example.org:443".into(),
+                layer: purlis_session_protocol::session::Layer::Chat,
+            }),
+        "{reached:?}"
+    );
+    assert_eq!(browsers.chat_sites(), [(3, site("news.example.org:443"))]);
+}
+
+#[test]
+fn a_chat_without_the_sandbox_is_asked_nothing_and_told_its_browser_reaches_only_what_it_was_given()
+{
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let unconfined = |browse: &BrowseAsk| {
+        answered_confined(&browsers, &hosted, browse, &AsPersona::default(), false)
+    };
+    unconfined(&ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["news.example.org:443".into()];
+    let (answer, _) = unconfined(&ask(3, click()));
+    assert!(browsers.sites_waiting().is_empty(), "nobody is asked");
+    match answer {
+        Answer::Browsed { browsed, .. } => {
+            let note = browsed.note.unwrap();
+            assert!(note.contains("not asked"), "{note}");
+            assert!(note.contains("started without the sandbox"), "{note}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn removing_a_chats_browser_site_ends_its_browsers() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["news.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers
+        .sites_answered(3, &[site("news.example.org:443")], true)
+        .unwrap();
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let ended = browsers
+        .chat_site_removed(Some(&driver), 3, &site("news.example.org:443"))
+        .unwrap();
+    assert_eq!(ended.ended, 1);
+    assert!(browsers.chat_sites().is_empty());
 }

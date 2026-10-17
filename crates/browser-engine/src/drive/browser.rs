@@ -107,8 +107,11 @@ const POLL: Duration = Duration::from_millis(50);
 const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
-/// The most form submissions remembered until their request is seen (#2018).
+/// The most form submissions, and links followed, remembered until their request is seen
+/// (#2018).
 const FORMS_KEPT: usize = 16;
+/// The most document requests remembered for the redirects they may lead to (#2018).
+const DOCUMENTS_KEPT: usize = 64;
 /// The most sites asked about that wait for the next answer (#2018).
 const ASKED_KEPT: usize = 16;
 /// How long the driver waits for the engine to take its word on a held request (#2018).
@@ -266,34 +269,68 @@ struct State {
     /// What the person typed while driving (#2014): kept out of every answer about every page
     /// of the browser, a page opened later included.
     kept: Vec<String>,
-    /// The page whose address the agent's act is sending it to, while that act lasts (#2018):
-    /// its documents are the agent's address, redirects included.
-    addressing: Option<String>,
+    /// The page an act of the agent's is sending somewhere, while that act lasts, and what its
+    /// documents are (#2018): the agent's address, or a read for going back.
+    addressing: Option<(String, Why)>,
     /// Addresses forms were submitted to, each until its request is seen (#2018).
     forms: VecDeque<String>,
+    /// Addresses a page asked to go to by a link or a script, each until its request is seen.
+    offered: VecDeque<String>,
+    /// Each document request held lately, and why it was sent: what a redirect from it is.
+    documents: VecDeque<(String, Why)>,
     /// The sites the judge asked about since the last answer, each once (#2018).
     asked: Vec<String>,
 }
 
 impl State {
-    /// Why a request to `address` by `method` is sent (#2018): a body or a submitted form
-    /// sends; a document of the page the agent's act is addressing is the agent's address;
-    /// anything else reads.
-    fn why(&mut self, address: &str, method: &str, document: bool, frame: Option<&str>) -> Why {
-        let bare = without_fragment(address);
-        let submitted = document
-            && self
-                .forms
-                .iter()
-                .position(|form| form == bare)
-                .map(|at| self.forms.remove(at))
-                .is_some();
-        if submitted || !matches!(method, "GET" | "HEAD" | "OPTIONS") {
+    /// **Why a held request is sent** (#2018). A body sends. A document is judged by how its
+    /// navigation began: a redirect as the request it came from; a form the page submitted
+    /// sends; the page an act of the agent's sends to an address is that address (or, going
+    /// back, a read); a link or a script of the page reads. A document the page asked for with
+    /// nothing said of how, whose address carries a query, sends, so a submission whose word
+    /// came late is never taken for a read. Anything else reads.
+    fn why(&mut self, held: &Held<'_>) -> Why {
+        let bare = without_fragment(held.address);
+        let why = if !matches!(held.method, "GET" | "HEAD" | "OPTIONS") {
             Why::Sends
-        } else if document && frame.is_some() && frame == self.addressing.as_deref() {
-            Why::Addressed
+        } else if !held.document {
+            return Why::Reads;
+        } else if let Some(from) = held
+            .redirected_from
+            .and_then(|from| self.documents.iter().find(|(id, _)| id == from))
+        {
+            from.1
+        } else if take(&mut self.forms, bare) {
+            Why::Sends
+        } else if let Some((page, why)) = &self.addressing
+            && held.frame == Some(page.as_str())
+        {
+            *why
+        } else if take(&mut self.offered, bare) {
+            Why::Reads
+        } else if bare.contains('?') {
+            Why::Sends
         } else {
             Why::Reads
+        };
+        if held.document {
+            if self.documents.len() >= DOCUMENTS_KEPT {
+                self.documents.pop_front();
+            }
+            self.documents.push_back((held.request.to_owned(), why));
+        }
+        why
+    }
+
+    /// The address of document `frame` of `target`'s page, as its frame last navigated: the
+    /// page's own where the frame is its main one or is not known.
+    fn document_of(&self, target: &str, frame: &str) -> String {
+        let Some(page) = self.page(target) else {
+            return String::new();
+        };
+        match page.frames.get(frame) {
+            Some(known) if frame != target && !known.url.is_empty() => known.url.clone(),
+            _ => page.url.clone(),
         }
     }
 
@@ -699,33 +736,70 @@ impl Browser {
         answer
     }
 
-    /// Where the agent is about to type on `target`'s page (#2018): judged as something sent to
-    /// the page's site. Where the judge asks, nothing is typed, and the answer says so.
-    fn typing_held(&self, target: &str) -> Option<Answer> {
+    /// **Where the agent is about to type, keys or choices into the documents at `addresses`
+    /// of `target`'s page** (#2018): each judged as something sent to its site. Where the judge
+    /// asks about any, nothing is sent to the page, and the answer says so.
+    fn typing_held(&self, target: &str, addresses: &[String]) -> Option<Answer> {
         let judge = self.inner.judge.as_ref()?;
-        let address = lock(&self.inner.state).page(target)?.url.clone();
-        let outbound = Outbound {
-            address,
-            method: String::new(),
-            why: Why::Sends,
-            by: Driver::Agent,
-        };
-        let Gate::Ask { site } = judge(&outbound) else {
-            return None;
-        };
+        let site = addresses.iter().find_map(|address| {
+            let outbound = Outbound {
+                address: address.clone(),
+                method: String::new(),
+                why: Why::Sends,
+                by: Driver::Agent,
+            };
+            match judge(&outbound) {
+                Gate::Ask { site } => Some(site),
+                Gate::Go => None,
+            }
+        })?;
         lock(&self.inner.state).ask(&site);
         let mut answer = self.answer_now(target, Content::Nothing);
         answer.note = Some(format!(
-            "nothing was typed: this page is on {site}, a site new to this project, and purlis \
-             asked the person whether this browser may send to it"
+            "nothing was typed: this page shows {site}, a site new to this project, where this \
+             would have gone, and purlis asked the person whether this browser may send to it"
         ));
         Some(answer)
     }
 
+    /// The address of the document `written` is in: its frame's.
+    fn address_of(&self, written: &Ref) -> Result<String, Refusal> {
+        let state = lock(&self.inner.state);
+        let (page, key) = live_ref(&state, written)?;
+        Ok(state.document_of(&page, &key.frame))
+    }
+
+    /// The addresses of the documents what has the focus on `target`'s page may be in: the one
+    /// document of the focused element, where one is focused, and otherwise every document the
+    /// page shows, since a key goes wherever the focus is.
+    fn focus_addresses(&self, target: &str) -> Vec<String> {
+        if self.inner.judge.is_none() {
+            return Vec::new();
+        }
+        let focused = self
+            .snapshot_of(target)
+            .ok()
+            .and_then(|snapshot| match snapshot.focused() {
+                [one] => Some(one.frame.clone()),
+                _ => None,
+            });
+        let state = lock(&self.inner.state);
+        match focused {
+            Some(frame) => vec![state.document_of(target, &frame)],
+            None => state.page(target).map_or_else(Vec::new, |page| {
+                let mut every: Vec<String> = page.frames.values().map(|f| f.url.clone()).collect();
+                every.push(page.url.clone());
+                every.sort();
+                every.dedup();
+                every
+            }),
+        }
+    }
+
     /// Marks `target`'s page as the one the agent's act is sending to an address, until the
     /// mark is dropped (#2018).
-    fn addressing(&self, target: &str) -> Addressing<'_> {
-        lock(&self.inner.state).addressing = Some(target.to_owned());
+    fn addressing(&self, target: &str, why: Why) -> Addressing<'_> {
+        lock(&self.inner.state).addressing = Some((target.to_owned(), why));
         Addressing(&self.inner)
     }
 
@@ -808,7 +882,7 @@ impl Browser {
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;
-                let _addressing = self.addressing(&target);
+                let _addressing = self.addressing(&target, Why::Addressed);
                 self.acting_on(&target, || self.navigate(&session, &address))
             }
             Call::Snapshot {
@@ -880,7 +954,7 @@ impl Browser {
             Call::Type { page, fields } => self.type_into(page.as_ref(), &fields),
             Call::Press { page, keys } => {
                 let target = self.target(page.as_ref())?;
-                if let Some(held) = self.typing_held(&target) {
+                if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)) {
                     return Ok(held);
                 }
                 let session = self.page_session(&target)?;
@@ -1029,7 +1103,7 @@ impl Browser {
         drop(state);
         let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
-        let _addressing = self.addressing(&target);
+        let _addressing = self.addressing(&target, Why::Addressed);
         self.acting_on(&target, || self.navigate(&session, address))
     }
 
@@ -1515,7 +1589,14 @@ impl Browser {
             Some(first) if page.is_none() => self.locate(first)?.target,
             _ => self.target(page)?,
         };
-        if let Some(held) = self.typing_held(&target) {
+        let mut into = Vec::new();
+        for field in fields {
+            match &field.into {
+                Some(written) => into.push(self.address_of(written)?),
+                None => into.extend(self.focus_addresses(&target)),
+            }
+        }
+        if let Some(held) = self.typing_held(&target, &into) {
             return Ok(held);
         }
         let session = self.page_session(&target)?;
@@ -1584,7 +1665,7 @@ impl Browser {
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
         let at = self.locate(target)?;
         let page = at.target.clone();
-        if let Some(held) = self.typing_held(&page) {
+        if let Some(held) = self.typing_held(&page, &[self.address_of(target)?]) {
             return Ok(held);
         }
         let resolved = self
@@ -1745,6 +1826,8 @@ impl Browser {
         let url = earlier.get("url").and_then(Value::as_str).unwrap_or("");
         WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
         let entry = earlier.get("id").cloned().unwrap_or_default();
+        // A page gone back to was read before: its documents read again (#2018).
+        let _revisiting = self.addressing(&target, Why::Reads);
         self.acting_on(&target, || {
             self.gated(|| {
                 self.devtools().call(
@@ -2061,22 +2144,32 @@ impl Inner {
                 }
                 // A form submitted (#2018): its request, when it comes, sends what was typed.
                 "Page.frameRequestedNavigation" => {
-                    if text("/reason").is_some_and(|reason| reason.starts_with("formSubmission"))
-                        && let Some(url) = text("/url")
-                    {
-                        if state.forms.len() >= FORMS_KEPT {
-                            state.forms.pop_front();
+                    if let (Some(reason), Some(url)) = (text("/reason"), text("/url")) {
+                        let marks = if reason.starts_with("formSubmission") {
+                            &mut state.forms
+                        } else {
+                            &mut state.offered
+                        };
+                        if marks.len() >= FORMS_KEPT {
+                            marks.pop_front();
                         }
-                        state.forms.push_back(without_fragment(&url).to_owned());
+                        marks.push_back(without_fragment(&url).to_owned());
                     }
                 }
                 "Fetch.requestPaused" => {
                     if let Some(request) = text("/requestId") {
                         let address = text("/request/url").unwrap_or_default();
                         let method = text("/request/method").unwrap_or_default();
-                        let document = text("/resourceType").as_deref() == Some("Document");
                         let frame = text("/frameId");
-                        let why = state.why(&address, &method, document, frame.as_deref());
+                        let redirected_from = text("/redirectedRequestId");
+                        let why = state.why(&Held {
+                            request: &request,
+                            address: &address,
+                            method: &method,
+                            document: text("/resourceType").as_deref() == Some("Document"),
+                            frame: frame.as_deref(),
+                            redirected_from: redirected_from.as_deref(),
+                        });
                         let by = if self.person_drives.load(Ordering::SeqCst) {
                             Driver::Person
                         } else {
@@ -2224,6 +2317,25 @@ impl Drop for Addressing<'_> {
     fn drop(&mut self) {
         lock(&self.0.state).addressing = None;
     }
+}
+
+/// A request held for the judge, as the engine said it (#2018).
+struct Held<'a> {
+    request: &'a str,
+    address: &'a str,
+    method: &'a str,
+    document: bool,
+    frame: Option<&'a str>,
+    redirected_from: Option<&'a str>,
+}
+
+/// Takes `address` out of `marks`, answering whether it was there.
+fn take(marks: &mut VecDeque<String>, address: &str) -> bool {
+    marks
+        .iter()
+        .position(|one| one == address)
+        .and_then(|at| marks.remove(at))
+        .is_some()
 }
 
 /// `address` without its fragment, which no request carries.

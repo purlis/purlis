@@ -296,6 +296,11 @@ struct OnDisk {
     /// asked. The only place it is kept, where no chat writes; one per persona.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     browsers_mine: Vec<BrowserAlways>,
+    /// The browser sites you let every chat's browser of this project reach on this machine
+    /// (#2018, ruled 2026-10-17), each `host:port`: the browser's alone, never read by a chat's
+    /// own commands.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    browser_sites_mine: Vec<String>,
     /// Your own sandbox levels for this project, and for its personas, as you set or confirmed
     /// them in Settings on this machine (#2071, ADR 0096 §7): what `purlis.local.toml`'s
     /// `[sandbox] level` and `[sandbox.personas]` are honoured down to
@@ -1629,6 +1634,54 @@ pub fn revoke_browser_always(root: &Path, persona: &str) -> io::Result<bool> {
         was = held.browsers_mine.len() != before;
         held.granted
             .retain(|made| !(made.what == BROWSER && made.target == persona));
+    })?;
+    Ok(was)
+}
+
+// ---- browser sites (#2018) ----------------------------------------------------------------------
+
+/// What a [`Made`] record and the audit call a browser site (#2018).
+pub const BROWSER_SITE: &str = "browser-site";
+
+/// **The browser sites you allowed for every chat's browser of the project at `root`** (#2018,
+/// ruled 2026-10-17): read by the browser's judge and its reach proxy alone, never by a chat's
+/// own commands. One this build cannot read is left out, and said in the host's log.
+pub fn browser_sites(root: &Path) -> Vec<super::browser_reach::Site> {
+    read(root)
+        .browser_sites_mine
+        .iter()
+        .filter_map(|written| match super::browser_reach::Site::parse(written) {
+            Ok(site) => Some(site),
+            Err(why) => {
+                tracing::warn!("purlis: a kept browser site reaches nothing: {why}");
+                None
+            }
+        })
+        .collect()
+}
+
+/// Lets every chat's browser of the project at `root` reach `site` on this machine (#2018):
+/// a browser's Ask, never a chat.
+pub fn grant_browser_site(root: &Path, site: &super::browser_reach::Site) -> io::Result<()> {
+    let written = site.to_string();
+    change(root, |held| {
+        if !held.browser_sites_mine.contains(&written) {
+            held.browser_sites_mine.push(written);
+        }
+    })
+}
+
+/// Takes `site` off what you let every chat's browser reach, and its Granted record: Settings'
+/// Remove. Answers whether it was kept.
+pub fn revoke_browser_site(root: &Path, site: &super::browser_reach::Site) -> io::Result<bool> {
+    let written = site.to_string();
+    let mut was = false;
+    change(root, |held| {
+        let before = held.browser_sites_mine.len();
+        held.browser_sites_mine.retain(|one| *one != written);
+        was = held.browser_sites_mine.len() != before;
+        held.granted
+            .retain(|made| !(made.what == BROWSER_SITE && made.target == written));
     })?;
     Ok(was)
 }

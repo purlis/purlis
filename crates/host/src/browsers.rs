@@ -73,14 +73,10 @@ pub trait Screen: Send + Sync + 'static {
     /// unless the agent holds that lease, and cut if the person takes the browser over before
     /// it answers. It waits on the engine, so the host calls it off its runtime.
     fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed>;
-    /// What it may reach from now on (#2018): its chat's reach as the window says it is now,
-    /// with what the person allowed since it started. One it cannot read is refused, and it
-    /// reaches what it reached before. A browser that cannot be told keeps the reach it started
-    /// with.
-    fn reach_now(&self, reach: &BrowserReach) -> Result<(), String> {
-        let _ = reach;
-        Ok(())
-    }
+    /// What it may reach from now on (#2018): its chat's reach and its browser sites as the
+    /// window says they are now. One it cannot read is refused, and it reaches what it reached
+    /// before.
+    fn reach_now(&self, reach: &BrowserReach) -> Result<(), String>;
     /// The person takes it over (#2014): an act in flight is cut. Answers the new lease's
     /// epoch. Returns once no act of the agent's can reach a page.
     fn take_over(&self) -> u64;

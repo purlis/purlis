@@ -28,10 +28,11 @@
 //! - **Only web addresses.** Every navigation takes a [`WebAddress`]; a page the engine opens at
 //!   any other address (a link or a redirect a page offered) is closed and never listed.
 //! - **Where it may go is judged** (#2018). A browser made with a [`Judge`] holds every http and
-//!   https request of every page until the judge has heard what it is ([`Outbound`]): a read, an address the
-//!   agent wrote, or something sent; and the agent's typing on a page is judged as something
-//!   sent to the page's site. A request the judge asks about is failed, and an act on a page it
-//!   asks about does nothing; the sites it asked about are in the next answer.
+//!   https request of every page until the judge has heard what it is ([`Outbound`]): a read,
+//!   an address the agent wrote, or something sent; and the agent's typing is judged as
+//!   something sent to the site of the document it goes into. A request the judge asks about is
+//!   failed, and an act it asks about does nothing; the sites it asked about are in the next
+//!   answer.
 //! - **One driver at a time** (#2014). The agent drives through its calls until the person
 //!   takes the browser over ([`Browser::take_over`]); from then every call is refused, a call in
 //!   flight answers that it was interrupted, and only the person's own input

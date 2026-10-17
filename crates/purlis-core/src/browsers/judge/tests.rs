@@ -8,8 +8,8 @@ use purlis_browser_engine::drive::{Driver, Gate, Outbound, Why};
 use purlis_host::protocol::browsing::BrowserReach;
 use purlis_host::protocol::session::{Layer, Listed};
 
-use super::{Sites, site_of};
-use crate::sandbox::browser_reach::NewSite;
+use super::{SiteJudge, site_of};
+use crate::sandbox::browser_reach::Site;
 
 /// This machine, as the tests say it: one address on a private network.
 fn own() -> Vec<IpAddr> {
@@ -30,9 +30,9 @@ fn reach(hosts: &[&str], open_web: bool) -> BrowserReach {
     }
 }
 
-fn sites(hosts: &[&str], open_web: bool) -> Arc<Sites> {
+fn sites(hosts: &[&str], open_web: bool) -> Arc<SiteJudge> {
     Arc::new(
-        Sites::of(&reach(hosts, open_web))
+        SiteJudge::of(&reach(hosts, open_web))
             .unwrap()
             .knowing_this_machine(own()),
     )
@@ -68,14 +68,14 @@ fn a_site_the_chat_lists_goes_whatever_is_sent_to_it() {
 fn a_new_site_the_page_reads_goes_and_its_proxy_carries_it() {
     let sites = sites(&["docs.example.com"], false);
     let carried = sites.new_sites();
-    assert!(!carried.carries(&NewSite::of("cdn.example.net", 443)));
+    assert!(!carried.carries(&Site::of("cdn.example.net", 443)));
     assert_eq!(
         sites.judge(&out("https://cdn.example.net/logo.png", Why::Reads)),
         Gate::Go
     );
-    assert!(carried.carries(&NewSite::of("cdn.example.net", 443)));
+    assert!(carried.carries(&Site::of("cdn.example.net", 443)));
     assert!(
-        !carried.carries(&NewSite::of("cdn.example.net", 80)),
+        !carried.carries(&Site::of("cdn.example.net", 80)),
         "by its host and the port it was read on"
     );
 }
@@ -94,7 +94,7 @@ fn an_address_the_agent_writes_to_a_new_site_asks_and_is_not_carried() {
     assert!(
         !sites
             .new_sites()
-            .carries(&NewSite::of("news.example.org", 443))
+            .carries(&Site::of("news.example.org", 443))
     );
 }
 
@@ -120,7 +120,7 @@ fn what_the_person_does_while_they_drive_goes_and_is_carried() {
     assert!(
         sites
             .new_sites()
-            .carries(&NewSite::of("forms.example.org", 443))
+            .carries(&Site::of("forms.example.org", 443))
     );
 }
 
@@ -136,7 +136,7 @@ fn on_the_open_web_nothing_asks_and_every_public_site_is_carried() {
     assert!(
         sites
             .new_sites()
-            .carries(&NewSite::of("elsewhere.example.org", 443))
+            .carries(&Site::of("elsewhere.example.org", 443))
     );
 }
 
@@ -153,7 +153,7 @@ fn a_site_allowed_since_the_browser_started_goes_and_is_carried() {
     assert!(
         sites
             .new_sites()
-            .carries(&NewSite::of("news.example.org", 443))
+            .carries(&Site::of("news.example.org", 443))
     );
 }
 
@@ -184,7 +184,7 @@ fn what_is_never_a_site_asks_nothing_and_is_carried_by_nothing_it_did() {
     ] {
         assert_eq!(sites.judge(&out(address, Why::Addressed)), Gate::Go);
     }
-    assert!(!sites.new_sites().carries(&NewSite::of("10.0.0.5", 80)));
+    assert!(!sites.new_sites().carries(&Site::of("10.0.0.5", 80)));
 }
 
 #[test]

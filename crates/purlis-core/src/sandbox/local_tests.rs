@@ -1090,3 +1090,39 @@ fn always_for_a_persona_s_browser_is_kept_where_no_sandboxed_chat_writes() {
     );
     TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
+
+/// #2018: a browser site you allowed for every chat's browser here is kept in this machine's own
+/// file, apart from the hosts the chats' commands reach, and Remove takes it and its Granted
+/// record away.
+#[test]
+fn a_browser_site_is_kept_apart_from_the_hosts_and_removed_whole() {
+    use crate::sandbox::browser_reach::Site;
+    let project = a_project("schema = 1\n");
+    let root = project.path();
+    let site = Site::parse("news.example.org:443").expect("a site");
+    grant_browser_site(root, &site).expect("kept");
+    grant_browser_site(root, &site).expect("kept once");
+    assert_eq!(browser_sites(root), std::slice::from_ref(&site));
+    let text = std::fs::read_to_string(path(root)).expect("this machine's file");
+    assert!(text.contains("\"browser_sites_mine\""), "{text}");
+    assert!(
+        crate::sandbox::hosts::personal(root).is_empty(),
+        "no host of the chats' commands"
+    );
+    record_made(
+        root,
+        Made {
+            what: BROWSER_SITE.to_owned(),
+            target: site.to_string(),
+            level: "you".to_owned(),
+            at: 1,
+            chat: None,
+        },
+    )
+    .expect("recorded");
+    assert!(revoke_browser_site(root, &site).expect("removed"));
+    assert!(browser_sites(root).is_empty());
+    assert!(made(root).iter().all(|one| one.what != BROWSER_SITE));
+    assert!(!revoke_browser_site(root, &site).expect("nothing to remove"));
+    assert_eq!(charter_toml(root), "schema = 1\n");
+}

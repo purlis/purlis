@@ -144,6 +144,9 @@ pub enum AskSource {
     /// A chat's browser whose page needs the person (#2015): the chat asked them to take it
     /// over, through `ask_operator` pointed at it.
     BrowserNeedsYou,
+    /// Sites new to the project a chat's browser held back what it would open, send or type
+    /// on (#2018): an Allow is a browser site grant, for the browser alone.
+    BrowserSite,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -190,6 +193,9 @@ pub enum AnswerPath {
     /// then opens its view, so the person's first click or key reaches the page (#2015). The
     /// Ask ends on their Done (`hand_back_browser`), or with the browser.
     TakeOver { program: String },
+    /// `allow_browser_sites` at the level an option names, and `keep_browser_sites_blocked` for
+    /// Keep blocked with the person's reason, each for `sites`, the sites the ask showed (#2018).
+    BrowserSites { sites: Vec<String> },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -961,6 +967,59 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
     }
 }
 
+/// The key of chat `session`'s browser sites Ask (#2018): one per chat, every site it waits on.
+fn browser_sites_key(session: u32) -> String {
+    format!("browser-sites:{session}")
+}
+
+/// **The browser sites adapter** (#2018): one ask per chat, naming every site new to the project
+/// its browser held back what it would open, send or type on, oldest first, each whole. Allow
+/// for this chat; Allow always here, on this machine, unless an administrator's policy leaves
+/// out `you`; Keep blocked. Every word is purlis's, and the line says an Allow is the browser's
+/// alone: the chat's own commands still need their own Allow for a host.
+pub fn browser_sites(
+    waits: &crate::chatbrowsers::SitesWait,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
+    use purlis_core::sandbox::grant::Level;
+    let sites: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
+    let says = format!(
+        "Its browser wants to open, send or type on {} new to this project: {}. An Allow is for \
+         its browser alone",
+        if sites.len() == 1 { "a site" } else { "sites" },
+        sites.join(", ")
+    );
+    let mut options = Vec::new();
+    let allow = |level: Level, label: &str| Offered {
+        id: level.word().to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    };
+    if locks.scope_removed(Level::Chat).is_none() {
+        options.push(allow(Level::Chat, "Allow for this chat"));
+    }
+    if locks.scope_removed(Level::You).is_none() {
+        options.push(allow(
+            Level::You,
+            "Always allow in this project, on this machine",
+        ));
+    }
+    options.push(refuses(KEEP, "Keep blocked"));
+    Shown {
+        session: waits.session,
+        ask: browser_sites_key(waits.session),
+        says: said_inertly(&says),
+        options,
+        source: AskSource::BrowserSite,
+        chain: Vec::new(),
+        answer: AnswerPath::BrowserSites { sites },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
 /// The id of This project's sites, always for the chat's persona (#2241).
 pub const BROWSER_PROJECT_ALWAYS: &str = "project-always";
 /// The id of Also the open web, always for the chat's persona (#2241).
@@ -1215,6 +1274,8 @@ pub struct Waiting<'a> {
     pub browsers: Vec<crate::chatbrowsers::Waits>,
     /// The browsers whose chat asked the person to take them over (#2015).
     pub needs_you: Vec<crate::browserneedsyou::Waiting>,
+    /// The chats whose browser's sites new to the project wait on the person (#2018).
+    pub browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -1270,6 +1331,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // And one whose browser needs the person waits on them to take it over (#2015).
     asks.extend(waiting.needs_you.iter().map(browser_needs_you));
+    // A chat whose browser's sites new to the project wait on the person (#2018).
+    asks.extend(
+        waiting
+            .browser_sites
+            .iter()
+            .map(|one| browser_sites(one, waiting.locks)),
+    );
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -1444,9 +1512,14 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &needs_you {
         since.insert(needs_you_key(&one.program), one.since);
     }
+    let browser_sites = held.browsers().sites_waiting();
+    for one in &browser_sites {
+        since.insert(browser_sites_key(one.session), one.since);
+    }
     let waiting = Waiting {
         browsers,
         needs_you,
+        browser_sites,
         sandbox_only,
         sign_ins,
         removals,

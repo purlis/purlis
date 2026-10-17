@@ -27,7 +27,7 @@
 //!   browser starts and never before (D-2012-4).
 //! - **Its reach** is what the window gives it as it starts ([`reach_of`], #2013), and again
 //!   with each act (#2018): the hosts its chat's sandbox lists, with the person's Allows since.
-//!   A site new to the project is judged by [`sites::Sites`]: the page may read it, and the
+//!   A site new to the project is judged by [`judge::SiteJudge`]: the page may read it, and the
 //!   agent's address, a form or a body sent there, or its typing there, asks the person first;
 //!   on the open web nothing asks. A browser started with none (the person's own, #2012)
 //!   reaches nothing listed, and every site new to the project is refused
@@ -60,7 +60,7 @@ use purlis_host::{Browsers, FrameSink, NotActed, NotTaken, Screen};
 use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
 use crate::sandbox::reach::{Reach, Written};
 
-pub mod sites;
+pub mod judge;
 
 /// The argument that starts this binary as an engine's keeper.
 pub const KEEPER: &str = "purlis-engine-keeper";
@@ -266,9 +266,11 @@ impl Browsers for EngineBrowsers {
         let ready = prepared(&engines).map_err(|why| why.to_string())?;
         // A chat's browser is judged (#2018); the person's own, given no reach, refuses every
         // site new to the project at its proxy.
-        let sites = reach.map(sites::Sites::of).transpose()?.map(Arc::new);
+        let sites = reach.map(judge::SiteJudge::of).transpose()?.map(Arc::new);
         let (listed, new_sites) = reach_of(reach)?;
-        let new_sites = sites.as_ref().map_or(new_sites, sites::Sites::new_sites);
+        let new_sites = sites
+            .as_ref()
+            .map_or(new_sites, judge::SiteJudge::new_sites);
         let proxy = ReachProxy::start(Lane::of(listed), new_sites)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let launch = Launch::new(&ready, data, launch::ReachProxy(proxy.address()));
@@ -597,7 +599,7 @@ struct Held {
 struct EngineScreen {
     process: Option<u32>,
     /// Its judge, shared with its reach proxy (#2018): none for a browser given no reach.
-    sites: Option<Arc<sites::Sites>>,
+    sites: Option<Arc<judge::SiteJudge>>,
     held: Mutex<Option<Held>>,
 }
 

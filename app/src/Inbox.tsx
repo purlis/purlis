@@ -545,7 +545,9 @@ function shapeOf(
     // while it is itself waiting, it gets the box beside the reason (#1700).
     reply: ask.source === "question" && (why === undefined || asked?.(ask.session) === true),
     reason:
-      (ask.answer.via === "sandbox-block" || ask.answer.via === "browser") &&
+      (ask.answer.via === "sandbox-block" ||
+        ask.answer.via === "browser" ||
+        ask.answer.via === "browser-sites") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.

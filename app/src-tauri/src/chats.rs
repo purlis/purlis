@@ -582,10 +582,6 @@ pub struct Chats {
     /// The sandbox block each open chat is held on now, as the app heard it (#1508): what an
     /// answer to several tasks is checked against. **In memory only**, and gone with the chat.
     blocks: Arc<crate::taskblocks::Blocks>,
-    /// The sites each open chat's browser asked about (#2018), each until it is allowed: whose
-    /// Allow the chat is told of, since nothing of its waits to carry on. **In memory only**,
-    /// and bounded as a board's hosts are.
-    browser_asked: Mutex<HashMap<u32, Vec<purlis_core::sandbox::hosts::Host>>>,
     /// Who is told a project's asks may have moved where nothing else tells the window (#1709):
     /// a live ask held for its chat whose Notice the throttle held back. Empty until the
     /// project's hooks listen.
@@ -987,7 +983,6 @@ impl Chats {
             grants: Mutex::new(HashMap::new()),
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
-            browser_asked: Mutex::new(HashMap::new()),
             asks_moved: Arc::new(Mutex::new(None)),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
@@ -1928,21 +1923,6 @@ impl Chats {
                 .collect()
         };
         let mut live = Live::default();
-        // A chat whose browser asked about it is told it was allowed (#2018): nothing of its
-        // waits to carry on, so nothing else tells it.
-        for number in self.browser_allowed(session, host, level) {
-            self.tell_outcome(
-                number,
-                purlis_core::askoutcome::Outcome {
-                    about: purlis_core::askoutcome::About::Host {
-                        host: host.to_string(),
-                    },
-                    answer: purlis_core::askoutcome::Answer::Allowed {
-                        scope: purlis_core::askoutcome::Scope::live(level),
-                    },
-                },
-            );
-        }
         for (number, board) in boards {
             let retry = board.allow(host, level.into());
             if !retry.is_empty() {
@@ -1994,80 +1974,6 @@ impl Chats {
         }
         // A browser of the chat was given what it allowed live: it ends (#2013).
         self.narrowed(&narrowed);
-    }
-
-    /// **Chat `session`'s browser held back what it would have sent to `sites`** (#2018), each a
-    /// `host:port` new to the project, from the browser's own judge, never a word the chat
-    /// sent: each is asked about as a host its proxy asks about live is (#1709), held for the
-    /// chat in the asks registry and raised as its Notice, where every host of the chat joins
-    /// one Notice with one Allow. An Allow lists it in the chat's reach, which the browser is
-    /// given at its next act; Keep blocked tells the chat not to retry.
-    pub fn ask_for_its_browser(&self, session: u32, sites: &[String]) {
-        use purlis_core::sandboxblock::{Block, Kind, Operation};
-        {
-            let mut asked = lock(&self.browser_asked);
-            let waiting = asked.entry(session).or_default();
-            for host in sites
-                .iter()
-                .filter_map(|site| purlis_core::sandbox::grant::host(site).ok())
-            {
-                if !waiting.contains(&host) && waiting.len() < BROWSER_ASKED_KEPT {
-                    waiting.push(host);
-                }
-            }
-        }
-        let registered = sites
-            .iter()
-            .filter(|site| register_live(&self.blocks, session, site))
-            .count();
-        if registered > 0
-            && let Some(moved) = lock(&self.asks_moved).clone()
-        {
-            moved();
-        }
-        let Some(raise) = lock(&self.refused).clone() else {
-            return;
-        };
-        let harness = self
-            .harness(session)
-            .map(|harness| harness.name().to_owned());
-        for site in sites {
-            raise(purlis_core::hookwire::SandboxBlocked {
-                chat: session,
-                sandbox_blocked: Block {
-                    operation: Operation::Connect,
-                    kind: Kind::Host,
-                    ours: false,
-                },
-                harness: harness.clone(),
-                target: Some(site.clone()),
-                read_back: false,
-                suggested: None,
-            });
-        }
-    }
-
-    /// The chats whose browser asked about `host` that an Allow of it at `level` reaches: chat
-    /// `session` alone for this chat, every one for the other scopes. Each is asked about it no
-    /// more.
-    fn browser_allowed(
-        &self,
-        session: Option<u32>,
-        host: &purlis_core::sandbox::hosts::Host,
-        level: purlis_core::sandbox::grant::Level,
-    ) -> Vec<u32> {
-        let mut asked = lock(&self.browser_asked);
-        let mut told = Vec::new();
-        for (number, waiting) in asked.iter_mut() {
-            let reached =
-                level != purlis_core::sandbox::grant::Level::Chat || Some(*number) == session;
-            if reached && waiting.contains(host) {
-                waiting.retain(|one| one != host);
-                told.push(*number);
-            }
-        }
-        told.sort_unstable();
-        told
     }
 
     /// **The person kept `host` blocked for chat `session`, from the window** (#1666): what its
@@ -3326,7 +3232,6 @@ impl Chats {
         lock(&self.models).remove(&session);
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
-        lock(&self.browser_asked).remove(&session);
         self.blocks.ended(session);
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
@@ -5182,9 +5087,6 @@ pub struct Live {
     /// Those of them a held connection had given up on before the Allow, each told to retry.
     pub told_to_retry: Vec<u32>,
 }
-
-/// The most sites one chat's browser waits on an Allow of at once (#2018).
-const BROWSER_ASKED_KEPT: usize = 64;
 
 /// What keeps purlis's word on a chat's held connections for its next turn (#1666).
 pub type NetworkWords = Arc<dyn Fn(u32, purlis_core::askoutcome::Outcome) + Send + Sync + 'static>;

@@ -696,13 +696,26 @@ _Avoid_: autofill, credential tool, password tool
 
 **Reach** (of a browser):
 The sites and local ports a browser may open and the ones its agent may write to: its chat's
-**allowed hosts**, in a lane of their own for the browser, shown with the chat's in the one
-Granted list. A site new to the project that the agent itself writes an address for, posts a
-form to, or types on, asks once; a link the page offered does not, and on the open web nothing
-asks. The ask is the chat's own host Ask, so its Allow is a host grant. A private address is
-reached only by the literal address and port the person allowed.
-_Avoid_: allowlist (in UI text), network access, browser allowlist (it is the same allowed
-hosts)
+**allowed hosts**, in a lane of their own for the browser, and its **browser sites**, all shown
+in the one Granted list. A site new to the project that the agent itself writes an address for,
+posts a form to, or types on, asks once; a link the page offered does not, and on the open web
+nothing asks. A private address is reached only by the literal address and port the person
+allowed.
+_Avoid_: allowlist (in UI text), network access, browser allowlist
+
+**Browser site**:
+A person's yes to one site, a host and port, for a chat's browser alone, at *this chat* or *this
+project on this machine*: the browser may open it, send to it and type on it. The chat's own
+commands never reach a browser site; they still need an **Allowed host** for it. Asked by the
+browser's **judge**, and listed apart from allowed hosts in the Granted list.
+_Avoid_: host grant, browser host, allowed host (that is the commands' own)
+
+**Judge** (of a browser):
+The part of a chat's browser that hears every request its pages are about to send, and every
+field the agent is about to type into, and says whether it goes or the person is asked: a read
+goes, an address the agent wrote or anything sent to a site new to the project asks. The reach
+proxy carries a site new to the project only where the judge let a request to it go.
+_Avoid_: filter, firewall, interceptor
 
 ### Chats working together
 
