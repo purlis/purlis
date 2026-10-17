@@ -375,12 +375,7 @@ pub fn whole_of(one: &Proposal, now: &Now) -> ProposedWhole {
 fn lines_changed(before: &str, after: &str) -> Vec<crate::piecefiles::GitHunk> {
     purlis_core::files::line_hunks(before, after)
         .into_iter()
-        .map(|one| crate::piecefiles::GitHunk {
-            old_start: one.old_start,
-            old_lines: one.old_lines,
-            new_start: one.new_start,
-            new_lines: one.new_lines,
-        })
+        .map(crate::piecefiles::GitHunk::from)
         .collect()
 }
 

@@ -313,6 +313,17 @@ pub struct GitHunk {
     pub new_lines: u32,
 }
 
+impl From<files::Hunk> for GitHunk {
+    fn from(one: files::Hunk) -> Self {
+        Self {
+            old_start: one.old_start,
+            old_lines: one.old_lines,
+            new_start: one.new_start,
+            new_lines: one.new_lines,
+        }
+    }
+}
+
 /// One file's change, as the comparison tab draws it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -374,15 +385,7 @@ fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatC
         files::FileDiff::Text { base, head, hunks } => FileDiff::Text {
             base,
             head,
-            hunks: hunks
-                .into_iter()
-                .map(|one| GitHunk {
-                    old_start: one.old_start,
-                    old_lines: one.old_lines,
-                    new_start: one.new_start,
-                    new_lines: one.new_lines,
-                })
-                .collect(),
+            hunks: hunks.into_iter().map(GitHunk::from).collect(),
         },
         files::FileDiff::Binary => FileDiff::Binary,
         files::FileDiff::TooLarge { bytes } => FileDiff::TooLarge {
