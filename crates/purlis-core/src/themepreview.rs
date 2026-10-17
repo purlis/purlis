@@ -81,7 +81,7 @@ pub static TOOLS: [Tool; 1] = [Tool {
                   page, a dialog and a Notice), in a theme and appearance, and return its \
                   picture. Give side_by_side to get a second specimen beside it to compare. The \
                   specimen never shows the person's window, chats, paths or terminal output.",
-    schema: schema,
+    schema,
     read_only: true,
 }];
 
