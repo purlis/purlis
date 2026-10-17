@@ -297,12 +297,82 @@ pub struct WindowTheme {
     pub motion: WindowMotion,
     /// The theme's icon set, by view id: empty when the rails draw the window's own marks.
     pub icons: std::collections::BTreeMap<String, WindowIcon>,
+    /// The geometry's custom properties, written by the engine, for each density (#2326).
+    pub geometry: WindowGeometry,
+    /// The UI, mono and terminal fonts (#2326).
+    pub fonts: WindowFonts,
 }
 
 /// One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 pub struct WindowIcon {
     pub paths: Vec<String>,
+}
+
+/// A theme's geometry as the custom properties the window writes, for each density: the
+/// person's density picks one ([`purlis_core::theme::Layer`]).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowGeometry {
+    pub comfortable: std::collections::BTreeMap<String, String>,
+    pub compact: std::collections::BTreeMap<String, String>,
+}
+
+/// A theme's three fonts.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowFonts {
+    pub ui: WindowFont,
+    pub mono: WindowFont,
+    pub terminal: WindowFont,
+}
+
+/// One font: the family list the window draws with, as the engine wrote it, and the faces it
+/// asks purlis for by digest (`theme_font`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowFont {
+    /// The theme's label for it; `null` for core's.
+    pub family: Option<String>,
+    pub stack: String,
+    pub faces: Vec<WindowFace>,
+}
+
+/// One face of a font.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowFace {
+    /// The sha-256 of its bytes, which `theme_font` answers.
+    pub asset: String,
+    pub weight: u16,
+    /// `normal` or `italic`.
+    pub style: String,
+}
+
+impl From<&purlis_core::theme::Font> for WindowFont {
+    fn from(font: &purlis_core::theme::Font) -> Self {
+        Self {
+            family: font.family.clone(),
+            stack: font.stack.clone(),
+            faces: font
+                .faces
+                .iter()
+                .map(|face| WindowFace {
+                    asset: face.asset.clone(),
+                    weight: face.weight,
+                    style: match face.style {
+                        purlis_core::theme::Style::Normal => "normal",
+                        purlis_core::theme::Style::Italic => "italic",
+                    }
+                    .to_owned(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `geometry` as the window writes it.
+fn written(geometry: &purlis_core::theme::Geometry) -> std::collections::BTreeMap<String, String> {
+    purlis_core::theme::geometry::properties(geometry)
+        .into_iter()
+        .map(|(property, value)| (property.to_owned(), value))
+        .collect()
 }
 
 /// A resolved theme's motion: milliseconds, and the four numbers of each cubic Bézier.
@@ -354,8 +424,73 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                     )
                 })
                 .collect(),
+            geometry: WindowGeometry {
+                comfortable: written(&theme.geometry),
+                compact: written(&theme.compact),
+            },
+            fonts: WindowFonts {
+                ui: (&theme.fonts.ui).into(),
+                mono: (&theme.fonts.mono).into(),
+                terminal: (&theme.fonts.terminal).into(),
+            },
         }
     }
+}
+
+/// **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
+/// read again by the core's theme engine from inside the theme's folder, under its cap, and only
+/// while it still has that digest (`purlis_core::theme::served`). As base64, as a file tab's
+/// image is (FM-2); the window makes a `FontFace` from the bytes, so no path and no address ever
+/// reach it.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_font(asset: String) -> Result<String, String> {
+    use base64::Engine as _;
+    tauri::async_runtime::spawn_blocking(move || purlis_core::theme::served(&asset))
+        .await
+        .map_err(|err| format!("reading the font did not finish: {err}"))?
+        .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// What [`theme_person`] answers: the person's layer, and what reading it had to put right.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct PersonInForce {
+    /// `comfortable` or `compact`: which of a theme's geometries is drawn.
+    pub density: String,
+    /// The family list for each font the person named (`ui`, `mono`, `terminal`), as the engine
+    /// wrote it.
+    pub fonts: std::collections::BTreeMap<String, String>,
+    pub complaints: Vec<String>,
+}
+
+impl PersonInForce {
+    /// The person's settings as the layout file's `appearance` holds them, read by the engine.
+    pub fn of(appearance: Option<&serde_json::Value>) -> Self {
+        let (person, complaints) = purlis_core::theme::Person::read(appearance);
+        let layer = person.layer();
+        Self {
+            density: match layer.density {
+                purlis_core::theme::Density::Comfortable => "comfortable",
+                purlis_core::theme::Density::Compact => "compact",
+            }
+            .to_owned(),
+            fonts: layer
+                .fonts
+                .into_iter()
+                .map(|(slot, stack)| (slot.to_owned(), stack))
+                .collect(),
+            complaints: complaints.into_iter().map(|one| one.said).collect(),
+        }
+    }
+}
+
+/// **The person's density and font override, read by the core's theme engine** (#2326): what
+/// the window draws over every theme once Settings changed them. The window keeps them in its
+/// layout file beside the text sizes, and is handed the same at creation.
+#[tauri::command]
+#[specta::specta]
+pub fn theme_person(appearance: Option<serde_json::Value>) -> PersonInForce {
+    PersonInForce::of(appearance.as_ref())
 }
 
 /// Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on

@@ -31,24 +31,31 @@
 //! **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): it draws
 //! Purlis, and every complaint says what is wrong. A token or motion name purlis does not have is
 //! said and left out instead: a name reaches nothing, and a teammate's purlis may know a token
-//! this one does not yet. Geometry and fonts (#2326), options (#2325) and tint (#2329) are not
-//! read yet, so naming one refuses the theme rather than drawing something other than what it
-//! says.
+//! this one does not yet. Options (#2325) and tint (#2329) are not read yet, so naming one
+//! refuses the theme rather than drawing something other than what it says.
 //!
 //! - **`icons`** names the theme's icon set (#2337): a file inside the theme's folder, read under
 //!   the same containment and cap as `theme.json` ([`super::icons`]). A view the set does not
 //!   draw is its parent's.
+//! - **Geometry** (#2326, [`super::geometry`]): an appearance's `tokens` may give any geometry
+//!   token a number inside its documented bound; the theme's `compact` layer tunes what compact
+//!   draws, for every appearance. A value outside its bound refuses the theme and names the
+//!   bound.
+//! - **Fonts** (#2326, [`super::fonts`]): the UI, mono and terminal fonts, from woff2 files in
+//!   the folder's `fonts/`, for every appearance.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
+use super::fonts::Fonts;
+use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
-use super::vocabulary::{TOKENS, is_colour, names_geometry};
+use super::vocabulary::{TOKENS, is_colour};
 use super::{
-    Appearance, CLASSIC, Complaint, GEOMETRY_IS_CORE, Resolved, ResolvedTheme, Theme, built_in_for,
-    classic, is_format_2, load_format_1, load_motion, stringify,
+    Appearance, CLASSIC, Complaint, Resolved, ResolvedTheme, Theme, built_in_for, classic,
+    is_format_2, load_format_1, load_motion, stringify,
 };
 
 /// The file a theme folder is read from.
@@ -73,11 +80,13 @@ const KEYS: &[&str] = &[
     "palette",
     "appearances",
     "icons",
+    "compact",
+    "fonts",
 ];
 
 /// The keys the spec gives format 2 that this purlis does not read yet, each with the ticket
-/// that reads it: fonts #2326, options #2325, tint #2329.
-const NOT_YET: &[(&str, &str)] = &[("fonts", "#2326"), ("options", "#2325"), ("tint", "#2329")];
+/// that reads it: options #2325, tint #2329.
+const NOT_YET: &[(&str, &str)] = &[("options", "#2325"), ("tint", "#2329")];
 
 /// The longest path to an icon set purlis follows, in bytes.
 pub(super) const MOST_ICONS_PATH: usize = 256;
@@ -118,9 +127,10 @@ enum Beside {
     /// Nothing: the theme is one document, not a folder.
     Nothing,
     /// A folder, and the icon set its `theme.json` names, parsed, or why not; `None` when it
-    /// names none.
+    /// names none. `folder` is the theme's folder, whose `fonts/` its fonts are read from.
     Folder {
         icons: Option<Result<Value, String>>,
+        folder: PathBuf,
     },
 }
 
@@ -185,6 +195,21 @@ impl Library {
     /// and always answers with a complete theme.
     pub fn load(&self, id: Option<&str>, document: &Value) -> Resolved {
         self.load_beside(id, document, &Beside::Nothing)
+    }
+
+    /// [`Self::load`] of a `theme.json` read from `folder`, the theme's own folder: the icon set
+    /// and the fonts it names are read from inside it. The person's own theme is read so, from
+    /// the config folder its `theme.json` is in.
+    pub fn load_in(&self, id: Option<&str>, document: &Value, folder: &Path) -> Resolved {
+        let icons = match document.get("icons") {
+            Some(Value::String(named)) => Some(read_icons(folder, folder, named)),
+            _ => None,
+        };
+        let beside = Beside::Folder {
+            icons,
+            folder: folder.to_path_buf(),
+        };
+        self.load_beside(id, document, &beside)
     }
 
     /// [`Self::load`] of a theme with what was read beside it.
@@ -260,6 +285,10 @@ impl Library {
         };
         let called = if name.is_empty() { "this theme" } else { &name };
         let palette = palette(from.get("palette"), &mut complaints);
+        let folder = match beside {
+            Beside::Folder { folder, .. } => Some(folder.as_path()),
+            Beside::Nothing => None,
+        };
 
         // The parent's appearances, complete: what this theme's layer over.
         let mut appearances: Vec<ResolvedTheme> = match from.get("extends") {
@@ -306,6 +335,17 @@ impl Library {
             )));
             return Err(Refused::because(complaints));
         }
+        // What the theme's `compact` layer and fonts are over: its parent's, else core's. Both are
+        // the whole theme's, so a parent's first appearance holds them.
+        let (parent_tuned, parent_fonts) = appearances.first().map_or_else(
+            || (Geometry::new(), Fonts::classic()),
+            |first| (first.tuned.clone(), first.fonts.clone()),
+        );
+        let mut tuned = parent_tuned;
+        tuned.extend(compact_layer(from.get("compact"), &mut complaints));
+        let mut said = Vec::new();
+        let fonts = super::fonts::read(from.get("fonts"), &parent_fonts, folder, &mut said);
+        complaints.extend(said.into_iter().map(Complaint::said));
         let inherited = appearances.len();
         // Every appearance of a theme carries its one set, so the parent's first has it.
         let parents_icons = appearances
@@ -362,6 +402,9 @@ impl Library {
         for one in &mut appearances {
             one.name.clone_from(&name);
             one.icons.clone_from(&icons);
+            one.compact = geometry::compact_of(&one.geometry, &tuned);
+            one.tuned.clone_from(&tuned);
+            one.fonts.clone_from(&fonts);
         }
         Ok((Theme { name, appearances }, notes))
     }
@@ -452,7 +495,7 @@ fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
     };
     Ok(Held {
         document,
-        beside: Beside::Folder { icons },
+        beside: Beside::Folder { icons, folder },
     })
 }
 
@@ -543,12 +586,14 @@ fn icon_set(
         ))),
         Beside::Folder {
             icons: Some(Ok(set)),
+            ..
         } => return icons::read(named, set, complaints, notes),
         Beside::Folder {
             icons: Some(Err(why)),
+            ..
         } => complaints.push(Complaint::said(why.clone())),
         // A folder whose `theme.json` names a set always has it read, or why not.
-        Beside::Folder { icons: None } => complaints.push(Complaint::said(format!(
+        Beside::Folder { icons: None, .. } => complaints.push(Complaint::said(format!(
             "purlis could not read the icon set {}",
             stringify(&Value::String(named.clone()))
         ))),
@@ -689,24 +734,27 @@ fn appearance(
     };
     let base = parent.unwrap_or_else(|| built_in_for(appearance));
     let mut values = base.values.clone();
+    let mut sizes = base.geometry.clone();
     match one.get("tokens") {
         None => {}
         Some(Value::Object(tokens)) => {
             for (token, value) in tokens {
-                let Some(known) = TOKENS.iter().copied().find(|it| *it == token) else {
-                    if names_geometry(token) {
-                        complaints.push(Complaint::about(
-                            token,
-                            format!("{token} in appearance {id} {GEOMETRY_IS_CORE}"),
-                        ));
-                    } else {
-                        notes.push(Complaint::about(
-                            token,
-                            format!(
-                                "{token} in appearance {id} is not a purlis token, so it is left out"
-                            ),
-                        ));
+                if let Some(step) = geometry::step_of(token) {
+                    match geometry::number(step, value, &format!("in appearance {id}")) {
+                        Ok(number) => {
+                            sizes.insert(step.token, number);
+                        }
+                        Err(why) => complaints.push(Complaint::about(token, why)),
                     }
+                    continue;
+                }
+                let Some(known) = TOKENS.iter().copied().find(|it| *it == token) else {
+                    notes.push(Complaint::about(
+                        token,
+                        format!(
+                            "{token} in appearance {id} is not a purlis token, so it is left out"
+                        ),
+                    ));
                     continue;
                 };
                 match colour(value, palette) {
@@ -742,7 +790,43 @@ fn appearance(
         values,
         motion,
         icons: Icons::default(),
+        // The compact geometry, the theme's layer and its fonts are the whole theme's, set
+        // once every appearance is read.
+        compact: geometry::compact_of(&sizes, &base.tuned),
+        geometry: sizes,
+        tuned: base.tuned.clone(),
+        fonts: base.fonts.clone(),
     })
+}
+
+/// A theme's `compact` layer: geometry tokens and their compact numbers, each in its bound.
+fn compact_layer(raw: Option<&Value>, complaints: &mut Vec<Complaint>) -> Geometry {
+    let mut out = Geometry::new();
+    let Some(raw) = raw else {
+        return out;
+    };
+    let Some(given) = raw.as_object() else {
+        complaints.push(Complaint::said(
+            "compact is an object of geometry tokens to numbers",
+        ));
+        return out;
+    };
+    for (token, value) in given {
+        let Some(step) = geometry::step_of(token) else {
+            complaints.push(Complaint::about(
+                token,
+                format!("{token} in compact is not a purlis geometry token"),
+            ));
+            continue;
+        };
+        match geometry::number(step, value, "in compact") {
+            Ok(number) => {
+                out.insert(step.token, number);
+            }
+            Err(why) => complaints.push(Complaint::about(token, why)),
+        }
+    }
+    out
 }
 
 /// A token's value: hex, or the hex of a name in `palette`. Anything else is not a colour.

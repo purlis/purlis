@@ -210,6 +210,16 @@ export type Token = (typeof TOKENS)[number];
 /** Whether a theme is drawn on a dark window or a light one. */
 export type Appearance = "dark" | "light";
 
+/** One face of a theme's font: the digest purlis serves its bytes by (`theme_font`). */
+export type Face = { asset: string; weight: number; style: "normal" | "italic" | string };
+
+/** One of a theme's fonts, as the engine resolved it (`purlis_core::theme::Font`): the family
+ *  list to draw with, written by the engine, and the faces to load for it. */
+export type Font = { family: string | null; stack: string; faces: Face[] };
+
+/** The three fonts a theme sets. */
+export type FontSlot = "ui" | "mono" | "terminal";
+
 /** A theme, complete: every token in {@link TOKENS} has a value. */
 export type Theme = {
   /** What to call it, as a person would. */
@@ -225,10 +235,42 @@ export type Theme = {
    *  checked, for `RailIcon` to stroke. A view it does not draw, and every view of a theme
    *  without one, is the window's own mark (`VIEW_MARKS`). */
   icons?: Readonly<Record<string, RailSymbol>>;
+  /** The geometry's custom properties for each density, written by the engine from the theme's
+   *  numbers (#2326, `purlis_core::theme::geometry`). */
+  geometry?: Record<Density, Record<string, string>>;
+  /** Its UI, mono and terminal fonts (#2326). */
+  fonts?: Record<FontSlot, Font>;
 };
 
 /** One icon of a theme's set: path data on a 24 grid. */
 export type RailSymbol = { readonly paths: readonly string[] };
+
+/** How tightly the window is laid out: the person's setting, honoured by every theme. */
+export type Density = "comfortable" | "compact";
+
+/**
+ * **The person's layer, drawn over every theme** (#2326, `purlis_core::theme::Layer`): which of
+ * a theme's two geometries is drawn, and the family list of each font the person named, as the
+ * engine read and wrote them. The window draws the theme, then this over it, so the person's
+ * font beats the theme's and their density picks the theme's geometry.
+ */
+export type Person = {
+  density: Density;
+  fonts: Partial<Record<FontSlot, string>>;
+  complaints?: string[];
+};
+
+/** Nothing set: comfortable, and the theme's fonts. */
+export const NO_PERSON: Person = { density: "comfortable", fonts: {} };
+
+/** The person's layer the window was handed as it was created. */
+function handedPerson(): Person {
+  const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
+    | { person?: Person }
+    | undefined;
+  const person = given?.person;
+  return person && typeof person === "object" && person.fonts ? person : NO_PERSON;
+}
 
 /** The custom property a token is written to: `surface.base` becomes `--surface-base`. */
 export function property(token: Token): string {
@@ -302,7 +344,11 @@ export function sameTheme(a: Theme, b: Theme): boolean {
   if (a.name !== b.name || a.appearance !== b.appearance) return false;
   if (TOKENS.some((token) => a.values[token] !== b.values[token])) return false;
   if (JSON.stringify(a.icons ?? {}) !== JSON.stringify(b.icons ?? {})) return false;
-  return JSON.stringify(a.motion) === JSON.stringify(b.motion);
+  return (
+    JSON.stringify(a.motion) === JSON.stringify(b.motion) &&
+    JSON.stringify(a.geometry) === JSON.stringify(b.geometry) &&
+    JSON.stringify(a.fonts) === JSON.stringify(b.fonts)
+  );
 }
 
 /**
@@ -499,13 +545,127 @@ export function searchDecorations(theme: Theme): SearchDecorations {
  * `color-scheme` goes on too: it is what makes the platform's own scrollbars, text selection
  * and form controls match, and no custom property can do it.
  */
-export function apply(theme: Theme, to: HTMLElement, reduced = motionReduced()): void {
+export function apply(
+  theme: Theme,
+  to: HTMLElement,
+  reduced = motionReduced(),
+  over: Person = person,
+): void {
   for (const [name, value] of Object.entries(cssVariables(theme)))
     to.style.setProperty(name, value);
   for (const [name, value] of Object.entries(motionVariables(theme.motion, reduced)))
     to.style.setProperty(name, value);
+  for (const [name, value] of Object.entries(drawnGeometry(theme, over)))
+    to.style.setProperty(name, value);
+  for (const slot of ["ui", "mono"] as const) {
+    const stack = drawnFont(slot, theme, over);
+    if (stack !== undefined) to.style.setProperty(`--font-${slot}`, stack);
+  }
   to.style.colorScheme = theme.appearance;
   to.dataset.theme = theme.name;
+  to.dataset.density = over.density;
+  loadFaces(theme, over);
+}
+
+/** The geometry `theme` is drawn in for `over`'s density: its custom properties, as the engine
+ *  wrote them (`purlis_core::theme::Layer::drawn_geometry`). */
+export function drawnGeometry(theme: Theme, over: Person = person): Record<string, string> {
+  return theme.geometry?.[over.density] ?? {};
+}
+
+/** The family list `slot` is drawn in: the person's, when they named one, else the theme's
+ *  (`purlis_core::theme::Layer::drawn_font`). */
+export function drawnFont(
+  slot: FontSlot,
+  theme: Theme = current,
+  over: Person = person,
+): string | undefined {
+  return over.fonts[slot] ?? theme.fonts?.[slot].stack;
+}
+
+/** The terminal's family list: what every pane hands xterm (#2326). */
+export function terminalFont(): string {
+  return drawnFont("terminal") ?? "monospace";
+}
+
+/** The faces already made, by digest: a face is asked for once a launch. */
+const loaded = new Set<string>();
+
+/** How a face's bytes are asked for: `theme_font` (`fonts.ts` sets it, so this module stays
+ *  free of the IPC). */
+let fetchFace: ((asset: string) => Promise<ArrayBuffer | undefined>) | undefined;
+
+/** Says how the window asks purlis for a face's bytes. */
+export function fetchFacesWith(fetch: typeof fetchFace): void {
+  fetchFace = fetch;
+}
+
+/**
+ * **Loads the faces the drawn fonts need, after the frame** (#2326): each from the bytes purlis
+ * serves by digest, made with `FontFace` and added to the document's fonts under the name the
+ * engine wrote into the family list. Nothing waits on it: the first frame is drawn in the
+ * family list's fallback, and the text redraws when a face arrives. A slot the person set draws
+ * the person's font, so its faces are not asked for.
+ */
+function loadFaces(theme: Theme, over: Person): void {
+  if (fetchFace === undefined || typeof FontFace === "undefined" || !theme.fonts) return;
+  for (const slot of ["ui", "mono", "terminal"] as const) {
+    if (over.fonts[slot] !== undefined) continue;
+    const font = theme.fonts[slot];
+    const name = /^"([a-z0-9-]+)"/.exec(font.stack)?.[1];
+    if (name === undefined) continue;
+    for (const face of font.faces) {
+      if (loaded.has(face.asset)) continue;
+      loaded.add(face.asset);
+      const fetch = fetchFace;
+      void (async () => {
+        try {
+          const bytes = await fetch(face.asset);
+          if (bytes === undefined) return;
+          const made = new FontFace(name, bytes, {
+            weight: String(face.weight),
+            style: face.style,
+          });
+          await made.load();
+          document.fonts.add(made);
+          if (slot === "terminal") for (const follow of fontFollowers) follow(terminalFont());
+        } catch {
+          // A face that cannot be made draws the family list's fallback; it is not asked again.
+        }
+      })();
+    }
+  }
+}
+
+/** The person's layer in force. */
+let person: Person = handedPerson();
+
+/** The person's layer in force: what Settings shows. */
+export function personInForce(): Person {
+  return person;
+}
+
+/** Draws the person's layer over the theme in force: Settings changed their density or a
+ *  font. The terminals are told their family. */
+export function drawPerson(next: Person): void {
+  person = next;
+  if (drawnOn !== null) {
+    apply(current, drawnOn);
+    if (tint !== null) paint(current, drawnOn, tint);
+  }
+  for (const follow of fontFollowers) follow(terminalFont());
+}
+
+/** Everything following the terminal's family: one per terminal on screen. */
+const fontFollowers = new Set<(family: string) => void>();
+
+/** Calls `follow` with the terminal's family whenever it changes: a theme, the person's font,
+ *  or a face that arrived. Answers the way to stop. */
+export function onTerminalFont(follow: (family: string) => void): () => void {
+  fontFollowers.add(follow);
+  return () => {
+    fontFollowers.delete(follow);
+  };
 }
 
 /** Writes {@link TINTED_WINDOW} of `theme` in `colour` onto `to`, or as the theme has them. */
@@ -534,7 +694,10 @@ export function drawIn(theme: Theme, to: HTMLElement = document.documentElement)
   apply(theme, to);
   if (tint !== null) paint(theme, to, tint);
   followReducedMotion();
-  if (changed) for (const follow of followers) follow(theme);
+  if (changed) {
+    for (const follow of followers) follow(theme);
+    for (const follow of fontFollowers) follow(terminalFont());
+  }
 }
 
 /**

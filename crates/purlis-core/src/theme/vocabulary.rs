@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What a theme may say**: the token names, the motion names and their grammar, and the names
-//! a theme may not set because they are core geometry (ADR 0094).
+//! **What a theme may say**: the token names, the motion names and their grammar, and the core
+//! geometry's custom properties, which a theme reaches through its geometry tokens and fonts
+//! (`theme::geometry`, `theme::fonts`, ADR 0097).
 //!
 //! These lists are the contract a theme author writes against, so they are written once, here.
 //! The window still names the same tokens to write them to the document (`app/src/theme/theme.ts`
@@ -130,8 +131,9 @@ pub const TINTED: &[&str] = &[
     "layer.selected",
 ];
 
-/// Every core geometry custom property, which no theme may set (ADR 0094). The window's
-/// `GEOMETRY_PROPERTIES`, whose groups say what each one sizes.
+/// Every core geometry custom property, each written by the engine from a theme's numbers
+/// (`theme::geometry::properties`) or fonts (`theme::Fonts`), never from a file's text. The
+/// window's `GEOMETRY_PROPERTIES`, whose groups say what each one sizes.
 pub const GEOMETRY: &[&str] = &[
     "--space-0",
     "--space-1",
@@ -154,6 +156,7 @@ pub const GEOMETRY: &[&str] = &[
     "--font-weight-strong",
     "--line-height-tight",
     "--line-height-body",
+    "--font-ui",
     "--font-mono",
     "--radius-sm",
     "--radius-md",
@@ -212,7 +215,8 @@ pub fn is_colour(value: &str) -> bool {
 
 /// Whether a key a theme file wrote names geometry: a property (`--space-4`), its dotted form
 /// the way a token is spelled (`space.4`, `radius.md`), or a whole group (`geometry`,
-/// `spacing`). Used to tell a theme author why the key was ignored, rather than only that it was.
+/// `spacing`). Format 1 has no geometry, and a format 1 file that names some is told where it
+/// goes, rather than only that it was not read.
 pub fn names_geometry(key: &str) -> bool {
     let dashed = if key.starts_with("--") {
         key.to_owned()

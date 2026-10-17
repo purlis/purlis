@@ -35,7 +35,7 @@ import {
   type TerminalRowId,
 } from "./terminalRows";
 import { onTextSizes, textSizes } from "./textSize";
-import { inForce, onDrawn, xtermTheme } from "./theme/theme";
+import { inForce, onDrawn, onTerminalFont, terminalFont, xtermTheme } from "./theme/theme";
 import { scrollByDistance } from "./wheel";
 import { useProjectShown } from "./projectShown";
 
@@ -161,7 +161,9 @@ export function SessionPane({
     const pane = new Terminal({
       // The machine's terminal text size (charter-app#283), 13px unless the operator changed it.
       fontSize: textSizes().terminal,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      // The theme's terminal font, or the person's in its place (#2326): the engine wrote the
+      // family list, and core's is today's.
+      fontFamily: terminalFont(),
       // The same theme the rest of the window is drawn from. It used to be two hex values
       // written out here, which were `--paper` and `--ink` spelled a second time and had
       // nothing keeping them equal — and which left the other eighteen colours a terminal
@@ -279,6 +281,17 @@ export function SessionPane({
       pane.options.fontSize = size;
       fit.fit();
     });
+    // **And so is the terminal's font** (#2326): another theme's, the person's, or a face that
+    // has just arrived. xterm measures its cells again when the family is set, so a refit
+    // follows, as for a size.
+    const unfont = onTerminalFont((family) => {
+      if (pane.options.fontFamily === family) {
+        // The same family with a face that has just arrived: its glyphs are drawn again.
+        pane.clearTextureAtlas();
+        pane.refresh(0, pane.rows - 1);
+      } else pane.options.fontFamily = family;
+      fit.fit();
+    });
     // **And so is screen-reader mode turned on or off** while it is up: `options` is xterm's
     // own way to change it on a live terminal, which builds or drops the rows it keeps.
     const unread = onScreenReaderMode((on) => {
@@ -372,6 +385,7 @@ export function SessionPane({
       undrawn();
       unfollow();
       unsize();
+      unfont();
       unread();
       watching.disconnect();
       wheeling.dispose();

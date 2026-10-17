@@ -2,26 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The core geometry: the names of the sizes every theme shares (ADR 0094).
+ * The core geometry: the names of the sizes every theme draws from (ADR 0094, ADR 0097).
  *
  * **Why this module exists.** Colour and motion were tokens with guards, and size was not: 132
  * paddings, 20 font sizes and 11 radii, each a local decision, so every view drew its own
  * controls and they drifted apart. These tokens are the one scale a view may draw from.
  *
- * **Themes own colour, shadow colour and motion; core owns geometry.** A theme is data an
- * author or an extension writes (`theme.ts`), and a theme that could move a control's height
- * could break the alignment of every view that sits on it. So geometry is not in a theme's
- * vocabulary at all. The values are written once, in `geometry.css`, in the stylesheet's
- * `theme` layer, and nothing a theme file says is ever written to one of these properties:
- * `geometry.test.ts` holds that, for the built-ins and for a theme that tries.
+ * **A theme sets them as bounded numbers, and the core writes them** (#2326). A theme gives a
+ * geometry token a number within the range the core's theme engine documents
+ * (`purlis_core::theme::geometry`), and its fonts as woff2 files in its folder; the engine writes
+ * each property here from those and hands the window the result for both densities, comfortable
+ * and compact (`theme.ts` puts the person's on the document). A value outside its bound refuses
+ * the theme, so alignment is as safe as when geometry was core's alone.
  *
- * **Density is a later user setting, not a theme property.** When it comes it swaps these
- * values for another set; a theme still never sees them.
- *
- * This list is the contract: `geometry.css` declares exactly these names, no other stylesheet
- * declares one, and `docs/design-system.md` lists every one. Values live in the CSS only, so
- * there is no second copy to drift. The core's theme engine refuses each name in a theme file
- * (`purlis_core::theme::vocabulary::GEOMETRY`, held to this list by `core.test.ts`).
+ * This list is the contract: `geometry.css` declares exactly these names, holding Purlis
+ * Classic's values, no other stylesheet declares one, and `docs/design-system.md` lists every
+ * one. The engine names the same list (`purlis_core::theme::vocabulary::GEOMETRY`, held to this
+ * one by `core.test.ts`), and its own test holds what it writes for Purlis Classic equal to
+ * `geometry.css`.
  */
 
 /** Each group of core tokens, and the custom properties in it. */
@@ -54,8 +52,9 @@ export const GEOMETRY = {
   weight: ["--font-weight-regular", "--font-weight-medium", "--font-weight-strong"],
   /** Line heights, as a share of the text's size: a compact line, and the window's own. */
   leading: ["--line-height-tight", "--line-height-body"],
-  /** The one monospace family: a command, a path, a host (`ui-text-code`). */
-  family: ["--font-mono"],
+  /** The window's own family, and the one monospace family: a command, a path, a host
+   *  (`ui-text-code`). The terminal's family is xterm's, not a property. */
+  family: ["--font-ui", "--font-mono"],
   /** Corners: 3px (checks, chips), 4px (controls), 6px (every overlay), and 8px. */
   radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-xl", "--radius-full"],
   /** One height for every control (28px) and one for every strip and pane header (21px). */
@@ -70,7 +69,7 @@ export const GEOMETRY = {
 /** Every core geometry custom property. */
 export const GEOMETRY_PROPERTIES: readonly string[] = Object.values(GEOMETRY).flat();
 
-/** Whether a custom property is core geometry, which no theme may set. */
+/** Whether a custom property is core geometry: written only from what the engine hands. */
 export function isGeometry(name: string): boolean {
   return GEOMETRY_PROPERTIES.includes(name);
 }
