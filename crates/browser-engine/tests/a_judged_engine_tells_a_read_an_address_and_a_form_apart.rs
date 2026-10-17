@@ -162,42 +162,48 @@ fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
     );
 }
 
-#[test]
-fn a_form_submitted_to_the_site_sends_whether_by_get_or_by_post() {
+/// A form on the page of ways out, typed into and submitted: it sends, and nothing reaches the
+/// other site. Each in a browser of its own.
+fn a_form_sends(field: &str, button: &str) {
     let (judge, told) = judge();
     let _one = one_engine_at_a_time();
     let Some((browser, _data, _site)) = started_judged(judge) else {
         return;
     };
-    for (field, button) in [
-        ("textbox \"Search\"", "button \"Search the other site\""),
-        ("textbox \"Note\"", "button \"Post to the other site\""),
-    ] {
-        open_the_way_out(&browser, &told);
-        let page = snapshot(&browser);
-        call(
-            &browser,
-            Call::Type {
-                page: None,
-                fields: vec![Field {
-                    into: Some(ref_on(&page, field)),
-                    text: "what was typed".into(),
-                    replace: true,
-                }],
-            },
-        );
-        let answer = call(
-            &browser,
-            Call::Click {
-                target: ref_on(&page, button),
-            },
-        );
-        assert_eq!(answer.asked, ["other.test:80"], "{button}: {answer:?}");
-        assert!(
-            !snapshot(&browser).contains("Deep button"),
-            "{button}: nothing was sent, so the other site's page did not load"
-        );
-    }
+    open_the_way_out(&browser, &told);
+    let page = snapshot(&browser);
+    call(
+        &browser,
+        Call::Type {
+            page: None,
+            fields: vec![Field {
+                into: Some(ref_on(&page, field)),
+                text: "what was typed".into(),
+                replace: true,
+            }],
+        },
+    );
+    let answer = call(
+        &browser,
+        Call::Click {
+            target: ref_on(&page, button),
+        },
+    );
+    assert_eq!(answer.asked, ["other.test:80"], "{button}: {answer:?}");
+    assert!(
+        !snapshot(&browser).contains("Deep button"),
+        "{button}: nothing was sent, so the other site's page did not load"
+    );
     let sent = told_about(&told, "http://other.test/deep.html");
-    assert_eq!(sent, [Why::Sends, Why::Sends], "{sent:?}");
+    assert_eq!(sent, [Why::Sends], "{sent:?}");
+}
+
+#[test]
+fn a_form_submitted_to_the_site_by_get_sends() {
+    a_form_sends("textbox \"Search\"", "button \"Search the other site\"");
+}
+
+#[test]
+fn a_form_submitted_to_the_site_by_post_sends() {
+    a_form_sends("textbox \"Note\"", "button \"Post to the other site\"");
 }
