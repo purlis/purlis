@@ -802,7 +802,7 @@ fn exec_starts_the_program_under_the_name_it_is_handed() {
     };
     let tmp = plane();
     let packed = {
-        let mut child = Command::new(&xz)
+        let mut child = support::command(&xz)
             .arg("-c")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
