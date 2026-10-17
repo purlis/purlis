@@ -510,7 +510,7 @@ fn statusline_only_reads_a_read_only_project() {
 
 #[test]
 fn persona_list_only_reads_a_read_only_project() {
-    only_reads(&["persona", "list"], "1 secret(s)");
+    only_reads(&["persona", "list"], "1 secret");
 }
 
 #[test]

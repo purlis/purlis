@@ -58,6 +58,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::counts::{counted, plural};
 use crate::forge::{self, Forge};
 use crate::gitstate;
 use crate::repocmd::{Say, Sink};
@@ -1058,8 +1059,9 @@ impl Held {
                 format!("the plane is on `{here}`, not its target branch `{branch}`")
             }
             Self::Ahead(n) => format!(
-                "the plane has {n} commit(s) of its own the remote lacks, and a pull only \
-                 fast-forwards"
+                "the plane has {} of its own the remote lacks, and a pull only \
+                 fast-forwards",
+                counted(*n, "commit", "commits")
             ),
             Self::Unsaved => "the tree has unsaved changes, and a pull never moves them".into(),
             Self::Refused(detail) => format!("git refused the fast-forward: {detail}"),
@@ -2751,11 +2753,11 @@ fn show_what_is_staged(root: &Path, staged: &[String], say: Sink) {
         *counts.entry(dir).or_default() += 1;
     }
     say(Say::Warn(format!(
-        "purlis save commits everything pending in {} — {} file(s) across {} \
-         directories, not only what you meant:",
+        "purlis save commits everything pending in {} — {} across {}, \
+         not only what you meant:",
         root.display(),
-        staged.len(),
-        counts.len()
+        counted(staged.len(), "file", "files"),
+        counted(counts.len(), "directory", "directories")
     )));
     // Biggest first, ties by name, so the row that explains the count is the first one read.
     let mut rows: Vec<(&String, &usize)> = counts.iter().collect();
@@ -3005,8 +3007,9 @@ fn commit_push(
             if !request.no_push && (unpushed.is_some() || pr_known) {
                 say(Say::Info(match unpushed {
                     Some(n) => format!(
-                        "Nothing new to commit — carrying on {n} commit(s) this machine has not \
-                         saved yet."
+                        "Nothing new to commit — carrying on {} this machine has not \
+                         saved yet.",
+                        counted(n, "commit", "commits")
                     ),
                     None => format!(
                         "Nothing new to commit — asking after the open {}.",
@@ -3237,8 +3240,8 @@ fn commit_push(
             format!("purlis could not sign the commit: {signer}")
         };
         say(Say::Fail(format!(
-            "{why} — {} file(s) are staged but not committed.",
-            staged.len()
+            "{why} — {} staged but not committed.",
+            files_are(staged.len())
         )));
         say(Say::Info(
             "  Fix the signer, or set sign = false under [plane], then save again.".into(),
@@ -3251,8 +3254,8 @@ fn commit_push(
     // BECAUSE there was no commit, and that was the only visible symptom.
     if still_staged(root) {
         say(Say::Fail(format!(
-            "git commit failed — {} file(s) are staged but not committed.",
-            staged.len()
+            "git commit failed — {} staged but not committed.",
+            files_are(staged.len())
         )));
         say(Say::Info(format!(
             "  Run `git -C {} status` to see why; purlis has left them staged.",
@@ -3272,9 +3275,9 @@ fn commit_push(
     // the plane's clone while the operator stood in a worktree read exactly like a commit
     // landing where they meant.
     say(Say::Done(format!(
-        "Committed {short} in {}: {msg}  ({} file(s))",
+        "Committed {short} in {}: {msg}  ({})",
         root.display(),
-        staged.len()
+        counted(staged.len(), "file", "files")
     )));
 
     carry(request, plane, sign, caller, attempt, say)
@@ -3286,6 +3289,11 @@ fn commit_push(
 /// mode counts too when the window's Save was `pressed`, or while its last push stopped and
 /// has not landed ([`retries_its_push`]): the window never answers "nothing to save" while the
 /// remote lacks commits HEAD has (qw382).
+/// `1 file is`, `3 files are`: what a failed commit left staged.
+pub(crate) fn files_are(n: usize) -> String {
+    format!("{} {}", counted(n, "file", "files"), plural(n, "is", "are"))
+}
+
 fn unpushed(root: &Path, plane: &crate::planesave::Plane, pressed: bool) -> Option<u32> {
     use crate::planesave::Mode;
     let mode = match plane.mode.value {

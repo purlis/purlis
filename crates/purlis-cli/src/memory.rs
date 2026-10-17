@@ -29,6 +29,7 @@ use purlis_core::workspaces::Plane;
 
 use crate::brokered::Named;
 use crate::voice;
+use purlis_core::counts::{counted, plural};
 
 /// A command's own exit code, as purlis's `cmd_*` functions return it.
 pub type Code = u8;
@@ -517,8 +518,9 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
         String::new()
     } else {
         format!(
-            "; {} base(s) not searched — purlis could not read them",
-            got.unread.len()
+            "; {} not searched — purlis could not read {}",
+            counted(got.unread.len(), "base", "bases"),
+            plural(got.unread.len(), "it", "them")
         )
     };
     let code = if got.unread.is_empty() { 0 } else { 1 };
@@ -569,8 +571,8 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
         ));
         if got.undated > 0 {
             voice::info(&format!(
-                "{} undated memory(ies) skipped — no recorded date to compare.",
-                got.undated
+                "{} skipped — no recorded date to compare.",
+                counted(got.undated, "undated memory", "undated memories")
             ));
         }
         return Ok(code);
@@ -612,8 +614,8 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
     }
     print!("{out}");
     voice::info(&format!(
-        "{} memory(ies) across {place}{skipped}.{}",
-        results.len(),
+        "{} across {place}{skipped}.{}",
+        counted(results.len(), "memory", "memories"),
         if args.full {
             ""
         } else {
@@ -628,15 +630,15 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
     }
     if got.undated > 0 {
         voice::info(&format!(
-            "{} undated memory(ies) skipped by --since — no recorded date.",
-            got.undated
+            "{} skipped by --since — no recorded date.",
+            counted(got.undated, "undated memory", "undated memories")
         ));
     }
     if got.undated_refs > 0 {
         voice::info(&format!(
-            "{} ref doc(s) not searched — `--since` filters by recorded date and refs carry \
+            "{} not searched — `--since` filters by recorded date and refs carry \
              none. Drop --since to include them.",
-            got.undated_refs
+            counted(got.undated_refs, "ref doc", "ref docs")
         ));
     }
     Ok(code)
@@ -828,8 +830,8 @@ pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Resul
     }
     print!("{out}");
     voice::info(&format!(
-        "{} memory(ies) in workspaces/{name}/memory/ — read one: cat workspaces/{name}/memory/<file>",
-        results.len()
+        "{} in workspaces/{name}/memory/ — read one: cat workspaces/{name}/memory/<file>",
+        counted(results.len(), "memory", "memories")
     ));
     Ok(0)
 }

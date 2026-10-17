@@ -69,6 +69,7 @@ pub(crate) use config::truthy as config_truthy;
 /// (#1369): the `project remote` row's own forge read.
 pub use remote::{Readers, readers};
 
+use crate::counts::counted;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -679,14 +680,15 @@ pub fn table(rows: &[Row], color: bool) -> String {
     let warned = rows.iter().filter(|r| r.status == Status::Warn).count();
     if !failed.is_empty() {
         out.push_str(&format!(
-            "\u{2717} {} blocker(s): {}. Fix the \u{2192} hints above, then re-run `purlis \
+            "\u{2717} {}: {}. Fix the \u{2192} hints above, then re-run `purlis \
              doctor`.\n",
-            failed.len(),
+            counted(failed.len(), "blocker", "blockers"),
             failed.join(", ")
         ));
     } else if warned > 0 {
         out.push_str(&format!(
-            "! {warned} optional item(s) pending \u{2014} see hints above.\n"
+            "! {} pending \u{2014} see hints above.\n",
+            counted(warned, "optional item", "optional items")
         ));
     } else {
         out.push_str("\u{2713} All set \u{2014} you can discover and clone repos.\n");

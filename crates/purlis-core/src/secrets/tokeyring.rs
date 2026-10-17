@@ -157,12 +157,12 @@ fn clear_an_old_index(ctx: &Ctx, held: &Vault) -> Result<(), VaultError> {
     let old = keyring::load_index(ctx, held)?;
     if !old.keys.is_empty() {
         return Err(VaultError::new(format!(
-            "a keychain vault called '{}' was here before, and its index {} still lists {} \
-             item(s). Nothing was moved: remove that index if those items are not wanted, or \
+            "a keychain vault called '{}' was here before, and its index {} still lists {}. \
+             Nothing was moved: remove that index if those items are not wanted, or \
              rename this vault first",
             held.name,
             super::short_path(&ctx.root, &at),
-            old.keys.len()
+            crate::counts::counted(old.keys.len(), "item", "items")
         )));
     }
     std::fs::remove_file(&at).map_err(|e| {

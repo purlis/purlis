@@ -34,6 +34,7 @@
 use std::path::Path;
 
 use crate::active::Ids;
+use crate::counts::counted;
 use crate::repocmd::{Say, Sink};
 
 /// How far a selection reaches — `set_active`'s return.
@@ -278,8 +279,8 @@ fn say_tool_ceiling(root: &Path, name: &str, sid: Option<&str>, say: Sink) {
         return;
     }
     say(Say::Info(format!(
-        "  {} tool(s) declared since this session started: {}.",
-        added.len(),
+        "  {} declared since this session started: {}.",
+        counted(added.len(), "tool", "tools"),
         added.join(", ")
     )));
     say(Say::Info(
@@ -301,8 +302,8 @@ fn say_mcp_boundary(root: &Path, name: &str, say: Sink) {
     let mut names: Vec<&String> = servers.keys().collect();
     names.sort();
     say(Say::Info(format!(
-        "  {} MCP server(s) declared: {}.",
-        names.len(),
+        "  {} declared: {}.",
+        counted(names.len(), "MCP server", "MCP servers"),
         names
             .iter()
             .map(|s| s.as_str())
@@ -569,12 +570,12 @@ mod tests {
             heard.err,
             "✓ Active persona set to 'ops' for this session only — this terminal reports no \
              pane id, so a new session starts as 'steward'.\n\
-             •   1 tool(s) declared since this session started: kubectl.\n\
+             •   1 tool declared since this session started: kubectl.\n\
              •   Those still prompt HERE. The tool-gate answers within the set that existed at \
              session start — `tools:` is read from a file this session can write, and freezing \
              it is what stops an edit from becoming an unprompted command. A new session picks \
              them up.\n\
-             •   3 MCP server(s) declared: grafana, gsc, status.\n\
+             •   3 MCP servers declared: grafana, gsc, status.\n\
              •   They are NOT started for the session you are in, and servers already live here \
              (from .mcp.json or an enabled plugin) stay live. A chat started as this persona \
              is started with them, on Claude Code, once a person has approved the ones that \

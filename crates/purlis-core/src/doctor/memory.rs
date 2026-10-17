@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use super::fsx::{self, Unread};
 use super::{Doctor, Row, Status};
+use crate::counts::counted;
 
 /// An index this long is worth curating. Not a truncation — the SessionStart digest is
 /// bounded anyway — a nudge.
@@ -213,7 +214,10 @@ pub(super) fn memory_indexes(d: &Doctor) -> Row {
     if !refused.is_empty() {
         return row(
             Status::Warn,
-            format!("{} index(es) purlis will not touch", refused.len()),
+            format!(
+                "{} purlis will not touch",
+                counted(refused.len(), "index", "indexes")
+            ),
             format!(
                 "{}  → this is a defect in a committed file: replace the link with a real \
                  MEMORY.md",
@@ -224,7 +228,10 @@ pub(super) fn memory_indexes(d: &Doctor) -> Row {
     if worst.is_empty() && large.is_empty() {
         return row(
             Status::Ok,
-            format!("{} base(s) consistent", bases.len() - unread_bases),
+            format!(
+                "{} consistent",
+                counted(bases.len() - unread_bases, "base", "bases")
+            ),
             String::new(),
         );
     }
@@ -253,7 +260,7 @@ pub(super) fn memory_indexes(d: &Doctor) -> Row {
     if worst.is_empty() {
         return row(
             Status::Warn,
-            format!("{} large index(es)", large.len()),
+            counted(large.len(), "large index", "large indexes"),
             hint,
         );
     }

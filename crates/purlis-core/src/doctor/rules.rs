@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::{Doctor, Row, canonical, memory};
+use crate::counts::{counted, plural};
 use crate::guardcmd;
 use crate::scaffold::settings;
 
@@ -166,8 +167,9 @@ pub(super) fn ask_rules(d: &Doctor) -> Row {
                 .join(", ")
         };
         details.push(format!(
-            "{} prompt(s) despite being declared by {}",
+            "{} {} despite being declared by {}",
             show(hit.iter().collect()),
+            plural(hit.len(), "prompts", "prompt"),
             show(who.into_iter().collect())
         ));
         hints.push(
@@ -185,7 +187,10 @@ pub(super) fn ask_rules(d: &Doctor) -> Row {
     }
     Row::ok(
         NAME,
-        format!("{} rule(s), none shadow a persona tool", rules.len()),
+        format!(
+            "{}, none shadow a persona tool",
+            counted(rules.len(), "rule", "rules")
+        ),
     )
 }
 
@@ -258,7 +263,9 @@ pub(super) fn handoff_gate(d: &Doctor) -> Row {
         String::new()
     } else {
         format!(
-            "\n        \u{21b3} your own rule(s) stay, and your harness decides by them: {}",
+            "\n        \u{21b3} your own {}, and your harness decides by {}: {}",
+            plural(found.left.len(), "rule stays", "rules stay"),
+            plural(found.left.len(), "it", "them"),
             super::one_line(&listed(&found.left), 1024)
         )
     };

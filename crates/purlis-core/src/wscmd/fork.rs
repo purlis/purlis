@@ -61,6 +61,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::counts::{counted, plural};
 use crate::repocmd::{Say, Sink};
 use crate::wscmd::{self, ensure};
 
@@ -290,7 +291,8 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
             .map(|it| format!("{it}/"))
             .collect();
         say(Say::Info(format!(
-            "Carried the folder(s) extensions keep in '{src}': {}",
+            "Carried the {} extensions keep in '{src}': {}",
+            plural(folders.len(), "folder", "folders"),
             folders.join(", ")
         )));
     }
@@ -299,8 +301,9 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
         // Said out loud because the two lists are independent from here: whoever forked now
         // owns a second copy of this intent, not a view of the first.
         say(Say::Info(format!(
-            "Inherited {inherited} open todo(s) from '{src}' — the fork's own list now: purlis \
-             ws todo --workspace {new}"
+            "Inherited {} from '{src}' — the fork's own list now: purlis \
+             ws todo --workspace {new}",
+            counted(inherited, "open todo", "open todos")
         )));
     }
     // Which source each repo came from. A snapshot promises its branch was pushed; a clone
@@ -323,8 +326,8 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
         // fork that inherited everything and could not clone one repo is not reported as a
         // fork that lost context.
         say(Say::Info(format!(
-            "Cloning {} inherited repo(s)…",
-            repos.len()
+            "Cloning {}…",
+            counted(repos.len(), "inherited repo", "inherited repos")
         )));
         // Python's `restore(...) or int(bool(missed))`: the restore's own failure first, and
         // the unread-context exit only where the restore itself went fine.
@@ -336,9 +339,9 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
         };
     } else if !repos.is_empty() {
         say(Say::Info(format!(
-            "Clone its {} inherited repo(s): purlis workspace restore {new}  (or re-run fork \
+            "Clone its {}: purlis workspace restore {new}  (or re-run fork \
              with --restore).",
-            repos.len()
+            counted(repos.len(), "inherited repo", "inherited repos")
         )));
     } else {
         say(Say::Info(format!(
@@ -635,7 +638,7 @@ mod tests {
         let todos = std::fs::read_to_string(gamma.join("todos/MEMORY.md")).unwrap();
         assert!(todos.contains("Write the migration"), "{todos}");
         assert!(
-            lines.iter().any(|l| l.contains("Inherited 1 open todo(s)")),
+            lines.iter().any(|l| l.contains("Inherited 1 open todo")),
             "{lines:?}"
         );
     }
@@ -675,7 +678,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|l| l.contains("Carried the folder(s) extensions keep in 'alpha': notes/")),
+                .any(|l| l.contains("Carried the folder extensions keep in 'alpha': notes/")),
             "{lines:?}"
         );
     }

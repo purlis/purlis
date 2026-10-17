@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use super::{DISPLAY_LIMIT, Doctor, NOT_CHECKED_HINT, Row, SettingsGroup};
+use crate::counts::counted as counted_noun;
 use crate::profiles::{self, IgnoreCheck, Profile, Source};
 use crate::shown;
 use crate::wiring::{self, State};
@@ -77,7 +78,10 @@ pub(super) fn harness_profiles(d: &Doctor) -> Row {
     }
     Row::ok(
         NAME,
-        format!("{} profile(s): {names}", set.profiles().len()),
+        format!(
+            "{}: {names}",
+            counted_noun(set.profiles().len(), "profile", "profiles")
+        ),
     )
 }
 

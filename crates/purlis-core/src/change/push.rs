@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use super::cmd::{REFUSED, load, named, workspace_ok};
 use super::record::{Record, TEXT_LIMIT};
+use crate::counts::counted;
 use crate::forge::pr::{Pr, Repo, State};
 use crate::forge::{self, Caller, ForgeBackend};
 use crate::names::{CHANGE_BLOCK_BEGIN, CHANGE_BLOCK_END};
@@ -610,8 +611,8 @@ fn pushing(
     let w = tui::column("", names.iter().map(String::as_str), 0, None);
     if !plans.is_empty() {
         say(Say::Info(format!(
-            "Pushing {} member(s) of {}. Nothing is committed and nothing is forced:",
-            plans.len(),
+            "Pushing {} of {}. Nothing is committed and nothing is forced:",
+            counted(plans.len(), "member", "members"),
             named(slug)
         )));
     }
@@ -760,12 +761,14 @@ fn pushing(
     }
     if written > 0 {
         say(Say::Done(format!(
-            "cross-link block written into {written} request description(s)"
+            "cross-link block written into {}",
+            counted(written, "request description", "request descriptions")
         )));
     }
     if current > 0 {
         say(Say::Info(format!(
-            "cross-link block already current in {current} request description(s)"
+            "cross-link block already current in {}",
+            counted(current, "request description", "request descriptions")
         )));
     }
     // 1 when any member was not pushed, opened or written, as the Python charter answered:

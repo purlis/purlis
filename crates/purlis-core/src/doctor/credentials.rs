@@ -25,6 +25,7 @@
 //! `vault files` row's question, and whether the registry can be read is `vault registry`'s.
 
 use super::{Doctor, Row};
+use crate::counts::{counted, plural};
 use crate::secrets::keyring::{self, Presence};
 use crate::secrets::registry::{self, Vault};
 use crate::secrets::{Ctx, Env, plain_file};
@@ -150,7 +151,8 @@ fn keyring_items(ctx: &Ctx, vault: &Vault, ask_keyring: bool) -> Said {
     let count = index.keys.len();
     if !ask_keyring {
         return Said::fine(format!(
-            "{count} key(s) in its index; the preflight asks the keyring nothing"
+            "{} in its index; the preflight asks the keyring nothing",
+            counted(count, "key", "keys")
         ));
     }
     let store = keyring::store(ctx);
@@ -164,20 +166,25 @@ fn keyring_items(ctx: &Ctx, vault: &Vault, ask_keyring: bool) -> Said {
     }
     if !absent.is_empty() {
         return Said::act(format!(
-            "{} of {count} key(s) its index lists have no item in {}: {}",
+            "{} of {} its index lists {} no item in {}: {}",
             absent.len(),
+            counted(count, "key", "keys"),
+            plural(absent.len(), "has", "have"),
             keyring::STORE_NAME,
             absent.join(", ")
         ));
     }
     if unknown > 0 {
         return Said::fine(format!(
-            "{count} key(s) in its index, {present} item(s) found; {unknown} not asked, because \
-             this keyring cannot say whether it holds an item without reading its value"
+            "{} in its index, {} found; {unknown} not asked, because \
+             this keyring cannot say whether it holds an item without reading its value",
+            counted(count, "key", "keys"),
+            counted(present, "item", "items")
         ));
     }
     Said::fine(format!(
-        "{count} key(s) in its index, each with its item in {}",
+        "{} in its index, each with its item in {}",
+        counted(count, "key", "keys"),
         keyring::STORE_NAME
     ))
 }

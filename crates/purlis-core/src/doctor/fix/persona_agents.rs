@@ -54,6 +54,7 @@ use std::path::Path;
 use crate::personaverbs::retired::{self, Authorship};
 
 use super::Fixed;
+use crate::counts::{counted, plural};
 
 /// Claude Code's names for a sub-agent colour that purlis's palette spells otherwise.
 const COLOURS: [(&str, &str); 2] = [("cyan", "teal"), ("magenta", "pink")];
@@ -139,10 +140,15 @@ pub fn apply_with(root: &Path, facts: &Facts<'_>) -> Fixed {
             .to_owned()
     } else {
         format!(
-            "✓ removed {} generated sub-agent file(s) and rewrote {} persona key(s). Nothing \
+            "✓ removed {} and rewrote {}. Nothing \
              is committed: the change is in the working tree for the project's next save. To \
              take it back before then: `git restore -- .claude/agents personas`.",
-            work.removed, work.rewritten
+            counted(
+                work.removed,
+                "generated sub-agent file",
+                "generated sub-agent files"
+            ),
+            counted(work.rewritten, "persona key", "persona keys")
         )
     };
     work.said.push(summary);
@@ -413,10 +419,12 @@ fn agent_memory(root: &Path, work: &mut Work) {
     for (name, files) in stores {
         let name = crate::shown::short(&name);
         work.said.push(format!(
-            "• .claude/agent-memory/{name}/ holds {files} file(s) the harness kept for the \
-             `{name}` sub-agent. Nothing reads them now. Move what is worth keeping into the \
+            "• .claude/agent-memory/{name}/ holds {} the harness kept for the \
+             `{name}` sub-agent. Nothing reads {} now. Move what is worth keeping into the \
              persona's own memory with `purlis persona remember {name} \"<fact>\"`; the folder \
-             is left as it is."
+             is left as it is.",
+            counted(files, "file", "files"),
+            plural(files, "it", "them")
         ));
     }
 }
@@ -464,15 +472,18 @@ fn leftovers(root: &Path, work: &mut Work) {
         }
         if kept {
             work.said.push(format!(
-                "• left alone {}: it holds something purlis did not write there. Its {records} \
-                 record file(s) were removed.",
-                shown(INFLIGHT, true)
+                "• left alone {}: it holds something purlis did not write there. Its {} \
+                 {} removed.",
+                shown(INFLIGHT, true),
+                counted(records, "record file", "record files"),
+                plural(records, "was", "were")
             ));
         } else if std::fs::remove_dir(&dir).is_ok() {
             work.said.push(format!(
-                "✓ removed {} ({records} file(s)): the record of sub-agents in flight, which \
+                "✓ removed {} ({}): the record of sub-agents in flight, which \
                  nothing reads now.",
-                shown(INFLIGHT, true)
+                shown(INFLIGHT, true),
+                counted(records, "file", "files")
             ));
         }
         if records > 0 || !kept {

@@ -30,6 +30,7 @@ use serde_json::Value;
 
 use super::{Say, Sink, banner, submodules};
 use crate::contain;
+use crate::counts::counted;
 use crate::forge::{self, Forge, py_str};
 use crate::guest::{self, Hidden, Status};
 use crate::inventory;
@@ -134,8 +135,8 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
 
     if targets.len() > 1 {
         say(Say::Info(format!(
-            "Cloning {} repo(s) into '{ws}', {} at a time …",
-            targets.len(),
+            "Cloning {} into '{ws}', {} at a time …",
+            counted(targets.len(), "repo", "repos"),
             WORKERS.min(targets.len())
         )));
     }
@@ -544,10 +545,10 @@ fn wire(root: &Path, ws: &str, say: Sink) {
         if wrote > 0 {
             // The files, and the exclude block that hides them: Python counts both.
             say(Say::Info(format!(
-                "{label}: purlis's layer written ({} file(s)) and hidden in that repo's \
+                "{label}: purlis's layer written ({}) and hidden in that repo's \
                  .git/info/exclude — `git status` there is unaffected, and nothing purlis wrote \
                  can be committed.",
-                wrote + 1
+                counted(wrote + 1, "file", "files")
             )));
         }
     }

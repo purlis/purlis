@@ -41,7 +41,9 @@ mod old_names;
 use old_names::{old_spellings, spells};
 
 mod shipped_literals;
-use shipped_literals::{FIXTURE_FILES, FIXTURES, TestMod, is_fixture_path, outside_tests, repo, shipped};
+use shipped_literals::{
+    FIXTURE_FILES, FIXTURES, TestMod, is_fixture_path, outside_tests, repo, shipped,
+};
 
 /// Why a shipped file may still spell an old name. Each is a ticket that removes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -53,6 +53,7 @@ use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::counts::{counted, plural};
 use crate::names;
 use crate::repocmd::{Say, Sink};
 
@@ -439,7 +440,11 @@ pub fn work_at_risk(root: &Path, ws: &str) -> Vec<AtRisk> {
             // of" anything, and charter does not call a fresh local branch work at risk.
             Ok(state) if state.upstream.is_some() && state.ahead > 0 => out.push(AtRisk {
                 what: repo.name.clone(),
-                said: format!("{}: {} unpushed commit(s)", repo.name, state.ahead),
+                said: format!(
+                    "{}: {}",
+                    repo.name,
+                    counted(state.ahead, "unpushed commit", "unpushed commits")
+                ),
             }),
             Ok(_) => {}
         }
@@ -517,7 +522,11 @@ fn worktrees_at_risk(root: &Path, ws: &str, repos: &[crate::repos::Repo]) -> Vec
                 Some(0) => {}
                 Some(alone) => out.push(AtRisk {
                     what: label.clone(),
-                    said: format!("{label}: {alone} commit(s) that exist nowhere else"),
+                    said: format!(
+                        "{label}: {} that {} nowhere else",
+                        counted(alone, "commit", "commits"),
+                        plural(alone, "exists", "exist")
+                    ),
                 }),
             }
             // What git keeps for the folder alone, which `wt remove` refuses over too (#1472):
@@ -565,7 +574,11 @@ pub fn restore_blockers(root: &Path, ws: &str) -> Vec<String> {
                 branch_word(&state.head)
             )),
             Ok(state) if state.ahead > 0 => {
-                out.push(format!("{}: {} unpushed commit(s)", repo.name, state.ahead));
+                out.push(format!(
+                    "{}: {}",
+                    repo.name,
+                    counted(state.ahead, "unpushed commit", "unpushed commits")
+                ));
             }
             Ok(_) => {}
         }

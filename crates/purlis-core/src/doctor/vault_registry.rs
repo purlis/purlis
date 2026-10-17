@@ -18,6 +18,7 @@
 use serde_json::{Map, Value};
 
 use super::{Doctor, Row};
+use crate::counts::counted;
 use crate::secrets::registry;
 use crate::secrets::{Ctx, Env};
 
@@ -71,8 +72,8 @@ pub(super) fn row_for(ctx: &Ctx) -> Row {
         "no vaults registered".to_owned()
     } else {
         format!(
-            "{} vault(s) registered: {}",
-            usable.len(),
+            "{} registered: {}",
+            counted(usable.len(), "vault", "vaults"),
             usable.join(", ")
         )
     };
@@ -145,7 +146,7 @@ mod tests {
         assert_eq!(row.status, Status::Ok, "{row:?}");
         assert_eq!(
             row.detail,
-            "2 vault(s) registered: 'box' (keyring), 'home' (plain-file)"
+            "2 vaults registered: 'box' (keyring), 'home' (plain-file)"
         );
         assert!(!row.detail.contains("never-printed-994a"));
         assert!(!row.deferred());
@@ -163,7 +164,7 @@ mod tests {
         assert!(
             row.detail.starts_with(
                 "1 entry no command can use: 'odd' (vault 'odd' uses unknown provider \
-                 'carrier-pigeon'); 1 vault(s) registered: 'good' (keyring)"
+                 'carrier-pigeon'); 1 vault registered: 'good' (keyring)"
             ),
             "{}",
             row.detail

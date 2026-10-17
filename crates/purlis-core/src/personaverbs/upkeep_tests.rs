@@ -195,9 +195,9 @@ fn optimize_without_apply_changes_nothing_and_names_what_apply_would_do() {
     assert_eq!((rc, changed), (0, 0));
     assert!(
         heard.out.starts_with(
-            "\n◆ devops  (2 memories · 0% verified · 1 exact-dup group(s) · 0 near-dup pair(s) · \
+            "\n◆ devops  (2 memories · 0% verified · 1 exact-dup group · 0 near-dup pairs · \
              0 stale)\n  would auto-apply (re-run with --apply):\n    + collapse 1 exact-duplicate \
-             group(s)"
+             group"
         ),
         "{}",
         heard.out
@@ -223,13 +223,9 @@ fn optimize_with_no_name_curates_every_persona_and_the_shared_store() {
     let plane = Plane::fixture("daily");
     let (rc, _, heard) = optimize_on(&plane, None, false);
     assert_eq!(rc, 0);
+    assert!(heard.out.contains("\n◆ devops  (1 memory"), "{}", heard.out);
     assert!(
-        heard.out.contains("\n◆ devops  (1 memories"),
-        "{}",
-        heard.out
-    );
-    assert!(
-        heard.out.contains("\n◆ _shared  (1 memories"),
+        heard.out.contains("\n◆ _shared  (1 memory"),
         "{}",
         heard.out
     );

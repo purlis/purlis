@@ -346,7 +346,7 @@ describe("the Fix button", () => {
   }
 
   const missing = row("schema", "warn", {
-    detail: "1 issue(s): missing directory: personas/",
+    detail: "1 issue: missing directory: personas/",
     fix: "reinit",
   });
   const clean = row("schema", "ok", { detail: "up to date (schema 1)" });

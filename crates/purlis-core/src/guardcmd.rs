@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::counts::{counted, plural};
 use crate::harness::{Harness, HarnessAdapter};
 use crate::scaffold::settings::{self, Wrote};
 
@@ -399,16 +400,18 @@ pub(crate) fn mirror(root: &Path) -> String {
     }
     if !unread.is_empty() {
         out.push_str(&format!(
-            "! {} workspace director(ies) could not be read, so the rule was not carried into \
-             them.\n",
-            unread.len()
+            "! {} could not be read, so the rule was not carried into \
+             {}.\n",
+            counted(unread.len(), "workspace directory", "workspace directories"),
+            plural(unread.len(), "it", "them")
         ));
     }
     if carried.is_empty() {
         return out;
     }
     format!(
-        "  Carried into the generated settings of workspace(s) {}.\n{out}",
+        "  Carried into the generated settings of {} {}.\n{out}",
+        plural(carried.len(), "workspace", "workspaces"),
         carried.join(", ")
     )
 }

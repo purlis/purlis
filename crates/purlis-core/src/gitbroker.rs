@@ -32,6 +32,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::counts::plural;
 use crate::hookwire::{Answer, GitAsk, GitWork};
 use crate::pieces::Who;
 use crate::repocmd::{self, Say};
@@ -440,7 +441,9 @@ pub fn fitted(lines: Vec<Say>, budget: usize) -> Vec<Say> {
     let mut cut = 0;
     let note = |cut: usize| {
         Say::Warn(format!(
-            "{cut} more line(s) were cut here to fit the app's answer; the app's log has the run"
+            "{} more {} cut here to fit the app's answer; the app's log has the run",
+            cut,
+            plural(cut, "line was", "lines were")
         ))
     };
     while !kept.is_empty() && size(&[kept.as_slice(), &[note(cut + 1)]].concat()) > budget {

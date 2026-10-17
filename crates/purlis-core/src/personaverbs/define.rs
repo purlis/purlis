@@ -36,6 +36,7 @@
 use std::path::Path;
 
 use crate::active::Ids;
+use crate::counts::{counted, plural};
 use crate::repocmd::{Say, Sink};
 
 /// What `charter persona create` was asked for.
@@ -294,10 +295,10 @@ fn say_revived(name: &str, revived: crate::active::Pointers, say: Sink) {
     } = revived;
     let mut rungs = Vec::new();
     if sessions > 0 {
-        rungs.push(format!("{sessions} session pointer(s)"));
+        rungs.push(counted(sessions, "session pointer", "session pointers"));
     }
     if terminals > 0 {
-        rungs.push(format!("{terminals} terminal pointer(s)"));
+        rungs.push(counted(terminals, "terminal pointer", "terminal pointers"));
     }
     if active_file {
         rungs.push("the plane-wide .charter/active-persona".to_string());
@@ -306,9 +307,18 @@ fn say_revived(name: &str, revived: crate::active::Pointers, say: Sink) {
         return;
     }
     say(Say::Warn(format!(
-        "{} selection(s) already named '{name}' before it existed, and now select it: {}. \
+        "{} already named '{name}' before it existed, and now {} it: {}. \
          Nobody chose it again: those sessions and terminals now resolve to this persona.",
-        sessions + terminals + usize::from(active_file),
+        counted(
+            sessions + terminals + usize::from(active_file),
+            "selection",
+            "selections"
+        ),
+        plural(
+            sessions + terminals + usize::from(active_file),
+            "selects",
+            "select"
+        ),
         rungs.join(", ")
     )));
 }

@@ -45,6 +45,7 @@ use super::git::git_in;
 use super::{Doctor, Row};
 use crate::change::pending::{self, At, Stage};
 use crate::change::{Record, land, landing, store};
+use crate::counts::{counted, plural};
 use crate::shown;
 
 const NAME: &str = "changes";
@@ -87,7 +88,11 @@ pub(super) fn changes(d: &Doctor) -> Row {
     let row = if !unreadable.is_empty() {
         Row::fail(
             NAME,
-            format!("unreadable record(s): {}", first_few(&unreadable)),
+            format!(
+                "{}: {}",
+                plural(unreadable.len(), "unreadable record", "unreadable records"),
+                first_few(&unreadable)
+            ),
             "Fix the file the message names — the key set is closed at both ends, so an unknown \
              or missing key is named rather than ignored. `purlis change list` prints the same \
              complaint.",
@@ -102,7 +107,10 @@ pub(super) fn changes(d: &Doctor) -> Row {
     } else if total == 0 {
         Row::ok(NAME, "none")
     } else {
-        Row::ok(NAME, format!("{total} change(s), none divergent"))
+        Row::ok(
+            NAME,
+            format!("{}, none divergent", counted(total, "change", "changes")),
+        )
     };
     fsx::beside_unread(root, row, &unseen)
 }

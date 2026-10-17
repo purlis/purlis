@@ -19,7 +19,8 @@ use std::path::{Path, PathBuf};
 /// * a file a `#[cfg(test)]` (or `#[cfg(all(test, …))]`) `mod name;` brings in;
 /// * an item — a module, a function — under such an attribute, inside any file;
 /// * the files named in [`FIXTURE_FILES`].
-pub const FIXTURES: &str = "tests/, *tests.rs, tests_*.rs, cfg(test) modules and items, FIXTURE_FILES";
+pub const FIXTURES: &str =
+    "tests/, *tests.rs, tests_*.rs, cfg(test) modules and items, FIXTURE_FILES";
 
 /// Whole files, or folders (ending in `/`), that are test fixtures without matching a shape
 /// in [`FIXTURES`], and why.
@@ -27,7 +28,6 @@ pub const FIXTURE_FILES: &[(&str, &str)] = &[(
     "crates/extension-probe/",
     "the extension the tests install to prove each capability; never shipped (its lib.rs)",
 )];
-
 
 /// A module a test-only attribute brings in from another file: its name and any `#[path]`.
 pub type TestMod = (String, Option<String>);
@@ -305,7 +305,6 @@ pub fn attr_end(b: &[u8], from: usize) -> Option<usize> {
     None
 }
 
-
 /// The literals in `src` outside test-only items, and the test-only module files `src`
 /// brings in.
 pub fn outside_tests(src: &str) -> (Vec<Literal>, Vec<TestMod>) {
@@ -403,4 +402,3 @@ pub fn is_fixture_path(rel: &str) -> bool {
             .iter()
             .any(|(f, _)| *f == rel || (f.ends_with('/') && rel.starts_with(f)))
 }
-

@@ -93,6 +93,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::counts::{counted, plural};
 use crate::harness::Harness;
 use crate::repocmd::{Say, Sink};
 use crate::wscmd;
@@ -712,9 +713,12 @@ fn finish(request: &Request, say: Sink) -> u8 {
     say(Say::Done(format!("Renamed workspace '{old}' to '{new}'.")));
     if links_left_behind > 0 {
         say(Say::Warn(format!(
-            "The work links to {links_left_behind} todo(s) of '{new}' still resolve under \
+            "The work {} to {} of '{new}' still {} under \
              '{old}': it was called '{new}' before, and an alias back to a name a key left \
-             would close a cycle."
+             would close a cycle.",
+            plural(links_left_behind, "link", "links"),
+            counted(links_left_behind, "todo", "todos"),
+            plural(links_left_behind, "resolves", "resolve")
         )));
     }
     if grants_left > 0 {

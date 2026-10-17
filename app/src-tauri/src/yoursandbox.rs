@@ -40,13 +40,13 @@ fn listed(plain: Vec<tokeyring::PlainFile>) -> Vec<PlainFileVault> {
 fn said(name: &str, moved: &tokeyring::Moved) -> String {
     match &moved.file_kept {
         None => format!(
-            "Moved {name} into the keychain: {} secret(s), and its file is gone.",
-            moved.secrets
+            "Moved {name} into the keychain: {}, and its file is gone.",
+            purlis_core::counts::counted(moved.secrets, "secret", "secrets")
         ),
         Some(file) => format!(
-            "Moved {name} into the keychain: {} secret(s). Its old file at {file} could not be \
+            "Moved {name} into the keychain: {}. Its old file at {file} could not be \
              removed, and it still holds the values: remove it yourself.",
-            moved.secrets
+            purlis_core::counts::counted(moved.secrets, "secret", "secrets")
         ),
     }
 }

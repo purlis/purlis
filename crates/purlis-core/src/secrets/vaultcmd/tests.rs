@@ -485,7 +485,7 @@ fn list_is_a_table_whose_status_never_holds_a_value() {
         "-----  ----------  -----------------------  -----  ------"
     );
     assert!(
-        lines[2].starts_with("aa     plain-file  —                        local  1 secret(s)"),
+        lines[2].starts_with("aa     plain-file  —                        local  1 secret"),
         "{out}"
     );
     assert_eq!(
@@ -512,12 +512,12 @@ fn verify_resolves_every_key_and_says_how_many() {
     plane.plain("e", json!({}));
     let mut io = Rec::default();
     assert_eq!(verify(&plane.ctx, Some("p"), &mut io), 0);
-    assert_eq!(io.said(), "ok: p: 2 reference(s) resolved");
+    assert_eq!(io.said(), "ok: p: 2 references resolved");
     let mut io = Rec::default();
     assert_eq!(verify(&plane.ctx, None, &mut io), 0);
     let said = io.said();
     assert!(said.contains("info: e: no references to verify"), "{said}");
-    assert!(said.contains("ok: p: 2 reference(s) resolved"), "{said}");
+    assert!(said.contains("ok: p: 2 references resolved"), "{said}");
 }
 
 #[test]
@@ -536,7 +536,7 @@ fn verify_names_each_reference_that_does_not_resolve_and_fails() {
     assert_eq!(verify(&plane.ctx, Some("r"), &mut io), 1);
     let said = io.said();
     assert!(
-        said.starts_with("err: r: 2 of 2 reference(s) did NOT resolve"),
+        said.starts_with("err: r: 2 of 2 references did NOT resolve"),
         "{said}"
     );
     assert!(
@@ -566,7 +566,7 @@ fn verify_of_a_vault_that_cannot_be_listed_fails_on_it_whole() {
     assert_eq!(verify(&plane.ctx, Some("p"), &mut io), 1);
     assert!(
         io.said()
-            .starts_with("err: p: 1 of 1 reference(s) did NOT resolve"),
+            .starts_with("err: p: 1 of 1 reference did NOT resolve"),
         "{}",
         io.said()
     );

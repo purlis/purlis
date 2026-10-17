@@ -37,6 +37,7 @@ use serde_json::{Map, Value};
 use crate::harness::Harness;
 
 use super::mcp;
+use crate::counts::plural;
 
 /// The command a person approves a persona's credentialed servers with.
 pub const APPROVE: &str = "purlis persona approve-mcp";
@@ -221,11 +222,13 @@ pub fn told(root: &Path, state: &Path, persona: &str, harness: Option<Harness>) 
         return out;
     }
     if !servers.withheld.is_empty() {
+        let n = servers.withheld.len();
         out.push(format!(
-            "This persona's MCP server(s) {} were not started: each is handed a credential \
-             from the persona's vault, and nobody has approved that on this machine. Their \
-             tools are not here. Tell the operator, who approves them in a terminal with \
-             `{APPROVE} --persona {}`; a new chat then starts with them.",
+            "This persona's MCP {} {} {} not started: {} handed a credential \
+             from the persona's vault, and nobody has approved that on this machine. {} \
+             tools are not here. Tell the operator, who approves {} in a terminal with \
+             `{APPROVE} --persona {}`; a new chat then starts with {}.",
+            plural(n, "server", "servers"),
             list(
                 servers
                     .withheld
@@ -233,14 +236,22 @@ pub fn told(root: &Path, state: &Path, persona: &str, harness: Option<Harness>) 
                     .map(|(name, _)| name.as_str())
                     .collect()
             ),
-            crate::shown::short(persona)
+            plural(n, "was", "were"),
+            plural(n, "it is", "each is"),
+            plural(n, "Its", "Their"),
+            plural(n, "it", "them"),
+            crate::shown::short(persona),
+            plural(n, "it", "them")
         ));
     }
     if !servers.refused.is_empty() {
+        let n = servers.refused.len();
         out.push(format!(
-            "This persona's MCP server(s) {} were not started: the name is one purlis refuses \
+            "This persona's MCP {} {} {} not started: the name is one purlis refuses \
              (`purlis persona lint` says why).",
-            list(servers.refused.iter().map(String::as_str).collect())
+            plural(n, "server", "servers"),
+            list(servers.refused.iter().map(String::as_str).collect()),
+            plural(n, "was", "were")
         ));
     }
     out

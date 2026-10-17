@@ -30,7 +30,7 @@ function contents(secrets: VaultSecret[], over: Partial<VaultContents> = {}): Va
     name: "ops",
     provider: "keyring",
     count: secrets.length,
-    health: { ok: true, detail: `${secrets.length} secret(s) in the system keyring` },
+    health: { ok: true, detail: `${secrets.length} ${secrets.length === 1 ? "secret" : "secrets"} in the system keyring` },
     secrets,
     refused: null,
     identity_unset_elsewhere: [],

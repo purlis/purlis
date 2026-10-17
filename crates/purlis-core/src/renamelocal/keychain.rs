@@ -55,6 +55,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{Entry, Local, Moved, Seams, Waiting, write_entry};
+use crate::counts::counted;
 use crate::names::KEYCHAIN_PREFIX;
 use crate::secrets::keyring::{self, Held, Store};
 use crate::secrets::registry::{self, Vault};
@@ -563,14 +564,15 @@ pub(super) fn hold_again(
                 }
                 if again.held == again.keys {
                     moved.done(format!(
-                        "{what}: {} secret(s) held again by {own}",
-                        again.keys
+                        "{what}: {} held again by {own}",
+                        counted(again.keys, "secret", "secrets")
                     ));
                 } else if again.would_ask == 0 && again.failed.is_empty() {
                     moved.note(format!(
-                        "{what}: {} of {} secret(s) held again by {own}; the others are held \
+                        "{what}: {} of {} held again by {own}; the others are held \
                          again the next time they are read",
-                        again.held, again.keys
+                        again.held,
+                        counted(again.keys, "secret", "secrets")
                     ));
                 }
             }
@@ -686,8 +688,9 @@ impl Copy<'_> {
         };
         match keyring::switch_service(ctx, vault, from, &to, keys) {
             Ok(true) => moved.done(format!(
-                "{what}: {count} secret(s) copied to {to}, each read back the same, and read \
-                 from there now; the items under {from} are kept"
+                "{what}: {} copied to {to}, each read back the same, and read \
+                 from there now; the items under {from} are kept",
+                counted(count, "secret", "secrets")
             )),
             Ok(false) => moved.failed(format!(
                 "{what}: its keys index changed while it was copied; {stays}, and the next run \
