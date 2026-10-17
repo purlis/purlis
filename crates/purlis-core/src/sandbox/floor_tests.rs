@@ -1229,3 +1229,45 @@ fn a_chat_at_the_floor_on_a_mac_writes_neither_the_plugin_nor_the_git_hooks() {
         assert!(!tried(&refused), "{refused} was let through");
     }
 }
+
+/// #2428: no profile purlis compiles for a chat it wraps on Linux reaches the system's name
+/// lookup through its local sockets (systemd-resolved's, nscd's, sssd's, avahi's), at the floor
+/// or at the full sandbox: a chat's names are looked up by purlis's proxy.
+#[test]
+fn on_linux_no_compiled_profile_reaches_the_system_s_name_lookup() {
+    use purlis_linux_sandbox::profile::{Op, Profile, Remote};
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine_with(Path::new("/opt/none"))
+    };
+    let (_floor_dir, floor_root) = project();
+    let floor = floor_of(decided(Harness::Opencode, &floor_root, &linux));
+    let Form::Opencode(at_the_floor) = floor.form() else {
+        panic!("compiled for opencode: {:?}", floor.form());
+    };
+    let (_full_dir, full_root) = project();
+    std::fs::write(
+        full_root.join("charter.toml"),
+        "schema = 1\n[sandbox]\nmode = \"on\"\n",
+    )
+    .expect("charter.toml");
+    let full = floor_of(decided(Harness::Opencode, &full_root, &linux));
+    let Form::Opencode(at_full) = full.form() else {
+        panic!("compiled for opencode: {:?}", full.form());
+    };
+    let tmp = full_root.join(".tmp-chat");
+    std::fs::create_dir_all(&tmp).expect("a temp folder");
+    let profiles = [
+        opencode::floor_profile(at_the_floor, &[4040], None).expect("the floor's profile"),
+        opencode::profile(at_full, &full_root, &tmp, &[4040], None).expect("the full profile"),
+    ];
+    for profile in profiles {
+        let read = Profile::parse(&profile).expect("read whole");
+        for socket in crate::sandboxblock::RESOLVER_SOCKETS {
+            assert!(
+                !read.allows(&Op::Connect(Remote::Unix(Some(Path::new(socket))))),
+                "{socket}"
+            );
+        }
+    }
+}
