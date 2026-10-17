@@ -25,6 +25,7 @@ import {
 } from "./fileControls";
 import { EXTENSIONS_LINK } from "./links";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
+import { themeOptionsRow } from "./themeOptions";
 import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "./driver";
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { workspaceDispatchGroup } from "./dispatch";
@@ -202,6 +203,8 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
           read.iconsDrawn,
         ),
       ],
+      // The drawn theme's options and where each value comes from (#2325).
+      after: [themeOptionsRow("workspace.appearance")],
     },
     {
       id: "workspace.plugins",
