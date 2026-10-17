@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
@@ -29,6 +30,37 @@ struct Hosted {
     /// How many closes, and how many stops by id, fail from now.
     closes_fail: Mutex<u32>,
     stops_fail: Mutex<u32>,
+    /// While set, every close waits until it is let go of: a host that does not answer.
+    holding: Mutex<bool>,
+    let_go: Condvar,
+    /// How many closes wait now.
+    waiting: Mutex<u32>,
+}
+
+impl Hosted {
+    /// Every close from now waits until [`Self::answer_closes`].
+    fn hold_closes(&self) {
+        *self.holding.lock().unwrap() = true;
+    }
+
+    fn answer_closes(&self) {
+        *self.holding.lock().unwrap() = false;
+        self.let_go.notify_all();
+    }
+
+    /// Waits until a close waits on the host.
+    fn until_a_close_waits(&self) {
+        until(|| *self.waiting.lock().unwrap() > 0);
+    }
+}
+
+/// Waits, a few seconds at most, until `done`.
+fn until(done: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < deadline, "it never came");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn fails(left: &Mutex<u32>) -> bool {
@@ -68,6 +100,15 @@ impl Driver for Hosted {
     }
 
     fn close(&self, program: &str) -> Result<(), String> {
+        let mut holding = self.holding.lock().unwrap();
+        if *holding {
+            *self.waiting.lock().unwrap() += 1;
+            while *holding {
+                holding = self.let_go.wait(holding).unwrap();
+            }
+            *self.waiting.lock().unwrap() -= 1;
+        }
+        drop(holding);
         if fails(&self.closes_fail) {
             return Err("the session host did not answer in time".into());
         }
@@ -1125,4 +1166,97 @@ fn an_allow_takes_only_the_sites_their_ask_names_whole() {
         std::slice::from_ref(&long),
         std::slice::from_ref(&long)
     ));
+}
+
+/// Browsers that retry quickly, so a test waits on the retry and not on its timer.
+fn retrying_quickly() -> ChatBrowsers {
+    ChatBrowsers::retrying(Duration::from_millis(5), Duration::from_millis(20))
+}
+
+/// Chat 3 allowed, with a browser `program-1` that could not be ended, and that purlis now
+/// retries while the host does not answer.
+fn one_stuck(browsers: &ChatBrowsers, hosted: &Arc<Hosted>) {
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(browsers, hosted, 3);
+    *hosted.closes_fail.lock().unwrap() = 2;
+    *hosted.stops_fail.lock().unwrap() = 1;
+    hosted.hold_closes();
+    // The first close waits on the host too, so let it go once it waits.
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            hosted.until_a_close_waits();
+            *hosted.holding.lock().unwrap() = false;
+            hosted.let_go.notify_all();
+        });
+        browsers.narrowed(Some(&driver), 3);
+    });
+    assert_eq!(browsers.unended(), ["program-1"]);
+    hosted.hold_closes();
+    hosted.until_a_close_waits();
+}
+
+#[test]
+fn a_browser_call_answers_at_once_while_a_browser_of_the_project_is_stuck() {
+    let browsers = Arc::new(retrying_quickly());
+    let hosted = Arc::new(Hosted::default());
+    one_stuck(&browsers, &hosted);
+
+    let (sent, answers) = std::sync::mpsc::channel();
+    let calling = {
+        let (browsers, hosted) = (Arc::clone(&browsers), Arc::clone(&hosted));
+        std::thread::spawn(move || {
+            let _ = sent.send(answered(&browsers, &hosted, &ask(3, click())).0);
+        })
+    };
+    let answer = answers.recv_timeout(Duration::from_secs(5));
+
+    hosted.answer_closes();
+    calling.join().unwrap();
+    let answer = answer.expect("the call answers while the stuck browser is retried");
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+}
+
+#[test]
+fn a_stuck_browser_being_retried_still_counts_toward_the_projects_three() {
+    let browsers = Arc::new(retrying_quickly());
+    let hosted = Arc::new(Hosted::default());
+    one_stuck(&browsers, &hosted);
+    // Two more run beside the stuck one: three in all.
+    answered(&browsers, &hosted, &ask(3, click()));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+
+    let (sent, answers) = std::sync::mpsc::channel();
+    let calling = {
+        let (browsers, hosted) = (Arc::clone(&browsers), Arc::clone(&hosted));
+        std::thread::spawn(move || {
+            let _ = sent.send(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+        })
+    };
+    let fourth = answers.recv_timeout(Duration::from_secs(5));
+
+    hosted.answer_closes();
+    calling.join().unwrap();
+    let why = refusal(fourth.expect("the call answers"));
+    assert!(why.contains("this project"), "{why}");
+    assert_eq!(hosted.started.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn a_stuck_browser_is_ended_off_the_calls_path_once_the_host_answers_and_its_row_goes() {
+    let told = Arc::new(Mutex::new(0u32));
+    let browsers = {
+        let told = Arc::clone(&told);
+        retrying_quickly().telling(Arc::new(move || *told.lock().unwrap() += 1))
+    };
+    let hosted = Arc::new(Hosted::default());
+    one_stuck(&browsers, &hosted);
+    let before = browsers.listing();
+
+    hosted.answer_closes();
+
+    until(|| browsers.unended().is_empty());
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert_ne!(browsers.listing(), before, "its row moves");
+    assert!(browsers.listed().is_empty());
+    until(|| *told.lock().unwrap() > 0);
 }
