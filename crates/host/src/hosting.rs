@@ -508,10 +508,14 @@ struct Subscriber {
     saves: bool,
 }
 
-/// A chat's confinement the host holds (#1999), and whose it is.
+/// A chat's confinement the host holds (#1999), whose it is, and who may act on it (#2444).
 struct Confinement {
     project: String,
     owner: Owner,
+    /// The links the host named it to ([`may_act_on`]): the link that made it, from the first;
+    /// none, for one the host made for a chat it composed; and each window that took its chat
+    /// back. A link's names end with it.
+    named_to: std::collections::HashSet<u64>,
     confining: Arc<dyn Confining>,
     /// The plan it was started from, as the window sent it (#2006).
     plan: session::ConfinePlan,
@@ -522,6 +526,20 @@ struct Confinement {
 enum Owner {
     Link(u64),
     Program(String),
+}
+
+/// **Whether `link` may act on confinement `held`, and hear what its proxy does** (#2444): it
+/// was named to the link, and it is the link's own while nothing runs in it, or the link holds
+/// the project of the program that runs in it at the place that program runs. Every other
+/// confinement is one the host does not hold, to that link.
+fn may_act_on(state: &State, held: &Confinement, link: u64) -> bool {
+    held.named_to.contains(&link)
+        && match &held.owner {
+            Owner::Link(made_by) => *made_by == link,
+            Owner::Program(program) => state.programs.get(program).is_some_and(|hosted| {
+                held_by(state, &held.project, link).is_some_and(|at| *at == hosted.at)
+            }),
+        }
 }
 
 /// A place: a project, by its stable id, at the folder it is held at on this machine, by the
@@ -847,11 +865,32 @@ impl Hosting {
     }
 
     /// Tell every subscriber, letting go of one that is gone or has stopped reading. What a
-    /// chat's sandbox did is told only to a link that may confine.
+    /// chat's sandbox did is told only to a link that may confine and may act on that
+    /// confinement ([`may_act_on`]).
     fn tell(&self, pushed: &Pushed) {
-        let sandbox = matches!(pushed, Pushed::Sandbox { .. });
-        self.state().subscribers.retain(|subscriber| {
-            if sandbox && !subscriber.confines {
+        let mut state = self.state();
+        let hearers: Option<Vec<u64>> = match pushed {
+            Pushed::Sandbox { confinement, .. } => Some(
+                state
+                    .subscribers
+                    .iter()
+                    .filter(|subscriber| subscriber.confines)
+                    .map(|subscriber| subscriber.link)
+                    .filter(|link| {
+                        state
+                            .confinements
+                            .get(confinement)
+                            .is_some_and(|held| may_act_on(&state, held, *link))
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        };
+        state.subscribers.retain(|subscriber| {
+            if hearers
+                .as_ref()
+                .is_some_and(|hearers| !hearers.contains(&subscriber.link))
+            {
                 return !subscriber.told.is_closed();
             }
             subscriber.told.try_send(pushed.clone()).is_ok()
@@ -1593,7 +1632,7 @@ impl Hosting {
     /// `peer` came on holds it, which it must (#2006): what a window that comes back takes back,
     /// each with the place of the confinement it runs in.
     fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
-        let state = self.state();
+        let mut state = self.state();
         let at = held_by(&state, project, link_of(peer))
             .cloned()
             .ok_or_else(|| no_such_project(project))?;
@@ -1626,6 +1665,15 @@ impl Hosting {
             })
             .collect();
         programs.sort_by_key(|program| program.number);
+        // Each confinement answered is named to the window taking its chat back (#2444).
+        for confined in programs
+            .iter()
+            .filter_map(|program| program.confined.as_ref())
+        {
+            if let Some(held) = state.confinements.get_mut(&confined.confinement) {
+                held.named_to.insert(link_of(peer));
+            }
+        }
         Ok(Answer::Programs(programs))
     }
 
@@ -1803,6 +1851,7 @@ impl Hosting {
                 Confinement {
                     project,
                     owner: Owner::Link(link_of(peer)),
+                    named_to: std::iter::once(link_of(peer)).collect(),
                     confining,
                     plan,
                 },
@@ -1848,44 +1897,51 @@ impl Hosting {
     }
 
     /// Whether confinement `id`'s proxy may hold a connection while the person is asked: a
-    /// program runs in it, and a window that may answer is there to be asked.
+    /// program runs in it, and a window that may answer it is there to be asked (#2444).
     fn askable(&self, id: &str) -> bool {
         let state = self.state();
-        let claimed = state
-            .confinements
-            .get(id)
-            .is_some_and(|held| matches!(held.owner, Owner::Program(_)));
-        claimed
-            && state
-                .subscribers
-                .iter()
-                .any(|subscriber| subscriber.confines && !subscriber.told.is_closed())
+        let Some(held) = state.confinements.get(id) else {
+            return false;
+        };
+        matches!(held.owner, Owner::Program(_))
+            && state.subscribers.iter().any(|subscriber| {
+                subscriber.confines
+                    && !subscriber.told.is_closed()
+                    && may_act_on(&state, held, subscriber.link)
+            })
     }
 
-    fn confinement(&self, id: &str) -> Result<Arc<dyn Confining>, Refusal> {
-        self.state()
+    /// Confinement `id`, for a command from `peer`: one it may not act on is one the host does
+    /// not hold (#2444).
+    fn confinement(&self, id: &str, peer: &Peer) -> Result<Arc<dyn Confining>, Refusal> {
+        let state = self.state();
+        state
             .confinements
             .get(id)
+            .filter(|held| may_act_on(&state, held, link_of(peer)))
             .map(|held| Arc::clone(&held.confining))
             .ok_or_else(|| no_such_confinement(id))
     }
 
     /// Ends confinement `id`, whatever runs in it, and answers once it has ended: its proxy
     /// carries nothing by the time the client hears so. One the host does not hold is let go
-    /// of already.
-    async fn let_go_of_confinement(&self, id: &str) -> Answer {
-        let ending: Vec<Arc<dyn Confining>> = self
-            .state()
-            .confinements
-            .remove(id)
-            .map(|held| held.confining)
-            .into_iter()
-            .collect();
-        if !ending.is_empty() {
+    /// of already; one `peer` may not act on is refused, and goes on (#2444).
+    async fn let_go_of_confinement(&self, id: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let ending = {
+            let mut state = self.state();
+            match state.confinements.get(id) {
+                None => return Ok(Answer::Done),
+                Some(held) if !may_act_on(&state, held, link_of(peer)) => {
+                    return Err(no_such_confinement(id));
+                }
+                Some(_) => state.confinements.remove(id).map(|held| held.confining),
+            }
+        };
+        if let Some(ending) = ending {
             // A proxy's end waits on its listeners: off the runtime, and waited for.
             let _ = tokio::task::spawn_blocking(move || drop(ending)).await;
         }
-        Answer::Done
+        Ok(Answer::Done)
     }
 }
 
@@ -1958,6 +2014,8 @@ impl Beside for ForTheProgram {
             Confinement {
                 project: self.at.project.clone(),
                 owner: Owner::Program(self.program.clone()),
+                // Named to no link: the host made it, for a chat it composed (#2444).
+                named_to: std::collections::HashSet::new(),
                 confining,
                 plan: plan.clone(),
             },
@@ -2175,20 +2233,20 @@ impl session::Host for Hosting {
             },
             Command::Confine(confine) => self.confine(*confine, peer).await,
             Command::LetGoOfConfinement { confinement } => {
-                Ok(self.let_go_of_confinement(&confinement).await)
+                self.let_go_of_confinement(&confinement, peer).await
             }
             Command::ChangeReach {
                 confinement,
                 change,
             } => {
-                let confining = self.confinement(&confinement)?;
+                let confining = self.confinement(&confinement, peer)?;
                 confining
                     .change(&change)
                     .map(|retry| Answer::ReachChanged { retry })
                     .map_err(not_started)
             }
             Command::ReachOf { confinement } => {
-                Ok(Answer::Reach(self.confinement(&confinement)?.now()))
+                Ok(Answer::Reach(self.confinement(&confinement, peer)?.now()))
             }
             Command::StopAll => Ok(self.stop_all().await),
             // Only the window's link reaches this: the grants refuse every other.
@@ -2276,7 +2334,14 @@ impl session::Host for Hosting {
         // What the link confined that nothing runs in yet goes with it; what a program runs in
         // stays with the program (#1999).
         let link = link_of(peer);
-        let ending = take_confinements(&mut self.state(), |owner| *owner == Owner::Link(link));
+        let ending = {
+            let mut state = self.state();
+            // Its names end with it (#2444).
+            for held in state.confinements.values_mut() {
+                held.named_to.remove(&link);
+            }
+            take_confinements(&mut state, |owner| *owner == Owner::Link(link))
+        };
         end_off_the_runtime(ending);
     }
 
