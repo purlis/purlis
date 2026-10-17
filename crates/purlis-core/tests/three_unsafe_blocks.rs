@@ -32,7 +32,7 @@ struct Audited {
 }
 
 /// The three, each named. Each is the allow on its function and that function's one block.
-const AUDITED: [Audited; 3] = [
+const AUDITED: [Audited; 4] = [
     Audited {
         file: "crates/purlis-core/src/executor.rs",
         function: "fn inherit_nothing_else(",
@@ -50,6 +50,11 @@ const AUDITED: [Audited; 3] = [
         file: "crates/linux-sandbox/src/linux/notify.rs",
         function: "fn raw(",
         lines: ["unsafe_code,", "let got: i64 = unsafe {"],
+    },
+    Audited {
+        file: "app/src-tauri/src/specimen.rs",
+        function: "fn snapshot(",
+        lines: ["unsafe_code,", "unsafe {"],
     },
 ];
 
@@ -101,8 +106,8 @@ fn unsafe_code_appears_only_in_the_three_audited_functions() {
 
     let this = Path::new(file!()).file_name().expect("this file's name");
     let mut found = Vec::new();
-    let mut allowed: [Vec<(usize, String)>; 3] = Default::default();
-    let mut named: [Vec<usize>; 3] = Default::default();
+    let mut allowed: [Vec<(usize, String)>; 4] = Default::default();
+    let mut named: [Vec<usize>; 4] = Default::default();
     for file in &files {
         if file.file_name() == Some(this) {
             continue;
