@@ -18,6 +18,9 @@
 //! field the person typed into) shows its role and reference and nothing else: no name, no
 //! value, nothing inside it. Its value is also taken out of every other line, so a page that
 //! echoes a field elsewhere does not show it there, and neither a find nor a wait sees it.
+//! Blanked boxes next to each other on the page, with nothing but short separators between
+//! them (a code typed one character a box), are a group: what they hold, joined in their order
+//! on the page, is taken out as one more value (#2144).
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -121,6 +124,123 @@ pub(crate) struct Snapshot {
     focused: Vec<NodeKey>,
     /// Every element whose name or value held a text kept out: where the page shows it.
     echoes: Vec<NodeKey>,
+    /// The groups of blanked boxes, each in its order on the page.
+    groups: Vec<Group>,
+}
+
+/// Blanked elements next to each other on the page, with nothing between them but separators:
+/// boxes that hold one value between them, such as a code typed one character a box.
+#[derive(Debug, Clone)]
+struct Group {
+    parts: Vec<Part>,
+}
+
+#[derive(Debug, Clone)]
+enum Part {
+    /// A blanked element, and what it holds.
+    Box(NodeKey, String),
+    /// A separator between two boxes.
+    Between(String),
+}
+
+impl Group {
+    /// What the group holds joined, without its separators and with them, `key`'s box holding
+    /// `held` in place of what it held when read.
+    fn joined(&self, key: Option<&NodeKey>, held: &str) -> Vec<String> {
+        let mut bare = String::new();
+        let mut spaced = String::new();
+        for part in &self.parts {
+            match part {
+                Part::Box(at, was) => {
+                    let text = if Some(at) == key { held } else { was };
+                    bare.push_str(text);
+                    spaced.push_str(text);
+                }
+                Part::Between(text) => spaced.push_str(text),
+            }
+        }
+        let mut out = vec![bare];
+        if out[0] != spaced {
+            out.push(spaced);
+        }
+        out.retain(|text| !text.is_empty());
+        out
+    }
+
+    fn first(&self) -> Option<&NodeKey> {
+        self.parts.iter().find_map(|part| match part {
+            Part::Box(key, _) => Some(key),
+            Part::Between(_) => None,
+        })
+    }
+
+    fn holds(&self, key: &NodeKey) -> bool {
+        self.parts
+            .iter()
+            .any(|part| matches!(part, Part::Box(at, _) if at == key))
+    }
+}
+
+/// The groups of blanked boxes among `lines`: blanked elements of one frame next to each other,
+/// with nothing between them but lines that show less than [`SHORTEST_SCRUBBED`] characters.
+/// A group has two boxes or more.
+fn groups_of(lines: &[Line], held: &HashMap<NodeKey, String>) -> Vec<Group> {
+    let mut out = Vec::new();
+    let mut open: Option<(Group, Option<String>)> = None;
+    let mut between: Vec<String> = Vec::new();
+    let mut close = |open: &mut Option<(Group, Option<String>)>| {
+        if let Some((group, _)) = open.take()
+            && group
+                .parts
+                .iter()
+                .filter(|part| matches!(part, Part::Box(..)))
+                .count()
+                >= 2
+        {
+            out.push(group);
+        }
+    };
+    for line in lines {
+        match &line.key {
+            Some(key) if line.blanked => {
+                let text = held.get(key).cloned().unwrap_or_default();
+                match &mut open {
+                    Some((group, frame)) if *frame == line.frame => {
+                        group.parts.extend(between.drain(..).map(Part::Between));
+                        group.parts.push(Part::Box(key.clone(), text));
+                    }
+                    _ => {
+                        close(&mut open);
+                        open = Some((
+                            Group {
+                                parts: vec![Part::Box(key.clone(), text)],
+                            },
+                            line.frame.clone(),
+                        ));
+                    }
+                }
+                between.clear();
+            }
+            _ => {
+                let shown = format!("{}{}", line.name, line.value.as_deref().unwrap_or_default());
+                let separates = line.address.is_none()
+                    && open.as_ref().is_some_and(|(_, frame)| *frame == line.frame)
+                    && between.iter().map(|t| t.chars().count()).sum::<usize>()
+                        + shown.chars().count()
+                        < SHORTEST_SCRUBBED;
+                if separates {
+                    if !shown.is_empty() {
+                        between.push(shown);
+                    }
+                } else {
+                    close(&mut open);
+                    between.clear();
+                }
+            }
+        }
+    }
+    close(&mut open);
+    out
 }
 
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
@@ -133,6 +253,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&s
             blanked_text: Kept::default(),
             focused: Vec::new(),
             echoes: Vec::new(),
+            groups: Vec::new(),
         };
     };
     let mut builder = Builder {
@@ -142,6 +263,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&s
         lines: Vec::new(),
         blanked_text: Kept::default(),
         focused: Vec::new(),
+        held: HashMap::new(),
     };
     let tree = FrameNodes::new(&main.nodes);
     let mut title = tree
@@ -157,7 +279,13 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&s
         }
     }
     let mut lines = builder.lines;
-    let blanked_text = builder.blanked_text;
+    let mut blanked_text = builder.blanked_text;
+    let groups = groups_of(&lines, &builder.held);
+    for group in &groups {
+        if let Some(first) = group.first() {
+            blanked_text.group(first, &group.joined(None, ""));
+        }
+    }
     let all: Vec<&str> = blanked_text
         .texts()
         .into_iter()
@@ -193,6 +321,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&s
         blanked_text,
         focused: builder.focused,
         echoes,
+        groups,
     }
 }
 
@@ -307,6 +436,14 @@ impl Snapshot {
     /// with its element.
     pub(crate) fn blanked_text(&self) -> &Kept {
         &self.blanked_text
+    }
+
+    /// What the group of blanked boxes `key` is in holds with `key` holding `held`, joined as
+    /// [`Kept::group`] keeps it: the group's first box, and the joined texts. `None` when `key`
+    /// is in no group.
+    pub(crate) fn group_with(&self, key: &NodeKey, held: &str) -> Option<(NodeKey, Vec<String>)> {
+        let group = self.groups.iter().find(|group| group.holds(key))?;
+        Some((group.first()?.clone(), group.joined(Some(key), held)))
     }
 
     /// Every element whose name or value held a text kept out: where the page shows it.
@@ -605,6 +742,8 @@ struct Builder<'f> {
     /// of every other line.
     blanked_text: Kept,
     focused: Vec<NodeKey>,
+    /// What each blanked element holds as its value, to join a group of boxes by.
+    held: HashMap<NodeKey, String>,
 }
 
 impl Builder<'_> {
@@ -709,6 +848,8 @@ impl Builder<'_> {
         if let Some(key) = &key
             && self.excluded.contains(key)
         {
+            self.held
+                .insert(key.clone(), value.clone().unwrap_or_default());
             self.blank(key, tree, node, value);
             let index = self.lines.len();
             self.lines.push(Line {
