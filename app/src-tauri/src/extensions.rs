@@ -280,6 +280,14 @@ pub struct WindowTheme {
     pub appearance: String,
     pub values: std::collections::BTreeMap<String, String>,
     pub motion: WindowMotion,
+    /// The theme's icon set, by view id: empty when the rails draw the window's own marks.
+    pub icons: std::collections::BTreeMap<String, WindowIcon>,
+}
+
+/// One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowIcon {
+    pub paths: Vec<String>,
 }
 
 /// A resolved theme's motion: milliseconds, and the four numbers of each cubic Bézier.
@@ -318,6 +326,19 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                     .map(|(key, curve)| ((*key).to_owned(), *curve))
                     .collect(),
             },
+            icons: theme
+                .icons
+                .views
+                .iter()
+                .map(|(view, symbol)| {
+                    (
+                        (*view).to_owned(),
+                        WindowIcon {
+                            paths: symbol.paths.clone(),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
@@ -1420,6 +1441,33 @@ mod tests {
         assert_eq!(
             (theme.name.as_str(), theme.appearance.as_str()),
             ("Mine", "light")
+        );
+    }
+
+    #[test]
+    fn the_window_is_handed_a_theme_s_icon_set_by_view_and_classic_s_as_none() {
+        let classic = WindowTheme::from(purlis_core::theme::default_theme());
+        assert!(classic.icons.is_empty());
+
+        let dir = tempfile::tempdir().expect("a directory");
+        let folder = dir.path().join("dusk");
+        std::fs::create_dir_all(&folder).expect("a theme folder");
+        std::fs::write(
+            folder.join("theme.json"),
+            r#"{"name":"Dusk","icons":"icons.json","appearances":[{"id":"dark","appearance":"dark"}]}"#,
+        )
+        .expect("a theme");
+        std::fs::write(
+            folder.join("icons.json"),
+            r#"{"views":{"chats":{"paths":["M1 1h2"]}}}"#,
+        )
+        .expect("an icon set");
+        let loaded = purlis_core::theme::Library::new().load_folder(dir.path(), "dusk");
+        assert!(!loaded.refused, "{:?}", loaded.complaints);
+        let handed = WindowTheme::from(loaded.theme.first());
+        assert_eq!(
+            handed.icons.get("chats").map(|icon| icon.paths.clone()),
+            Some(vec!["M1 1h2".to_owned()])
         );
     }
 

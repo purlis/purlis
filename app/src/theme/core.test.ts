@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { VIEW_MARKS } from "../ActivityBar";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { DURATIONS, EASINGS } from "./motion";
 import { TINTED_TABS, TOKENS } from "./theme";
@@ -53,6 +54,10 @@ describe("the engine's vocabulary", () => {
 
   it("tints the tokens the window tints on a workspace's tabs", () => {
     expect(list(vocabulary, "TINTED")).toEqual([...TINTED_TABS]);
+  });
+
+  it("lets an icon set draw the window's own views, in the rails' order", () => {
+    expect(list(vocabulary, "RAIL_VIEWS")).toEqual(Object.keys(VIEW_MARKS));
   });
 });
 

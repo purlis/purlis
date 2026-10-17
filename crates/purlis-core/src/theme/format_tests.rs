@@ -465,10 +465,10 @@ fn a_key_format_2_does_not_have_refuses_the_theme() {
 }
 
 #[test]
-fn geometry_fonts_icons_options_and_tint_stay_refused_for_now() {
+fn geometry_fonts_options_and_tint_stay_refused_for_now() {
     let loaded = load(&json!({
         "name": "Ahead",
-        "fonts": {}, "icons": {}, "options": [], "tint": {},
+        "fonts": {}, "options": [], "tint": {},
         "appearances": [{ "id": "dark", "appearance": "dark", "tokens": { "radius.md": "#000" } }]
     }));
     assert!(loaded.refused);
@@ -476,7 +476,6 @@ fn geometry_fonts_icons_options_and_tint_stay_refused_for_now() {
         said(&loaded),
         [
             "fonts is not read yet (#2326), so the theme cannot be drawn as written",
-            "icons is not read yet (#2337), so the theme cannot be drawn as written",
             "options is not read yet (#2325), so the theme cannot be drawn as written",
             "tint is not read yet (#2329), so the theme cannot be drawn as written",
             "radius.md in appearance dark is geometry, which this purlis does not read from a \
