@@ -645,10 +645,10 @@ impl Chat {
         self.children.list()
     }
 
-    /// A hook of child agent `agent` was heard that says nothing more than that it is there:
-    /// a tool call. Answers whether anything a reader can see changed.
+    /// A tool call of child agent `agent` was heard: it is at work, so a child that completed
+    /// was given another turn (#2455). Answers whether anything a reader can see changed.
     pub fn child_heard(&mut self, agent: &str) -> bool {
-        !self.ended && self.children.seen(agent)
+        !self.ended && self.children.at_work(agent)
     }
 
     /// Child agent `agent` said `said`, on its parent's hooks. Answers whether anything a
@@ -657,6 +657,9 @@ impl Chat {
     /// **Only its ask is the chat's** (ADR 0076 §6): a child is never `input-required`, so
     /// what it asks the operator, the chat asks. Its own turn, its session and its end move
     /// the child alone, so a fan-out of sub-agents never blinks the chat out of `running`.
+    ///
+    /// A prompt or an ask says the child is at work: one that completed was given another
+    /// turn, and works again (#2455). Anything else only says it is there.
     pub fn child_said(&mut self, agent: &str, said: &Said) -> bool {
         if self.ended {
             return false;
@@ -667,9 +670,10 @@ impl Chat {
                 self.helper_gone(agent) || ended
             }
             Said::Ask(ask) => {
-                let seen = self.children.seen(agent);
-                self.asked(ask, Waits::default(), Some(agent)) || seen
+                let working = self.children.at_work(agent);
+                self.asked(ask, Waits::default(), Some(agent)) || working
             }
+            Said::Turn(Turn::Began) => self.children.at_work(agent),
             _ => self.children.seen(agent),
         }
     }
@@ -4168,6 +4172,110 @@ mod tests {
             [("thread-2".to_owned(), State::Done)]
         );
         assert_eq!(board.state(3), State::Running, "the parent's turn goes on");
+    }
+
+    #[test]
+    fn a_codex_child_given_another_turn_works_again_and_completes_at_its_next_subagent_stop() {
+        // #2455: Codex runs `SubagentStop` at the end of each turn of a child, and a parent can
+        // give a finished child another turn (`send_input`), whose hooks name the same id.
+        let mut board = Board::new();
+        board.opened(3, Some(Harness::Codex), None);
+        board.reported(&unsigned(3, Event::UserPromptSubmit, Some(A)));
+        let stop = crate::hookwire::Report {
+            agent: Some("thread-2".to_owned()),
+            ..unsigned(3, Event::SubagentStop, Some(A))
+        };
+        board.child_heard(3, "thread-2");
+        board.reported(&stop);
+
+        assert!(
+            board.child_heard(3, "thread-2"),
+            "its next turn's tool call"
+        );
+        assert_eq!(
+            children_of(&board, 3),
+            [("thread-2".to_owned(), State::Running)]
+        );
+        assert!(!board.child_heard(3, "thread-2"), "working already");
+
+        assert!(board.reported(&stop));
+        assert_eq!(
+            children_of(&board, 3),
+            [("thread-2".to_owned(), State::Done)]
+        );
+        assert_eq!(board.state(3), State::Running, "the parent's turn goes on");
+    }
+
+    #[test]
+    fn a_claude_code_sub_agent_resumed_after_its_subagent_stop_works_again_and_completes_again() {
+        // #2455: a sub-agent resumed by its parent sends its hooks under the same `agent_id`.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.child_heard(7, "a1");
+        board.reported(&from_agent(7, Event::SubagentStop, "a1"));
+
+        assert!(board.reported(&from_agent(7, Event::UserPromptSubmit, "a1")));
+        assert_eq!(children_of(&board, 7), [("a1".to_owned(), State::Running)]);
+
+        assert!(board.reported(&from_agent(7, Event::SubagentStop, "a1")));
+        assert_eq!(children_of(&board, 7), [("a1".to_owned(), State::Done)]);
+
+        board.child_heard(7, "a1");
+        assert_eq!(
+            children_of(&board, 7),
+            [("a1".to_owned(), State::Running)],
+            "a tool call of a third turn"
+        );
+        board.reported(&from_agent(7, Event::SubagentStop, "a1"));
+        assert!(
+            board.reported(&from_agent(7, Event::Notification, "a1")),
+            "an ask is the chat's, and its child is at work"
+        );
+        assert_eq!(children_of(&board, 7), [("a1".to_owned(), State::Running)]);
+        assert_eq!(board.state(7), State::Waiting, "its ask was the chat's");
+    }
+
+    #[test]
+    fn a_completed_child_heard_from_without_new_work_stays_completed() {
+        // Only a prompt, a tool call or an ask is work. A hook of a finished child that says
+        // nothing of new work (its own `Stop`, its session's start or end) reopens nothing.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.child_heard(7, "a1");
+        board.reported(&from_agent(7, Event::SubagentStop, "a1"));
+
+        board.reported(&from_agent(7, Event::Stop, "a1"));
+        board.reported(&from_agent(7, Event::SessionEnd, "a1"));
+        board.reported(&from_agent(7, Event::SessionStart, "a1"));
+
+        assert_eq!(children_of(&board, 7), [("a1".to_owned(), State::Done)]);
+    }
+
+    #[test]
+    fn a_child_that_ended_with_its_parent_is_not_brought_back_by_a_late_hook() {
+        // Only a child that completed at its own stop works again: one that ended with its
+        // parent ended for good (ADR 0076 §6), however its parent ended.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.child_heard(7, "a1");
+        board.child_heard(7, "a2");
+        board.reported(&from_agent(7, Event::SubagentStop, "a2"));
+        board.exited(7, Some(0));
+
+        assert!(!board.child_heard(7, "a1"));
+        assert!(!board.child_heard(7, "a2"));
+        assert!(!board.reported(&from_agent(7, Event::UserPromptSubmit, "a1")));
+
+        assert_eq!(
+            children_of(&board, 7),
+            [
+                ("a1".to_owned(), State::Done),
+                ("a2".to_owned(), State::Done)
+            ]
+        );
     }
 
     #[test]

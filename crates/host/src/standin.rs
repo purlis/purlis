@@ -564,6 +564,14 @@ impl StandInScreen {
 }
 
 impl crate::browsers::Screen for StandInScreen {
+    /// A stand-in reaches nothing, whatever it is told.
+    fn reach_now(
+        &self,
+        _reach: &purlis_session_protocol::browsing::BrowserReach,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
     fn show(&self, frames: crate::browsers::FrameSink) {
         let mut shown = self.shown();
         shown.showing = true;

@@ -1485,3 +1485,44 @@ fn a_timeline_expires_what_it_read_in_the_same_read() {
     assert!(note.expired && note.text.is_empty(), "{note:?}");
     assert_eq!(dispatchrecord::read(&root, &id).unwrap().talk[0].text, "");
 }
+
+// ----- briefs and reports drawn from the store (#1872) ---------------------------------------
+
+#[test]
+fn a_brief_or_report_holding_a_vault_value_or_a_credential_is_drawn_masked() {
+    // A vault value with no shape, which only purlis's own memory of it finds, and a token
+    // built here from its parts so no line of this file holds one.
+    let value = format!("{}-{}-{}", "plain", "vault words", "6b1d");
+    crate::secrets::seen::remember(&value);
+    let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+    let (_d, root) = project();
+    let brief = format!("Sign in with {value}, then deploy.");
+    let opened = dispatchrecord::open(
+        &root,
+        a_task(&steward(), &chat(7, "deploy"), "deploy", &brief),
+        at("2026-10-08T09:00:00Z"),
+    )
+    .unwrap();
+    reports(
+        &root,
+        &opened.id,
+        Outcome::Done,
+        &format!("Deployed with {token}."),
+        None,
+        "2026-10-08T09:05:00Z",
+    );
+
+    let found = timeline(&root, &steward());
+    let texts: Vec<&str> = found.lines.iter().map(|line| line.text.as_str()).collect();
+    assert_eq!(texts.len(), 2, "{texts:?}");
+    for text in &texts {
+        assert!(!text.contains(&value), "no vault value is drawn: {text}");
+        assert!(!text.contains(&token), "no credential is drawn: {text}");
+    }
+    assert!(texts[0].starts_with("Sign in with "), "{}", texts[0]);
+    assert!(texts[0].ends_with(", then deploy."), "{}", texts[0]);
+    assert!(texts[1].starts_with("Deployed with "), "{}", texts[1]);
+    // The store is not rewritten: what is checked is what is drawn.
+    let record = dispatchrecord::read(&root, &opened.id).unwrap();
+    assert_eq!(record.brief, brief);
+}

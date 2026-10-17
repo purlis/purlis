@@ -43,7 +43,10 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   command in a sandbox built from what the chat's own sandbox was compiled to when the chat
   started: the same denials (its harness's own among them), the chat's folder and a temp
   directory of its own as the only places it writes, and the network only through a proxy
-  carrying the chat's hosts. A `--file` or `--dotenv` file is kept in the vaults folder, which
+  carrying the chat's hosts. That sandbox is applied as the chat's own is: Seatbelt on macOS,
+  and on Linux purlis's own sandbox, started from the purlis program the chat's start checked
+  and held, which is never one a chat may write (#2342). Where the chat's start held none, or
+  the kernel lacks the Landlock it needs, the run is refused and nothing runs. A `--file` or `--dotenv` file is kept in the vaults folder, which
   every chat is denied, and only that command is given back a read of it. The command leads a
   process group of its own: everything it started that stayed in that group is killed when it
   ends or when the chat goes away. A process that leaves the group on purpose, such as a daemon,
@@ -140,15 +143,15 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   chat's choice, so a tool that can be told to run something else, or to send its credential
   somewhere, hands that value over. Masking matches a value's literal text only. Prefer `--file` to `--env` for a command that can read
   its credential from a file: an environment variable is readable by the same user through `ps
-  eww` while the command runs. On Linux the app refuses for now: running it inside purlis's own Linux sandbox is #2342.
+  eww` while the command runs.
 - **A sandboxed chat never reads the keyring through the command** (#1638). Where the app
   does not take a sandboxed chat's `secret exec` (it is closed, or does not answer), a vault
   whose values come from the keyring (a `keyring` vault, or a 1Password vault whose token is
   kept there) is refused with a sentence saying so, and nothing runs: read in the chat, the
   Keychain would ask you on the chat's behalf. `secret get`, `cp` and every other read of such
   a vault in a sandboxed chat are refused the same way, since the app runs only `exec`. The
-  refusal names what to run instead: `secret exec` through the app on macOS, and a terminal
-  outside the chat where the app runs no command for a chat yet (Linux). Any other vault runs
+  refusal names what to run instead: `secret exec` through the app on macOS and Linux, and a
+  terminal outside the chat on other systems. Any other vault runs
   as before.
 - **A sandboxed chat lists a vault's key names through the app, and reads no value itself**
   (qw385). `secret list <vault>` (and `persona secret list`) in a sandboxed chat is answered
@@ -159,8 +162,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   never read in the chat instead.
   `secret get` and `secret cp` (and their `persona secret` forms) are refused in a sandboxed
   chat for every provider, whatever was allowed; the refusal names `secret list` for the key
-  names and `secret exec` through a declared tool for a value (a terminal outside the chat on
-  Linux).
+  names and `secret exec` through a declared tool for a value.
 - **The rest of the vault verbs are yours, and a sandboxed chat is told so before anything is
   read** (#1969). `secret set`, `secret rm`, `vault add` and `vault remove` change a vault or
   the registry, and the app takes no write for a chat: in a sandboxed chat each is refused
@@ -249,8 +251,18 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   interpreter or another program that runs what it is told, with the same sentence, on the
   Notice and Settings › Sandbox and as a chat starts, and no Allow is of it. A tool runs the
   program its links resolve to, and every link on the way to it is in a folder no chat writes.
-  An
-  administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
+  It starts that program under the name the tool was declared as (its `argv[0]`), so a program
+  that does what its name says (`unxz` or `xzcat` linked to `xz`, `gunzip` or `zcat`, a
+  `git-*` link) does what the declared name says (#1977). In the run's sandbox the app makes a
+  link of that name, for that run alone, beside the credential files no chat reads, to the
+  resolved program, and runs the link, so the program sees a path that ends in the declared
+  name. A program that finds its own files from that path without resolving links (a script
+  whose `#!` line names its interpreter and that reads `$(dirname "$0")/../lib`) looks beside
+  the link and not beside itself; declare such a tool under its program's own file name. The
+  script itself, run where no app answers, can only name the program when its shell has
+  `exec -a` (bash and zsh do, dash does not); otherwise the program sees its own name. The
+  name is handed to `secret exec` as `--argv0`, an internal flag of the scripts that does
+  nothing off macOS and Linux. An administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
   gets the scripts, and a save that adds one is refused.
 - **A browser login: a persona's tool that logs a browser in to one page** (D-PE-browser-1,
   approved by the operator on 2026-10-12). A sandboxed chat runs only declared tools, and a

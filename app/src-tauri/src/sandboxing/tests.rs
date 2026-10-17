@@ -189,11 +189,19 @@ fn a_kept_grant_policy_now_drops_is_marked_locked_on_the_granted_list() {
     let folder = project.path().join("out");
     sandbox::local::grant_write(project.path(), &folder).expect("kept");
     let chats = crate::chats::Chats::new();
-    let free = grants_of(project.path(), &chats);
+    let free = grants_of(
+        project.path(),
+        &chats,
+        &crate::chatbrowsers::ChatBrowsers::default(),
+    );
     assert_eq!(free.len(), 1, "{free:?}");
     assert_eq!(free[0].locked, None);
     let _under = Under::policy(r#"{"owner": "IT", "sandbox": {"write-grants": false}}"#);
-    let held = grants_of(project.path(), &chats);
+    let held = grants_of(
+        project.path(),
+        &chats,
+        &crate::chatbrowsers::ChatBrowsers::default(),
+    );
     assert_eq!(held[0].what, GrantWhat::Write);
     assert_eq!(
         held[0].locked.as_deref(),
@@ -291,7 +299,14 @@ fn nothing_is_allowed_that_was_not_audited_or_that_a_grant_cannot_name() {
     // An unaudited grant is no grant: nothing is kept at any level.
     assert!(refused(GrantWhat::Host, "api.example.com", GrantLevel::You).contains("event log"));
     assert!(sandbox::hosts::personal(project.path()).is_empty());
-    assert!(grants_of(project.path(), &chats).is_empty());
+    assert!(
+        grants_of(
+            project.path(),
+            &chats,
+            &crate::chatbrowsers::ChatBrowsers::default()
+        )
+        .is_empty()
+    );
 }
 
 /// ADR 0093 (D-sock-2, D-sock-3): a socket or a service is this machine's, so never allowed
@@ -430,7 +445,7 @@ fn the_certificate_check_is_never_granted_by_name_and_an_old_grant_is_not_listed
     sandbox::local::grant_service(root, TRUSTD).expect("an older build's");
     let chats = crate::chats::Chats::new();
     assert!(
-        !grants_of(root, &chats)
+        !grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
             .iter()
             .any(|one| one.target == TRUSTD),
         "it grants nothing, so it is not listed"
@@ -831,7 +846,7 @@ fn a_socket_or_a_service_is_allowed_for_every_project_listed_in_each_and_removed
 
     // Listed in each project, at that level, with when it was allowed.
     let listed_in = |root: &std::path::Path| -> Vec<(GrantWhat, String, GrantLevel, Option<u32>)> {
-        grants_of(root, &chats)
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
             .into_iter()
             .filter(|one| one.level == GrantLevel::Machine)
             .map(|one| (one.what, one.target, one.level, one.at))
@@ -857,11 +872,15 @@ fn a_socket_or_a_service_is_allowed_for_every_project_listed_in_each_and_removed
         );
     }
     // Remove, from the other project's list: gone from both, audited, with its record.
-    let id = grants_of(other.path(), &chats)
-        .into_iter()
-        .find(|one| one.level == GrantLevel::Machine && one.what == GrantWhat::Socket)
-        .expect("listed")
-        .id;
+    let id = grants_of(
+        other.path(),
+        &chats,
+        &crate::chatbrowsers::ChatBrowsers::default(),
+    )
+    .into_iter()
+    .find(|one| one.level == GrantLevel::Machine && one.what == GrantWhat::Socket)
+    .expect("listed")
+    .id;
     revoke(other.path(), &chats, &id, &audit).expect("removed");
     assert!(sandbox::local::sockets_everywhere().is_empty());
     assert_eq!(listed_in(root).len(), 1);
@@ -890,7 +909,7 @@ fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once(
         },
     )
     .expect("recorded");
-    let listed = grants_of(root, &chats);
+    let listed = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default());
     assert_eq!(
         listed,
         [SandboxGrant {
@@ -927,7 +946,10 @@ fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once(
     );
     // Not audited, not revoked.
     assert!(revoke(root, &chats, &listed[0].id, &no_audit()).is_err());
-    assert_eq!(grants_of(root, &chats).len(), 1);
+    assert_eq!(
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).len(),
+        1
+    );
 
     let heard = std::sync::Mutex::new(Vec::new());
     let audit = |number: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
@@ -940,7 +962,7 @@ fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once(
         Ok(())
     };
     revoke(root, &chats, &listed[0].id, &audit).expect("revoked");
-    assert!(grants_of(root, &chats).is_empty());
+    assert!(grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).is_empty());
     assert!(sandbox::local::granted_vaults(root).is_empty());
     assert!(sandbox::local::made(root).is_empty());
     let again = revoke(root, &chats, &listed[0].id, &audit).expect_err("not there");
@@ -974,7 +996,7 @@ fn a_persona_s_hosts_are_allowed_as_shown_listed_for_the_persona_and_revoked() {
     assert_eq!(state.persona_hosts.len(), 1);
     let shown = state.persona_hosts[0].clone();
     assert!(!shown.allowed);
-    assert!(grants_of(root, &chats).is_empty());
+    assert!(grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).is_empty());
 
     // A digest that is not the list's as it stands allows nothing.
     let stale = allow_persona(root, "devops", "not-what-stands", &no_audit(), 7)
@@ -996,7 +1018,7 @@ fn a_persona_s_hosts_are_allowed_as_shown_listed_for_the_persona_and_revoked() {
     };
     allow_persona(root, "devops", &shown.digest, &audit, 42).expect("allowed");
     assert!(state_of(root).persona_hosts[0].allowed);
-    let listed = grants_of(root, &chats);
+    let listed = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default());
     assert_eq!(
         listed,
         [SandboxGrant {
@@ -1025,7 +1047,7 @@ fn a_persona_s_hosts_are_allowed_as_shown_listed_for_the_persona_and_revoked() {
     let now = state_of(root).persona_hosts[0].clone();
     assert!(!now.allowed);
     assert!(now.waiting);
-    let waiting = grants_of(root, &chats);
+    let waiting = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default());
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].id, listed[0].id);
     assert!(
@@ -1043,9 +1065,13 @@ fn a_persona_s_hosts_are_allowed_as_shown_listed_for_the_persona_and_revoked() {
     )
     .expect("toml");
     assert!(state_of(root).persona_hosts[0].waiting);
-    assert!(grants_of(root, &chats)[0].waiting.is_some());
+    assert!(
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())[0]
+            .waiting
+            .is_some()
+    );
     revoke(root, &chats, &listed[0].id, &audit).expect("revoked");
-    assert!(grants_of(root, &chats).is_empty());
+    assert!(grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).is_empty());
     assert!(!state_of(root).persona_hosts[0].allowed);
     assert!(!state_of(root).persona_hosts[0].waiting);
     assert_eq!(
@@ -1077,7 +1103,11 @@ fn a_vault_grant_policy_forbids_is_listed_locked() {
         r#"{"owner": "IT", "sandbox": {"vault-grants": false}}"#,
         std::path::Path::new("/etc/purlis/policy.json"),
     ));
-    let listed = grants_of(root, &crate::chats::Chats::new());
+    let listed = grants_of(
+        root,
+        &crate::chats::Chats::new(),
+        &crate::chatbrowsers::ChatBrowsers::default(),
+    );
     set_for_this_test(Locks::none());
     assert_eq!(
         listed[0].locked.as_deref(),
@@ -1100,7 +1130,7 @@ fn a_grant_policy_locks_out_is_still_revoked() {
     let _under = Under::policy(
         r#"{"owner": "IT", "sandbox": {"write-grants": false, "vault-grants": false}}"#,
     );
-    let listed = grants_of(root, &chats);
+    let listed = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default());
     assert_eq!(listed.len(), 2, "{listed:?}");
     assert!(listed.iter().all(|one| one.locked.is_some()), "{listed:?}");
     let heard = std::sync::Mutex::new(0);
@@ -1111,7 +1141,7 @@ fn a_grant_policy_locks_out_is_still_revoked() {
     for one in &listed {
         revoke(root, &chats, &one.id, &audit).expect("revoked");
     }
-    assert!(grants_of(root, &chats).is_empty());
+    assert!(grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).is_empty());
     assert_eq!(*heard.lock().unwrap(), 2);
 }
 
@@ -1134,7 +1164,7 @@ fn what_was_kept_at_a_scope_policy_leaves_out_is_listed_as_held_and_still_remove
         .expect("kept");
     sandbox::local::grant_service_everywhere("com.example.helper", None).expect("kept");
     let held = |root: &std::path::Path| -> Vec<(GrantLevel, GrantWhat, bool)> {
-        grants_of(root, &chats)
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
             .into_iter()
             .map(|one| (one.level, one.what, one.locked.is_some()))
             .collect()
@@ -1157,7 +1187,7 @@ fn what_was_kept_at_a_scope_policy_leaves_out_is_listed_as_held_and_still_remove
         let _under =
             Under::policy(r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#);
         assert_eq!(held(root), rows(false, true));
-        let why = grants_of(root, &chats)
+        let why = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
             .into_iter()
             .find(|one| one.level == GrantLevel::Machine)
             .and_then(|one| one.locked)
@@ -1183,10 +1213,10 @@ fn what_was_kept_at_a_scope_policy_leaves_out_is_listed_as_held_and_still_remove
         *heard.lock().unwrap() += 1;
         Ok(())
     };
-    for one in grants_of(root, &chats) {
+    for one in grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()) {
         revoke(root, &chats, &one.id, &audit).expect("removed");
     }
-    assert!(grants_of(root, &chats).is_empty());
+    assert!(grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).is_empty());
     assert_eq!(*heard.lock().unwrap(), 4);
     assert!(sandbox::local::sockets_everywhere().is_empty());
     sandbox::local::everywhere_for_this_test(None);
@@ -1264,7 +1294,7 @@ fn a_folder_you_were_granted_is_listed_and_revoke_takes_it_out_audited_once() {
         },
     )
     .expect("recorded");
-    let listed = grants_of(root, &chats);
+    let listed = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default());
     assert_eq!(
         listed,
         [SandboxGrant {
@@ -1285,7 +1315,10 @@ fn a_folder_you_were_granted_is_listed_and_revoke_takes_it_out_audited_once() {
     );
     // Not audited, not revoked.
     assert!(revoke(root, &chats, &listed[0].id, &no_audit()).is_err());
-    assert_eq!(grants_of(root, &chats).len(), 1);
+    assert_eq!(
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).len(),
+        1
+    );
 
     let heard = std::sync::Mutex::new(Vec::new());
     let audit = |number: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
@@ -1296,7 +1329,7 @@ fn a_folder_you_were_granted_is_listed_and_revoke_takes_it_out_audited_once() {
         Ok(())
     };
     revoke(root, &chats, &listed[0].id, &audit).expect("revoked");
-    assert!(grants_of(root, &chats).is_empty());
+    assert!(grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default()).is_empty());
     assert!(sandbox::local::granted_writes(root).is_empty());
     // Revoked twice: the second is refused before anything is audited.
     let again = revoke(root, &chats, &listed[0].id, &audit).expect_err("not there");
@@ -1691,7 +1724,7 @@ fn a_general_purpose_tool_says_so_beside_its_allow_and_an_unlisted_one_does_not(
     let chats = crate::chats::Chats::new();
     sandbox::local::allow_persona_hosts(root, "logs", &logs.digest).expect("kept");
     sandbox::local::allow_persona_hosts(root, "cloud", &of("cloud").digest).expect("kept");
-    let rows = grants_of(root, &chats);
+    let rows = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default());
     let row = |persona: &str| {
         rows.iter()
             .find(|one| one.persona.as_deref() == Some(persona))

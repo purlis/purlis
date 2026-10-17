@@ -1270,19 +1270,15 @@ impl Chats {
             }
             // At the floor, the program it starts is never written by the chat (#2071, Q4).
             applied.hold_programs(&checked);
-            // And on Linux, purlis's own program the wrap starts it under, the same (#1040).
-            if applied.wrapped_by_purlis_here() {
-                let wrap = purlis_core::sandbox::program::checked_wrap(
-                    applied.root(),
-                    purlis_core::sandbox::program::Chat {
-                        cwd: &cwd,
-                        writable: &writable,
-                        env: &[],
-                    },
-                )
+            // And on Linux, purlis's own program the wrap starts it under, the same (#1040), which
+            // a brokered `secret exec` for the chat runs its command in too (#2342).
+            applied
+                .hold_wrap(purlis_core::sandbox::program::Chat {
+                    cwd: &cwd,
+                    writable: &writable,
+                    env: &[],
+                })
                 .map_err(|refused| refused.to_string())?;
-                applied.wrap_with(wrap);
-            }
             return Ok((Some((applied, checked[0].clone())), None, None));
         }
         Ok((None, lifted, floorless))
@@ -3084,6 +3080,8 @@ impl Chats {
                 // back keeps the key its workspace pointer and session lock are under; a
                 // chat the operator just started has none yet (charter-app#90).
                 chat.number,
+                // Every field spelled out on purpose, with no `..Opening::default()`: a new
+                // field is decided here, where a start's real value comes from (#2453).
                 &Opening {
                     program: Some(program),
                     args: all,

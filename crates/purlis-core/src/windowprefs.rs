@@ -32,8 +32,8 @@
 //! **What a region means is the window's**, because the vocabulary is: the regions are
 //! `app/src/regions.ts`'s catalogue, and its `load` takes whatever this module hands it, falls
 //! back field by field and says what it put right. **What a token means is the theme engine's**
-//! ([`crate::theme`]): [`crate::theme::read_theirs`] reads the theme file through
-//! [`read_theme`] and resolves it before the window is handed anything.
+//! ([`crate::theme`]): [`crate::theme::read_theirs`] reads the theme file's text through
+//! [`read_theme_text`] and resolves it before the window is handed anything.
 //!
 //! # Everything read back is attacker-influenced
 //!
@@ -221,13 +221,44 @@ pub fn read_layout(config_root: &Path) -> Reading {
     read(config_root, LAYOUT, "the window's layout", layout_problem)
 }
 
-/// The operator's theme, as a document the theme engine can load ([`crate::theme::load`]), or
-/// why not.
-///
-/// Only the envelope is asked about: `load` checks every token against the vocabulary and the
-/// hex grammar and reports what it put right, and it is the one place that knows the tokens.
-pub fn read_theme(config_root: &Path) -> Reading {
-    read(config_root, THEME, "the operator's theme", theme_problem)
+/// The operator's theme file as text, read the way every file beside `machine.json` is.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThemeText {
+    /// Where the file is, or would be.
+    pub path: String,
+    /// Whether there is a file at all.
+    pub found: bool,
+    /// Its text, when purlis could read it.
+    pub text: Option<String>,
+    /// Why a file that is there could not be read.
+    pub trouble: Option<String>,
+}
+
+/// **The operator's theme, as text** for the theme engine ([`crate::theme::load_text`]), or why
+/// it could not be read. Nothing about what it says is judged here: whether it is JSON, an
+/// object and a theme is the engine's one rule, the same for every theme wherever it comes from.
+pub fn read_theme_text(config_root: &Path) -> ThemeText {
+    let target = crate::machine::dir(config_root).join(THEME);
+    let path = target.display().to_string();
+    match crate::machine::read_beside(config_root, THEME, MAX_BYTES, "the operator's theme") {
+        Ok(None) => ThemeText {
+            path,
+            ..ThemeText::default()
+        },
+        Ok(Some(text)) => ThemeText {
+            path,
+            found: true,
+            text: Some(text),
+            trouble: None,
+        },
+        // The refusal already names the path; saying it twice reads as two files.
+        Err(why) => ThemeText {
+            path,
+            found: true,
+            text: None,
+            trouble: Some(format!("purlis could not read it: {why}")),
+        },
+    }
 }
 
 fn read(
@@ -302,11 +333,6 @@ fn layout_problem(document: &serde_json::Value) -> Option<String> {
         return Some("has no \"regions\" list".to_owned());
     }
     None
-}
-
-/// What is wrong with a theme's envelope, or `None` when the theme engine can load it.
-fn theme_problem(document: &serde_json::Value) -> Option<String> {
-    (!document.is_object()).then(|| "is not a theme: it is not a JSON object".to_owned())
 }
 
 /// Writes the window's layout.
@@ -791,16 +817,20 @@ mod tests {
     #[test]
     fn no_file_is_a_first_launch_and_nothing_to_complain_about() {
         let home = home();
-        for (reading, path) in [
-            (read_layout(home.path()), layout_path(home.path())),
-            (read_theme(home.path()), theme_path(home.path())),
-        ] {
-            assert!(!reading.found);
-            assert_eq!(reading.document, None);
-            assert_eq!(reading.trouble, None);
-            // Named all the same, so the window can say where one would go.
-            assert_eq!(reading.path, path.display().to_string());
-        }
+        let reading = read_layout(home.path());
+        assert!(!reading.found);
+        assert_eq!(reading.document, None);
+        assert_eq!(reading.trouble, None);
+        // Named all the same, so the window can say where one would go.
+        assert_eq!(reading.path, layout_path(home.path()).display().to_string());
+        let theme = read_theme_text(home.path());
+        assert_eq!(
+            theme,
+            ThemeText {
+                path: theme_path(home.path()).display().to_string(),
+                ..ThemeText::default()
+            }
+        );
     }
 
     #[test]
@@ -1141,19 +1171,33 @@ mod tests {
     }
 
     #[test]
-    fn a_theme_is_read_whole_and_judged_only_on_being_an_object() {
+    fn a_theme_is_read_whole_and_judged_by_the_theme_engine() {
         let home = home();
         put(
             home.path(),
             THEME,
             r##"{"name":"Mine","appearance":"light","tokens":{"surface.base":"#fff","nonsense":1}}"##,
         );
-        let reading = read_theme(home.path());
+        let reading = read_theme_text(home.path());
         assert_eq!(reading.trouble, None);
-        assert_eq!(reading.document.expect("a theme")["name"], "Mine");
+        assert!(reading.text.expect("a theme").contains("\"Mine\""));
 
+        // Neither JSON nor an object is asked about here: the engine refuses both, by the rule
+        // it holds every theme to.
+        for text in ["\"purlis-light\"", "[[[ not json"] {
+            put(home.path(), THEME, text);
+            let reading = read_theme_text(home.path());
+            assert_eq!(reading.trouble, None);
+            assert_eq!(reading.text.as_deref(), Some(text));
+        }
         put(home.path(), THEME, "\"purlis-light\"");
-        assert!(trouble(&read_theme(home.path())).contains("not a JSON object"));
+        let theirs = crate::theme::read_theirs(Some(home.path()));
+        assert!(theirs.theme.is_none());
+        assert!(
+            theirs
+                .trouble
+                .is_some_and(|why| why.contains("a theme is a JSON object"))
+        );
     }
 
     // ---------------------------------------------------------------- use the built-in
@@ -1169,7 +1213,7 @@ mod tests {
 
         let first = use_built_in_theme(home.path()).expect("moved aside");
         assert_eq!(first, dir.join("theme.aside.json").display().to_string());
-        assert!(!read_theme(home.path()).found);
+        assert!(!read_theme_text(home.path()).found);
         assert_eq!(std::fs::read_to_string(&first).unwrap(), "[[[ not json");
 
         put(home.path(), THEME, "{}");

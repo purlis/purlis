@@ -297,6 +297,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",
     "keep_chat_browser_off",
+    // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
+    // browser a site.
+    "allow_browser_sites",
+    "keep_browser_sites_blocked",
     // Apply and Dismiss on a chat's proposed change (#1975): only the person applies a change to
     // purlis's own configuration, and no chat answers its own proposal (PC-3).
     "apply_proposed_change",

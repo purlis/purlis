@@ -340,7 +340,12 @@ describe("a Tailwind class cannot reach past the tokens", () => {
    *  property, so a theme still owns the value. */
   const ARBITRARY = /\b[a-z][a-z0-9-]*-\[[^\]\s]+\]/g;
 
-  it.each(sources(".tsx", ".ts", ".css", ".html"))("%s uses no arbitrary value", (path, raw) => {
+  /** A design guard's own tests plant the values it refuses, to see each one fail. */
+  const unplanted = sources(".tsx", ".ts", ".css", ".html").filter(
+    ([path]) => !/\.guard\.test\.tsx?$/.test(path),
+  );
+
+  it.each(unplanted)("%s uses no arbitrary value", (path, raw) => {
     const text = withoutComments(raw, path.endsWith(".ts") || path.endsWith(".tsx") ? "ts" : "css");
     const complaints = [...text.matchAll(ARBITRARY)].map(
       (hit) => `${at(path, text, hit.index)} has ${hit[0]}`,

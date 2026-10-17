@@ -273,7 +273,9 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
     let mut want = wanted(
         project.path(),
         "team",
-        sh(r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$KEPT]""#),
+        sh(
+            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$KEPT]""#,
+        ),
     );
     want.env = vec!["X=TOKEN".into()];
     for (name, value) in [
@@ -281,13 +283,17 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         ("DYLD_INSERT_LIBRARIES", "/work/mine.dylib"),
         ("LD_PRELOAD", "/work/mine.so"),
         ("PYTHONPATH", "/work"),
+        ("GCONV_PATH", "/work/gconv"),
+        ("LOCPATH", "/work/locale"),
+        ("GIO_EXTRA_MODULES", "/work/gio"),
+        ("GTK_MODULES", "mine"),
         ("KEPT", "kept"),
     ] {
         want.environment.push((name.into(), value.into()));
     }
     let frames = served(&asker(project.path(), Some("devops")), want);
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
-    assert_eq!(stdout(&frames), "[][][][][kept]\n");
+    assert_eq!(stdout(&frames), "[][][][][][][][][kept]\n");
 }
 
 /// #1667 with #1350: a run's ssh signs with the chat's own agent. The run hands the chat's
@@ -553,6 +559,32 @@ fn a_credential_file_left_behind_is_swept_when_the_project_opens() {
     sweep(&ctx);
     assert!(!dir.join("charter-secret-abc").exists());
     assert!(dir.join("other").exists(), "only the files a run makes");
+}
+
+#[test]
+fn a_named_link_left_behind_is_swept_and_what_it_points_at_is_kept() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let dir = private_dir(&ctx.vaults_dir()).unwrap();
+    // What a run's link points at, and a folder a link of the same shape points at.
+    let program = project.path().join("work/xz");
+    std::fs::write(&program, "the program").unwrap();
+    let elsewhere = project.path().join("work/elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("kept"), "kept").unwrap();
+    // A crash mid-run leaves its folder and its link.
+    let (left, link) = named_link(&dir, "unxz", &program).unwrap();
+    let left = left.keep();
+    std::os::unix::fs::symlink(&elsewhere, dir.join("as-a-link")).unwrap();
+    sweep(&ctx);
+    assert!(!left.exists(), "the run's folder is swept");
+    assert!(std::fs::symlink_metadata(&link).is_err());
+    assert_eq!(std::fs::read_to_string(&program).unwrap(), "the program");
+    assert!(
+        std::fs::symlink_metadata(dir.join("as-a-link")).is_ok(),
+        "a link is not a folder a run makes"
+    );
+    assert!(elsewhere.join("kept").exists(), "nothing behind a link");
 }
 
 #[test]
@@ -938,6 +970,163 @@ fn a_wrapped_child_reads_its_credential_and_not_the_vault() {
         root.join("work/ran").exists(),
         "the chat's folder is written"
     );
+}
+
+/// On Linux a run is wrapped by purlis's own program (#2342), the one the chat's own start
+/// checked and held. A chat recorded with none runs nothing: no value is read and no credential
+/// file is made.
+#[test]
+fn a_run_wrapped_by_purlis_for_a_chat_whose_start_held_no_wrap_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = None;
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(refusal(&frames), NO_WRAP_RECORDED, "{frames:?}");
+    assert!(!marker.exists(), "nothing ran");
+    let exec_dir = Ctx::new(&root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    assert!(
+        std::fs::read_dir(&exec_dir).map_or(true, |mut d| d.next().is_none()),
+        "no credential file was made"
+    );
+}
+
+/// A run wrapped by purlis's own program refuses one the chat may write: the program the
+/// chat's start recorded is checked again as the run starts.
+#[test]
+fn a_run_wrapped_by_a_purlis_program_the_chat_may_write_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let planted = root.join("work/purlis");
+    std::fs::write(&planted, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = Some(planted.clone());
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        refusal(&frames).contains(&planted.display().to_string()),
+        "{frames:?}"
+    );
+    assert!(!marker.exists(), "nothing ran");
+}
+
+/// At the floor the chat writes all but what its start held, so a run is wrapped only by a
+/// program the start held unwritten.
+#[test]
+fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_nothing() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let program = elsewhere.path().canonicalize().unwrap().join("purlis");
+    std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    let confines = asker.confines.as_mut().unwrap();
+    confines.level = crate::sandbox::Level::Floor;
+    confines.held.clear();
+    confines.wrap = Some(program);
+    let marker = root.join("work/ran");
+    let (asker, want) = as_tool(
+        asker,
+        wanted(&root, "team", sh(&format!("touch {}", marker.display()))),
+    );
+    let wire = Wire::default();
+    serve_wrapped(
+        &asker,
+        want,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(wire.clone()),
+        Wrap::Purlis,
+    );
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        refusal(&frames).contains("is not one this chat's start kept it from writing"),
+        "{frames:?}"
+    );
+    assert!(!marker.exists(), "nothing ran");
+}
+
+/// The credential file and a login's folder are given back after every denial of the profile,
+/// the vaults of every project among them (#2071), at both levels: read as the last matching
+/// rule decides, by the same reading purlis's Linux wrap judges by. Nothing else of the vaults
+/// class is.
+#[test]
+fn a_runs_own_credential_file_is_given_back_after_every_denial_and_nothing_else_is() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let vaults = Ctx::new(&root, Env::of(&[])).vaults_dir();
+    let file = vaults.join("exec/charter-secret-given");
+    let other = vaults.join("exec/charter-secret-another");
+    let login = vaults.join("exec/login-given");
+    for level in [crate::sandbox::Level::Full, crate::sandbox::Level::Floor] {
+        let confines = Confines {
+            level,
+            ..compiled(&root)
+        };
+        let profile = profile_on(
+            &confines,
+            std::slice::from_ref(&file),
+            std::slice::from_ref(&login),
+            &root.join("work"),
+            &root.join("tmp"),
+            &[4242],
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("it reads");
+        let may = |what: FileOp, path: &Path| {
+            read.allows(&Op::File {
+                what,
+                path,
+                kind: Kind::Regular,
+            })
+        };
+        assert!(may(FileOp::ReadData, &file), "{level:?}: {profile}");
+        assert!(!may(FileOp::WriteData, &file), "{level:?}");
+        assert!(may(FileOp::WriteData, &login.join("state")), "{level:?}");
+        assert!(!may(FileOp::ReadData, &other), "{level:?}");
+        assert!(!may(FileOp::ReadData, &root.join("team.json")), "{level:?}");
+        assert!(
+            !may(FileOp::ReadData, &vaults.join("team.json")),
+            "{level:?}"
+        );
+    }
 }
 
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
@@ -2076,7 +2265,7 @@ fn a_sandboxed_chat_is_refused_reading_a_value_with_the_route_that_works() {
     let project = project();
     let root = project.path();
     let chat = Ctx::new(root, Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]));
-    let route = if cfg!(target_os = "macos") {
+    let route = if runs_a_chats_command_here() {
         "purlis secret exec team --env NAME=key -- <tool>"
     } else {
         "terminal outside the chat"
@@ -3767,4 +3956,135 @@ fn only_a_marked_secret_exec_is_tried_again_through_the_app() {
             assert_eq!(code, Some(1));
         }
     }
+}
+
+/// `asker`, whose chat's start armed the tool `name` of `vault` handing `X=TOKEN`, found as
+/// `program`: a tool declared under a name its program's file does not have (#1977).
+fn armed_as(mut asker: Asker, name: &str, vault: &str, program: &Path) -> Asker {
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    asker
+        .confines
+        .as_mut()
+        .expect("sandboxed")
+        .tools
+        .push(Ready {
+            tool: Tool::one(name, vault, "X", Handed::Env, "TOKEN"),
+            program: program.to_path_buf(),
+        });
+    asker
+}
+
+/// Every folder of a run's named link left in the project at `root`'s exec folder.
+fn named_links_left(root: &Path) -> Vec<PathBuf> {
+    let exec = Ctx::new(root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    std::fs::read_dir(exec)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(NAMED_PREFIX)
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
+#[test]
+fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
+    let Some(xz) = crate::testmulticall::xz() else {
+        let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
+        return;
+    };
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let file = crate::testmulticall::packed(&xz, &root.join("work"), "unpacked\n");
+    // `unxz` is a link to xz: the chat runs the program the link resolves to, by its path.
+    let asker = armed_as(asker(&root, Some("devops")), "unxz", "team", &xz);
+    let mut want = wanted(
+        &root,
+        "team",
+        vec![
+            xz.display().to_string(),
+            "-c".into(),
+            file.display().to_string(),
+        ],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    // `xz -c` would pack it again: started as `unxz`, the same program unpacks.
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    assert!(frames.contains(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        named_links_left(&root),
+        Vec::<PathBuf>::new(),
+        "the run's link went with it"
+    );
+}
+
+/// [`a_tool_declared_under_another_name_runs_its_program_under_that_name`] in the run's
+/// sandbox, applied for real where this machine can apply one: macOS's `gunzip` is also its
+/// `zcat`, which writes what it unpacks to standard output.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
+    let can_apply = crate::forklock::status(
+        std::process::Command::new(crate::sandbox::backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]),
+    )
+    .is_ok_and(|s| s.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let packed = crate::forklock::spawn(
+        std::process::Command::new("/usr/bin/gzip")
+            .arg("-c")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped()),
+    )
+    .and_then(|mut child| {
+        child.stdin.take().unwrap().write_all(b"unpacked\n")?;
+        child.wait_with_output()
+    })
+    .unwrap();
+    let file = root.join("work/packed.gz");
+    std::fs::write(&file, packed.stdout).unwrap();
+    let asker = armed_as(
+        asker(&root, Some("devops")),
+        "zcat",
+        "team",
+        Path::new("/usr/bin/gunzip"),
+    );
+    let mut want = wanted(
+        &root,
+        "team",
+        vec!["/usr/bin/gunzip".into(), file.display().to_string()],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_wrapped(&asker, want, reader, Box::new(wire.clone()), Wrap::Seatbelt);
+    let text = String::from_utf8(wire.0.lock().unwrap().clone()).unwrap();
+    let frames: Vec<Frame> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    // As `gunzip` it would unpack beside the file and say nothing.
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    assert!(file.exists(), "the packed file is left as it was");
+    assert_eq!(
+        named_links_left(&root),
+        Vec::<PathBuf>::new(),
+        "the run's link went with it"
+    );
 }

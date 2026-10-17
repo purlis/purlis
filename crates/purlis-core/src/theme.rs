@@ -1,35 +1,51 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The theme engine** (spec #2313, #2320): the one place that reads a theme, validates it,
-//! resolves which theme the window draws, and checks whether its words can be read.
+//! **The theme engine** (spec #2313, #2320, #2322): the one place that reads a theme, validates
+//! it, resolves which theme the window draws, and checks whether its words can be read.
 //!
 //! Every surface asks this module, and none of them holds a rule of its own. The window is
-//! handed a [`ResolvedTheme`] — every token's final value and the motion — and only applies it:
-//! it writes the custom properties and hands xterm its object (`app/src/theme/theme.ts`).
+//! handed a [`ResolvedTheme`] — one appearance, every token's final value and the motion — and
+//! only applies it: it writes the custom properties and hands xterm its object
+//! (`app/src/theme/theme.ts`).
 //!
 //! # The interface
 //!
-//! - [`load`] reads one theme document (today's format, format 1: a name, an appearance, colour
-//!   tokens and motion) and always answers with a complete theme and what it had to put right
-//!   ([`Resolved`]). **It never fails**: a token that is missing, misspelled or malformed falls
-//!   back to the built-in of the same appearance, and the substitution is said. ADR 0026 holds
-//!   cold start at 2 s, and the window has to come up whatever a file says.
-//! - [`built_ins`] and [`built_in`] are the themes purlis ships, compiled into the core
-//!   (`theme/built-in/*.json`), by their ids and the ids they had before (#1838).
-//! - [`resolve`] decides which theme the window draws from every source there is today: the
-//!   project's or workspace's pick, the person's own theme file, the themes approved extensions
-//!   contribute, and the operating system's appearance ([`Inputs`]).
-//! - [`check`] measures any theme against the contrast pairs and the terminal's floors, as it
-//!   ships and tinted by every workspace colour, and answers with a [`Report`].
+//! - [`load`] reads one theme document and always answers with a complete [`Theme`] — every
+//!   appearance, each complete — and what it had to say about it ([`Resolved`]).
+//!   - **Format 2** (a theme folder's `theme.json`, [`Library`]): a name, optionally a theme it
+//!     `extends`, a palette of named colours, and one or more appearances, each tagged dark or
+//!     light and optionally high contrast.
+//!   - **Format 1** (today's single-appearance file) keeps loading as a theme with one
+//!     appearance.
 //!
-//! The spec's later formats (appearances, options, levels, import and export) grow these same
-//! four entries: `resolve` takes more inputs, `check` covers more combinations, and a resolved
-//! theme carries more than colour and motion.
+//!   **One rule for both, and for every source**: a token the theme does not name is Purlis
+//!   Classic's of the same appearance, silently; a token or motion name purlis does not have,
+//!   and a key format 1 does not have, is said and left out; a value that is there and outside
+//!   its type or bound, a key format 2 does not have, geometry, or a document that is not a
+//!   theme **refuses the theme whole**
+//!   (ADR 0097 §2). A refused theme draws Purlis, and the complaints name each value.
+//!   **It never fails**: ADR 0026 holds cold start at 2 s, and the window has to come up
+//!   whatever a file says.
+//! - [`classic`] is Purlis Classic, the theme purlis ships, compiled into the core from its theme
+//!   folder (`theme/built-in/purlis-classic/`); [`built_ins`] and [`built_in`] are its
+//!   appearances by the ids a pick names them by, old ones included (#1838).
+//! - [`resolve`] decides which theme, and which of its appearances, the window draws from every
+//!   source there is today: the project's or workspace's pick, the person's own theme file, the
+//!   themes approved extensions contribute, and the operating system's appearance ([`Inputs`]).
+//! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
+//!   it ships and tinted by every workspace colour, and answers with a [`Report`].
+//! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
+//!   vocabulary (`docs/schema/theme.schema.json`, held to it by a test).
+//!
+//! The spec's later steps (theme options, the choice levels, geometry and fonts, import and
+//! export) grow these same entries: `resolve` takes more inputs, `check` covers more
+//! combinations, and a resolved theme carries more than colour and motion.
 //!
 //! # Values are closed grammars
 //!
-//! A colour is hex and only hex ([`vocabulary::is_colour`]); a duration is a whole number of
+//! A colour is hex ([`vocabulary::is_colour`]) or, in format 2, the name of a colour in the
+//! theme's own palette, which the engine replaces with that hex; a duration is a whole number of
 //! milliseconds; an easing is four bounded numbers. What reaches the window is written from those
 //! parsed values, never copied from a file's text (ADR 0041, property 4), so a theme from an
 //! extension or a hand-edited file has nowhere to put anything but a colour or a number.
@@ -40,15 +56,25 @@ use std::sync::OnceLock;
 use serde_json::Value;
 
 mod check;
+mod format;
+mod icons;
 mod resolve;
+mod schema;
 mod tint;
 pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
-pub use resolve::{Drawn, Inputs, Offered, On, resolve};
+pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
+pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
+pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
+pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
 use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
 
+#[cfg(test)]
+mod format_tests;
+#[cfg(test)]
+mod icons_tests;
 #[cfg(test)]
 mod tests;
 
@@ -69,23 +95,33 @@ pub struct Motion {
     pub easings: BTreeMap<&'static str, [f64; 4]>,
 }
 
-/// **A theme, complete**: what the window draws. Every token in [`TOKENS`] has a value, and so
-/// does every motion token.
+/// **One appearance of a theme, complete**: what the window draws. Every token in [`TOKENS`] has
+/// a value, and so does every motion token.
 ///
-/// **This shape is today's (format 1) and will change for format 2** (spec #2313): typed values
-/// beyond colour and motion (geometry, fonts, icons), keys for each appearance × option
-/// combination, and schema errors beside the findings. Its users are the window's wire types and
-/// the engine's own tests, which change with it.
+/// **It will grow** (spec #2313): typed values beyond colour, motion and icons (geometry and
+/// fonts #2326) and the option values it was drawn with (#2325). Its users are the window's wire types
+/// and the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ResolvedTheme {
-    /// What to call it, as a person would.
+    /// The name the window knows what it draws by: the theme's name, or for Purlis Classic's
+    /// appearances the id a pick names each by (`purlis-dark`, `purlis-light`), which the
+    /// window's picks and Settings name until the choice levels replace the old ids (#2323).
     pub name: String,
-    /// Which built-in a partial theme falls back to, and the `color-scheme` the window gets.
+    /// The appearance's id inside its theme (`dark`, `day`): a format 1 file's is its tag.
+    pub id: String,
+    /// Its tag: which of Purlis Classic's appearances a partial one falls back to, and the
+    /// `color-scheme` the window gets.
     pub appearance: Appearance,
+    /// Whether it is tagged high contrast.
+    pub high_contrast: bool,
     /// Each token's final value.
     pub values: BTreeMap<&'static str, String>,
     /// How the window moves.
     pub motion: Motion,
+    /// The theme's icon set (#2337), the same in each of its appearances: empty when the rails
+    /// draw the window's own marks, as Purlis Classic's do.
+    #[serde(skip_serializing_if = "Icons::is_empty")]
+    pub icons: Icons,
 }
 
 impl ResolvedTheme {
@@ -95,7 +131,46 @@ impl ResolvedTheme {
     }
 }
 
-/// One thing [`load`] had to put right: a value the file did not supply usably.
+/// **A theme**: its name and every appearance it has, each complete, in the order it declares
+/// them. Never without an appearance.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Theme {
+    /// What to call it, as a person would.
+    pub name: String,
+    /// Its appearances, the first one what it draws when nothing chose another.
+    pub appearances: Vec<ResolvedTheme>,
+}
+
+impl Theme {
+    /// What the theme draws when nothing chose an appearance: its first.
+    pub fn first(&self) -> &ResolvedTheme {
+        &self.appearances[0]
+    }
+
+    /// Its appearance tagged `appearance`: the first such that is not high contrast, else the
+    /// first such at all.
+    pub fn of(&self, appearance: Appearance) -> Option<&ResolvedTheme> {
+        let tagged = || {
+            self.appearances
+                .iter()
+                .filter(|one| one.appearance == appearance)
+        };
+        tagged()
+            .find(|one| !one.high_contrast)
+            .or_else(|| tagged().next())
+    }
+
+    /// The theme as one appearance: what a format 1 file is.
+    fn one(theme: ResolvedTheme) -> Self {
+        Self {
+            name: theme.name.clone(),
+            appearances: vec![theme],
+        }
+    }
+}
+
+/// One thing [`load`] found wrong with a theme, which refuses it: a value the file did not
+/// supply usably.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Complaint {
     /// What was wrong, in the words to put in front of whoever wrote the file.
@@ -124,61 +199,104 @@ impl Complaint {
 /// A theme, and what it cost to get one.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Resolved {
-    pub theme: ResolvedTheme,
+    /// The theme, complete: Purlis when the document was refused.
+    pub theme: Theme,
+    /// Why it was refused; empty when it was not.
     pub complaints: Vec<Complaint>,
+    /// Whether the document was refused whole, so [`Self::theme`] is Purlis and not the
+    /// document's (a format 2 theme that breaks its grammar, ADR 0097 §2).
+    pub refused: bool,
 }
 
-/// The built-in theme files, compiled in: the one copy of each.
-const BUILT_IN_FILES: [&str; 2] = [
-    include_str!("theme/built-in/purlis-dark.json"),
-    include_str!("theme/built-in/purlis-light.json"),
-];
+impl Resolved {
+    /// The document refused for one reason.
+    pub(crate) fn refused_for(why: String) -> Self {
+        Self::refusal(vec![Complaint::said(why)])
+    }
 
-/// **The themes purlis ships**, dark first: the theme the window comes up in. Their ids are
-/// [`crate::extension::BUILT_IN_THEMES`], which a test holds to these.
+    /// The document refused, for `complaints`: Purlis is drawn in its place.
+    fn refusal(complaints: Vec<Complaint>) -> Self {
+        Self {
+            theme: classic().clone(),
+            complaints,
+            refused: true,
+        }
+    }
+}
+
+/// Purlis Classic's `theme.json`, compiled in: the one copy of it.
+const CLASSIC_FILE: &str = include_str!("theme/built-in/purlis-classic/theme.json");
+
+/// Purlis Classic's id: its folder's name, which a theme `extends` it by.
+pub const CLASSIC: &str = "purlis-classic";
+
+/// **Purlis Classic**, the theme purlis ships: today's look, a dark and a light appearance. Its
+/// appearances are named by the ids a pick names them by ([`crate::extension::BUILT_IN_THEMES`],
+/// which a test holds to these), dark first: the theme the window comes up in.
+pub fn classic() -> &'static Theme {
+    static BUILT: OnceLock<Theme> = OnceLock::new();
+    BUILT.get_or_init(|| built_in_of(CLASSIC_FILE))
+}
+
+/// **The appearances purlis ships**, dark first: Purlis Classic's.
 pub fn built_ins() -> &'static [ResolvedTheme] {
-    static BUILT: OnceLock<Vec<ResolvedTheme>> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        BUILT_IN_FILES
-            .iter()
-            .map(|text| built_in_of(text))
-            .collect()
-    })
+    &classic().appearances
 }
 
-/// A built-in file as a theme. A built-in is checked into this crate and a test proves each one
-/// complete, so a gap here is a defect of this build and not something a person did.
-fn built_in_of(text: &str) -> ResolvedTheme {
+/// The built-in folder as a theme. It is checked into this crate and a test proves it complete,
+/// so a gap here is a defect of this build and not something a person did. Every token is
+/// given, so nothing falls back: this is what everything else falls back to.
+fn built_in_of(text: &str) -> Theme {
     let document: Value = serde_json::from_str(text).expect("a built-in theme is JSON");
-    let appearance = match document.get("appearance").and_then(Value::as_str) {
-        Some("light") => Appearance::Light,
-        _ => Appearance::Dark,
-    };
     let name = document
         .get("name")
         .and_then(Value::as_str)
         .expect("a built-in theme has a name")
         .to_owned();
-    let tokens = document.get("tokens").and_then(Value::as_object);
-    let values = TOKENS
+    let picks = [
+        crate::names::THEME_DARK.write,
+        crate::names::THEME_LIGHT.write,
+    ];
+    let appearances = document
+        .get("appearances")
+        .and_then(Value::as_array)
+        .expect("a built-in theme has appearances")
         .iter()
-        .map(|token| {
-            let value = tokens
-                .and_then(|tokens| tokens.get(*token))
-                .and_then(Value::as_str)
-                .filter(|value| is_colour(value))
-                .unwrap_or_else(|| panic!("the built-in theme {name} has no {token}"));
-            (*token, value.to_owned())
+        .zip(picks)
+        .map(|(one, pick)| {
+            let field = |key: &str| one.get(key).and_then(Value::as_str);
+            let appearance = match field("appearance") {
+                Some("light") => Appearance::Light,
+                _ => Appearance::Dark,
+            };
+            let tokens = one.get("tokens").and_then(Value::as_object);
+            let values = TOKENS
+                .iter()
+                .map(|token| {
+                    let value = tokens
+                        .and_then(|tokens| tokens.get(*token))
+                        .and_then(Value::as_str)
+                        .filter(|value| is_colour(value))
+                        .unwrap_or_else(|| panic!("the built-in theme {name} has no {token}"));
+                    (*token, value.to_owned())
+                })
+                .collect();
+            let motion = motion_of(one.get("motion"))
+                .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
+            ResolvedTheme {
+                name: pick.to_owned(),
+                id: field("id")
+                    .expect("a built-in appearance has an id")
+                    .to_owned(),
+                appearance,
+                high_contrast: false,
+                values,
+                motion,
+                icons: Icons::default(),
+            }
         })
         .collect();
-    let motion = motion_of(document.get("motion"))
-        .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
-    ResolvedTheme {
-        name,
-        appearance,
-        values,
-        motion,
-    }
+    Theme { name, appearances }
 }
 
 /// A built-in's motion, every token present, or the first token it lacks.
@@ -196,21 +314,26 @@ fn motion_of(raw: Option<&Value>) -> Result<Motion, &'static str> {
     Ok(Motion { durations, easings })
 }
 
-/// The theme purlis draws when nothing has said otherwise: the dark built-in.
+/// The appearance purlis draws when nothing has said otherwise: Purlis Classic's dark.
 pub fn default_theme() -> &'static ResolvedTheme {
-    &built_ins()[0]
+    classic().first()
 }
 
-/// The built-in of `appearance`: what a theme of that appearance falls back to, token by token.
+/// Purlis Classic's appearance of `appearance`: what a theme's appearance of that tag falls back
+/// to, token by token.
 pub fn built_in_for(appearance: Appearance) -> &'static ResolvedTheme {
-    built_ins()
-        .iter()
-        .find(|theme| theme.appearance == appearance)
-        .unwrap_or_else(default_theme)
+    classic().of(appearance).unwrap_or_else(default_theme)
 }
 
-/// The built-in `id` names, by its id or by an id it had before the rename (#1838).
+/// The built-in appearance `id` names, by its id or by an id it had before the rename (#1838):
+/// the old ids map as the spec's table says, each to Purlis Classic's appearance of its tag
+/// until the switch-over to Purlis.
 pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
+    // Purlis Classic by its own id is the theme, which draws its first appearance when nothing
+    // chose another.
+    if id == CLASSIC {
+        return Some(classic().first());
+    }
     let id = [crate::names::THEME_DARK, crate::names::THEME_LIGHT]
         .into_iter()
         .find(|name| name.recognises(id))
@@ -218,32 +341,52 @@ pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
     built_ins().iter().find(|theme| theme.name == id)
 }
 
-/// Why a theme's geometry was ignored, after the key that named it.
+/// Why a theme that names geometry is refused, after the key that named it (ADR 0097 §7: geometry
+/// stays core's until a theme may set it, #2326).
 const GEOMETRY_IS_CORE: &str =
-    "is geometry, which is the same in every theme; a theme sets colour, shadow colour and motion";
+    "is geometry, which this purlis does not read from a theme yet (#2326)";
 
-/// **Reads one theme document** (format 1), and always answers with a complete theme.
+/// The keys of a format 1 theme file.
+const FORMAT_1_KEYS: &[&str] = &["name", "appearance", "tokens", "motion"];
+
+/// **Reads one theme document**, format 1 or format 2, and always answers with a complete
+/// theme. A format 2 theme may extend only Purlis Classic here; [`Library::load`] reads one
+/// that extends a theme folder.
 ///
 /// `document` is untrusted: the parse of a file purlis did not write. Nothing here panics and
-/// nothing trusts a type. A token that is missing falls back to the built-in of the theme's
-/// appearance silently, since not naming a token is how a small theme says the built-in's is
-/// right; a value that is there and unusable falls back too, and is said.
+/// nothing trusts a type.
 pub fn load(document: &Value) -> Resolved {
-    let Some(from) = document.as_object() else {
-        return Resolved {
-            theme: default_theme().clone(),
-            complaints: vec![Complaint::said("a theme is a JSON object")],
-        };
-    };
-    let mut complaints = Vec::new();
+    Library::new().load(None, document)
+}
 
-    let appearance = match from.get("appearance").and_then(Value::as_str) {
-        Some("light") => Appearance::Light,
-        Some("dark") => Appearance::Dark,
-        _ => {
-            complaints.push(Complaint::said(
-                "appearance is \"dark\" or \"light\"; read this one as dark",
-            ));
+/// Whether `document` is format 2: it names the schema, a parent, a palette or appearances,
+/// none of which format 1 has.
+fn is_format_2(document: &serde_json::Map<String, Value>) -> bool {
+    ["$schema", "extends", "palette", "appearances"]
+        .iter()
+        .any(|key| document.contains_key(*key))
+}
+
+/// **Reads a format 1 document**: one appearance. A token that is missing is Purlis Classic's of
+/// the theme's appearance, silently, since not naming a token is how a small theme says
+/// Classic's is right; a value that is there and unusable refuses the theme, and is said. A
+/// token or motion name purlis does not have is said and left out, and does not refuse it: a
+/// name reaches nothing, and a teammate's purlis may have a token this one does not yet.
+fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
+    let mut complaints = Vec::new();
+    let mut notes = Vec::new();
+
+    // A key the file does not have says nothing: no appearance is dark, as no token is Purlis
+    // Classic's. A key that is there and not a value of its type refuses the theme.
+    let appearance = match from.get("appearance") {
+        None => Appearance::Dark,
+        Some(Value::String(tag)) if tag == "light" => Appearance::Light,
+        Some(Value::String(tag)) if tag == "dark" => Appearance::Dark,
+        Some(other) => {
+            complaints.push(Complaint::said(format!(
+                "appearance is {}; a theme's appearance is \"dark\" or \"light\"",
+                stringify(other)
+            )));
             Appearance::Dark
         }
     };
@@ -252,10 +395,7 @@ pub fn load(document: &Value) -> Resolved {
     let name = match from.get("name").and_then(Value::as_str).map(str::trim) {
         Some(name) if !name.is_empty() => name.to_owned(),
         _ => {
-            complaints.push(Complaint::said(format!(
-                "a theme has a name; called this one {}",
-                base.name
-            )));
+            complaints.push(Complaint::said("a theme has a name"));
             base.name.clone()
         }
     };
@@ -263,7 +403,10 @@ pub fn load(document: &Value) -> Resolved {
     let empty = serde_json::Map::new();
     let tokens = match from.get("tokens") {
         Some(Value::Object(tokens)) => tokens,
-        _ => {
+        // A theme that names no token is Purlis Classic's of its appearance, as one that names
+        // a few is for the rest.
+        None => &empty,
+        Some(_) => {
             complaints.push(Complaint::said(
                 "tokens is an object of token names to colours",
             ));
@@ -280,35 +423,41 @@ pub fn load(document: &Value) -> Resolved {
                 format!("{given} {GEOMETRY_IS_CORE}"),
             ));
         } else {
-            complaints.push(Complaint::about(
+            notes.push(Complaint::about(
                 given,
-                format!("{given} is not a purlis token"),
+                format!("{given} is not a purlis token, so it is left out"),
             ));
         }
     }
-    // Geometry is core (ADR 0094): a theme that tries to size the window is told so, by key,
-    // rather than being silently ignored. Nothing it says is read.
+    // Format 1 is frozen, and people's files and extensions' themes carry keys of their own
+    // (`author`, `description`, `$comment`): a key it does not have is said and left out, as an
+    // unknown token name is. Geometry still refuses the theme, by name (ADR 0097 §7).
     for key in from.keys() {
+        if FORMAT_1_KEYS.contains(&key.as_str()) {
+            continue;
+        }
         if names_geometry(key) {
             complaints.push(Complaint::said(format!("{key} {GEOMETRY_IS_CORE}")));
+        } else {
+            notes.push(Complaint::said(format!(
+                "{key} is not a key of a theme file, so it is left out"
+            )));
         }
     }
 
     let mut values = BTreeMap::new();
     for token in TOKENS {
-        let fallback = base.value(token);
         match tokens.get(*token) {
             Some(Value::String(given)) if is_colour(given) => {
                 values.insert(*token, given.clone());
             }
             given => {
-                values.insert(*token, fallback.to_owned());
+                values.insert(*token, base.value(token).to_owned());
                 if let Some(given) = given {
                     complaints.push(Complaint::about(
                         token,
                         format!(
-                            "{token} is {}, which is not #rgb, #rgba, #rrggbb or #rrggbbaa; used \
-                             {fallback}",
+                            "{token} is {}, which is not #rgb, #rgba, #rrggbb or #rrggbbaa",
                             stringify(given)
                         ),
                     ));
@@ -319,25 +468,50 @@ pub fn load(document: &Value) -> Resolved {
 
     // A theme that says nothing about motion moves the way the built-in of its appearance does,
     // exactly as a token it does not name is coloured by that built-in.
-    let motion = load_motion(from.get("motion"), &base.motion, &mut complaints);
+    let motion = load_motion(
+        from.get("motion"),
+        &base.motion,
+        &mut complaints,
+        &mut notes,
+    );
 
+    // A value outside its type refuses the whole theme (ADR 0097 §2), as in format 2: the
+    // window draws Purlis and the complaints name each value.
+    if !complaints.is_empty() {
+        complaints.extend(notes);
+        return Resolved::refusal(complaints);
+    }
     Resolved {
-        theme: ResolvedTheme {
+        theme: Theme::one(ResolvedTheme {
             name,
+            id: match appearance {
+                Appearance::Dark => "dark",
+                Appearance::Light => "light",
+            }
+            .to_owned(),
             appearance,
+            high_contrast: false,
             values,
             motion,
-        },
-        complaints,
+            icons: Icons::default(),
+        }),
+        complaints: notes,
+        refused: false,
     }
 }
 
-/// [`load`] of a theme's text: `None` when the text is not JSON at all, which the caller decides
-/// about (an extension's theme that is not JSON is dropped, and the window keeps what it has).
-pub fn load_text(text: &str) -> Option<Resolved> {
-    serde_json::from_str::<Value>(text)
-        .ok()
-        .map(|document| load(&document))
+/// [`load`] of a theme's text. Text that is not JSON is refused like any other theme that is
+/// not one: Purlis is drawn, and the complaint says why.
+pub fn load_text(text: &str) -> Resolved {
+    match load_text_document(text) {
+        Ok(document) => load(&document),
+        Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
+    }
+}
+
+/// A theme's text as JSON, or the one sentence every source says when it is not.
+fn load_text_document(text: &str) -> Result<Value, String> {
+    serde_json::from_str::<Value>(text).map_err(|why| format!("a theme is JSON: {why}"))
 }
 
 /// A value as JSON writes it, for a sentence that names what a file said.
@@ -367,8 +541,14 @@ fn easing(value: &Value) -> Option<[f64; 4]> {
         .then_some([x1, y1, x2, y2])
 }
 
-/// Reads a theme's `motion`, filling what it does not supply usably from `base` and saying so.
-fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complaint>) -> Motion {
+/// Reads a theme's `motion` over `base`, saying in `complaints` what it does not supply usably
+/// (which refuses the theme) and in `notes` a motion name purlis does not have (left out).
+fn load_motion(
+    raw: Option<&Value>,
+    base: &Motion,
+    complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
+) -> Motion {
     let Some(raw) = raw else {
         return base.clone();
     };
@@ -384,8 +564,8 @@ fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complain
     };
     for name in given.keys() {
         if !DURATIONS.contains(&name.as_str()) && !EASINGS.contains(&name.as_str()) {
-            complaints.push(Complaint::said(format!(
-                "{name} is not a purlis motion token"
+            notes.push(Complaint::said(format!(
+                "{name} is not a purlis motion token, so it is left out"
             )));
         }
     }
@@ -399,10 +579,8 @@ fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complain
                 motion.durations.insert(*token, ms);
             }
             None => complaints.push(Complaint::said(format!(
-                "{token} is {}, which is not a whole number of milliseconds from 0 to {LONGEST}; \
-                 used {}",
+                "{token} is {}, which is not a whole number of milliseconds from 0 to {LONGEST}",
                 stringify(value),
-                base.durations[token]
             ))),
         }
     }
@@ -414,15 +592,11 @@ fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complain
             Some(curve) => {
                 motion.easings.insert(*token, curve);
             }
-            None => {
-                let used: Vec<String> = base.easings[token].iter().map(f64::to_string).collect();
-                complaints.push(Complaint::said(format!(
-                    "{token} is {}, which is not [x1, y1, x2, y2] with each x from 0 to 1 and \
-                     each y from -1 to 2; used [{}]",
-                    stringify(value),
-                    used.join(", ")
-                )));
-            }
+            None => complaints.push(Complaint::said(format!(
+                "{token} is {}, which is not [x1, y1, x2, y2] with each x from 0 to 1 and each y \
+                 from -1 to 2",
+                stringify(value),
+            ))),
         }
     }
     motion
@@ -440,29 +614,50 @@ pub struct Theirs {
     /// Why a file that is there is not in force: not readable, not JSON, not an object.
     pub trouble: Option<String>,
     /// The theme it resolves to, when it is in force.
-    pub theme: Option<ResolvedTheme>,
+    pub theme: Option<Theme>,
     /// What resolving it had to put right.
     pub complaints: Vec<Complaint>,
 }
 
 /// Reads the person's own theme under `config_root` and resolves it. A machine with no config
 /// home has none. Bounded and link-refusing, as every file beside `machine.json` is read
-/// ([`crate::windowprefs::read_theme`]).
+/// ([`crate::windowprefs::read_theme_text`]).
 pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
     let Some(root) = config_root else {
         return Theirs::default();
     };
-    let reading = crate::windowprefs::read_theme(root);
-    let resolved = reading.document.as_ref().map(load);
+    let reading = crate::windowprefs::read_theme_text(root);
+    let Some(text) = reading.text else {
+        return Theirs {
+            path: reading.path,
+            found: reading.found,
+            trouble: reading.trouble,
+            ..Theirs::default()
+        };
+    };
+    let resolved = load_text(&text);
+    // A refused theme is not in force: the window draws Purlis and says why. What refused it is
+    // kept as it was found, beside the sentence.
+    if resolved.refused {
+        let why: Vec<&str> = resolved
+            .complaints
+            .iter()
+            .map(|one| one.said.as_str())
+            .collect();
+        return Theirs {
+            path: reading.path,
+            found: true,
+            trouble: Some(format!("purlis cannot draw it: {}", why.join("; "))),
+            theme: None,
+            complaints: resolved.complaints,
+        };
+    }
     Theirs {
         path: reading.path,
-        found: reading.found,
-        trouble: reading.trouble,
-        complaints: resolved
-            .as_ref()
-            .map(|it| it.complaints.clone())
-            .unwrap_or_default(),
-        theme: resolved.map(|it| it.theme),
+        found: true,
+        trouble: None,
+        complaints: resolved.complaints,
+        theme: Some(resolved.theme),
     }
 }
 
@@ -502,9 +697,9 @@ impl TheirsKept {
     }
 }
 
-/// **Checks a theme**: every contrast pair, the terminal's ANSI floors and the selected row kept
-/// apart, as the theme is and tinted by every colour a workspace can name. A theme with no
-/// findings can be read.
+/// **Checks one appearance of a theme**: every contrast pair, the terminal's ANSI floors and the
+/// selected row kept apart, as it is and tinted by every colour a workspace can name. An
+/// appearance with no findings can be read.
 pub fn check(theme: &ResolvedTheme) -> Report {
     check::check(theme)
 }

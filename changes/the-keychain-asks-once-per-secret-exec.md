@@ -7,7 +7,7 @@
   refuses with a sentence saying why and what to run instead, rather than reading the keyring
   itself and raising a Keychain question on the chat's behalf (#1638). On Linux this is new
   for `get`, `cp` and every other read of such a vault in a sandboxed chat, which used to
-  read it; there the refusal says to run it in a terminal outside the chat.
+  read it; there the refusal names `secret exec` through the app.
 
 ### Fixed
 

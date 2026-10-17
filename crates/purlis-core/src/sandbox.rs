@@ -3147,7 +3147,27 @@ impl Applied {
     /// the floor as the harness's program is.
     pub fn wrap_with(&mut self, program: PathBuf) {
         self.hold_programs(&[program.display().to_string()]);
+        self.confines.wrap = Some(program.clone());
         self.wrap = Some(program);
+    }
+
+    /// **On Linux, purlis's own program checked and held for this chat** (#1040, #2342), as
+    /// [`program::checked_wrap`] checks it for `chat`: the wrap a chat purlis holds whole starts
+    /// under, and the one a brokered `secret exec` for any sandboxed chat runs its command in
+    /// ([`Confines::wrap`]). A chat purlis wraps does not start without it; a chat whose
+    /// harness holds itself starts, and a run for it is refused. Nothing elsewhere.
+    pub fn hold_wrap(&mut self, chat: program::Chat<'_>) -> Result<(), NotStarted> {
+        if Os::this() != Os::Linux {
+            return Ok(());
+        }
+        match program::checked_wrap(&self.root, chat) {
+            Ok(wrap) => {
+                self.wrap_with(wrap);
+                Ok(())
+            }
+            Err(refused) if self.wrapped_by_purlis_here() => Err(refused),
+            Err(_) => Ok(()),
+        }
     }
 
     /// Whether this chat's line starts with purlis's own program: a harness purlis holds
@@ -5079,6 +5099,7 @@ pub(crate) fn applied_of(
             widened: compiled.widened.clone(),
             writable: compiled.writable.clone(),
             tools: Vec::new(),
+            wrap: None,
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code waits for its program's answer ([`Applied::answered`]).
@@ -5120,6 +5141,11 @@ pub struct Confines {
     /// this machine, with the program found for it where no chat writes. The only commands a
     /// brokered `secret exec` runs for the chat (D-PE-ruling-2, [`tools::declared`]).
     pub tools: Vec<tools::Ready>,
+    /// On Linux, purlis's own program as the chat's start checked it and held it
+    /// ([`Applied::wrap_with`], #1040): what a run for the chat is wrapped with (#2342). `None`
+    /// elsewhere, and where the start found none it could hold; a run for such a chat is
+    /// refused.
+    pub wrap: Option<PathBuf>,
 }
 
 impl Confines {

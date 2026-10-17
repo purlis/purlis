@@ -347,7 +347,7 @@ async fn a_confinement_a_program_runs_in_outlives_the_window_link_that_made_it()
         events,
         confines,
         hosting,
-        ..
+        _project,
     } = linked;
     drop((client, events));
 
@@ -357,6 +357,10 @@ async fn a_confinement_a_program_runs_in_outlives_the_window_link_that_made_it()
     .await;
     assert!(!confines.ended(CONFINEMENT), "the chat keeps its network");
     let (next, _events) = linked_as(&hosting, Scope::LocalUi).await;
+    next.hold_project(PROJECT, _project.path().to_str().unwrap())
+        .await
+        .expect("held again");
+    next.programs_of(PROJECT).await.expect("its programs");
     assert!(reach_of(&next, CONFINEMENT).await.is_ok());
 }
 
@@ -591,4 +595,285 @@ async fn a_link_that_is_not_the_windows_is_refused_a_confinement_and_starts_noth
 
     assert_eq!(refused, session::NOT_ALLOWED);
     assert!(linked.confines.seen().is_empty());
+}
+
+/// What a confinement command from `client` about confinement `id` was answered: its refusal's
+/// code, or none.
+async fn changed(client: &Client, id: &str, change: ReachChange) -> Result<Answer, String> {
+    client
+        .call(Command::ChangeReach {
+            confinement: id.into(),
+            change,
+        })
+        .await
+        .map_err(|why| why.refusal().map(|r| r.code.clone()).unwrap_or_default())
+}
+
+/// Another window link to the same host, holding the same project at the same place and
+/// subscribed: the window of another clone's thread, or a second window.
+async fn another_window(linked: &Linked) -> (Client, Events) {
+    let (other, events) = linked_as(&linked.hosting, Scope::LocalUi).await;
+    other
+        .hold_project(PROJECT, linked._project.path().to_str().unwrap())
+        .await
+        .expect("held by the other window too");
+    other
+        .subscribe(Default::default())
+        .await
+        .expect("subscribed");
+    (other, events)
+}
+
+/// Whether `events` is pushed a sandbox notice soon.
+async fn hears_a_sandbox(events: &mut Events) -> bool {
+    timeout(Duration::from_millis(300), async {
+        loop {
+            match events.recv().await {
+                Some(Told::Pushed(Pushed::Sandbox { .. })) => return true,
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    })
+    .await
+    .unwrap_or(false)
+}
+
+#[tokio::test]
+async fn a_link_that_did_not_make_a_confinement_may_not_act_on_it() {
+    let linked = linked().await;
+    let (other, _events) = another_window(&linked).await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+
+    assert_eq!(
+        changed(
+            &other,
+            CONFINEMENT,
+            ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: Layer::Chat,
+            },
+        )
+        .await
+        .unwrap_err(),
+        session::NO_SUCH_CHAT
+    );
+    assert_eq!(
+        changed(
+            &other,
+            CONFINEMENT,
+            ReachChange::WithdrawPort { port: 5432 }
+        )
+        .await
+        .unwrap_err(),
+        session::NO_SUCH_CHAT
+    );
+    assert_eq!(
+        reach_of(&other, CONFINEMENT).await.unwrap_err(),
+        session::NO_SUCH_CHAT
+    );
+    assert_eq!(
+        other
+            .call(Command::LetGoOfConfinement {
+                confinement: CONFINEMENT.into(),
+            })
+            .await
+            .unwrap_err()
+            .refusal()
+            .map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_CHAT)
+    );
+
+    assert!(linked.confines.seen()[0].changes.is_empty(), "unchanged");
+    assert!(!linked.confines.ended(CONFINEMENT), "still there");
+    assert!(reach_of(&linked.client, CONFINEMENT).await.is_ok());
+}
+
+#[tokio::test]
+async fn a_link_that_did_not_start_the_program_may_not_act_on_its_confinement() {
+    let linked = linked().await;
+    let (other, _events) = another_window(&linked).await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+    linked
+        .client
+        .start_program(running_in(CONFINEMENT))
+        .await
+        .expect("started");
+
+    assert_eq!(
+        changed(
+            &other,
+            CONFINEMENT,
+            ReachChange::WithdrawPort { port: 5432 }
+        )
+        .await
+        .unwrap_err(),
+        session::NO_SUCH_CHAT
+    );
+    assert!(linked.confines.seen()[0].changes.is_empty(), "unchanged");
+    changed(
+        &linked.client,
+        CONFINEMENT,
+        ReachChange::WithdrawPort { port: 5432 },
+    )
+    .await
+    .expect("its own link's change is made");
+}
+
+#[tokio::test]
+async fn a_link_that_let_go_of_the_project_acts_on_its_chats_confinement_no_more() {
+    let linked = linked().await;
+    let (other, _events) = another_window(&linked).await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+    linked
+        .client
+        .start_program(running_in(CONFINEMENT))
+        .await
+        .expect("started");
+    // The other window keeps the project held: the program and its confinement stay.
+    let _held_still = other;
+
+    linked.client.let_go_of_project(PROJECT).await.unwrap();
+
+    assert_eq!(
+        reach_of(&linked.client, CONFINEMENT).await.unwrap_err(),
+        session::NO_SUCH_CHAT
+    );
+}
+
+#[tokio::test]
+async fn a_window_that_comes_back_acts_on_a_chats_confinement_once_it_is_told_it() {
+    let linked = linked().await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+    linked
+        .client
+        .start_program(running_in(CONFINEMENT))
+        .await
+        .expect("started");
+    let (back, _events) = another_window(&linked).await;
+    assert_eq!(
+        reach_of(&back, CONFINEMENT).await.unwrap_err(),
+        session::NO_SUCH_CHAT,
+        "not told it yet"
+    );
+
+    let programs = back.programs_of(PROJECT).await.expect("its programs");
+
+    assert_eq!(
+        programs[0]
+            .confined
+            .as_ref()
+            .map(|c| c.confinement.as_str()),
+        Some(CONFINEMENT)
+    );
+    assert!(reach_of(&back, CONFINEMENT).await.is_ok());
+}
+
+#[tokio::test]
+async fn what_a_proxy_did_is_told_only_to_the_links_that_may_act_on_its_confinement() {
+    let mut linked = linked().await;
+    let (_other, mut other_events) = another_window(&linked).await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+
+    linked.confines.proxy_did(
+        CONFINEMENT,
+        SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    assert!(hears_a_sandbox(&mut linked.events).await);
+    assert!(
+        !hears_a_sandbox(&mut other_events).await,
+        "a window that may not act on it hears nothing of it"
+    );
+}
+
+#[tokio::test]
+async fn its_proxy_asks_only_while_a_link_that_may_answer_hears() {
+    let linked = linked().await;
+    let (_other, _other_events) = another_window(&linked).await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+    linked
+        .client
+        .start_program(running_in(CONFINEMENT))
+        .await
+        .expect("started");
+    assert!(linked.confines.askable(CONFINEMENT));
+
+    let Linked {
+        client,
+        events,
+        confines,
+        hosting,
+        ..
+    } = linked;
+    drop((client, events));
+
+    until("no link that may answer hears", || {
+        !confines.askable(CONFINEMENT)
+    })
+    .await;
+    drop(hosting);
+}
+
+/// Composes a start with no launch as its binary would, in a confinement it asks the host for.
+struct ComposesConfined;
+
+impl Compose for ComposesConfined {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        if starting.start.launch.is_none() {
+            starting.beside.confine(&planned("unused").plan)?;
+        }
+        Ok(Spec::new("/bin/echo", starting.size))
+    }
+}
+
+#[tokio::test]
+async fn a_confinement_the_host_made_for_a_chat_it_composed_is_acted_on_by_no_link_it_was_not_told_to()
+ {
+    let confines = StandInConfines::default();
+    let hosting = Hosting::confining(ComposesConfined, confines.clone(), StandIns::default());
+    let (window, mut events) = linked_as(&hosting, Scope::LocalUi).await;
+    let project = tempfile::tempdir().unwrap();
+    window
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    window.subscribe(Default::default()).await.unwrap();
+    window
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Harness))
+        .await
+        .expect("composed in the host");
+    let composed = confines.seen()[0].confine.confinement.clone();
+
+    confines.proxy_did(
+        &composed,
+        SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    assert!(!hears_a_sandbox(&mut events).await, "not told it");
+    assert_eq!(
+        changed(&window, &composed, ReachChange::WithdrawPort { port: 5432 })
+            .await
+            .unwrap_err(),
+        session::NO_SUCH_CHAT
+    );
+    assert!(confines.seen()[0].changes.is_empty());
 }

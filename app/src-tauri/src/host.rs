@@ -83,6 +83,33 @@ pub struct Opening {
     pub run: Option<String>,
 }
 
+/// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
+/// added to or kept from its environment, not the operator's own shell, handed nothing and held
+/// in no confinement. A fixture names what it sets and takes the rest with
+/// `..Opening::default()`, so a new field touches only the code that sets it. A real start sets
+/// every field (the start in `Chats`).
+#[cfg(test)]
+impl Default for Opening {
+    fn default() -> Self {
+        Opening {
+            program: None,
+            args: Vec::new(),
+            cwd: None,
+            size: Size::MIN,
+            env: Vec::new(),
+            env_strip: Vec::new(),
+            harness: None,
+            declared_env: Vec::new(),
+            env_pass: Vec::new(),
+            operator_shell: false,
+            git_hooks: None,
+            handed: purlis_core::profilesignin::Handed::default(),
+            confinement: None,
+            run: None,
+        }
+    }
+}
+
 /// **A chat by what it is named, for the session host to compose** (#2171): its profile and
 /// persona, its workspace, the conversation it carries on, its first message, and whether the
 /// person opted it out of the sandbox.
@@ -797,3 +824,6 @@ pub(crate) mod pretend {
         mutex.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests;

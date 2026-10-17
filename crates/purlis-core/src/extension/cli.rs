@@ -20,18 +20,20 @@
 
 use super::{ok_in_a_part_id, title_of};
 
-/// Every word `charter` itself answers as its first argument: each core command's name, each
+/// Every word `purlis` itself answers as its first argument: each core command's name, each
 /// other name clap accepts for it (`ws`), and clap's own `help`. **An extension whose id is one
-/// of these is refused**, so `charter <word>` always means what the core says it means.
+/// of these is refused**, so `purlis <word>` always means what the core says it means. **So is a
+/// profile named like one** (`profiles`, #2422): the same list, so one test holds both.
 ///
 /// **Written here, and held to the command line's own definition by a test there.** The core
-/// cannot read the `charter` binary's parser — the app approves extensions and does not link the
-/// command line — so the list lives with the refusal, and a test in the `charter` binary
-/// (`core_word_tests` in `purlis-cli/src/main.rs`) reads every word off the parser itself and
-/// fails for a core word this list is missing, or one it lists that is gone. So a new core
-/// command is not protected by itself: CI goes red on the change that adds it until the word is
-/// here, and that change does not merge before it is. The `charter` binary needs no list: it
-/// asks its parser before it looks for an extension.
+/// cannot read the `purlis` binary's parser — the app approves extensions and does not link the
+/// command line — so the list lives with the refusal, and a test in the `purlis` binary
+/// (`core_word_tests` in `purlis-cli/src/main.rs`) reads every word off the parser itself. It
+/// fails for a core word this list is missing or one it lists that is gone, and for a word a
+/// profile could still be named after. So a new core command is not protected by itself: CI
+/// goes red on the change that adds it until the word is here, and that change does not merge
+/// before it is. The `purlis` binary needs no list: it asks its parser before it looks for an
+/// extension.
 pub const CORE_WORDS: [&str; 45] = [
     "browser",
     "change",

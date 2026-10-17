@@ -50,7 +50,9 @@ export function grantSaid(one: SandboxGrant): string {
                 ? `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`
                 : one.what === "browser"
                   ? `Chats as ${one.persona ?? "a persona"} open a browser without asking, reaching ${one.target}`
-                  : `Write ${one.target} and everything in it`;
+                  : one.what === "browser-site"
+                    ? `Browsers open, send and type on ${one.target} (browsers only; chats' commands still ask)`
+                    : `Write ${one.target} and everything in it`;
   const by =
     one.level !== "project"
       ? "allowed by you"
@@ -71,6 +73,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "service") return `reaching ${one.target}`;
   if (one.what === "port") return `connecting to port ${one.target}`;
   if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
+  if (one.what === "browser-site") return `browsers reaching ${one.target}`;
   return `writing ${one.target}`;
 }
 

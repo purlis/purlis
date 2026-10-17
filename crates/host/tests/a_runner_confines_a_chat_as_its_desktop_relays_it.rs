@@ -36,11 +36,15 @@ const PATIENCE: Duration = Duration::from_secs(5);
 static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().unwrap());
 
-/// Composes every start as `/bin/echo`.
+/// Composes every start as `/bin/echo`; one started by its names, in a confinement of the
+/// runner's own, as its binary composes it with its own sandbox.
 struct Echo;
 
 impl Compose for Echo {
     fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        if starting.start.launch.is_none() {
+            starting.beside.confine(&planned().plan)?;
+        }
         Ok(Spec::new("/bin/echo", starting.size))
     }
 }
@@ -100,6 +104,7 @@ async fn between_hosts(b: Hosting) -> Link {
 /// counting each link it dials.
 struct Hosts {
     relay: Relay,
+    runner: Hosting,
     confines: StandInConfines,
     runs: StandIns,
     dials: Arc<AtomicUsize>,
@@ -109,6 +114,7 @@ struct Hosts {
 fn hosts() -> Hosts {
     let (confines, runs) = (StandInConfines::default(), StandIns::default());
     let b = Hosting::confining(Echo, confines.clone(), runs.clone());
+    let b_itself = b.clone();
     let dials = Arc::new(AtomicUsize::new(0));
     let dial: Dial = {
         let dials = Arc::clone(&dials);
@@ -120,6 +126,7 @@ fn hosts() -> Hosts {
     };
     Hosts {
         relay: Relay::new(dial),
+        runner: b_itself,
         confines,
         runs,
         dials,
@@ -418,4 +425,111 @@ async fn the_runner_refuses_the_windows_launch_of_a_harness_which_it_composes_by
         .await
         .expect("a start by its names runs on host B");
     assert_eq!(hosts.runs.ran().len(), 1);
+}
+
+/// The runner's own window: a machine that is someone's desktop and a runner both. It holds
+/// the project at the place host A's window holds it on host B.
+async fn the_runners_own_window(hosts: &Hosts) -> (Client, Events) {
+    let (window, _views, events) =
+        Client::new(as_scope(Scope::LocalUi, hosts.runner.clone()).await);
+    window
+        .hold_project(PROJECT, hosts._project.path().to_str().unwrap())
+        .await
+        .expect("held on host B");
+    window
+        .subscribe(Default::default())
+        .await
+        .expect("subscribed");
+    (window, events)
+}
+
+#[tokio::test]
+async fn the_desktops_window_may_not_act_on_or_hear_a_confinement_the_runners_own_window_made() {
+    let hosts = hosts();
+    let (window, mut events) = the_window(&hosts).await;
+    let (runners, _runners_events) = the_runners_own_window(&hosts).await;
+    confine(&runners)
+        .await
+        .expect("confined by the runner's window");
+
+    let refused = window
+        .call(Command::ChangeReach {
+            confinement: CONFINEMENT.into(),
+            change: ReachChange::WithdrawPort { port: 5432 },
+        })
+        .await
+        .unwrap_err();
+    hosts.confines.proxy_did(
+        CONFINEMENT,
+        SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_CHAT)
+    );
+    assert!(hosts.confines.seen()[0].changes.is_empty(), "unchanged");
+    assert!(
+        timeout(Duration::from_millis(300), next_sandbox(&mut events))
+            .await
+            .ok()
+            .flatten()
+            .is_none(),
+        "the desktop's window hears nothing of it"
+    );
+}
+
+#[tokio::test]
+async fn the_runners_confinement_of_a_chat_it_composed_is_not_the_desktop_windows_to_act_on() {
+    let hosts = hosts();
+    let (window, mut events) = the_window(&hosts).await;
+    window
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Harness))
+        .await
+        .expect("composed on host B by its names");
+    let composed = hosts.confines.seen()[0].confine.confinement.clone();
+
+    let refused = window
+        .call(Command::LetGoOfConfinement {
+            confinement: composed.clone(),
+        })
+        .await;
+    let withdrawn = window
+        .call(Command::ChangeReach {
+            confinement: composed.clone(),
+            change: ReachChange::WithdrawPort { port: 5432 },
+        })
+        .await
+        .unwrap_err();
+    hosts.confines.proxy_did(
+        &composed,
+        SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    assert_eq!(
+        refused.unwrap_err().refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_CHAT)
+    );
+    assert!(
+        !hosts.confines.ended(&composed),
+        "the chat keeps its network"
+    );
+    assert_eq!(
+        withdrawn.refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_CHAT)
+    );
+    assert!(
+        timeout(Duration::from_millis(300), next_sandbox(&mut events))
+            .await
+            .ok()
+            .flatten()
+            .is_none(),
+        "nobody named it to the window"
+    );
 }

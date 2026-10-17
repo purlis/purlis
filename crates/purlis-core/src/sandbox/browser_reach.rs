@@ -23,8 +23,10 @@
 //! - **Public sites are readable; a site new to the project asks.** An address the agent writes
 //!   for a site new to the project, or a form it posts there, asks the person once (#2018); a
 //!   link the page offered does not. By host and port the proxy cannot tell these apart, so it
-//!   tells every new site to [`NewSites`], which the browser's broker answers.
-//!   [`NewSites::refusing`] is the interim default until #2018: it refuses every new site.
+//!   tells every new site to [`NewSites`], which the browser's broker answers
+//!   (`crate::browsers::judge`): it carries a site new to the project only where the browser's
+//!   driver judged a request to it to go. A browser started with no reach refuses every new
+//!   site ([`NewSites::refusing`]).
 //! - **It fails closed.** The engine resolves no name and sends every request to this proxy
 //!   (`purlis_browser_engine::launch`). When the proxy is dropped it stops listening and ends
 //!   every connection it carries, tunnels included, so every load fails; where this machine's
@@ -64,7 +66,7 @@ pub enum Verdict {
     },
     /// A public site nothing lists, on HTTPS's or HTTP's port: whoever hears new sites decides
     /// ([`NewSites`]).
-    NewSite {
+    Site {
         at: Option<SocketAddr>,
     },
     Refused(Refusal),
@@ -163,7 +165,7 @@ impl Lane {
             Err(_) => None,
         };
         match self.reach.decide(&host, port, defaults, own) {
-            Decision::Ask if defaults.contains(&port) => Verdict::NewSite { at },
+            Decision::Ask if defaults.contains(&port) => Verdict::Site { at },
             Decision::Ask => Verdict::Refused(Refusal::Port),
             Decision::Refused(reach::Refused::NeverAHost(why)) => {
                 Verdict::Refused(Refusal::NeverAHost(why))
@@ -245,19 +247,60 @@ pub enum Route {
     NotFound,
 }
 
-/// A public site nothing in the browser's lane lists, as the connection named it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NewSite {
+/// **A site a browser goes to**: a host and the one port it is reached on, in one spelling.
+/// What the proxy is told of a site nothing lists, what a browser asks the person about, and
+/// what a browser site grant names (#2018). Written `host:port`, an IPv6 address in brackets.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Site {
     pub host: String,
     pub port: u16,
 }
 
-impl NewSite {
-    /// `host` on `port` in one spelling: lower case, with no final dot.
+impl Site {
+    /// `host` on `port` in one spelling: lower case, with no final dot, an IPv6 address
+    /// without its brackets.
     pub fn of(host: &str, port: u16) -> Self {
+        let host = host.strip_suffix('.').unwrap_or(host);
+        let host = host
+            .strip_prefix('[')
+            .and_then(|inside| inside.strip_suffix(']'))
+            .unwrap_or(host);
         Self {
-            host: host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase(),
+            host: host.to_ascii_lowercase(),
             port,
+        }
+    }
+
+    /// **A site as `host:port` writes it**, or why it is none: a host that is a name or an
+    /// address, and a port from 1 to 65535. Nothing is resolved.
+    pub fn parse(written: &str) -> Result<Self, String> {
+        let refused = || format!("{written:?} is not a site, written host:port");
+        let (host, port) = match written.strip_prefix('[') {
+            Some(inside) => {
+                let (host, after) = inside.split_once(']').ok_or_else(refused)?;
+                host.parse::<Ipv6Addr>().map_err(|_| refused())?;
+                (host, after.strip_prefix(':').ok_or_else(refused)?)
+            }
+            None => written.rsplit_once(':').ok_or_else(refused)?,
+        };
+        let port: u16 = port.parse().map_err(|_| refused())?;
+        let fine = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '_');
+        if port == 0 || host.is_empty() || !host.chars().all(fine) {
+            return Err(refused());
+        }
+        if host.contains(':') && host.parse::<Ipv6Addr>().is_err() {
+            return Err(refused());
+        }
+        Ok(Self::of(host, port))
+    }
+}
+
+impl std::fmt::Display for Site {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.host.contains(':') {
+            write!(f, "[{}]:{}", self.host, self.port)
+        } else {
+            write!(f, "{}:{}", self.host, self.port)
         }
     }
 }
@@ -267,7 +310,7 @@ impl NewSite {
 /// an address the agent wrote or a form it posts (#2018). What it carries is still connected
 /// to only at public addresses ([`route`]).
 #[derive(Clone)]
-pub struct NewSites(Arc<dyn Fn(&NewSite) -> bool + Send + Sync>);
+pub struct NewSites(Arc<dyn Fn(&Site) -> bool + Send + Sync>);
 
 impl std::fmt::Debug for NewSites {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -277,12 +320,12 @@ impl std::fmt::Debug for NewSites {
 
 impl NewSites {
     /// Told each new site; `true` carries it.
-    pub fn new(hear: impl Fn(&NewSite) -> bool + Send + Sync + 'static) -> Self {
+    pub fn new(hear: impl Fn(&Site) -> bool + Send + Sync + 'static) -> Self {
         Self(Arc::new(hear))
     }
 
-    /// Refuses every new site: the interim default until the browser's Ask answers here
-    /// (#2018), so a browser reaches only what its chat's reach lists.
+    /// Refuses every new site: a browser started with no reach reaches only what its chat's
+    /// reach lists.
     pub fn refusing() -> Self {
         Self::new(|_| false)
     }
@@ -294,7 +337,7 @@ impl NewSites {
     }
 
     /// Whether `site` is carried.
-    pub fn carries(&self, site: &NewSite) -> bool {
+    pub fn carries(&self, site: &Site) -> bool {
         (self.0)(site)
     }
 }
@@ -602,8 +645,8 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
     let tunnel = request.forward.is_none();
     let at = match served.lane.decide_here(host, port, tunnel, own.as_deref()) {
         Verdict::Carry { at, .. } => at,
-        Verdict::NewSite { at } => {
-            let site = NewSite::of(host, port);
+        Verdict::Site { at } => {
+            let site = Site::of(host, port);
             if !served.new_sites.carries(&site) {
                 answer(&mut client, "403 Forbidden", &new_site_said(host, port));
                 return;

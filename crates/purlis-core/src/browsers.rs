@@ -25,10 +25,13 @@
 //! - **This runs in the session host.** The window's host is the window's own binary, so with
 //!   browsers it runs core code: the engine's download and the data home are read there, as a
 //!   browser starts and never before (D-2012-4).
-//! - **Its reach** is what the window gives it as it starts ([`reach_of`], #2013): the hosts its
-//!   chat's sandbox lists, and a public site nothing lists only where the person let it reach
-//!   the open web. A browser started with none (the person's own, #2012) reaches nothing listed,
-//!   and every site new to the project is refused ([`NewSites::refusing`]), so it fails closed.
+//! - **Its reach** is what the window gives it as it starts ([`reach_of`], #2013), and again
+//!   with each act (#2018): the hosts its chat's sandbox lists, with the person's Allows since.
+//!   A site new to the project is judged by [`judge::SiteJudge`]: the page may read it, and the
+//!   agent's address, a form or a body sent there, or its typing there, asks the person first;
+//!   on the open web nothing asks. A browser started with none (the person's own, #2012)
+//!   reaches nothing listed, and every site new to the project is refused
+//!   ([`NewSites::refusing`]), so it fails closed.
 //! - **Its acts** are the driver's own calls ([`call_of`]), answered in the protocol's words
 //!   ([`browsed`]), a screenshot made to fit the control lane ([`MOST_SCREENSHOT_BYTES`]).
 //! - **Its data folder** is the one the host gives it, under `<data>/browsers`, fresh: the host
@@ -56,6 +59,8 @@ use purlis_host::{Browsers, FrameSink, NotActed, NotTaken, Screen};
 
 use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
 use crate::sandbox::reach::{Reach, Written};
+
+pub mod judge;
 
 /// The argument that starts this binary as an engine's keeper.
 pub const KEEPER: &str = "purlis-engine-keeper";
@@ -259,15 +264,33 @@ impl Browsers for EngineBrowsers {
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
         let engines = engines_here(&home, platform);
         let ready = prepared(&engines).map_err(|why| why.to_string())?;
-        let (reach, new_sites) = reach_of(reach)?;
-        let proxy = ReachProxy::start(Lane::of(reach), new_sites)
+        // A chat's browser is judged (#2018); the person's own, given no reach, refuses every
+        // site new to the project at its proxy.
+        let sites = reach.map(judge::SiteJudge::of).transpose()?.map(Arc::new);
+        let (listed, new_sites) = reach_of(reach)?;
+        let new_sites = sites
+            .as_ref()
+            .map_or(new_sites, judge::SiteJudge::new_sites);
+        let proxy = ReachProxy::start(Lane::of(listed), new_sites)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let launch = Launch::new(&ready, data, launch::ReachProxy(proxy.address()));
         let engine =
             Engine::start(&launch, &Self::keeper(program)).map_err(|why| why.to_string())?;
-        let browser = Browser::new(engine, Limits::default()).map_err(|why| why.to_string())?;
+        let browser = match &sites {
+            Some(sites) => {
+                let judge = Arc::clone(sites);
+                Browser::judged(
+                    engine,
+                    Limits::default(),
+                    Arc::new(move |out: &drive::Outbound| judge.judge(out)),
+                )
+            }
+            None => Browser::new(engine, Limits::default()),
+        }
+        .map_err(|why| why.to_string())?;
         Ok(Arc::new(EngineScreen {
             process: browser.process(),
+            sites,
             held: Mutex::new(Some(Held {
                 browser: Arc::new(browser),
                 proxy,
@@ -462,6 +485,7 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
         opened: answer.opened.into_iter().map(said).collect(),
         note: answer.note,
         repeated: answer.repeated,
+        asked: answer.asked,
         ..Browsed::default()
     };
     let mut also = |note: String| {
@@ -574,6 +598,8 @@ struct Held {
 /// One browser on its engine, as the host drives it.
 struct EngineScreen {
     process: Option<u32>,
+    /// Its judge, shared with its reach proxy (#2018): none for a browser given no reach.
+    sites: Option<Arc<judge::SiteJudge>>,
     held: Mutex<Option<Held>>,
 }
 
@@ -623,6 +649,13 @@ impl Screen for EngineScreen {
         if let Some(Held { browser, proxy }) = held {
             browser.stop(STOP_GRACE);
             drop(proxy);
+        }
+    }
+
+    fn reach_now(&self, reach: &BrowserReach) -> Result<(), String> {
+        match &self.sites {
+            Some(sites) => sites.reach_now(reach),
+            None => Err("this browser was started with no reach, and takes none".to_owned()),
         }
     }
 

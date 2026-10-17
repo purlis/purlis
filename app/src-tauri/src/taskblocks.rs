@@ -77,7 +77,10 @@ pub fn normalised(what: GrantWhat, target: &str) -> Option<String> {
             .map(|port| port.to_string()),
         // None is ever a block's: each is granted from its own Notice or Ask (#1430, #1362,
         // #2241).
-        GrantWhat::Vault | GrantWhat::PersonaHosts | GrantWhat::Browser => None,
+        GrantWhat::Vault
+        | GrantWhat::PersonaHosts
+        | GrantWhat::Browser
+        | GrantWhat::BrowserSite => None,
     }
 }
 
