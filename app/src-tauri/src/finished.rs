@@ -149,15 +149,16 @@ fn row(record: &Record, asker: u32, how: Finished) -> FinishedTask {
         how: how.into(),
         outcome: how.word().to_owned(),
         folds: how.folds(),
+        // Drawn masked (#1872): a secret in a report is not shown back.
         report: record
             .report
             .as_ref()
-            .map(|report| report.text.clone())
+            .map(|report| dispatchrecord::masked(&report.text))
             .unwrap_or_default(),
         changed: record
             .report
             .as_ref()
-            .and_then(|report| report.changed.said.clone()),
+            .and_then(dispatchrecord::Report::changed_said_masked),
         ended: record.ended.clone(),
         place: record
             .place
@@ -703,6 +704,16 @@ mod tests {
             earlier: Vec::new(),
             asker_last_record: None,
         }
+    }
+
+    #[test]
+    fn a_secret_in_a_finished_task_s_report_is_masked_on_its_row() {
+        // #1872: a token built here from its parts, so no line of this file holds one.
+        let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+        let record = a_task(Outcome::Done, &format!("Signed in with {token}."));
+        let drawn = row(&record, 12, Finished::of(&record).unwrap());
+
+        assert_eq!(drawn.report, "Signed in with ***.");
     }
 
     #[test]

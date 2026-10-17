@@ -217,6 +217,11 @@ pub struct Browsed {
     /// Whether this answers a retry: the act did not act again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub repeated: bool,
+    /// The sites, each `host:port`, the browser did not go to or send to, or where it typed
+    /// nothing, because each is new to the project and the person is to be asked (1.15,
+    /// #2018): each once, since the act before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asked: Vec<String>,
 }
 
 /// What a browser may reach, given as it starts (1.11): the hosts its chat's sandbox lists, each

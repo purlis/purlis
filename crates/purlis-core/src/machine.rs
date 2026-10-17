@@ -1717,8 +1717,19 @@ pub(crate) fn read_beside(
             ),
         ));
     }
+    // The size was asked of the descriptor, and a file can still grow after it was: the read
+    // itself stops one byte past the cap, so what is held is never more than was allowed.
     let mut text = String::new();
-    io::Read::read_to_string(&mut open, &mut text)?;
+    io::Read::read_to_string(&mut io::Read::take(&mut open, max_bytes + 1), &mut text)?;
+    if text.len() as u64 > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} grew past {max_bytes} bytes while it was read, and {what} is never larger",
+                target.display()
+            ),
+        ));
+    }
     Ok(Some(text))
 }
 

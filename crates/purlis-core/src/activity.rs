@@ -266,7 +266,12 @@ pub fn lines_of(record: &Record, depth: u32) -> Vec<Line> {
     };
     let mut lines = vec![Line {
         by_person: record.asker.by_person,
-        ..line(0, &record.started, Kind::Dispatched, &record.brief)
+        ..line(
+            0,
+            &record.started,
+            Kind::Dispatched,
+            &dispatchrecord::masked(&record.brief),
+        )
     }];
     for said in &record.talk {
         lines.push(Line {
@@ -308,7 +313,12 @@ pub fn lines_of(record: &Record, depth: u32) -> Vec<Line> {
             by_purlis: purlis_wrote(report),
             outcome: Some(report.outcome),
             files: paths_named(&report.changed),
-            ..line(lines.len(), &earlier.at, Kind::Report, &report.text)
+            ..line(
+                lines.len(),
+                &earlier.at,
+                Kind::Report,
+                &dispatchrecord::masked(&report.text),
+            )
         });
     }
     if let (Some(report), Some(ended)) = (&record.report, &record.ended) {
@@ -320,7 +330,12 @@ pub fn lines_of(record: &Record, depth: u32) -> Vec<Line> {
             by_purlis: purlis_wrote(report),
             outcome: Some(report.outcome),
             files: paths_named(&report.changed),
-            ..line(lines.len(), ended, kind, &report.text)
+            ..line(
+                lines.len(),
+                ended,
+                kind,
+                &dispatchrecord::masked(&report.text),
+            )
         });
     }
     lines
@@ -464,7 +479,8 @@ pub fn timeline_within(
 /// and nothing is decided by it: a file named another way is not found, and a word that only
 /// looks like a file is. Which is why a record that lists its files is not read this way.
 pub fn paths_named(changed: &Changed) -> Vec<String> {
-    let said = changed.said.as_deref().unwrap_or_default();
+    // Read as drawn (#1872): no secret in the words is taken for a file's name.
+    let said = dispatchrecord::masked(changed.said.as_deref().unwrap_or_default());
     let mut named: Vec<String> = Vec::new();
     let listed = changed.files.iter().map(String::as_str);
     let read = said

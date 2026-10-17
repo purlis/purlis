@@ -92,6 +92,32 @@ pub fn distinct<T: PartialEq>(lines: Vec<T>) -> Vec<T> {
     once
 }
 
+/// What one read told a host still running: `spooled`, then `live`, with each spooled line
+/// cancelling **at most one** live copy of itself, in this read or a later one.
+///
+/// A line spooled because the host was slow is often recorded live too, once the host gets to
+/// it, maybe only by a later read. `awaiting` holds the spooled lines whose live copy has not
+/// come yet, from one read to the next. **Nothing else is merged**: two live lines that are
+/// equal, or two spooled ones, are two lines said, and a test that allows one sees both.
+pub fn paired<T: PartialEq + Clone>(
+    spooled: Vec<T>,
+    live: impl IntoIterator<Item = T>,
+    awaiting: &mut Vec<T>,
+) -> (Vec<T>, Vec<T>) {
+    awaiting.extend(spooled.iter().cloned());
+    let live = live
+        .into_iter()
+        .filter(|line| match awaiting.iter().position(|copy| copy == line) {
+            Some(at) => {
+                awaiting.remove(at);
+                false
+            }
+            None => true,
+        })
+        .collect();
+    (spooled, live)
+}
+
 /// The lines of one kind spooled beside the host's `socket`, drained. `kind` picks the line
 /// out of a spooled one.
 ///
@@ -104,20 +130,55 @@ pub fn spooled<T>(
 ) -> Vec<T> {
     use purlis_core::hookwire::spool;
     let mut spooled = Vec::new();
-    spool::drain(&spool::dir_for(socket), &mut |item| {
+    spool::drain(&spool::dir_for(socket), &mut strictly(&mut spooled, &kind))
+        .expect("the spool drains");
+    spooled
+}
+
+/// [`spooled`], for chat `chat` alone **while the process that spools for it still runs**
+/// (`spool::drain_running`): every key is kept, so the lines it spools after this drain are
+/// handed on by the next one, with no gap.
+///
+/// **Read it only where nothing is being appended.** A drain that meets a number a writer has
+/// taken and not yet written a line under rejects it, and this panics on that. A test drains
+/// once it knows the line it waits on was sent, recorded live or durable in the spool: the
+/// process has answered the request that sent it, or has exited.
+#[cfg(unix)]
+pub fn spooled_running<T>(
+    socket: &std::path::Path,
+    chat: u32,
+    kind: impl Fn(purlis_core::hookwire::spool::Spooled) -> Option<T>,
+) -> Vec<T> {
+    use purlis_core::hookwire::spool;
+    let mut spooled = Vec::new();
+    spool::drain_running(
+        &spool::dir_for(socket),
+        chat,
+        &mut strictly(&mut spooled, &kind),
+    )
+    .expect("the spool drains");
+    spooled
+}
+
+/// A drain's `each` that keeps the lines of one kind in `into`, and panics on anything else.
+#[cfg(unix)]
+fn strictly<'a, T>(
+    into: &'a mut Vec<T>,
+    kind: &'a dyn Fn(purlis_core::hookwire::spool::Spooled) -> Option<T>,
+) -> impl FnMut(purlis_core::hookwire::spool::Drained) -> std::io::Result<()> + 'a {
+    use purlis_core::hookwire::spool;
+    move |item| {
         match item {
             spool::Drained::Line { line, .. } => {
                 let said = format!("{line:?}");
-                spooled
-                    .push(kind(line).unwrap_or_else(|| {
-                        panic!("the spool held a line of another kind: {said}")
-                    }));
+                into.push(
+                    kind(line)
+                        .unwrap_or_else(|| panic!("the spool held a line of another kind: {said}")),
+                );
             }
             spool::Drained::Spool { .. } => {}
             other => panic!("the spool held more than lines that check: {other:?}"),
         }
         Ok(())
-    })
-    .expect("the spool drains");
-    spooled
+    }
 }

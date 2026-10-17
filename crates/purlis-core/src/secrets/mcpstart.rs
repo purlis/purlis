@@ -349,7 +349,14 @@ pub fn error_shown(raw: &str) -> String {
 /// ([`crate::secretshape::leak_spans`]). What a chat's words are masked by before purlis hands
 /// them to another chat (#1981, [`crate::handback::last_message_summary`]).
 pub fn masked(text: &str) -> String {
+    masked_also(text, None)
+}
+
+/// [`masked`], with the stretch `also` of `text` masked as well (#1872): the end of a text the
+/// store cut, which can hold the start of a value no whole match finds.
+pub fn masked_also(text: &str, also: Option<std::ops::Range<usize>>) -> String {
     let mut spans: Vec<std::ops::Range<usize>> = super::seen::found_in(text);
+    spans.extend(also);
     spans.extend(
         crate::secretshape::leak_spans(text)
             .into_iter()

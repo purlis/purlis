@@ -3,6 +3,10 @@
 
 use super::*;
 
+mod merge_rules;
+/// The default ask rule for `charter report --yes` (#363, ADR 0059 amended 2026-09-26).
+mod report_ask;
+
 /// The guard's list of consent-gated commands is the list of rules written here.
 #[test]
 fn the_consent_patterns_are_the_ask_rules_init_writes() {

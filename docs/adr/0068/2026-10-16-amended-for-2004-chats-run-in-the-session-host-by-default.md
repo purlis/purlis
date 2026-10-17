@@ -65,8 +65,9 @@ confirmed** (D-2004-2 to D-2004-4, D-2004-8).
    any host serving that config home: one a crashed window left, and equally a `purlis serve`
    started in a terminal or the host of another window of the same config home, whose chats end
    with it. The window puts a chat back only once its own host serves, or once it knows no other
-   host serves its config home (none holds its lock); otherwise it puts none back and keeps the
-   record for the next launch. Its attempt to reach a host it found is bounded. A conversation
+   host serves its config home (none holds its lock). A held lock may be its own host's, started
+   again after a start that failed, so it waits on its own host again until its patience runs
+   out (#2405); then it puts none back and keeps the record for the next launch. Its attempt to reach a host it found is bounded. A conversation
    never has a program in a host and one in the window at once. *D-2004-8, to be confirmed.*
 
 **What this does not do.** An update still ends every chat until the upgrade handoff (#665).
