@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792259538449,
+  "lastUpdate": 1792260804503,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15624,6 +15624,48 @@ window.BENCHMARK_DATA = {
             "value": 103.93995100000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.771, 103.878, 103.940, 106.508, 106.845 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5e9de9465464f0ae03a0024acf32d2839e8345e6",
+          "message": "A child agent given another turn after its SubagentStop works again (#2455) (#2479)\n\n* A child given another turn after its SubagentStop works again (#2455)\n\nCodex runs SubagentStop at the end of each turn of a child, and a parent\ncan give a finished child another turn whose hooks name the same\nagent_id (a resumed Claude Code sub-agent too). Children::seen kept a\nknown child as it was, so it read done while it worked.\n\nA hook that says the child is at work (a tool call, a prompt, an ask)\nnow moves a completed child back to working, as a second child run of\nthe same agent; its next SubagentStop completes it again. Other hooks of\na finished child still move nothing, and a child that ended with its\nparent is never heard again because an ended chat passes no hook on.\n\nCloses #2455\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Record a child's second turn as an ADR 0076 amendment (#2455)\n\nA known agent_id heard doing work after its SubagentStop starts a new\nrun of that agent, and a run still ends exactly once. Decided in\nimplementation, pending the operator's acknowledgement. The children\nmodule note puts the board's words next to the three states again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T22:10:05+04:00",
+          "tree_id": "f94f8b725faf9e2419d5f4e9544393d2d953fdc0",
+          "url": "https://github.com/purlis/purlis/commit/5e9de9465464f0ae03a0024acf32d2839e8345e6"
+        },
+        "date": 1792260802656,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.536604,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.510, 0.534, 0.537, 0.543, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1124515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.950, 17.065, 17.112, 17.236, 17.257 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.17151150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.215, 104.144, 104.172, 104.313, 104.764 ms"
           }
         ]
       }
