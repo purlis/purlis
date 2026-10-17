@@ -1667,7 +1667,16 @@ pub fn browser_site_held(
     site: &super::browser_reach::Site,
     locks: &super::policy::Locks,
 ) -> Option<String> {
-    let level = super::grant::Level::You;
+    browser_site_held_at(site, super::grant::Level::You, locks)
+}
+
+/// **Why policy holds the browser site `site` kept at `level`**, where it does: the scope is
+/// left out, or its host is never allowed there. A chat's own (#2364) is held as yours is.
+pub fn browser_site_held_at(
+    site: &super::browser_reach::Site,
+    level: super::grant::Level,
+    locks: &super::policy::Locks,
+) -> Option<String> {
     locks.scope_removed(level).or_else(|| {
         let host = super::hosts::Host::parse(&site.to_string()).ok()?;
         locks.refuses_grant(&super::grant::What::Host(host), level)

@@ -1454,3 +1454,40 @@ fn proposed_changes_are_turned_off_by_the_word_off_and_by_a_refused_file() {
     }
     assert!(Locks::none().proposed_changes_refused().is_none());
 }
+
+/// The internal services a runner's chats planned on another machine reach (#2445, ruled
+/// 2026-10-18): a list of their own, which `hosts` neither gives nor takes.
+#[test]
+fn relayed_internal_lists_hosts_of_its_own_and_leaves_hosts_alone() {
+    let file = Path::new("/etc/purlis/policy.json");
+    let locks = Locks::parse(
+        r#"{"sandbox": {"relayed-internal": ["10.96.0.1:443", "*.svc.cluster.local"]}}"#,
+        file,
+    );
+
+    assert_eq!(
+        locks
+            .relayed_internal()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["10.96.0.1:443", "*.svc.cluster.local"]
+    );
+    assert!(locks.allowed_hosts().is_none());
+    assert!(
+        Locks::parse(r#"{"sandbox": {"hosts": ["10.96.0.1"]}}"#, file)
+            .relayed_internal()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_relayed_internal_entry_that_is_not_a_host_refuses_the_file_and_opens_nothing() {
+    let locks = Locks::parse(
+        r#"{"sandbox": {"relayed-internal": ["10.0.0.0/8"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+
+    assert!(locks.refused_because().is_some());
+    assert!(locks.relayed_internal().is_empty());
+}

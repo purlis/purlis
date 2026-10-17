@@ -31,6 +31,20 @@ describe("the sandbox mark", () => {
     expect(mark).toHaveAccessibleName(`no sandbox: ${why}`);
   });
 
+  it("says how many sites only the chat's browser reaches, apart from its level (#2364)", () => {
+    const { container, rerender } = render(<SandboxMark level="full" sites={2} />);
+    const mark = container.querySelector('[data-sandbox="full"]');
+    const said = "full sandbox; its browser reaches 2 sites of its own";
+    expect(mark).toHaveAttribute("title", said);
+    expect(mark).toHaveAccessibleName(said);
+    rerender(<SandboxMark level="full" sites={1} of="The chat in front" />);
+    expect(container.querySelector('[data-sandbox="full"]')).toHaveAccessibleName(
+      "The chat in front: full sandbox; its browser reaches 1 site of its own",
+    );
+    rerender(<SandboxMark level="full" sites={0} />);
+    expect(container.querySelector('[data-sandbox="full"]')).toHaveAccessibleName("full sandbox");
+  });
+
   it("draws nothing for a shell or a chat still to start, nor for a word it does not know", () => {
     for (const level of [null, undefined, "partial"]) {
       const { container } = render(<SandboxMark level={level} />);
