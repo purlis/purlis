@@ -1,5 +1,5 @@
-/* Copyright 2026 Purlis
-   SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 /* **The theme specimen's layout** (#2330): the page's own size, handed to it by the app
    (`--specimen-width`, `--specimen-height`, set by `main.tsx`), in two columns. Every colour
