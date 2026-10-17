@@ -114,6 +114,60 @@ async function tabsOpen(): Promise<number> {
   return counted;
 }
 
+/**
+ * The fifty-sessions test's opening, while it runs: what `stopOpening` stops and waits for.
+ * `null` when nothing is opening.
+ */
+let opening: Promise<void> | null = null;
+
+/** Set once a test is over: the opening loop stops before its next press. */
+let stopped = false;
+
+/**
+ * **Opens tabs until fifty sessions run.** Each session is waited for on its own (#2157): every
+ * tab opened must bring its own harness up within `OPEN_CEILING_MS`, and one that does not says
+ * which open it was. Each open's time is written down (`logs/fifty-opens.jsonl`), so a slow run
+ * shows where. It checks `stopped` before every press, so a test that ran out of time opens no
+ * chat after it (#2367).
+ */
+async function openUntilFifty(): Promise<void> {
+  for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
+    if (stopped) throw new Error(`stopped after ${opened - 1} opens: the test was over`);
+    if (opened > FIFTY + 10) {
+      throw new Error(
+        `${opened - 1} tabs opened and only ${harnessesRunning()} sessions run: opening ` +
+          `stopped adding sessions`,
+      );
+    }
+    const before = harnessesRunning();
+    const pressed = Date.now();
+    await pressAndStart("New tab");
+    await browser.waitUntil(() => harnessesRunning() > before, {
+      timeout: OPEN_CEILING_MS,
+      interval: 100,
+      timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_CEILING_MS / 1000} s`,
+    });
+    const took = Date.now() - pressed;
+    logLine("fifty-opens.jsonl", { open: opened, running: before + 1, ms: took });
+    if (took > OPEN_CEILING_MS) {
+      throw new Error(
+        `open ${opened} took ${took} ms, over the ${OPEN_CEILING_MS} ms one open may`,
+      );
+    }
+  }
+}
+
+/**
+ * Stops the fifty-sessions opening, if one is still going, and waits until it has: the open it
+ * is in finishes (a press and its own bounded wait), and no press follows it.
+ */
+async function stopOpening(): Promise<void> {
+  if (opening === null) return;
+  stopped = true;
+  await opening.catch(() => undefined);
+  opening = null;
+}
+
 describe("the window", function () {
   // **The fifty-sessions test's time is an allowance for each session it opens** (#2157), never
   // one fixed total that a slower runner, or a slower start, crosses with nothing wrong. On the
@@ -126,7 +180,17 @@ describe("the window", function () {
   before(async () => {
     wereOpen = await chatsRunning();
   });
+  // **A test that runs out of time is not stopped by it** (#2367): mocha and WebdriverIO move
+  // on, and the body goes on pressing New tab under the tests and the `after` that follow. The
+  // `after` then ends the chats it counted while more are opened behind it, and the root guard
+  // finds them (PR #1934: "left 7 chats running (session 42, 43, 44, 45, 46, 47, 48)"). So once
+  // a test is over, the fifty-sessions opening is told to stop and waited for, before anything
+  // else runs: the `after` below then ends, by number, every chat this file started.
+  afterEach(async () => {
+    await stopOpening();
+  });
   after(async () => {
+    await stopOpening();
     await endTheChatsStartedSince(wereOpen);
   });
 
@@ -171,32 +235,8 @@ describe("the window", function () {
   });
 
   it("keeps fifty sessions running at once, and stays usable", async () => {
-    // **Each session is waited for on its own** (#2157): every tab opened must bring its own
-    // harness up within `OPEN_CEILING_MS`, and one that does not says which open it was. Each
-    // open's time is written down (`logs/fifty-opens.jsonl`), so a slow run shows where.
-    for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
-      if (opened > FIFTY + 10) {
-        throw new Error(
-          `${opened - 1} tabs opened and only ${harnessesRunning()} sessions run: opening ` +
-            `stopped adding sessions`,
-        );
-      }
-      const before = harnessesRunning();
-      const pressed = Date.now();
-      await pressAndStart("New tab");
-      await browser.waitUntil(() => harnessesRunning() > before, {
-        timeout: OPEN_CEILING_MS,
-        interval: 100,
-        timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_CEILING_MS / 1000} s`,
-      });
-      const took = Date.now() - pressed;
-      logLine("fifty-opens.jsonl", { open: opened, running: before + 1, ms: took });
-      if (took > OPEN_CEILING_MS) {
-        throw new Error(
-          `open ${opened} took ${took} ms, over the ${OPEN_CEILING_MS} ms one open may`,
-        );
-      }
-    }
+    opening = openUntilFifty();
+    await opening;
 
     expect(harnessesRunning()).toBe(FIFTY);
     const [pane] = await panes();
