@@ -15,7 +15,7 @@
 //! sandbox; it tells the app over the chat's hook socket, with the chat's token, as a hook does
 //! ([`crate::hookwire::tell_blocked`]), and its Notice goes through the app's throttle like any
 //! other. What it reads to do so ([`teller`]) is read from the environment the app started the
-//! chat with, once, before the wrap holds itself to the profile.
+//! chat with, which the wrap carries for it, once, before the wrap holds itself to the profile.
 //!
 //! **It never changes an answer.** The chat is refused before anything is told, and a block
 //! that cannot be told (no app listening, a chat not started sandboxed) is a refusal all the
@@ -81,11 +81,22 @@ pub fn tells(block: &Block) -> bool {
     )
 }
 
-/// **What the wrap tells each refusal to**, from this process's own environment and working
-/// folder: see [`teller_in`].
-pub fn teller() -> Option<Tell> {
+/// **What the wrap tells each refusal to**, from the environment it carries for the chat,
+/// `env` (#2460), and this process's working folder: see [`teller_in`]. Where a name is carried
+/// twice, the later one is the chat's, as it is for any program.
+pub fn teller(env: &[(std::ffi::OsString, std::ffi::OsString)]) -> Option<Tell> {
     let here = std::env::current_dir().ok()?;
-    teller_in(&crate::envvar::var, &here)
+    // Under either of a variable's names, as this process's own would be read.
+    let var = |name: &str| {
+        crate::envvar::lookup(name, |spelled: &str| {
+            env.iter()
+                .rev()
+                .find(|(key, _)| key == spelled)
+                .and_then(|(_, value)| value.to_str())
+                .map(str::to_owned)
+        })
+    };
+    teller_in(&var, &here)
 }
 
 /// **What the wrap tells each refusal to**, read from `env` and the folder it started in,

@@ -27,6 +27,9 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 
 use crate::engine::{Engine, Screen, Size};
 
+/// The terminal type every program a session starts is given, as `TERM`.
+pub const TERM: &str = "xterm-256color";
+
 /// What to run, where, and at what size.
 #[derive(Debug, Clone)]
 pub struct Spec {
@@ -304,7 +307,7 @@ impl Session {
         if spec.env_clear {
             command.env_clear();
         }
-        command.env("TERM", "xterm-256color");
+        command.env("TERM", TERM);
         // Removed before anything is set, so a caller can always put back what it means to.
         for key in &spec.env_without {
             command.env_remove(key);
