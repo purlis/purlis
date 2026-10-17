@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792194658992,
+  "lastUpdate": 1792213979870,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14826,6 +14826,48 @@ window.BENCHMARK_DATA = {
             "value": 102.323667,
             "unit": "ms",
             "extra": "median of 5 runs: 101.762, 102.158, 102.324, 102.602, 103.063 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3075404f8750ba91c8c75cb87dde0afef2e9128",
+          "message": "deps: ignore the three zip 4 extraction advisories beside the zip 4 exemption (#2379)\n\n* deps: ignore the three zip 4 extraction advisories next to the zip 4 exemption\n\ntauri-plugin-updater compiles zip 4 in on Windows alone, which purlis does\nnot ship yet, and extracts only updates whose signature it checked. The\nentries go with the zip 4 exemption (#2263).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* test(app): a composed chat's stand-in draws its first message on a line of its own\n\nThe stand-in printed every argument and then ' :END'. Once the arguments a\nchat starts with grew, the pane drew the tail after a cursor move, so the\ntest's text was never drawn whole. It now prints only the first message,\nthe last argument, alone on a new line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T09:11:38+04:00",
+          "tree_id": "38608e784f9c65b169b06c9f7cba7cf51aa2d12d",
+          "url": "https://github.com/purlis/purlis/commit/b3075404f8750ba91c8c75cb87dde0afef2e9128"
+        },
+        "date": 1792213978675,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5394875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.513, 0.527, 0.539, 0.553, 0.558 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.028791,
+            "unit": "ms",
+            "extra": "median of 5 runs: 17.001, 17.023, 17.029, 17.104, 17.301 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.2582655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.139, 104.108, 104.258, 105.782, 106.944 ms"
           }
         ]
       }
