@@ -203,7 +203,8 @@ describe("the window", function () {
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
     await until(pane, "you said: with fifty sessions running");
-  });
+    // PROBE (#2367, removed before ready): force the timeout mid-opening.
+  }).timeout(20_000);
 
   /**
    * The strip collapsing, against a real layout (ADR 0039, as amended).
