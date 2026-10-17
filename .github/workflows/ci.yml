@@ -727,6 +727,8 @@ jobs:
   # and 26 minutes into their tests. So each part has 60 minutes, and the app's `behaviour`
   # tests are left out here until #2464: on macOS each takes some 160 s where Linux takes
   # under 10 (about 1,000 s a part), and the Linux `rust` job runs them on every pull request.
+  # So set, the three parts took 16.6 + 28.9, 18.0 + 17.6 and 18.4 + 17.7 minutes (build +
+  # tests, still with no cache).
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
