@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792260804503,
+  "lastUpdate": 1792262332731,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15666,6 +15666,48 @@ window.BENCHMARK_DATA = {
             "value": 104.17151150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.215, 104.144, 104.172, 104.313, 104.764 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "db16fc734cddcd185848ed0f51c2cf3cf22483de",
+          "message": "app: a commit right after a checkout in the cockpit is told (refs #2463)\n\nThe product gap: after a checkout of a new branch in the cockpit's folder,\nthe new branch's ref folder is watched only once its refs are found again\n(a burst later, on a reader child). A commit landing before that watch\nholds moves only the new ref file, which no watch held, and a platform\nreports nothing from before a watch (FSEvents also restarts its stream to\nadd one). Now, once the re-found refs are watched, every window whose\ncockpit is that folder is told it moved, and reads it again.\n\nThe new test holds the re-find on a test-only latch until the HEAD move\nhas been told, so without the fix it fails every time, not only when the\nre-find is slower than the watch's own thread.\n\nThe nightly failure of a_checkout_in_the_cockpit_has_its_new_branchs_commits_heard\nwas the test's poller: notify 8's PollWatcher keeps mtimes to the second, so\na ref rewritten within the second the checkout made it looked unchanged.\nThe tests' poller now compares contents too.\n\nThe ordering flake in a_branch_whose_check_hangs_holds_up_no_other_branch:\na write in `src/deep` also names `src/deep`, a folder holding tracked files,\nwhich matters without reading any ignore file. The burst's paths are a set,\nso whenever `src/deep` was asked first the \"hung\" check answered at once and\nthe two branches were told in either order (about half the runs took ~2 s,\nnot the ~8 s the hang takes). The write now goes in an untracked folder\nbelow the FIFO, so the check always hangs, and the test asserts that the\nhung branch is told only after the reader's deadline.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward",
+          "timestamp": "2026-10-17T22:35:38+04:00",
+          "tree_id": "fc4cfb62dd52b7c9130d70f56678d5aa8f263436",
+          "url": "https://github.com/purlis/purlis/commit/db16fc734cddcd185848ed0f51c2cf3cf22483de"
+        },
+        "date": 1792262331443,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.543672,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.513, 0.527, 0.544, 0.548, 0.570 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5283305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.338, 16.436, 16.528, 16.577, 17.027 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.14510849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.552, 104.073, 104.145, 104.904, 106.574 ms"
           }
         ]
       }
