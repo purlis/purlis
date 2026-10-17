@@ -5615,6 +5615,7 @@ dependencies = [
  "purlis-core",
  "purlis-host",
  "purlis-linux-sandbox",
+ "purlis-session-protocol",
  "regex",
  "rmcp",
  "serde_json",

@@ -5853,6 +5853,7 @@ pub mod codex;
 pub mod egress;
 pub mod grant;
 pub mod held;
+pub mod hosted;
 pub mod hosts;
 pub mod kubeconfig;
 pub mod local;
