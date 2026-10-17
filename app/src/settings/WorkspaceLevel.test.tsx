@@ -437,7 +437,7 @@ describe("every workspace setting there is, at the Workspace level", () => {
     ["Repos", ["Cloned here", "Not cloned here"]],
     ["Dispatch", ["Limits"]],
     ["Extensions", ["Persona statistics: enabled", "Solarized: enabled"]],
-    ["Appearance", ["Theme", "Colour", "Icons"]],
+    ["Appearance", ["Theme", "Colour", "Icons", "Theme options"]],
     [
       "Plugins",
       [

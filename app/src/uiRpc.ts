@@ -8543,6 +8543,11 @@ export type ThemeInForce = {
 	 *  drawn has purlis's own values for those tokens.
 	 */
 	floors: string | null,
+	/**
+	 *  The options of the theme drawn, each with the value it is drawn with (#2325): empty for
+	 *  a theme with none.
+	 */
+	options: WindowOption[],
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
@@ -9077,6 +9082,36 @@ export type WindowIcon = {
 export type WindowMotion = {
 	durations: { [key in string]: number },
 	easings: { [key in string]: [(number | null), (number | null), (number | null), (number | null)] },
+};
+
+/**
+ *  One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
+ *  the value drawn and whether a choice made it (`false`: the theme's default).
+ */
+export type WindowOption = {
+	id: string,
+	label: string,
+	/**  One line on what it changes; empty when the theme says none. */
+	description: string,
+	/**  `toggle` or `choice`. */
+	kind: string,
+	/**
+	 *  Its values in the theme's order, each with what a person calls it: a toggle's are `off`
+	 *  and `on`.
+	 */
+	values: WindowOptionValue[],
+	/**  The value drawn. */
+	value: string,
+	/**  The theme's default. */
+	default: string,
+	/**  Whether a choice made the value drawn; `false` when it is the theme's default. */
+	chosen: boolean,
+};
+
+/**  One value of a theme option. */
+export type WindowOptionValue = {
+	id: string,
+	label: string,
 };
 
 /**
