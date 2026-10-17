@@ -109,14 +109,6 @@ impl Default for NeedsYou {
     }
 }
 
-impl std::fmt::Debug for NeedsYou {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NeedsYou")
-            .field("waiting", &*self.lock())
-            .finish_non_exhaustive()
-    }
-}
-
 impl NeedsYou {
     /// None waiting; `ended` hears each that ends with its browser.
     pub fn new(ended: EndedTeller) -> Self {
