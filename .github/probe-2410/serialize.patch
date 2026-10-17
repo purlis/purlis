@@ -1,0 +1,14 @@
+diff --git a/crates/purlis-core/src/hookwire/spool.rs b/crates/purlis-core/src/hookwire/spool.rs
+index be98afcb..1abc19b3 100644
+--- a/crates/purlis-core/src/hookwire/spool.rs
++++ b/crates/purlis-core/src/hookwire/spool.rs
+@@ -776,6 +776,9 @@ fn append_within(
+     std::thread::Builder::new()
+         .name("purlis-hook-spool".into())
+         .spawn(move || {
++            // PROBE: hooks queued behind one another, as before #983.
++            static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
++            let _held = ONE_AT_A_TIME.lock();
+             let _ = tx.send(write_line(&dir, chat, &key, line, bounds));
+         })?;
+     use std::sync::mpsc::RecvTimeoutError;

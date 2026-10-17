@@ -1,0 +1,77 @@
+# TEMPORARY probe for #2410: removed before the pull request is ready.
+name: probe 2410
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/probe-2410.yml
+      - .github/probe-2410/**
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  loop:
+    name: probe 2410 (${{ matrix.arm }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # main's test: the hook's one-second wall clock on every line.
+          - arm: main
+            runs: 60
+          # this branch's test: bounded by the event, hooks on the disk together.
+          - arm: fixed
+            runs: 60
+          # this branch's test with hooks queued behind one another, as before #983: must fail.
+          - arm: serialized
+            runs: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - name: main's test (the red arm)
+        if: matrix.arm == 'main'
+        run: |
+          git checkout origin/main -- crates/purlis-core/src/hookwire/spool/tests.rs
+          git diff --stat HEAD
+      - name: Queue the hooks behind one another
+        if: matrix.arm == 'serialized'
+        run: git apply .github/probe-2410/serialize.patch && git diff --stat
+      - name: Measure each line's wait (this branch's test)
+        if: matrix.arm != 'main'
+        run: git apply .github/probe-2410/measure.patch && git diff --stat
+      - name: Build the test
+        run: cargo test -p purlis-core --locked --lib --no-run
+      - name: Loop the test under load
+        run: |
+          lib=$(ls -t target/debug/deps/purlis_core-* | grep -v '\.d$\|\.rlib$\|\.rmeta$' | head -1)
+          echo "nproc $(nproc)"
+          # The load: purlis-core's own unit tests on every core, over and over, as a CI
+          # partition runs them, and twice as many spinning shells besides.
+          ( while :; do "$lib" --test-threads="$(nproc)" >/dev/null 2>&1; done ) &
+          for _ in $(seq $(( $(nproc) * 2 ))); do ( while :; do :; done ) & done
+          sleep 20
+          failed=0
+          for i in $(seq ${{ matrix.runs }}); do
+            start=$(date +%s%N)
+            if "$lib" --exact hookwire::spool::tests::sixteen_hooks_spooling_two_thousand_lines_for_one_chat_on_a_slow_disk_lose_none --test-threads=1 --nocapture > "out-$i.txt" 2>&1; then
+              echo "run $i: ok in $(( ($(date +%s%N) - start) / 1000000 )) ms, load $(cut -d' ' -f1 /proc/loadavg) $(grep -m1 PROBE "out-$i.txt" || true)"
+            else
+              failed=$((failed + 1))
+              echo "run $i: FAILED in $(( ($(date +%s%N) - start) / 1000000 )) ms, load $(cut -d' ' -f1 /proc/loadavg)"
+              grep -m5 "PROBE\|were not spooled\|did not take the line\|no two hooks\|panicked" "out-$i.txt" || true
+            fi
+          done
+          echo "::notice title=probe 2410 (${{ matrix.arm }})::$failed of ${{ matrix.runs }} runs failed"
+          test "$failed" -eq 0
