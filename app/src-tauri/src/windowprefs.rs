@@ -53,6 +53,9 @@ struct TheirTheme {
     /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
     /// drawn has purlis's own values for those tokens.
     floors: Option<String>,
+    /// Whether it is a format 1 file in force, which the window offers, once, to move into a
+    /// theme folder (#2323).
+    format_1: bool,
 }
 
 impl From<Theirs> for TheirTheme {
@@ -73,6 +76,7 @@ impl From<Theirs> for TheirTheme {
                 .map(WindowTheme::from),
             complaints: theirs.complaints,
             floors: drawn.and_then(|drawn| drawn.held).map(|held| held.said()),
+            format_1: theirs.format_1,
         }
     }
 }

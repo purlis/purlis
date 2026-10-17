@@ -46,6 +46,8 @@ export type TheirReading = {
   complaints: Complaint[];
   /** The Notice that names the consent floors it breaks, when it breaks one. */
   floors: string | null;
+  /** Whether it is a format 1 file in force, offered once a move into a theme folder (#2323). */
+  format_1: boolean;
 };
 
 /** Both readings. */
@@ -59,6 +61,7 @@ const NO_THEME: TheirReading = {
   theme: null,
   complaints: [],
   floors: null,
+  format_1: false,
 };
 
 /**
@@ -92,6 +95,7 @@ function theirReading(raw: unknown): TheirReading {
         one !== null && typeof one === "object" && typeof (one as Complaint).said === "string",
     ),
     floors: typeof from.floors === "string" ? from.floors : null,
+    format_1: from.format_1 === true,
   };
 }
 
@@ -131,7 +135,14 @@ export type MachineAlert = Pick<AlertRow, "severity" | "subject" | "detail"> & {
   /** The layout file's way out: move it aside, so the next launch starts from the default
    *  layout and the next change writes a new file ({@link usingTheDefaultLayout}). */
   defaultLayout?: true;
+  /** The old theme file's offer (#2323): move it into a theme folder, once
+   *  ({@link THEME_FOLDER_OFFERED}). */
+  themeFolder?: true;
 };
+
+/** The subject of the offer to move a format 1 theme file into a theme folder, and the cause it
+ *  is seen by, once on this machine (`purlis_core::windowprefs::ONCE_ON_THIS_MACHINE`). */
+export const THEME_FOLDER_OFFERED = "theme-folder-offered";
 
 const said = new Map<string, MachineAlert>();
 let listed: MachineAlert[] = [];
@@ -266,5 +277,15 @@ export function theirTheme(reading: TheirReading = atCreation().theme): Theme | 
       builtIn: true,
     });
   }
+  // An old single-file theme keeps working, and is offered once to move into a theme folder
+  // (spec #2313): the row draws only while the offer was not seen on this machine.
+  if (reading.format_1)
+    sayAboutThisMachine(THEME_FOLDER_OFFERED, {
+      severity: "warn",
+      detail: `${where} is a theme in the old single-file format; it keeps working`,
+      remedy:
+        "move it into a theme folder of your own, where it can grow fonts, icons and more appearances",
+      themeFolder: true,
+    });
   return theme;
 }
