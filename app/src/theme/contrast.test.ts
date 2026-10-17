@@ -196,10 +196,14 @@ describe("every pair a stylesheet draws", () => {
   });
 
   it("holds each change mark's colour on every row the explorer draws it on", () => {
-    // A change mark (FM-4) sets its colour and no background: it is drawn on the row it is on,
-    // which is the window, the row under the pointer or the selected row (#2392).
+    // A change mark (FM-4), its letter and the file's name, sets its colour and no background:
+    // it is drawn on the row it is on, which is the window, the row under the pointer or the
+    // selected row (#2392). A name rule is read as well as the letter's, so one split out with a
+    // colour of its own is held too.
+    const markRule =
+      /^\.explorer (?:\.change-mark|\[data-mark(?:="[^"]*")?\] > \.file-node > \.spot-name)/;
     const marks = [...colours]
-      .filter(([selector]) => selector.startsWith(".explorer .change-mark"))
+      .filter(([selector]) => markRule.test(selector))
       .flatMap(([, sets]) => [...sets.fronts]);
     expect(marks).toEqual(expect.arrayContaining(["state.success", "danger.base"]));
     const loose = [...new Set(marks)].flatMap((mark) =>
