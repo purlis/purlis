@@ -83,14 +83,14 @@ fn sandboxed_no_app(tmp: &tempfile::TempDir) -> Vec<(&'static str, String)> {
 /// What a refusal of `get`, `cp` or any other read tells a sandboxed chat to run instead: on
 /// macOS and Linux `secret exec` through the app; elsewhere the app runs none for a chat yet
 /// ([`crate::secrets::brokered::NO_WRAP`]), so a terminal outside the chat.
-const ROUTE: &str = if cfg!(any(target_os = "macos", target_os = "linux")) {
+const ROUTE: &str = if crate::secrets::brokered::runs_a_chats_command_here() {
     "secret exec team"
 } else {
     "terminal outside the chat"
 };
 
 /// What the refusal of a `secret exec` no app took tells a sandboxed chat to do instead.
-const EXEC_ROUTE: &str = if cfg!(any(target_os = "macos", target_os = "linux")) {
+const EXEC_ROUTE: &str = if crate::secrets::brokered::runs_a_chats_command_here() {
     "while the app that started this chat is open"
 } else {
     "terminal outside the chat"

@@ -312,7 +312,7 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
     }
     let (why, next) = match reader {
         // The app runs no command for a chat on this system yet ([`NO_WRAP`]).
-        _ if Wrap::here() == Wrap::Nothing => (
+        _ if !runs_a_chats_command_here() => (
             "purlis cannot yet run a command in a sandbox on this system, so the app runs none \
              for a chat here",
             "Run it in a terminal outside the chat.".to_owned(),
@@ -1033,7 +1033,7 @@ pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<String> {
         return None;
     }
     // The app runs no command for a chat on this system yet ([`NO_WRAP`]).
-    let to_use = if Wrap::here() != Wrap::Nothing {
+    let to_use = if runs_a_chats_command_here() {
         format!(
             "To use a value, hand it to a tool this chat's persona declares: purlis secret exec \
              {vault} --env NAME=key -- <tool> …; the app runs that for the chat."
@@ -1070,17 +1070,33 @@ pub(crate) enum Wrap {
     Refusing(&'static str),
 }
 
+/// **Whether the app runs a sandboxed chat's `secret exec` on this system**: where it has a
+/// sandbox to run the command in, macOS's Seatbelt or purlis's own wrap on Linux (#2342). What
+/// every sentence that names the route asks.
+pub const fn runs_a_chats_command_here() -> bool {
+    cfg!(any(target_os = "macos", target_os = "linux"))
+}
+
 impl Wrap {
     /// This system's.
     fn here() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Seatbelt
-        } else if cfg!(target_os = "linux") {
-            Self::Purlis
-        } else {
+        if !runs_a_chats_command_here() {
             Self::Nothing
+        } else if cfg!(target_os = "macos") {
+            Self::Seatbelt
+        } else {
+            Self::Purlis
         }
     }
+}
+
+/// How the run's sandbox is applied, once its checks have passed.
+enum Applying {
+    Seatbelt,
+    /// By purlis's own program, as [`wrap_for`] checked it.
+    Purlis(PathBuf),
+    #[cfg(test)]
+    Unwrapped,
 }
 
 /// What is told each sandbox block of a brokered run, for the asking chat's Notice.
@@ -1451,9 +1467,6 @@ pub(crate) fn serve_recorded(
             ),
         );
     };
-    if wrap == Wrap::Nothing {
-        return refuse(&mut *writer, 1, NO_WRAP.to_owned());
-    }
     let Some(folder) = asker.folder.clone().filter(|f| f.is_dir()) else {
         return refuse(
             &mut *writer,
@@ -1465,13 +1478,15 @@ pub(crate) fn serve_recorded(
     };
     // On Linux the run's sandbox is purlis's own program, as the chat's start held it, checked
     // again now: never one the chat may write, nor one replaced since.
-    let wrap_program = if wrap == Wrap::Purlis {
-        match wrap_for(asker, confines, &folder) {
-            Ok(program) => Some(program),
+    let applying = match wrap {
+        Wrap::Nothing => return refuse(&mut *writer, 1, NO_WRAP.to_owned()),
+        Wrap::Seatbelt => Applying::Seatbelt,
+        Wrap::Purlis => match wrap_for(asker, confines, &folder) {
+            Ok(program) => Applying::Purlis(program),
             Err(why) => return refuse(&mut *writer, 1, why),
-        }
-    } else {
-        None
+        },
+        #[cfg(test)]
+        Wrap::Unwrapped | Wrap::Refusing(_) => Applying::Unwrapped,
     };
     let v = match cmd::provider(&ctx, &wanted.vault) {
         Ok(v) => v,
@@ -1692,8 +1707,8 @@ pub(crate) fn serve_recorded(
             &ports,
         )
     };
-    let mut child = match (wrap, &wrap_program) {
-        (Wrap::Seatbelt, _) => {
+    let mut child = match &applying {
+        Applying::Seatbelt => {
             let profile = match profile() {
                 Ok(profile) => profile,
                 Err(why) => return refuse(&mut *writer, 1, why.to_owned()),
@@ -1704,7 +1719,7 @@ pub(crate) fn serve_recorded(
         }
         // The same profile, read by purlis's own wrap, as a wrapped chat's line starts
         // ([`crate::sandbox::wrapper::line`]).
-        (Wrap::Purlis, Some(purlis)) => {
+        Applying::Purlis(purlis) => {
             let profile = match profile() {
                 Ok(profile) => profile,
                 Err(why) => return refuse(&mut *writer, 1, why.to_owned()),
@@ -1727,11 +1742,8 @@ pub(crate) fn serve_recorded(
             ));
             child
         }
-        (Wrap::Purlis | Wrap::Nothing, _) => {
-            return refuse(&mut *writer, 1, NO_WRAP.to_owned());
-        }
         #[cfg(test)]
-        (Wrap::Unwrapped | Wrap::Refusing(_), _) => std::process::Command::new(&program),
+        Applying::Unwrapped => std::process::Command::new(&program),
     };
     let start_in = wanted
         .cwd
@@ -2376,7 +2388,11 @@ fn wrap_for(asker: &Asker, confines: &Confines, folder: &Path) -> Result<PathBuf
     if confines.level == crate::sandbox::Level::Floor
         && !confines.held.iter().any(|held| program.starts_with(held))
     {
-        return Err(NO_WRAP_RECORDED.to_owned());
+        return Err(format!(
+            "purlis's own program, {}, is not one this chat's start kept it from writing, so it \
+             runs no command for the chat. Start the chat again",
+            program.display()
+        ));
     }
     #[cfg(target_os = "linux")]
     if purlis_linux_sandbox::abi() < purlis_linux_sandbox::MIN_ABI {

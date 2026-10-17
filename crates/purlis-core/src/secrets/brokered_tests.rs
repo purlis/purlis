@@ -273,7 +273,9 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
     let mut want = wanted(
         project.path(),
         "team",
-        sh(r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$KEPT]""#),
+        sh(
+            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$KEPT]""#,
+        ),
     );
     want.env = vec!["X=TOKEN".into()];
     for (name, value) in [
@@ -281,13 +283,17 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         ("DYLD_INSERT_LIBRARIES", "/work/mine.dylib"),
         ("LD_PRELOAD", "/work/mine.so"),
         ("PYTHONPATH", "/work"),
+        ("GCONV_PATH", "/work/gconv"),
+        ("LOCPATH", "/work/locale"),
+        ("GIO_EXTRA_MODULES", "/work/gio"),
+        ("GTK_MODULES", "mine"),
         ("KEPT", "kept"),
     ] {
         want.environment.push((name.into(), value.into()));
     }
     let frames = served(&asker(project.path(), Some("devops")), want);
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
-    assert_eq!(stdout(&frames), "[][][][][kept]\n");
+    assert_eq!(stdout(&frames), "[][][][][][][][][kept]\n");
 }
 
 /// #1667 with #1350: a run's ssh signs with the chat's own agent. The run hands the chat's
@@ -1043,7 +1049,10 @@ fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_no
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(refusal(&frames), NO_WRAP_RECORDED, "{frames:?}");
+    assert!(
+        refusal(&frames).contains("is not one this chat's start kept it from writing"),
+        "{frames:?}"
+    );
     assert!(!marker.exists(), "nothing ran");
 }
 
@@ -2230,7 +2239,7 @@ fn a_sandboxed_chat_is_refused_reading_a_value_with_the_route_that_works() {
     let project = project();
     let root = project.path();
     let chat = Ctx::new(root, Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]));
-    let route = if cfg!(any(target_os = "macos", target_os = "linux")) {
+    let route = if runs_a_chats_command_here() {
         "purlis secret exec team --env NAME=key -- <tool>"
     } else {
         "terminal outside the chat"

@@ -151,7 +151,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   Keychain would ask you on the chat's behalf. `secret get`, `cp` and every other read of such
   a vault in a sandboxed chat are refused the same way, since the app runs only `exec`. The
   refusal names what to run instead: `secret exec` through the app on macOS and Linux, and a
-  terminal outside the chat where the app runs no command for a chat. Any other vault runs
+  terminal outside the chat on other systems. Any other vault runs
   as before.
 - **A sandboxed chat lists a vault's key names through the app, and reads no value itself**
   (qw385). `secret list <vault>` (and `persona secret list`) in a sandboxed chat is answered
@@ -162,8 +162,7 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   never read in the chat instead.
   `secret get` and `secret cp` (and their `persona secret` forms) are refused in a sandboxed
   chat for every provider, whatever was allowed; the refusal names `secret list` for the key
-  names and `secret exec` through a declared tool for a value (a terminal outside the chat on
-  Linux).
+  names and `secret exec` through a declared tool for a value.
 - **The rest of the vault verbs are yours, and a sandboxed chat is told so before anything is
   read** (#1969). `secret set`, `secret rm`, `vault add` and `vault remove` change a vault or
   the registry, and the app takes no write for a chat: in a sandboxed chat each is refused

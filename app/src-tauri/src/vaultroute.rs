@@ -493,7 +493,7 @@ pub fn told_allowed(grant: &sandbox::local::VaultGrant, tooled: bool) -> String 
             "`purlis secret list {vault}` now lists its key names here. Reading a value \
              directly (`secret get`, `secret cp`) stays refused in a sandboxed chat."
         )
-    } else if cfg!(any(target_os = "macos", target_os = "linux")) {
+    } else if brokered::runs_a_chats_command_here() {
         format!(
             "`purlis secret list {vault}` now lists its key names here, and the tools {persona} \
              declares with it now run (`purlis secret exec {vault} … -- <tool>`). Reading a \
@@ -877,7 +877,8 @@ mod tests {
                                chat.";
 
     /// The same, where steward declares a tool with `devops`.
-    const TOLD_DEVOPS_TOOLED: &str = if cfg!(any(target_os = "macos", target_os = "linux")) {
+    const TOLD_DEVOPS_TOOLED: &str = if purlis_core::secrets::brokered::runs_a_chats_command_here()
+    {
         "⬢ purlis: using vault `devops` — Allowed for chats opened as `steward` in this project \
          on this machine — retry. `purlis secret list devops` now lists its key names here, \
          and the tools steward declares with it now run (`purlis secret exec devops … -- \
