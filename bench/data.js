@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792266285852,
+  "lastUpdate": 1792267646305,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15834,6 +15834,48 @@ window.BENCHMARK_DATA = {
             "value": 101.58890099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.921, 101.215, 101.589, 101.641, 102.570 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c5a064e4ac0423a29e316886337cede0d6da7f30",
+          "message": "CI: the release-features check fails on a shipping workflow or cargo form it doesn't know (#2474)\n\n* CI: the release-features check fails on a shipping workflow or cargo form it doesn't know (#2456)\n\nA workflow that publishes a release or pushes an image and builds with\ncargo or tauri is an error until it is in SHIPPING_WORKFLOWS. A cargo\nsubcommand outside the ones the check reads or knows make nothing that\nships is an error, and so is cargo called by path or through a variable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* release-features: place every building workflow, read cargo under other names (#2456 review)\n\nEvery workflow that builds with cargo or tauri is in SHIPPING_WORKFLOWS\nor in NOT_SHIPPING with a reason; one in NOT_SHIPPING that publishes is\nan error. cargo run with a release profile is read as a build, and\ncargo test with one is an error. cargo by path, as cargo.exe, as a\nplugin binary, through any expansion or inside a quoted command is\nread or refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T23:46:00+04:00",
+          "tree_id": "437271a2b9019633e2e869c5e43b044d40471650",
+          "url": "https://github.com/purlis/purlis/commit/c5a064e4ac0423a29e316886337cede0d6da7f30"
+        },
+        "date": 1792267644910,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.525428,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.523, 0.525, 0.525, 0.528, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0363805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.455, 16.961, 17.036, 17.097, 17.260 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.1045435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.110, 104.153, 105.105, 105.555, 106.206 ms"
           }
         ]
       }
