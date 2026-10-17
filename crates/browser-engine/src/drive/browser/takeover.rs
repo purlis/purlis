@@ -300,7 +300,7 @@ impl Browser {
                         Err(Refusal::NothingFocused) => {
                             // Nothing the tree shows has the focus: unless the document has
                             // nothing focused either, the key waits.
-                            if self.focus_unseen(&session) {
+                            if self.focus_unseen(&session, &target) {
                                 return Err(Refusal::FocusUnseen);
                             }
                             None
@@ -460,11 +460,13 @@ impl Browser {
             }
         };
         let on = Some(session.as_str());
-        let Ok(resolved) = self.devtools().call(
-            "DOM.resolveNode",
-            json!({ "backendNodeId": key.backend }),
-            on,
-        ) else {
+        let Ok(resolved) = self.in_world(&session, &key.frame, |world| {
+            self.devtools().call(
+                "DOM.resolveNode",
+                json!({ "backendNodeId": key.backend, "executionContextId": world }),
+                on,
+            )
+        }) else {
             return String::new();
         };
         let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
@@ -487,23 +489,25 @@ impl Browser {
             .unwrap_or_default()
     }
 
-    /// Whether the document on `session` has an element focused (or one inside a frame), though
-    /// its tree shows none: then a key typed now would go where purlis cannot blank it.
-    fn focus_unseen(&self, session: &str) -> bool {
-        self.devtools()
-            .call(
+    /// Whether the document of `frame` on `session` has an element focused (or one inside a
+    /// frame), though its tree shows none: then a key typed now would go where purlis cannot
+    /// blank it.
+    fn focus_unseen(&self, session: &str, frame: &str) -> bool {
+        self.in_world(session, frame, |world| {
+            self.devtools().call(
                 "Runtime.evaluate",
-                json!({ "expression": ACTIVE_ELEMENT, "returnByValue": true }),
+                json!({ "expression": ACTIVE_ELEMENT, "contextId": world, "returnByValue": true }),
                 Some(session),
             )
-            .ok()
-            .and_then(|read| {
-                read.pointer("/result/value")
-                    .and_then(Value::as_str)
-                    .map(|tag| !tag.is_empty())
-            })
-            // A document that cannot say holds the key back too.
-            .unwrap_or(true)
+        })
+        .ok()
+        .and_then(|read| {
+            read.pointer("/result/value")
+                .and_then(Value::as_str)
+                .map(|tag| !tag.is_empty())
+        })
+        // A document that cannot say holds the key back too.
+        .unwrap_or(true)
     }
 }
 
