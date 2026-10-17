@@ -55,6 +55,7 @@ describe("filtering the Settings tab by name", () => {
     expect(box()).toHaveValue("");
     expect(inNav()).toEqual([
       "Text",
+      "Density and fonts",
       "Editor",
       "Chats list",
       "Notifications",
@@ -138,6 +139,7 @@ describe("filtering the Settings tab by name", () => {
 
     expect(inNav()).toEqual([
       "Text",
+      "Density and fonts",
       "Editor",
       "Chats list",
       "Notifications",
@@ -157,6 +159,7 @@ describe("filtering the Settings tab by name", () => {
     expect(box()).toHaveValue("");
     expect(inNav()).toEqual([
       "Text",
+      "Density and fonts",
       "Editor",
       "Chats list",
       "Notifications",

@@ -113,8 +113,10 @@ cd "$(dirname "$0")/.."
   broken "main's app is not at $baseline: the step that built it said it was"
 limit="${LIMIT_MS:-2000}"
 ceiling="${CEILING_MS:-2500}"
+# Every launch is a person's first, with a theme of theirs that brings its fonts (#2326): the
+# window draws as a person with a theme folder's fonts does, and the gate holds that.
 bench=(node tools/bench.mjs --skip-build --only coldstart --app "$app" --limit "$limit"
-  --ceiling "$ceiling" --warm-up --fresh-profile --launch-steps --case "$case")
+  --ceiling "$ceiling" --warm-up --fresh-profile --theme-fonts --launch-steps --case "$case")
 if [[ -n "$baseline" ]]; then
   bench+=(--baseline-app "$baseline" --cold-starts 7)
 else

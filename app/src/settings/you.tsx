@@ -1,7 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { useState } from "react";
 import type { YourEditor } from "../bindings";
+import { setDensity, setFontOverride, useAppearance } from "../appearance";
+import type { FontSlot } from "../theme/theme";
 import { onAMac } from "../tabKeys";
 import {
   DEFAULT_TEXT,
@@ -41,6 +44,12 @@ export function youGroups(plane?: string): SettingsGroup[] {
       label: "Text",
       help: "How big the text is drawn, on this machine.",
       settings: [textSize("window"), textSize("terminal")],
+    },
+    {
+      id: "you.look",
+      label: "Density and fonts",
+      help: "How tightly the window is laid out, and the fonts it is drawn in, on this machine, whatever the theme.",
+      settings: [density, fontOverride("ui"), fontOverride("mono"), fontOverride("terminal")],
     },
     {
       id: "you.editor",
@@ -94,6 +103,73 @@ function textSize(which: Which): Setting {
           label: `Reset to ${DEFAULT_TEXT[which]}px`,
           disabled: size === DEFAULT_TEXT[which],
           onReset: () => resetText(which),
+        },
+      };
+    },
+  };
+}
+
+/** Comfortable or compact, in every theme (#2326). */
+const density: Setting = {
+  id: "you.look.density",
+  label: "Density",
+  help: "Compact draws tighter spacing and shorter controls and strips. A theme may tune what compact means for it, and every theme has it.",
+  useControl: function useDensity() {
+    const chosen = useAppearance().density ?? "comfortable";
+    return {
+      control: (ids) => (
+        <Choice
+          kind="radio"
+          ids={ids}
+          options={[
+            { value: "comfortable", label: "Comfortable", says: "The theme's own spacing." },
+            { value: "compact", label: "Compact", says: "Tighter, for more on screen." },
+          ]}
+          value={chosen}
+          onValueChange={(to) => setDensity(to === "compact" ? "compact" : "comfortable")}
+        />
+      ),
+      grouped: true,
+    };
+  },
+};
+
+/** What each font the person may set is called, and where it is drawn. */
+const FONT_NAMES: Record<FontSlot, { label: string; help: string }> = {
+  ui: { label: "Window font", help: "Every label, menu and message." },
+  mono: { label: "Code font", help: "Commands, paths and code outside the terminal." },
+  terminal: { label: "Terminal font", help: "Every chat's terminal." },
+};
+
+/** A font family the person names in place of the theme's (#2326). */
+function fontOverride(slot: FontSlot): Setting {
+  const { label, help } = FONT_NAMES[slot];
+  return {
+    id: `you.look.${slot}`,
+    label,
+    help: `${help} An installed family, such as Atkinson Hyperlegible; empty draws the theme's. It beats the theme's in every theme.`,
+    useControl: function useFontOverride() {
+      const set = useAppearance().fonts?.[slot] ?? "";
+      const [typed, setTyped] = useState<string | undefined>(undefined);
+      return {
+        control: (ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={typed ?? set}
+            placeholder="The theme's"
+            maxLength={64}
+            onChange={setTyped}
+            onCommit={() => {
+              if (typed !== undefined && typed !== set) setFontOverride(slot, typed.trim());
+              setTyped(undefined);
+            }}
+          />
+        ),
+        reset: {
+          label: "Use the theme's",
+          disabled: set === "",
+          onReset: () => setFontOverride(slot, ""),
         },
       };
     },

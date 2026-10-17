@@ -129,3 +129,8 @@ record is what the M64 tickets build to.
 - Every value a theme gives needs a documented bound and a test at the engine's interface.
 - The contrast suite moves into the engine so it can run on any theme.
 - `docs/design-system.md` describes the tokens and their bounds as the M64 tickets build them.
+
+The amendments to this decision are files of their own in [`0097/`](0097/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

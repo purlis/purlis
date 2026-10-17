@@ -354,6 +354,8 @@ macro_rules! app_commands {
                 extensions::set_extension_on,
                 extensions::open_extension_record,
                 extensions::theme_in_force,
+                extensions::theme_font,
+                extensions::theme_person,
                 extensions::extension_icon_themes,
                 extensions::extension_panels,
                 vaults::vault_list,
