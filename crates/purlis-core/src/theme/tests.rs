@@ -899,7 +899,7 @@ fn the_check_holds_a_change_mark_on_every_row_it_is_drawn_on() {
             let mut tokens = serde_json::Map::new();
             tokens.insert(mark.to_owned(), json!(dark().value(ground)));
             let gone = load(&file(json!({ "tokens": tokens }))).theme;
-            let report = check(&gone);
+            let report = check(gone.first());
             assert!(
                 report.findings.iter().any(|one| matches!(
                     one,
@@ -928,7 +928,7 @@ fn the_check_measures_a_see_through_colour_over_what_it_is_drawn_on() {
     // is measured: today's added-line wash as a mark on the dark window is 1.85:1, not the 6.93
     // its opaque colour would have.
     let faint = load(&file(json!({ "tokens": { "state.success": "#3fb95055" } }))).theme;
-    let report = check(&faint);
+    let report = check(faint.first());
     let ratio = report.findings.iter().find_map(|one| match one {
         Finding::Contrast {
             tint: None,
@@ -939,7 +939,7 @@ fn the_check_measures_a_see_through_colour_over_what_it_is_drawn_on() {
     });
     assert_eq!(ratio, Some(1.85));
     let solid = load(&file(json!({ "tokens": { "state.success": "#3fb950ff" } }))).theme;
-    assert!(!check(&solid).findings.iter().any(|one| matches!(
+    assert!(!check(solid.first()).findings.iter().any(|one| matches!(
         one,
         Finding::Contrast { tint: None, pair, .. }
             if pair.front == "state.success" && pair.back == "surface.base"
