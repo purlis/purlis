@@ -29,6 +29,7 @@ const NO_THEME: TheirReading = {
   trouble: null,
   theme: null,
   complaints: [],
+  floors: null,
 };
 /** The person's theme as the core resolves it: complete, and named theirs. */
 const MINE = { ...DEFAULT_THEME, name: "Mine", values: { ...DEFAULT_THEME.values } };
@@ -37,13 +38,22 @@ MINE.values["surface.base"] = RAISED;
 const handed = (theme: Partial<TheirReading>) => {
   (globalThis as Record<string, unknown>)[GLOBAL] = {
     layout: NONE,
-    theme: { path: PATH, found: true, trouble: null, theme: null, complaints: [], ...theme },
+    theme: {
+      path: PATH,
+      found: true,
+      trouble: null,
+      theme: null,
+      complaints: [],
+      floors: null,
+      ...theme,
+    },
   };
 };
 
 beforeEach(() => {
   Reflect.deleteProperty(globalThis, GLOBAL);
   sayAboutThisMachine("theme", undefined);
+  sayAboutThisMachine("consent floors", undefined);
   drawIn(DEFAULT_THEME);
 });
 afterEach(() => {
@@ -92,6 +102,18 @@ describe("the operator's own theme", () => {
     expect(said.subject).toBe("theme");
     expect(said.detail).toContain(PATH);
     expect(said.detail).toContain("surface.bass is not a purlis token; surface.base is");
+  });
+
+  it("that breaks a consent floor says so in one Notice, with the core's sentence", () => {
+    const floors = "Mine breaks the consent floors (the state marks meet the mark floor)";
+    handed({ theme: MINE, floors });
+
+    expect(theirTheme()).toEqual(MINE);
+    const [said] = aboutThisMachine();
+    expect(said.subject).toBe("consent floors");
+    expect(said.detail).toBe(floors);
+    expect(said.remedy).toContain(PATH);
+    expect(said.builtIn).toBe(true);
   });
 
   it("that could not be read leaves the built-in, and the Inbox says why", () => {

@@ -101,6 +101,11 @@ pub fn tinted(theme: &ResolvedTheme, colour: &str) -> ResolvedTheme {
     tint
 }
 
+/// A theme value in OKLab, its alpha left out; `None` for a value that is not a colour.
+pub(super) fn oklab_of(hex: &str) -> Option<Vec3> {
+    parse(hex).map(|(rgb, _)| oklab(rgb))
+}
+
 /// WCAG's relative luminance of a colour in linear sRGB.
 fn luminance([r, g, b]: Vec3) -> f64 {
     0.2126 * r + 0.7152 * g + 0.0722 * b
