@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   commands,
   type ExpectedItem,
@@ -12,9 +12,46 @@ import {
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
-import { sandboxCommandReturned } from "./sandboxAsked";
+import { sandboxCommandReturned, useSandboxCommands } from "./sandboxAsked";
 import { inertly } from "./sandboxBlocks";
 import { useWindowFocused } from "./windowFocused";
+
+/**
+ * **What a project expects and this machine has not allowed, read again** (#1888): whenever one
+ * of the window's sandbox commands returns, so an Allow made on this Notice or in Settings ›
+ * Sandbox shows on the other, and whenever `moves` grows (a caller's own counters, summed).
+ * `drawn` is what the caller has already read, where it has: nothing is read until something
+ * moves. `null` is nothing waiting. A read that fails keeps what is drawn, and says so in the
+ * console.
+ */
+export function useProjectExpects(
+  plane: PlaneId,
+  drawn: ProjectExpects | null | undefined,
+  moves = 0,
+): [ProjectExpects | null | undefined, (now: ProjectExpects | null) => void] {
+  const [expects, setExpects] = useState(drawn);
+  const moved = useSandboxCommands() + moves;
+  /** Where nothing has moved since `drawn` was read: no read is owed. */
+  const drawnAt = useRef(drawn === undefined ? undefined : moved);
+  useEffect(() => {
+    if (moved === drawnAt.current) return;
+    let live = true;
+    const unread = (why: string) =>
+      console.warn(`purlis could not read what this project expects: ${why}`);
+    void commands
+      .sandboxState(plane)
+      .then((answer) => {
+        if (!live) return;
+        if (answer.status === "ok") setExpects(answer.data?.expects ?? null);
+        else unread(answer.error);
+      })
+      .catch((err: unknown) => unread(String(err)));
+    return () => {
+      live = false;
+    };
+  }, [plane, moved]);
+  return [expects, setExpects];
+}
 
 /** What the Allow says, here and on Settings › Sandbox. */
 export const ALLOW_EXPECTS = "Allow on this machine";
@@ -101,32 +138,22 @@ export function ProjectExpectsNotice({
   /** Whether this page may answer: the window may, a link may not. */
   canAnswer?: boolean;
 }) {
-  const [expects, setExpects] = useState<ProjectExpects>();
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // Read when the project's settings change on disk, and when the window comes back: an Allow
+  // made in another window. An Allow in Settings, in this window, is a sandbox command (#1888).
   const onDisk = usePlaneChanged([plane], SETTINGS);
-  // And when the window comes back: an Allow made in Settings, or in another window.
   const focused = useWindowFocused();
 
   /** Asked again after an Allow that was refused: what waits may stand otherwise by now. */
   const [again, setAgain] = useState(0);
 
-  useEffect(() => {
-    let live = true;
-    void commands
-      .sandboxState(plane)
-      .then((answer) => {
-        if (live && answer.status === "ok") setExpects(answer.data?.expects ?? undefined);
-      })
-      // A project whose state cannot be read asks nothing here: a declaration grants nothing,
-      // so saying nothing is the safe way to be wrong.
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [plane, onDisk, focused, again]);
+  // A project whose state cannot be read asks nothing here: a declaration grants nothing, so
+  // saying nothing is the safe way to be wrong.
+  const [expects, setExpects] = useProjectExpects(plane, undefined, onDisk + focused + again);
 
-  if (expects === undefined || !expects.asked || expects.items.length === 0) return null;
+  if (expects === undefined || expects === null || !expects.asked || expects.items.length === 0)
+    return null;
 
   const items = expects.items;
   const answer = (allow: boolean) => {
@@ -145,7 +172,7 @@ export function ProjectExpectsNotice({
           setAgain((n) => n + 1);
           return;
         }
-        setExpects(done.data.expects ?? undefined);
+        setExpects(done.data.expects ?? null);
         // The chats open now keep the sandbox they started with: their Notice asks again.
         if (allow) sandboxCommandReturned();
       })

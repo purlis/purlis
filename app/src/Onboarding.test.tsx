@@ -448,3 +448,74 @@ describe("the place it keeps", () => {
     await waitFor(() => expect(onDisk).toMatchObject({ step: "project", door: "get" }));
   });
 });
+
+describe("the kept place, read before a door can be pressed (#2400)", () => {
+  /** A machine whose kept place is `kept`, answered only when `answer` is called, with a project
+   *  open at `launch` when one is given. */
+  function aSlowRead({ launch, kept }: { launch?: string; kept: OnboardingProgress }) {
+    let answer = () => {};
+    const core = machine({
+      answers: (cmd) => {
+        if (cmd === "plane_at_launch" && launch !== undefined)
+          return { plane: launch, from: launch, why: null };
+        if (cmd === "onboarding_progress")
+          return new Promise((resolve) => {
+            answer = () => resolve(kept);
+          });
+        return undefined;
+      },
+    });
+    return { ...core, answer: () => answer() };
+  }
+
+  it("keeps the Create page a door opened on Add another project, however late the read answers", async () => {
+    // The window holds a project, and this machine finished the steps: the plain welcome. Drawn
+    // before the read answered, the guided one was swapped for it under the press, and the page
+    // the door opened was gone.
+    const read = aSlowRead({ launch: TEAM, kept: { ...FRESH, finished_once: true } });
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Open a project…" }));
+    // The read is asked and has not answered: no welcome to press yet.
+    await waitFor(() => expect(read.calls("onboarding_progress").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("list", { name: "Ways to start" })).toBeNull();
+
+    read.answer();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await screen.findByRole("heading", { level: 1, name: "Create a project" });
+    expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).toBeNull();
+  });
+
+  it("draws the welcome of a read that never answers by the deadline, and keeps a press from a late answer", async () => {
+    const read = aSlowRead({ launch: TEAM, kept: { ...FRESH, finished_once: true } });
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Open a project…" }));
+    const asked = Date.now();
+    await person.click(
+      await screen.findByRole("button", { name: "Create a project" }, { timeout: 2_000 }),
+    );
+    expect(Date.now() - asked).toBeLessThan(2_000);
+    await screen.findByRole("heading", { level: 1, name: "Create a project" });
+
+    // The read answers long after: the place takes it (and keeps it), the page stays.
+    read.answer();
+    await waitFor(() => expect(read.lastKept()).toMatchObject({ finished_once: true }));
+    expect(screen.getByRole("heading", { level: 1, name: "Create a project" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
+  });
+
+  it("guides a window with no project at once, without waiting on the read", async () => {
+    const read = aSlowRead({ kept: FRESH });
+    render(<App />);
+    await stepSays("Step 1 of 4: Welcome");
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await screen.findByRole("heading", { level: 1, name: "Create a project" });
+
+    read.answer();
+    await stepSays("Step 2 of 4: Create, get or open a project");
+    expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
+  });
+});

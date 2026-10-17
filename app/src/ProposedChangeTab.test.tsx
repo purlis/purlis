@@ -62,6 +62,44 @@ describe("a proposed change's own tab", () => {
     );
   });
 
+  it("marks the one line a long change changes, folds the rest, and unfolds it on a click", async () => {
+    // #2121: a 2000-line file with line 1000 changed, and the app's hunks for it (git's).
+    const file = (changed: string) =>
+      Array.from({ length: 2000 }, (_, at) => (at === 999 ? changed : `line ${at + 1}`))
+        .map((line) => `${line}\n`)
+        .join("");
+    const sent = core(
+      whole({
+        before: file("line 1000"),
+        after: file("the one line that changed"),
+        hunks: [{ oldStart: 1000, oldLines: 1, newStart: 1000, newLines: 1 }],
+      }),
+    );
+    const { container } = render(<ProposedChangeTab plane={PLANE} id={7} />);
+    await screen.findByTestId("merge-viewer", undefined, { timeout: 5000 });
+    // Above the change and below it, on each side: folded but for three lines of context.
+    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(4));
+    const [a, b] = [...container.querySelectorAll(".cm-editor")];
+    const changed = (side: Element) =>
+      [...side.querySelectorAll(".cm-changedLine")].map((line) => line.textContent);
+    expect(changed(a)).toEqual(["line 1000"]);
+    expect(changed(b)).toEqual(["the one line that changed"]);
+    const shown = (side: Element) =>
+      [...side.querySelectorAll(".cm-line")].map((line) => line.textContent);
+    expect(shown(a)).not.toContain("line 2");
+
+    // Every line can still be seen before Apply: a click on a fold opens it on both sides.
+    await userEvent.click(a.querySelector(".cm-collapsedLines") as HTMLElement);
+    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(2));
+    expect(shown(a)).toContain("line 2");
+    expect(shown(b)).toContain("line 2");
+
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(sent("apply_proposed_change")).toEqual([{ plane: PLANE, id: 7, from: "tab" }]),
+    );
+  });
+
   it("says why a change is not shown, and offers Dismiss alone", async () => {
     const sent = core(
       whole({

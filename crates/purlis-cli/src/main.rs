@@ -3914,8 +3914,11 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 
 fn main() -> ExitCode {
     // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
-    // the hidden `purlis _sandbox`, never in help and not a public command line.
-    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+    // the hidden `purlis _sandbox`, never in help and not a public command line. Each call its
+    // supervisor refuses is told to the app as the chat's sandbox block (#2344).
+    if let Some(code) =
+        purlis_linux_sandbox::serve_if_asked_telling(purlis_core::sandboxblock::supervised::teller)
+    {
         std::process::exit(code);
     }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed

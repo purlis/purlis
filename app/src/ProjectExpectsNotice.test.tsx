@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import type { ProjectExpects, SandboxState } from "./bindings";
+import { sandboxCommandReturned } from "./sandboxAsked";
 
 /**
  * The up-front question about what a project declares it expects (ADR 0093, ruling 2; qw354):
@@ -56,13 +57,22 @@ const ASKED = expecting({ asked: true, locked: null, items: [DOCKER, HELPER] });
 
 function core(state: SandboxState, after: SandboxState = QUIET) {
   const asked: { cmd: string; args: unknown }[] = [];
+  let now = state;
   mockIPC((cmd, args) => {
     asked.push({ cmd, args });
-    if (cmd === "sandbox_state") return state;
-    if (cmd === "allow_project_expects" || cmd === "decline_project_expects") return after;
+    if (cmd === "sandbox_state") return now;
+    if (cmd === "allow_project_expects" || cmd === "decline_project_expects") {
+      now = after;
+      return after;
+    }
     return null;
   });
-  return (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);
+  const sent = (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);
+  /** The state from now on, as an answer elsewhere left it. */
+  sent.becomes = (next: SandboxState) => {
+    now = next;
+  };
+  return sent;
 }
 
 const drawn = (canAnswer = true) =>
@@ -105,6 +115,18 @@ describe("what a project expects, asked up front", () => {
     );
     await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
     expect(sent("decline_project_expects")).toEqual([]);
+  });
+
+  // #1888: an Allow in Settings, in the same window, left this Notice asking until focus moved.
+  it("goes when an Allow elsewhere in the window returns", async () => {
+    const sent = core(ASKED);
+    drawn();
+    expect(await screen.findByRole("status", { name: LABEL })).toBeTruthy();
+
+    sent.becomes(QUIET);
+    act(() => sandboxCommandReturned());
+
+    await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
   });
 
   it("declined: Not now records the declaration as shown, allows nothing, and is not asked again", async () => {

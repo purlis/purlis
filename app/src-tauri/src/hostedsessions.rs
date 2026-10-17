@@ -440,7 +440,7 @@ const A_REPLY_IS_AT_MOST: usize = purlis_session_protocol::link::MOST_CONTROL_FR
 type Turns = Arc<dyn Fn(&str) -> Option<Vec<String>> + Send + Sync>;
 
 /// Told once, as a program ends.
-type TellEnd = Box<dyn FnOnce(Ending) + Send>;
+pub(crate) type TellEnd = Box<dyn FnOnce(Ending) + Send>;
 
 /// The most ends of programs nobody waits for yet a window keeps (#2006).
 const MOST_UNCLAIMED_ENDS: usize = 1024;
@@ -603,7 +603,7 @@ impl HostLink {
     }
 
     /// Tell `tell` once program `program` ends.
-    fn when_it_ends(&self, program: &str, tell: TellEnd) {
+    pub(crate) fn when_it_ends(&self, program: &str, tell: TellEnd) {
         let ended = lock(&self.shared.unclaimed_ends).remove(program);
         match ended {
             Some(exit) => self.told_ended(tell, exit),

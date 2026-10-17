@@ -16,14 +16,14 @@ use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::hookwire::{
-    CHAT_ENV, Hearing, Listener, Output, Report, SOCKET_ENV, TOKEN_ENV, TurnOutput,
+    CHAT_ENV, Hearing, Listener, Output, Report, SOCKET_ENV, TOKEN_ENV, TurnOutput, spool,
 };
 
 /// What the host heard of one `purlis hook stop` run as chat 7 with `payload`, in the order
 /// it heard them: `Ok` a turn's output, `Err` a report.
 fn stop(payload: &serde_json::Value) -> Vec<Result<TurnOutput, Report>> {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let (tx, rx) = mpsc::channel();
@@ -32,7 +32,7 @@ fn stop(payload: &serde_json::Value) -> Vec<Result<TurnOutput, Report>> {
     let _reading = listener.hear(Hearing {
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(move |report| {
-            reports.lock().unwrap().send(Err(report)).unwrap();
+            let _ = reports.lock().unwrap().send(Err(report));
             Ok(())
         }),
         answer: Box::new(|_, _| panic!("no ask")),
@@ -43,7 +43,9 @@ fn stop(payload: &serde_json::Value) -> Vec<Result<TurnOutput, Report>> {
         blocked: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         doing: Box::new(|_| {}),
-        output: Box::new(move |output| outputs.lock().unwrap().send(Ok(output)).unwrap()),
+        output: Box::new(move |output| {
+            let _ = outputs.lock().unwrap().send(Ok(output));
+        }),
         permission: Box::new(|_| None),
     });
     let mut child = support::purlis()
@@ -62,7 +64,16 @@ fn stop(payload: &serde_json::Value) -> Vec<Result<TurnOutput, Report>> {
         .expect("purlis runs");
     stand_in::feed(&mut child, payload.to_string().as_bytes());
     child.wait_with_output().expect("purlis finishes");
-    std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(2)).ok()).collect()
+    // The output's line is told and not waited on, so it is waited for here.
+    let mut heard: Vec<_> =
+        std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(2)).ok()).collect();
+    // The report is recorded before the hook exits, or spooled where the host was slower than
+    // the hook waits (`support::told`).
+    heard.extend(support::told(&path, &rx, |line| match line {
+        spool::Spooled::Report(report) => Some(Err(report)),
+        _ => None,
+    }));
+    support::distinct(heard)
 }
 
 #[test]

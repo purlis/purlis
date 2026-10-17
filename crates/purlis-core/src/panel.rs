@@ -76,6 +76,8 @@
 
 use std::collections::BTreeSet;
 
+use crate::counts::counted;
+
 /// The most panels one extension may contribute.
 ///
 /// The region is one column in a window that has three other regions in it, and every panel in
@@ -477,9 +479,9 @@ pub fn declares(panel: &Panel) -> String {
         })
         .sum();
     format!(
-        "a panel, “{}” — {rows} row{} purlis draws in the window's side region",
+        "a panel, “{}” — {} purlis draws in the window's side region",
         panel.title,
-        if rows == 1 { "" } else { "s" }
+        counted(rows, "row", "rows")
     )
 }
 
