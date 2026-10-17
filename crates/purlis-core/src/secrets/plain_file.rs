@@ -375,7 +375,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
         Ok(d) => d.len(),
         Err(e) => return (false, e.message),
     };
-    let mut parts = vec![format!("{count} secret(s)")];
+    let mut parts = vec![crate::counts::counted(count, "secret", "secrets")];
     for s in [super::mode_note(&pp), note] {
         if !s.is_empty() {
             parts.push(s);

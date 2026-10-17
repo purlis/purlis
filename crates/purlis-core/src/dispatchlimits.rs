@@ -98,6 +98,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
+use crate::counts::counted;
 use crate::settings::Refusal;
 
 /// The table of a settings file that holds the limits.
@@ -674,11 +675,6 @@ pub const WAIT_FOR_ONE: &str = "Wait for one to finish, then dispatch again.";
 
 /// What a chat is told to do at the message limit.
 pub const WAIT_TO_SEND: &str = "Wait a minute, then send it.";
-
-/// `1 chat`, `2 chats`.
-fn counted(n: u32, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
 
 impl Refused {
     /// The limit that refused, where one did: the loop rule is no limit.
@@ -1458,5 +1454,4 @@ pub fn of(
 }
 
 #[cfg(test)]
-#[path = "dispatchlimits_tests.rs"]
 mod tests;

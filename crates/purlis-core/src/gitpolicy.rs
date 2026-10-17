@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::counts::{counted, plural};
 use crate::doctor::fsx;
 use crate::forge::{self, Forge, Kind};
 use crate::repocmd::{Say, Sink};
@@ -287,13 +288,13 @@ pub fn policy(root: &Path, apply_it: bool, say: Sink) -> u8 {
             let changes = apply(repo, root);
             fixed += 1;
             say(Say::Done(format!(
-                "{name}: applied {} setting(s) — token-only",
-                changes.len()
+                "{name}: applied {} — token-only",
+                counted(changes.len(), "setting", "settings")
             )));
         } else {
             say(Say::Warn(format!(
-                "{name}: {} setting(s) not token-only",
-                drift.len()
+                "{name}: {} not token-only",
+                counted(drift.len(), "setting", "settings")
             )));
             for line in drift.iter().take(4) {
                 say(Say::Info(format!("    {line}")));
@@ -302,27 +303,33 @@ pub fn policy(root: &Path, apply_it: bool, say: Sink) -> u8 {
     }
     if drifted == 0 && unmanaged == 0 {
         say(Say::Done(format!(
-            "All {} repo(s) are token-only (each forge's own HTTPS token, no SSH, no signing).",
-            targets.len()
+            "{} token-only (each forge's own HTTPS token, no SSH, no signing).",
+            if targets.len() == 1 {
+                "The one repo is".to_owned()
+            } else {
+                format!("All {} repos are", targets.len())
+            }
         )));
         return 0;
     }
     if apply_it {
         say(Say::Done(format!(
-            "Applied the single-credential policy to {fixed} of {} repo(s).",
-            targets.len()
+            "Applied the single-credential policy to {fixed} of {}.",
+            counted(targets.len(), "repo", "repos")
         )));
     } else if drifted > 0 {
         say(Say::Info(format!(
-            "{drifted} of {} repo(s) drifted — fix: purlis git-policy --apply",
-            targets.len()
+            "{drifted} of {} drifted — fix: purlis git-policy --apply",
+            counted(targets.len(), "repo", "repos")
         )));
     }
     if unmanaged > 0 {
         say(Say::Warn(format!(
-            "{unmanaged} repo(s) have an unrecognised forge — not covered by any policy. \
+            "{} {} an unrecognised forge — not covered by any policy. \
              Declare the host in charter.toml's [[forge]] to bring {} under management.",
-            if unmanaged == 1 { "it" } else { "them" }
+            counted(unmanaged, "repo", "repos"),
+            plural(unmanaged, "has", "have"),
+            plural(unmanaged, "it", "them")
         )));
     }
     0
@@ -574,14 +581,14 @@ mod tests {
             lines,
             [
                 warn(&format!("workspaces/alpha/foreign: {UNMANAGED_FORGE}")),
-                warn("workspaces/alpha/widget: 5 setting(s) not token-only"),
+                warn("workspaces/alpha/widget: 5 settings not token-only"),
                 info("    credential.helper != !gh auth git-credential"),
                 info("    commit.gpgsign != false"),
                 info("    tag.gpgsign != false"),
                 info("    url.https://github.com/.insteadOf missing git@github.com:"),
-                info("1 of 2 repo(s) drifted — fix: purlis git-policy --apply"),
+                info("1 of 2 repos drifted — fix: purlis git-policy --apply"),
                 warn(
-                    "1 repo(s) have an unrecognised forge — not covered by any policy. Declare \
+                    "1 repo has an unrecognised forge — not covered by any policy. Declare \
                      the host in charter.toml's [[forge]] to bring it under management."
                 ),
             ]
@@ -608,13 +615,13 @@ mod tests {
         assert_eq!(
             lines,
             [
-                done("control plane: applied 5 setting(s) — token-only"),
+                done("control plane: applied 5 settings — token-only"),
                 warn(&format!("workspaces/alpha/one: {UNMANAGED_FORGE}")),
-                done("workspaces/alpha/widget: applied 5 setting(s) — token-only"),
+                done("workspaces/alpha/widget: applied 5 settings — token-only"),
                 warn(&format!("workspaces/beta/two: {UNMANAGED_FORGE}")),
-                done("Applied the single-credential policy to 2 of 4 repo(s)."),
+                done("Applied the single-credential policy to 2 of 4 repos."),
                 warn(
-                    "2 repo(s) have an unrecognised forge — not covered by any policy. Declare \
+                    "2 repos have an unrecognised forge — not covered by any policy. Declare \
                      the host in charter.toml's [[forge]] to bring them under management."
                 ),
             ]
@@ -625,7 +632,7 @@ mod tests {
         assert_eq!(
             said(&root, false).0,
             [done(
-                "All 2 repo(s) are token-only (each forge's own HTTPS token, no SSH, no signing)."
+                "All 2 repos are token-only (each forge's own HTTPS token, no SSH, no signing)."
             )]
         );
     }
@@ -641,7 +648,7 @@ mod tests {
             [
                 warn(&format!("workspaces/alpha/one: {UNMANAGED_FORGE}")),
                 warn(
-                    "1 repo(s) have an unrecognised forge — not covered by any policy. Declare \
+                    "1 repo has an unrecognised forge — not covered by any policy. Declare \
                      the host in charter.toml's [[forge]] to bring it under management."
                 ),
             ]
@@ -669,9 +676,9 @@ mod tests {
         assert_eq!(
             said(&root, false).0,
             [
-                warn("workspaces/alpha/widget: 1 setting(s) not token-only"),
+                warn("workspaces/alpha/widget: 1 setting not token-only"),
                 info("    tag.gpgsign != false"),
-                info("1 of 1 repo(s) drifted — fix: purlis git-policy --apply"),
+                info("1 of 1 repo drifted — fix: purlis git-policy --apply"),
             ]
         );
     }

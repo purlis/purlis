@@ -62,6 +62,7 @@ import {
   type MemoryRef,
 } from "./memories";
 import { publishedSaid } from "./memoryMoves";
+import { SAID } from "./menuWords";
 import { searchFromFocus, type SearchAsk } from "./contentSearch";
 import { pieceFilesTitle, pieceFilesView, type Place } from "./pieceViews";
 import { screenReaderMode, setScreenReaderMode } from "./screenReader";
@@ -825,7 +826,7 @@ export type Now = {
   sidePanels?: readonly { view: PanelViewId; name: string }[];
   /**
    * **Where each side's view lives now** (#1752), as the window draws it: the region whose bar
-   * holds it, its name, and where "Move to panel" or "Move to sidebar" would put it (none for the
+   * holds it, its name, and where `SAID.toPanel` or `SAID.toSidebar` would put it (none for the
    * Inbox, which is pinned). Each move is a palette row, and each region's row names the views
    * there now. Absent, the views are where the catalogue starts them and no move is offered.
    */
@@ -974,7 +975,7 @@ export type Doing = {
   showExtensions: () => void;
   showSideView: (view: ViewId) => void;
   toggleRegion: (region: Toggled) => void;
-  /** "Move to panel" or "Move to sidebar" (#1740). Absent where no project is open, and so no
+  /** `SAID.toPanel` or `SAID.toSidebar` (#1740). Absent where no project is open, and so no
    *  side has views to move: its row is never offered there. */
   moveView?: (view: ViewId, to: ViewPlace) => void;
   /** F6, or Shift+F6 with `back` (#1751): the keyboard to the next region, or the one before.
@@ -4811,13 +4812,13 @@ export function menuRows(what: MenuOn, offers: Catalogued): { above: Offer[]; be
 /**
  * **What a view's icon offers: its move, and nothing else** (#1740, P-3, P-4). Built for the
  * icon it was opened on, as a file row's are: where the view can go is the arrangement's, which
- * the catalogue does not read. "Move to panel" on a sidebar's view, "Move to sidebar" on a
+ * the catalogue does not read. `SAID.toPanel` on a sidebar's view, `SAID.toSidebar` on a
  * half's; none for a view that never moves, so the Inbox's icon has no menu.
  */
 export function viewRows(what: Extract<MenuOn, { on: "view" }>): Offer[] {
   if (what.to === undefined) return [];
   return [
-    can(`view.move:${what.view}`, what.to === "panel" ? "Move to panel" : "Move to sidebar", {
+    can(`view.move:${what.view}`, what.to === "panel" ? SAID.toPanel : SAID.toSidebar, {
       verb: "moveView",
       view: what.view,
       to: what.to,
@@ -4934,19 +4935,19 @@ export function fileRows(what: FileOn): Offer[] {
   // copy (D-1143-1) and no chat started on a reference to the whole branch (D-1143-2).
   if (at.path === "")
     return [
-      can(`file.copyabsolute:${key}`, "Copy absolute path", {
+      can(`file.copyabsolute:${key}`, SAID.copyAbsolutePath, {
         verb: "copyPath",
         at,
         absolute: true,
       }),
       can(`file.reveal:${key}`, REVEAL_SAID, { verb: "revealPath", at }),
-      can(`file.shell:${key}`, "Open a shell tab here", { verb: "shellInFolder", at }),
+      can(`file.shell:${key}`, SAID.shellHere, { verb: "shellInFolder", at }),
     ];
   const placed = (id: string, title: string, does: Does): Offer =>
     kind === "link" ? cannot(id, title, NO_LINK_FOLLOWED) : can(id, title, does);
   const rows: Offer[] = [
-    can(`file.copy:${key}`, "Copy relative path", { verb: "copyPath", at, absolute: false }),
-    placed(`file.copyabsolute:${key}`, "Copy absolute path", {
+    can(`file.copy:${key}`, SAID.copyRelativePath, { verb: "copyPath", at, absolute: false }),
+    placed(`file.copyabsolute:${key}`, SAID.copyAbsolutePath, {
       verb: "copyPath",
       at,
       absolute: true,
@@ -4954,17 +4955,17 @@ export function fileRows(what: FileOn): Offer[] {
     placed(`file.reveal:${key}`, REVEAL_SAID, { verb: "revealPath", at }),
   ];
   if (kind === "folder") {
-    rows.push(can(`file.shell:${key}`, "Open a shell tab here", { verb: "shellInFolder", at }));
+    rows.push(can(`file.shell:${key}`, SAID.shellHere, { verb: "shellInFolder", at }));
   } else {
     // At the line its preview was last read at (#1143, D-1143-2), and line 1 when it was not.
     const line = what.line ?? 1;
     rows.push(
       what.refused !== undefined
-        ? cannot(`file.editor:${key}`, "Open in your editor", what.refused)
+        ? cannot(`file.editor:${key}`, SAID.openInEditor, what.refused)
         : line === 1
-          ? can(`file.editor:${key}`, "Open in your editor", { verb: "openInEditor", at, line })
+          ? can(`file.editor:${key}`, SAID.openInEditor, { verb: "openInEditor", at, line })
           : {
-              ...can(`file.editor:${key}`, "Open in your editor", {
+              ...can(`file.editor:${key}`, SAID.openInEditor, {
                 verb: "openInEditor",
                 at,
                 line,
@@ -4973,7 +4974,7 @@ export function fileRows(what: FileOn): Offer[] {
             },
     );
   }
-  rows.push(placed(`file.chat:${key}`, "Start a chat here", { verb: "startChatHere", at }));
+  rows.push(placed(`file.chat:${key}`, SAID.startAChatHere, { verb: "startChatHere", at }));
   // Into a chat that is open already (#1151): the preview's *Add to a chat's context*, from the
   // row, so the keyboard reaches it with the menu key. A link is refused as every placed row is.
   // On a row among two or more picked, every picked row, as one paste (D-1151-1); a row outside
@@ -4981,7 +4982,7 @@ export function fileRows(what: FileOn): Offer[] {
   const together = pickedWith(what);
   rows.push(
     together === undefined
-      ? placed(`file.addtochat:${key}`, "Add to a chat's context", {
+      ? placed(`file.addtochat:${key}`, SAID.addToChat, {
           verb: "addToChat",
           rows: [{ at, folder: kind === "folder" }],
         })

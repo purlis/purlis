@@ -29,6 +29,10 @@ import { ask } from "./switching.js";
  *
  * Ending a chat by id from outside the window (`close_session`) takes no tab away, so the guard
  * is only a backstop that keeps the files after a leaky one honest: the spec is what must clean up.
+ * It stays on `close_session` on purpose (#2367): ending through the window takes each tab
+ * away, but costs a find, a press and a question per chat, unbounded where the leaky file left
+ * the window in a state of its own, and a guard that runs out of time names nothing. The file
+ * the guard names is already red, so its tabs are left for its own `after` to take away.
  */
 
 /** The chats running in each open project, by the project's path. */

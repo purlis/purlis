@@ -29,11 +29,11 @@
 //! it where purlis says such things — the Inbox — rather than in a console nobody
 //! reads.
 //!
-//! **What a region or a token means is the window's**, because the vocabulary is: the regions
-//! are `app/src/regions.ts`'s catalogue and the tokens are `app/src/theme/theme.ts`'s. Both of
-//! those `load` functions take whatever this module hands them, fall back field by field and
-//! say what they put right. A second copy of either vocabulary here would be a second answer to
-//! "which regions exist", and the first one to drift would be the one nobody runs.
+//! **What a region means is the window's**, because the vocabulary is: the regions are
+//! `app/src/regions.ts`'s catalogue, and its `load` takes whatever this module hands it, falls
+//! back field by field and says what it put right. **What a token means is the theme engine's**
+//! ([`crate::theme`]): [`crate::theme::read_theirs`] reads the theme file through
+//! [`read_theme`] and resolves it before the window is handed anything.
 //!
 //! # Everything read back is attacker-influenced
 //!
@@ -41,7 +41,7 @@
 //! no link on the way or at the leaf, a plain file asked of the open descriptor, a size bound,
 //! `O_NONBLOCK` — because this read happens before there is a window, and a FIFO or a planted
 //! giant here is a launch that never finishes. The theme's values are additionally held to a
-//! hex grammar by `theme.ts`, which is what stands between a theme file and a stylesheet.
+//! hex grammar by the theme engine, which is what stands between a theme file and a stylesheet.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -88,7 +88,8 @@ pub const MAX_BYTES: u64 = 64 * 1024;
 /// What a read of one of these files came back with.
 ///
 /// Serialised as it is into the window's initialization script, so its field names are the
-/// ones the window reads (`app/src/regions.ts`, `app/src/theme/userTheme.ts`).
+/// ones the window reads (`app/src/regions.ts`); the theme's reading is resolved by
+/// [`crate::theme::read_theirs`] before it reaches the window.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Reading {
     /// Where the file is, or would be — what the window names when it tells the operator to
@@ -220,7 +221,8 @@ pub fn read_layout(config_root: &Path) -> Reading {
     read(config_root, LAYOUT, "the window's layout", layout_problem)
 }
 
-/// The operator's theme, as a document `theme.ts`'s `load` can take, or why not.
+/// The operator's theme, as a document the theme engine can load ([`crate::theme::load`]), or
+/// why not.
 ///
 /// Only the envelope is asked about: `load` checks every token against the vocabulary and the
 /// hex grammar and reports what it put right, and it is the one place that knows the tokens.
@@ -302,7 +304,7 @@ fn layout_problem(document: &serde_json::Value) -> Option<String> {
     None
 }
 
-/// What is wrong with a theme's envelope, or `None` when `theme.ts` can load it.
+/// What is wrong with a theme's envelope, or `None` when the theme engine can load it.
 fn theme_problem(document: &serde_json::Value) -> Option<String> {
     (!document.is_object()).then(|| "is not a theme: it is not a JSON object".to_owned())
 }

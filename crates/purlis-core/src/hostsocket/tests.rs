@@ -104,3 +104,96 @@ fn the_window_makes_the_sockets_folder_this_users_alone() {
     assert!(made.is_dir());
     assert_eq!(made.permissions().mode() & 0o777, 0o700);
 }
+
+/// #2114: a purlis with a config home of its own on this device (a scenario run, a development
+/// build beside an installed one) has a session host of its own, in the same folder.
+#[test]
+fn a_config_home_named_apart_from_the_default_has_a_socket_of_its_own_in_the_same_folder() {
+    let socket = PathBuf::from("/run/user/501/purlis/purlisd.sock");
+    let default = Path::new("/home/someone/.config");
+    let (one, two) = (
+        Path::new("/tmp/run-a/config"),
+        Path::new("/tmp/run-b/config"),
+    );
+
+    let of_one = named_for(&socket, Some(one), Some(default));
+    let of_two = named_for(&socket, Some(two), Some(default));
+
+    assert_ne!(of_one, socket);
+    assert_ne!(of_one, of_two);
+    assert_eq!(of_one, named_for(&socket, Some(one), Some(default)));
+    for named in [&of_one, &of_two] {
+        assert_eq!(named.parent(), socket.parent());
+        let file = named.file_name().unwrap().to_str().unwrap();
+        let key = file
+            .strip_prefix("purlisd-")
+            .and_then(|rest| rest.strip_suffix(".sock"))
+            .unwrap_or_else(|| panic!("{file}"));
+        assert_eq!(key.len(), 16, "{file}");
+        assert!(
+            key.bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+            "{file}"
+        );
+    }
+}
+
+/// #2114: the config home a person's purlis finds by itself keeps the socket every build before
+/// it listened at, so an upgrade finds its host where it was.
+#[test]
+fn the_default_config_home_keeps_the_socket_every_earlier_build_named() {
+    let socket = PathBuf::from("/run/user/501/purlis/purlisd.sock");
+    let default = Path::new("/home/someone/.config");
+
+    assert_eq!(named_for(&socket, Some(default), Some(default)), socket);
+    assert_eq!(named_for(&socket, None, Some(default)), socket);
+    assert_eq!(named_for(&socket, None, None), socket);
+}
+
+/// #2114: one config home spelled two ways (through a link, or `/tmp` for `/private/tmp`) is one
+/// config home, with one host.
+#[test]
+fn a_config_home_spelled_two_ways_names_one_socket() {
+    let socket = PathBuf::from("/run/user/501/purlis/purlisd.sock");
+    let homes = tempfile::tempdir().unwrap();
+    let (real, default) = (homes.path().join("real"), homes.path().join("default"));
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::create_dir_all(&default).unwrap();
+    let (to_real, to_default) = (
+        homes.path().join("to-real"),
+        homes.path().join("to-default"),
+    );
+    std::os::unix::fs::symlink(&real, &to_real).unwrap();
+    std::os::unix::fs::symlink(&default, &to_default).unwrap();
+
+    assert_eq!(
+        named_for(&socket, Some(&to_real), Some(&default)),
+        named_for(&socket, Some(&real), Some(&default)),
+    );
+    assert_eq!(
+        named_for(&socket, Some(&to_default), Some(&default)),
+        socket
+    );
+}
+
+/// #2114: a config home named before it is made names the socket it names once it is.
+#[test]
+fn a_config_home_not_made_yet_names_the_socket_it_will_once_it_is() {
+    let socket = PathBuf::from("/run/user/501/purlis/purlisd.sock");
+    let homes = tempfile::tempdir().unwrap();
+    let default = homes.path().join("default");
+    std::fs::create_dir_all(&default).unwrap();
+    let real = homes.path().join("real");
+    std::os::unix::fs::symlink(homes.path(), homes.path().join("link")).unwrap();
+    let through_a_link = homes.path().join("link").join("real").join("config");
+
+    let before = named_for(&socket, Some(&through_a_link), Some(&default));
+    std::fs::create_dir_all(real.join("config")).unwrap();
+    let after = named_for(&socket, Some(&through_a_link), Some(&default));
+
+    assert_eq!(before, after);
+    assert_eq!(
+        after,
+        named_for(&socket, Some(&real.join("config")), Some(&default))
+    );
+}

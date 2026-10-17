@@ -31,6 +31,7 @@ pub mod committedby;
 pub mod compat;
 pub mod consentspelling;
 pub mod contain;
+pub mod counts;
 pub mod createproject;
 pub mod credguard;
 pub mod curate;
@@ -220,6 +221,7 @@ mod testgit;
 // calls it.
 #[doc(hidden)]
 pub mod testrun;
+pub mod theme;
 pub mod toolgate;
 pub mod toolhooks;
 pub mod touching;

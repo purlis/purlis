@@ -54,6 +54,7 @@
 
 use std::path::Path;
 
+use crate::counts::{counted, plural};
 use crate::forge::{self, Forge, pr};
 use crate::gitstate;
 use crate::planegit::{self, Claim, Looked, MergeState, MergedAsItStands, Merging, Stage, Trigger};
@@ -380,8 +381,9 @@ fn commit_push(
                     (_, Err(e)) => format!("git commit failed: {e}"),
                 };
                 say(Say::Fail(format!(
-                    "Not saved: {why} — {} file(s) in {at} are staged but not committed.",
-                    staged.len()
+                    "Not saved: {why} — {} in {at} {} staged but not committed.",
+                    counted(staged.len(), "file", "files"),
+                    plural(staged.len(), "is", "are")
                 )));
                 attempt.detail = why;
                 return 1;
@@ -390,8 +392,8 @@ fn commit_push(
                 .map(|r| r.line().trim().to_string())
                 .unwrap_or_default();
             say(Say::Done(format!(
-                "Committed {short} on {branch} in {at}: {msg}  ({} file(s))",
-                staged.len()
+                "Committed {short} on {branch} in {at}: {msg}  ({})",
+                counted(staged.len(), "file", "files")
             )));
             true
         }

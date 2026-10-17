@@ -65,7 +65,7 @@ pub fn commit(held: &Held, ask: &CommitAsk) -> Answer {
     };
     let what = match &ask.stage {
         Stage::Tracked => "every tracked change".to_owned(),
-        Stage::Paths(paths) => format!("{} path(s)", paths.len()),
+        Stage::Paths(paths) => purlis_core::counts::counted(paths.len(), "path", "paths"),
     };
     // The person's name and email, read before the commit runs; nothing else of their
     // global or system git config reaches it.

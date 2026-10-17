@@ -14,10 +14,10 @@ import { DEFAULT_THEME, drawIn } from "./theme/theme";
 import { theirThemeOnce } from "./windowprefs";
 
 // The window's colours, before anything is rendered and therefore before anything is painted:
-// the operator's own `theme.json` when there is one, else the built-in compiled into the bundle.
-// Neither is a read from disk on the way to the first frame — the file was read by the Rust side
-// before the window existed and handed to it with the window (`windowprefs.ts`) — which is the
-// only arrangement ADR 0026's 2 s cold start can afford.
+// the operator's own `theme.json` when there is one, else the built-in. Both were resolved by the
+// core's theme engine before the window existed and handed to it with the window
+// (`windowprefs.ts`), the built-ins compiled into the core, so nothing is read or asked on the
+// way to the first frame — the only arrangement ADR 0026's 2 s cold start can afford.
 drawIn(theirThemeOnce() ?? DEFAULT_THEME);
 
 // The window's text size, for the same reason and from the same place: the layout file the

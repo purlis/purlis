@@ -297,7 +297,7 @@ fn a_vaults_status_says_its_program_is_not_found_or_found_only_where_a_chat_can_
     // A temp project is listed by other accounts, which the status adds after a comma.
     assert_eq!(
         said.split(", listed").next(),
-        Some("1 reference(s), but not found: op")
+        Some("1 reference, but not found: op")
     );
 
     let planted = Machine::new();
@@ -313,7 +313,7 @@ fn a_vaults_status_says_its_program_is_not_found_or_found_only_where_a_chat_can_
     // A temp project is listed by other accounts, which the status adds after a comma.
     assert_eq!(
         said.split(", listed").next(),
-        Some("1 reference(s), but found only where a chat can write: op")
+        Some("1 reference, but found only where a chat can write: op")
     );
 }
 

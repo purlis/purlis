@@ -16,6 +16,7 @@
 
 use std::path::Path;
 
+use crate::counts::{counted, plural};
 use crate::memstore::{self, Found, Unread};
 
 /// Durable-rule language worth promoting to a charter, and its weight — `curate._RULE_MARKERS`.
@@ -231,8 +232,8 @@ pub fn link_unindexed(root: &Path, dir: &Path) -> Result<Vec<String>, Unread> {
         }
         actions.push(match refused {
             None => format!(
-                "repaired index: linked {} unindexed memory(ies)",
-                missing.len()
+                "repaired index: linked {}",
+                counted(missing.len(), "unindexed memory", "unindexed memories")
             ),
             Some(e) => format!("index NOT repaired — {e}"),
         });
@@ -247,8 +248,13 @@ pub fn pending_auto(rep: &Report) -> Vec<String> {
     if !rep.exact_dups.is_empty() {
         let redundant: usize = rep.exact_dups.iter().map(|g| g.len() - 1).sum();
         out.push(format!(
-            "collapse {} exact-duplicate group(s) — archives {redundant} redundant copy(ies), reversible",
-            rep.exact_dups.len()
+            "collapse {} — archives {}, reversible",
+            counted(
+                rep.exact_dups.len(),
+                "exact-duplicate group",
+                "exact-duplicate groups"
+            ),
+            counted(redundant, "redundant copy", "redundant copies")
         ));
     }
     if !rep.missing.is_empty() {
@@ -263,8 +269,10 @@ pub fn pending_auto(rep: &Report) -> Vec<String> {
             shown.push_str(", …");
         }
         out.push(format!(
-            "repair index: link {} memory(ies) that exist but aren't listed ({shown})",
-            rep.missing.len()
+            "repair index: link {} that {} but {} listed ({shown})",
+            counted(rep.missing.len(), "memory", "memories"),
+            plural(rep.missing.len(), "exists", "exist"),
+            plural(rep.missing.len(), "isn't", "aren't")
         ));
     }
     out
@@ -281,8 +289,8 @@ pub fn proposals(rep: &Report) -> Vec<String> {
     }
     if let Some(oldest) = rep.stale.first() {
         out.push(format!(
-            "archive {} stale memory(ies) (age-based, oldest {}d — review first: age ≠ obsolete)?",
-            rep.stale.len(),
+            "archive {} (age-based, oldest {}d — review first: age ≠ obsolete)?",
+            counted(rep.stale.len(), "stale memory", "stale memories"),
             oldest.2
         ));
     }
@@ -301,8 +309,8 @@ pub fn proposals(rep: &Report) -> Vec<String> {
             .collect::<Vec<_>>()
             .join(", ");
         out.push(format!(
-            "index lists {} missing file(s) — stale links to prune: {names}",
-            rep.orphans.len()
+            "index lists {} — stale links to prune: {names}",
+            counted(rep.orphans.len(), "missing file", "missing files")
         ));
     }
     out
@@ -372,12 +380,12 @@ pub fn optimize(
             None => String::new(),
         };
         say(Say::Out(format!(
-            "\n◆ {}  ({} memories · {verified}{} exact-dup group(s) · {} near-dup pair(s) · {} \
+            "\n◆ {}  ({} · {verified}{} · {} · {} \
              stale)",
             store.label,
-            rep.total,
-            rep.exact_dups.len(),
-            rep.near_dups.len(),
+            counted(rep.total, "memory", "memories"),
+            counted(rep.exact_dups.len(), "exact-dup group", "exact-dup groups"),
+            counted(rep.near_dups.len(), "near-dup pair", "near-dup pairs"),
             rep.stale.len()
         )));
         let rep = if apply {
@@ -636,7 +644,7 @@ mod tests {
             apply_safe(&root, &mem, day("2025-09-01")).unwrap(),
             [
                 "archived exact-duplicate 20250601-b.md (kept 20250601-a.md)",
-                "repaired index: linked 4 unindexed memory(ies)",
+                "repaired index: linked 4 unindexed memories",
             ]
         );
         assert!(mem.join("archive/20250601-b.md").is_file());
@@ -686,8 +694,8 @@ mod tests {
         assert_eq!(
             pending_auto(&rep),
             [
-                "collapse 2 exact-duplicate group(s) — archives 3 redundant copy(ies), reversible",
-                "repair index: link 3 memory(ies) that exist but aren't listed \
+                "collapse 2 exact-duplicate groups — archives 3 redundant copies, reversible",
+                "repair index: link 3 memories that exist but aren't listed \
                  (m1.md, m2.md, m3.md)",
             ]
         );
@@ -696,7 +704,7 @@ mod tests {
         assert_eq!(
             pending_auto(&rep),
             [
-                "repair index: link 4 memory(ies) that exist but aren't listed \
+                "repair index: link 4 memories that exist but aren't listed \
               (m1.md, m2.md, m3.md, …)"
             ]
         );
@@ -724,14 +732,14 @@ mod tests {
             [
                 "merge near-duplicates (0.83): a.md + c.md → one canonical memory?".to_string(),
                 "merge near-duplicates (1.0): x.md + y.md → one canonical memory?".to_string(),
-                "archive 2 stale memory(ies) (age-based, oldest 400d — review first: age ≠ \
+                "archive 2 stale memories (age-based, oldest 400d — review first: age ≠ \
                  obsolete)?"
                     .to_string(),
                 format!(
                     "promote to charter? [r.md] \"{}\" (rule-signal 7)",
                     &long[..60]
                 ),
-                "index lists 6 missing file(s) — stale links to prune: g1.md, g2.md, g3.md, \
+                "index lists 6 missing files — stale links to prune: g1.md, g2.md, g3.md, \
                  g4.md, g5.md"
                     .to_string(),
             ]

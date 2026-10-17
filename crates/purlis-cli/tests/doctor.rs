@@ -93,7 +93,9 @@ fn with_an_identity_and_nothing_wrong_the_exit_is_zero_and_the_warnings_are_coun
     let text = String::from_utf8(table.stdout).unwrap();
     assert!(text.starts_with("purlis preflight:\n\n"), "{text}");
     assert!(
-        text.ends_with("optional item(s) pending \u{2014} see hints above.\n"),
+        text.ends_with(" pending \u{2014} see hints above.\n")
+            && text.contains("! 1 optional item")
+            || text.ends_with("optional items pending \u{2014} see hints above.\n"),
         "{text}"
     );
     // Never coloured into a pipe: another program is reading this.
@@ -753,7 +755,7 @@ fn fix_persona_agents_by_name_removes_what_purlis_generated_and_says_every_line(
         "• personas/ops/persona.md: `agent-tools:` is no longer read: ",
         "• left alone .claude/agents/late.md: it is a file purlis generated, but git does not \
          track it",
-        "✓ removed 1 generated sub-agent file(s) and rewrote 1 persona key(s).",
+        "✓ removed 1 generated sub-agent file and rewrote 1 persona key.",
         "`git restore -- .claude/agents personas`",
     ] {
         assert!(said.contains(line), "{line}\n--\n{said}");

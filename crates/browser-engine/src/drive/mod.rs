@@ -36,11 +36,13 @@
 
 mod blank;
 mod browser;
+mod drawn;
 pub mod fit;
 mod keys;
 mod ledger;
 mod screencast;
 mod settle;
+mod site;
 mod tree;
 
 use std::fmt;

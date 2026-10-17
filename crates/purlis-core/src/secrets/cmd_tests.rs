@@ -168,7 +168,7 @@ fn a_plain_file_vault_is_read_listed_checked_and_deleted_through_its_own_provide
     assert_eq!(get_value(&plane.ctx, &v, "a").unwrap(), "one");
     assert_eq!(keys(&plane.ctx, &v).unwrap(), ["a", "b"]);
     let (ok, detail) = health(&plane.ctx, &v);
-    assert!(ok && detail.starts_with("2 secret(s)"), "{detail}");
+    assert!(ok && detail.starts_with("2 secrets"), "{detail}");
     delete(&plane.ctx, &v, "a").unwrap();
     assert_eq!(keys(&plane.ctx, &v).unwrap(), ["b"]);
 }
@@ -218,10 +218,7 @@ fn a_reference_vault_resolves_through_the_cli_its_uri_names() {
     assert_eq!(get_value(&plane.ctx, &v, "tok").unwrap(), "resolved-token");
     assert_eq!(keys(&plane.ctx, &v).unwrap(), ["tok"]);
     let (ok, detail) = health(&plane.ctx, &v);
-    assert!(
-        ok && detail.starts_with("1 reference(s) via op"),
-        "{detail}"
-    );
+    assert!(ok && detail.starts_with("1 reference via op"), "{detail}");
     set_value(&plane.ctx, &v, "other", "op://Eng/x/y").unwrap();
     delete(&plane.ctx, &v, "tok").unwrap();
     assert_eq!(keys(&plane.ctx, &v).unwrap(), ["other"]);

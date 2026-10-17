@@ -368,7 +368,7 @@ fn credentials_with_no_vault_and_a_refused_server_name_are_errors() {
     );
     assert_eq!(
         issues[1].message,
-        "mcp: server(s) g declare `secrets` or `secret_files` but this persona names no vault — add `vault:` or drop the declaration"
+        "mcp: server g declares `secrets` or `secret_files` but this persona names no vault — add `vault:` or drop the declaration"
     );
     assert_eq!(issues[2].level, Level::Warn);
 }
@@ -399,8 +399,8 @@ fn a_persona_s_servers_are_said_where_a_chat_gets_them_and_an_unapproved_one_how
             ),
             (
                 Level::Warn,
-                "mcp: `mcp.json` is read, and it declares 1 MCP server(s). A chat as this \
-                 persona is started with them on Claude Code; on Codex and opencode they are \
+                "mcp: `mcp.json` is read, and it declares 1 MCP server. A chat as this \
+                 persona is started with it on Claude Code; on Codex and opencode it is \
                  not started"
             ),
         ]
@@ -495,7 +495,7 @@ fn the_command_exits_one_on_an_error_and_zero_on_warnings_alone() {
     assert_eq!(
         heard.err,
         "✗ ok: uses: 'ghost' — no such persona (dangling)\n\
-         ✗ 1 error(s) — dangling reuse or unloadable persona.\n"
+         ✗ 1 error — dangling reuse or unloadable persona.\n"
     );
 }
 

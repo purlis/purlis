@@ -84,7 +84,7 @@ fn a_cli_a_repo_needs_is_named_where_it_was_found() {
     assert_eq!(row.status, Status::Ok);
     assert_eq!(
         row.detail,
-        "/opt/homebrew/bin/gh (2 workspace repo(s) have their origin on github.com)"
+        "/opt/homebrew/bin/gh (2 workspace repos have their origin on github.com)"
     );
 }
 
@@ -97,7 +97,7 @@ fn a_cli_a_repo_needs_that_is_not_found_is_a_warning_and_its_sign_in_is_not_aske
     assert_eq!(cli.status, Status::Warn);
     assert_eq!(
         cli.detail,
-        "not found, and 1 workspace repo(s) have their origin on github.com"
+        "not found, and 1 workspace repo has its origin on github.com"
     );
     assert!(
         cli.hint

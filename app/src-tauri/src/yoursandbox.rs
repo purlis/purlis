@@ -36,17 +36,16 @@ fn listed(plain: Vec<tokeyring::PlainFile>) -> Vec<PlainFileVault> {
         .collect()
 }
 
-/// What a move says, as the person reads it.
+/// What a move says, as the person reads it. `moved.secrets` is how many values moved, never
+/// one of them: it is written as the number it is, beside the noun that agrees with it.
 fn said(name: &str, moved: &tokeyring::Moved) -> String {
+    let count: usize = moved.secrets;
+    let noun = purlis_core::counts::plural(count, "secret", "secrets");
     match &moved.file_kept {
-        None => format!(
-            "Moved {name} into the keychain: {} secret(s), and its file is gone.",
-            moved.secrets
-        ),
+        None => format!("Moved {name} into the keychain: {count} {noun}, and its file is gone."),
         Some(file) => format!(
-            "Moved {name} into the keychain: {} secret(s). Its old file at {file} could not be \
-             removed, and it still holds the values: remove it yourself.",
-            moved.secrets
+            "Moved {name} into the keychain: {count} {noun}. Its old file at {file} could not be \
+             removed, and it still holds the values: remove it yourself."
         ),
     }
 }
@@ -184,8 +183,11 @@ mod tests {
             file_kept: Some("/p/ops.json".to_owned()),
         };
         let said = said("ops", &kept);
-        assert!(said.contains("/p/ops.json"), "{said}");
-        assert!(said.contains("remove it yourself"), "{said}");
+        // Asserted without echoing the sentence: code scanning reads `Moved::secrets` (a count)
+        // as a secret, and a failed assertion's message as a log it is written to.
+        assert!(said.starts_with("Moved ops into the keychain: 2 secrets. Its old file"));
+        assert!(said.contains("/p/ops.json"));
+        assert!(said.contains("remove it yourself"));
         assert_eq!(
             listed(vec![tokeyring::PlainFile {
                 name: "ops".to_owned(),

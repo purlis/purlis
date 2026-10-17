@@ -25,6 +25,7 @@ use super::plain_file;
 use super::registry::Vault;
 use super::run::{self, RunError};
 use super::{Ctx, VaultError};
+use crate::counts::counted;
 
 /// How long one reference may take to resolve — `reference.RESOLVE_TIMEOUT`.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -418,11 +419,19 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
         }
         return (
             false,
-            line(format!("{n} reference(s), but {}", problems.join("; "))),
+            line(format!(
+                "{}, but {}",
+                counted(n, "reference", "references"),
+                problems.join("; ")
+            )),
         );
     }
     (
         true,
-        line(format!("{n} reference(s) via {}", needed.join(", "))),
+        line(format!(
+            "{} via {}",
+            counted(n, "reference", "references"),
+            needed.join(", ")
+        )),
     )
 }

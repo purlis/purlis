@@ -91,7 +91,7 @@ fn install_generates_the_pinned_skill_and_ignores_the_trace_directory() {
             .unwrap()
             .contains(".playwright-cli/\n")
     );
-    assert!(err(&out).contains("✓ Wrote .claude/skills/playwright-cli (1 page(s))"));
+    assert!(err(&out).contains("✓ Wrote .claude/skills/playwright-cli (1 page)"));
 }
 
 #[test]

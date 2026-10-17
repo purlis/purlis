@@ -773,7 +773,7 @@ fn a_sandboxed_chats_commit_in_its_branch_folder_is_made_by_the_app_and_its_answ
         "notes.md"
     );
     assert!(
-        printed(&ran).contains(&format!("committed {after} on {branch}: 1 file(s)")),
+        printed(&ran).contains(&format!("committed {after} on {branch}: 1 file")),
         "{}",
         printed(&ran)
     );

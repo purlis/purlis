@@ -133,7 +133,7 @@ fn generated_files_go_and_every_other_file_is_named_as_left_alone() {
              writes it, so somebody edited it by hand. Remove it yourself if it is not wanted.",
             "• left alone .claude/agents/runner.md: hand-written (it does not carry purlis's \
              marker).",
-            "✓ removed 2 generated sub-agent file(s) and rewrote 0 persona key(s). Nothing is \
+            "✓ removed 2 generated sub-agent files and rewrote 0 persona keys. Nothing is \
              committed: the change is in the working tree for the project's next save. To take \
              it back before then: `git restore -- .claude/agents personas`.",
         ]
@@ -197,7 +197,7 @@ fn model_becomes_profile_only_where_the_project_offers_a_profile_of_that_name() 
              chats start on with `profile:`, or delete the line.",
             "• personas/web/persona.md: `model: codex` is no longer read: this persona's \
              profile is named with `profile:`. Delete the line.",
-            "✓ removed 0 generated sub-agent file(s) and rewrote 1 persona key(s). Nothing is \
+            "✓ removed 0 generated sub-agent files and rewrote 1 persona key. Nothing is \
              committed: the change is in the working tree for the project's next save. To take \
              it back before then: `git restore -- .claude/agents personas`.",
         ]
@@ -350,8 +350,8 @@ fn a_key_nothing_reads_is_reported_with_what_widened_and_its_line_is_kept() {
     assert_eq!(
         servers,
         [
-            "• personas/ops/mcp.json: it declares 1 MCP server(s). A chat as this persona is \
-          started with them on Claude Code; on Codex and opencode they are not started. \
+            "• personas/ops/mcp.json: it declares 1 MCP server. A chat as this persona is \
+          started with it on Claude Code; on Codex and opencode it is not started. \
           `purlis persona lint` says which of them wait for an approval."
         ]
     );
@@ -382,7 +382,7 @@ fn a_generated_file_git_cannot_give_back_is_left_and_named() {
              track it or it has changes that are not committed, so removing it could not be \
              undone. \
              Commit it or remove it yourself, then run this again.",
-            "✓ removed 1 generated sub-agent file(s) and rewrote 0 persona key(s). Nothing is \
+            "✓ removed 1 generated sub-agent file and rewrote 0 persona keys. Nothing is \
              committed: the change is in the working tree for the project's next save. To take \
              it back before then: `git restore -- .claude/agents personas`.",
         ]
@@ -424,7 +424,7 @@ fn the_harness_s_memory_of_a_retired_sub_agent_is_named_and_left() {
 
     assert_eq!(
         said[0],
-        "• .claude/agent-memory/ops/ holds 2 file(s) the harness kept for the `ops` \
+        "• .claude/agent-memory/ops/ holds 2 files the harness kept for the `ops` \
          sub-agent. Nothing reads them now. Move what is worth keeping into the persona's own \
          memory with `purlis persona remember ops \"<fact>\"`; the folder is left as it is."
     );
@@ -549,7 +549,7 @@ fn what_this_machine_kept_for_the_retired_sub_agents_is_removed() {
     assert_eq!(
         said,
         [
-            "✓ removed .charter/dispatch-inflight/ (2 file(s)): the record of sub-agents in \
+            "✓ removed .charter/dispatch-inflight/ (2 files): the record of sub-agents in \
              flight, which nothing reads now.",
             "✓ removed .charter/agent-personas.json: the map of sub-agents to personas, which \
              nothing reads now.",
@@ -598,7 +598,7 @@ fn a_leftover_that_is_a_link_or_holds_something_else_is_left_and_named() {
         said[..2],
         [
             "• left alone .charter/dispatch-inflight/: it holds something purlis did not \
-             write there. Its 1 record file(s) were removed."
+             write there. Its 1 record file was removed."
                 .to_owned(),
             "• left alone .charter/agent-personas.json: it is a link, and purlis wrote no \
              such file."

@@ -354,7 +354,7 @@ describe("deleting a workspace", () => {
   it("names what the core refused on, not what the preview saw, when they differ", async () => {
     const dirtied = [
       { what: "svc", said: "svc: uncommitted changes" },
-      { what: "lib", said: "lib: 2 unpushed commit(s)" },
+      { what: "lib", said: "lib: 2 unpushed commits" },
     ];
     const { calls } = core({
       atRisk: [{ what: "svc", said: "svc: uncommitted changes" }],
@@ -365,7 +365,7 @@ describe("deleting a workspace", () => {
     const dialog = await askToDelete("alpha");
     // The preview, which is the older reading and is drawn as one.
     await screen.findByText("svc: uncommitted changes");
-    expect(within(dialog).queryByText("lib: 2 unpushed commit(s)")).toBeNull();
+    expect(within(dialog).queryByText("lib: 2 unpushed commits")).toBeNull();
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete workspace" }));
 
@@ -376,7 +376,7 @@ describe("deleting a workspace", () => {
       within(within(dialog).getByTestId("at-risk"))
         .getAllByRole("listitem")
         .map((row) => row.textContent),
-    ).toEqual(["svc: uncommitted changes", "lib: 2 unpushed commit(s)"]);
+    ).toEqual(["svc: uncommitted changes", "lib: 2 unpushed commits"]);
     // And the button names the same two, in the same order, from the same list.
     within(dialog).getByRole("button", {
       name: "Delete it anyway, discarding the work in 2: svc, lib",
@@ -473,6 +473,9 @@ describe("deleting a workspace", () => {
       // folder, and the watch that says when it moves.
       "plane_tree",
       "files_watch",
+      // The workspace in front changed, so the theme it draws is asked of the core's theme
+      // engine again (#2320): a read, from the survey the core keeps.
+      "theme_in_force",
     ];
     const during = asked.slice(before).map((one) => one.cmd);
     expect(during.filter((cmd) => !READS.includes(cmd))).toEqual(["workspace_remove"]);

@@ -307,6 +307,9 @@ impl Browser {
                 if *down {
                     lock(&self.typing).typed(&target, key, text.as_deref());
                 }
+                if edits || text.is_some() {
+                    lock(&self.inner.state).kept_on(&target);
+                }
                 if edits {
                     lock(&self.typing).dirty.insert(target.clone());
                 }

@@ -300,11 +300,11 @@ fn vault_list_counts_from_the_index_and_verify_reads_every_item() {
         .map(str::to_owned)
         .expect("a row for ops");
     assert!(row.contains("keyring"), "{row}");
-    assert!(row.contains("1 secret(s) in the system keyring"), "{row}");
+    assert!(row.contains("1 secret in the system keyring"), "{row}");
 
     let verify = run(&tmp, &["vault", "verify", "ops"]);
     assert_eq!(verify.status.code(), Some(0), "{}", said(&verify));
-    assert!(text(&verify.stderr).contains("ops: 1 reference(s) resolved"));
+    assert!(text(&verify.stderr).contains("ops: 1 reference resolved"));
 }
 
 #[test]

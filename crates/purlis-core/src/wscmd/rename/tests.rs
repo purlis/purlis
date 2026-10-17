@@ -1058,7 +1058,7 @@ fn a_workspace_renamed_back_says_its_todo_links_stay_under_the_name_it_left() {
     assert_eq!(code, 0, "{said:?}");
     assert!(
         said.iter()
-            .any(|line| line.contains("1 todo(s) of 'alpha'") && line.contains("under 'beta'")),
+            .any(|line| line.contains("1 todo of 'alpha'") && line.contains("under 'beta'")),
         "{said:?}"
     );
     let folded = crate::work::log::fold(&plane.root);

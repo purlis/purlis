@@ -17,6 +17,7 @@ import App from "./App";
 import type { ExtensionCommand, VaultContents, ViewTab } from "./bindings";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
 import { findStripNamed, stripNamed, showThePanel } from "./test-strips";
+import { themeInForce } from "./theme/inForce.testkit";
 
 /**
  * **A tab that holds something other than a chat**, against the whole window (ADR 0043,
@@ -191,6 +192,7 @@ function core(
     if (cmd === "run_action") return { blocks: null, took_ms: 1, overreach: null };
     if (cmd === "extension_panels") return [];
     if (cmd === "extensions_on") return on.extensionsOn ?? ["persona-statistics"];
+    if (cmd === "theme_in_force") return themeInForce(args);
     if (cmd === "project_theme_drawn") return on.projectTheme ?? null;
     if (cmd === "workspace_panels")
       return {

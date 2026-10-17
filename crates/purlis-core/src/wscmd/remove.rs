@@ -53,6 +53,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::counts::{counted, plural};
 use crate::repocmd::{Say, Sink};
 use crate::wscmd;
 
@@ -169,8 +170,9 @@ pub(crate) fn remove_unless_running(
         && !todos.is_empty()
     {
         say(Say::Warn(format!(
-            "Discarding {} open todo(s) with '{name}' — nothing else holds them.",
-            todos.len()
+            "Discarding {} with '{name}' — nothing else holds {}.",
+            counted(todos.len(), "open todo", "open todos"),
+            plural(todos.len(), "it", "them")
         )));
     }
 
@@ -765,7 +767,7 @@ mod tests {
 
         let (code, said) = run(dir.path(), "beta", false);
         assert_eq!(code, 2, "{said:?}");
-        assert!(said[0].contains("svc: 1 unpushed commit(s)"), "{said:?}");
+        assert!(said[0].contains("svc: 1 unpushed commit"), "{said:?}");
         assert!(clone.exists());
 
         // …and `--force` is the way past it, which is what makes the guard a guard rather
@@ -834,7 +836,7 @@ mod tests {
         let (code, said) = run(dir.path(), "beta", false);
         assert_eq!(code, 2, "{said:?}");
         assert!(
-            said[0].contains("svc/task: 1 commit(s) that exist nowhere else"),
+            said[0].contains("svc/task: 1 commit that exists nowhere else"),
             "{said:?}"
         );
         assert!(piece.exists());
@@ -961,7 +963,7 @@ mod tests {
         );
         assert!(
             said.iter()
-                .any(|l| l.contains("Discarding 1 open todo(s) with 'beta'")),
+                .any(|l| l.contains("Discarding 1 open todo with 'beta'")),
             "{said:?}"
         );
         assert!(!dir.path().join("workspaces/beta").exists());

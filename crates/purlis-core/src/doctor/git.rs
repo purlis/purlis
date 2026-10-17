@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{CHECK_TIMEOUT, Doctor, NOT_CHECKED_HINT, Row, SettingsGroup, first_line};
+use crate::counts::{counted, plural};
 use crate::memstore::py_strip;
 use crate::worktree::git::{self as runner, Run};
 
@@ -218,21 +219,24 @@ pub(super) fn git_auth(d: &Doctor) -> Row {
             return Row::ok(
                 NAME,
                 format!(
-                    "token-only across {} repo(s) (each forge's own HTTPS token; no SSH/signing)",
-                    scope.len()
+                    "token-only across {} (each forge's own HTTPS token; no SSH/signing)",
+                    counted(scope.len(), "repo", "repos")
                 ),
             );
         }
         let what = if unseen.len() == 1 && unseen[0].path == listing {
             named(&listing)
         } else {
-            format!("{} director(ies) under workspaces/", unseen.len())
+            format!(
+                "{} under workspaces/",
+                counted(unseen.len(), "directory", "directories")
+            )
         };
         return Row::warn(
             NAME,
             format!(
-                "token-only across {} repo(s); {what} cannot be checked",
-                scope.len()
+                "token-only across {}; {what} cannot be checked",
+                counted(scope.len(), "repo", "repos")
             ),
             cannot.trim_start(),
         );
@@ -248,26 +252,34 @@ pub(super) fn git_auth(d: &Doctor) -> Row {
     let more = if bad.len() > NAMED { " …" } else { "" };
     let hint = if fixable == 0 {
         format!(
-            "{unmanaged} repo(s) have an unrecognised forge — `purlis git-policy --apply` \
-             deliberately no-ops for these (there's no policy to apply for a host it can't \
-             identify). Declare the host under [[forge]] in charter.toml to bring them under \
-             management, then re-run."
+            "{} {} an unrecognised forge — `purlis git-policy --apply` \
+             deliberately no-ops for {} (there's no policy to apply for a host it can't \
+             identify). Declare the host under [[forge]] in charter.toml to bring {} under \
+             management, then re-run.",
+            counted(unmanaged, "repo", "repos"),
+            plural(unmanaged, "has", "have"),
+            plural(unmanaged, "it", "these"),
+            plural(unmanaged, "it", "them")
         )
     } else if unmanaged == 0 {
         "Apply the single-credential policy to every clone: purlis git-policy --apply".into()
     } else {
         format!(
-            "purlis git-policy --apply fixes {fixable} drifted repo(s); {unmanaged} more have \
-             an unrecognised forge and need a [[forge]] declaration in charter.toml first — \
-             --apply alone won't touch those."
+            "purlis git-policy --apply fixes {}; {unmanaged} more {} \
+             an unrecognised forge and {} a [[forge]] declaration in charter.toml first — \
+             --apply alone won't touch {}.",
+            counted(fixable, "drifted repo", "drifted repos"),
+            plural(unmanaged, "has", "have"),
+            plural(unmanaged, "needs", "need"),
+            plural(unmanaged, "that one", "those")
         )
     };
     let row = Row::warn(
         NAME,
         format!(
-            "{}/{} repo(s) not token-only: {}{more}",
+            "{}/{} not token-only: {}{more}",
             bad.len(),
-            scope.len(),
+            counted(scope.len(), "repo", "repos"),
             names.join(", ")
         ),
         hint + &cannot,
@@ -350,7 +362,11 @@ pub(super) fn plane_root(d: &Doctor) -> Row {
         _ => {}
     }
     if standing.dirty > 0 {
-        findings.push(format!("{} uncommitted file(s)", standing.dirty));
+        findings.push(counted(
+            standing.dirty,
+            "uncommitted file",
+            "uncommitted files",
+        ));
         actions.push("Commit control-plane content with `purlis save`.".to_owned());
     }
     if let Some((finding, action)) = standing.stranded {
@@ -715,7 +731,8 @@ pub(super) fn index_lock(d: &Doctor) -> Row {
         return Row::ok(
             NAME,
             format!(
-                "held now — {size} byte(s), {} old; a git is probably writing",
+                "held now — {}, {} old; a git is probably writing",
+                counted(size, "byte", "bytes"),
                 age_phrase(age)
             ),
         );
@@ -723,8 +740,9 @@ pub(super) fn index_lock(d: &Doctor) -> Row {
     Row::warn(
         NAME,
         format!(
-            "{} — {size} byte(s), {} old",
+            "{} — {}, {} old",
             super::fsx::path_field(&path),
+            counted(size, "byte", "bytes"),
             age_phrase(age)
         ),
         format!(

@@ -516,3 +516,98 @@ fn a_host_started_as_the_window_ends_it_is_ended_and_not_left_running() {
         "started again after the window ended it"
     );
 }
+
+// ----- the way back after a crash (#2004) ---------------------------------------------------
+
+/// The lock of `place`, held as a host serving there holds it, for as long as the answer lives.
+fn a_host_holds_the_lock_of(place: &purlis_host::Place) -> std::fs::File {
+    let lock = std::fs::File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&place.lock)
+        .unwrap();
+    lock.try_lock().expect("the lock is free to take");
+    lock
+}
+
+/// A window whose chats run in its own process puts none back while another host holds the
+/// place's lock, though its own host failed before it could find that one: that host may still
+/// run them.
+#[test]
+fn a_window_running_its_chats_puts_none_back_while_another_host_holds_the_lock() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    let _held = a_host_holds_the_lock_of(&place);
+    let host = SessionHost::default();
+    host.ending_a_host_it_finds();
+
+    host.start_at(
+        place,
+        a_host_that_crashes_as_it_starts(&home.path().join("started")),
+    );
+    let gate = host.before_chats_are_put_back(Duration::from_secs(2));
+
+    assert!(gate().is_err(), "chats were put back beside another host");
+    host.end();
+}
+
+/// The same with no host holding the lock: the window's own host failing leaves nothing that
+/// could run its chats, so they are put back, and purlis stays usable with its host broken.
+#[test]
+fn a_window_running_its_chats_puts_them_back_when_no_host_holds_the_lock() {
+    let home = tempfile::tempdir().unwrap();
+    let host = SessionHost::default();
+    host.ending_a_host_it_finds();
+
+    host.start_at(
+        a_place(home.path()),
+        a_host_that_crashes_as_it_starts(&home.path().join("started")),
+    );
+    let gate = host.before_chats_are_put_back(Duration::from_secs(2));
+
+    assert_eq!(gate(), Ok(()));
+    host.end();
+}
+
+/// A host found serving that never answers is not waited on for ever: no chat is put back
+/// while it holds its lock, and the window's supervisor carries on. It binds a socket, which a
+/// sandboxed agent cannot: it first runs on CI.
+#[test]
+fn a_host_found_serving_that_never_answers_keeps_every_chat_from_being_put_back() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    let _held = a_host_holds_the_lock_of(&place);
+    // Listening, never accepting: a connect lands in its backlog and nothing answers.
+    let _listening = std::os::unix::net::UnixListener::bind(&place.socket).unwrap();
+    purlis_session_protocol::auth::Credentials::mint_into(&place.credentials).unwrap();
+    let started = home.path().join("started");
+    let another_serves = {
+        let started = started.clone();
+        move || {
+            let mut command = Command::new("/bin/sh");
+            command
+                .arg("-c")
+                .arg("echo once >> \"$1\"; exit 3")
+                .arg("sh")
+                .arg(&started)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            Ok(command)
+        }
+    };
+    let host = SessionHost::default();
+    host.ending_a_host_it_finds();
+
+    host.start_at(place, another_serves);
+    let gate = host.before_chats_are_put_back(Duration::from_secs(2));
+
+    assert!(
+        gate().is_err(),
+        "chats were put back beside a host that never answered"
+    );
+    // The supervisor was not held up for good: it went on to try again.
+    until("the host is tried again", || starts_in(&started) >= 2);
+    host.end();
+}

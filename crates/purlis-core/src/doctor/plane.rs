@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{Config, Doctor, NOT_CHECKED_HINT, Row, canonical, short_path};
+use crate::counts::{counted, plural};
 use crate::plane::MANIFEST;
 
 /// The plane whose `workspaces/` contains `root`, or `None`.
@@ -183,8 +184,10 @@ pub(super) fn front_door(d: &Doctor) -> Row {
             name: NAME.to_owned(),
             status: super::Status::Ok,
             detail: format!(
-                "none declared — {others} persona(s) exist, and a session started with none \
-                 of them has no identity"
+                "none declared — {} {}, and a session started with {} has no identity",
+                counted(others, "persona", "personas"),
+                plural(others, "exists", "exist"),
+                plural(others, "it", "none of them")
             ),
             hint: "purlis persona default <name>".to_owned(),
             settings: None,

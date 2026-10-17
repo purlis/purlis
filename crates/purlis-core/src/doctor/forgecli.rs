@@ -24,6 +24,7 @@
 
 use super::git::git_in;
 use super::{Doctor, Row, first_line, fsx};
+use crate::counts::{counted, plural};
 use crate::forge::transport::Transport;
 use crate::forge::{self, Forge, ForgeError};
 
@@ -116,7 +117,12 @@ fn used_forges(d: &Doctor) -> Used {
 fn on_host(forge: &Forge, on: Use) -> String {
     let host = super::one_line(&forge.host, super::DISPLAY_LIMIT);
     match on {
-        Use::Repos(n) => format!("{n} workspace repo(s) have their origin on {host}"),
+        Use::Repos(n) => format!(
+            "{} {} {} origin on {host}",
+            counted(n, "workspace repo", "workspace repos"),
+            plural(n, "has", "have"),
+            plural(n, "its", "their")
+        ),
         Use::Unknown => format!(
             "a workspace whose repos could not be read may have one on {host}; the `workspace \
              clones` row names it"
@@ -221,5 +227,4 @@ fn said_refused(name: &str, cli: &str, e: &ForgeError) -> Row {
 }
 
 #[cfg(test)]
-#[path = "forgecli_tests.rs"]
 mod tests;

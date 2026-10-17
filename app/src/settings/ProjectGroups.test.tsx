@@ -295,7 +295,7 @@ describe("the files, at the Project level", () => {
 
   it("says what charter ignores in a file as it stands", async () => {
     const standing =
-      "1 [[forge]] block(s) failed to resolve — [[forge]] block 0: unknown forge kind 'bitbucket'";
+      "1 [[forge]] block failed to resolve — [[forge]] block 0: unknown forge kind 'bitbucket'";
     core({ shared: { ...SHARED, refusals: [{ why: standing, key: null }] } });
     await at();
 

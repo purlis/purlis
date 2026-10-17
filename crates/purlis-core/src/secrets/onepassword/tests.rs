@@ -467,7 +467,7 @@ fn health_counts_the_secrets_and_never_reads_one() {
     fake.answers("get", ITEM);
     assert_eq!(
         health(&fake.ctx, &eng()),
-        (true, "5 secret(s) in 1Password item 'charter-team'".into())
+        (true, "5 secrets in 1Password item 'charter-team'".into())
     );
     assert!(!fake.calls().iter().any(|c| c.starts_with("read")));
 }
@@ -505,7 +505,7 @@ fn health_of_an_empty_vault_tells_old_one_item_per_key_items_apart() {
     let (ok, said) = health(&fake.ctx, &eng());
     assert!(!ok);
     assert!(
-        said.starts_with("2 item(s) from the old one-item-per-key layout"),
+        said.starts_with("2 items from the old one-item-per-key layout"),
         "{said}"
     );
 }

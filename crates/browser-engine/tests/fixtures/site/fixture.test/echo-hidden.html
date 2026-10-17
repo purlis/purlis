@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>What you typed, out of the tree</title>
+<style>
+  body { margin: 0; font: 40px sans-serif; }
+  input { display: block; margin: 8px; color: black; font: 16px sans-serif; }
+  .echo { color: rgb(255, 0, 0); margin: 8px; }
+  #styled::after { content: attr(data-said); }
+</style></head>
+<body>
+  <input id="said" aria-label="Say something">
+  <div class="echo" id="copy" aria-hidden="true">waiting</div>
+  <p class="echo" id="styled" aria-hidden="true" data-said="waiting"></p>
+  <script>
+    // The page shows what is typed in a copy hidden from its tree, and in text its style draws.
+    document.getElementById('said').addEventListener('input', (e) => {
+      document.getElementById('copy').textContent = e.target.value;
+      document.getElementById('styled').dataset.said = e.target.value;
+    });
+  </script>
+</body></html>

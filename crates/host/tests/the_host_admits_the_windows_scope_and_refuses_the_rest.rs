@@ -183,6 +183,26 @@ async fn a_second_host_leaves_the_one_serving_alone() {
     assert!(connect(&place, Scope::LocalUi, &credential).await.is_ok());
 }
 
+/// #2114: the host of another config home, its socket named apart in the same folder, serves
+/// beside the one serving, each with its own lock and credentials.
+#[tokio::test]
+async fn the_host_of_another_config_home_serves_beside_the_one_serving() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let other = Place::at(
+        place.socket.with_file_name("purlisd-0123456789abcdef.sock"),
+        dir.path().join("another-config").join("purlisd"),
+    );
+    let (_stop, _host) = hosting(&place, None).await;
+    let (_other_stop, _other_host) = hosting(&other, None).await;
+
+    for place in [&place, &other] {
+        let credential = Credential::read(&place.credentials, Scope::LocalUi).unwrap();
+        assert!(connect(place, Scope::LocalUi, &credential).await.is_ok());
+    }
+    assert_ne!(place.lock, other.lock);
+}
+
 #[tokio::test]
 async fn a_socket_a_host_left_behind_is_replaced() {
     let dir = tempfile::tempdir().unwrap();

@@ -104,7 +104,7 @@ fn repairing_the_index_while_an_edit_retitles_loses_no_index_line() {
     for i in 0..N {
         file(&dir, &format!("f{i}"), &format!("F{i}"));
         let actions = purlis_core::curate::apply_safe(&root, &dir, today()).unwrap();
-        if actions != ["repaired index: linked 1 unindexed memory(ies)"] {
+        if actions != ["repaired index: linked 1 unindexed memory"] {
             relinked.push((i, actions));
         }
     }

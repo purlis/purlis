@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ON_THIS_MACHINE, ONCE_ON_THIS_MACHINE } from "./dismissals";
 import { drawWhatIsInForce } from "./Extensions";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
+import { DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
 import {
   aboutThisMachine,
   atCreation,
@@ -16,17 +16,28 @@ import {
   theirTheme,
   theirThemeOnce,
   type Reading,
+  type TheirReading,
 } from "./windowprefs";
 
 const PATH = "/home/op/.config/charter/theme.json";
 /** A colour that is a value, taken from a theme so that no colour is written here. */
 const RAISED = DEFAULT_THEME.values["surface.raised"];
 const NONE: Reading = { path: "", found: false, document: null, trouble: null };
+const NO_THEME: TheirReading = {
+  path: "",
+  found: false,
+  trouble: null,
+  theme: null,
+  complaints: [],
+};
+/** The person's theme as the core resolves it: complete, and named theirs. */
+const MINE = { ...DEFAULT_THEME, name: "Mine", values: { ...DEFAULT_THEME.values } };
+MINE.values["surface.base"] = RAISED;
 
-const handed = (theme: Partial<Reading>) => {
+const handed = (theme: Partial<TheirReading>) => {
   (globalThis as Record<string, unknown>)[GLOBAL] = {
     layout: NONE,
-    theme: { path: PATH, found: true, document: null, trouble: null, ...theme },
+    theme: { path: PATH, found: true, trouble: null, theme: null, complaints: [], ...theme },
   };
 };
 
@@ -42,7 +53,7 @@ afterEach(() => {
 
 describe("what the window was handed as it was created", () => {
   it("is nothing at all when it was handed nothing", () => {
-    expect(atCreation()).toEqual({ layout: NONE, theme: NONE });
+    expect(atCreation()).toEqual({ layout: NONE, theme: NO_THEME });
   });
 
   it("costs the preference and never the window when it is not what the Rust side writes", () => {
@@ -58,41 +69,29 @@ describe("what the window was handed as it was created", () => {
 });
 
 describe("the operator's own theme", () => {
-  it("is the theme the window is drawn in, token by token", () => {
-    handed({
-      document: {
-        name: "Mine",
-        appearance: "light",
-        tokens: { "surface.base": RAISED },
-      },
-    });
+  it("is the theme the core resolved, drawn as it was handed", () => {
+    handed({ theme: MINE });
 
     const theirs = theirTheme();
 
-    expect(theirs?.name).toBe("Mine");
-    expect(theirs?.values["surface.base"]).toBe(RAISED);
-    // A token it did not name is the built-in of its appearance's.
-    expect(theirs?.values["text.primary"]).toBe(BUILT_IN["purlis-light"].values["text.primary"]);
+    expect(theirs).toEqual(MINE);
     expect(aboutThisMachine()).toEqual([]);
   });
 
-  it("says in the Inbox what it had to put right, and where the file is", () => {
+  it("says in the Inbox what the core had to put right, and where the file is", () => {
     handed({
-      document: {
-        name: "Mine",
-        appearance: "dark",
-        tokens: { "surface.base": "red; } body { display: none", "surface.bass": RAISED },
-      },
+      theme: MINE,
+      complaints: [
+        { said: "surface.bass is not a purlis token", token: "surface.bass" },
+        { said: "surface.base is not a colour" },
+      ],
     });
 
-    const theirs = theirTheme();
-
-    expect(theirs?.values["surface.base"]).toBe(DEFAULT_THEME.values["surface.base"]);
+    expect(theirTheme()).toEqual(MINE);
     const [said] = aboutThisMachine();
     expect(said.subject).toBe("theme");
     expect(said.detail).toContain(PATH);
-    expect(said.detail).toContain("surface.bass is not a purlis token");
-    expect(said.detail).toContain("surface.base is");
+    expect(said.detail).toContain("surface.bass is not a purlis token; surface.base is");
   });
 
   it("that could not be read leaves the built-in, and the Inbox says why", () => {
@@ -110,21 +109,29 @@ describe("the operator's own theme", () => {
     expect(aboutThisMachine()).toEqual([]);
   });
 
-  it("is not repainted over by an extension's theme", async () => {
-    handed({ document: { name: "Mine", appearance: "dark", tokens: {} } });
-    // As `main.tsx` draws it: once, so a later redraw of it is the same theme.
+  it("costs nothing but itself when what was handed is not a theme", () => {
+    handed({ theme: "Mine" as unknown as TheirReading["theme"], complaints: [7] as never });
+
+    expect(theirTheme()).toBeUndefined();
+    expect(atCreation().theme.complaints).toEqual([]);
+  });
+
+  it("is drawn again at once for a project that picks nothing, asking the core nothing", async () => {
+    handed({ theme: MINE });
+    // As `main.tsx` draws it: once, so drawing it again is the same theme and repaints nothing.
     const theirs = theirThemeOnce();
     if (theirs === undefined) throw new Error("the operator's theme was not read");
     drawIn(theirs);
-    mockIPC((cmd) =>
-      cmd === "extension_themes"
-        ? [{ extension: "solarized", name: "Solarized", text: '{"name":"Solarized"}' }]
-        : null,
-    );
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return null;
+    });
 
     await drawWhatIsInForce();
 
     expect(inForce()).toBe(theirs);
+    expect(asked).not.toContain("theme_in_force");
   });
 });
 

@@ -20,6 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::counts::counted;
 use crate::worktree::git::Run;
 
 /// The name git gives the file. `$GIT_DIR/index.lock` in every git there has ever been.
@@ -74,9 +75,9 @@ impl IndexLock {
             "something may still be holding it"
         };
         format!(
-            "{} — {} byte(s), {} old; {what}.",
+            "{} — {}, {} old; {what}.",
             self.path.display(),
-            self.size,
+            counted(self.size, "byte", "bytes"),
             age_phrase(self.age)
         )
     }
@@ -347,7 +348,7 @@ mod tests {
     fn the_description_carries_the_path_the_size_and_the_age() {
         let said = lock(0, STALE_AFTER).describe();
         assert!(said.contains("/p/.git/index.lock"), "{said}");
-        assert!(said.contains("0 byte(s)"), "{said}");
+        assert!(said.contains("0 bytes"), "{said}");
         assert!(said.contains("15m old"), "{said}");
         assert!(said.contains("crashed"), "{said}");
         assert!(lock(4, 1.0).describe().contains("may still be holding it"));

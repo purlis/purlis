@@ -790,13 +790,17 @@ fn serve() -> ExitCode {
     );
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone(&place, |place| {
-            purlis_core::browsers::given_to(purlis_host::Hosting::keeping_its_switch_in(
-                &place.credentials,
-                Composes(purlis_core::hoststart::Kit::found(
-                    std::env::current_exe().ok(),
-                    None,
-                )),
-            ))
+            purlis_core::browsers::given_to(
+                purlis_host::Hosting::keeping_its_switch_in(
+                    &place.credentials,
+                    Composes(purlis_core::hoststart::Kit::found(
+                        std::env::current_exe().ok(),
+                        None,
+                    )),
+                )
+                // `purlis stop --all` is heard with no window there (#2190).
+                .heeding(purlis_core::halt::OnDisk(config.clone())),
+            )
         }))
         .unwrap_or(1),
     )

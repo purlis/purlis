@@ -29,6 +29,7 @@ use std::path::Path;
 use chrono::{NaiveDate, NaiveDateTime};
 
 use crate::contain::SHARED_PERSONA;
+use crate::counts::{counted, plural};
 use crate::repocmd::{Say, Sink};
 use crate::tui::{Align, column, pad};
 
@@ -550,9 +551,11 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
     if fired > 0 {
         let since = first.map_or_else(String::new, |d| d.format("%Y-%m-%d").to_string());
         say(Say::Info(format!(
-            "Routing advice: fired {fired} time(s) · work handed to a persona {followed} \
-             time(s) since the first one ({since}). Advice that fires and is never followed is \
-             the block failing, not the roster — read it that way before adding more personas."
+            "Routing advice: fired {} · work handed to a persona {} \
+             since the first one ({since}). Advice that fires and is never followed is \
+             the block failing, not the roster — read it that way before adding more personas.",
+            counted(fired, "time", "times"),
+            counted(followed, "time", "times")
         )));
     }
     if !drifted.is_empty() {
@@ -581,26 +584,36 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
     }
     if unused > 0 {
         say(Say::Warn(format!(
-            "{unused} persona(s) NEVER dispatched — they exist, lint green, and are unused. \
-             Check whether a chat does their work itself where it could dispatch to them."
+            "{} NEVER dispatched — {}, lint green, and {} unused. \
+             Check whether a chat does {} work itself where it could dispatch to {}.",
+            counted(unused, "persona", "personas"),
+            plural(unused, "it exists", "they exist"),
+            plural(unused, "is", "are"),
+            plural(unused, "its", "their"),
+            plural(unused, "it", "them")
         )));
     }
     if drafts > 0 {
         say(Say::Info(format!(
-            "{drafts} draft persona(s) — no chat is dispatched to a persona while `draft: \
-             true` is set, so they are not counted above. Finish the charter, then drop the \
-             line."
+            "{} — no chat is dispatched to a persona while `draft: \
+             true` is set, so {} not counted above. Finish the charter, then drop the \
+             line.",
+            counted(drafts, "draft persona", "draft personas"),
+            plural(drafts, "it is", "they are")
         )));
     }
     if dormant > 0 {
         say(Say::Warn(format!(
-            "{dormant} dormant persona(s) — a REAL prune signal (old, zero memory, no declared \
-             activity: profile). The steward can quiz-propose removal (cite this)."
+            "{} — a REAL prune signal (old, zero memory, no declared \
+             activity: profile). The steward can quiz-propose removal (cite this).",
+            counted(dormant, "dormant persona", "dormant personas")
         )));
     }
     if idle > 0 {
         say(Say::Info(format!(
-            "{idle} idle persona(s) — have memory but none recent; watch, don't prune yet."
+            "{} — {} memory but none recent; watch, don't prune yet.",
+            counted(idle, "idle persona", "idle personas"),
+            plural(idle, "has", "have")
         )));
     }
     0
@@ -790,5 +803,4 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "stats_tests.rs"]
 mod recorded;

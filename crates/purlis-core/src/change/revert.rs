@@ -55,6 +55,7 @@ use super::landing::{self, Landing};
 use super::pending::{self, At};
 use super::record::{Member, Record, TEXT_LIMIT, default_branch};
 use super::store;
+use crate::counts::counted;
 use crate::repocmd::Say;
 use crate::shown;
 use crate::worktree::git;
@@ -536,13 +537,13 @@ pub fn revert(
     }
     say(Say::Done(if existing.is_some() {
         format!(
-            "change '{new_slug}' updated — {} member(s) to revert",
-            new.members.len()
+            "change '{new_slug}' updated — {} to revert",
+            counted(new.members.len(), "member", "members")
         )
     } else {
         format!(
-            "change '{new_slug}' created — {} member(s) to revert",
-            new.members.len()
+            "change '{new_slug}' created — {} to revert",
+            counted(new.members.len(), "member", "members")
         )
     }));
     for s in &seeded {

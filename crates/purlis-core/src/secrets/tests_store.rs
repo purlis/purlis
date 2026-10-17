@@ -362,7 +362,7 @@ fn a_plain_file_vaults_health_counts_and_names_what_is_loose() {
     chmod(&p, 0o600);
     assert_eq!(
         plain_file::health(&ctx, &v),
-        (true, "2 secret(s)".to_string())
+        (true, "2 secrets".to_string())
     );
     chmod(&p, 0o644);
     chmod(&dir, 0o755);
@@ -371,7 +371,7 @@ fn a_plain_file_vaults_health_counts_and_names_what_is_loose() {
         plain_file::health(&ctx, &v),
         (
             true,
-            "2 secret(s), perms 644 (want 600), listed by other accounts: .charter/vaults 755 \
+            "2 secrets, perms 644 (want 600), listed by other accounts: .charter/vaults 755 \
              (want 700 — chmod 700)"
                 .to_string()
         )
@@ -487,15 +487,14 @@ fn a_reference_vaults_health_names_the_clis_it_needs_and_what_is_wrong() {
     );
     assert_eq!(
         reference::health(&ctx, &v),
-        (true, "3 reference(s) via op, vault".to_string())
+        (true, "3 references via op, vault".to_string())
     );
     write(&ctx, r#"{"A": "op://v/i/f", "B": "plain", "C": 5}"#);
     assert_eq!(
         reference::health(&ctx, &v),
         (
             false,
-            "3 reference(s), but 2 not a supported URI (purlis vault verify names them)"
-                .to_string()
+            "3 references, but 2 not a supported URI (purlis vault verify names them)".to_string()
         )
     );
 
@@ -503,17 +502,14 @@ fn a_reference_vaults_health_names_the_clis_it_needs_and_what_is_wrong() {
     write(&ctx, r#"{"A": "op://v/i/f", "B": "vault://secret/app#K"}"#);
     assert_eq!(
         reference::health(&ctx, &v),
-        (
-            false,
-            "2 reference(s), but not found: op, vault".to_string()
-        )
+        (false, "2 references, but not found: op, vault".to_string())
     );
     write(&ctx, r#"{"A": "browser://x", "B": "nope"}"#);
     assert_eq!(
         reference::health(&ctx, &v),
         (
             false,
-            "2 reference(s), but 1 not a supported URI (purlis vault verify names them); not \
+            "2 references, but 1 not a supported URI (purlis vault verify names them); not \
              found: npx"
                 .to_string()
         )
