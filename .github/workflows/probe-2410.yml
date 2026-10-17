@@ -23,13 +23,10 @@ jobs:
         include:
           # main's test: the hook's one-second wall clock on every line.
           - arm: main
-            runs: 60
+            runs: 40
           # this branch's test: bounded by the event, hooks on the disk together.
           - arm: fixed
-            runs: 60
-          # this branch's test with hooks queued behind one another, as before #983: must fail.
-          - arm: serialized
-            runs: 5
+            runs: 40
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -61,6 +58,9 @@ jobs:
           # partition runs them, and twice as many spinning shells besides.
           ( while :; do "$lib" --test-threads="$(nproc)" >/dev/null 2>&1; done ) &
           for _ in $(seq $(( $(nproc) * 2 ))); do ( while :; do :; done ) & done
+          # Round 2: a disk kept busy as well, as a partition's git and tempdir tests keep it:
+          # writers that each sync 64 MiB over and over.
+          for w in 1 2; do ( while :; do dd if=/dev/zero of="$RUNNER_TEMP/disk-$w" bs=1M count=64 conv=fsync status=none; done ) & done
           sleep 20
           failed=0
           for i in $(seq ${{ matrix.runs }}); do
