@@ -1820,6 +1820,72 @@ fn ahead_here(
     .flatten()
 }
 
+/// #2179: **one picker compiles each harness's sandbox once**, however many profiles it
+/// lists of that harness. Every New tab asks for the picker, and a compile per row made
+/// each open pay one per profile (about 200 ms a compile on the macOS runner). A compile
+/// asks whether the sandbox's backend is installed, which is what is counted here.
+#[test]
+fn one_picker_compiles_each_harness_once_however_many_profiles_share_it() {
+    let compiles_with = |more_claude_profiles: usize| {
+        let plane = tempfile::tempdir().expect("a plane");
+        std::fs::write(
+            plane.path().join(purlis_core::plane::MANIFEST),
+            "[sandbox]\nmode = \"on\"\n",
+        )
+        .expect("written");
+        // Declared and approved by nobody, so the picker runs none of their programs.
+        let declared: String = (0..more_claude_profiles)
+            .map(|n| format!("[harness.work{n}]\nkind = \"claude\"\ncommand = [\"claude{n}\"]\n"))
+            .collect();
+        std::fs::write(
+            plane.path().join(purlis_core::profiles::LOCAL_FILE),
+            declared,
+        )
+        .expect("written");
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let machine = purlis_core::sandbox::Machine {
+            env: purlis_core::secrets::Env::of(&[]),
+            home: None,
+            // Where every harness has a sandbox charter compiles.
+            os: purlis_core::sandbox::Os::MacOs,
+        };
+        let options = crate::start_options_on(plane.path(), &machine, &|_| {
+            asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            true
+        })
+        .expect("read");
+        assert_eq!(
+            options
+                .profiles
+                .iter()
+                .filter(|row| row.kind == "claude")
+                .count(),
+            1 + more_claude_profiles,
+            "{:?}",
+            options.refused
+        );
+        // Each row is still told its sandbox. Not which: the built-in row checks this
+        // machine's own Claude Code, whatever it answers here.
+        assert!(
+            options.profiles.iter().all(|row| row.sandbox.is_some()),
+            "{:?}",
+            options
+                .profiles
+                .iter()
+                .map(|row| (&row.name, &row.sandbox))
+                .collect::<Vec<_>>()
+        );
+        asked.into_inner()
+    };
+    let one = compiles_with(0);
+    assert!(one > 0, "the picker compiles the sandbox it shows");
+    assert_eq!(
+        compiles_with(4),
+        one,
+        "five Claude Code profiles cost what one does"
+    );
+}
+
 /// Must-fix (verifier r7): the picker never runs a profile's program before the start's
 /// gate lets it start (approved, among the rest). Past the gate, its program is checked,
 /// which runs it. The program answers as something other than Claude Code, so whether it
