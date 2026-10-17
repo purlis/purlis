@@ -668,6 +668,11 @@ struct OpenChat {
     /// its tab's sandbox mark says beside `none`. `null` for any other chat.
     #[specta(optional)]
     sandbox_why: Option<String>,
+    /// **How many sites only its browser reaches** (#2364): its browser sites, for this chat
+    /// alone and for every chat here on this machine, that policy leaves in force. Its tab's
+    /// sandbox mark says the count; its Network view lists them. `null` where there is none.
+    #[specta(optional)]
+    browser_sites: Option<u32>,
     /// Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
     /// window keys what it keeps of a chat beyond this launch by, such as the Chats list's
     /// folds (#1687). `null` for a chat that has no id yet.
@@ -827,10 +832,20 @@ impl HandedFromNote {
 /// key the window keeps a chat's folds by across a launch (#1687).
 fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
+    let browser_sites = browser_sites_of(held, open.session);
     OpenChat {
         id,
+        browser_sites,
         ..OpenChat::from(open)
     }
+}
+
+/// How many sites only chat `session`'s browser reaches ([`OpenChat::browser_sites`]): none
+/// for a chat its sandbox holds nothing of, whose browser is given none.
+fn browser_sites_of(held: &planes::Held, session: u32) -> Option<u32> {
+    held.chats().confines_now(session)?;
+    let count = network::browser_sites_here(held.root(), &held.browsers().chat_sites(), session);
+    u32::try_from(count).ok().filter(|count| *count > 0)
 }
 
 /// `drawn` with how it stands as a task beyond its own record (#1484): how it ended, by its
@@ -2531,6 +2546,8 @@ impl From<chats::Open> for OpenChat {
                 .to_owned()
             }),
             sandbox_why: open.floorless,
+            // Its browser's sites are the project's to count (`drawn_of`).
+            browser_sites: None,
             // The store's record of it, which `drawn_of` reads: not part of what opened.
             id: None,
             name: open.name,
