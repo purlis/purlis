@@ -843,7 +843,7 @@ fn working_folders() -> Result<Vec<(String, PathBuf)>, String> {
         return Err("/proc does not show this process".to_owned());
     }
     let entries =
-        std::fs::read_dir("/proc").map_err(|e| format!("/proc could not be read ({e})"))?;
+        std::fs::read_dir("/proc").map_err(|e| format!("/proc could not be read: {e}"))?;
     Ok(entries
         .flatten()
         .filter_map(|entry| {
@@ -867,16 +867,43 @@ fn working_folders() -> Result<Vec<(String, PathBuf)>, String> {
     let me = std::process::id().to_string();
     let uid = rustix::process::getuid().as_raw().to_string();
     let mut lsof = std::process::Command::new("/usr/sbin/lsof");
-    lsof.args(["-nP", "-a", "-d", "cwd", "-u", &uid, "-F", "pn"]);
-    let out = crate::forklock::output(&mut lsof)
-        .map_err(|e| format!("the process list could not be read ({e})"))?;
-    if !out.status.success() {
+    // `-b` and `-w`: no kernel call that can block, and no warnings on its output.
+    lsof.args(["-b", "-w", "-nP", "-a", "-d", "cwd", "-u", &uid, "-F", "pn"]);
+    listed_cwds(&mut lsof, LISTING_DEADLINE, &me)
+}
+
+/// How long the process list may take to read: a rename asks for it while the person waits, and
+/// one that takes longer could not be read.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const LISTING_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The folders `lsof`, run as `command`, says other processes work in, read within `deadline`
+/// (see [`lsof_cwds`]). One still running at the deadline is ended, and the process list could
+/// not be read; so too where it fails.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn listed_cwds(
+    command: &mut std::process::Command,
+    deadline: std::time::Duration,
+    me: &str,
+) -> Result<Vec<(String, PathBuf)>, String> {
+    let (status, listing) = crate::restartends::within(command, deadline).ok_or_else(|| {
+        format!(
+            "the process list could not be read: lsof gave no answer within {} seconds",
+            deadline.as_secs_f32()
+        )
+    })?;
+    // Only 0 is an answer here, unlike `restartends::lsof_answer`, which reads a 1 too: a
+    // partial list could leave out the very process working in the folder, so it fails closed.
+    if status != Some(0) {
         return Err(format!(
-            "the process list could not be read (lsof ended with {})",
-            out.status
+            "the process list could not be read: lsof ended with {}",
+            status.map_or_else(
+                || "a signal".to_owned(),
+                |code| format!("exit status {code}")
+            )
         ));
     }
-    lsof_cwds(&String::from_utf8_lossy(&out.stdout), &me)
+    lsof_cwds(&listing, me)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -902,9 +929,7 @@ fn lsof_cwds(listing: &str, me: &str) -> Result<Vec<(String, PathBuf)>, String> 
         }
     }
     if !shows_me {
-        return Err(
-            "the process list could not be read (it does not show this process)".to_owned(),
-        );
+        return Err("the process list could not be read: it does not show this process".to_owned());
     }
     Ok(out)
 }
@@ -977,5 +1002,4 @@ fn kept_why(config_root: &Path) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "localproject_tests.rs"]
 mod tests;
