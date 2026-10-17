@@ -450,9 +450,21 @@ const STRIP =
 /** Named like a strip and not one: a chart's bar and the two columns down a side. */
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
-/** The rows of controls drawn as part of a strip or a pane's top line, as tall as it is: the
- *  ways to end a pane's task (#1488) and the chip a tab wears for its tasks (#1487). */
-const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks"]);
+/** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
+ *  a handed-off chat came from and its work item. Each is as tall as the line, the chrome
+ *  height, so the line is one height with the ways to end a task beside them. */
+export const PANE_LINE_CHIPS = [
+  "pane-crumbs",
+  "pane-brief",
+  "chat-gauge",
+  "pane-harness",
+  "pane-from",
+  "pane-work-item",
+];
+
+/** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
+ *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the top line's chips. */
+const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks", ...PANE_LINE_CHIPS]);
 
 /** The classes that make a control the small one, drawn at the chrome height. */
 const SMALL_CONTROLS = new Set(["ui-button-sm", "ui-segmented-sm"]);
@@ -731,6 +743,22 @@ function heightsByFile(): Map<string, string[]> {
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
+/** The top line's chips (`PANE_LINE_CHIPS`) that no rule in `css` sets `height:
+ *  var(--size-chrome)` on, as a chip of the line: a strip's part, or a control inside a strip. */
+export function chipsNotChromeTall(css: string, controls: ReadonlySet<string>): string[] {
+  const tall = new Set<string>();
+  for (const { context, property, value } of declarations(css)) {
+    if (property !== "height" || value !== "var(--size-chrome)") continue;
+    for (const selector of nestedSelectors(context).flatMap(opened)) {
+      const kind = subjectKind(selector, controls);
+      if (kind !== "a strip" && kind !== "a small control") continue;
+      const subject = selector.trim().slice(subjectStart(selector.trim()));
+      for (const name of partsOf(subject).classes) tall.add(name);
+    }
+  }
+  return PANE_LINE_CHIPS.filter((chip) => !tall.has(chip));
+}
+
 /** What differs between the heights found and the named exceptions (`ratchet`). */
 export function offTheHeights(
   found: ReadonlyMap<string, readonly string[]>,
@@ -925,6 +953,35 @@ describe("the control and chrome heights (#2449)", () => {
       <select className={cn("ui-select", wide && "wide")} />
     `;
     expect(controlClasses(tsx)).toEqual(["ui-button", "task-end", "ui-select", "wide"]);
+  });
+
+  it("holds every chip on a pane's top line at the chrome height (#2484)", () => {
+    const css = readFileSync(join(SRC, "App.css"), "utf8");
+    const controls = new Set(
+      sourceFiles(isView).flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
+    );
+    expect(chipsNotChromeTall(css, controls)).toEqual([]);
+    // Each chip is one a component draws, so the list does not outlive the line.
+    const views = sourceFiles(isView).map((file) => readFileSync(join(SRC, file), "utf8"));
+    for (const chip of PANE_LINE_CHIPS)
+      expect(
+        views.some((text) => text.includes(`className="${chip}"`)),
+        chip,
+      ).toBe(true);
+  });
+
+  it("fails a top-line chip with no chrome height, and one held off it", () => {
+    const controls = new Set(["pane-harness", "pane-brief"]);
+    expect(
+      chipsNotChromeTall(".pane-chips > .chat-gauge { height: var(--size-chrome); }", controls),
+    ).toEqual(PANE_LINE_CHIPS.filter((chip) => chip !== "chat-gauge"));
+    // A button chip outside the line is a full control, not the line's chip.
+    expect(chipsNotChromeTall(".pane-harness { height: var(--size-chrome); }", controls)).toContain(
+      "pane-harness",
+    );
+    expect(cssHeights(".pane-from { min-height: 1.25rem; }", controls)).toEqual([
+      ".pane-from | min-height: 1.25rem (a strip)",
+    ]);
   });
 
   it("covers the window, so a reader that found nothing fails", () => {
