@@ -208,6 +208,73 @@ fn a_check_that_cannot_list_the_processes_fails_rather_than_passing_blind() {
 }
 
 #[test]
+fn on_macos_an_agent_launchd_starts_for_this_user_is_not_the_suites() {
+    // #2458: on a macOS runner launchd starts the runner user's own agents while a suite runs
+    // (nbagent, mdworker_shared, CoreSimulator's services…), each with launchd as its parent
+    // and its program in the system's own folders. They are not the suite's, and counting them
+    // failed every nightly part and killed them. A process the suite left behind is reparented
+    // to launchd too, so it is the program's folder that tells them apart; and Linux, where
+    // the check has never miscounted, keeps counting every one.
+    let dir = tempfile::tempdir().expect("a directory");
+    let state = dir.path().join("calls");
+    let ps = format!(
+        "#!/bin/sh\n\
+         me=$(id -u)\n\
+         n=$(cat '{state}' 2>/dev/null || echo 0)\n\
+         echo $((n + 1)) > '{state}'\n\
+         echo '    1     0     0 Fri Oct 17 16:00:00 2026 /sbin/launchd'\n\
+         if [ \"$n\" -gt 0 ]; then\n\
+         echo \"  901     1 $me Fri Oct 17 16:01:00 2026 /System/Library/PrivateFrameworks/Noticeboard.framework/Versions/A/Resources/nbagent.app/Contents/MacOS/nbagent\"\n\
+         echo \"  902     1 $me Fri Oct 17 16:01:00 2026 /usr/libexec/proactiveeventtrackerd\"\n\
+         echo \"  903     1 $me Fri Oct 17 16:01:00 2026 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimLaunchHost.arm64.xpc/Contents/MacOS/SimLaunchHost.arm64\"\n\
+         echo \"  904     1 $me Fri Oct 17 16:01:00 2026 /bin/sleep 47.2458\"\n\
+         fi\n",
+        state = state.display()
+    );
+    for (os, counted) in [
+        ("Darwin", &["/bin/sleep 47.2458"][..]),
+        (
+            "Linux",
+            &[
+                "/bin/sleep 47.2458",
+                "nbagent",
+                "/usr/libexec/proactiveeventtrackerd",
+                "SimLaunchHost.arm64",
+            ][..],
+        ),
+    ] {
+        let _ = std::fs::remove_file(&state);
+        let bin = dir.path().join(os);
+        std::fs::create_dir(&bin).expect("a bin directory");
+        stand_in::program(&bin, "ps", &ps);
+        stand_in::program(&bin, "uname", &format!("#!/bin/sh\necho {os}\n"));
+        let path = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+
+        let said = Command::new(the_check())
+            .args(["--grace", "0", "--", "true"])
+            .env("PATH", path)
+            .env_remove("GITHUB_ACTIONS")
+            .output()
+            .expect("the check runs");
+
+        let stderr = String::from_utf8_lossy(&said.stderr);
+        assert_eq!(said.status.code(), Some(1), "{os}: {stderr}");
+        let named = stderr
+            .lines()
+            .filter(|line| line.trim().starts_with("pid "))
+            .count();
+        assert_eq!(named, counted.len(), "{os}: {stderr}");
+        for one in counted {
+            assert!(stderr.contains(one), "{os}: {one} was not named: {stderr}");
+        }
+    }
+}
+
+#[test]
 fn a_grace_with_no_value_is_a_usage_error() {
     let said = Command::new(the_check())
         .arg("--grace")
