@@ -718,6 +718,26 @@ fn holds_a_secret(text: &str) -> bool {
         || crate::applog::holds_a_value_kept_out(text)
 }
 
+/// **A brief's or a report's text as a view draws it from the store** (#1872): every secret
+/// found in it masked, whenever it is read, so a value purlis learned to be a secret after the
+/// text was stored is masked too. Briefs and reports are stored as written (D-1452-13), and the
+/// record is never rewritten here.
+///
+/// Masked as tool output is ([`crate::secrets::mcpstart::masked`]: each vault value this
+/// process read or stored, each credential-shaped stretch), with each forge token the process
+/// holds ([`crate::applog::without_values_kept_out`]). A text that still holds a secret by
+/// the rule a message is left out by ([`holds_a_secret`]) is drawn as `***` alone. **Fails
+/// closed** as [`crate::secrets::seen`] does: where a vault value could not be remembered,
+/// every text that is not empty is drawn as `***`.
+pub fn masked(text: &str) -> String {
+    let masked = crate::secrets::mcpstart::masked(&crate::applog::without_values_kept_out(text));
+    if holds_a_secret(&masked) {
+        "***".to_owned()
+    } else {
+        masked
+    }
+}
+
 /// [`said`], for a message that `by` said in a chat's place (#1496): the person's answer to a
 /// task's question, which the timeline then says is theirs. Counted and kept as any message is.
 pub fn said_by(
