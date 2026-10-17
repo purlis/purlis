@@ -1,0 +1,15 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: purlis-cluster-operator
+description: purlis in your cluster, turning a team's Pools and people's Claims into runners on the pinned upstream agent-sandbox
+type: application
+# The chart's own version, and the operator's (operator/Cargo.toml), which
+# operator/tests/the_chart.rs holds equal.
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.36.0-0"
+home: https://github.com/purlis/purlis/blob/main/docs/cluster-operator.md
+sources:
+  - https://github.com/purlis/purlis/tree/main/operator

@@ -2586,9 +2586,9 @@ button.show-more:focus-visible {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-2);
   min-height: 1.4rem;
-  padding: 0.35rem 0.5rem 0.25rem;
+  padding: var(--space-2) var(--space-3) var(--space-2);
 }
 
 .half-head > h2 {
@@ -2601,7 +2601,7 @@ button.show-more:focus-visible {
 
 .half-actions {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -3644,7 +3644,7 @@ h2.sidebar-title .node-icon {
   font-size: var(--font-size-sm);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-2) var(--space-3);
   align-items: center;
   justify-content: space-between;
 }
@@ -3739,9 +3739,9 @@ h2.sidebar-title .node-icon {
 .chats-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
-  margin-block-start: 0.25rem;
+  margin-block-start: var(--space-2);
 }
 
 /* The box and its glass. **Its text starts where a top-level chat's name does** (DS-11): the
@@ -3796,11 +3796,11 @@ h2.sidebar-title .node-icon {
 .chats-hidden-go {
   display: inline-flex;
   flex: none;
-  gap: 0.2rem;
+  gap: var(--space-1);
   align-items: center;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   background: none;
   font: inherit;
@@ -4633,14 +4633,14 @@ h2.sidebar-title .node-icon {
 .panels {
   height: 100%;
   overflow: auto;
-  padding: 0.5rem;
+  padding: var(--space-3);
 }
 /* **One section per panel, and a line between them** (`PanelSection.tsx`). The divider runs
    the region's full width, through its padding, so it reads as the edge of a section and not
    as a rule inside one; the first section has none, the region's own edge being its top. */
 .panels > section {
-  margin-inline: -0.5rem;
-  padding: 0.5rem 0.5rem 0.75rem;
+  margin-inline: calc(var(--space-3) * -1);
+  padding: var(--space-3) var(--space-3) var(--space-5);
 }
 .panels > section + section {
   border-top: 1px solid var(--layer-divider);
@@ -4652,9 +4652,9 @@ h2.sidebar-title .node-icon {
 }
 .panels li {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-2);
   align-items: baseline;
-  padding: 0.1rem 0;
+  padding: var(--space-1) 0;
   overflow-wrap: anywhere;
 }
 .panels .node-icon {
@@ -4668,7 +4668,7 @@ h2.sidebar-title .node-icon {
 .panels .pending,
 .panels .note,
 .panels .stamp {
-  margin: 0.1rem 0;
+  margin: var(--space-1) 0;
 }
 .panels .unreadable {
   color: var(--state-unreadable);
@@ -4686,7 +4686,7 @@ h2.sidebar-title .node-icon {
 }
 .panels .trouble {
   color: var(--state-failed);
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
 }
 
 /* The command palette: the primary input (spec decision 1). It sits over everything on the
@@ -6010,13 +6010,13 @@ h2.sidebar-title .node-icon {
 }
 
 .chat-card p {
-  margin: 0.15rem 0 0;
+  margin: var(--space-1) 0 0;
 }
 
 .chat-card .chat-card-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 0.5rem;
+  gap: 0 var(--space-3);
   align-items: center;
   margin: 0;
 }
@@ -6028,9 +6028,9 @@ h2.sidebar-title .node-icon {
 .chat-card-facts {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.1rem 0.6rem;
+  gap: var(--space-1) var(--space-4);
   align-items: baseline;
-  margin: 0.35rem 0 0;
+  margin: var(--space-2) 0 0;
 }
 
 .chat-card-facts > div {
@@ -6567,22 +6567,22 @@ h2.sidebar-title .node-icon {
 /* The dispatches a session record's chat made, above the record's own text. */
 .session-dispatches {
   max-width: 60rem;
-  margin: 0 0 0.75rem;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-sm);
 }
 
 .session-dispatches h3 {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-2);
   color: var(--text-muted);
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .session-dispatches ul {
   margin: 0;
-  padding-inline-start: 1.1rem;
+  padding-inline-start: var(--space-6);
 }
 
 /* ---- A vault's tab (charter-app#235) ------------------------------------------------- */
@@ -6725,7 +6725,7 @@ h2.sidebar-title .node-icon {
 
 /* A list in a view has the pane's height to use, not a side region's. */
 .view-body .panel-list {
-  margin-top: 0.6rem;
+  margin-top: var(--space-4);
 }
 
 .view-body .panel-rows {
@@ -6865,10 +6865,10 @@ h2.sidebar-title .node-icon {
 .panels .panel-head {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-2);
   /* As tall as a heading with a view's button, so a heading without one lines up the same. */
   min-height: 1.4rem;
-  margin: 0 0 0.35rem;
+  margin: 0 0 var(--space-2);
 }
 
 .panels .panel-head h2 {
@@ -7369,11 +7369,11 @@ h2.sidebar-title .node-icon {
 .memory-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: center;
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-5);
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .memory-meta code {
@@ -7381,10 +7381,10 @@ h2.sidebar-title .node-icon {
 }
 
 .memory-scope {
-  padding: 0 0.45rem;
+  padding: 0 var(--space-3);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
 .memory-body {
@@ -7412,7 +7412,7 @@ h2.sidebar-title .node-icon {
 }
 
 .memory-stale {
-  margin: 0.5rem 0;
+  margin: var(--space-3) 0;
 }
 
 /* **A store's archive** (KN-4): its memories as a list's rows, the one chosen (`aria-pressed`)
@@ -7435,8 +7435,8 @@ h2.sidebar-title .node-icon {
 /* A memory's Move (KN-3): under the body, set apart from it by a rule. */
 .memory-move {
   max-width: 60rem;
-  margin-top: 1.5rem;
-  padding-top: 0.75rem;
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -7696,7 +7696,7 @@ h2.sidebar-title .node-icon {
 }
 
 .ui-levels-small .ui-level {
-  padding: 0.05rem 0.45rem;
+  padding: var(--space-0) var(--space-3);
   white-space: nowrap;
 }
 

@@ -5689,6 +5689,23 @@ pub fn ahead(
     os_release: &str,
     check: &dyn Fn(&Applied) -> Result<(), NotStarted>,
 ) -> Ahead {
+    ahead_decided(
+        decide(harness, root, machine, has, None, None),
+        root,
+        os_release,
+        check,
+    )
+}
+
+/// [`ahead`], from what [`decide`] answered for the harness: the compile, asked once and shared
+/// by every profile of that harness one picker lists (#2179), since it reads nothing of the
+/// profile. `check` is then asked of each profile's own program.
+pub fn ahead_decided(
+    decided: Result<Option<Decided>, NotStarted>,
+    root: &Path,
+    os_release: &str,
+    check: &dyn Fn(&Applied) -> Result<(), NotStarted>,
+) -> Ahead {
     // Under a policy that forbids the opt-out no sentence sends the person to it (#1423); the
     // picker says what locks it on a line of its own.
     let locks = policy::Locks::of(root);
@@ -5714,7 +5731,7 @@ pub fn ahead(
             | NotStarted::RequiredWithoutBackend(_) => None,
         },
     };
-    match decide(harness, root, machine, has, None, None) {
+    match decided {
         Ok(None) => Ahead::Off,
         Ok(Some(Decided::Sandboxed(applied))) => match check(&applied) {
             Ok(()) => Ahead::Sandboxed,
