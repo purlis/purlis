@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792274704905,
+  "lastUpdate": 1792275989828,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16086,6 +16086,48 @@ window.BENCHMARK_DATA = {
             "value": 104.24697,
             "unit": "ms",
             "extra": "median of 5 runs: 103.015, 103.786, 104.247, 105.733, 106.182 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "90204ff56a8e05c33af2bf719b63247898941d1a",
+          "message": "Hold a floor chat from more of what purlis runs (#2519)\n\nA sandboxed chat at the floor is held from more of what purlis runs, and a chat is not started where purlis's own files lie in a folder it may write.",
+          "timestamp": "2026-10-18T02:14:45+04:00",
+          "tree_id": "57f3a5c13283ec54f7f2be9692f864b6b10da6f4",
+          "url": "https://github.com/purlis/purlis/commit/90204ff56a8e05c33af2bf719b63247898941d1a"
+        },
+        "date": 1792275988520,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5270355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.521, 0.527, 0.536, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.105399,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.862, 16.893, 17.105, 17.242, 17.278 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.0754195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.788, 103.805, 105.075, 105.196, 105.337 ms"
           }
         ]
       }
