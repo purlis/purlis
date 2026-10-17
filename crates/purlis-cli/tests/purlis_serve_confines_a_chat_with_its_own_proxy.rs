@@ -84,7 +84,11 @@ fn purlis_serve_starts_a_chats_confinement_with_its_own_proxy() {
     let dir = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let _host = serving(dir.path());
-    let socket = dir.path().join("run").join("purlis").join("purlisd.sock");
+    // Where the host of this config home listens (#2114).
+    let socket = purlis_core::hostsocket::here_for(
+        Some(dir.path().join("run").as_os_str()),
+        Some(&dir.path().join("config")),
+    );
     let credential = Credential::read(
         &purlis_core::machine::charterd(&dir.path().join("config")),
         Scope::LocalUi,
