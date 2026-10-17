@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792250634160,
+  "lastUpdate": 1792251802203,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15330,6 +15330,48 @@ window.BENCHMARK_DATA = {
             "value": 103.54947349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.462, 103.019, 103.549, 105.575, 106.637 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "de90a7f926c44ced630b4ced7e975602114af839",
+          "message": "The explorer's change marks are held to a contrast floor (#2421)\n\n* The explorer's change marks are held to a contrast floor (#2392)\n\nA branch's added and deleted marks in the explorer are drawn in\nstate.success and danger.base, the editor's diff gutters' marks, instead\nof the diff.*-text washes. The engine's PAIRS hold both on the window,\nthe row under the pointer and the selected row at the mark floor, and\nthe check measures a front with alpha laid over its background. The\nstylesheet guard fails when a change mark's colour is not held on each\nof those rows.\n\nPart of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The change-mark guard reads the file-name rules too (#2392)\n\nA name rule split out with its own colour is held on the window, the\nrow under the pointer and the selected row like the letter's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T19:31:07+04:00",
+          "tree_id": "f3433b5168fd760e9190cdb382245a9caf49a609",
+          "url": "https://github.com/purlis/purlis/commit/de90a7f926c44ced630b4ced7e975602114af839"
+        },
+        "date": 1792251800682,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.538608,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.533, 0.539, 0.542, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.738207000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.586, 16.622, 16.738, 17.203, 17.304 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.77592100000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.056, 103.556, 104.776, 105.101, 105.337 ms"
           }
         ]
       }
