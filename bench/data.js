@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792271931169,
+  "lastUpdate": 1792273280418,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16002,6 +16002,48 @@ window.BENCHMARK_DATA = {
             "value": 101.661214,
             "unit": "ms",
             "extra": "median of 5 runs: 99.963, 101.157, 101.661, 101.677, 102.072 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "3cbfd63f1b95107d3e0a3c8a05d9ed47fb3a4ad7",
+          "message": "Move same-user's ancestry tests to ancestry/tests.rs (#2383)\n\nMove only: the inline `mod tests { ... }` block becomes `ancestry/tests.rs`,\nde-indented and formatted, declared with `#[cfg(test)] mod tests;`.\nNo test's name or body changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T01:36:09+04:00",
+          "tree_id": "fd2ee45b9b60fc968bfde88e8c1ddaba3326c046",
+          "url": "https://github.com/purlis/purlis/commit/3cbfd63f1b95107d3e0a3c8a05d9ed47fb3a4ad7"
+        },
+        "date": 1792273278959,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5200914999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.501, 0.519, 0.520, 0.538, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.2507095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.959, 17.153, 17.251, 17.330, 17.338 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.32722849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.355, 103.843, 104.327, 105.046, 105.410 ms"
           }
         ]
       }
