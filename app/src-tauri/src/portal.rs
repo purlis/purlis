@@ -278,8 +278,10 @@ fn the_x_sessions_bus() -> Option<(String, Heard)> {
 /// replaces this process with the same binary, the same arguments and the same process id,
 /// and the only difference is the session bus. A restart that cannot happen is said on
 /// standard error and the launch goes on, slow, as it always did.
+///
+/// `reached` is the launch log's: the restart is a step of its own, said before the `exec`.
 #[cfg(target_os = "linux")]
-pub fn start_clear_of_a_silent_portal() {
+pub fn start_clear_of_a_silent_portal(reached: impl Fn(&str)) {
     use std::os::unix::process::CommandExt;
 
     let address = std::env::var(SESSION_BUS).ok();
@@ -298,6 +300,7 @@ pub fn start_clear_of_a_silent_portal() {
             Bus::Without { kept }
         }
     };
+    reached(&again.starting_again());
     let failed = match this_launch_again(&again) {
         Ok(mut command) => command.exec(),
         Err(err) => err,
@@ -318,6 +321,19 @@ pub enum Bus {
 }
 
 impl Bus {
+    /// The launch step a restart in place onto this bus is (`PURLIS_LAUNCH_LOG`). The launch
+    /// log shows `run() entered` again after it, and the time before it is the time the portal
+    /// was given ([`BUDGET`]): on a bus whose portal is silent, that is what a launch pays
+    /// before the app's clock starts again (#2389).
+    pub fn starting_again(&self) -> String {
+        let onto = match self {
+            Self::At(address) => format!("on the session bus at {address}"),
+            Self::Default => "on the session bus the standard lookup finds".to_owned(),
+            Self::Without { .. } => "without the session bus".to_owned(),
+        };
+        format!("the launch starts again in place, {onto}")
+    }
+
     /// The address to ask this bus's portal at: `runtime` is `$XDG_RUNTIME_DIR`, where the
     /// default one is looked for. `None` for no bus, and for a default one that is not there.
     pub fn where_to_ask(&self, runtime: Option<&std::path::Path>) -> Option<String> {
