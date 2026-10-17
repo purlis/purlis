@@ -732,7 +732,7 @@ a count the meta, a heading over a group the label.
 `app/src/primitives/text.test.ts` holds each class to this table through the stylesheet's own
 cascade, and `InboxScope.window.test.tsx` that the Inbox's rows are drawn with what they had
 before. `app/src/type.guard.test.ts` refuses a size, weight, line height, family or text colour
-written any other way, with an allowance that only shrinks; `design-system.md`
+written any other way, with no allowance (#2319); `design-system.md`
 (["Text roles"](design-system.md#text-roles)) has the rules, what a theme may change, where
 today's window still differs, and the order the surfaces move in.
 

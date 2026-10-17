@@ -23,6 +23,11 @@
 //!   of typed characters are kept as they typed them; both are kept out of every later answer
 //!   about every page of the browser, a page opened later included, whatever became of the
 //!   field. A press of the mouse and the hand-back read every field the person touched again.
+//!   A field keeps its latest value: a read drops the field's short earlier values that the new
+//!   one contains ([`KEPT_WHOLE_FROM`](super::super::kept::KEPT_WHOLE_FROM)), so what was typed
+//!   key by key is kept out whole, not as each short part on the way. What a key that neither
+//!   types nor deletes put into the field (a paste), and what the field holds after it, are
+//!   kept as they were, like a run.
 //!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
@@ -35,6 +40,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use super::super::kept::Kept;
 use super::super::keys::command_of;
 use super::super::tree::NodeKey;
 use super::{ACTIVE_ELEMENT, READ_VALUE};
@@ -302,6 +308,12 @@ impl Browser {
                 } else {
                     None
                 };
+                // A key that edits without typing or deleting (a paste, an undo) may put in text
+                // no run holds: what the field held before it is read, to tell what it put in.
+                let before = field
+                    .as_ref()
+                    .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
+                    .map(|field| self.field_holds(field));
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -316,8 +328,17 @@ impl Browser {
                 if let Some(field) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
-                    let held = self.field_holds(&field);
-                    lock(&self.inner.state).keep_out_everywhere(&[held]);
+                    let after = self.field_holds(&field);
+                    let mut held = Kept::default();
+                    if let Some(before) = before {
+                        // What the key put in is kept as it was put in, like a run, and so is
+                        // what the field holds after it: a paste over a selection may share its
+                        // ends with what it replaced.
+                        let [first, last] = put_in(&before, &after);
+                        held.run(&[first, last, after.clone()]);
+                    }
+                    held.field(&field.1, &[after]);
+                    lock(&self.inner.state).keep_out_everywhere(&held);
                     lock(&self.typing).touched.insert(field);
                 }
                 Ok(())
@@ -407,15 +428,18 @@ impl Browser {
             let touched: Vec<(String, NodeKey)> = typing.touched.iter().cloned().collect();
             (std::mem::take(&mut typing.dirty), runs, touched)
         };
-        let mut held = runs;
-        for field in &touched {
-            held.push(self.field_holds(field));
-        }
+        let mut held = Kept::default();
+        held.run(&runs);
         for target in dirty {
             let _ = self.snapshot_of(&target);
             if let Some(page) = lock(&self.inner.state).page(&target) {
-                held.extend(page.scrubbed.iter().cloned());
+                held.take_in(&page.scrubbed);
             }
+        }
+        // Each field is read last, from the field itself: what it holds now is the latest of
+        // its values, whatever its page's tree read before.
+        for field in &touched {
+            held.field(&field.1, &[self.field_holds(field)]);
         }
         lock(&self.inner.state).keep_out_everywhere(&held);
     }
@@ -508,6 +532,31 @@ impl Typing {
     }
 }
 
+/// What `after` holds that `before` did not: `after` without the beginning and the end the two
+/// share, matched from the beginning first and from the end first (they differ where what was
+/// put in begins or ends like what is next to it). Empty when nothing was put in (a selection
+/// alone, or a deletion).
+fn put_in(before: &str, after: &str) -> [String; 2] {
+    let before: Vec<char> = before.chars().collect();
+    let after: Vec<char> = after.chars().collect();
+    let shared = |a: &mut dyn Iterator<Item = &char>, b: &mut dyn Iterator<Item = &char>| {
+        a.zip(b).take_while(|(a, b)| a == b).count()
+    };
+    let start = shared(&mut before.iter(), &mut after.iter());
+    let end = shared(
+        &mut before[start..].iter().rev(),
+        &mut after[start..].iter().rev(),
+    );
+    let first: String = after[start..after.len() - end].iter().collect();
+    let end = shared(&mut before.iter().rev(), &mut after.iter().rev());
+    let start = shared(
+        &mut before[..before.len() - end].iter(),
+        &mut after[..after.len() - end].iter(),
+    );
+    let last: String = after[start..after.len() - end].iter().collect();
+    [first, last]
+}
+
 /// Whether the keys held make a chord rather than a character: Meta, or Control without Alt
 /// (Control with Alt is AltGr, which types; Alt alone is Option, which types too).
 fn commands(modifiers: Modifiers) -> bool {
@@ -581,5 +630,20 @@ fn button_bit(button: MouseButton) -> i64 {
         MouseButton::Left => 1,
         MouseButton::Right => 2,
         MouseButton::Middle => 4,
+    }
+}
+
+#[cfg(test)]
+mod put_in_tests {
+    use super::put_in;
+
+    #[test]
+    fn what_was_put_in_is_found_from_either_end() {
+        assert_eq!(put_in("ab", "abQb"), ["Qb".to_owned(), "bQ".to_owned()]);
+        assert_eq!(put_in("hello", "hello"), [String::new(), String::new()]);
+        assert_eq!(
+            put_in("", "zq7kp"),
+            ["zq7kp".to_owned(), "zq7kp".to_owned()]
+        );
     }
 }

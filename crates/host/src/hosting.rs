@@ -658,15 +658,9 @@ impl Hosting {
         Hosting::built(compose, run, hear, confine, Switch::in_memory(), None)
     }
 
-    /// A host whose starts `compose` composes, each run in a terminal of its own, which hears
-    /// no hooks and starts no confinement, with its kill switch kept in `folder`, its own, and
-    /// read from there now: a host started again while stopped starts nothing until the window
-    /// re-arms (ADR 0071). What `purlis serve` runs.
-    pub fn keeping_its_switch_in(folder: &Path, compose: impl Compose) -> Hosting {
-        Hosting::kept(folder, compose, Terminals, HearsNothing, ConfinesNothing)
-    }
-
-    /// [`Hosting::keeping_its_switch_in`], each start run by `run`.
+    /// A host whose starts `compose` composes and `run` runs, which hears no hooks and starts
+    /// no confinement, with its kill switch kept in `folder`, its own, and read from there now:
+    /// a host started again while stopped starts nothing until the window re-arms (ADR 0071).
     pub fn running_with_its_switch_in(
         folder: &Path,
         compose: impl Compose,
@@ -676,7 +670,8 @@ impl Hosting {
     }
 
     /// [`Hosting::with`], with its kill switch kept in `folder`, its own, and read from there
-    /// now (ADR 0071), and its host record kept there (#2007): what the window's host runs.
+    /// now (ADR 0071), and its host record kept there (#2007): what the window's host and
+    /// `purlis serve` run.
     pub fn kept(
         folder: &Path,
         compose: impl Compose,
