@@ -1081,11 +1081,29 @@ fn a_spool_that_is_not_what_it_should_be_is_reported_and_the_drain_reads_the_oth
     }
 }
 
-/// A hook's bounds on a disk that takes 20 ms to make a line durable, as a loaded machine's does.
+/// How many of [`sixteen_hooks_spooling_two_thousand_lines_for_one_chat_on_a_slow_disk_lose_none`]'s
+/// hooks are inside the slow disk now, and the most that ever were at once.
+static ON_THE_SLOW_DISK: [std::sync::atomic::AtomicUsize; 2] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 2];
+
+/// A hook's bounds on a disk that takes 20 ms to make a line durable, as a loaded machine's
+/// does, and that counts the hooks inside it at once ([`ON_THE_SLOW_DISK`]).
+///
+/// **The wait is a hang's, not a hook's** (#2410). What #983 holds is that no hook waits for
+/// another, and that is the count's to show: hooks that queued for each other would never be
+/// on the disk two at a time. A hook's own second ([`A_LINE_IS_SPOOLED_WITHIN`]) is a wall
+/// clock's, and a loaded runner's disk outlasted it with no hook waiting on another: six lines
+/// of sixteen hooks, all at one moment, while every other line was spooled. Giving up on a disk
+/// in time is held by `a_disk_that_does_not_take_the_line_in_time_is_given_up_on_...`.
 fn on_a_slow_disk() -> Bounds {
     Bounds {
+        wait: Duration::from_secs(60),
         a_line_reaches_the_disk: || {
+            use std::sync::atomic::Ordering::SeqCst;
+            let [now, most] = &ON_THE_SLOW_DISK;
+            most.fetch_max(now.fetch_add(1, SeqCst) + 1, SeqCst);
             std::thread::sleep(Duration::from_millis(20));
+            now.fetch_sub(1, SeqCst);
             Ok(())
         },
         ..Bounds::A_HOOKS
@@ -1094,7 +1112,8 @@ fn on_a_slow_disk() -> Bounds {
 
 /// Issue 983: hooks of one chat that spool at once never cost each other a line. Sixteen
 /// writers, two thousand lines, and a disk slow enough that a writer queued behind the others'
-/// syncs would run out of any wait a hook can afford.
+/// syncs would run out of any wait a hook can afford. That they never queue is shown by the
+/// event, hooks on the disk together, never by a wall clock (#2410).
 #[test]
 fn sixteen_hooks_spooling_two_thousand_lines_for_one_chat_on_a_slow_disk_lose_none() {
     const WRITERS: usize = 16;
@@ -1120,6 +1139,11 @@ fn sixteen_hooks_spooling_two_thousand_lines_for_one_chat_on_a_slow_disk_lose_no
         }
     });
 
+    let most = ON_THE_SLOW_DISK[1].load(std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        most > 1,
+        "no two hooks were ever on the disk at once, so each waited for the others' writes"
+    );
     let lost = lost.into_inner().unwrap();
     assert!(
         lost.is_empty(),
