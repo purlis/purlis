@@ -2421,6 +2421,21 @@ export const commands = {
 	workspace: string | null,
 } | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread, at })),
 	/**
+	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
+	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
+	 *  while it still has that digest (`purlis_core::theme::served`). As base64, as a file tab's
+	 *  image is (FM-2); the window makes a `FontFace` from the bytes, so no path and no address ever
+	 *  reach it.
+	 */
+	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
+	/**
+	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
+	 *  the window draws over every theme once Settings changed them. The window keeps them in its
+	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
+	 *  layout's `appearance` as JSON text.
+	 */
+	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
+	/**
 	 *  **Maps today's in-plane theme picks into the person's choices, once** (#2323,
 	 *  [`purlis_core::theme::levels::adopt`]): a sentence for each pick copied, which the window says
 	 *  in a Notice; none when there was nothing to copy.
@@ -2440,21 +2455,6 @@ export const commands = {
 	 *  the choice away. What Settings › Appearance › Your theme writes.
 	 */
 	themeChoose: (plane: PlaneId, workspace: string | null, theme: string | null, appearance: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_choose", { plane, workspace, theme, appearance })),
-	/**
-	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
-	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
-	 *  while it still has that digest (`purlis_core::theme::served`). As base64, as a file tab's
-	 *  image is (FM-2); the window makes a `FontFace` from the bytes, so no path and no address ever
-	 *  reach it.
-	 */
-	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
-	/**
-	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
-	 *  the window draws over every theme once Settings changed them. The window keeps them in its
-	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
-	 *  layout's `appearance` as JSON text.
-	 */
-	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`

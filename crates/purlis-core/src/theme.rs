@@ -61,15 +61,15 @@ use std::sync::OnceLock;
 use serde_json::Value;
 
 mod check;
-mod floors;
-mod fonts;
 pub mod choices;
+mod floors;
 mod folders;
+mod fonts;
 mod format;
 pub mod geometry;
 mod icons;
-mod person;
 pub mod levels;
+mod person;
 mod resolve;
 mod schema;
 mod tint;

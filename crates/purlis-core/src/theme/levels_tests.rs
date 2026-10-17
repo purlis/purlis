@@ -1047,3 +1047,48 @@ fn a_settings_pick_takes_effect_after_the_mapping() {
         ))
     );
 }
+
+// Every level's theme is drawn with the consent floors held (#2478) ---------------------------
+
+#[test]
+fn every_level_s_theme_is_drawn_with_the_consent_floors_held() {
+    let places = Places::new();
+    let breaks = json!({
+        "name": "Breaks",
+        "appearances": [{
+            "id": "dark",
+            "appearance": "dark",
+            "tokens": { "danger.text": "#301010", "danger.surface": "#301010" }
+        }]
+    });
+    put(&places.machine_themes(), "breaks", &breaks);
+    let theirs = load(&breaks).theme;
+    for levels in [
+        Levels {
+            workspace_choice: pick("breaks"),
+            ..Levels::default()
+        },
+        Levels {
+            workspace_default: pick("breaks"),
+            ..Levels::default()
+        },
+        Levels {
+            project_choice: pick("breaks"),
+            ..Levels::default()
+        },
+        Levels {
+            project_default: pick("breaks"),
+            ..Levels::default()
+        },
+        Levels {
+            machine_default: pick("breaks"),
+            ..Levels::default()
+        },
+    ] {
+        let got = drawn(&levels, &places.folders(Some("alpha")), None);
+        assert!(got.held.is_some(), "{:?}", got.level);
+    }
+    // Level 5 with no machine default: the person's own theme.json.
+    let got = drawn(&Levels::default(), &places.folders(None), Some(&theirs));
+    assert!(got.held.is_some());
+}

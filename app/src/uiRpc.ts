@@ -1259,7 +1259,10 @@ export const commands = {
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 	 */
-	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread })),
+	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean, at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread, at })),
 	themeFont: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
@@ -1268,6 +1271,14 @@ export const commands = {
 	 *  layout's `appearance` as JSON text.
 	 */
 	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
+	/**
+	 *  **Maps today's in-plane theme picks into the person's choices, once** (#2323,
+	 *  [`purlis_core::theme::levels::adopt`]): a sentence for each pick copied, which the window says
+	 *  in a Notice; none when there was nothing to copy.
+	 */
+	themeLevelsAdopt: (plane: PlaneId, workspace: string | null) => typedError<string[], string>(__TAURI_INVOKE("theme_levels_adopt", { plane, workspace })),
+	themeMoveIntoAFolder: __WINDOW_ONLY_RESULT,
+	themeChoose: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`

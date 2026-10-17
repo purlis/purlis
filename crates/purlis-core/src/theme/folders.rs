@@ -211,9 +211,7 @@ mod read {
 
     use std::path::{Component, Path};
 
-    use super::{
-        Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, plain_below,
-    };
+    use super::{Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, plain_below};
 
     const DIRECTORY: OFlags = OFlags::RDONLY
         .union(OFlags::DIRECTORY)
