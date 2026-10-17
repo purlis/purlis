@@ -43,7 +43,7 @@ tempfile = "3"
 portable-pty = "0.9"
 
 [workspace.lints.rust]
-# `deny`, not `forbid`, for exactly three audited blocks, each by the operator's ruling:
+# `deny`, not `forbid`, for exactly four audited blocks, each by the operator's ruling:
 # 1. `purlis_core::executor::inherit_nothing_else`, the `pre_exec` that closes every inherited
 #    descriptor in an extension's program (2026-09-23: "Allow one audited block");
 # 2. `purlis_same_user`'s `ancestry::pidinfo::read`, the `proc_pidinfo` call that reads a
@@ -52,9 +52,9 @@ portable-pty = "0.9"
 # 3. `purlis_linux_sandbox`'s `linux::notify::raw`, the seccomp notification calls of the Linux
 #    sandbox's supervisor (2026-10-16, #1040: one more small, isolated, audited module).
 # 4. `purlis-app`'s `specimen::photograph::snapshot`, WebKit's snapshot of the theme specimen's
-#    webview on macOS (#2330, for the operator's ruling).
+#    webview on macOS (2026-10-17, #2330: a fourth audited block, for the specimen snapshot).
 # `forbid` cannot be allowed anywhere, even there.
-# `crates/purlis-core/tests/three_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
+# `crates/purlis-core/tests/four_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
 # this lint appears anywhere else.
 unsafe_code = "deny"
 
