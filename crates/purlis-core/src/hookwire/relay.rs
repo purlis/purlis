@@ -483,8 +483,34 @@ pub struct Heeding {
     gone: Mutex<HashSet<u64>>,
     /// What each permission ask held here is told if the host lets it go first.
     held: Mutex<HashMap<u64, LetGo>>,
-    /// Where each running `secret exec`'s input goes.
-    inputs: Mutex<HashMap<u64, mpsc::Sender<String>>>,
+    /// The input of each `secret exec` handed on, by the number it was handed on as.
+    inputs: Mutex<HashMap<u64, Input>>,
+}
+
+/// **The input of one `secret exec`** (#2271). The window's link hears the exec on a thread of
+/// its own and its input, line by line, in order on another, so a line, and the input's end, can
+/// be heard before the exec has begun: what comes then is kept for it, or the exec would wait
+/// for an end it was never told of.
+enum Input {
+    /// The exec has not begun: what came for it waits in `from`, and `to` is gone once its input
+    /// ended.
+    Early {
+        to: Option<mpsc::Sender<String>>,
+        from: mpsc::Receiver<String>,
+    },
+    /// The exec runs, and reads what is sent here.
+    Running(mpsc::Sender<String>),
+    /// The exec ended before its input did: what still comes for it is dropped, not kept, until
+    /// the host says its input ended.
+    Ended,
+}
+
+impl Input {
+    /// What lines that come before the exec begins are kept in.
+    fn early() -> Input {
+        let (to, from) = mpsc::channel();
+        Input::Early { to: Some(to), from }
+    }
 }
 
 /// What a permission ask held in the window is told as it ends unanswered.
@@ -562,12 +588,26 @@ impl Heeding {
             }
             Heard::SecretExec(ask) => self.secret_exec(id, ask, reply),
             Heard::Input { of, line } => {
-                if let Some(input) = lock(&self.inputs).get(&of) {
-                    let _ = input.send(line);
+                let mut inputs = lock(&self.inputs);
+                let to = match inputs.entry(of).or_insert_with(Input::early) {
+                    Input::Early { to, .. } => to.as_ref(),
+                    Input::Running(to) => Some(&*to),
+                    Input::Ended => None,
+                };
+                if let Some(to) = to {
+                    let _ = to.send(line);
                 }
             }
             Heard::InputEnded { of } => {
-                lock(&self.inputs).remove(&of);
+                let mut inputs = lock(&self.inputs);
+                // A running exec reads to the end once its sender goes; one not begun yet is
+                // kept what came, and that it ended.
+                let from = match inputs.remove(&of) {
+                    Some(Input::Early { from, .. }) => from,
+                    Some(Input::Running(_) | Input::Ended) => return,
+                    None => mpsc::channel().1,
+                };
+                inputs.insert(of, Input::Early { to: None, from });
             }
         }
     }
@@ -622,8 +662,22 @@ impl Heeding {
 
     /// Runs a `secret exec` here, its input the lines the host hands on, its frames replied.
     fn secret_exec(&self, id: u64, ask: brokered::Ask, reply: Reply) {
-        let (input, lines) = mpsc::channel();
-        lock(&self.inputs).insert(id, input);
+        let lines = {
+            let mut inputs = lock(&self.inputs);
+            match inputs.remove(&id) {
+                Some(Input::Early { to, from }) => {
+                    if let Some(to) = to {
+                        inputs.insert(id, Input::Running(to));
+                    }
+                    from
+                }
+                _ => {
+                    let (to, from) = mpsc::channel();
+                    inputs.insert(id, Input::Running(to));
+                    from
+                }
+            }
+        };
         let reader = Box::new(std::io::BufReader::new(Lines {
             lines,
             pending: Vec::new(),
@@ -634,7 +688,12 @@ impl Heeding {
             pending: Vec::new(),
         });
         (self.hearing.secret_exec)(ask, reader, writer);
-        lock(&self.inputs).remove(&id);
+        {
+            let mut inputs = lock(&self.inputs);
+            if let Some(input @ Input::Running(_)) = inputs.get_mut(&id) {
+                *input = Input::Ended;
+            }
+        }
         reply(Replied::Ended);
     }
 }

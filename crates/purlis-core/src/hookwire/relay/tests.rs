@@ -69,7 +69,8 @@ struct Holding {
 
 /// The window's own hearing: it records what it hears, takes a report unless it is chat 13's,
 /// answers an ask with a ticket naming its connection, holds every permission ask for a
-/// minute, and runs a `secret exec` that writes back each input line it reads.
+/// minute, and runs a `secret exec` that writes back each input line it reads, unless it is
+/// chat 4's, which ends without reading any.
 fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
     Hearing {
         each: {
@@ -119,7 +120,10 @@ fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
         output: Box::new(|_| {}),
-        secret_exec: Box::new(|_, reader, mut writer| {
+        secret_exec: Box::new(|ask, reader, mut writer| {
+            if ask.chat == 4 {
+                return;
+            }
             for line in reader.lines() {
                 let line = line.unwrap();
                 writeln!(writer, "ran {line}").unwrap();
@@ -259,20 +263,106 @@ fn a_secret_exec_runs_in_the_window_on_what_its_asker_types() {
     let (window, holding) = a_window();
     let host = relayed(&window, &holding);
     let written = Arc::new(Mutex::new(Vec::new()));
+    let (ended, ran) = mpsc::channel();
 
-    (host.secret_exec)(
-        brokered::Ask {
-            chat: 3,
-            secret_exec: Default::default(),
-        },
-        Box::new(Cursor::new(b"one\ntwo\n".to_vec())),
-        Box::new(Shared(Arc::clone(&written))),
+    std::thread::spawn({
+        let written = Arc::clone(&written);
+        move || {
+            (host.secret_exec)(
+                brokered::Ask {
+                    chat: 3,
+                    secret_exec: Default::default(),
+                },
+                Box::new(Cursor::new(b"one\ntwo\n".to_vec())),
+                Box::new(Shared(written)),
+            );
+            let _ = ended.send(());
+        }
+    });
+
+    assert_eq!(
+        ran.recv_timeout(Duration::from_secs(10)),
+        Ok(()),
+        "the secret exec did not end; it wrote {:?}",
+        String::from_utf8_lossy(&written.lock().unwrap())
     );
-
     assert_eq!(
         String::from_utf8(written.lock().unwrap().clone()).unwrap(),
         "ran one\nran two\n"
     );
+}
+
+/// Hears `heard`, a `secret exec` handed on as `id`, on a thread of its own, as the window's
+/// link does, and answers what it replied up to its end: a panic naming what it replied where it
+/// does not end within seconds.
+fn an_exec_heard(heeding: &Arc<Heeding>, id: u64, chat: u32) -> Vec<Replied> {
+    let (replies, replied) = mpsc::channel();
+    let heeding = Arc::clone(heeding);
+    std::thread::spawn(move || {
+        let reply: Reply = Arc::new(move |r| {
+            let _ = replies.send(r);
+        });
+        let exec = Heard::SecretExec(brokered::Ask {
+            chat,
+            secret_exec: Default::default(),
+        });
+        heeding.hear(id, exec, reply);
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut heard = Vec::new();
+    while heard.last() != Some(&Replied::Ended) {
+        match replied.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(r) => heard.push(r),
+            Err(_) => panic!("the secret exec never ended; it replied {heard:?}"),
+        }
+    }
+    heard
+}
+
+fn input(of: u64, line: &str) -> Heard {
+    Heard::Input {
+        of,
+        line: line.into(),
+    }
+}
+
+/// The window's link hears a `secret exec` on a thread of its own and its input in order on
+/// another, so the input, and its end, can come before the exec has begun (#2271): the exec
+/// still reads every line, then the end, and ends.
+#[test]
+fn a_secret_execs_input_heard_before_it_began_is_still_read_to_its_end() {
+    let (window, holding) = a_window();
+    let heeding = Arc::new(Heeding::new(the_windows(&window, &holding)));
+    let nothing: Reply = Arc::new(|_| {});
+
+    heeding.hear(8, input(7, "one"), Arc::clone(&nothing));
+    heeding.hear(9, Heard::InputEnded { of: 7 }, nothing);
+
+    assert_eq!(
+        an_exec_heard(&heeding, 7, 3),
+        [
+            Replied::Wrote {
+                text: "ran one\n".into()
+            },
+            Replied::Ended
+        ]
+    );
+}
+
+/// Input that comes for a `secret exec` after it ended, and before the host says that input
+/// ended, is dropped, not kept for a later exec of the same number (#2271).
+#[test]
+fn a_secret_execs_input_heard_after_it_ended_is_not_kept() {
+    let (window, holding) = a_window();
+    let heeding = Arc::new(Heeding::new(the_windows(&window, &holding)));
+    let nothing: Reply = Arc::new(|_| {});
+
+    assert_eq!(an_exec_heard(&heeding, 1, 4), [Replied::Ended]);
+    heeding.hear(2, input(1, "late"), Arc::clone(&nothing));
+    heeding.hear(3, Heard::InputEnded { of: 1 }, Arc::clone(&nothing));
+    heeding.hear(4, Heard::InputEnded { of: 1 }, nothing);
+
+    assert_eq!(an_exec_heard(&heeding, 1, 3), [Replied::Ended]);
 }
 
 #[test]
