@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792265080333,
+  "lastUpdate": 1792266285852,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15792,6 +15792,48 @@ window.BENCHMARK_DATA = {
             "value": 104.998988,
             "unit": "ms",
             "extra": "median of 5 runs: 103.160, 104.715, 104.999, 105.277, 105.824 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "afe4a11e11cbd9103be02d34fb0d6acf3de7a9d7",
+          "message": "test: a sandboxed start runs the program's real path, on purpose (#2488) (#2513)\n\nCause: since the floor became the default (#2081), these tests' starts are\nsandboxed, and a sandboxed start runs the real file its check asked\n(ADR 0067, V87g: \"the file checked is the file run\"). On macOS a temp\nfolder's real path is /private/var/..., so two tests that expected the\npath as written failed in the nightly macOS job.\n\nThe product is right. The search's own premise (an absolute program is\nnever canonicalised or re-searched) is now asked with the sandbox opted\nout, and a new macOS test pins that a sandboxed start runs the real path.\nThe wrapper-order test compares against the real path.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T23:29:21+04:00",
+          "tree_id": "4e20a0355a53bb0e53083504eeb3a35f8a361bf6",
+          "url": "https://github.com/purlis/purlis/commit/afe4a11e11cbd9103be02d34fb0d6acf3de7a9d7"
+        },
+        "date": 1792266284470,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47278849999999994,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.446, 0.460, 0.473, 0.476, 0.477 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.24297,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.114, 16.164, 16.243, 16.359, 16.856 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.58890099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.921, 101.215, 101.589, 101.641, 102.570 ms"
           }
         ]
       }
