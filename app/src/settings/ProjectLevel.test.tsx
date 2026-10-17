@@ -1194,7 +1194,8 @@ describe("the Project level of a read-only project (#826)", () => {
     }
     // Every one is charter.local.toml's (the default profile, the environment, the profiles and
     // a profile's page, Your hosts, Your level), this machine's own (Network's folders), or writes nothing
-    // (a link, a Notice's Dismiss). A control that writes the
+    // (a link, a Notice's Dismiss). A service on this Mac's port and its scope are this
+    // machine's too (#1970). A control that writes the
     // committed file, or one this list does not name yet, fails here.
     expect(on).toEqual([
       "Harness & profiles: Default profile",
@@ -1215,6 +1216,8 @@ describe("the Project level of a read-only project (#826)", () => {
       // to the Dispatch page (#1759).
       "Network: Folders a block's Allow may name",
       "Network: Dismiss",
+      "Network: A service on this Mac",
+      "Network: Allowed for",
       "Network: Open that page",
       "Extensions: Go to Extensions…",
     ]);

@@ -279,6 +279,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         "allow_project_expects",
         "decline_project_expects",
         "allow_blocked_host",
+        "allow_sandbox_port",
         "forget_sandbox_block",
     ] {
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
