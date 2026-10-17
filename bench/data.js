@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792268852457,
+  "lastUpdate": 1792270423941,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15918,6 +15918,48 @@ window.BENCHMARK_DATA = {
             "value": 105.095899,
             "unit": "ms",
             "extra": "median of 5 runs: 103.438, 103.752, 105.096, 105.712, 109.068 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ffbbf98e40b9a813d45939274427c0f8db631376",
+          "message": "A theme sets geometry and fonts; density and font override are the person's (#2492)\n\n* A theme sets geometry and fonts; density and font override are the person's\n\nThe theme engine reads geometry tokens as numbers within documented\nbounds (refusing a value outside its bound with the bound named), a\ntheme's compact layer, and its UI, mono and terminal fonts from woff2\nfiles in its folder's fonts/, which purlis serves to the window by\ncontent digest. Density and a font override are the person's settings,\nread by the engine and drawn over every theme. Purlis Classic's values\nare core's, unchanged; the terminal reads the theme's terminal font.\n\nPart of #2313. Closes #2326.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Themes: the window's bindings, Settings' Density and fonts group, launch notices\n\nRegenerates the window's typed commands for theme_font and theme_person,\nlists Settings › You › Density and fonts in the catalogue, says what the\nengine put right in the person's settings at launch, and links ADR 0097\nto its amendments folder.\n\nPart of #2326.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Themes: review of #2492 (faces, terminal re-measure, compact, registry, icons path)\n\n- A face is made once per name and digest, its bytes asked for once per\n  digest, so two slots or two themes sharing a file each get their face.\n- A terminal face that arrives under the same family has xterm measure\n  its cells again (terminalFont.ts).\n- A theme's faces are served only once the theme is accepted.\n- A theme's compact defaults are never looser than its comfortable values.\n- The person's own icon set is a file beside theme.json or in its icons/.\n- The Settings rows count in actions.test.ts includes Density and fonts.\n\nPart of #2326.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Themes: theme_person is async, like its siblings\n\nThe window's command list holds every command off the main thread\nunless it says why not; theme_person reads nothing but has no reason\nto be the exception.\n\nPart of #2326.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T00:50:59+04:00",
+          "tree_id": "5b8cdb6ff6b80c86db1386d986112dd6b8a48feb",
+          "url": "https://github.com/purlis/purlis/commit/ffbbf98e40b9a813d45939274427c0f8db631376"
+        },
+        "date": 1792270422196,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.519707,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.497, 0.507, 0.520, 0.522, 0.531 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.115427500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.388, 16.916, 17.115, 17.223, 17.541 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.82396399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.851, 104.271, 104.824, 105.067, 106.039 ms"
           }
         ]
       }
