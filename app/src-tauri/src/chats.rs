@@ -1173,14 +1173,9 @@ impl Chats {
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
     ) -> Result<Armed, String> {
-        let shipped = &self.shipped;
         purlis_core::hoststart::armed(
             &self.project,
-            &purlis_core::hoststart::Kit {
-                binary: shipped.binary.clone(),
-                plugin: shipped.plugin.clone(),
-                git_hooks: None,
-            },
+            &self.kit(harness),
             harness,
             cwd,
             plugins,
@@ -2547,6 +2542,16 @@ impl Chats {
         harness.and(self.shipped.git_hooks.clone())
     }
 
+    /// What this app arms a chat of `harness` with ([`purlis_core::hoststart::Kit`]): its own
+    /// binary, its plugin, and its git hooks for a chat running a harness.
+    fn kit(&self, harness: Option<Harness>) -> purlis_core::hoststart::Kit {
+        purlis_core::hoststart::Kit {
+            binary: self.shipped.binary.clone(),
+            plugin: self.shipped.plugin.clone(),
+            git_hooks: self.git_hooks_for(harness),
+        }
+    }
+
     /// The one place a session is opened and a chat is remembered.
     ///
     /// Everything that differs between a profile chat and a shell chat is decided by the
@@ -2693,6 +2698,26 @@ impl Chats {
         // for a start; what a start begins (a run, its trust event, a first message, the
         // credentials it is handed) is not, since nothing starts: it is the run it was.
         let reattaching = self.reattaches(chat, why);
+        // What it is armed with, never written by it, and never where it writes. A chat
+        // reattached is not started, so it is never refused here: it is compared with the
+        // sandbox it would start in now, held as a start would hold it.
+        let kit_held;
+        let sandbox = match sandbox {
+            Some(applied) => {
+                let mut held = applied.clone();
+                let cwd = chat.cwd.clone().unwrap_or_else(|| self.project.clone());
+                let kit = self.kit(harness);
+                match held.hold_kit(kit.armed_with(), &cwd, &env) {
+                    Ok(()) => {
+                        kit_held = held;
+                        Some(&kit_held)
+                    }
+                    Err(_) if reattaching => Some(applied),
+                    Err(refused) => return Err(refused.to_string()),
+                }
+            }
+            None => None,
+        };
         // The persona it runs as is the one its environment names, which the core's start put
         // there (`purlis_core::start::ready`) and every hook in the chat resolves; a chat that
         // names none runs as the project's default.
@@ -6727,7 +6752,9 @@ pub(crate) mod tests {
         // opencode has no sandbox of its own, so the whole harness runs under the profile
         // charter writes, reaching the network through charter's proxy alone (ADR 0067 §2).
         let plane = a_sandboxed_plane();
-        let plugin = plane.path().join("plugin");
+        let plugin = crate::Shipped::default()
+            .plugin
+            .expect("the stand-in plugin");
         let shim = purlis_core::opencode::shim_in(&plugin);
         std::fs::create_dir_all(shim.parent().expect("a parent")).expect("the bundle");
         std::fs::write(&shim, "export default {}\n").expect("the shim");
@@ -6736,7 +6763,7 @@ pub(crate) mod tests {
         host.reporting_on(socket.clone());
         let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.path().join("charter")),
+            binary: crate::Shipped::default().binary,
             plugin: Some(plugin),
             shims: None,
             git_hooks: None,
@@ -6856,7 +6883,9 @@ pub(crate) mod tests {
     /// Chats on a pretend host armed to hand a sandbox to an opencode chat in `plane`, as the
     /// app ships it.
     fn armed_for_opencode(plane: &std::path::Path) -> (Chats, Pretend) {
-        let plugin = plane.join("plugin");
+        let plugin = crate::Shipped::default()
+            .plugin
+            .expect("the stand-in plugin");
         let shim = purlis_core::opencode::shim_in(&plugin);
         std::fs::create_dir_all(shim.parent().expect("a parent")).expect("the bundle");
         std::fs::write(&shim, "export default {}\n").expect("the shim");
@@ -6864,7 +6893,7 @@ pub(crate) mod tests {
         host.reporting_on(plane.join(".charter/app/hooks.sock"));
         let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.join("charter")),
+            binary: crate::Shipped::default().binary,
             plugin: Some(plugin),
             shims: None,
             git_hooks: None,
@@ -7291,8 +7320,8 @@ pub(crate) mod tests {
             }),
         );
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.join("charter")),
-            plugin: Some(plane.join("plugin")),
+            binary: crate::Shipped::default().binary,
+            plugin: crate::Shipped::default().plugin,
             shims: None,
             git_hooks: None,
         });
@@ -8454,7 +8483,7 @@ pub(crate) mod tests {
         let plane = a_sandboxed_plane();
         let mut chats = Chats::new();
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.path().join("charter")),
+            binary: crate::Shipped::default().binary,
             plugin: None,
             shims: None,
             git_hooks: None,
@@ -8473,8 +8502,8 @@ pub(crate) mod tests {
         let plane = a_sandboxed_plane();
         let mut chats = Chats::new();
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.path().join("charter")),
-            plugin: Some(plane.path().join("plugin")),
+            binary: crate::Shipped::default().binary,
+            plugin: crate::Shipped::default().plugin,
             shims: None,
             git_hooks: None,
         });
@@ -8496,8 +8525,8 @@ pub(crate) mod tests {
         let plane = a_sandboxed_plane();
         let mut chats = Chats::new();
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.path().join("charter")),
-            plugin: Some(plane.path().join("plugin")),
+            binary: crate::Shipped::default().binary,
+            plugin: crate::Shipped::default().plugin,
             shims: None,
             git_hooks: None,
         });
@@ -12045,10 +12074,12 @@ pub(crate) mod tests {
         )
         .expect("approved");
 
-        let plugin = root.join("plugin");
+        let plugin = crate::Shipped::default()
+            .plugin
+            .expect("the stand-in plugin");
         let mut chats = Chats::new();
         chats.arming_with(crate::Shipped {
-            binary: Some(root.join("charter")),
+            binary: crate::Shipped::default().binary,
             plugin: Some(plugin.clone()),
             shims: None,
             git_hooks: None,
@@ -12425,8 +12456,8 @@ pub(crate) mod tests {
         let mut chats =
             Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.path().join("charter")),
-            plugin: Some(plane.path().join("plugin")),
+            binary: crate::Shipped::default().binary,
+            plugin: crate::Shipped::default().plugin,
             shims: None,
             git_hooks: None,
         });
@@ -12459,8 +12490,8 @@ pub(crate) mod tests {
         let mut chats =
             Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
         chats.arming_with(crate::Shipped {
-            binary: Some(plane.path().join("charter")),
-            plugin: Some(plane.path().join("plugin")),
+            binary: crate::Shipped::default().binary,
+            plugin: crate::Shipped::default().plugin,
             shims: None,
             git_hooks: None,
         });
