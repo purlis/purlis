@@ -567,5 +567,4 @@ pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
 }
 
 #[cfg(test)]
-#[path = "proposals_tests.rs"]
 mod tests;
