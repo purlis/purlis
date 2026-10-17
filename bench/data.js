@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792263681008,
+  "lastUpdate": 1792265080333,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15750,6 +15750,48 @@ window.BENCHMARK_DATA = {
             "value": 105.8097895,
             "unit": "ms",
             "extra": "median of 5 runs: 103.779, 105.487, 105.810, 105.829, 107.707 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "9b6fefac727fa5fd45744b536eef9ebc7c0b37bb",
+          "message": "review(qw1977): a run leaves no named link behind; name the link's binding apart\n\nThe unwrapped, macOS and Linux runs of a tool declared under another name assert no `as-*`\nfolder is left in the exec folder. The binding that holds the run's link is `name_link`, so\nthe refusals' `named` later in the run does not shadow it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward",
+          "timestamp": "2026-10-17T23:19:37+04:00",
+          "tree_id": "8c2ae0df69b01c959e675b346d10be5b59f3cac8",
+          "url": "https://github.com/purlis/purlis/commit/9b6fefac727fa5fd45744b536eef9ebc7c0b37bb"
+        },
+        "date": 1792265078760,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5171735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.513, 0.517, 0.522, 0.533 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.14344,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.492, 16.960, 17.143, 17.219, 17.407 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.998988,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.160, 104.715, 104.999, 105.277, 105.824 ms"
           }
         ]
       }
