@@ -497,6 +497,21 @@ export type WindowLines = {
   count: number;
 };
 
+/**
+ * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
+ * sandbox's host, folder or local service, and a browser's sites. On these, each answer that
+ * allows is drawn in the primary style and every other in the plain one, so the two are told
+ * apart at a glance in every theme. A question's choices, a removal and a browser's reach are
+ * answers of another kind and keep their own looks.
+ */
+export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>([
+  "permission",
+  "sandbox-host",
+  "sandbox-write",
+  "sandbox-local",
+  "browser-site",
+]);
+
 /** What one ask's row offers, decided once for its stops and its drawing. */
 type Shape = {
   /** Why the chat waits, said in place of what it asked. */
@@ -761,10 +776,14 @@ function Ask({
                 type="button"
                 // The answer the source suggests is styled as the primary one, in its place
                 // (#2241): a persona's declared browser. Still only the person's press answers.
+                // On an ask of Allow and Keep blocked, every Allow is (ADR 0097 §6).
                 className={[
                   "ui-button inbox-answer",
                   option.allows ? "allows" : "",
-                  option.preselected === true ? "ui-button-primary" : "",
+                  option.preselected === true ||
+                  (option.allows && ALLOW_OR_KEEP.has(ask.source))
+                    ? "ui-button-primary"
+                    : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}

@@ -90,10 +90,11 @@ fn purlis_classic_is_one_theme_with_a_dark_and_a_light_appearance() {
 fn purlis_classic_draws_exactly_today_s_values() {
     // The sha-256 of today's `purlis-dark.json` and `purlis-light.json` tokens, taken before
     // they moved into the Classic folder (sorted keys, compact JSON). A changed value anywhere
-    // in Classic changes one of these.
+    // in Classic changes one of these. Dark's `needs-you.base` moved from `#b85050` to
+    // `#bd5654` for the mark on a hovered control (#2504).
     assert_eq!(
         digest(classic_dark()),
-        "60ed04613dd72ac5c7820da379788210a613c52bee38c8e875662fa90ea46853"
+        "b612dcdabecf1c81bbde32cb5a5c8f0bcc7774d0d70aac68e27cd8771136e9df"
     );
     assert_eq!(
         digest(classic_light()),

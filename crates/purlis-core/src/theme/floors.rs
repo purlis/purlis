@@ -5,12 +5,16 @@
 //! asks, the danger colours and the state marks whatever a theme says, every time a theme is
 //! drawn.
 //!
-//! A theme may set every token, the consent surfaces' and the state marks' included. Four floors
+//! A theme may set every token, the consent surfaces' and the state marks' included. Five floors
 //! hold for them:
 //!
 //! - **an ask contrasts with its surface** ([`Floor::Ask`]): an ask's words on the dialog it is
 //!   asked in, its answers' words on their buttons, what it says on the danger wash, and the
 //!   needs-you count's number on its chip;
+//! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): Allow is the primary
+//!   button, edged in `accent.base` on `accent.surface`, and Keep blocked the plain one, edged in
+//!   `border.strong` on `control.base`. The two edges are at least [`ALLOW_APART`] apart as OKLab
+//!   draws colour, as the theme writes them, and the Allow's edge contrasts with its ground;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
 //!   window draws it on;
@@ -41,6 +45,8 @@ use super::{Appearance, ResolvedTheme, built_in_for, tint};
 pub enum Floor {
     /// An ask contrasts with its surface.
     Ask,
+    /// Allow is distinguishable from Keep blocked.
+    AllowApart,
     /// The danger colours contrast with what they are drawn on.
     Danger,
     /// Danger is distinguishable from primary.
@@ -54,6 +60,7 @@ impl Floor {
     pub fn says(self) -> &'static str {
         match self {
             Self::Ask => "an ask contrasts with its surface",
+            Self::AllowApart => "Allow is distinguishable from Keep blocked",
             Self::Danger => "the danger colours contrast with what they are drawn on",
             Self::DangerApart => "danger is distinguishable from primary",
             Self::StateMarks => "the state marks meet the mark floor",
@@ -67,14 +74,25 @@ impl Floor {
 /// told apart at a glance, not on a second look.
 pub const DANGER_APART: f64 = 0.1;
 
+/// **How far apart Allow's edge and Keep blocked's are, at least**: the distance between
+/// `accent.base` and `border.strong` in OKLab, held as [`DANGER_APART`] is, for the same reason:
+/// two answers told apart at a glance, not on a second look.
+pub const ALLOW_APART: f64 = 0.1;
+
 /// The ask's pairs, by `front` on `back`: its words on the dialog it is asked in, its answers'
-/// words on their buttons, what it says on the danger wash, and the needs-you count on its chip.
-const ASK: [(&str, &str); 4] = [
+/// words on their buttons (Allow's and Keep blocked's), what it says on the danger wash, and the
+/// needs-you count on its chip.
+const ASK: [(&str, &str); 5] = [
     ("text.primary", "surface.overlay"),
     ("text.primary", "control.base"),
+    ("text.primary", "accent.surface"),
     ("text.primary", "danger.wash"),
     ("needs-you.text", "needs-you.base"),
 ];
+
+/// The pairs that keep Allow apart from Keep blocked, by `front` on `back`: the Allow's edge on
+/// its own ground, so the edge that tells it apart is seen.
+const ALLOW: [(&str, &str); 1] = [("accent.base", "accent.surface")];
 
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
 /// first when a floor fails.
@@ -88,6 +106,8 @@ fn is_consent(token: &str) -> bool {
 fn floor_of(pair: &Pair) -> Option<Floor> {
     if ASK.contains(&(pair.front, pair.back)) {
         Some(Floor::Ask)
+    } else if ALLOW.contains(&(pair.front, pair.back)) {
+        Some(Floor::AllowApart)
     } else if pair.front.starts_with("danger.") {
         Some(Floor::Danger)
     } else if pair.front.starts_with("state.") || pair.front == "needs-you.base" {
@@ -137,7 +157,8 @@ struct Failure {
 }
 
 /// Every consent floor `theme` breaks: the contrast floors as it is and tinted by every
-/// workspace colour, and danger apart from primary as the theme writes them.
+/// workspace colour, and Allow apart from Keep blocked and danger apart from primary as the
+/// theme writes them.
 fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
     let mut found = Vec::new();
     let tints = tint::PALETTE
@@ -155,6 +176,12 @@ fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
                 });
             }
         }
+    }
+    if allow_apart(theme) < ALLOW_APART {
+        found.push(Failure {
+            floor: Floor::AllowApart,
+            tokens: vec!["accent.base", "border.strong"],
+        });
     }
     if apart(theme) < DANGER_APART {
         found.push(Failure {
@@ -180,6 +207,12 @@ fn apart_of(one: &str, other: &str) -> f64 {
 /// How far `danger.base` is from `accent.base` in OKLab, as the theme writes them.
 pub(super) fn apart(theme: &ResolvedTheme) -> f64 {
     apart_of(theme.value("danger.base"), theme.value("accent.base"))
+}
+
+/// How far Allow's edge, `accent.base`, is from Keep blocked's, `border.strong`, in OKLab, as
+/// the theme writes them.
+pub(super) fn allow_apart(theme: &ResolvedTheme) -> f64 {
+    apart_of(theme.value("accent.base"), theme.value("border.strong"))
 }
 
 /// **`theme` with the consent floors held**: as it is when it clears them; otherwise with
