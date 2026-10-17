@@ -330,7 +330,13 @@ fn workspace_write(
         Forwarded::NotTaken(not) if !not.may_write_outside() => {
             let instead = match &write {
                 Write::WorkspaceVision { .. } => not.refusal("purlis workspace vision \"<text>\""),
-                _ => format!("{}: add it to workspace.md in the chat instead", not.why()),
+                // No command writes a section (D-1384-5), and a chat in a clone is refused the
+                // file by its sandbox (ADR 0067 §2), so the edit is not the only way named (#1598).
+                _ => format!(
+                    "{}: add it to workspace.md in the chat where its sandbox lets it, or ask the \
+                     person to",
+                    not.why()
+                ),
             };
             Err(format!("nothing was written: {instead}"))
         }
