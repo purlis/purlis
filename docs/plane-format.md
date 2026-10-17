@@ -4004,16 +4004,25 @@ given never writes it.
 
 ### `.charter/vaults/exec/` — a brokered run's credential files
 
-**Tier:** Clone state, transient — one file per `--file` or `--dotenv` credential of a running brokered `secret exec`; it lives for that run.
+**Tier:** Clone state, transient — one file per `--file` or `--dotenv` credential of a running brokered `secret exec`, and one folder of a link per run of a tool declared under another name; each lives for that run.
 
 A folder made `0700` by the app the first time a sandboxed chat's `purlis secret exec` asks it
 for a `--file` or `--dotenv` credential (#1407, `crates/purlis-core/src/secrets/brokered.rs`).
 Each file is `charter-secret-<12 random characters>`, `0600`, holding one value or one dotenv
 body: **it holds values in plaintext** while the run lasts. It is inside the vaults folder,
 which every sandboxed chat is denied, and only the run's own sandbox is given back a read of
-its file. The run removes the file when the command ends. The app removes any it finds when it
-opens the project, so one left by a crash or a kill does not outlive the next launch. The app
-refuses to use the folder when the vaults folder or `exec/` is a link. FR-10 never copies it.
+its file. The run removes the file when the command ends.
+
+A run of a persona's tool declared under a name its program's file does not have (#1977) also
+gets a folder `as-<random characters>/` here, holding one link with the tool's declared name
+to the program the tool resolved to: the run starts that link, so the program sees the declared
+name. It holds no value. Only the run's own sandbox is given back a read of the link, and the
+run removes the folder when the command ends.
+
+The app removes every `charter-secret-*` file and `as-*` folder it finds when it opens the
+project, so one left by a crash or a kill does not outlive the next launch; it removes a
+folder's links without following them, and leaves anything else alone. The app refuses to use
+the folder when the vaults folder or `exec/` is a link. FR-10 never copies it.
 
 ### `.charter/vaults/<name>.json` — reference vault (same path, different content)
 

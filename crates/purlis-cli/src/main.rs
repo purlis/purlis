@@ -50,6 +50,7 @@ mod secret;
 mod session;
 mod shellguard;
 mod statusline;
+mod theme;
 mod voice;
 mod whereworking;
 
@@ -132,6 +133,11 @@ enum Command {
     /// Harness profiles: which program a chat runs, and with what environment.
     #[command(subcommand)]
     Harness(HarnessCommand),
+
+    /// Themes: every theme available here and where it comes from, and the theme check of
+    /// any one of them — its errors, its contrast warnings and its hard floors.
+    #[command(subcommand)]
+    Theme(theme::ThemeCommand),
 
     /// Profiles: one identity of a harness each, and how it signs in.
     #[command(subcommand)]
@@ -917,6 +923,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
+        // This machine's themes: nothing of a project's is read or written.
+        | Command::Theme(_)
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
@@ -3042,6 +3050,7 @@ fn run(command: Command) -> Result<u8, String> {
         | Command::Init(_)
         | Command::Reinit
         | Command::News(_)
+        | Command::Theme(_)
         | Command::Stop { .. }
         | Command::Update { .. }
         | Command::Version { .. }
@@ -4287,6 +4296,9 @@ fn main() -> ExitCode {
             });
         }
         Command::Stop { .. } => return stop_every_agent(),
+        // `theme` reads this machine's themes and needs no plane; it chooses its own exit, a
+        // linter's (`theme.rs`).
+        Command::Theme(command) => return theme::run(command),
         // `news` and `update` say several lines of their own on both streams and choose their
         // own exit status, exactly as `init` does.
         Command::News(news) => {

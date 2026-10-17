@@ -680,7 +680,10 @@ fn a_wrapper_profiles_own_words_come_before_everything_the_app_adds() {
     let hooks = armed(Harness::ClaudeCode, plane.root());
     let line = ready.command_line(hooks.clone());
 
-    assert_eq!(ready.program, bin.display().to_string());
+    // The wrapper's real path: a sandboxed start runs the file its check asked (ADR 0067,
+    // V87g), and on macOS a temp folder's real path is `/private/var/…` (#2488).
+    let real = bin.canonicalize().expect("the wrapper's real path");
+    assert_eq!(ready.program, real.display().to_string());
     assert_eq!(
         line[0], "work",
         "the wrapper's subcommand is first: {line:?}"

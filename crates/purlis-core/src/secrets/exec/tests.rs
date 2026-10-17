@@ -563,3 +563,52 @@ fn the_handlers_are_gone_once_exec_returns() {
         "exec's handlers no longer record a signal"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_program_started_under_another_name_does_what_that_name_says() {
+    let Some(xz) = crate::testmulticall::xz() else {
+        let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
+        return;
+    };
+    let (tmp, ctx) = plane(serde_json::json!({}), &[]);
+    let file = crate::testmulticall::packed(&xz, tmp.path(), "unpacked\n");
+    // `xz -c` packs again; started as `unxz`, the same program unpacks.
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            env: vec!["T=TOKEN".into()],
+            argv0: Some("unxz".into()),
+            ..req(vec![
+                xz.display().to_string(),
+                "-c".into(),
+                file.display().to_string(),
+            ])
+        },
+    );
+    assert_eq!(rec.errors(), Vec::<&str>::new());
+    assert_eq!(code, 0);
+    assert_eq!(rec.out(), "unpacked\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_link_runs_the_git_command_its_name_says() {
+    let Some(git) = crate::testmulticall::git() else {
+        let _ = writeln!(std::io::stderr(), "skipped: no git on this machine");
+        return;
+    };
+    let (_tmp, ctx) = plane(serde_json::json!({}), &[]);
+    // `git` alone prints its usage and fails; started as `git-version`, it is `git version`.
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            env: vec!["T=TOKEN".into()],
+            argv0: Some("git-version".into()),
+            ..req(vec![git.display().to_string()])
+        },
+    );
+    assert_eq!(rec.errors(), Vec::<&str>::new());
+    assert_eq!(code, 0);
+    assert!(rec.out().starts_with("git version "), "{}", rec.out());
+}

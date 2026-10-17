@@ -562,6 +562,32 @@ fn a_credential_file_left_behind_is_swept_when_the_project_opens() {
 }
 
 #[test]
+fn a_named_link_left_behind_is_swept_and_what_it_points_at_is_kept() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let dir = private_dir(&ctx.vaults_dir()).unwrap();
+    // What a run's link points at, and a folder a link of the same shape points at.
+    let program = project.path().join("work/xz");
+    std::fs::write(&program, "the program").unwrap();
+    let elsewhere = project.path().join("work/elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("kept"), "kept").unwrap();
+    // A crash mid-run leaves its folder and its link.
+    let (left, link) = named_link(&dir, "unxz", &program).unwrap();
+    let left = left.keep();
+    std::os::unix::fs::symlink(&elsewhere, dir.join("as-a-link")).unwrap();
+    sweep(&ctx);
+    assert!(!left.exists(), "the run's folder is swept");
+    assert!(std::fs::symlink_metadata(&link).is_err());
+    assert_eq!(std::fs::read_to_string(&program).unwrap(), "the program");
+    assert!(
+        std::fs::symlink_metadata(dir.join("as-a-link")).is_ok(),
+        "a link is not a folder a run makes"
+    );
+    assert!(elsewhere.join("kept").exists(), "nothing behind a link");
+}
+
+#[test]
 fn a_file_credential_is_kept_where_chats_are_denied_and_removed_after() {
     let project = project();
     let mut want = wanted(
@@ -3930,4 +3956,135 @@ fn only_a_marked_secret_exec_is_tried_again_through_the_app() {
             assert_eq!(code, Some(1));
         }
     }
+}
+
+/// `asker`, whose chat's start armed the tool `name` of `vault` handing `X=TOKEN`, found as
+/// `program`: a tool declared under a name its program's file does not have (#1977).
+fn armed_as(mut asker: Asker, name: &str, vault: &str, program: &Path) -> Asker {
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    asker
+        .confines
+        .as_mut()
+        .expect("sandboxed")
+        .tools
+        .push(Ready {
+            tool: Tool::one(name, vault, "X", Handed::Env, "TOKEN"),
+            program: program.to_path_buf(),
+        });
+    asker
+}
+
+/// Every folder of a run's named link left in the project at `root`'s exec folder.
+fn named_links_left(root: &Path) -> Vec<PathBuf> {
+    let exec = Ctx::new(root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    std::fs::read_dir(exec)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(NAMED_PREFIX)
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
+#[test]
+fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
+    let Some(xz) = crate::testmulticall::xz() else {
+        let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
+        return;
+    };
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let file = crate::testmulticall::packed(&xz, &root.join("work"), "unpacked\n");
+    // `unxz` is a link to xz: the chat runs the program the link resolves to, by its path.
+    let asker = armed_as(asker(&root, Some("devops")), "unxz", "team", &xz);
+    let mut want = wanted(
+        &root,
+        "team",
+        vec![
+            xz.display().to_string(),
+            "-c".into(),
+            file.display().to_string(),
+        ],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    // `xz -c` would pack it again: started as `unxz`, the same program unpacks.
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    assert!(frames.contains(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        named_links_left(&root),
+        Vec::<PathBuf>::new(),
+        "the run's link went with it"
+    );
+}
+
+/// [`a_tool_declared_under_another_name_runs_its_program_under_that_name`] in the run's
+/// sandbox, applied for real where this machine can apply one: macOS's `gunzip` is also its
+/// `zcat`, which writes what it unpacks to standard output.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
+    let can_apply = crate::forklock::status(
+        std::process::Command::new(crate::sandbox::backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]),
+    )
+    .is_ok_and(|s| s.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let packed = crate::forklock::spawn(
+        std::process::Command::new("/usr/bin/gzip")
+            .arg("-c")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped()),
+    )
+    .and_then(|mut child| {
+        child.stdin.take().unwrap().write_all(b"unpacked\n")?;
+        child.wait_with_output()
+    })
+    .unwrap();
+    let file = root.join("work/packed.gz");
+    std::fs::write(&file, packed.stdout).unwrap();
+    let asker = armed_as(
+        asker(&root, Some("devops")),
+        "zcat",
+        "team",
+        Path::new("/usr/bin/gunzip"),
+    );
+    let mut want = wanted(
+        &root,
+        "team",
+        vec!["/usr/bin/gunzip".into(), file.display().to_string()],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_wrapped(&asker, want, reader, Box::new(wire.clone()), Wrap::Seatbelt);
+    let text = String::from_utf8(wire.0.lock().unwrap().clone()).unwrap();
+    let frames: Vec<Frame> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    // As `gunzip` it would unpack beside the file and say nothing.
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    assert!(file.exists(), "the packed file is left as it was");
+    assert_eq!(
+        named_links_left(&root),
+        Vec::<PathBuf>::new(),
+        "the run's link went with it"
+    );
 }
