@@ -9,7 +9,12 @@
 //!
 //! A child has three states only (ADR 0076 §6): it is `working` from the first hook that names
 //! it, `completed` at its own `SubagentStop`, or it ends with its parent, in the parent's end
-//! state, when the parent ends first. The board's words for those are [`State::Running`],
+//! state, when the parent ends first. A completed child its parent gives another turn (Codex's
+//! `send_input`, a resumed Claude Code sub-agent) is heard again under the same `agent_id`
+//! (#2455): that turn is a **second child run** of the same agent, `working` again from the
+//! hook that says it is at work, and `completed` at its next `SubagentStop`. The run that
+//! completed stays completed, as ADR 0076 ends a run exactly once; the board shows the agent's
+//! latest run. The board's words for those are [`State::Running`],
 //! [`State::Done`] and whatever the chat ended as. **No child move changes the chat's own
 //! state**: a child's asks come on its parent's hooks and are the chat's.
 
@@ -57,13 +62,37 @@ impl Children {
         &self.list
     }
 
-    /// A hook named `agent`. A child seen for the first time is `working`; one already known,
-    /// live or ended, stays as it is, and an id that is not one ([`is_agent_id`]) is no child. Answers whether anything a reader can see changed.
+    /// A hook named `agent` that says nothing of new work: its session, its `Stop`. A child
+    /// seen for the first time is `working`; one already known, live or ended, stays as it is,
+    /// and an id that is not one ([`is_agent_id`]) is no child. Answers whether anything a
+    /// reader can see changed.
     pub fn seen(&mut self, agent: &str) -> bool {
         if !is_agent_id(agent) || self.list.iter().any(|child| child.agent == agent) {
             return false;
         }
         self.add(agent, State::Running)
+    }
+
+    /// A hook named `agent` that says it is at work: a prompt, a tool call or an ask (#2455).
+    /// A child seen for the first time is `working`, as at [`Children::seen`]; one that
+    /// completed is given another turn, and works again until its next `SubagentStop`.
+    ///
+    /// Every child that is not working is taken to have completed at its own stop: one that
+    /// ended with its parent is never heard again, because its chat has ended and passes no
+    /// hook of it on (`Chat::child_heard`, `Chat::child_said`). Answers whether anything a
+    /// reader can see changed.
+    pub fn at_work(&mut self, agent: &str) -> bool {
+        if !is_agent_id(agent) {
+            return false;
+        }
+        match self.list.iter_mut().find(|child| child.agent == agent) {
+            Some(child) if child.state == State::Running => false,
+            Some(child) => {
+                child.state = State::Running;
+                true
+            }
+            None => self.add(agent, State::Running),
+        }
     }
 
     /// `agent`'s own `SubagentStop`: it completed. One never seen before is shown completed,
@@ -152,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn a_child_completes_at_its_own_stop_and_a_later_hook_does_not_bring_it_back() {
+    fn a_child_completes_at_its_own_stop_and_a_later_hook_saying_no_work_does_not_bring_it_back() {
         let mut children = Children::default();
         children.seen("a1");
 
@@ -161,6 +190,30 @@ mod tests {
         assert!(!children.seen("a1"));
 
         assert_eq!(states(&children), [("a1", State::Done)]);
+    }
+
+    #[test]
+    fn a_completed_child_given_another_turn_works_again_until_its_next_stop() {
+        let mut children = Children::default();
+        children.seen("a1");
+        children.ended("a1");
+
+        assert!(children.at_work("a1"));
+        assert!(!children.at_work("a1"), "working already");
+        assert_eq!(states(&children), [("a1", State::Running)]);
+
+        assert!(children.ended("a1"));
+        assert_eq!(states(&children), [("a1", State::Done)]);
+    }
+
+    #[test]
+    fn a_child_first_heard_at_work_is_working_and_an_id_that_is_none_is_no_child() {
+        let mut children = Children::default();
+
+        assert!(children.at_work("a1"));
+        assert!(!children.at_work("a b"));
+
+        assert_eq!(states(&children), [("a1", State::Running)]);
     }
 
     #[test]
