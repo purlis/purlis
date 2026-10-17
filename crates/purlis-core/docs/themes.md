@@ -107,7 +107,7 @@ is refused, **2** when there is no such theme.
 ```json
 {
   "schema": 1,
-  "theme_schema": "https://raw.githubusercontent.com/purlis/purlis/v0.4.2/docs/schema/theme.v2.schema.json",
+  "theme_schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "theme": {"id": "mine", "name": "Dim",
             "appearances": [{"id": "dark", "appearance": "dark", "high_contrast": false}],
             "options": [], "combinations": 1,

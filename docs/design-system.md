@@ -279,7 +279,7 @@ rewrites the file; the next pick made in Settings writes the new id.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/purlis/purlis/v0.4.2/docs/schema/theme.v2.schema.json",
+  "$schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "name": "Dusk",
   "extends": "purlis-classic",
   "palette": { "lavender": "#b4a7f5" },

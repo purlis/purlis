@@ -6,7 +6,7 @@
 //!
 //! [`super::schema`] says what format 2 is; this module says where an editor finds it. The
 //! address names two things: the format, in the file's name (`theme.v2.schema.json`), and the
-//! release of purlis that wrote it, as the release's tag in the repository (`v0.4.2`). A theme
+//! release of purlis that wrote it, as the release's tag in the repository (`v<version>`). A theme
 //! written by one purlis names the schema that purlis reads, so an editor never completes a
 //! token an older purlis does not know, and every release's schema stays at its address for as
 //! long as the tag does. purlis itself never fetches it (ADR 0083 amendment of 2026-10-17).
@@ -47,7 +47,14 @@ mod promise {
         "description",
         "examples",
         "default",
+        "deprecated",
+        "markdownDescription",
+        "enumDescriptions",
     ];
+
+    /// Keywords whose effect on what a schema accepts this comparison cannot judge: one
+    /// anywhere in the later schema is a narrowing until the comparison is taught it.
+    const UNJUDGED: &[&str] = &["not", "if", "then", "else", "oneOf"];
 
     /// Bounds a later schema may lower or drop, never raise or add.
     const LOWER: &[&str] = &[
@@ -74,7 +81,9 @@ mod promise {
     pub fn narrowings(before: &Value, after: &Value) -> Vec<String> {
         let mut found = Vec::new();
         compare(before, after, "", &mut found);
+        unjudged(after, "", &mut found);
         found.sort();
+        found.dedup();
         found
     }
 
@@ -92,6 +101,36 @@ mod promise {
             }
             (Value::Object(before), Value::Object(after)) => objects(before, after, at, found),
             _ => found.push(format!("{}: not a schema", shown(at))),
+        }
+    }
+
+    /// Every [`UNJUDGED`] keyword in `schema`, wherever it is. The keys of `properties`,
+    /// `patternProperties` and `$defs` are names, not keywords, so only their values are read.
+    fn unjudged(schema: &Value, at: &str, found: &mut Vec<String>) {
+        let Value::Object(fields) = schema else {
+            if let Value::Array(items) = schema {
+                for (n, item) in items.iter().enumerate() {
+                    unjudged(item, &format!("{at}/{n}"), found);
+                }
+            }
+            return;
+        };
+        for (key, value) in fields {
+            let here = format!("{at}/{key}");
+            if UNJUDGED.contains(&key.as_str()) {
+                found.push(format!(
+                    "{here}: a keyword this check cannot judge; teach \
+                     `theme::published::narrowings` whether it narrows"
+                ));
+            }
+            match (key.as_str(), value) {
+                ("properties" | "patternProperties" | "$defs", Value::Object(named)) => {
+                    for (name, one) in named {
+                        unjudged(one, &format!("{here}/{name}"), found);
+                    }
+                }
+                _ => unjudged(value, &here, found),
+            }
         }
     }
 
@@ -177,7 +216,7 @@ mod promise {
                         compare(&was_one, &now_one, &format!("{here}/{n}"), found);
                     }
                 }
-                "anyOf" | "oneOf" => match (was.and_then(Value::as_array), now) {
+                "anyOf" => match (was.and_then(Value::as_array), now) {
                     (_, None) => {}
                     (None, Some(_)) => found.push(format!("{here}: a new constraint")),
                     (Some(was_branches), Some(now)) => {
