@@ -213,13 +213,25 @@ fn on_macos_an_agent_launchd_starts_for_this_user_is_not_the_suites() {
     // (nbagent, mdworker_shared, CoreSimulator's services…), each with launchd as its parent
     // and its program in the system's own folders. They are not the suite's, and counting them
     // failed every nightly part and killed them. A process the suite left behind is reparented
-    // to launchd too, so it is the program's folder that tells them apart; and Linux, where
-    // the check has never miscounted, keeps counting every one.
+    // to launchd too, so it is the program's folder that tells them apart, read as the kernel's
+    // path of its executable and never its arguments: `/usr/sbin`'s lsof and sysctl, which
+    // purlis runs, still count, and so does a process whose arguments only claim a system
+    // folder. Linux, where the check has never miscounted, keeps counting every one.
     let dir = tempfile::tempdir().expect("a directory");
     let state = dir.path().join("calls");
     let ps = format!(
         "#!/bin/sh\n\
          me=$(id -u)\n\
+         case \"$*\" in *comm=*)\n\
+         echo '    1 /sbin/launchd'\n\
+         echo '  901 /System/Library/PrivateFrameworks/Noticeboard.framework/Versions/A/Resources/nbagent.app/Contents/MacOS/nbagent'\n\
+         echo '  902 /usr/libexec/proactiveeventtrackerd'\n\
+         echo '  903 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimLaunchHost.arm64.xpc/Contents/MacOS/SimLaunchHost.arm64'\n\
+         echo '  904 /bin/sleep'\n\
+         echo '  905 /usr/sbin/lsof'\n\
+         echo '  906 /bin/sh'\n\
+         exit 0;;\n\
+         esac\n\
          n=$(cat '{state}' 2>/dev/null || echo 0)\n\
          echo $((n + 1)) > '{state}'\n\
          echo '    1     0     0 Fri Oct 17 16:00:00 2026 /sbin/launchd'\n\
@@ -228,11 +240,20 @@ fn on_macos_an_agent_launchd_starts_for_this_user_is_not_the_suites() {
          echo \"  902     1 $me Fri Oct 17 16:01:00 2026 /usr/libexec/proactiveeventtrackerd\"\n\
          echo \"  903     1 $me Fri Oct 17 16:01:00 2026 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimLaunchHost.arm64.xpc/Contents/MacOS/SimLaunchHost.arm64\"\n\
          echo \"  904     1 $me Fri Oct 17 16:01:00 2026 /bin/sleep 47.2458\"\n\
+         echo \"  905     1 $me Fri Oct 17 16:01:00 2026 /usr/sbin/lsof -nP -p 4242\"\n\
+         echo \"  906     1 $me Fri Oct 17 16:01:00 2026 /System/Library/CoreServices/only-its-arguments-say-so\"\n\
          fi\n",
         state = state.display()
     );
     for (os, counted) in [
-        ("Darwin", &["/bin/sleep 47.2458"][..]),
+        (
+            "Darwin",
+            &[
+                "/bin/sleep 47.2458",
+                "/usr/sbin/lsof -nP -p 4242",
+                "only-its-arguments-say-so",
+            ][..],
+        ),
         (
             "Linux",
             &[
@@ -240,6 +261,8 @@ fn on_macos_an_agent_launchd_starts_for_this_user_is_not_the_suites() {
                 "nbagent",
                 "/usr/libexec/proactiveeventtrackerd",
                 "SimLaunchHost.arm64",
+                "/usr/sbin/lsof -nP -p 4242",
+                "only-its-arguments-say-so",
             ][..],
         ),
     ] {

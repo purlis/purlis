@@ -722,13 +722,9 @@ jobs:
   # builds every test binary and runs a third of each one's tests (`count:`), and a red night
   # still saves its build (`cache-on-failure`), so the next night starts from it.
   #
-  # Measured on #2468 (2026-10-17, no cache): the builds took 9, 17 and 22 minutes, and the
-  # tests of the one part that finished 17; the other two were cancelled at 45 minutes, 21
-  # and 26 minutes into their tests. So each part has 60 minutes, and the app's `behaviour`
-  # tests are left out here until #2464: on macOS each takes some 160 s where Linux takes
-  # under 10 (about 1,000 s a part), and the Linux `rust` job runs them on every pull request.
-  # So set, the three parts took 16.6 + 28.9, 18.0 + 17.6 and 18.4 + 17.7 minutes (build +
-  # tests, still with no cache).
+  # Each part has 60 minutes, and the app's `behaviour` tests are left out here until #2464: on
+  # macOS each takes some 160 s where Linux takes under 10, and the Linux `rust` job runs them
+  # on every pull request. What each part took, measured, is in #2468.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
