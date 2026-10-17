@@ -260,7 +260,7 @@ fn a_waiting_chat_is_woken_with_the_line_and_a_busy_one_when_its_turn_ends() {
     assert_eq!(tell(State::Waiting, true), Told::NotSent);
 
     let line = super::finished(&back).line();
-    assert_eq!(*sent.lock().unwrap(), [line.clone()]);
+    assert_eq!(*sent.lock().unwrap(), std::slice::from_ref(&line));
     assert_eq!(*next_turn.lock().unwrap(), [line]);
 }
 
