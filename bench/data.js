@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792225634777,
+  "lastUpdate": 1792226898957,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15204,6 +15204,48 @@ window.BENCHMARK_DATA = {
             "value": 104.71075200000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.571, 104.480, 104.711, 105.108, 105.258 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "346d1791736274a6052a82fc59a3defcb1b2fcde",
+          "message": "panes e2e: the fifty-sessions test stops opening when it times out, so its after ends every chat it started (#2404)\n\n* test(e2e): probe a forced timeout in the fifty-sessions test (#2367, red, to be removed)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* test(e2e): the fifty-sessions test stops opening once it is over, so its after ends every chat it started (#2367)\n\nCause: a test that runs out of time is not stopped by mocha or WebdriverIO. The\nfifty-sessions body went on pressing New tab under the tests and the after that\nfollowed it, so the after ended the chats it had counted while more opened\nbehind it, and the root guard found them (PR #1934: sessions 42..48).\n\nThe opening loop now checks a stop flag before every press; an afterEach and\nthe after set it and wait for the open in flight to settle, and only then does\nthe after end, by number, every chat the file started.\n\nThe chatsLeft guard stays on close_session: it must stay bounded, and the file\nit names is already red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* test(e2e): remove the forced-timeout probe; the stop says why it stopped (#2367)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* test(e2e): each fifty-sessions opening carries its own stop flag, and a loop that fails after its test is logged (#2367)\n\nReview: a latched module-level flag would stop a retry at once; the opening's\npromise and flag are now one per-run object. stopOpening logs the loop's error\ninstead of dropping it. The after no longer stops the opening a second time:\nafterEach runs after every test, the last one too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T12:33:06+04:00",
+          "tree_id": "c9c752d9037d38c822a35651f4f9af507900e911",
+          "url": "https://github.com/purlis/purlis/commit/346d1791736274a6052a82fc59a3defcb1b2fcde"
+        },
+        "date": 1792226897290,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.447094,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.419, 0.436, 0.447, 0.455, 0.458 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.415939,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.300, 16.315, 16.416, 16.446, 16.471 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8056735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.464, 101.788, 101.806, 102.018, 102.082 ms"
           }
         ]
       }
