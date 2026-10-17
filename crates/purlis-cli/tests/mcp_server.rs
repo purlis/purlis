@@ -649,11 +649,42 @@ mod the_server_says_it {
     use super::*;
     use purlis_core::harness::model::Prompt;
     use purlis_core::hookwire::{
-        CHAT_ENV, HARNESS_ENV, Hearing, Listener, Report, SOCKET_ENV, TOKEN_ENV,
+        CHAT_ENV, HARNESS_ENV, Hearing, Listener, Report, SOCKET_ENV, TOKEN_ENV, spool,
     };
     use purlis_core::state::{Event, Notified};
+    use std::cell::RefCell;
     use std::sync::{Mutex, mpsc};
-    use std::time::Duration;
+
+    /// The chat the host issued its token to.
+    const CHAT: u32 = 7;
+
+    /// How the host hears a report.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Hears {
+        /// At once.
+        AtOnce,
+        /// Not until the test lets it go ([`Host::let_go`]): far past the 250 ms a server waits
+        /// for it (`A_NOTICE_TAKES_AT_MOST`), so the server spools its line.
+        WhenLetGo,
+    }
+
+    /// A report the host was told: recorded by it live, or spooled beside its socket for the
+    /// next drain, as `deliver_report` does when the host is slower than it waits.
+    #[derive(Debug)]
+    enum Heard {
+        Live(Report),
+        Spooled(Report),
+    }
+
+    impl std::ops::Deref for Heard {
+        type Target = Report;
+
+        fn deref(&self) -> &Report {
+            match self {
+                Heard::Live(report) | Heard::Spooled(report) => report,
+            }
+        }
+    }
 
     /// A host listening as the app does, and the reports it hears.
     struct Host {
@@ -661,27 +692,43 @@ mod the_server_says_it {
         socket: std::path::PathBuf,
         token: String,
         heard: mpsc::Receiver<Report>,
+        /// Every report told so far, each once.
+        told: RefCell<Vec<Report>>,
+        /// Held while the hearer is to stall; dropped, it lets the hearer go. Before the
+        /// reading, which waits for its hearer as it is dropped.
+        stall: RefCell<Option<mpsc::Sender<()>>>,
         _reading: purlis_core::hookwire::Reading,
     }
 
     fn host() -> Host {
+        host_that(Hears::AtOnce)
+    }
+
+    fn host_that(hears: Hears) -> Host {
         let dir = tempfile::tempdir().expect("a directory");
         let socket = dir.path().join("hooks.sock");
         let listener = Listener::bind(dir.path(), &socket).expect("a socket");
         let token = listener
             .tokens()
-            .issue_to_this_process(7)
+            .issue_to_this_process(CHAT)
             .expect("a token")
             .expose()
             .to_owned();
         let (into, heard) = mpsc::channel();
         let into = Mutex::new(into);
+        let (stall, held) = mpsc::channel::<()>();
+        let held = Mutex::new(held);
         let reading = listener.hear(Hearing {
             secret_exec: Box::new(|_, _, writer| {
                 purlis_core::secrets::brokered::not_answered(writer)
             }),
             each: Box::new(move |report| {
-                into.lock().unwrap().send(report).unwrap();
+                if hears == Hears::WhenLetGo {
+                    // Until the test lets go; only ever disconnected, never sent to.
+                    let _ = held.lock().unwrap().recv();
+                }
+                // A hearer let go late may run after the test has stopped listening.
+                let _ = into.lock().unwrap().send(report);
                 Ok(())
             }),
             answer: Box::new(|_, _| panic!("no ask")),
@@ -700,6 +747,8 @@ mod the_server_says_it {
             socket,
             token,
             heard,
+            told: RefCell::new(Vec::new()),
+            stall: RefCell::new(Some(stall)),
             _reading: reading,
         }
     }
@@ -712,21 +761,64 @@ mod the_server_says_it {
                 "alpha",
                 &[
                     (SOCKET_ENV, self.socket.as_os_str()),
-                    (CHAT_ENV, "7".as_ref()),
+                    (CHAT_ENV, CHAT.to_string().as_ref()),
                     (TOKEN_ENV, self.token.as_ref()),
                     (HARNESS_ENV, harness.as_ref()),
                 ],
             )
         }
 
-        fn next(&self) -> Option<Report> {
-            self.heard.recv_timeout(Duration::from_secs(5)).ok()
+        /// What the host was told since it was last asked, each report once: spooled, then
+        /// recorded live (`support::told`'s order and why).
+        ///
+        /// **Nothing is waited for**, and the server is still running: read only where the
+        /// test knows every report the server means to send is sent. A server says the wait
+        /// before it hands the harness the question, and its end before it answers the call
+        /// that ended it or exits, and `deliver_report` returns only once the host has recorded
+        /// the line or it is durable in the spool (FD-30). So once the harness has read that
+        /// answer, no append is in progress for the strict drain to meet half written.
+        fn told(&self) -> Vec<Heard> {
+            let mut heard: Vec<Heard> =
+                support::spooled_running(&self.socket, CHAT, |line| match line {
+                    spool::Spooled::Report(report) => Some(report),
+                    _ => None,
+                })
+                .into_iter()
+                .map(Heard::Spooled)
+                .collect();
+            heard.extend(self.heard.try_iter().map(Heard::Live));
+            // A report can be in both: the drain hands on a line the host is still recording,
+            // erring on a line twice, never none (#952). Its live copy can come by a later read.
+            let mut told = self.told.borrow_mut();
+            heard.retain(|heard| {
+                let report: &Report = heard;
+                let new = !told.contains(report);
+                if new {
+                    told.push(report.clone());
+                }
+                new
+            });
+            heard
         }
 
-        fn nothing_more(&self) {
-            if let Ok(report) = self.heard.recv_timeout(Duration::from_millis(500)) {
-                panic!("the host heard {report:?}");
-            }
+        /// The one report told since the host was last asked.
+        fn said(&self) -> Heard {
+            let mut told = self.told();
+            assert_eq!(told.len(), 1, "one report: {told:?}");
+            told.remove(0)
+        }
+
+        /// The hearer, stalled, goes on: it records what it was holding, late.
+        fn let_go(&self) {
+            drop(self.stall.borrow_mut().take());
+        }
+
+        /// The server says nothing more: once its harness has let go and it has exited, and so
+        /// has no report left to send, the host was told nothing it had not been.
+        fn nothing_more(&self, server: &mut Server) {
+            server.hang_up();
+            let told = self.told();
+            assert!(told.is_empty(), "the host heard {told:?}");
         }
     }
 
@@ -738,7 +830,7 @@ mod the_server_says_it {
         server.initialize(true);
 
         let asked = ask(&mut server, "Merge the train?");
-        let waits = host.next().expect("the wait is said");
+        let waits = host.said();
         assert_eq!((waits.chat, waits.event), (7, Event::Notification));
         assert_eq!(waits.detail.notified, Notified::Asks(Prompt::Form));
         assert!(
@@ -747,9 +839,34 @@ mod the_server_says_it {
         );
 
         answer(&mut server, &asked, "yes");
-        let ends = host.next().expect("the end is said");
+        let ends = host.said();
         assert_eq!(ends.detail.notified, Notified::Answered);
-        host.nothing_more();
+        host.nothing_more(&mut server);
+    }
+
+    /// #2409: a host slower than the server waits is told the wait by the spool. The server
+    /// does not wait past `A_NOTICE_TAKES_AT_MOST`; it spools the report and asks the harness.
+    /// The host here records nothing until the test has read what it was told, so only the
+    /// spool can hold the wait then.
+    #[test]
+    fn a_wait_the_host_is_too_slow_to_take_is_in_the_spool_when_the_question_is_asked() {
+        let p = project();
+        let host = host_that(Hears::WhenLetGo);
+        let mut server = host.server(p.path(), "codex");
+        server.initialize(true);
+
+        let asked = ask(&mut server, "Merge the train?");
+        let waits = host.said();
+        assert!(matches!(waits, Heard::Spooled(_)), "{waits:?}");
+        assert_eq!((waits.chat, waits.event), (CHAT, Event::Notification));
+        assert_eq!(waits.detail.notified, Notified::Asks(Prompt::Form));
+
+        // Let go, the host records the wait late too: the same report, told once.
+        host.let_go();
+        answer(&mut server, &asked, "yes");
+        let ends = host.said();
+        assert_eq!(ends.detail.notified, Notified::Answered);
+        host.nothing_more(&mut server);
     }
 
     #[test]
@@ -760,7 +877,7 @@ mod the_server_says_it {
         server.initialize(true);
         let asked = ask(&mut server, "Merge the train?");
         answer(&mut server, &asked, "yes");
-        host.nothing_more();
+        host.nothing_more(&mut server);
     }
 
     #[test]
@@ -774,7 +891,7 @@ mod the_server_says_it {
         assert_eq!(said["isError"], true, "{said}");
         let said = server.call("ask_operator", json!({}));
         assert_eq!(said["isError"], true, "{said}");
-        host.nothing_more();
+        host.nothing_more(&mut server);
     }
 
     #[test]
@@ -792,7 +909,7 @@ mod the_server_says_it {
         )["result"]
             .clone();
         assert_eq!(asked["resultType"], "input_required", "{asked}");
-        let waits = host.next().expect("the wait is said");
+        let waits = host.said();
         assert_eq!(waits.detail.notified, Notified::Asks(Prompt::Form));
 
         server.request(
@@ -805,9 +922,9 @@ mod the_server_says_it {
                 "requestState": asked["requestState"],
             }),
         );
-        let ends = host.next().expect("the end is said");
+        let ends = host.said();
         assert_eq!(ends.detail.notified, Notified::Answered);
-        host.nothing_more();
+        host.nothing_more(&mut server);
     }
 
     #[test]
@@ -817,11 +934,11 @@ mod the_server_says_it {
         let mut server = host.server(p.path(), "codex");
         server.initialize(true);
         ask(&mut server, "Merge the train?");
-        assert!(host.next().is_some(), "the wait is said");
+        host.said();
         // The harness closes the connection with the question unanswered.
         server.hang_up();
-        let ends = host.next().expect("the end is said");
+        let ends = host.said();
         assert_eq!(ends.detail.notified, Notified::Answered);
-        host.nothing_more();
+        host.nothing_more(&mut server);
     }
 }
