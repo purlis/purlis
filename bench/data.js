@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792267646305,
+  "lastUpdate": 1792268852457,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15876,6 +15876,48 @@ window.BENCHMARK_DATA = {
             "value": 105.1045435,
             "unit": "ms",
             "extra": "median of 5 runs: 104.110, 104.153, 105.105, 105.555, 106.206 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d4c7aab7e003cdca312016405013aeacd5ff47e",
+          "message": "Settings › Sandbox adds a service on this Mac by its port (#2459)\n\n* Settings › Sandbox adds a service on this Mac by its port (#1970)\n\nThe Network page's new row, A service on this Mac, allows one port for\nevery chat of this project on this machine or for one open chat. It is\ngranted through sandboxing::judged_and_kept, extracted from the Notice's\nAllow so both take the one path: the same judgement (one port, never a\nrange, never purlis's own), scopes, policy lock, audit and keeping. A\ntest at that seam checks every value and scope the Notice refuses is\nrefused by the form in the same words.\n\nCloses #1970\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Count the port row's controls among a read-only project's machine-only ones (#1970)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* The port form names an open harness chat, and says a refusal as one (#1970)\n\nThe core also checks, before anything is judged or audited, that a port\nfor one chat names a chat open in this project that runs a harness, and\nsays each refusal as what purlis did not do and why. allowed_said takes\nthe no-chat case, so the form's sentence and the Notice's come from one\nplace. The form's scope is a tagged type, and the name a Claude Code\nchat reaches the port by is shown as code.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Hand the port test's Allowed list the chats' browsers, as main's grants_of takes them (#1970)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T00:14:38+04:00",
+          "tree_id": "e8f9ddef4b7fbd049451dd0fd94f6b98269e3f21",
+          "url": "https://github.com/purlis/purlis/commit/4d4c7aab7e003cdca312016405013aeacd5ff47e"
+        },
+        "date": 1792268851150,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5189345000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.489, 0.502, 0.519, 0.530, 0.534 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.221608500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.527, 16.839, 17.222, 17.339, 17.504 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.095899,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.438, 103.752, 105.096, 105.712, 109.068 ms"
           }
         ]
       }
