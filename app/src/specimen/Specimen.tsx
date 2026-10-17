@@ -186,9 +186,7 @@ function SpecimenSettings() {
         />
         <SettingRow
           label="Reduce motion"
-          control={(ids) => (
-            <Choice ids={ids} kind="switch" checked onCheckedChange={still} />
-          )}
+          control={(ids) => <Choice ids={ids} kind="switch" checked onCheckedChange={still} />}
         />
         <SettingRow
           label="Show line numbers"
@@ -220,7 +218,12 @@ function SpecimenSettings() {
           onCheckedChange={still}
         />
         <SettingActions>
-          <button type="button" className="ui-button ui-button-primary" tabIndex={0} onClick={still}>
+          <button
+            type="button"
+            className="ui-button ui-button-primary"
+            tabIndex={0}
+            onClick={still}
+          >
             Save
           </button>
           <button type="button" className="ui-button" tabIndex={0} onClick={still}>
@@ -247,7 +250,12 @@ export function SpecimenDialog() {
         <button className="ui-button" type="button" tabIndex={0} onClick={still}>
           Cancel
         </button>
-        <button className="ui-button ui-button-danger ends-it" type="button" tabIndex={0} onClick={still}>
+        <button
+          className="ui-button ui-button-danger ends-it"
+          type="button"
+          tabIndex={0}
+          onClick={still}
+        >
           Delete branch
         </button>
       </AnswerBar>
@@ -263,7 +271,12 @@ export function Specimen({ theme, drawing }: { theme: Theme; drawing: Drawing })
         <SpecimenTerminal label="A chat" lines={CHAT_LINES} theme={theme} drawing={drawing} />
       </section>
       <section className="specimen-shell" aria-label="Terminal">
-        <SpecimenTerminal label="A terminal" lines={TERMINAL_LINES} theme={theme} drawing={drawing} />
+        <SpecimenTerminal
+          label="A terminal"
+          lines={TERMINAL_LINES}
+          theme={theme}
+          drawing={drawing}
+        />
       </section>
       <section className="specimen-file" aria-label="Editor">
         <SpecimenEditor />

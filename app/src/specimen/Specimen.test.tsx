@@ -152,7 +152,9 @@ describe("the theme specimen shows nothing of the person's", () => {
     const rows = [...view.container.querySelectorAll(".xterm-rows > div")]
       .map((row) => row.textContent?.replace(/\u00a0/g, " ").trimEnd() ?? "")
       .filter((row) => row !== "");
-    const fixture = new Set([...plain(CHAT_LINES), ...plain(TERMINAL_LINES)].map((l) => l.trimEnd()));
+    const fixture = new Set(
+      [...plain(CHAT_LINES), ...plain(TERMINAL_LINES)].map((l) => l.trimEnd()),
+    );
     for (const row of rows) expect(fixture, row).toContain(row);
   });
 

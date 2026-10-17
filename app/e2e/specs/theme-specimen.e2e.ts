@@ -42,8 +42,12 @@ const pixels = (picture: Picture): Pixels => readPng(Buffer.from(picture.png, "b
 /** The theme's own `surface.base`, as the window holds it, in `[r, g, b]`. */
 async function surfaceOf(name: string): Promise<number[]> {
   const hex = await browser.execute((theme: string) => {
-    const given = (window as unknown as Record<string, { built_in: { name: string; values: Record<string, string> }[] }>)
-      .__CHARTER_AT_CREATION__;
+    const given = (
+      window as unknown as Record<
+        string,
+        { built_in: { name: string; values: Record<string, string> }[] }
+      >
+    ).__CHARTER_AT_CREATION__;
     return given.built_in.find((one) => one.name === theme)?.values["surface.base"] ?? "";
   }, name);
   return [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
@@ -65,10 +69,22 @@ describe("the theme specimen", () => {
     expect(dark.picture.appearance).toBe("dark");
     expect(light.picture.appearance).toBe("light");
     // The page's own ground, in its corner, is the theme's `surface.base`.
-    const [darkGround, lightGround] = [pixels(dark.picture).at(2, 2), pixels(light.picture).at(2, 2)];
-    const [darkSurface, lightSurface] = [await surfaceOf("purlis-dark"), await surfaceOf("purlis-light")];
-    expect({ ground: darkGround, near: near(darkGround, darkSurface) }).toEqual({ ground: darkGround, near: true });
-    expect({ ground: lightGround, near: near(lightGround, lightSurface) }).toEqual({ ground: lightGround, near: true });
+    const [darkGround, lightGround] = [
+      pixels(dark.picture).at(2, 2),
+      pixels(light.picture).at(2, 2),
+    ];
+    const [darkSurface, lightSurface] = [
+      await surfaceOf("purlis-dark"),
+      await surfaceOf("purlis-light"),
+    ];
+    expect({ ground: darkGround, near: near(darkGround, darkSurface) }).toEqual({
+      ground: darkGround,
+      near: true,
+    });
+    expect({ ground: lightGround, near: near(lightGround, lightSurface) }).toEqual({
+      ground: lightGround,
+      near: true,
+    });
     expect(near(darkGround, lightGround)).toBe(false);
   });
 
