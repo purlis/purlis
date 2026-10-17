@@ -297,4 +297,16 @@ fn a_tool_declared_under_another_name_runs_under_it_inside_the_wrap() {
         .collect();
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    // The run's named link went with it.
+    let exec = purlis_core::secrets::Ctx::new(&root, Env::of(&[]))
+        .vaults_dir()
+        .join(brokered::EXEC_DIR);
+    let left: Vec<_> = fs::read_dir(&exec)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("as-"))
+        .map(|entry| entry.path())
+        .collect();
+    assert!(left.is_empty(), "left behind: {left:?}");
 }

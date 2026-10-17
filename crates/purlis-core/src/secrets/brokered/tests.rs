@@ -3974,6 +3974,23 @@ fn armed_as(mut asker: Asker, name: &str, vault: &str, program: &Path) -> Asker 
     asker
 }
 
+/// Every folder of a run's named link left in the project at `root`'s exec folder.
+fn named_links_left(root: &Path) -> Vec<PathBuf> {
+    let exec = Ctx::new(root, Env::of(&[])).vaults_dir().join(EXEC_DIR);
+    std::fs::read_dir(exec)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(NAMED_PREFIX)
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
 #[test]
 fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
     let Some(xz) = crate::testmulticall::xz() else {
@@ -3999,6 +4016,11 @@ fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
     // `xz -c` would pack it again: started as `unxz`, the same program unpacks.
     assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
     assert!(frames.contains(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        named_links_left(&root),
+        Vec::<PathBuf>::new(),
+        "the run's link went with it"
+    );
 }
 
 /// [`a_tool_declared_under_another_name_runs_its_program_under_that_name`] in the run's
@@ -4060,4 +4082,9 @@ fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
     // As `gunzip` it would unpack beside the file and say nothing.
     assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
     assert!(file.exists(), "the packed file is left as it was");
+    assert_eq!(
+        named_links_left(&root),
+        Vec::<PathBuf>::new(),
+        "the run's link went with it"
+    );
 }
