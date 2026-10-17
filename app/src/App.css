@@ -4452,7 +4452,7 @@ h2.sidebar-title .node-icon {
 
 .shown-state .word {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
 }
 
 /* "reported": the ring, filled. An outline this small is no mark. */
