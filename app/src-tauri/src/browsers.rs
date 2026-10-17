@@ -231,6 +231,7 @@ mod hosted {
             program: &str,
             call_id: &str,
             act: Act,
+            reach: BrowserReach,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
             let link = self.link().map_err(Refused::Said)?;
@@ -238,6 +239,7 @@ mod hosted {
                 program: program.to_owned(),
                 call_id: call_id.to_owned(),
                 act,
+                reach: Some(reach),
             };
             match link.call_refused_within(command, AN_ACT_TAKES_AT_MOST) {
                 Ok(Answer::Browsed(browsed)) => Ok(*browsed),

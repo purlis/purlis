@@ -791,12 +791,15 @@ fn serve() -> ExitCode {
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone(&place, |place| {
             purlis_core::browsers::given_to(
-                purlis_host::Hosting::keeping_its_switch_in(
+                purlis_host::Hosting::kept(
                     &place.credentials,
                     Composes(purlis_core::hoststart::Kit::found(
                         std::env::current_exe().ok(),
                         None,
                     )),
+                    purlis_host::Terminals,
+                    purlis_host::HearsNothing,
+                    Confines,
                 )
                 // `purlis stop --all` is heard with no window there (#2190).
                 .heeding(purlis_core::halt::OnDisk(config.clone())),
@@ -834,6 +837,52 @@ impl purlis_host::Compose for Composes {
                 |entry| beside.record(entry),
             ),
         )
+    }
+}
+
+/// **How `purlis serve` starts a chat's confinement** (#2217): the core's start of the plan it
+/// is handed ([`purlis_core::sandbox::hosted::start`]), as the window's own host starts one, so
+/// a chat on a runner is confined by the runner's own proxy.
+#[cfg(unix)]
+struct Confines;
+
+#[cfg(unix)]
+impl purlis_host::Confine for Confines {
+    fn confine(
+        &self,
+        confining: &purlis_host::ToConfine<'_>,
+        tell: purlis_host::Tell,
+        askable: purlis_host::Askable,
+    ) -> Result<Box<dyn purlis_host::Confining>, String> {
+        purlis_core::sandbox::hosted::start(
+            confining.project_path,
+            confining.confine,
+            tell,
+            askable,
+        )
+        .map(|hosted| Box::new(HeldByServe(hosted)) as Box<dyn purlis_host::Confining>)
+    }
+}
+
+/// A confinement `purlis serve` holds: its proxy and folders end as this is dropped.
+#[cfg(unix)]
+struct HeldByServe(purlis_core::sandbox::hosted::Hosted);
+
+#[cfg(unix)]
+impl purlis_host::Confining for HeldByServe {
+    fn confined(&self) -> purlis_host::protocol::session::Confined {
+        self.0.confined()
+    }
+
+    fn change(
+        &self,
+        change: &purlis_host::protocol::session::ReachChange,
+    ) -> Result<Vec<String>, String> {
+        self.0.change(change)
+    }
+
+    fn now(&self) -> purlis_host::protocol::session::ReachNow {
+        self.0.now()
     }
 }
 
@@ -4765,6 +4814,37 @@ mod core_word_tests {
         assert!(
             stale.is_empty(),
             "CORE_WORDS refuses {stale:?}, which is no longer a word charter answers"
+        );
+    }
+
+    #[test]
+    fn every_word_purlis_answers_is_a_name_no_profile_may_take() {
+        // #2422: a profile named like a command would shadow it, so the core refuses the name.
+        // The core cannot read this parser either, so here every word it answers is declared
+        // as a profile and each one must come back refused for its name.
+        let parser = words_the_parser_answers();
+        let local: String = parser
+            .iter()
+            .map(|word| format!("[harness.{word}]\nkind = \"claude\"\ncommand = [\"claude\"]\n"))
+            .collect();
+        let set = purlis_core::profiles::current_of(purlis_core::profiles::derive_from(
+            None,
+            Ok(Some(local)),
+        ));
+        let refused_for_the_name: BTreeSet<&str> = set
+            .refused
+            .iter()
+            .filter(|r| r.reason.contains("is named like the command"))
+            .map(|r| r.name.as_str())
+            .collect();
+        let unprotected: Vec<&String> = parser
+            .iter()
+            .filter(|word| !refused_for_the_name.contains(word.as_str()))
+            .collect();
+        assert!(
+            unprotected.is_empty(),
+            "`purlis {unprotected:?}` is a command a profile may still be named after — a word \
+             the parser answers must be in purlis_core::extension::cli::CORE_WORDS"
         );
     }
 }

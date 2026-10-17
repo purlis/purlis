@@ -24,6 +24,8 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
+use super::kept::Kept;
+
 /// One element of a page: its frame, and the engine's id for its node in that frame's document.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct NodeKey {
@@ -114,7 +116,7 @@ pub(crate) struct Snapshot {
     title: String,
     lines: Vec<Line>,
     /// What the blanked elements held when this was built, to keep out of every later answer.
-    blanked_text: Vec<String>,
+    blanked_text: Kept,
     /// Every element the engine says has the focus.
     focused: Vec<NodeKey>,
     /// Every element whose name or value held a text kept out: where the page shows it.
@@ -123,12 +125,12 @@ pub(crate) struct Snapshot {
 
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
 /// `excluded`.
-pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[String]) -> Snapshot {
+pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&str]) -> Snapshot {
     let Some(main) = frames.first() else {
         return Snapshot {
             title: String::new(),
             lines: Vec::new(),
-            blanked_text: Vec::new(),
+            blanked_text: Kept::default(),
             focused: Vec::new(),
             echoes: Vec::new(),
         };
@@ -138,7 +140,7 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         excluded,
         used: HashSet::from([0]),
         lines: Vec::new(),
-        blanked_text: Vec::new(),
+        blanked_text: Kept::default(),
         focused: Vec::new(),
     };
     let tree = FrameNodes::new(&main.nodes);
@@ -155,15 +157,11 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[St
         }
     }
     let mut lines = builder.lines;
-    let blanked_text: Vec<String> = builder
-        .blanked_text
-        .into_iter()
-        .filter(|text| text.chars().count() >= SHORTEST_SCRUBBED)
-        .collect();
+    let blanked_text = builder.blanked_text;
     let all: Vec<&str> = blanked_text
-        .iter()
-        .map(String::as_str)
-        .chain(scrub.iter().map(String::as_str))
+        .texts()
+        .into_iter()
+        .chain(scrub.iter().copied())
         .collect();
     title = cut(&scrubbed(&title, &all));
     let mut echoes = Vec::new();
@@ -305,8 +303,9 @@ impl Snapshot {
         &self.title
     }
 
-    /// What the blanked elements held (each at least [`SHORTEST_SCRUBBED`] characters).
-    pub(crate) fn blanked_text(&self) -> &[String] {
+    /// What the blanked elements held (each at least [`SHORTEST_SCRUBBED`] characters), each
+    /// with its element.
+    pub(crate) fn blanked_text(&self) -> &Kept {
         &self.blanked_text
     }
 
@@ -602,8 +601,9 @@ struct Builder<'f> {
     /// The frames already placed.
     used: HashSet<usize>,
     lines: Vec<Line>,
-    /// Text of blanked elements, to take out of every other line.
-    blanked_text: Vec<String>,
+    /// Text of blanked elements (each at least [`SHORTEST_SCRUBBED`] characters), to take out
+    /// of every other line.
+    blanked_text: Kept,
     focused: Vec<NodeKey>,
 }
 
@@ -709,7 +709,7 @@ impl Builder<'_> {
         if let Some(key) = &key
             && self.excluded.contains(key)
         {
-            self.blank(tree, node, value);
+            self.blank(key, tree, node, value);
             let index = self.lines.len();
             self.lines.push(Line {
                 depth,
@@ -802,8 +802,8 @@ impl Builder<'_> {
     }
 
     /// Keeps the text a blanked element holds, to take it out of every other line.
-    fn blank(&mut self, tree: &FrameNodes<'_>, node: &Value, value: Option<String>) {
-        self.blanked_text.extend(value);
+    fn blank(&mut self, key: &NodeKey, tree: &FrameNodes<'_>, node: &Value, value: Option<String>) {
+        self.keep_blanked(key, value.as_deref().unwrap_or_default());
         let mut stack: Vec<&Value> = child_ids(node).filter_map(|c| tree.get(c)).collect();
         let mut seen = HashSet::new();
         while let Some(inside) = stack.pop() {
@@ -815,11 +815,18 @@ impl Builder<'_> {
             }
             for field in ["name", "value"] {
                 let text = text_of(inside.get(field));
-                if !text.is_empty() {
-                    self.blanked_text.push(text);
-                }
+                self.keep_blanked(key, &text);
             }
             stack.extend(child_ids(inside).filter_map(|c| tree.get(c)));
+        }
+    }
+}
+
+impl Builder<'_> {
+    /// Keeps `text`, read from blanked element `key`, if it is long enough to take out.
+    fn keep_blanked(&mut self, key: &NodeKey, text: &str) {
+        if text.chars().count() >= SHORTEST_SCRUBBED {
+            self.blanked_text.tree(key, &[text]);
         }
     }
 }

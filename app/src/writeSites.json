@@ -19,6 +19,16 @@
       "by": ["allowChatBrowser"]
     },
     {
+      "at": "chatbrowsers.rs allow_browser_sites",
+      "writes": "this machine's network record",
+      "by": ["allowBrowserSites"]
+    },
+    {
+      "at": "chatbrowsers.rs sites_allowed",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["allowBrowserSites"]
+    },
+    {
       "at": "chatbrowsers.rs allowed_always",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["allowChatBrowser"]
@@ -305,6 +315,11 @@
     },
     {
       "at": "sandboxing.rs revoke_browser",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["revokeSandboxGrant"]
+    },
+    {
+      "at": "sandboxing.rs revoke_browser_site",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["revokeSandboxGrant"]
     },

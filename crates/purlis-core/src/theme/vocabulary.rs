@@ -142,6 +142,7 @@ pub const GEOMETRY: &[&str] = &[
     "--space-6",
     "--space-7",
     "--space-8",
+    "--font-size-2xs",
     "--font-size-xs",
     "--font-size-sm",
     "--font-size-md",
@@ -185,6 +186,13 @@ const GEOMETRY_GROUPS: &[&str] = &[
     "line",
     "leading",
     "weight",
+];
+
+/// **The views a theme's icon set may draw** (#2337): each view's tab on the rails, by the
+/// window's own id (`OwnViewId` in `app/src/sideViews.ts`, in `VIEW_MARKS`' order).
+pub const RAIL_VIEWS: &[&str] = &[
+    "chats", "explorer", "search", "changes", "repos", "inbox", "todos", "memory", "personas",
+    "sessions", "vaults",
 ];
 
 /// Whether `token` is one of [`TOKENS`].

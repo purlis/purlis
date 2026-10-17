@@ -202,9 +202,9 @@ to change that changes one value rather than hunting for the second one.
 
 ## The brand: Verdigris
 
-purlis ships two themes, `purlis-dark` and `purlis-light`
-(`crates/purlis-core/src/theme/built-in/purlis-dark.json`, `purlis-light.json`), and both are
-drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
+purlis ships **Purlis Classic**, one theme folder with a dark and a light appearance
+(`crates/purlis-core/src/theme/built-in/purlis-classic/theme.json`), picked as `purlis-dark` and
+`purlis-light`. Both appearances are drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
 accent on warm-grey neutrals. It is calm and technical, easy on the eyes in a long session, and
 not the blue most developer tools use.
 
@@ -242,7 +242,57 @@ else in the window; `no_old_name_is_spelled_outside_the_name_module` does the sa
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
 rewrites the file; the next pick made in Settings writes the new id.
 
-## What a theme file looks like
+## What a theme looks like
+
+**A theme is a folder** (format 2, spec #2313): a `theme.json`, and beside it, optionally, its
+`fonts/`, `icons/`, a preview image and a `LICENSE`. A lone `theme.json` is a whole theme.
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
+  "name": "Dusk",
+  "extends": "purlis-classic",
+  "palette": { "lavender": "#b4a7f5" },
+  "appearances": [
+    { "id": "dark", "tokens": { "accent.base": "lavender", "focus.ring": "lavender" } },
+    { "id": "dim", "appearance": "dark", "high-contrast": true, "tokens": { "text.primary": "#ffffff" } }
+  ]
+}
+```
+
+- **`$schema`** names the published schema (`docs/schema/theme.schema.json`), which the theme
+  engine generates from its own vocabulary (`purlis_core::theme::schema`, held to the file by a
+  test): an editor completes every token name and flags a value outside the grammar.
+- **`extends`** names the theme this one starts from: `purlis-classic` (or an id a pick names
+  one of its appearances by), or another theme folder by its name. The theme holds only what
+  differs. A parent that is not there, a parent purlis cannot draw, and themes that extend one
+  another in a circle each refuse the theme with a sentence that names them.
+- **`palette`** is named colours, hex only. A token's value is hex or a palette name: a closed
+  grammar, never CSS. A name is the theme's own; a child cannot name its parent's.
+- **`appearances`** each have an `id`, a tag (`appearance`: `dark` or `light`) and optionally
+  `high-contrast`, with their `tokens` and `motion`. One whose id its parent has layers over
+  that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
+  first appearance is what a theme draws when nothing chose another; following the system works
+  with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
+  follows with Purlis Classic until Settings › Theme can say that following would stay in it
+  (#2331). A theme has at most 64.
+- **`icons`** names the theme's icon set (#2337): the path of a JSON file inside the theme's
+  folder (`"icons": "icons/icons.json"`), read as `theme.json` is: no link on the way, a plain
+  file, under the same cap. The file draws each view's tab on the rails, by the window's own
+  view ids, as path data:
+  `{ "views": { "chats": { "paths": ["M22 17a2 2 0 0 1-2 2H6.8…"] } } }`. Each path is the icon
+  theme's path grammar on a 24 grid, at most 16 to an icon, and the window strokes it 2 wide with
+  round caps and joins in the rail's own colour for the tab's state; none of that is the set's to
+  say. A view the set does not draw is its parent's, and a view no theme draws is the window's
+  own mark, so Purlis Classic, which names no set, keeps today's icons. A view name purlis does
+  not have is said and left out. Purlis's own set is Lucide's icons, converted
+  (`app/src/theme/railIcons.vendor.ts`, with Lucide's licence in the folder).
+- **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
+  draws Purlis and says what is wrong. Geometry and fonts (#2326), options (#2325) and tint
+  (#2329) are not read yet, so naming one refuses the theme.
+
+**Format 1**, a single file with one appearance, keeps loading as a theme with that one
+appearance:
 
 ```json
 {
@@ -255,7 +305,8 @@ rewrites the file; the next pick made in Settings writes the new id.
 }
 ```
 
-- **`appearance` is `dark` or `light`.** It decides two things: which built-in fills in the
+- **`appearance` is `dark` or `light`.** It decides two things: which of Purlis Classic's
+  appearances fills in the
   tokens this file does not name, and what `color-scheme` the document gets, which is what
   makes the platform's own scrollbars and form controls match.
 - **A value is hex and only hex** — `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. This is a security
@@ -263,12 +314,18 @@ rewrites the file; the next pick made in Settings writes the new id.
   `red; } body { display: none` in a theme file would be a stylesheet somebody else wrote. The
   grammar removes the question rather than answering it, and every value it allows is one xterm
   also accepts. Converting an `rgb(0 0 0 / 55%)` to `#0000008c` costs an author one lookup.
-- **A partial theme is normal.** Name the tokens you are changing; the rest come from the
-  built-in of the same appearance.
-- **Nothing in a theme file can stop the window.** A token that is missing, misspelled or
-  malformed falls back and the substitution is reported. The theme engine's `load` always
-  answers with a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up because a
-  colour was spelled wrong is worse than every possible wrong colour.
+- **A partial theme is normal.** Name the tokens you are changing; the rest come from
+  Purlis Classic's appearance of the same tag.
+- **A theme that breaks its grammar is refused whole, in either format and from any source**
+  (ADR 0097 §2): a value outside its type or bound, a key format 2 does not have, geometry, or
+  a file that is not a theme. purlis draws Purlis in its place and a Notice names each value.
+  A token the theme does not name is not an error: it is Purlis Classic's. A token or motion
+  name purlis does not have, and a key format 1 does not have (`author`, `description`), is said
+  and left out, and the rest is drawn: a teammate's purlis may know a token this one does not
+  yet, and format 1 files carry keys of their own.
+- **Nothing in a theme file can stop the window.** The theme engine's `load` always answers with
+  a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
+  because a colour was spelled wrong is worse than every possible wrong colour.
 
 ### The theme engine
 
@@ -279,11 +336,14 @@ holding every value to its grammar, filling what is missing from the built-in of
 appearance and saying so, deciding which theme the window draws, and checking whether its words
 can be read. Its interface:
 
-- `load(document)` reads one theme file and always answers with a complete theme and what it had
-  to put right;
-- `resolve(inputs)` answers which theme the window draws, from the project's pick, the person's
-  own theme, the extension themes in force and the operating system's appearance;
-- `check(theme)` holds any theme to every contrast pair (`PAIRS`), the ANSI floors and the
+- `load(document)` reads one theme document, format 1 or 2, and always answers with a complete
+  theme (every appearance) and what it had to put right or why it refused it; a `Library` reads
+  one that extends a theme folder, and `load_folder` reads a folder;
+- `resolve(inputs)` answers which theme and which of its appearances the window draws, from the
+  project's pick, the person's own theme, the extension themes in force and the operating
+  system's appearance;
+- `schema()` is the published JSON Schema of format 2;
+- `check(theme)` holds any appearance to every contrast pair (`PAIRS`), the ANSI floors and the
   selected row's distinctness, as it is and tinted by every workspace colour, and reports each
   finding with its ratio.
 
@@ -311,7 +371,7 @@ has. Nothing about this needs ADR 0040 amended again.
 
 **It is read before the window exists and handed to it as it is created** (M6.7), the same way
 as the layout below, so an operator with a theme of their own never sees the built-in painted
-first. The theme engine (`purlis_core::theme`) judges it token by token, and whatever it had to put right — a
+first. The theme engine (`purlis_core::theme`) judges it, and whatever makes it refuse the theme — a
 misspelled token, a value that is not hex, a file that is not JSON — is said in the Inbox,
 as a Notice about this machine, with the file's path. **It wins over an extension's theme**: it
 is the one theme the operator wrote for this machine themselves, so an approved extension's
@@ -594,7 +654,8 @@ A theme file carries them under `motion`, beside `tokens`:
   would silently vanish — and the `y` range leaves room for an overshoot and none for a curve
   that flings a menu off the window.
 - **A partial `motion` is normal, and so is none.** What a theme does not name moves the way the
-  built-in of its appearance does; a bad value falls back and is reported, exactly as a colour is.
+  built-in of its appearance does; a bad value refuses the theme and is reported, exactly as a
+  colour does.
 - **`0` turns a motion off.** A theme that sets every duration to zero is a still window.
 - **An extension restyles motion the same way it restyles colour** — through the theme it
   contributes (ADR 0041; the panel contract of ADR 0043 is the same registry). Nothing
@@ -717,7 +778,8 @@ rings stay in px. The px below are at the default 14px text.
 | `--space-6`             | 16px                                       |                                                                          |
 | `--space-7`             | 24px                                       |                                                                          |
 | `--space-8`             | 32px                                       |                                                                          |
-| `--font-size-xs`        | 11px                                       | the type scale, six steps: badges, counts; the meta and label roles      |
+| `--font-size-2xs`       | 10px                                       | the type scale, seven steps: a tight secondary label only (#2319)        |
+| `--font-size-xs`        | 11px                                       | badges, counts; the meta and label roles: the words' floor               |
 | `--font-size-sm`        | 12px                                       | secondary lines, help text; the secondary role                           |
 | `--font-size-md`        | 13px                                       | dense lists and tables, a menu's rows; the body role                     |
 | `--font-size-base`      | 14px                                       | the window's text (`1rem`); the heading role                             |
@@ -799,13 +861,17 @@ What a tab on the three strips draws, and in what (the operator's asks of 2026-1
 Three guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837; the
 third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
-- **`geometry.guard.test.ts`** fails on a literal **size** (width, height and their min, max,
-  block and inline forms), **padding**, **margin**, **gap**, **corner** or **font size**, in any
-  stylesheet but `theme/geometry.css`, in a component's inline `style`, or as a Tailwind class off
-  the core scale (`p-5`, `text-2xl`, `rounded-2xl`). A custom property that holds a length counts,
-  so `--pad: 7px` is no way round. Not literals: `0`, a `1px` hairline, `1em`, `1lh` or `1ch` (as
-  big as the element's own text), a share (`%`, `vh`, `vw`), and a token, or a token's multiple
-  or share in `calc()`. A shadow's lengths are elevation, which this guard does not read.
+- **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**
+  or **font size**, in any stylesheet but `theme/geometry.css`, in a component's inline `style`,
+  or as a Tailwind class off the core scale (`p-5`, `text-2xl`, `rounded-2xl`). A custom
+  property that holds a length is held to what reads it: one a padding, margin, gap, corner or
+  font size reads, or that no stylesheet reads, counts, so `--pad: 7px` is no way round. Not
+  literals: `0`, a `1px` hairline, `1em`, `1lh` or `1ch` (as big as the element's own text), a
+  share (`%`, `vh`, `vw`), and a token, or a token's multiple or share in `calc()`. A shadow's
+  lengths are elevation, which this guard does not read. **A box's size** (a width, a height
+  and their min, max, block and inline forms, or a custom property only they read) is not a step
+  of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
+  and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
   `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
@@ -813,19 +879,20 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`).
 
-Each starts with **an allowance list of the offenders the window had when it landed**,
-`geometry.guard.allowance.ts` and `controls.guard.allowance.ts`, grouped by file and one entry
-per line. An entry names a declaration by its rule and what it sets (`.chat | padding: 0.1rem
-0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
+Each started with **an allowance list of the offenders the window had when it landed**,
+grouped by file and one entry per line. The geometry and type lists reached zero with #2319
+and are gone, so a literal in what those two guards read fails (widening what they read is
+#2450); `controls.guard.allowance.ts` remains. An entry names a declaration by its rule and what
+it sets (`.chat | padding: 0.1rem 0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
 number. The list only shrinks:
 
 - a new offender fails: take the value from a token, or give the control its class;
 - an entry with nothing left to name fails: delete its line when you fix it;
-- a file's list longer than its frozen ceiling (`CEILING` in each guard) fails, and a file
+- a file's list longer than its frozen ceiling (`CEILING` in the controls guard) fails, and a file
   without a ceiling may have no list.
 
-The surface tickets migrate a view and delete its lines in the same change. Two of them editing
-one file's list touch different lines, so their removals merge.
+The surface tickets migrated a view and deleted its lines in the same change. Two of them
+editing one file's list touched different lines, so their removals merged.
 
 **A migration snaps to the scale** (the operator, 2026-10-17, #2313). A spacing, corner, type
 size or weight with no exact token takes the nearest one, by computed px at the 14px root (a tie
@@ -835,8 +902,14 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
   steps stay even rather than flattening onto the top of the scale.
 - **A corner that draws the same is the pill.** A radius at or above half its box's height
   becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
-- **Line heights are outside the snap**, as is a structural size that is no step of the scale,
-  such as an icon's box or a strip's cap on a tab's width: each keeps its literal and its line.
+- **A structural size is outside the snap**: a size that is no step of the scale, such as an
+  icon's box or a strip's cap on a tab's width, keeps its literal, and the geometry guard does
+  not read a box's size. A structural reserve written as a margin is a multiple of a size token
+  (`calc(var(--size-control) * 2.5)`, the title bar's drag stretch).
+- **A line height keeps `1`**, a line as tall as its text, which the type guard reads as no
+  leading. Any other line height takes the nearest line-height token by computed px, as a size
+  does (#2319: a brief's text and the Welcome page's lede onto `--line-height-body`, the rail's
+  count onto `--line-height-tight`).
 
 Each snap is listed with its change in px in the pull request, and the window is looked at
 before and after.
@@ -870,8 +943,10 @@ view wears one.
    quieter colour; it is given the role it has, and the role brings the colour.
 2. **Muted is for meta only.** A help line or a where line is secondary. (Muted was the
    window's most used text colour, mostly on secondary-role text.)
-3. **Nothing is under the smallest step.** 11px (`--font-size-xs`) is the floor: `0.72rem` and
-   `0.65rem` become it.
+3. **Nothing is under the words' floor.** 11px (`--font-size-xs`) is it: `0.72rem` and
+   `0.65rem` become it, and a snap never lands under it. The one step below, `--font-size-2xs`
+   (10px, the operator, 2026-10-17), is for a tight secondary label only: the Chats view's and the
+   Inbox's scope switch (`.ui-levels-small`).
 4. **One colour for a word that says something is wrong:** `danger.text`. `state.failed` is a
    state's mark, not a word's colour.
 5. **Three weights.** Regular 400, medium 500 and strong 600, and no fourth.
@@ -910,9 +985,10 @@ window differ, the window was kept and the difference is recorded here for the m
 - **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
   It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
 - **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's
-  text), is in the allowance, to move onto `--font-mono`; so is the window's own sans-serif
-  stack on `:root`, which has no token because nothing else should name it. The terminal and the
-  editor take their type from their own themes and are not covered.
+  text), is `--font-mono` now (#2319). The window's own sans-serif stack, which has no token
+  because nothing else should name it, is given once with the 14px root size in
+  `theme/geometry.css`, the core. The terminal and the editor take their type from their own
+  themes and are not covered.
 - **A label's capitals and its `0.06em` spacing have no token**; they are written once, in
   `.ui-text-label`.
 
@@ -925,12 +1001,11 @@ colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
 pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to wear instead,
 by the size or weight that was written.
 
-Its allowance, `type.guard.allowance.ts`, is today's offenders by file, one per line, with a
-ceiling per file (`App.css` landed at 159, of which 91 were font sizes, and is
-shorter with each surface that moves), and it follows
-[the same rule as the other two](#the-guards-and-the-lists-that-only-shrink): a new literal
-fails, a stale entry fails, and a ceiling may only go down. A font size is held by the
-geometry guard too, so a migration deletes its line from both lists.
+Its allowance landed at 159 lines in `App.css` (91 of them font sizes) and reached zero with
+#2319, and the list is gone: [as with the geometry guard](#the-guards-and-the-lists-that-only-shrink),
+a literal in what it reads fails (#2450 widens that). A line height of exactly `1` is no leading
+and passes. A font size is
+held by the geometry guard too.
 
 **A token is not yet a role.** `font-size: var(--font-size-sm)` passes the guard and is still
 a surface ranking its own words. The guard stops the scale growing; the migrations give the

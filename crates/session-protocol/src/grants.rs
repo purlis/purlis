@@ -30,7 +30,8 @@
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | relayed |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | relayed |
 //! | a start's sandbox opt-out (`without_sandbox`) | yes | | | | | |
-//! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | |
+//! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | relayed |
+//! | a start's `launch` that names a harness, the window's composed chat | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn`, and the pushed `saving` and `who_is_mid_turn` (1.7) | yes | | | | | |
 //! | `record`, a write in the event log the host holds (1.8) | yes | | | | | |
@@ -56,21 +57,36 @@
 //! - **A chat's confinement is the window's alone** (1.4). The window plans a chat's proxy from
 //!   the sandbox it compiled, answers its live asks and withdraws a port from it; only the
 //!   window hears what a proxy refused, carried and asks about. Every answer to a sandbox ask
-//!   is the window's, as it is where the proxy runs in the window.
+//!   is the window's, as it is where the proxy runs in the window. **On a runner it is the
+//!   window's as its host relays it** (#2217): the runner's host starts the confinement with
+//!   its own binary's proxy, pushes what that proxy does to its peer, and takes its peer's
+//!   answers and withdrawn ports, which the desktop's relay sends on for its own `local-ui`
+//!   client alone, and it pushes nothing of a sandbox on to any other client.
+//!   **This row says which links may confine; each confinement is the links' it is named to**
+//!   (#2444): a host acts on a confinement, and pushes what its proxy did, only for a link it
+//!   named that confinement to, and every other is one it does not hold (ADR 0068, amended for
+//!   #2444).
+//! - **A launch that names a harness is the window's for its own host alone** (#2217). It is a
+//!   chat the window composed with the sandbox it compiled for its own machine. A runner
+//!   composes every harness chat it runs by its names (#2171), with the sandbox it compiles
+//!   for itself, so it refuses one from `remote-link`; a relayed launch starts a program that
+//!   names no harness, such as a shell.
 //! - **Holding a project is the window's alone** (1.2): a hold says where the project is on the
 //!   host's machine, and only the window, whose projects they are, says so or lets go.
 //! - **A project's numbers are dealt for the window alone** (1.3), as its holds are: `deal`
 //!   and `dealt_already` go with the `hold_project` row.
 //! - **"Relayed": a runner's host takes the window's own commands from its desktop's host**
 //!   (ruled 2026-10-15, #2042; ADR 0078 and ADR 0068 amended). Over the link between hosts,
-//!   `remote-link` may hold a project, deal its numbers, start with the window's `launch`, and
-//!   reply to a held project's hook lines, whose lines it is pushed. **"Relayed" is enforced by
+//!   `remote-link` may hold a project, deal its numbers, start with the window's `launch`,
+//!   reply to a held project's hook lines, whose lines it is pushed, and confine a chat (#2217),
+//!   whose proxy's notices it is pushed. **"Relayed" is enforced by
 //!   the desktop's relay alone** (`purlis_host::Relay`), which sends these on for its own
 //!   `local-ui` client only. The runner's host cannot tell a relayed command from one its peer
 //!   composed, so a runner trusts its peer as it trusts the window: to compose the programs it
 //!   starts and their environment, and to answer its chats' asks. That is why a runner admits
-//!   one peer, the desktop that relays to it (`crate::hostlink::answer`). An interim, until a
-//!   runner's chats are started by their names, which its host composes (#2171, #2217).
+//!   one peer, the desktop that relays to it (`crate::hostlink::answer`). A runner's harness
+//!   chats are started by their names, which its host composes (#2171, #2217); the relayed
+//!   launch stays for a program that names no harness.
 //! - **A held project's hook lines are heard and answered by the window** (1.3), on its own
 //!   host or relayed. The host pushes each line to the links that hold the project, which only
 //!   `local-ui` and a relayed `remote-link` may, and only they reply: a reply can carry an ask's
@@ -127,7 +143,8 @@
 //!   `terminal` answer and a runner's `remote-link` carry an answer a desktop human scope sent;
 //!   V75, ruled later, names only `local-ui` and `approval` as answerers. Both are refused the
 //!   `answer` command until the operator rules, which fails closed; `remote-link`'s relayed
-//!   `reply_heard` is the one way an ask's answer reaches a runner (ruled 2026-10-15).
+//!   `reply_heard` is the one way a hook's ask's answer reaches a runner (ruled 2026-10-15), and
+//!   its relayed `change_reach` the one way a sandbox ask's answer does (#2217).
 
 use crate::auth::Scope;
 
@@ -180,6 +197,9 @@ pub enum Power {
     Record,
     /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
     OptOut,
+    /// A start's `launch` that names a harness (#2217): a chat the window composed with the
+    /// sandbox it compiled for its own machine, taken by the window's own host alone.
+    LaunchAHarness,
     /// `board_moved` and `board` (1.10): what a held project's kept board holds, and the
     /// window's moves of it.
     Board,
@@ -213,6 +233,7 @@ impl Scope {
                     | P::Hold
                     | P::Launch
                     | P::Heard
+                    | P::Confine
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),
@@ -256,10 +277,18 @@ mod tests {
     }
 
     #[test]
-    fn only_the_window_confines_a_chat_and_answers_its_sandbox() {
+    fn only_the_window_or_its_hosts_relay_confines_a_chat_and_answers_its_sandbox() {
+        for scope in Scope::ALL {
+            let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+            assert_eq!(scope.may(Power::Confine), windows, "{scope}");
+        }
+    }
+
+    #[test]
+    fn only_the_window_hands_its_own_host_a_chat_it_composed_for_a_harness() {
         for scope in Scope::ALL {
             assert_eq!(
-                scope.may(Power::Confine),
+                scope.may(Power::LaunchAHarness),
                 scope == Scope::LocalUi,
                 "{scope}"
             );

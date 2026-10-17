@@ -27,6 +27,12 @@
 //!   it. Its value appears in no answer.
 //! - **Only web addresses.** Every navigation takes a [`WebAddress`]; a page the engine opens at
 //!   any other address (a link or a redirect a page offered) is closed and never listed.
+//! - **Where it may go is judged** (#2018). A browser made with a [`Judge`] holds every http and
+//!   https request of every page until the judge has heard what it is ([`Outbound`]): a read,
+//!   an address the agent wrote, or something sent; and the agent's typing is judged as
+//!   something sent to the site of the document it goes into. A request the judge asks about is
+//!   failed, and an act it asks about does nothing; the sites it asked about are in the next
+//!   answer.
 //! - **One driver at a time** (#2014). The agent drives through its calls until the person
 //!   takes the browser over ([`Browser::take_over`]); from then every call is refused, a call in
 //!   flight answers that it was interrupted, and only the person's own input
@@ -38,6 +44,7 @@ mod blank;
 mod browser;
 mod drawn;
 pub mod fit;
+mod kept;
 mod keys;
 mod ledger;
 mod screencast;
@@ -383,7 +390,47 @@ pub struct Answer {
     pub note: Option<String>,
     /// Whether this answers a retry: the call did not act again.
     pub repeated: bool,
+    /// The sites the judge asked the person about since the last answer, each once (#2018):
+    /// what the browser did not reach or send to, or where it typed nothing, until they say.
+    pub asked: Vec<String>,
 }
+
+/// **What a request a page is about to send is**, as the driver tells the browser's judge
+/// (#2018): its address, its method, why it is sent, and who drives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outbound {
+    pub address: String,
+    pub method: String,
+    pub why: Why,
+    pub by: Driver,
+}
+
+/// Why a page sends a request (#2018).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Why {
+    /// The page reads: a link it offered, an image, a script, a frame.
+    Reads,
+    /// An address the agent wrote: its open or navigate, and where that address redirects,
+    /// while the act lasts.
+    Addressed,
+    /// It carries something: a form submitted, a request with a body, or the agent's typing
+    /// on the page.
+    Sends,
+}
+
+/// What the judge says of a request (#2018).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Gate {
+    /// Sent.
+    Go,
+    /// Not sent: the person is asked about `site` (`host:port`), and the act's answer says so.
+    Ask { site: String },
+}
+
+/// **The browser's judge** (#2018): told each request a page is about to send, and the page an
+/// agent is about to type on, and says whether it goes. It decides; the driver only tells it
+/// what each request is.
+pub type Judge = std::sync::Arc<dyn Fn(&Outbound) -> Gate + Send + Sync>;
 
 /// A call refused, or one whose effect is not known, in words that say what to do.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -287,6 +287,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::SandboxOnly => "Asks you to make a sandbox-only profile",
         AskSource::Browser => "Asks what its browser may reach",
         AskSource::BrowserNeedsYou => "Needs you in its browser",
+        AskSource::BrowserSite => "Asks to let its browser reach a new site",
     }
 }
 

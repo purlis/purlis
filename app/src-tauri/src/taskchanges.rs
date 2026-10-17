@@ -393,6 +393,14 @@ fn of_a_shared_folder(held: &Held, record: &Record, changes: &mut TaskChanges) {
     }
 }
 
+/// What `record`'s report says changed, in its words, masked as a view draws them (#1872).
+fn said_of(record: &Record) -> Option<String> {
+    record
+        .report
+        .as_ref()
+        .and_then(dispatchrecord::Report::changed_said_masked)
+}
+
 /// What the task of dispatch `id` changed, read now.
 pub(crate) fn changes_of(held: &Held, id: &str) -> Result<TaskChanges, String> {
     let record = record_of(held, id)?;
@@ -404,10 +412,7 @@ pub(crate) fn changes_of(held: &Held, id: &str) -> Result<TaskChanges, String> {
         places: Vec::new(),
         elsewhere: Vec::new(),
         more: false,
-        said: record
-            .report
-            .as_ref()
-            .and_then(|report| report.changed.said.clone()),
+        said: said_of(&record),
         unknown: None,
     };
     if record.place.worktree.is_some() {
@@ -889,6 +894,59 @@ mod tests {
         let unread = place_from(Err("no folder".to_owned()), at, none, |_| true);
         assert!(unread.refused.is_empty());
         assert_eq!(unread.unread.as_deref(), Some("no folder"));
+    }
+
+    #[test]
+    fn a_secret_in_what_a_report_says_changed_is_masked() {
+        // #1872: a token built here from its parts, so no line of this file holds one.
+        let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let chat = |chat: u32, name: &str| dispatchrecord::ChatRef {
+            chat,
+            id: None,
+            name: name.to_owned(),
+            persona: None,
+        };
+        let opened = dispatchrecord::open(
+            &root,
+            dispatchrecord::Opening {
+                mode: dispatchrecord::Mode::Task,
+                asker: dispatchrecord::Asker {
+                    chat: chat(3, "steward 3"),
+                    ..dispatchrecord::Asker::default()
+                },
+                persona: None,
+                worker: dispatchrecord::Worker {
+                    chat: chat(7, "talk"),
+                    ..dispatchrecord::Worker::default()
+                },
+                task: Some("talk".to_owned()),
+                place: dispatchrecord::Place::default(),
+                brief: "Rotate it.".to_owned(),
+                report_owed: true,
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap();
+        let ending = dispatchrecord::Ending {
+            report: Some(dispatchrecord::Report {
+                outcome: dispatchrecord::Outcome::Done,
+                text: "Done.".to_owned(),
+                changed: dispatchrecord::Changed {
+                    said: Some(format!("Rotated {token} in values.yaml")),
+                    ..dispatchrecord::Changed::default()
+                },
+            }),
+            usage: None,
+        };
+        assert!(dispatchrecord::close(&root, &opened.id, ending, chrono::Utc::now()).unwrap());
+        let record = dispatchrecord::read(&root, &opened.id).expect("it reads");
+
+        assert_eq!(
+            said_of(&record).as_deref(),
+            Some("Rotated *** in values.yaml")
+        );
     }
 
     #[test]

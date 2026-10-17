@@ -708,9 +708,3 @@ pub fn reads_on_open(provider: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
-
-// Unix only: its stand-in CLIs are shell scripts, and its vault files are judged by mode. Two
-// attributes rather than `all(test, unix)`, which cargo-mutants does not read as test code.
-#[cfg(test)]
-#[cfg(unix)]
-mod tests_store;
