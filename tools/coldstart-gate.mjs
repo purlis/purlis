@@ -10,7 +10,11 @@
 // gated: on unchanged code its median moved from 874 to 2537 ms between runners.
 //
 // **The absolute limit** (`coldStartGate`), where there is no main to measure against: a push
-// to main, or a pull request whose main did not build.
+// to main, a nightly, or a pull request whose main did not build. In CI each of those reports it
+// and gates nothing: a push to main and a nightly are evidence (the pull request held the same
+// code to main already), and a pull request with no main build has nothing that cancels the
+// runner's speed, which missed the limit in 39 of 1,572 cases on unchanged launch code (#2388,
+// ADR 0086 as amended 2026-10-17). It gates where it is run without `--evidence`, by hand.
 //
 // With a ceiling (CI's Linux gate): the median of the launches must be within the limit, and at
 // most one launch may go past the ceiling. That one is an outlier, reported and not gated: one
@@ -85,7 +89,21 @@ export function coldStartAgainstMain({ passes, threshold = AGAINST_MAIN }) {
 // `againstMain`, when the job measured main's build too, is `{ passes, verdict, ratio }`: its
 // verdict is the gate, each round of the last pass is listed, and the absolute limit is reported,
 // not gated. `evidence` makes a miss a `warning`: a run that only records.
-export function coldStartAnnotation({ name, launches, warmUp, traced, limit, ceiling, againstMain, evidence }) {
+//
+// `noBaseline`, on a pull request whose job could not build main's app (#2388), is why there is
+// nothing to hold the change to. Nothing is gated, the limit is reported, and the annotation is
+// a `warning` even when the limit is met, so the run says on its face that it went ungated.
+export function coldStartAnnotation({
+  name,
+  launches,
+  warmUp,
+  traced,
+  limit,
+  ceiling,
+  againstMain,
+  evidence,
+  noBaseline,
+}) {
   const absolute = coldStartGate({
     launches: launches.map((one) => one.ms),
     limit,
@@ -93,6 +111,7 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
   });
   const { median, worst, ignored } = absolute;
   const relative = againstMain && againstMain.verdict !== "no baseline";
+  const reported = relative || Boolean(noBaseline);
   const met = relative ? againstMain.verdict !== "regressed" : absolute.met;
   const ms = (value) => `${Math.round(value)} ms`;
   const split = (launch) => `${ms(launch.ms - launch.appMs)} before the app's clock + ${ms(launch.appMs)} in the app`;
@@ -115,7 +134,7 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
   const limitLine =
     `median ${ms(median)} against a ${limit} ms limit, worst ${ms(worst)}` +
     (ceiling === undefined ? "" : ` against a ${ceiling} ms ceiling`) +
-    (relative
+    (reported
       ? `: ${absolute.met ? "met" : "missed"}, reported, not gated`
       : `: ${absolute.met ? "met" : "MISSED"}` +
         (ignored.length > 0 ? ` (one launch past the ceiling let through)` : ""));
@@ -133,13 +152,14 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
       ]
     : [];
   const lines = [
+    ...(noBaseline && !relative ? [`no baseline: ${noBaseline}, so nothing is gated`] : []),
     ...mainLines,
     limitLine,
     ...(warmUp ? [`warm-up, cold disk, not gated: ${one(warmUp)}`] : []),
     ...launches.map((launch, n) => `launch ${n + 1}: ${one(launch)}`),
     ...(traced ? [`with the launch log, not gated: ${one(traced)}`] : []),
   ];
-  const level = met ? "notice" : evidence ? "warning" : "error";
+  const level = noBaseline && !relative ? "warning" : met ? "notice" : evidence ? "warning" : "error";
   return annotation(level, `Cold start, ${name}`, lines.join("\n"));
 }
 

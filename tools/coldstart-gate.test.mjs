@@ -211,6 +211,32 @@ test("against main, a confirmed regression is an error annotation", () => {
   assert.match(line, /^::error title=Cold start%2C i3::against main in this job: .*: REGRESSED/);
 });
 
+// A pull request whose main did not build in the job has nothing to hold it to (#2388). The
+// absolute limit is reported there, not gated: the runners missed it in 39 of 1,572 cases on
+// unchanged launch code. The annotation is a warning either way, so the run says it went ungated.
+test("with no main to measure against on a pull request, the limit is reported and nothing is gated", () => {
+  const why = "main's app did not build in this job";
+  const missed = coldStartAnnotation({
+    name: "i3",
+    ...gate,
+    launches: [2100, 2600, 2700, 1900, 2010].map((ms) => ({ ms })),
+    noBaseline: why,
+  });
+  assert.match(
+    missed,
+    /^::warning title=Cold start%2C i3::no baseline: main's app did not build in this job, so nothing is gated%0A/,
+  );
+  assert.match(missed, /median 2100 ms against a 2000 ms limit.*: missed, reported, not gated/);
+  assert.doesNotMatch(missed, /MISSED/);
+  const met = coldStartAnnotation({
+    name: "bare",
+    ...gate,
+    launches: [1300, 1400, 1500].map((ms) => ({ ms })),
+    noBaseline: why,
+  });
+  assert.match(met, /^::warning title=Cold start%2C bare::no baseline: .*: met, reported, not gated/);
+});
+
 // A characterization of the record, not of a change: one of the two red runs of the relative
 // gate on unchanged launch code, out of 524 pull request runs from 2026-10-14 to 2026-10-17
 // (#1866). One build was steadily slower than the other through a whole job, in both passes; the
