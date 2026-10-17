@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792277607043,
+  "lastUpdate": 1792278811802,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16170,6 +16170,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1264355,
             "unit": "ms",
             "extra": "median of 5 runs: 101.005, 101.109, 101.126, 101.249, 102.426 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "859275d1f9bfb2dc1995addc96764abb6474c1a2",
+          "message": "purlis serve keeps the event log as the window's host does (#2549)\n\nBoth binaries' session hosts record with the core's event log\n(purlis_core::hookchannel::EventLog as purlis_host::Record): a write\nthe window decided, a composed start's run and trust events, and what\na chat's end leaves (its spool drained, its sub-agents' runs ended for\nthe cause its end gives, and a dispatch it worked with no window there\nended without its report). The app's own Kept and its helpers move to\nthe core; purlis serve now records with it.\n\nCloses #2494\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T03:11:54+04:00",
+          "tree_id": "065e51473e94a6d7542ee23ee94dec92ba72ca14",
+          "url": "https://github.com/purlis/purlis/commit/859275d1f9bfb2dc1995addc96764abb6474c1a2"
+        },
+        "date": 1792278810495,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5149865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.490, 0.509, 0.515, 0.528, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.9590485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.472, 16.800, 16.959, 17.053, 17.318 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.666255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.903, 103.217, 104.666, 104.987, 106.006 ms"
           }
         ]
       }
