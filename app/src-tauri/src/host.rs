@@ -83,10 +83,12 @@ pub struct Opening {
     pub run: Option<String>,
 }
 
-/// A shell with nothing set (#2453): no program, the smallest terminal, nothing added to or
-/// kept from its environment, not the operator's own shell, handed nothing and held in no
-/// confinement. A start names what it sets and takes the rest from here
-/// (`..Opening::default()`), so a new field touches only the code that sets it.
+/// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
+/// added to or kept from its environment, not the operator's own shell, handed nothing and held
+/// in no confinement. A fixture names what it sets and takes the rest with
+/// `..Opening::default()`, so a new field touches only the code that sets it. A real start sets
+/// every field (the start in `Chats`).
+#[cfg(test)]
 impl Default for Opening {
     fn default() -> Self {
         Opening {
@@ -822,3 +824,6 @@ pub(crate) mod pretend {
         mutex.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests;
