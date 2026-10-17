@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792215324348,
+  "lastUpdate": 1792216455654,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14910,6 +14910,48 @@ window.BENCHMARK_DATA = {
             "value": 104.67422400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 104.147, 104.223, 104.674, 104.799, 107.439 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9a8594a0b4936d5cc46f6c2427042f090e0deb7c",
+          "message": "ci: the Linux cold start gates against main again; each round says where both builds' time went (#2390)\n\n* ci: the Linux cold start gates against main again, and each round says where both builds' time went\n\nThe gate this issue asked for (main's build measured in the same job, a ratio, two passes) landed\nin train 87 and was set to report only on pull requests (#1876). Its record since: 524 pull request\nruns, 1,572 cases, 0.80 to 1.10 in all but five; those five, in two runs, held one build steadily\nslower through the whole job on unchanged launch code. The absolute 2 s median it replaced missed\nin 39 of the same cases. So the relative gate gates again on pull requests; pushes and nightlies\nstay evidence.\n\nThe steady-gap cause is not known yet. Each round line now carries both builds' split and the CPU\ntime and major faults of each launch's process tree at its first frame (`processTreeUse`, read from\n/proc after the time is taken), so the next one names whether it was the disk, more code, or neither.\n\nCloses #1866\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* review(#1866): a round is its two launches, and the record read is an amendment of its own\n\n- A round is `{ base, head }`, each the launch as the bench keeps it; the gate judges `ms`. The\n  record and the annotation take one shape, with no times kept twice beside the launches.\n- The 2026-10-17 reading moves out of the 2026-10-13 amendment into a file of its own.\n- The steady-gap test says it characterizes the record; the round-line and /proc tests are\n  the ones this change turned green.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T09:48:59+04:00",
+          "tree_id": "fe54e7b1efc5d2c745379016b65a1dba3dc2987b",
+          "url": "https://github.com/purlis/purlis/commit/9a8594a0b4936d5cc46f6c2427042f090e0deb7c"
+        },
+        "date": 1792216454038,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.477469,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.453, 0.472, 0.477, 0.478, 0.485 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.287802,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.211, 16.223, 16.288, 16.396, 17.006 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.60257849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.153, 101.254, 101.603, 101.694, 102.321 ms"
           }
         ]
       }
