@@ -573,7 +573,7 @@ struct HooksHeard {
     relaying: Arc<Mutex<Option<Arc<purlis_core::hookwire::relay::Relaying>>>>,
     issued: Arc<Mutex<Vec<u32>>>,
     /// The project's board, kept as the window's binary keeps it in the host (#2194).
-    board: crate::sessionhost::KeptBoard,
+    board: purlis_core::hookchannel::KeptBoard,
 }
 
 impl HooksHeard {
@@ -608,7 +608,7 @@ impl purlis_host::Hear for HooksHeard {
 struct StandInChannel {
     relaying: Arc<purlis_core::hookwire::relay::Relaying>,
     issued: Arc<Mutex<Vec<u32>>>,
-    board: crate::sessionhost::KeptBoard,
+    board: purlis_core::hookchannel::KeptBoard,
 }
 
 impl purlis_host::Channel for StandInChannel {

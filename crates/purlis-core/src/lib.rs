@@ -103,6 +103,8 @@ pub mod harness_plugin;
 #[cfg(unix)]
 pub(crate) mod held;
 pub mod heredoc;
+#[cfg(unix)]
+pub mod hookchannel;
 pub mod hookreg;
 pub mod hookstate;
 pub mod hookwire;

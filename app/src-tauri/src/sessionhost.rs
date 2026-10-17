@@ -164,70 +164,39 @@ impl purlis_host::Compose for Composes {
 
 /// **The event log in the window's session host, and what a program's end leaves there**
 /// (#2003): the host's [`purlis_host::Record`] for the window's binary, shared with its hook
-/// channels ([`HookChannels`]).
+/// channels ([`hook_channels`]).
 ///
 /// The log is opened the first time it is needed, which is as the host first holds a project:
 /// only a window whose chats run in the host holds one, so a host whose window keeps the log
 /// itself never opens it, and the device has one writer either way. One that cannot be opened
 /// is said once in the host's log, and every write is refused in words from then on.
 #[derive(Clone)]
-pub struct Kept(Arc<KeptLog>);
-
-struct KeptLog {
-    open: Box<dyn Fn() -> std::io::Result<purlis_core::eventlog::Recorder> + Send + Sync>,
-    opened: std::sync::OnceLock<Option<crate::hooks::Events>>,
-}
+pub struct Kept(purlis_core::hookchannel::EventLog);
 
 impl Kept {
     /// The event log of this machine, as the window would open it
     /// (`purlis_core::eventlog::Recorder::open`).
     pub fn on_this_machine() -> Kept {
-        Kept::opening(purlis_core::eventlog::Recorder::open)
+        Kept(purlis_core::hookchannel::EventLog::on_this_machine())
     }
 
     /// The event log `open` opens, the first time it is needed.
     pub fn opening(
         open: impl Fn() -> std::io::Result<purlis_core::eventlog::Recorder> + Send + Sync + 'static,
     ) -> Kept {
-        Kept(Arc::new(KeptLog {
-            open: Box::new(open),
-            opened: std::sync::OnceLock::new(),
-        }))
-    }
-
-    /// The log, opened now if it was not yet: `None` where it could not be.
-    fn events(&self) -> Option<&crate::hooks::Events> {
-        self.0
-            .opened
-            .get_or_init(|| match (self.0.open)() {
-                Ok(recorder) => Some(crate::hooks::Events::here(recorder)),
-                Err(why) => {
-                    purlis_host_says(&format!(
-                        "no event log ({why}); what chats do in this host is not recorded"
-                    ));
-                    None
-                }
-            })
-            .as_ref()
+        Kept(purlis_core::hookchannel::EventLog::opening(open))
     }
 
     /// The recorder itself, for a drain of a hook spool into it.
     fn log(&self) -> Option<Arc<Mutex<purlis_core::eventlog::Recorder>>> {
-        self.events().and_then(crate::hooks::Events::held).cloned()
+        self.0.recorder()
     }
 
     /// Writes `entry` durably: what the window decided, or what its hearing made of a line.
     fn write(&self, entry: purlis_core::eventlog::Entry) -> std::io::Result<()> {
-        match self.events() {
-            Some(events) => events.record(entry),
-            None => Err(std::io::Error::other(NO_EVENT_LOG)),
-        }
+        self.0.write(entry)
     }
 }
-
-/// What a write is refused with in a host whose event log could not be opened.
-const NO_EVENT_LOG: &str = "the session host has no event log on this machine, so nothing was \
-     recorded";
 
 impl purlis_host::Record for Kept {
     fn record(&self, entry: serde_json::Value) -> Result<(), String> {
@@ -313,278 +282,13 @@ fn stop_by(stopped: purlis_host::Stopped) -> purlis_core::state::run::StopBy {
     }
 }
 
-/// What hears each held project's hooks in the window's session host (#2000): the host's
-/// [`purlis_host::Hear`] for the window's binary.
-///
-/// **The project's hook channel, as the window bound it before.** At the same place
-/// ([`crate::hooks::socket_for`]), with the same listener and every one of its checks: the
-/// token, the process that sent it, each framed ask again, the spool's keys beside it. Only who
-/// listens changes, and the host is each chat's ancestor, so a hook admits it. Each line it
-/// admits is handed on to the window ([`purlis_core::hookwire::relay`]).
-///
-/// **And recorded here** (#2003): what the window's hearing would have written of a line comes
-/// back with its reply and is written in the event log the host keeps ([`Kept`]), on the thread
-/// that heard the line; what a hook spooled is drained into the same log as the project is held,
-/// soon after a chat is heard from, and as a chat is closed. So a line and its spooled copy are
-/// told apart in one process, and recorded once (#952).
-///
-/// **It keeps the project's kept board** (#2194, [`KeptBoard`]), which outlives the window.
-pub struct HookChannels(pub Kept);
-
-/// **A held project's kept board, in the session host** (#2194, CONTEXT.md,
-/// `purlis_core::state::kept`).
-///
-/// The window makes each move on its own copy and tells this one ([`KeptBoard::moved`]), so
-/// the two read the same; a window that holds the project takes this one whole
-/// ([`KeptBoard::whole`]). A line no window took moves it here, as the window's own hearing
-/// would with nothing said of what a chat waits on ([`KeptBoard::handing_on`]), and so does a
-/// program that ends with no window there ([`KeptBoard::ended`]): nothing a chat says while the
-/// window is away is lost.
-#[derive(Clone, Default)]
-pub struct KeptBoard(Arc<Mutex<purlis_core::state::Board>>);
-
-/// The most a board answered to a window may be, its frame's envelope aside.
-const A_BOARD_IS_AT_MOST: usize = purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES - 4096;
-
-impl KeptBoard {
-    fn board(&self) -> std::sync::MutexGuard<'_, purlis_core::state::Board> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// What hands each line on through `hand_on`, the board moved by one no window took.
-    pub fn handing_on(&self, hand_on: purlis_host::HandOn) -> purlis_core::hookwire::relay::HandOn {
-        let kept = self.clone();
-        Box::new(move |id, heard| {
-            let told = serde_json::to_value(heard).is_ok_and(|line| hand_on(id, line));
-            if !told {
-                kept.board().hear(heard);
-            }
-            told
-        })
-    }
-
-    /// The window made `moved` of chat `number` on its own board: whether this host read it.
-    /// One it cannot read moves nothing, and is said in the log.
-    pub fn moved(&self, number: u32, moved: serde_json::Value) -> bool {
-        match serde_json::from_value::<purlis_core::state::Move>(moved) {
-            Ok(moved) => {
-                self.board().make(number, moved);
-                true
-            }
-            Err(why) => {
-                purlis_host_says(&format!(
-                    "a move of chat {number} the window made could not be read, so the board \
-                     kept here did not make it: {why}"
-                ));
-                false
-            }
-        }
-    }
-
-    /// The board, whole, for a window that holds the project. One larger than the link carries
-    /// is refused in a sentence, which the window shows the person (#2006), and said in the log:
-    /// the window then starts from its own.
-    pub fn whole(&self) -> Result<serde_json::Value, String> {
-        let kept = serde_json::to_value(self.board().kept()).unwrap_or(serde_json::Value::Null);
-        let size = serde_json::to_vec(&kept).map_or(usize::MAX, |said| said.len());
-        if size > A_BOARD_IS_AT_MOST {
-            purlis_host_says(&format!(
-                "the board kept here is {size} bytes, more than the link carries \
-                 ({A_BOARD_IS_AT_MOST}), so the window starts from its own"
-            ));
-            return Err(format!(
-                "the board the session host kept is {size} bytes, more than one answer carries \
-                 ({A_BOARD_IS_AT_MOST})"
-            ));
-        }
-        Ok(kept)
-    }
-
-    /// A line handed on whose window went before it replied (#2006): heard here, as one no
-    /// window took is.
-    fn unheard(&self, heard: &purlis_core::hookwire::relay::Heard) {
-        self.board().hear(heard);
-    }
-
-    /// Chat `number`'s program ended, `exit`, with no window there to say so.
-    pub fn ended(&self, number: u32, exit: &session::Exit) {
-        let exit = match exit {
-            session::Exit::Code(code) => purlis_core::session::Exit::Code(*code),
-            session::Exit::Signal(signal) => purlis_core::session::Exit::Signal(signal.clone()),
-        };
-        self.board().exited(number, crate::hooks::code_of(&exit));
-    }
-}
-
-impl purlis_host::Hear for HookChannels {
-    fn open(
-        &self,
-        _project: &str,
-        path: &Path,
-        hand_on: purlis_host::HandOn,
-    ) -> Result<Option<Arc<dyn purlis_host::Channel>>, String> {
-        use purlis_core::hookwire::relay::{Keeping, Relaying};
-        let at = crate::hooks::socket_for(Some(path));
-        let listener = purlis_core::hookwire::Listener::bind(&at.within, &at.socket)
-            .map_err(|why| format!("its hook socket at {} ({why})", at.socket.display()))?;
-        let socket = listener.path().to_path_buf();
-        // What its chats' hooks spooled while nobody took their lines, before a chat is started
-        // here and issued a token (FD-30), as the window drains it as it binds the socket.
-        let kept = self.0.clone();
-        crate::hooks::drain_at_open(&socket, path, kept.log().as_deref());
-        let tokens = listener.tokens();
-        let board = KeptBoard::default();
-        // A chat's spool drained while it runs (#952), set off by its lines.
-        let spooled = {
-            let (dir, root, kept) = (
-                purlis_core::hookwire::spool::dir_for(&socket),
-                path.to_path_buf(),
-                kept.clone(),
-            );
-            crate::hooks::watching_spools(move |chat| {
-                if let Some(log) = kept.log() {
-                    crate::hooks::drain_while_running(&dir, &root, &log, chat);
-                }
-            })
-        };
-        let relaying = Relaying::keeping(
-            board.handing_on(hand_on),
-            Keeping {
-                record: {
-                    let (kept, root) = (kept.clone(), path.to_path_buf());
-                    // A line of this project's is recorded under this project.
-                    Box::new(move |entry| match &entry {
-                        purlis_core::eventlog::Entry::Report { plane, .. }
-                        | purlis_core::eventlog::Entry::Tool { plane, .. }
-                        | purlis_core::eventlog::Entry::Refused { plane, .. }
-                            if *plane == root =>
-                        {
-                            kept.write(entry)
-                        }
-                        _ => Err(std::io::Error::other(
-                            "what the window sent back to record is not of this project's line",
-                        )),
-                    })
-                },
-                heard_from: Box::new(move |chat| spooled.heard_from(chat)),
-                unheard: {
-                    let board = board.clone();
-                    Box::new(move |heard| board.unheard(heard))
-                },
-            },
-        );
-        let reading = listener.hear(relaying.hearing(Arc::clone(&tokens)));
-        Ok(Some(Arc::new(HookChannel {
-            socket,
-            root: path.to_path_buf(),
-            kept,
-            tokens,
-            relaying,
-            board,
-            reading: Mutex::new(Some(reading)),
-        })))
-    }
-}
-
-/// One held project's hook channel in the host.
-struct HookChannel {
-    socket: PathBuf,
-    /// Where its project is on this machine: what its chats are recorded under.
-    root: PathBuf,
-    kept: Kept,
-    tokens: Arc<purlis_core::hookwire::ChatTokens>,
-    relaying: Arc<purlis_core::hookwire::relay::Relaying>,
-    /// The project's board, kept here (#2194).
-    board: KeptBoard,
-    reading: Mutex<Option<purlis_core::hookwire::Reading>>,
-}
-
-impl purlis_host::Channel for HookChannel {
-    fn report_to(&self, number: u32) -> Result<session::Reporting, String> {
-        let token = self.tokens.issue(number).map_err(|why| why.to_string())?;
-        Ok(session::Reporting {
-            socket: self.socket.display().to_string(),
-            token: token.expose().to_owned(),
-        })
-    }
-
-    fn bind(&self, number: u32, pid: u32) {
-        match purlis_core::hookwire::Program::of(pid) {
-            Some(program) => self.tokens.bind(number, program),
-            None => purlis_host_says(&format!(
-                "chat {number}'s program (pid {pid}) could not be confirmed as it started, so \
-                 none of its lines will be read until it is restarted"
-            )),
-        }
-    }
-
-    fn ended(&self, number: u32, pid: u32) {
-        self.tokens.program_ended(number, pid);
-    }
-
-    fn forget(&self, number: u32) {
-        self.tokens.forget(number);
-        // What it spooled is recorded and its keys dropped, off the host's runtime: a drain
-        // makes each line durable (V99i, #2003).
-        let (socket, root, kept) = (self.socket.clone(), self.root.clone(), self.kept.clone());
-        let drained = std::thread::Builder::new()
-            .name("purlisd-spool-ended".into())
-            .spawn(move || {
-                crate::hooks::spool_ended(&socket, &root, kept.log().as_deref(), number);
-            });
-        if let Err(why) = drained {
-            purlis_host_says(&format!(
-                "chat {number}'s hook spool was not drained as it was closed ({why}); it is \
-                 drained at the next hold of its project"
-            ));
-        }
-    }
-
-    fn replied(&self, id: u64, reply: serde_json::Value) {
-        match serde_json::from_value(reply) {
-            Ok(replied) => self.relaying.replied(id, replied),
-            Err(why) => {
-                purlis_host_says(&format!("a reply the window sent could not be read: {why}"))
-            }
-        }
-    }
-
-    fn moved(&self, number: u32, moved: serde_json::Value) {
-        self.board.moved(number, moved);
-    }
-
-    fn board(&self) -> Result<serde_json::Value, String> {
-        self.board.whole()
-    }
-
-    /// The window went: what waits for its reply is let go of, and the board kept here hears
-    /// each report among it (#2006).
-    fn no_window(&self) {
-        self.relaying.let_go();
-    }
-
-    fn ended_with_no_window(&self, number: u32, exit: &session::Exit) {
-        self.board.ended(number, exit);
-    }
-}
-
-/// The channel stops: every line still waiting on the window is let go of, then the socket.
-impl Drop for HookChannel {
-    fn drop(&mut self) {
-        self.relaying.let_go();
-        drop(
-            self.reading
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take(),
-        );
-    }
-}
-
-/// One line in the host's log, which the window keeps.
-fn purlis_host_says(line: &str) {
-    use std::io::Write;
-    let _ = writeln!(std::io::stderr(), "purlisd: {line}");
+/// **What hears each held project's hooks in the window's session host** (#2000): the core's
+/// hook channels ([`purlis_core::hookchannel::HookChannels`]), which `purlis serve` hears with
+/// too (#2447), recording in the event log this host keeps ([`Kept`]), each chat's spool looked
+/// at as the window's own hearing looks at it.
+pub fn hook_channels(kept: &Kept) -> purlis_core::hookchannel::HookChannels {
+    purlis_core::hookchannel::HookChannels::keeping(kept.0.clone())
+        .looking_at_spools_after(crate::hooks::A_SPOOL_IS_LOOKED_AT_AFTER)
 }
 
 /// The window's session host, while it runs, and its supervisor (#2007).
