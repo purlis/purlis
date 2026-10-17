@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792278811802,
+  "lastUpdate": 1792280157740,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16212,6 +16212,48 @@ window.BENCHMARK_DATA = {
             "value": 104.666255,
             "unit": "ms",
             "extra": "median of 5 runs: 102.903, 103.217, 104.666, 104.987, 106.006 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "15fdc439e73d2693cd55611a2130d5bc7001267d",
+          "message": "Theme options (#2521)\n\n* Theme options: toggles and choices as token layers, every combination checked\n\nFormat 2 reads `options`: a toggle (label, description, default, an `on`\nlayer) or a choice (label, description, default, named values, each a\nlayer). A layer is token values for every appearance and optionally for\none appearance by its id. There are no free-number options. A theme holds\nat most 64 appearance x option combinations; one past that is refused\nwith its count.\n\nThe engine takes option values as an input (`Theme::with`) and draws\neach option's default when nothing chose one. `check_every` checks every\nappearance x option combination, and `purlis theme check` reports each\nwarning with the combination it was found in. The window is handed the\ndrawn theme's options with the value each is drawn with.\n\nPart of #2325.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settings › Appearance shows the drawn theme's options and where each value comes from\n\nBoth Appearance groups gain a Theme options row: each option of the\ntheme the window draws, the value it is drawn with, and a badge saying\nwhether that is the theme's default or a choice. The core's theme engine\nanswers through theme_in_force; the row is asked again whenever the\nwindow draws another theme. Docs and a changelog fragment.\n\nPart of #2325.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme options row: a plain badge with its sentence, and the Appearance labels\n\nThe row draws its own badge with the sentence as title and description,\nso the design set's exports stay as they are, and its help no longer\nreads as a note about a pick. The Workspace level's Appearance labels\ninclude Theme options.\n\nPart of #2325.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme check: option values in the theme's order; docs on toggle defaults and derived appearances\n\nA warning's combination, on its line and in its JSON, names the option\nvalues in the order the theme declares its options. The themes page says\nthe check's JSON gives a toggle's default as on or off where theme.json\nwrites true or false, and Theme.appearances says it is derived: a theme\nis edited through its reader, never in place.\n\nPart of #2325.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme options: one token reader for appearances and option layers, the schema regenerated\n\nAn appearance's tokens and an option value's layer are read by one\nreader, so a layer holds whatever an appearance's tokens may: colours,\nand geometry inside its bounds, with what compact draws following. Tint\nis the one key format 2 does not read yet. The published schema is\nregenerated from the engine.\n\nPart of #2325.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme options: the consent floors hold on every combination drawn; bindings regenerated\n\nTests that an option value which breaks a consent floor is drawn with\npurlis's own values for those tokens in every appearance, and that what\ncompact draws follows the geometry an option sets. The window's bindings\ncarry the floors' Notice beside the options.\n\nPart of #2325.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T03:34:30+04:00",
+          "tree_id": "3f82ef052ca1d2636203eaa2763a9b3b65e7dbc9",
+          "url": "https://github.com/purlis/purlis/commit/15fdc439e73d2693cd55611a2130d5bc7001267d"
+        },
+        "date": 1792280156663,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5320675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.532, 0.532, 0.539, 0.576 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.883143,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.351, 16.584, 16.883, 17.096, 17.192 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.3507285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.531, 102.476, 103.351, 103.582, 104.712 ms"
           }
         ]
       }
