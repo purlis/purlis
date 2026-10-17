@@ -29,8 +29,10 @@ fn key() -> String {
 /// A repository outside any plane, a chat's armed environment, and an app listening.
 ///
 /// **The reading is dropped first**: it wakes its own thread by connecting to the socket, which
-/// has to still be there.
+/// has to still be there. Before it, a stalled app's hold is let go ([`Chat::with_a_stalled_app`]).
 struct Chat {
+    /// Held while the app's hearer of refusals is to stall; dropped, it lets the hearer go.
+    stall: Option<mpsc::Sender<()>>,
     _reading: purlis_core::hookwire::Reading,
     heard: mpsc::Receiver<CommitRefused>,
     socket: PathBuf,
@@ -41,6 +43,21 @@ struct Chat {
 
 impl Chat {
     fn new() -> Self {
+        Self::hearing(false)
+    }
+
+    /// A chat whose app stalls on every refusal it hears until [`Chat::let_the_app_go`], far past
+    /// the 250 ms a hook waits (`A_NOTICE_TAKES_AT_MOST`): each refusal's hook spools its line.
+    fn with_a_stalled_app() -> Self {
+        Self::hearing(true)
+    }
+
+    /// The stalled app's hearer, let go: what it holds it then records live.
+    fn let_the_app_go(&mut self) {
+        drop(self.stall.take());
+    }
+
+    fn hearing(stalled: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let hooks = GitHooks::at(root.join("app").join("git-hooks"));
@@ -50,6 +67,9 @@ impl Chat {
         let token = listener.tokens().issue_to_this_process(7).expect("a token");
         let (tx, heard) = mpsc::channel();
         let tx = Mutex::new(tx);
+        let (stall, held) = mpsc::channel::<()>();
+        let held = Mutex::new(held);
+        let stall = stalled.then_some(stall);
         let reading = listener.hear(Hearing {
             secret_exec: Box::new(|_, _, writer| {
                 purlis_core::secrets::brokered::not_answered(writer)
@@ -63,7 +83,12 @@ impl Chat {
             noticed: Box::new(|_| {}),
             saved: Box::new(|_| {}),
             refused: Box::new(move |refused| {
-                tx.lock().unwrap().send(refused).unwrap();
+                if stalled {
+                    // Until the test lets go; only ever disconnected, never sent to.
+                    let _ = held.lock().unwrap().recv();
+                }
+                // A stalled hearer can be let go as the chat is dropped, with no one to hear.
+                let _ = tx.lock().unwrap().send(refused);
                 Ok(())
             }),
             tool: Box::new(|_| Ok(())),
@@ -82,6 +107,7 @@ impl Chat {
             env,
             heard,
             socket,
+            stall,
             _reading: reading,
         };
         chat.git(&["init", "-q", "-b", "main", "."]);
@@ -136,17 +162,21 @@ impl Chat {
     /// was never coming (#2255).
     ///
     /// A line can be in both: the hook stopped waiting and spooled it, and the app, only slow,
-    /// recorded it too. The app's drain knows that copy by its delivery and records it once, so
-    /// here it is counted once.
+    /// read it later and recorded it too. The app's drain knows that copy by the delivery id it
+    /// carries (#952), which neither copy hands a hearer, so here the copies are told apart by
+    /// what they say: this answers each distinct refusal once.
     fn told(&self) -> Vec<CommitRefused> {
         let mut told: Vec<CommitRefused> = self.heard.try_iter().collect();
         spool::drain(&spool::dir_for(&self.socket), &mut |item| {
-            if let spool::Drained::Line {
-                line: spool::Spooled::Refused(refused),
-                ..
-            } = item
-            {
-                told.push(refused);
+            match item {
+                spool::Drained::Line {
+                    line: spool::Spooled::Refused(refused),
+                    ..
+                } => told.push(refused),
+                spool::Drained::Spool { .. } => {}
+                // A line that did not check, a number with no line, or a kind no git hook
+                // spools: never the quiet answer a test reads as "nothing was told".
+                other => panic!("the spool held more than refusals: {other:?}"),
             }
             Ok(())
         })
@@ -675,4 +705,33 @@ fn a_chat_cannot_push_an_allowlist_change_even_one_the_operator_committed() {
             .success(),
         "the operator's own terminal is not armed"
     );
+}
+
+/// #2255: an app slower than a hook waits is told of the refusal by the spool. The hook does not
+/// wait past `A_NOTICE_TAKES_AT_MOST`; it spools the line and exits, and git returns. The app
+/// here records nothing until the test lets it go, so only the spool can hold the line.
+#[test]
+fn a_refusal_the_app_is_too_slow_to_take_is_in_the_spool_when_git_returns() {
+    let mut chat = Chat::with_a_stalled_app();
+    let before = chat.head();
+    std::fs::write(chat.repo.join("deploy.sh"), format!("TOKEN={}\n", key())).unwrap();
+    chat.git(&["add", "deploy.sh"]);
+
+    let ran = chat.git(&["commit", "-q", "-m", "deploy"]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.head(), before, "nothing was committed");
+    assert!(
+        spool::holds_lines(&spool::dir_for(&chat.socket), 7),
+        "the hook spooled the line the app did not take in time"
+    );
+    // RED probe (#2255): the old live-only wait.
+    let heard = chat
+        .heard
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(heard.chat, 7);
+    assert!(heard.commit_refused.contains("deploy.sh:1"), "{heard:?}");
+    assert!(!heard.commit_refused.contains(&key()), "{heard:?}");
+    chat.let_the_app_go();
 }
