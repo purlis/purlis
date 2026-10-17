@@ -216,7 +216,8 @@ pub(super) fn too_many(called: &str, appearances: usize, options: &[ThemeOption]
 }
 
 /// Every combination of option values, the first option's slowest, each value in its option's
-/// order.
+/// order. [`Values`] is keyed by option id; a reader that shows them in the theme's order walks
+/// the theme's options.
 pub(super) fn every(options: &[ThemeOption]) -> Vec<Values> {
     let mut all = vec![Values::new()];
     for option in options {

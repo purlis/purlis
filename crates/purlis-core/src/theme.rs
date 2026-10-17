@@ -179,6 +179,10 @@ pub struct Theme {
     pub name: String,
     /// Its appearances, the first one what it draws when nothing chose another, each drawn with
     /// its option values: each option's default, until [`Self::with`] draws others.
+    ///
+    /// **Derived**: drawn from the appearances the theme declares and its options when it is
+    /// read. Edit a theme through its reader ([`load`], [`Library`]) or draw other values with
+    /// [`Self::with`]; a change made here in place is lost the next time the theme is drawn.
     pub appearances: Vec<ResolvedTheme>,
     /// Its options (#2325), in its order: a theme it extends' first, then its own.
     #[serde(skip_serializing_if = "Vec::is_empty")]

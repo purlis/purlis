@@ -33,7 +33,8 @@ Then `refused:`, one line per theme purlis refused and why. `--json` answers
 `{"schema": 1, "themes": [{"id", "name", "appearances", "options", "combinations", "from",
 "refused"}]}`, where each appearance is `{"id", "appearance", "high_contrast"}`, each option is
 `{"id", "label", "description", "kind", "default", "values": [{"id", "label"}]}` (a toggle's
-values are `off` and `on`), `combinations` is how many appearance × option combinations the
+values are `off` and `on`, so its `default` here is `"on"` or `"off"`, where `theme.json`
+writes `true` or `false`), `combinations` is how many appearance × option combinations the
 theme has, `from` is `{"kind": "built-in"}`,
 `{"kind": "mine", "path"}` or `{"kind": "extension", "extension"}`, and `refused` is `null` or
 why (`name`, `appearances`, `options` and `combinations` are then `null`).
@@ -91,9 +92,9 @@ not checked by this purlis yet.
   pair of tokens that is drawn as text on a surface, with its ratio and the floor it is under,
   as the theme is and tinted by every workspace colour, one line per pair. With more than one
   combination each line starts with the combination: the appearance's id, then each option's
-  value (`dark, borders on: …`). A theme with options says them on an `options:` line under its
-  name, with how many combinations were checked. A warning is the author's call; the theme is
-  drawn.
+  value in the theme's order of its options (`dark, borders on: …`). A theme with options says
+  them on an `options:` line under its name, with how many combinations were checked. A warning
+  is the author's call; the theme is drawn.
 - **Hard floors** are the few rules a theme can never break. This purlis does not check them
   yet (#2332), and says so rather than reporting a pass.
 
@@ -123,17 +124,17 @@ is refused, **2** when there is no such theme.
 
 `refused` is `null`, or why the theme is not drawn, and `errors` then lists each value that
 refused it (`said`, and `token` when it was about one); `name` and `appearances` are `null`.
-`notes` is what was left out of a theme that is drawn. A warning's `appearance` is the id of
-the appearance it was found in, and its `options` the value of each option it was drawn with
-(`{}` for a theme with none). Its `kind` is `contrast` (a `pair`, its `ratio`, and `under`
-when the back is a wash laid over another token), `ansi` (a terminal colour too close to the
-terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
-drawn exactly as `other`). `tint` is the workspace colour it was found in, or `null` for the
-theme as it is. `hard_floors` is `null` until purlis checks them. `clean` is true with no
-error, no note and no warning; it covers those only, never hard floors, which `hard_floors`
-reports on its own. `schema` is the version of this shape, in both answers: a reader checks it
-first. A theme folder's `from` is `{"kind": "folder", "path"}`, a theme file's
-`{"kind": "file", "path"}`.
+`notes` is what was left out of a theme that is drawn. A warning's `appearance` is the id of the
+appearance it was found in, and its `options` the value of each option it was drawn with (`{}`
+for a theme with none), in the theme's order of its options. Its `kind` is `contrast` (a `pair`,
+its `ratio`, and `under` when the back is a wash laid over another token), `ansi` (a terminal
+colour too close to the terminal's background: `token`, `ratio`, `floor`) or
+`selected-not-apart` (the selected row drawn exactly as `other`). `tint` is the workspace colour
+it was found in, or `null` for the theme as it is. `hard_floors` is `null` until purlis checks
+them. `clean` is true with no error, no note and no warning; it covers those only, never hard
+floors, which `hard_floors` reports on its own. `schema` is the version of this shape, in both
+answers: a reader checks it first. A theme folder's `from` is `{"kind": "folder", "path"}`, a
+theme file's `{"kind": "file", "path"}`.
 
 ## An extension's theme
 

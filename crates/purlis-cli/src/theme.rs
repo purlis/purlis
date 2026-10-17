@@ -523,16 +523,24 @@ fn checks(found: &Found) -> Vec<theme::Checked> {
         .map_or_else(Vec::new, theme::check_every)
 }
 
-/// What a combination is called on a warning's line: its appearance, and each option's value
-/// when the theme has options (`dark, borders on, accent teal`).
-fn combination(checked: &theme::Checked) -> String {
-    let mut parts = vec![checked.appearance.clone()];
-    parts.extend(
+/// The option values a combination was drawn with, in the theme's order of its options.
+fn in_theme_order<'a>(
+    theme: &'a Theme,
+    checked: &'a theme::Checked,
+) -> impl Iterator<Item = (&'a str, &'a str)> {
+    theme.options.iter().filter_map(|option| {
         checked
             .options
-            .iter()
-            .map(|(option, value)| format!("{option} {value}")),
-    );
+            .get(&option.id)
+            .map(|value| (option.id.as_str(), value.as_str()))
+    })
+}
+
+/// What a combination is called on a warning's line: its appearance, and each option's value
+/// in the theme's order when the theme has options (`dark, borders on, accent teal`).
+fn combination(theme: &Theme, checked: &theme::Checked) -> String {
+    let mut parts = vec![checked.appearance.clone()];
+    parts.extend(in_theme_order(theme, checked).map(|(option, value)| format!("{option} {value}")));
     shown::short(&parts.join(", "))
 }
 
@@ -606,7 +614,7 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
     let said: Vec<String> = checked
         .iter()
         .flat_map(|one| {
-            let called = combination(one);
+            let called = combination(theme, one);
             warnings(&one.report.findings)
                 .into_iter()
                 .map(move |warning| {
@@ -749,11 +757,21 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
     let warnings: Vec<Value> = checked
         .iter()
         .flat_map(|one| {
+            // The option values in the theme's order of its options.
+            let options: serde_json::Map<String, Value> = found
+                .theme
+                .as_ref()
+                .map(|theme| {
+                    in_theme_order(theme, one)
+                        .map(|(option, value)| (option.to_owned(), Value::from(value)))
+                        .collect()
+                })
+                .unwrap_or_default();
             one.report.findings.iter().map(move |finding| {
                 let mut said = serde_json::to_value(finding).unwrap_or_default();
                 if let Some(fields) = said.as_object_mut() {
                     fields.insert("appearance".to_owned(), Value::from(one.appearance.clone()));
-                    fields.insert("options".to_owned(), json!(one.options));
+                    fields.insert("options".to_owned(), Value::Object(options.clone()));
                 }
                 said
             })

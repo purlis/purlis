@@ -585,7 +585,7 @@ fn the_check_runs_every_appearance_and_option_combination_and_names_the_one_that
     assert!(
         failing
             .iter()
-            .all(|line| line.starts_with("  dark, accent ") && line.contains(", quiet on: ")),
+            .all(|line| line.starts_with("  dark, quiet on, accent ")),
         "{}",
         ran.out
     );
@@ -598,6 +598,14 @@ fn the_check_runs_every_appearance_and_option_combination_and_names_the_one_that
     let first = &json["warnings"][0];
     assert_eq!(first["appearance"], "dark");
     assert_eq!(first["options"]["quiet"], "on");
+    // In the theme's order of its options, not by name.
+    let named: Vec<&str> = first["options"]
+        .as_object()
+        .expect("the option values")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(named, ["quiet", "accent"]);
 }
 
 #[test]
