@@ -97,7 +97,8 @@ fn purlis_serve_listens_under_the_runtime_directory_and_a_second_one_leaves_it_s
     beside.sort();
     assert_eq!(
         beside,
-        ["config", "run"],
+        // The homes the test pinned there, and nothing else.
+        ["config", "data", "run"],
         "nothing went in the inherited temporary directory"
     );
     let credentials = purlis_core::machine::charterd(&dir.path().join("config"));
