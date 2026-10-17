@@ -221,7 +221,14 @@ export type Theme = {
   /** How the window moves: the durations and easings in `motion.ts`, which a theme sets under
    *  `motion` exactly as it sets colours under `tokens`. */
   motion: Motion;
+  /** The theme's icon set (#2337): each view it draws, as path data the core's theme engine
+   *  checked, for `RailIcon` to stroke. A view it does not draw, and every view of a theme
+   *  without one, is the window's own mark (`VIEW_MARKS`). */
+  icons?: Readonly<Record<string, RailSymbol>>;
 };
+
+/** One icon of a theme's set: path data on a 24 grid. */
+export type RailSymbol = { readonly paths: readonly string[] };
 
 /** The custom property a token is written to: `surface.base` becomes `--surface-base`. */
 export function property(token: Token): string {
@@ -294,6 +301,7 @@ export function sameTheme(a: Theme, b: Theme): boolean {
   if (a === b) return true;
   if (a.name !== b.name || a.appearance !== b.appearance) return false;
   if (TOKENS.some((token) => a.values[token] !== b.values[token])) return false;
+  if (JSON.stringify(a.icons ?? {}) !== JSON.stringify(b.icons ?? {})) return false;
   return JSON.stringify(a.motion) === JSON.stringify(b.motion);
 }
 

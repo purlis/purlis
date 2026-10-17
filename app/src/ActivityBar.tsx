@@ -17,7 +17,9 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
+import { RailIcon } from "./FileIcon";
 import { useTabStop } from "./roving";
+import { useRailIcons } from "./theme/railIcons";
 import type { OwnViewId, PanelViewId, Side, ViewId } from "./regions";
 
 /** A view as its tab draws it: its id, what it is called and its mark. */
@@ -43,7 +45,8 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  * **Icons, and the words are still there** (`docs/design-system.md` §Icons): each tab is its
  * view's mark, the view's name is its `aria-label`, and the tooltip says what pressing does,
  * with the key. The mark is what the view IS, never which edge it is on, so it is right on the
- * other side too.
+ * other side too. **A theme may redraw a view's mark** with its icon set (#2337,
+ * `theme/railIcons.ts`); a view it does not draw keeps its own.
  *
  * **Generic over the side.** It knows nothing of the left: the right side's bar (#1678) is this
  * component with the attention region's views, drawn by `RegionFrame` from the same data, and an
@@ -93,12 +96,14 @@ export function ActivityBar({
     open,
     views.map((one) => one.view),
   );
+  const iconOf = useRailIcons();
   return (
     <div className="activity-bar" data-side={side} data-region={region}>
       <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
         <div role="tablist" aria-orientation="vertical" aria-label={name}>
           {views.map(({ view, name: called, mark: Mark }) => {
             const selected = view === open;
+            const icon = iconOf(view);
             const key = keys?.[view];
             const badge = badges?.[view];
             const described = `${tabOf(view)}-badge`;
@@ -120,7 +125,11 @@ export function ActivityBar({
                   }
                   onClick={() => onPick(view)}
                 >
-                  <Mark aria-hidden="true" />
+                  {icon ? (
+                    <RailIcon view={view} paths={icon.paths} />
+                  ) : (
+                    <Mark aria-hidden="true" />
+                  )}
                   {badge !== undefined && (
                     <span id={described} className="activity-badge">
                       {badge}

@@ -33,3 +33,31 @@ export function FileIcon({ symbol }: { symbol: IconSymbol }) {
     </svg>
   );
 }
+
+/**
+ * **One icon of a theme's icon set** (#2337): a view's tab on the rails, drawn the way the
+ * window's own Lucide marks are: on a 24 grid, stroked 2 wide with round caps and joins in
+ * `currentColor`, which the tab's rules set for its state. Only the path data is the theme's,
+ * checked against the path grammar by the core's theme engine; every attribute is this
+ * component's, so a theme can say where the lines go and nothing else.
+ */
+export function RailIcon({ view, paths }: { view: string; paths: readonly string[] }) {
+  return (
+    <svg
+      className="rail-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      data-icon={view}
+    >
+      {paths.map((d, at) => (
+        <path key={at} d={d} />
+      ))}
+    </svg>
+  );
+}
