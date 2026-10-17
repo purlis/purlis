@@ -15,7 +15,7 @@ import "./specimen.css";
 import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
 import { DEFAULT_TEXT, drawWindowText } from "../textSize";
-import { apply, drawIn, type Theme } from "../theme/theme";
+import { apply, drawIn } from "../theme/theme";
 import { Specimen } from "./Specimen";
 import { drawn, failed, given } from "./page";
 
@@ -24,7 +24,7 @@ async function draw(): Promise<void> {
   const root = document.documentElement;
   drawIn(theme);
   // Still: every duration collapsed, as reduced motion collapses it.
-  apply(theme as Theme, root, true);
+  apply(theme, root, true);
   drawWindowText(DEFAULT_TEXT.window, root);
   root.style.setProperty("--specimen-width", `${width}px`);
   root.style.setProperty("--specimen-height", `${height}px`);
