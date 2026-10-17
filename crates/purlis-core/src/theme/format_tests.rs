@@ -52,10 +52,36 @@ fn classic_light() -> &'static ResolvedTheme {
     built_in("purlis-light").expect("Classic's light appearance")
 }
 
-/// Each value of `theme` in token order, as one string to digest.
+/// The tokens #2327 added after the digests below were taken: what Classic gives each is held
+/// to what the window drew before in `typed_tests.rs`.
+fn added_later(token: &str) -> bool {
+    [
+        "syntax.",
+        "markdown.",
+        "selection.",
+        "scrollbar.",
+        "chart.",
+        "window.",
+        "terminal.selection-foreground",
+        "terminal.selection-inactive",
+        "terminal.scrollbar",
+    ]
+    .iter()
+    .any(|prefix| token.starts_with(prefix))
+        || ["caret", "placeholder"].contains(&token)
+}
+
+/// Each value of `theme` in token order, as one string to digest: the tokens there were when
+/// the digests were taken.
 fn digest(theme: &ResolvedTheme) -> String {
     use sha2::Digest;
-    let sorted = serde_json::to_string(&theme.values).expect("values serialise");
+    let then: std::collections::BTreeMap<&str, &String> = theme
+        .values
+        .iter()
+        .filter(|(token, _)| !added_later(token))
+        .map(|(token, value)| (*token, value))
+        .collect();
+    let sorted = serde_json::to_string(&then).expect("values serialise");
     sha2::Sha256::digest(sorted.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -490,7 +516,7 @@ fn a_token_or_motion_name_purlis_does_not_have_is_left_out_and_said() {
         "name": "Ahead",
         "appearances": [{
             "id": "dark", "appearance": "dark",
-            "tokens": { "syntax.keyword": "#ff00ff", "accent.base": "#123456" },
+            "tokens": { "gutter.marker": "#ff00ff", "accent.base": "#123456" },
             "motion": { "duration.linger": 400 }
         }]
     }));
@@ -499,7 +525,7 @@ fn a_token_or_motion_name_purlis_does_not_have_is_left_out_and_said() {
     assert_eq!(
         said(&loaded),
         [
-            "syntax.keyword in appearance dark is not a purlis token, so it is left out",
+            "gutter.marker in appearance dark is not a purlis token, so it is left out",
             "duration.linger is not a purlis motion token, so it is left out",
         ]
     );
@@ -720,7 +746,8 @@ fn the_schema_completes_every_token_and_motion_name_and_nothing_else() {
         .as_object()
         .expect("token names");
     let named: Vec<&str> = tokens.keys().map(String::as_str).collect();
-    assert_eq!(named, TOKENS);
+    let expected: Vec<&str> = TOKENS.iter().copied().chain(typed::all()).collect();
+    assert_eq!(named, expected);
     assert_eq!(schema["$defs"]["tokens"]["additionalProperties"], false);
     let motion = schema["$defs"]["motion"]["properties"].as_object().unwrap();
     let names: Vec<&str> = motion.keys().map(String::as_str).collect();

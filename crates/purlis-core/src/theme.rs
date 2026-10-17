@@ -61,6 +61,7 @@ mod icons;
 mod resolve;
 mod schema;
 mod tint;
+mod typed;
 pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
@@ -69,7 +70,10 @@ pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
-use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
+pub use typed::Typed;
+use vocabulary::{
+    DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
+};
 
 #[cfg(test)]
 mod format_tests;
@@ -77,6 +81,8 @@ mod format_tests;
 mod icons_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod typed_tests;
 
 /// Whether a theme is drawn on a dark window or a light one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -118,6 +124,9 @@ pub struct ResolvedTheme {
     pub values: BTreeMap<&'static str, String>,
     /// How the window moves.
     pub motion: Motion,
+    /// Each token that is not a colour (#2327): the syntax roles' italic and bold, and the
+    /// terminal's cursor, line height and bold text.
+    pub typed: Typed,
     /// The theme's icon set (#2337), the same in each of its appearances: empty when the rails
     /// draw the window's own marks, as Purlis Classic's do.
     #[serde(skip_serializing_if = "Icons::is_empty")]
@@ -276,12 +285,14 @@ fn built_in_of(text: &str) -> Theme {
                     let value = tokens
                         .and_then(|tokens| tokens.get(*token))
                         .and_then(Value::as_str)
-                        .filter(|value| is_colour(value))
+                        .filter(|value| is_colour(value) || is_platform(token, value))
                         .unwrap_or_else(|| panic!("the built-in theme {name} has no {token}"));
                     (*token, value.to_owned())
                 })
                 .collect();
             let motion = motion_of(one.get("motion"))
+                .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
+            let typed = typed::complete(tokens)
                 .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
             ResolvedTheme {
                 name: pick.to_owned(),
@@ -292,6 +303,7 @@ fn built_in_of(text: &str) -> Theme {
                 high_contrast: false,
                 values,
                 motion,
+                typed,
                 icons: Icons::default(),
             }
         })
@@ -417,7 +429,14 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
         if is_token(given) {
             continue;
         }
-        if names_geometry(given) {
+        if typed::is_typed(given) {
+            notes.push(Complaint::about(
+                given,
+                format!(
+                    "{given} is set in a theme folder's theme.json (format 2), so it is left out"
+                ),
+            ));
+        } else if names_geometry(given) {
             complaints.push(Complaint::about(
                 given,
                 format!("{given} {GEOMETRY_IS_CORE}"),
@@ -493,6 +512,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             high_contrast: false,
             values,
             motion,
+            typed: base.typed.clone(),
             icons: Icons::default(),
         }),
         complaints: notes,

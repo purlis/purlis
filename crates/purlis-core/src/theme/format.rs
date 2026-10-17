@@ -35,6 +35,9 @@
 //! read yet, so naming one refuses the theme rather than drawing something other than what it
 //! says.
 //!
+//! - **A token that is not a colour** (#2327, [`super::typed`]) is given under `tokens` as a
+//!   colour is: a flag as `true` or `false`, the terminal cursor's shape by its name, the
+//!   terminal's line height as a number in its bound. A value of the wrong type refuses the theme.
 //! - **`icons`** names the theme's icon set (#2337): a file inside the theme's folder, read under
 //!   the same containment and cap as `theme.json` ([`super::icons`]). A view the set does not
 //!   draw is its parent's.
@@ -45,7 +48,7 @@ use std::path::Path;
 use serde_json::{Map, Value};
 
 use super::icons::{self, Icons};
-use super::vocabulary::{TOKENS, is_colour, names_geometry};
+use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform, names_geometry};
 use super::{
     Appearance, CLASSIC, Complaint, GEOMETRY_IS_CORE, Resolved, ResolvedTheme, Theme, built_in_for,
     classic, is_format_2, load_format_1, load_motion, stringify,
@@ -593,6 +596,13 @@ fn palette(raw: Option<&Value>, complaints: &mut Vec<Complaint>) -> BTreeMap<Str
             )));
             continue;
         }
+        if name == PLATFORM {
+            complaints.push(Complaint::said(format!(
+                "palette name \"{PLATFORM}\" is purlis's own word for what the platform draws, so \
+                 a palette cannot name a colour by it"
+            )));
+            continue;
+        }
         match value.as_str() {
             Some(hex) if is_colour(hex) => {
                 out.insert(name.clone(), hex.to_owned());
@@ -689,10 +699,18 @@ fn appearance(
     };
     let base = parent.unwrap_or_else(|| built_in_for(appearance));
     let mut values = base.values.clone();
+    let mut typed = base.typed.clone();
     match one.get("tokens") {
         None => {}
         Some(Value::Object(tokens)) => {
             for (token, value) in tokens {
+                let at = format!("in appearance {id}");
+                if let Some(read) = super::typed::read(token, value, &at, &mut typed) {
+                    if let Err(why) = read {
+                        complaints.push(Complaint::about(token, why));
+                    }
+                    continue;
+                }
                 let Some(known) = TOKENS.iter().copied().find(|it| *it == token) else {
                     if names_geometry(token) {
                         complaints.push(Complaint::about(
@@ -709,6 +727,14 @@ fn appearance(
                     }
                     continue;
                 };
+                // What the platform draws may be left to it by name (#2327).
+                if value
+                    .as_str()
+                    .is_some_and(|given| is_platform(known, given))
+                {
+                    values.insert(known, PLATFORM.to_owned());
+                    continue;
+                }
                 match colour(value, palette) {
                     Some(hex) => {
                         values.insert(known, hex);
@@ -741,6 +767,7 @@ fn appearance(
         high_contrast,
         values,
         motion,
+        typed,
         icons: Icons::default(),
     })
 }

@@ -75,6 +75,11 @@ pub const TOKENS: &[&str] = &[
     "terminal.selection",
     "terminal.find-match",
     "terminal.find-match-active",
+    "terminal.selection-foreground",
+    "terminal.selection-inactive",
+    "terminal.scrollbar",
+    "terminal.scrollbar-hover",
+    "terminal.scrollbar-active",
     "terminal.ansi.black",
     "terminal.ansi.red",
     "terminal.ansi.green",
@@ -91,6 +96,41 @@ pub const TOKENS: &[&str] = &[
     "terminal.ansi.bright-magenta",
     "terminal.ansi.bright-cyan",
     "terminal.ansi.bright-white",
+    "syntax.keyword",
+    "syntax.string",
+    "syntax.number",
+    "syntax.constant",
+    "syntax.comment",
+    "syntax.function",
+    "syntax.type",
+    "syntax.property",
+    "syntax.attribute",
+    "syntax.tag",
+    "syntax.heading",
+    "syntax.invalid",
+    "syntax.variable",
+    "syntax.operator",
+    "syntax.punctuation",
+    "markdown.link",
+    "markdown.code",
+    "markdown.code-block",
+    "markdown.quote",
+    "markdown.heading",
+    "selection.background",
+    "selection.text",
+    "caret",
+    "placeholder",
+    "scrollbar.thumb",
+    "scrollbar.track",
+    "chart.1",
+    "chart.2",
+    "chart.3",
+    "chart.4",
+    "chart.5",
+    "chart.6",
+    "chart.7",
+    "chart.8",
+    "window.background",
 ];
 
 /// How long each kind of change takes, in milliseconds (`motion.ts` says what each is for).
@@ -115,9 +155,10 @@ pub const EASINGS: &[&str] = &[
 pub const LONGEST: u32 = 10_000;
 
 /// **The tokens a workspace's colour turns** on its own tab and its chat strip (charter-app#281):
-/// the accent, the focus ring, the active-tab wash, the selected row, and the layer shades. Never
-/// the text and never the terminal, so every contrast a theme clears still holds. The window's
-/// `TINTED_TABS`; the window's own accent tint is the first six.
+/// the accent, the focus ring, the active-tab wash, the selected row, what is drawn in the accent
+/// (a markdown link, a chart's first series, #2327), and the layer shades. Never the text and
+/// never the terminal, so every contrast a theme clears still holds. The window's
+/// `TINTED_TABS`; the window's own accent tint is the first eight.
 pub const TINTED: &[&str] = &[
     "accent.base",
     "accent.surface",
@@ -125,6 +166,8 @@ pub const TINTED: &[&str] = &[
     "tab.active",
     "list.selected",
     "list.selected-edge",
+    "markdown.link",
+    "chart.1",
     "layer.workspace",
     "layer.chat",
     "layer.selected",
@@ -225,4 +268,79 @@ pub fn names_geometry(key: &str) -> bool {
     let bare = key.strip_prefix("--").unwrap_or(key);
     let group = bare.split(['.', '-']).next().unwrap_or_default();
     GEOMETRY_GROUPS.contains(&group.to_lowercase().as_str())
+}
+
+/// **The tokens a theme gives as a flag**, `true` or `false`, not a colour (#2327): whether each
+/// syntax role is drawn italic and bold, whether the terminal's cursor blinks, and whether the
+/// terminal draws bold text in the bright ANSI colours.
+pub const FLAGS: &[&str] = &[
+    "syntax.keyword.italic",
+    "syntax.keyword.bold",
+    "syntax.string.italic",
+    "syntax.string.bold",
+    "syntax.number.italic",
+    "syntax.number.bold",
+    "syntax.constant.italic",
+    "syntax.constant.bold",
+    "syntax.comment.italic",
+    "syntax.comment.bold",
+    "syntax.function.italic",
+    "syntax.function.bold",
+    "syntax.type.italic",
+    "syntax.type.bold",
+    "syntax.property.italic",
+    "syntax.property.bold",
+    "syntax.attribute.italic",
+    "syntax.attribute.bold",
+    "syntax.tag.italic",
+    "syntax.tag.bold",
+    "syntax.heading.italic",
+    "syntax.heading.bold",
+    "syntax.invalid.italic",
+    "syntax.invalid.bold",
+    "syntax.variable.italic",
+    "syntax.variable.bold",
+    "syntax.operator.italic",
+    "syntax.operator.bold",
+    "syntax.punctuation.italic",
+    "syntax.punctuation.bold",
+    "terminal.cursor-blink",
+    "terminal.bold-as-bright",
+];
+
+/// The token that says the terminal cursor's shape, one of [`CURSOR_STYLES`].
+pub const CURSOR_STYLE: &str = "terminal.cursor-style";
+
+/// The terminal cursor's shapes, as xterm names them.
+pub const CURSOR_STYLES: &[&str] = &["block", "underline", "bar"];
+
+/// The token that says the terminal's line height, a multiple of its text size within
+/// [`LINE_HEIGHTS`].
+pub const LINE_HEIGHT: &str = "terminal.line-height";
+
+/// The least and the most [`LINE_HEIGHT`] may be: xterm draws nothing under 1.
+pub const LINE_HEIGHTS: (f64, f64) = (1.0, 2.0);
+
+/// **The colour tokens the platform draws unless a theme says** (#2327): the window's text
+/// selection and the words in it, a field's caret and placeholder, the scrollbars' thumb, and the
+/// terminal's colour for selected text (each cell's own). One of these may be [`PLATFORM`]
+/// instead of a colour: purlis then writes nothing for it, and what draws it draws its default,
+/// as Purlis Classic does. A colour, transparent included, is drawn as given. A scrollbar's track
+/// is drawn only with a thumb, so it is not here.
+pub const PLATFORM_DRAWN: &[&str] = &[
+    "terminal.selection-foreground",
+    "selection.background",
+    "selection.text",
+    "caret",
+    "placeholder",
+    "scrollbar.thumb",
+];
+
+/// The value that leaves a token of [`PLATFORM_DRAWN`] to the platform. A closed word, never CSS;
+/// no palette may take it as a name.
+pub const PLATFORM: &str = "platform";
+
+/// Whether `token` holds [`PLATFORM`]: one of [`PLATFORM_DRAWN`] left to the platform.
+pub fn is_platform(token: &str, value: &str) -> bool {
+    value == PLATFORM && PLATFORM_DRAWN.contains(&token)
 }

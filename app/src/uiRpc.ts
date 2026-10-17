@@ -9033,6 +9033,15 @@ export type WindowTheme = {
 	motion: WindowMotion,
 	/**  The theme's icon set, by view id: empty when the rails draw the window's own marks. */
 	icons: { [key in string]: WindowIcon },
+	/**  The tokens that are not colours (#2327). */
+	typed: WindowTyped,
+};
+
+/**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */
+export type WindowTyped = {
+	flags: { [key in string]: boolean },
+	choices: { [key in string]: string },
+	numbers: { [key in string]: number | null },
 };
 
 /**  A person's opt-out, as the picker sends it. */

@@ -109,7 +109,7 @@
       }
     },
     "tokens": {
-      "description": "Token values; a token not named is the parent's, or Purlis Classic's of the same appearance.",
+      "description": "Token values: a colour, or for a flag, the terminal cursor's shape or its line height, a value of that type. A token not named is the parent's, or Purlis Classic's of the same appearance.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -302,6 +302,29 @@
         "terminal.find-match-active": {
           "$ref": "#/$defs/colour"
         },
+        "terminal.selection-foreground": {
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
+        },
+        "terminal.selection-inactive": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.scrollbar": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.scrollbar-hover": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.scrollbar-active": {
+          "$ref": "#/$defs/colour"
+        },
         "terminal.ansi.black": {
           "$ref": "#/$defs/colour"
         },
@@ -349,6 +372,261 @@
         },
         "terminal.ansi.bright-white": {
           "$ref": "#/$defs/colour"
+        },
+        "syntax.keyword": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.string": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.number": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.constant": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.comment": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.function": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.type": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.property": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.attribute": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.tag": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.heading": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.invalid": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.variable": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.operator": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.punctuation": {
+          "$ref": "#/$defs/colour"
+        },
+        "markdown.link": {
+          "$ref": "#/$defs/colour"
+        },
+        "markdown.code": {
+          "$ref": "#/$defs/colour"
+        },
+        "markdown.code-block": {
+          "$ref": "#/$defs/colour"
+        },
+        "markdown.quote": {
+          "$ref": "#/$defs/colour"
+        },
+        "markdown.heading": {
+          "$ref": "#/$defs/colour"
+        },
+        "selection.background": {
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
+        },
+        "selection.text": {
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
+        },
+        "caret": {
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
+        },
+        "placeholder": {
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
+        },
+        "scrollbar.thumb": {
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
+        },
+        "scrollbar.track": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.1": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.2": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.3": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.4": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.5": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.6": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.7": {
+          "$ref": "#/$defs/colour"
+        },
+        "chart.8": {
+          "$ref": "#/$defs/colour"
+        },
+        "window.background": {
+          "$ref": "#/$defs/colour"
+        },
+        "syntax.keyword.italic": {
+          "type": "boolean"
+        },
+        "syntax.keyword.bold": {
+          "type": "boolean"
+        },
+        "syntax.string.italic": {
+          "type": "boolean"
+        },
+        "syntax.string.bold": {
+          "type": "boolean"
+        },
+        "syntax.number.italic": {
+          "type": "boolean"
+        },
+        "syntax.number.bold": {
+          "type": "boolean"
+        },
+        "syntax.constant.italic": {
+          "type": "boolean"
+        },
+        "syntax.constant.bold": {
+          "type": "boolean"
+        },
+        "syntax.comment.italic": {
+          "type": "boolean"
+        },
+        "syntax.comment.bold": {
+          "type": "boolean"
+        },
+        "syntax.function.italic": {
+          "type": "boolean"
+        },
+        "syntax.function.bold": {
+          "type": "boolean"
+        },
+        "syntax.type.italic": {
+          "type": "boolean"
+        },
+        "syntax.type.bold": {
+          "type": "boolean"
+        },
+        "syntax.property.italic": {
+          "type": "boolean"
+        },
+        "syntax.property.bold": {
+          "type": "boolean"
+        },
+        "syntax.attribute.italic": {
+          "type": "boolean"
+        },
+        "syntax.attribute.bold": {
+          "type": "boolean"
+        },
+        "syntax.tag.italic": {
+          "type": "boolean"
+        },
+        "syntax.tag.bold": {
+          "type": "boolean"
+        },
+        "syntax.heading.italic": {
+          "type": "boolean"
+        },
+        "syntax.heading.bold": {
+          "type": "boolean"
+        },
+        "syntax.invalid.italic": {
+          "type": "boolean"
+        },
+        "syntax.invalid.bold": {
+          "type": "boolean"
+        },
+        "syntax.variable.italic": {
+          "type": "boolean"
+        },
+        "syntax.variable.bold": {
+          "type": "boolean"
+        },
+        "syntax.operator.italic": {
+          "type": "boolean"
+        },
+        "syntax.operator.bold": {
+          "type": "boolean"
+        },
+        "syntax.punctuation.italic": {
+          "type": "boolean"
+        },
+        "syntax.punctuation.bold": {
+          "type": "boolean"
+        },
+        "terminal.cursor-blink": {
+          "type": "boolean"
+        },
+        "terminal.bold-as-bright": {
+          "type": "boolean"
+        },
+        "terminal.cursor-style": {
+          "description": "The terminal cursor's shape.",
+          "enum": [
+            "block",
+            "underline",
+            "bar"
+          ]
+        },
+        "terminal.line-height": {
+          "description": "The terminal's line height, a multiple of its text size.",
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 2.0
         }
       }
     },
