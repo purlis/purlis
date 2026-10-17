@@ -75,6 +75,7 @@ async fn linked(
 
 #[test]
 fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
+    purlis_core::unsteered!();
     let Ok(image) = std::env::var("PURLIS_RUNNER_IMAGE") else {
         // No runner image of this build is named: nothing is run (the module's docs say where
         // it runs).
