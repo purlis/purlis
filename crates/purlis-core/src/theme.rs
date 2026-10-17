@@ -57,6 +57,7 @@ use serde_json::Value;
 
 mod check;
 mod format;
+mod icons;
 mod resolve;
 mod schema;
 mod tint;
@@ -64,6 +65,7 @@ pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
+pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
@@ -71,6 +73,8 @@ use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names
 
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod icons_tests;
 #[cfg(test)]
 mod tests;
 
@@ -94,8 +98,8 @@ pub struct Motion {
 /// **One appearance of a theme, complete**: what the window draws. Every token in [`TOKENS`] has
 /// a value, and so does every motion token.
 ///
-/// **It will grow** (spec #2313): typed values beyond colour and motion (geometry #2326, fonts,
-/// icons) and the option values it was drawn with (#2325). Its users are the window's wire types
+/// **It will grow** (spec #2313): typed values beyond colour, motion and icons (geometry and
+/// fonts #2326) and the option values it was drawn with (#2325). Its users are the window's wire types
 /// and the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ResolvedTheme {
@@ -114,6 +118,10 @@ pub struct ResolvedTheme {
     pub values: BTreeMap<&'static str, String>,
     /// How the window moves.
     pub motion: Motion,
+    /// The theme's icon set (#2337), the same in each of its appearances: empty when the rails
+    /// draw the window's own marks, as Purlis Classic's do.
+    #[serde(skip_serializing_if = "Icons::is_empty")]
+    pub icons: Icons,
 }
 
 impl ResolvedTheme {
@@ -284,6 +292,7 @@ fn built_in_of(text: &str) -> Theme {
                 high_contrast: false,
                 values,
                 motion,
+                icons: Icons::default(),
             }
         })
         .collect();
@@ -484,6 +493,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             high_contrast: false,
             values,
             motion,
+            icons: Icons::default(),
         }),
         complaints: notes,
         refused: false,

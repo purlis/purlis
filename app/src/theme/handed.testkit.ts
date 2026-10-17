@@ -51,6 +51,8 @@ function resolved(from: Appearance, at: number) {
     appearance: from.appearance,
     values: from.tokens,
     motion: { durations, easings },
+    // Classic names no icon set, so the rails draw the window's own marks (#2337).
+    icons: {},
   };
 }
 
