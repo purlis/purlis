@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792223369282,
+  "lastUpdate": 1792224324011,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15120,6 +15120,48 @@ window.BENCHMARK_DATA = {
             "value": 101.508209,
             "unit": "ms",
             "extra": "median of 5 runs: 100.986, 101.085, 101.508, 101.840, 101.981 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "50366314993f6d43aa5842437e4843132916b52f",
+          "message": "File rows read their words from menuWords.ts (#2412)\n\nfileRows in actions.ts wrote its rows' words inline. They now come from\nSAID (copyRelativePath, copyAbsolutePath, shellHere, openInEditor,\nstartAChatHere, addToChat), as viewRows' do since #2398. The window shows\nthe same words; the unit tests still write them out as the independent\ncheck. workspace-explorer.e2e.ts names the folder's rows by ROW and\npresses Open a shell tab here with pressMenuPath.\n\nCloses #2401\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T11:54:51+04:00",
+          "tree_id": "f783baa08dd720d1be05ac5f6ddd5832faae32af",
+          "url": "https://github.com/purlis/purlis/commit/50366314993f6d43aa5842437e4843132916b52f"
+        },
+        "date": 1792224322830,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4704555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.462, 0.470, 0.470, 0.474, 0.482 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2055455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.114, 16.171, 16.206, 16.427, 16.431 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4117775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.726, 101.240, 101.412, 101.807, 102.126 ms"
           }
         ]
       }
