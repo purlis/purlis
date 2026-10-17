@@ -32,7 +32,7 @@ use crate::theme::{self, Appearance, ResolvedTheme};
 pub const TOOL: &str = "theme_preview";
 
 /// Purlis Classic's id: today's look, whose two appearances are the two built-ins.
-pub const PURLIS_CLASSIC: &str = "purlis-classic";
+pub const PURLIS_CLASSIC: &str = theme::CLASSIC;
 
 /// How wide the specimen page is laid out, in CSS pixels.
 pub const WIDTH: u32 = 1280;
@@ -196,9 +196,11 @@ fn known() -> String {
 /// **The resolved theme `specimen` is drawn in**, by the theme engine, or why there is none.
 pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
     if specimen.theme == PURLIS_CLASSIC {
-        return Ok(theme::built_in_for(
-            specimen.appearance.unwrap_or(Appearance::Dark),
-        ));
+        let classic = theme::classic();
+        return Ok(specimen
+            .appearance
+            .and_then(|asked| classic.of(asked))
+            .unwrap_or_else(|| classic.first()));
     }
     let Some(found) = theme::built_in(&specimen.theme) else {
         return Err(format!(
