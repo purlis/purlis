@@ -4,7 +4,8 @@
 //! The dialing host keeps its link up (#2042, ADR 0078 §2): a link that drops comes back on
 //! its own, one that is half-open (open, carrying nothing) is noticed within the ping's deadline
 //! at both ends, and a link renews itself ahead of a limit on a stream's life, the new link up
-//! before the old one ends. Each runs on a cable the test cuts or freezes, in the runtime's
+//! before the old one ends, and the old one answering until its reader has moved to the new one
+//! (#2215). Each runs on a cable the test cuts or freezes, in the runtime's
 //! virtual time.
 
 use std::time::Duration;
@@ -142,4 +143,38 @@ async fn a_link_renews_itself_ahead_of_its_limit_with_the_new_one_up_first() {
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_renewed_link_answers_what_was_in_flight_until_its_reader_has_moved_to_the_new_one() {
+    let board = Board::default();
+    let liveness = Liveness {
+        renew_after: Some(Duration::from_secs(60 * 60)),
+        ..Liveness::default()
+    };
+    let (b, _told) = serve_b(board.clone(), a_as_pinned(), liveness);
+    let to_b = ToB::new(b);
+    let mut links = keep(&to_b, liveness);
+    let first = lists(up(&mut links).await).await;
+    links.moved();
+
+    let second = lists(up(&mut links).await).await;
+    let renewed = Instant::now();
+
+    // Until the reader has moved, the link it was using still answers.
+    tokio::time::sleep(liveness.deadline / 2).await;
+    let still = first.list().await;
+    assert!(
+        still.is_ok(),
+        "the renewed link ended before the reader moved: {still:?}"
+    );
+    links.moved();
+    while first.list().await.is_ok() {
+        assert!(
+            renewed.elapsed() < liveness.deadline,
+            "the renewed link outlived the move"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(second.list().await.is_ok());
 }

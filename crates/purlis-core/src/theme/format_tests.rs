@@ -465,21 +465,18 @@ fn a_key_format_2_does_not_have_refuses_the_theme() {
 }
 
 #[test]
-fn geometry_fonts_options_and_tint_stay_refused_for_now() {
+fn options_and_tint_stay_refused_for_now() {
     let loaded = load(&json!({
         "name": "Ahead",
-        "fonts": {}, "options": [], "tint": {},
-        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": { "radius.md": "#000" } }]
+        "options": [], "tint": {},
+        "appearances": [{ "id": "dark", "appearance": "dark" }]
     }));
     assert!(loaded.refused);
     assert_eq!(
         said(&loaded),
         [
-            "fonts is not read yet (#2326), so the theme cannot be drawn as written",
             "options is not read yet (#2325), so the theme cannot be drawn as written",
             "tint is not read yet (#2329), so the theme cannot be drawn as written",
-            "radius.md in appearance dark is geometry, which this purlis does not read from a \
-             theme yet (#2326)",
         ]
     );
 }
@@ -720,7 +717,12 @@ fn the_schema_completes_every_token_and_motion_name_and_nothing_else() {
         .as_object()
         .expect("token names");
     let named: Vec<&str> = tokens.keys().map(String::as_str).collect();
-    assert_eq!(named, TOKENS);
+    let expected: Vec<&str> = TOKENS
+        .iter()
+        .copied()
+        .chain(geometry::STEPS.iter().map(|step| step.token))
+        .collect();
+    assert_eq!(named, expected);
     assert_eq!(schema["$defs"]["tokens"]["additionalProperties"], false);
     let motion = schema["$defs"]["motion"]["properties"].as_object().unwrap();
     let names: Vec<&str> = motion.keys().map(String::as_str).collect();

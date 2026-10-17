@@ -60,6 +60,49 @@ impl Kit {
             git_hooks,
         }
     }
+
+    /// **What a host with no window arms a chat with** (`purlis serve`, #2447): its own
+    /// `binary`, the plugin installed beside it ([`crate::plugin_install::bundle_beside`]: where
+    /// a package or the runner image puts it), and purlis's git hooks, written now in `data`,
+    /// its data folder, to run `binary`, as the window writes them at its launch. Where none is
+    /// installed beside it, the kit has no plugin, and a sandboxed Claude Code chat is refused
+    /// as it is anywhere the plugin is missing. Git hooks that cannot be written leave a chat's
+    /// commits unscanned, and say so in the host's log.
+    pub fn installed_beside(binary: PathBuf, data: &Path) -> Kit {
+        let plugin = crate::plugin_install::bundle_beside(&binary);
+        let dir = data.join(crate::names::BUNDLE_ID.write).join(GIT_HOOKS);
+        let hooks = crate::githooks::GitHooks::at(&dir);
+        let git_hooks = match hooks.write(&binary) {
+            Ok(()) => Some(hooks),
+            Err(why) if why.kind() == std::io::ErrorKind::Unsupported => None,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: no git hooks at {} ({why}); a chat's commits will not be scanned \
+                     for secrets",
+                    dir.display()
+                );
+                None
+            }
+        };
+        Kit {
+            binary: Some(binary),
+            plugin,
+            git_hooks,
+        }
+    }
+
+    /// [`Kit::installed_beside`] for this process: this binary, and this user's data folder.
+    /// With no binary to name, it arms nothing, and a sandboxed chat is refused.
+    pub fn installed_beside_this_binary() -> Kit {
+        match (std::env::current_exe(), dirs::data_dir()) {
+            (Ok(binary), Some(data)) => Kit::installed_beside(binary, &data),
+            (binary, _) => Kit {
+                binary: binary.ok(),
+                plugin: None,
+                git_hooks: None,
+            },
+        }
+    }
 }
 
 /// The folder of the app's data folder the window writes purlis's git hooks in at its launch.

@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The dialing host keeps its link to another host up: it links again on its own when the link
-//! ends, and links anew ahead of a limit on a stream's life.
+//! ends, and links anew ahead of a limit on a stream's life. A link renewed ahead of its limit
+//! ends once whoever reads the kept link has moved to the new one ([`Links::moved`]), or once
+//! the ping's deadline has passed, so what was in flight on it is answered first.
 
 use std::time::Duration;
 
 use futures::future::BoxFuture;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
 use super::{Handshake, Identity, Liveness, Pinned, channel::Ends, connect_kept};
@@ -25,8 +27,9 @@ pub trait Connector: Send + Sync + 'static {
 
 /// What happens to a kept link, in order.
 pub enum Linked {
-    /// A link is up: the session protocol on it, from its start. A link that was up before
-    /// ends once this one is up, when it was renewed ahead of its limit. Boxed: a link is
+    /// A link is up: the session protocol on it, from its start. A link that was up before,
+    /// renewed ahead of its limit, ends once the reader says it has moved to this one
+    /// ([`Links::moved`]), or after [`Liveness::deadline`] at the latest. Boxed: a link is
     /// large, and a word of why is small.
     Up(Box<Link>),
     /// The link is down, or did not come up, and why: the host is linking again.
@@ -34,12 +37,28 @@ pub enum Linked {
 }
 
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
-pub struct Links(mpsc::Receiver<Linked>);
+pub struct Links {
+    told: mpsc::Receiver<Linked>,
+    /// How many links have been read up.
+    ups: u64,
+    /// How many of them the reader has moved to.
+    moved: watch::Sender<u64>,
+}
 
 impl Links {
     /// What happened next, or `None` once the link has been let go of.
     pub async fn next(&mut self) -> Option<Linked> {
-        self.0.recv().await
+        let linked = self.told.recv().await;
+        if let Some(Linked::Up(_)) = &linked {
+            self.ups += 1;
+        }
+        linked
+    }
+
+    /// The reader has moved what it does to the last link it was told is up: the link that
+    /// was up before it, renewed ahead of its limit, ends now rather than at the deadline.
+    pub fn moved(&self) {
+        self.moved.send_replace(self.ups);
     }
 }
 
@@ -61,7 +80,9 @@ pub fn keep_linked<C: Connector>(
     liveness: Liveness,
 ) -> Links {
     let (tell, told) = mpsc::channel(4);
+    let (moved, moved_to) = watch::channel(0);
     tokio::spawn(async move {
+        let mut ups: u64 = 0;
         let dial = || async {
             let io = connector
                 .connect()
@@ -89,7 +110,17 @@ pub fn keep_linked<C: Connector>(
                 ends.retire.abort();
                 return;
             }
-            let Some(why) = hold(&dial, &tell, &mut ends, liveness).await else {
+            ups += 1;
+            let Some(why) = hold(
+                &dial,
+                &tell,
+                &mut ends,
+                liveness,
+                &mut ups,
+                moved_to.clone(),
+            )
+            .await
+            else {
                 ends.retire.abort();
                 return;
             };
@@ -98,17 +129,24 @@ pub fn keep_linked<C: Connector>(
             }
         }
     });
-    Links(told)
+    Links {
+        told,
+        ups: 0,
+        moved,
+    }
 }
 
 /// Hold a link that is up until it ends, renewing it ahead of its limit; `None` once nobody
 /// listens. A renewal that fails keeps the link it would have replaced, and tries again after a
-/// pause.
+/// pause. A renewal that comes up ends the link it replaces once the reader has moved to the
+/// new one (`moved_to` reaches its count in `ups`), or after the ping's deadline.
 async fn hold<F, Fut>(
     dial: &F,
     tell: &mpsc::Sender<Linked>,
     ends: &mut Ends,
     liveness: Liveness,
+    ups: &mut u64,
+    mut moved_to: watch::Receiver<u64>,
 ) -> Option<String>
 where
     F: Fn() -> Fut,
@@ -131,8 +169,15 @@ where
             () = renewal => match dial().await {
                 Ok((link, renewed)) => {
                     tell.send(Linked::Up(Box::new(link))).await.ok()?;
-                    ends.retire.abort();
-                    *ends = renewed;
+                    *ups += 1;
+                    let this = *ups;
+                    let replaced = std::mem::replace(ends, renewed);
+                    tokio::select! {
+                        _ = moved_to.wait_for(|moved| *moved >= this) => {}
+                        () = tokio::time::sleep(liveness.deadline) => {}
+                        () = tell.closed() => {}
+                    }
+                    replaced.retire.abort();
                     pause = FIRST_PAUSE;
                     renew_at = liveness.renew_after.map(|after| Instant::now() + after);
                 }

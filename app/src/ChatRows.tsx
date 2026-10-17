@@ -199,7 +199,7 @@ export function TabMarks({
         persona != null && <PersonaMark persona={persona} className="tab-mark" />
       )}
       <span className="tab-name">{tabs.byId[id].name}</span>
-      <SandboxMark level={sandbox?.level} why={sandbox?.why} />
+      <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
       {pin}
       <PlaneUpdatedMark files={chat === undefined ? undefined : updates?.[chat]} />
       {/* The first pane's session is the tab's own chat. Its own element, so what a tab IS

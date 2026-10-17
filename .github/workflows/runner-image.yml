@@ -173,12 +173,14 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
-      # The build context is this folder and the one file in it, so nothing else of the
-      # checkout can reach the image.
+      # The build context is this folder: the binary, and purlis's plugin as this commit has it
+      # (#2447), so nothing else of the checkout can reach the image.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: purlis-linux-${{ matrix.arch }}
           path: ${{ runner.temp }}/context
+      - name: purlis's plugin, beside the binary
+        run: cp -R app/src-tauri/plugin "$RUNNER_TEMP/context/plugin"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc

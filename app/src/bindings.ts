@@ -2415,6 +2415,21 @@ export const commands = {
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread })),
 	/**
+	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
+	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
+	 *  while it still has that digest (`purlis_core::theme::served`). As base64, as a file tab's
+	 *  image is (FM-2); the window makes a `FontFace` from the bytes, so no path and no address ever
+	 *  reach it.
+	 */
+	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
+	/**
+	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
+	 *  the window draws over every theme once Settings changed them. The window keeps them in its
+	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
+	 *  layout's `appearance` as JSON text.
+	 */
+	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
+	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
 	 *  against its closed vocabulary — path data and `icon.*` tokens — and never by this crate.
@@ -4253,6 +4268,13 @@ export type ChatNetwork = {
 	sandboxed: boolean,
 	/**  What its sandbox lets it reach, as it was started. */
 	reach: Reached[],
+	/**
+	 *  **The sites only its browser reaches** (#2364): its browser sites, those allowed for this
+	 *  chat alone first, then those kept for every chat of this project on this machine that
+	 *  policy leaves in force, each once as `host:port`. Each was allowed for the browser
+	 *  alone, so the view lists them apart from `reach`.
+	 */
+	browser_sites: string[],
 	/**  What it was refused, newest first. */
 	refused: BlockedLately[],
 	/**
@@ -7056,6 +7078,12 @@ export type OpenChat = {
 	 */
 	sandbox_why?: string | null,
 	/**
+	 *  **How many sites only its browser reaches** (#2364): its browser sites, for this chat
+	 *  alone and for every chat here on this machine, that policy leaves in force. Its tab's
+	 *  sandbox mark says the count; its Network view lists them. `null` where there is none.
+	 */
+	browser_sites?: number | null,
+	/**
 	 *  Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
 	 *  window keys what it keeps of a chat beyond this launch by, such as the Chats list's
 	 *  folds (#1687). `null` for a chat that has no id yet.
@@ -7437,6 +7465,18 @@ export type Percent = {
 	 */
 	value: number,
 	tone: GaugeTone,
+};
+
+/**  What [`theme_person`] answers: the person's layer, and what reading it had to put right. */
+export type PersonInForce = {
+	/**  `comfortable` or `compact`: which of a theme's geometries is drawn. */
+	density: string,
+	/**
+	 *  The family list for each font the person named (`ui`, `mono`, `terminal`), as the engine
+	 *  wrote it.
+	 */
+	fonts: { [key in string]: string },
+	complaints: string[],
 };
 
 /**  One persona chat a chat dispatched as a task, as that chat sees it. */
@@ -9927,6 +9967,11 @@ export type ThemeInForce = {
 	complaints: string[],
 	/**  Whether it follows the operating system's appearance. */
 	follows_system: boolean,
+	/**
+	 *  The Notice that names the consent floors the theme breaks, when it breaks one: what is
+	 *  drawn has purlis's own values for those tokens.
+	 */
+	floors: string | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
@@ -10416,6 +10461,42 @@ export type WhatChanged = {
 	diff: FileDiff,
 };
 
+/**  One face of a font. */
+export type WindowFace = {
+	/**  The sha-256 of its bytes, which `theme_font` answers. */
+	asset: string,
+	weight: number,
+	/**  `normal` or `italic`. */
+	style: string,
+};
+
+/**
+ *  One font: the family list the window draws with, as the engine wrote it, and the faces it
+ *  asks purlis for by digest (`theme_font`).
+ */
+export type WindowFont = {
+	/**  The theme's label for it; `null` for core's. */
+	family: string | null,
+	stack: string,
+	faces: WindowFace[],
+};
+
+/**  A theme's three fonts. */
+export type WindowFonts = {
+	ui: WindowFont,
+	mono: WindowFont,
+	terminal: WindowFont,
+};
+
+/**
+ *  A theme's geometry as the custom properties the window writes, for each density: the
+ *  person's density picks one ([`purlis_core::theme::Layer`]).
+ */
+export type WindowGeometry = {
+	comfortable: { [key in string]: string },
+	compact: { [key in string]: string },
+};
+
 /**  One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes. */
 export type WindowIcon = {
 	paths: string[],
@@ -10456,6 +10537,10 @@ export type WindowTheme = {
 	motion: WindowMotion,
 	/**  The theme's icon set, by view id: empty when the rails draw the window's own marks. */
 	icons: { [key in string]: WindowIcon },
+	/**  The geometry's custom properties, written by the engine, for each density (#2326). */
+	geometry: WindowGeometry,
+	/**  The UI, mono and terminal fonts (#2326). */
+	fonts: WindowFonts,
 };
 
 /**  A person's opt-out, as the picker sends it. */

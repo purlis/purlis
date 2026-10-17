@@ -109,6 +109,11 @@ function machine(change = {}) {
     );
   }
   if (!change.noCertificates) writeFileSync(join(root, "etc", "ssl", "certs", "ca-certificates.crt"), "");
+  if (!change.noPlugin) {
+    const manifest = join(root, "usr", "local", "lib", "purlis", "plugin", ".claude-plugin");
+    mkdirSync(manifest, { recursive: true });
+    writeFileSync(join(manifest, "plugin.json"), '{"name":"purlis"}');
+  }
   if (change.readOnlyTmp) chmodSync(join(root, "tmp"), 0o555);
   const env = {
     PATH: bin,
@@ -138,6 +143,7 @@ test("the inside check names each thing an image lacks, and fails", () => {
     [{ missing: "git" }, /git/],
     [{ missing: "bash" }, /bash/],
     [{ noCertificates: true }, /certificate/],
+    [{ noPlugin: true }, /plugin/],
     [{ home: "/nonexistent/purlis" }, /HOME/],
     [{ readOnlyHome: true }, /HOME/],
     [{ readOnlyTmp: true }, /\/tmp/],

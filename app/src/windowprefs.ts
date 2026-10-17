@@ -44,6 +44,8 @@ export type TheirReading = {
   theme: Theme | null;
   /** What resolving it had to put right. */
   complaints: Complaint[];
+  /** The Notice that names the consent floors it breaks, when it breaks one. */
+  floors: string | null;
 };
 
 /** Both readings. */
@@ -56,6 +58,7 @@ const NO_THEME: TheirReading = {
   trouble: null,
   theme: null,
   complaints: [],
+  floors: null,
 };
 
 /**
@@ -88,6 +91,7 @@ function theirReading(raw: unknown): TheirReading {
       (one): one is Complaint =>
         one !== null && typeof one === "object" && typeof (one as Complaint).said === "string",
     ),
+    floors: typeof from.floors === "string" ? from.floors : null,
   };
 }
 
@@ -182,6 +186,29 @@ export function forgetTheirTheme() {
 export function usingTheBuiltIn() {
   theirs = { theme: undefined };
   sayAboutThisMachine("theme", undefined);
+  sayTheFloors(null);
+}
+
+/**
+ * **The consent floors the theme drawn breaks** (ADR 0097 §6): the engine drew purlis's own
+ * values for those tokens, and `floors` is its sentence naming the floors and the theme. One
+ * Notice, for the theme in force: a theme that clears them, `null`, takes it back. `theirs` is
+ * the person's own theme file's path, when it is theirs, whose way out is Use built-in.
+ */
+export function sayTheFloors(floors: string | null, { theirs }: { theirs?: string } = {}) {
+  if (floors === null) {
+    sayAboutThisMachine("consent floors", undefined);
+    return;
+  }
+  sayAboutThisMachine("consent floors", {
+    severity: "warn",
+    detail: floors,
+    remedy:
+      theirs === undefined
+        ? "pick another theme, or ask its author to fix it"
+        : `fix ${theirs}, or use the built-in, which moves it aside`,
+    ...(theirs === undefined ? {} : { builtIn: true as const }),
+  });
 }
 
 /**
@@ -230,6 +257,7 @@ export function theirTheme(reading: TheirReading = atCreation().theme): Theme | 
   }
   const { theme, complaints } = reading;
   if (theme === null) return undefined;
+  sayTheFloors(reading.floors, { theirs: where });
   if (complaints.length > 0) {
     sayAboutThisMachine("theme", {
       severity: "warn",

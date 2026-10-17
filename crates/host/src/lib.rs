@@ -70,7 +70,7 @@ pub use browsers::{
     NoBrowsers, NotActed, NotTaken, Screen, THUMBNAIL_EVERY,
 };
 #[cfg(unix)]
-pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfine};
+pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
@@ -90,7 +90,7 @@ pub use purlis_session_protocol as protocol;
 #[cfg(unix)]
 pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
-pub use relay::{Dial, Relay};
+pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
 pub use serving::{HostError, LOCK, Place, Window, serve};
 

@@ -950,6 +950,7 @@ const STATES: State[] = [
           { host: "db.internal:5432", by: "persona" },
           { host: "extra.example:443", by: "allowed" },
         ],
+        browser_sites: ["news.example.org:443"],
         refused: [
           {
             target: "db.example.com:5432",
@@ -968,7 +969,9 @@ const STATES: State[] = [
   {
     name: "a chat's network, not sandboxed",
     view: { from: null, view: "chat-network", key: "3" },
-    answers: { chat_network: { open: true, sandboxed: false, reach: [], refused: [] } },
+    answers: {
+      chat_network: { open: true, sandboxed: false, reach: [], browser_sites: [], refused: [] },
+    },
     drawn: /Not sandboxed: can reach anything/,
   },
   {

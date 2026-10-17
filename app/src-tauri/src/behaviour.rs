@@ -215,15 +215,16 @@ pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
         folder,
         crate::sessionhost::Composes::as_the_tests_ship(),
         purlis_host::Terminals,
-        crate::sessionhost::HookChannels(kept.clone()),
+        crate::sessionhost::hook_channels(&kept),
         crate::hostedconfinement::ConfinesHere,
     )
     .recording_with(kept)
     .saving_with(crate::hostsaving::InTheHost)
 }
 
-/// A link from host A to `host_b`, over the link between hosts on an in-memory stream.
-async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
+/// A link from host A to `host_b`, over the link between hosts on an in-memory stream: what
+/// `host_b` serves as `remote-link`.
+pub(crate) async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
     use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
     let identity = |device: &str| Identity {
         device: device.to_owned(),
@@ -1354,6 +1355,15 @@ fn a_service() -> (std::net::TcpListener, u16) {
     (service, port)
 }
 
+/// [`a_service`], which you let every chat of `target`'s project reach on this machine: a host
+/// the window's plan reaches through a link gives a chat only what its own sandbox for the
+/// project gives (#2445).
+fn a_service_you_gave(target: &Target) -> (std::net::TcpListener, u16) {
+    let (service, port) = a_service();
+    purlis_core::sandbox::local::grant_port(&target.root, port).expect("you gave it");
+    (service, port)
+}
+
 /// The status line a chat's proxy, on its HTTP `port`, answers a tunnel to `target` with.
 fn tunnel_through(port: u16, target: &str) -> String {
     use std::io::{BufRead, Write};
@@ -1422,7 +1432,7 @@ fn in_it(target: &Target, confinement: &Confinement) -> u32 {
 }
 
 fn a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest(target: &Target) {
-    let (_service, port) = a_service();
+    let (_service, port) = a_service_you_gave(target);
     let heard = Arc::new(HeardOfIt::default());
     let confinement = target
         .sessions
@@ -1448,7 +1458,7 @@ fn a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest(target: &T
 }
 
 fn a_port_withdrawn_while_a_chat_runs_is_carried_no_longer(target: &Target) {
-    let (_service, port) = a_service();
+    let (_service, port) = a_service_you_gave(target);
     let confinement = target
         .sessions
         .confine(

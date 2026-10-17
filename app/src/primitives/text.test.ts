@@ -126,9 +126,10 @@ describe("the text roles", () => {
       else expect(isGeometry(token), where).toBe(true);
     }
     // Each of the core's weights and its family is read by a role, but medium: no role is
-    // medium, and a form's label reads it (`App.css`, #2317).
+    // medium, and a form's label reads it (`App.css`, #2317). The window's own family is the
+    // root's (`geometry.css`), which every role inherits.
     for (const token of [...GEOMETRY.weight, ...GEOMETRY.family]) {
-      if (token === "--font-weight-medium") continue;
+      if (token === "--font-weight-medium" || token === "--font-ui") continue;
       expect(css, token).toContain(`var(${token})`);
     }
     expect(read("App.css")).toMatch(/\.ui-setting-label \{[^}]*var\(--font-weight-medium\)/);

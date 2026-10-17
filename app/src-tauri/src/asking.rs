@@ -977,23 +977,21 @@ fn browser_sites_key(session: u32) -> String {
     format!("browser-sites:{session}")
 }
 
-/// **The browser sites adapter** (#2018): one ask per chat, naming every site new to the project
+/// **The browser sites adapter** (#2018): one ask per chat, naming the sites new to the project
 /// its browser held back what it would open, send or type on, oldest first, each whole. Allow
 /// for this chat; Allow always here, on this machine, unless an administrator's policy leaves
 /// out `you`; Keep blocked. Every word is purlis's, and the line says an Allow is the browser's
-/// alone: the chat's own commands still need their own Allow for a host.
+/// alone (the chat's own commands still need their own Allow for a host) and what it does
+/// (#2364): the browser reaches the site from its next act, and nothing restarts.
+///
+/// **It answers only what its line names whole** ([`sites_named`], #2364): the rest wait for the
+/// next ask. A site too long to be named whole is offered Keep blocked alone.
 pub fn browser_sites(
     waits: &crate::chatbrowsers::SitesWait,
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Shown {
     use purlis_core::sandbox::grant::Level;
-    let sites: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
-    let says = format!(
-        "Its browser wants to open, send or type on {} new to this project: {}. An Allow is for \
-         its browser alone",
-        if sites.len() == 1 { "a site" } else { "sites" },
-        sites.join(", ")
-    );
+    let all: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
     let mut options = Vec::new();
     let allow = |level: Level, label: &str| Offered {
         id: level.word().to_owned(),
@@ -1001,15 +999,26 @@ pub fn browser_sites(
         allows: true,
         preselected: None,
     };
-    if locks.scope_removed(Level::Chat).is_none() {
-        options.push(allow(Level::Chat, "Allow for this chat"));
-    }
-    if locks.scope_removed(Level::You).is_none() {
-        options.push(allow(
-            Level::You,
-            "Always allow in this project, on this machine",
-        ));
-    }
+    let (sites, says) = match sites_named(&all) {
+        Some(named) => {
+            if locks.scope_removed(Level::Chat).is_none() {
+                options.push(allow(Level::Chat, "Allow for this chat"));
+            }
+            if locks.scope_removed(Level::You).is_none() {
+                options.push(allow(
+                    Level::You,
+                    "Always allow in this project, on this machine",
+                ));
+            }
+            named
+        }
+        // Not even the oldest fits whole: nothing is allowed that the person cannot read.
+        None => {
+            let oldest: Vec<String> = all.iter().take(1).cloned().collect();
+            let says = sites_said(&oldest, all.len() - oldest.len());
+            (oldest, says)
+        }
+    };
     options.push(refuses(KEEP, "Keep blocked"));
     Shown {
         session: waits.session,
@@ -1023,6 +1032,40 @@ pub fn browser_sites(
         held_until: None,
         writes: None,
     }
+}
+
+/// **The sites of `all`, oldest first, that a browser sites ask names whole** (#2364), and its
+/// line: as many as fit, with how many more wait after them; where the oldest alone fits only
+/// without that count, the oldest alone. `None` where not even the oldest is named whole: an
+/// Allow of it is never offered, and never taken ([`crate::chatbrowsers::sites_allowed`]).
+pub fn sites_named(all: &[String]) -> Option<(Vec<String>, String)> {
+    let whole = |says: String| (said_inertly(&says) == says).then_some(says);
+    (1..=all.len())
+        .rev()
+        .find_map(|count| {
+            whole(sites_said(&all[..count], all.len() - count)).map(|says| (count, says))
+        })
+        .or_else(|| whole(sites_said(&all[..all.len().min(1)], 0)).map(|says| (1, says)))
+        .filter(|(count, _)| *count <= all.len())
+        .map(|(count, says)| (all[..count].to_vec(), says))
+}
+
+/// The line of a browser sites ask that names `sites`, with `more` waiting after them.
+fn sites_said(sites: &[String], more: usize) -> String {
+    let named = match sites {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first @ .., last] => format!("{} and {last}", first.join(", ")),
+    };
+    let after = if more == 0 {
+        String::new()
+    } else {
+        format!(", and {more} more")
+    };
+    format!(
+        "Its browser wants to reach {named}{after}. An Allow is its browser's alone, from its \
+         next act; nothing restarts."
+    )
 }
 
 /// The id of This project's sites, always for the chat's persona (#2241).

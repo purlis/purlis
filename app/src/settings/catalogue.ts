@@ -24,6 +24,7 @@ export const SETTINGS_GROUPS: Readonly<
 > = {
   you: [
     { id: "you.text", label: "Text" },
+    { id: "you.look", label: "Density and fonts" },
     { id: "you.editor", label: "Editor" },
     { id: "you.chats", label: "Chats list" },
     { id: "you.notifications", label: "Notifications" },

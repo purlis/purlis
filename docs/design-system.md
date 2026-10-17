@@ -20,13 +20,13 @@ The rule, in one line each:
 - **Both built-in themes get every new token**, or the window will not start.
 - **No time and no easing outside `app/src/theme/`** — no `150ms`, no `ease-out`, no
   `duration-150`, and no `prefers-reduced-motion` block. Same test; see [Motion](#motion-is-data-too).
-- **Geometry is core, not a theme's.** Spacing, type sizes, corners, control and chrome heights,
-  focus rings and elevation are the core tokens in `app/src/theme/geometry.css`, the same in
-  every theme. A theme sets colour, shadow colour and motion, and nothing else;
-  `app/src/theme/geometry.test.ts` fails if a theme could set one. See
-  [Geometry is core](#geometry-is-core) and ADR 0094. ADR 0097 supersedes that rule: a theme
-  is bounded data and may set every token. The window holds 0094's rule until the theme engine
-  of spec #2313 is built.
+- **Geometry is one scale, and a theme sets it within bounds.** Spacing, type sizes, weights,
+  line heights, corners, control and chrome heights, focus rings and elevation are the core
+  tokens in `app/src/theme/geometry.css`, which hold Purlis Classic's values. A theme folder may
+  give any of them a number inside the bound the core documents, and bring its UI, mono and
+  terminal fonts as woff2 files in its folder; the engine writes every property from those
+  numbers and files (ADR 0097, #2326). Density and a font override are the person's, in every
+  theme. See [Geometry and fonts](#geometry-and-fonts).
 
 ## Why a theme is data and not CSS
 
@@ -288,8 +288,12 @@ rewrites the file; the next pick made in Settings writes the new id.
   not have is said and left out. Purlis's own set is Lucide's icons, converted
   (`app/src/theme/railIcons.vendor.ts`, with Lucide's licence in the folder).
 - **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
-  draws Purlis and says what is wrong. Geometry and fonts (#2326), options (#2325) and tint
-  (#2329) are not read yet, so naming one refuses the theme.
+  draws Purlis and says what is wrong. Options (#2325) and tint (#2329) are not read yet, so
+  naming one refuses the theme.
+- **Geometry and fonts** (#2326): an appearance's `tokens` may give a geometry token a number
+  inside its bound (`"radius.md": 6`), a `compact` object tunes what compact density draws for
+  every appearance, and `fonts` names the UI, mono and terminal fonts from the folder's
+  `fonts/`. [Geometry and fonts](#geometry-and-fonts) has the bounds.
 
 **Format 1**, a single file with one appearance, keeps loading as a theme with that one
 appearance:
@@ -346,6 +350,26 @@ can be read. Its interface:
 - `check(theme)` holds any appearance to every contrast pair (`PAIRS`), the ANSI floors and the
   selected row's distinctness, as it is and tinted by every workspace colour, and reports each
   finding with its ratio.
+
+**The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
+gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds four
+floors for any theme from any source:
+
+- **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
+  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and on `danger.wash`
+  over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
+- **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
+  is a `danger.*` token;
+- **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
+  in OKLab, five times the least difference a person can see, as the theme writes them;
+- **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
+  token or `needs-you.base`.
+
+Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
+workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
+appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
+for the pair's other token when Classic's colour still fails on it. The rest of the theme draws
+as written, and one Notice in the Inbox names the theme and the floors it breaks.
 
 **The window only applies.** It is handed a resolved theme, every token's final value and the
 motion, and writes the custom properties and xterm's object from it (`theme.ts`). The first
@@ -742,9 +766,10 @@ Measured against `origin/main` with `vite build`: CSS **+2.80 kB (+0.62 kB gz)**
 (+1.06 kB gz)**. Cold start gains nine `setProperty` calls in `drawIn`, beside the fifty-four the
 colours already make.
 
-## Geometry is core
+## Geometry and fonts
 
-**Every size in the window comes from one scale, and no theme can change it.** Colour and motion
+**Every size in the window comes from one scale, and a theme moves it only within bounds.**
+Colour and motion
 were tokens long before size was: in October 2026 `App.css` held 132 different paddings, 20 font
 sizes and 11 corner radii, and nothing styled a bare `button`, `input` or `select`, so each one
 WebKit drew was its own grey bezel. ADR 0094 records the fix and its reasons; this section is the
@@ -756,21 +781,51 @@ reference.
 | --------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------- |
 | **primitive palette** | raw colour steps a theme builds from (`teal.400`); private to that theme file             | a theme file, when one has a `palette`        | the theme                       |
 | **semantic**          | what a colour means here: the [vocabulary](#the-vocabulary) above, plus the motion tokens | `app/src/theme/*.json`, written by `theme.ts` | the theme                       |
-| **core geometry**     | spacing, type sizes, corners, heights, focus rings, elevation                             | `app/src/theme/geometry.css`                  | purlis, the same in every theme |
+| **core geometry**     | spacing, type sizes, corners, heights, focus rings, elevation, fonts                      | `app/src/theme/geometry.css` (Classic's)      | a theme, within core's bounds   |
 | **component**         | one control's look, as aliases of the two above (`--btn-bg: var(--control-base)`)         | the primitive classes (DS-2)                  | purlis                          |
 
-**A theme sets colour, shadow colour and motion.** A shadow's shape is core (the elevation
-tokens) and its colour is the theme's `overlay.shadow`. No primitive palette exists yet: the
-built-ins write hex straight into the semantic tokens, and the brand change adds the block.
-**Density is a later user setting, not a theme property**: when it comes, it swaps the core
-values for another set, as Zed's `ui_density` does.
+**A theme sets geometry as numbers, within bounds** (ADR 0097, #2326). A theme folder's
+appearance names a geometry token in its `tokens` with a number (`"radius.md": 6`,
+`"space.4": 10`, `"line-height.body": 1.5`); the bound of each is in the table below, and a
+value outside it, a fraction where a whole number is due, or anything that is not a number
+refuses the theme with a sentence that names the bound. The core's theme engine
+(`purlis_core::theme::geometry`) writes each custom property from the number, so a theme's text
+never reaches a declaration; `geometry.css` holds core's values, Purlis Classic's, and the
+engine's test holds what it writes for Classic equal to that file, value for value. A format 1
+file names no geometry: one that does is refused and told it belongs in a theme folder. A
+shadow's shape is two of these numbers per lift; its colour is the theme's `overlay.shadow`.
 
-**How a theme is kept out.** Geometry is not in a theme's vocabulary: `TOKENS` and the motion
-tokens are colour and time only, and `theme.ts` writes nothing else onto the document. A theme
-file that names a core token anyway (`space.4`, `--radius-md`, a `geometry` block) is drawn
-without it and told, in its complaints, that the key is geometry. `geometry.css` is the only
-stylesheet that gives a core token a value. `app/src/theme/geometry.test.ts` holds all of that,
-for the built-ins, every tint of them, and a theme file that tries every spelling.
+**Density is the person's, and every theme has both.** Settings › You › Density and fonts says
+comfortable or compact, kept in the layout file beside the text sizes (`appearance`). Core
+defines Purlis Classic's compact (the compact column below), and a theme tunes its own in a
+`compact` object of geometry tokens, held to the same bounds, for every appearance. A token
+the theme's `compact` does not name is the smaller of core's compact and the appearance's own
+comfortable value where core's compact moves it, so compact is never looser than comfortable,
+and the appearance's comfortable value where it does not. The engine resolves both geometries for
+every theme, and the window writes the one the person's density picks.
+
+**Fonts are woff2 files in the theme's folder, served by purlis.** A theme's `fonts` names
+`ui`, `mono` and `terminal`, each a `family` (a label Settings shows) and one to eight `faces`,
+each `{ "file": "fonts/<name>.woff2", "weight": 400, "style": "normal" }`. The file is one plain
+name in the folder's `fonts/`: a URL, an absolute path, `..`, another folder or a link on the
+way refuses the theme, and so do a file past 2 MiB and one without the woff2 signature. The
+engine reads each file when it reads the theme and hands the window its sha-256; the window
+asks purlis for the bytes by that digest (`theme_font`), and the engine reads the file again,
+contained and capped, and answers only while it still has that digest. The window makes the face
+with `FontFace` from the bytes and registers it under a name the engine made from the digests,
+so nothing in the window is a path or an address for a font, the stylesheet's
+`default-src 'self'` is unchanged, and the theme's family name never reaches a declaration.
+The faces are asked for after the first frame: it is drawn in the family list's fallback, and
+the text redraws when a face arrives. A theme not read from a folder (an extension's text) has
+no `fonts/`, so naming a font refuses it. The person's own `theme.json` is in their config
+folder, beside `machine.json`, and its fonts are that folder's `fonts/`.
+
+**The person's font beats the theme's.** Settings › You › Density and fonts takes a family for
+the window, for code and for the terminal; an empty field draws the theme's. The engine holds
+it to the same closed grammar as a theme's label and writes it quoted in front of core's family
+for the slot (`purlis_core::theme::Person`), so a family that is not installed falls back to
+core's. The terminal reads its family from the theme too (`terminalFont`), and its old literal
+is core's terminal family.
 
 ### The core tokens
 
@@ -801,7 +856,8 @@ rings stay in px. The px below are at the default 14px text.
 | `--font-weight-strong`  | 600                                        | the one strong weight: a title, a heading, a label, a row's strong line  |
 | `--line-height-tight`   | 1.2                                        | a compact line: a count, a chip. A share of the text's size, so no unit  |
 | `--line-height-body`    | 1.4                                        | the window's own line (`:root`)                                          |
-| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace` | the one monospace family: a command, a path, a host                      |
+| `--font-ui`             | `ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif` | the window's own family (`:root`); a theme's `fonts.ui`                  |
+| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace` | the one monospace family: a command, a path, a host; a theme's `fonts.mono` |
 | `--radius-sm`           | 3px                                        | checkboxes, chips                                                        |
 | `--radius-md`           | 4px                                        | every control                                                            |
 | `--radius-lg`           | 6px                                        | every overlay (dialogs, popovers, menus, tooltips), segmented controls   |
@@ -814,6 +870,50 @@ rings stay in px. The px below are at the default 14px text.
 | `--focus-ring-inset`    | -2px                                       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
 | `--elevation-raised`    | 0 2px 8px                                  | a bar floating over a pane (the find bar)                                |
 | `--elevation-overlay`   | 0 8px 24px                                 | every overlay: dialogs, popovers, menus, tooltips (#1845)                |
+
+### What a theme may set them to
+
+A theme names a geometry token by the name in the first column. Purlis Classic's compact is
+what compact density draws for it; a theme tunes its own in `compact`. The bounds are the
+engine's (`purlis_core::theme::geometry::STEPS`), which the published schema carries too.
+
+| theme token | property | bound | Classic | Classic compact |
+| --- | --- | --- | --- | --- |
+| `space.0` | `--space-0` | 0 in every theme | 0 | 0 |
+| `space.1` | `--space-1` | 0 to 4 px at 14px | 2 | 2 |
+| `space.2` | `--space-2` | 1 to 8 px at 14px | 4 | 3 |
+| `space.3` | `--space-3` | 2 to 10 px at 14px | 6 | 4 |
+| `space.4` | `--space-4` | 4 to 12 px at 14px | 8 | 6 |
+| `space.5` | `--space-5` | 6 to 16 px at 14px | 12 | 8 |
+| `space.6` | `--space-6` | 8 to 24 px at 14px | 16 | 12 |
+| `space.7` | `--space-7` | 12 to 32 px at 14px | 24 | 16 |
+| `space.8` | `--space-8` | 16 to 48 px at 14px | 32 | 24 |
+| `font-size.2xs` | `--font-size-2xs` | 8 to 12 px at 14px | 10 | 10 |
+| `font-size.xs` | `--font-size-xs` | 9 to 13 px at 14px | 11 | 11 |
+| `font-size.sm` | `--font-size-sm` | 10 to 14 px at 14px | 12 | 12 |
+| `font-size.md` | `--font-size-md` | 11 to 15 px at 14px | 13 | 13 |
+| `font-size.base` | `--font-size-base` | 12 to 18 px at 14px | 14 | 14 |
+| `font-size.lg` | `--font-size-lg` | 13 to 22 px at 14px | 16 | 16 |
+| `font-size.xl` | `--font-size-xl` | 16 to 28 px at 14px | 20 | 20 |
+| `font-weight.regular` | `--font-weight-regular` | 300 to 500 | 400 | 400 |
+| `font-weight.medium` | `--font-weight-medium` | 400 to 600 | 500 | 500 |
+| `font-weight.strong` | `--font-weight-strong` | 500 to 800 | 600 | 600 |
+| `line-height.tight` | `--line-height-tight` | 1 to 1.4 × text | 1.2 | 1.2 |
+| `line-height.body` | `--line-height-body` | 1.2 to 1.8 × text | 1.4 | 1.3 |
+| `radius.sm` | `--radius-sm` | 0 to 8 px | 3 | 3 |
+| `radius.md` | `--radius-md` | 0 to 10 px | 4 | 4 |
+| `radius.lg` | `--radius-lg` | 0 to 14 px | 6 | 6 |
+| `radius.xl` | `--radius-xl` | 0 to 18 px | 8 | 8 |
+| `radius.full` | `--radius-full` | 0 to 9999 px | 9999 | 9999 |
+| `size.control` | `--size-control` | 20 to 40 px at 14px | 28 | 24 |
+| `size.chrome` | `--size-chrome` | 16 to 32 px at 14px | 21 | 18 |
+| `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
+| `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
+| `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
+| `elevation.raised-y` | `--elevation-raised` | 0 to 8 px at 14px | 2 | 2 |
+| `elevation.raised-blur` | `--elevation-raised` | 0 to 24 px at 14px | 8 | 8 |
+| `elevation.overlay-y` | `--elevation-overlay` | 0 to 16 px at 14px | 8 | 8 |
+| `elevation.overlay-blur` | `--elevation-overlay` | 0 to 48 px at 14px | 24 | 24 |
 
 Tailwind reads these tokens and has no geometry of its own (`styles.css` hands them over with
 `@theme inline reference`, #1837):
@@ -1013,12 +1113,13 @@ view wears one.
 |                 | what                                                                                                                                        | where                                       | who sets it                     |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------- |
 | **the theme's** | the colour values: `text.primary`, `text.secondary`, `text.muted`, `danger.text`                                                            | a theme file, written by `theme.ts`         | the theme                       |
-| **core**        | the sizes, the weights, the line heights, the monospace family, and the roles themselves (which size, weight and colour token a role reads) | `theme/geometry.css`, `primitives/text.css` | purlis, the same in every theme |
+| **core**        | the roles themselves (which size, weight and colour token a role reads), and the defaults of the sizes, weights, line heights and families, which a theme sets within bounds | `theme/geometry.css`, `primitives/text.css` | purlis; a theme within bounds   |
 
-So a theme can make the secondary text warmer or the muted text darker, and cannot make a
-heading larger, a label bolder or the meta the primary colour. The new core tokens are held
-as the rest of the core is (`geometry.test.ts`): a theme file that names `font.mono`,
-`font.weight.strong` or `line.height.body` is drawn without it and told why.
+So a theme can make the secondary text warmer or the muted text darker, and cannot make the
+meta the primary colour. Since #2326 a theme folder also sets the sizes, weights and line heights
+within their bounds (`font-size.lg`, `font-weight.strong`, `line-height.body`) and its fonts
+([Geometry and fonts](#geometry-and-fonts)); which size, weight and colour token a role reads
+stays core's.
 
 ### Where today's pixels and the table disagree
 

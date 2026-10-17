@@ -27,7 +27,7 @@ import {
   THEME_ALIASES,
   type Theme,
 } from "./theme/theme";
-import { forgetTheirTheme, theirThemeOnce } from "./windowprefs";
+import { atCreation, forgetTheirTheme, sayTheFloors, theirThemeOnce } from "./windowprefs";
 import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
@@ -492,6 +492,10 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   const handed = handedFor(picked);
   if (handed !== undefined) {
     following = false;
+    // The person's own theme was drawn with the floors held as the window was created; a
+    // built-in clears them.
+    const theirs = atCreation().theme;
+    sayTheFloors(picked === null ? theirs.floors : null, { theirs: theirs.path || undefined });
     draw(handed);
     return;
   }
@@ -510,5 +514,8 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   if (mine !== drawing) return;
   following = given.follows_system === true;
   if (following) followSystem();
-  if (given.theme) draw(given.theme as unknown as Theme);
+  if (given.theme) {
+    sayTheFloors(typeof given.floors === "string" ? given.floors : null);
+    draw(given.theme as unknown as Theme);
+  }
 }

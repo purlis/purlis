@@ -5,10 +5,12 @@
    lift is given a value. `geometry.ts` names these properties and `docs/design-system.md`
    says where each one is used.
 
-   **No theme can reach this file.** A theme writes colour and motion onto the document from
-   data (`theme.ts`); nothing in a theme's vocabulary is a property below, and
-   `geometry.test.ts` holds that for the built-ins and for a theme that tries. So light, dark,
-   a tint or an extension's theme all line up the same way.
+   **These are core's values, Purlis Classic's** (ADR 0097). A theme sets geometry and fonts
+   as numbers and woff2 files, within the bounds the core's theme engine documents
+   (`purlis_core::theme::geometry`), and the engine writes each property below from them; the
+   window puts what it is handed on the document over these (`theme.ts`). A theme's text never
+   reaches a declaration. The engine's own test holds what it writes for Purlis Classic equal to
+   this file, value for value.
 
    **Sizes scale with the window's text.** `:root`'s font size is 14px by default and the
    text-size setting changes it (charter-app#283), so every length that should grow with the
@@ -19,7 +21,8 @@
   /* The window's own text: its family, and the default size every rem is a share of
      (charter-app#283, `textSize.DEFAULT_TEXT`). What is in force is set on the element itself
      before the first frame (`main.tsx`), so the text-size setting moves the whole scale. */
-  font-family: ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif;
+  --font-ui: ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
 
   /* The spacing scale. */

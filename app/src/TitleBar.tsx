@@ -181,7 +181,12 @@ export function TitleBar({
         {/* The level of the chat in front, beside the project's save: about that chat. */}
         {sandbox && (
           <span className="title-bar-sandbox" data-testid="title-sandbox">
-            <SandboxMark level={sandbox.level} why={sandbox.why} of="The chat in front" />
+            <SandboxMark
+              level={sandbox.level}
+              why={sandbox.why}
+              sites={sandbox.sites}
+              of="The chat in front"
+            />
           </span>
         )}
         {/* The kill switch (OV-1): about every chat in every window, so it is here. */}

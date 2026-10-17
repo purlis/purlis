@@ -311,7 +311,7 @@ describe("a chat's Network view", () => {
   }
 
   it("says a chat started without the sandbox can reach anything, and nothing more", async () => {
-    chatCore({ open: true, sandboxed: false, reach: [], refused: [] });
+    chatCore({ open: true, sandboxed: false, reach: [], browser_sites: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={3} />);
     expect(await screen.findByText("Not sandboxed: can reach anything.")).toBeVisible();
     expect(screen.queryByText("Refused")).toBeNull();
@@ -326,6 +326,7 @@ describe("a chat's Network view", () => {
         { host: "db.internal:5432", by: "persona" },
         { host: "extra.example:443", by: "allowed" },
       ],
+      browser_sites: [],
       refused: [REFUSED, { ...NETWORK.blocked[2], chat: null }],
     });
     render(<ChatNetworkTab plane={PLANE} session={3} />);
@@ -351,8 +352,45 @@ describe("a chat's Network view", () => {
     expect(within(lookup).queryByRole("button")).toBeNull();
   });
 
+  it("lists the sites only its browser reaches apart from what the chat reaches (#2364)", async () => {
+    chatCore({
+      open: true,
+      sandboxed: true,
+      reach: [{ host: "extra.example:443", by: "allowed" }],
+      browser_sites: ["news.example.org:443", "docs.example.com:443"],
+      refused: [],
+    });
+    render(<ChatNetworkTab plane={PLANE} session={3} />);
+
+    const browser = await screen.findByRole("region", { name: "Only its browser can reach" });
+    const sites = within(browser).getByRole("list", { name: "Browser sites" });
+    expect(
+      within(sites)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["news.example.org:443", "docs.example.com:443"]);
+    expect(browser).toHaveTextContent(/for its browser alone/);
+    expect(browser).toHaveTextContent(/only where it is allowed for them as well/);
+    const reach = screen.getByRole("region", { name: "Can reach now" });
+    expect(reach).toHaveTextContent("extra.example:443");
+    expect(reach).not.toHaveTextContent("news.example.org");
+  });
+
+  it("draws nothing of its browser where its browser was allowed no site of its own", async () => {
+    chatCore({
+      open: true,
+      sandboxed: true,
+      reach: [{ host: "extra.example:443", by: "allowed" }],
+      browser_sites: [],
+      refused: [],
+    });
+    render(<ChatNetworkTab plane={PLANE} session={3} />);
+    await screen.findByRole("region", { name: "Can reach now" });
+    expect(screen.queryByRole("region", { name: "Only its browser can reach" })).toBeNull();
+  });
+
   it("says under each heading what goes there when a sandboxed chat reaches nothing and was refused nothing", async () => {
-    chatCore({ open: true, sandboxed: true, reach: [], refused: [] });
+    chatCore({ open: true, sandboxed: true, reach: [], browser_sites: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={3} />);
 
     const reach = await screen.findByTestId("chat-network-reaches-none");
@@ -367,14 +405,21 @@ describe("a chat's Network view", () => {
   it("says where an administrator's settings let a Claude Code chat reach every local port (#1699)", async () => {
     const said =
       "Your administrator's Claude Code settings (/Library/Application Support/ClaudeCode/managed-settings.json) turn local binding on, which outranks purlis's: this chat's commands can connect to every port on this machine, every local service among them.";
-    chatCore({ open: true, sandboxed: true, reach: [], refused: [], local_ports: said });
+    chatCore({
+      open: true,
+      sandboxed: true,
+      reach: [],
+      browser_sites: [],
+      refused: [],
+      local_ports: said,
+    });
     render(<ChatNetworkTab plane={PLANE} session={3} />);
     const reach = await screen.findByRole("region", { name: "Can reach now" });
     expect(within(reach).getByText(said)).toBeVisible();
   });
 
   it("says a chat that is not open has nothing to show", async () => {
-    chatCore({ open: false, sandboxed: false, reach: [], refused: [] });
+    chatCore({ open: false, sandboxed: false, reach: [], browser_sites: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={9} />);
     expect(await screen.findByText("This chat is not open")).toBeVisible();
   });

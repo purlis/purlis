@@ -90,6 +90,7 @@ const LOCAL_READS: &[&str] = &[
     "browser_always_here",
     "browsers_always",
     "browser_site_held",
+    "browser_site_held_at",
     "browser_sites",
     "browser_sites_in_force",
     "confirmed_hosts",
