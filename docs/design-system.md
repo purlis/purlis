@@ -276,9 +276,20 @@ rewrites the file; the next pick made in Settings writes the new id.
   with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
   follows with Purlis Classic until Settings › Theme can say that following would stay in it
   (#2331). A theme has at most 64.
+- **`icons`** names the theme's icon set (#2337): the path of a JSON file inside the theme's
+  folder (`"icons": "icons/icons.json"`), read as `theme.json` is: no link on the way, a plain
+  file, under the same cap. The file draws each view's tab on the rails, by the window's own
+  view ids, as path data:
+  `{ "views": { "chats": { "paths": ["M22 17a2 2 0 0 1-2 2H6.8…"] } } }`. Each path is the icon
+  theme's path grammar on a 24 grid, at most 16 to an icon, and the window strokes it 2 wide with
+  round caps and joins in the rail's own colour for the tab's state; none of that is the set's to
+  say. A view the set does not draw is its parent's, and a view no theme draws is the window's
+  own mark, so Purlis Classic, which names no set, keeps today's icons. A view name purlis does
+  not have is said and left out. Purlis's own set is Lucide's icons, converted
+  (`app/src/theme/railIcons.vendor.ts`, with Lucide's licence in the folder).
 - **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
-  draws Purlis and says what is wrong. Geometry and fonts (#2326), icons (#2337), options
-  (#2325) and tint (#2329) are not read yet, so naming one refuses the theme.
+  draws Purlis and says what is wrong. Geometry and fonts (#2326), options (#2325) and tint
+  (#2329) are not read yet, so naming one refuses the theme.
 
 **Format 1**, a single file with one appearance, keeps loading as a theme with that one
 appearance:
