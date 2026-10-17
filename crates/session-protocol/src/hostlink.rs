@@ -35,7 +35,8 @@
 //! **The dialing host keeps the link up** ([`keep_linked`]): it links again on its own after a
 //! drop, with a growing pause between tries, and links anew ahead of any limit on how long a
 //! connector's stream may live ([`Liveness::renew_after`]), opening the new link before it
-//! closes the old one. Each new link is the session protocol from its start: the client
+//! closes the old one, which it closes once its reader has moved to the new one
+//! ([`Links::moved`]) or the ping's deadline has passed. Each new link is the session protocol from its start: the client
 //! subscribes again from its cursor and attaches its views again, each with a snapshot
 //! (ADR 0068 §4). The answering host never dials (ADR 0078 §4: the desktop is always the
 //! client).

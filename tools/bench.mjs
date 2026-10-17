@@ -98,6 +98,10 @@ const { values: options } = parseArgs({
     // it pays what a new profile pays — Mesa compiling WebKit's shaders into
     // `~/.cache/mesa_shader_cache`, about half a second — instead of reading the last launch's.
     "fresh-profile": { type: "boolean", default: false },
+    // Each fresh profile also holds a theme of the person's that brings its fonts (#2326): a
+    // `theme.json` beside `machine.json` naming woff2 files in the folder's `fonts/`, so the
+    // launch pays for reading, checking and serving them. The faces are sized like IBM Plex's.
+    "theme-fonts": { type: "boolean", default: false },
     // Diagnostic (main run 38203858940, which said only "exit code 1"): the run's launches,
     // their split and the runner's load put on the CI run as one annotation
     // (`coldStartAnnotation`), with one more launch after the held ones, with
@@ -292,7 +296,43 @@ function freshProfile() {
     CHARTER_CONFIG_HOME: join(home, "charter-config"),
   };
   for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
+  if (options["theme-fonts"]) themeWithFonts(join(dirs.CHARTER_CONFIG_HOME, "purlis"));
   return dirs;
+}
+
+/** The faces a theme with fonts brings: three for the window, one for the terminal. */
+const THEME_FACES = [
+  ["ui", "Sans-Regular", 400],
+  ["ui", "Sans-Medium", 500],
+  ["ui", "Sans-SemiBold", 600],
+  ["terminal", "Mono-Regular", 400],
+];
+
+/**
+ * A theme of the person's that brings fonts, in `home` (the config folder `machine.json` is in):
+ * `theme.json` and its woff2 files under `fonts/`. Each file is the woff2 signature and 90 KB
+ * besides, a Plex face's size: the engine reads and checks each one as a launch does, and the
+ * window asks for each after its first frame. Not a real typeface, so a face is not drawn; what
+ * is measured is what a theme's fonts cost the launch.
+ */
+function themeWithFonts(home) {
+  mkdirSync(join(home, "fonts"), { recursive: true });
+  const fonts = {};
+  for (const [slot, file, weight] of THEME_FACES) {
+    const bytes = Buffer.alloc(90 * 1024, weight);
+    bytes.write("wOF2", 0, "latin1");
+    writeFileSync(join(home, "fonts", `${file}.woff2`), bytes);
+    fonts[slot] ??= { family: `Bench ${slot}`, faces: [] };
+    fonts[slot].faces.push({ file: `fonts/${file}.woff2`, weight });
+  }
+  writeFileSync(
+    join(home, "theme.json"),
+    JSON.stringify({
+      name: "Bench fonts",
+      fonts,
+      appearances: [{ id: "dark", appearance: "dark" }],
+    }),
+  );
 }
 
 /** The kernel's clock, for `/proc/<pid>/stat`'s CPU times: Linux only, read once. */
