@@ -3980,20 +3980,27 @@ struct InTurn {
     /// The lowest number not yet done, and the numbers above it that are.
     state: std::sync::Mutex<(u64, std::collections::BTreeSet<u64>)>,
     turned: std::sync::Condvar,
+    /// How long a line waits for its turn: [`A_TURN_IS_WAITED_AT_MOST`] on the channel.
+    at_most: std::time::Duration,
 }
 
 #[cfg(unix)]
 impl InTurn {
     fn new() -> Self {
+        Self::waiting_at_most(A_TURN_IS_WAITED_AT_MOST)
+    }
+
+    fn waiting_at_most(at_most: std::time::Duration) -> Self {
         Self {
             state: std::sync::Mutex::new((1, std::collections::BTreeSet::new())),
             turned: std::sync::Condvar::new(),
+            at_most,
         }
     }
 
     /// Waits until every connection before `this` is done, or the wait has gone on too long.
     fn wait(&self, this: u64) {
-        let until = std::time::Instant::now() + A_TURN_IS_WAITED_AT_MOST;
+        let until = std::time::Instant::now() + self.at_most;
         let mut state = self
             .state
             .lock()
@@ -7270,7 +7277,11 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_line_is_handed_on_after_every_line_whose_connection_arrived_before_it() {
-        let turns = std::sync::Arc::new(InTurn::new());
+        // A bound no scheduler reaches, so line 2 goes when line 1 is done and never because
+        // its wait ran out: with the channel's 50 ms, a runner that held this thread longer
+        // let line 2 go first (#2465).
+        let turns =
+            std::sync::Arc::new(InTurn::waiting_at_most(std::time::Duration::from_secs(60)));
         let (tx, rx) = mpsc::channel();
         let second = {
             let turns = std::sync::Arc::clone(&turns);
@@ -7281,7 +7292,8 @@ mod tests {
                 turns.done(2);
             })
         };
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        // Held up past the channel's bound, as a loaded runner can hold this thread (#2465).
+        std::thread::sleep(A_TURN_IS_WAITED_AT_MOST * 2);
         tx.send(1).unwrap();
         turns.done(1);
         second.join().unwrap();
@@ -8399,6 +8411,11 @@ mod tests {
             {
                 let _ = socket.write_all(&line);
             }
+            // Asked to, it says so once its connection is closed, and stays until it is ended.
+            if let Some(closed) = crate::envvar::var_os("PURLIS_TEST_HOOK_CLOSED") {
+                std::fs::write(closed, b"").expect("said");
+                std::thread::sleep(std::time::Duration::from_secs(30));
+            }
             std::thread::sleep(std::time::Duration::from_millis(500));
             return;
         }
@@ -8442,7 +8459,13 @@ mod tests {
         );
     }
 
+    /// Linux names a peer (`SO_PEERCRED`) as it connected, even after it has closed, so a
+    /// sender that does not wait is still heard there. macOS names it only while it is
+    /// connected, and a sender it cannot name is refused, failing closed (operator ruling
+    /// 2026-10-17 on #2465; every purlis sender waits, D-1407-10): see
+    /// `a_sender_that_does_not_wait_is_refused_on_macos_when_it_closed_before_it_was_named`.
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn a_sender_that_does_not_wait_is_heard_when_it_is_still_running_as_its_line_is_read() {
         let dir = tempfile::tempdir().expect("a directory");
         let path = dir.path().join("hooks.sock");
@@ -8477,6 +8500,82 @@ mod tests {
             heard.map(|notice| notice.chat),
             Ok(12),
             "the line of a sender that did not wait, read while it still ran"
+        );
+    }
+
+    /// **A sender the listener cannot name is refused, failing closed** (operator ruling
+    /// 2026-10-17 on #2465). On macOS the kernel names a peer (`LOCAL_PEERPID`) only while its
+    /// connection is open, so a sender that closed before the app took its connection is
+    /// refused unread, though it is still running. Every purlis sender holds its connection
+    /// until the app lets it go (D-1407-10), so this refuses only a sender written by hand.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn a_sender_that_does_not_wait_is_refused_on_macos_when_it_closed_before_it_was_named() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let closed = dir.path().join("closed");
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let token = listener
+            .tokens()
+            .issue_to_this_process(12)
+            .expect("a token");
+        // The sender connects, writes and closes before anything takes its connection: the
+        // channel is read only once it says it has closed.
+        let mut sender = crate::forklock::spawn(
+            std::process::Command::new(std::env::current_exe().expect("this test binary"))
+                .args([
+                    "--exact",
+                    "hookwire::tests::a_sender_that_writes_and_exits",
+                    "--ignored",
+                    "--quiet",
+                ])
+                .env("PURLIS_TEST_HOOK_SOCKET", &path)
+                .env("PURLIS_TEST_HOOK_TOKEN", token.expose())
+                .env("PURLIS_TEST_HOOK_RAW", "1")
+                .env("PURLIS_TEST_HOOK_CLOSED", &closed)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null()),
+        )
+        .expect("the sender runs");
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !closed.exists() {
+            assert!(
+                std::time::Instant::now() < until,
+                "the sender says it has closed"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let (tx, rx) = mpsc::channel();
+        let tx = std::sync::Mutex::new(tx);
+        let _reading = listener.each_answering_and_noticing(
+            Box::new(|_| panic!("a notice is not a report")),
+            Box::new(|_, _| panic!("a notice is not an ask")),
+            Box::new(move |notice| tx.lock().unwrap().send(notice.started_by_hand).unwrap()),
+        );
+        // A sender that waits, after it: the channel is reading, and hears that one alone.
+        tell(
+            &path,
+            Some(&token),
+            &StartedByHand {
+                chat: 12,
+                started_by_hand: "a sender that waits".to_owned(),
+                cwd: None,
+            },
+        )
+        .expect("the app took it");
+        let heard = rx.recv_timeout(std::time::Duration::from_secs(5));
+        let after = rx.recv_timeout(std::time::Duration::from_secs(1));
+        let running = sender.try_wait().expect("the sender, read").is_none();
+        let _ = sender.kill();
+        let _ = sender.wait();
+
+        assert!(running, "the sender still ran as its connection was taken");
+        assert_eq!(heard.as_deref(), Ok("a sender that waits"));
+        assert_eq!(
+            after,
+            Err(mpsc::RecvTimeoutError::Timeout),
+            "the line of a sender the app could not name"
         );
     }
 
