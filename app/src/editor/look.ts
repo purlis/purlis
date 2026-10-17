@@ -11,10 +11,16 @@
  * token's custom property: no colour is written in this file. `literals.test.ts` reads it
  * as it reads `App.css`.
  *
- * **The terminal's colours.** The editor is drawn on `terminal.background` in
- * `terminal.foreground`, and syntax in the terminal's ANSI palette: a theme already holds
- * those legible against each other, so a theme author gets code drawn in the colours they
- * chose for code everywhere else in the window.
+ * **The editor is drawn on the terminal's ground, and its code in the syntax tokens** (#2327).
+ * The editor's ground and words are `terminal.background` and `terminal.foreground`; each
+ * syntax role is its own token, with its italic and bold (`--syntax-<role>-font-style` and
+ * `-font-weight`, written by `theme.apply`). Purlis Classic gives each role the terminal colour
+ * the editor borrowed before, so it draws as it did.
+ *
+ * **Order is meaning here.** Two classes can land on one token (a heading's is inherited by what
+ * it holds), and the later rule wins. `variable`, `operator` and `punctuation` come first, so
+ * they colour only what nothing else does, as the editor's own colour did; emphasis, strong and
+ * link come last, so they outrank a role's italic or bold, as they did.
  */
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
@@ -75,27 +81,95 @@ export const look = [
   syntaxHighlighting(
     HighlightStyle.define([
       {
+        tag: tags.variableName,
+        color: "var(--syntax-variable)",
+        fontStyle: "var(--syntax-variable-font-style)",
+        fontWeight: "var(--syntax-variable-font-weight)",
+      },
+      {
+        tag: tags.operator,
+        color: "var(--syntax-operator)",
+        fontStyle: "var(--syntax-operator-font-style)",
+        fontWeight: "var(--syntax-operator-font-weight)",
+      },
+      {
+        tag: tags.punctuation,
+        color: "var(--syntax-punctuation)",
+        fontStyle: "var(--syntax-punctuation-font-style)",
+        fontWeight: "var(--syntax-punctuation-font-weight)",
+      },
+      {
         tag: [tags.keyword, tags.modifier, tags.operatorKeyword],
-        color: "var(--terminal-ansi-magenta)",
+        color: "var(--syntax-keyword)",
+        fontStyle: "var(--syntax-keyword-font-style)",
+        fontWeight: "var(--syntax-keyword-font-weight)",
       },
       {
         tag: [tags.string, tags.special(tags.string), tags.regexp],
-        color: "var(--terminal-ansi-green)",
+        color: "var(--syntax-string)",
+        fontStyle: "var(--syntax-string-font-style)",
+        fontWeight: "var(--syntax-string-font-weight)",
       },
-      { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--terminal-ansi-yellow)" },
+      {
+        tag: tags.number,
+        color: "var(--syntax-number)",
+        fontStyle: "var(--syntax-number-font-style)",
+        fontWeight: "var(--syntax-number-font-weight)",
+      },
+      {
+        tag: [tags.bool, tags.null, tags.atom],
+        color: "var(--syntax-constant)",
+        fontStyle: "var(--syntax-constant-font-style)",
+        fontWeight: "var(--syntax-constant-font-weight)",
+      },
       {
         tag: [tags.comment, tags.meta],
-        color: "var(--terminal-ansi-bright-black)",
-        fontStyle: "italic",
+        color: "var(--syntax-comment)",
+        fontStyle: "var(--syntax-comment-font-style)",
+        fontWeight: "var(--syntax-comment-font-weight)",
       },
       {
         tag: [tags.function(tags.variableName), tags.function(tags.propertyName)],
-        color: "var(--terminal-ansi-blue)",
+        color: "var(--syntax-function)",
+        fontStyle: "var(--syntax-function-font-style)",
+        fontWeight: "var(--syntax-function-font-weight)",
       },
-      { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--terminal-ansi-cyan)" },
-      { tag: [tags.propertyName, tags.attributeName], color: "var(--terminal-ansi-bright-blue)" },
-      { tag: [tags.tagName, tags.heading], color: "var(--terminal-ansi-red)", fontWeight: "bold" },
-      { tag: tags.invalid, color: "var(--terminal-ansi-bright-red)" },
+      {
+        tag: [tags.typeName, tags.className, tags.namespace],
+        color: "var(--syntax-type)",
+        fontStyle: "var(--syntax-type-font-style)",
+        fontWeight: "var(--syntax-type-font-weight)",
+      },
+      {
+        tag: tags.propertyName,
+        color: "var(--syntax-property)",
+        fontStyle: "var(--syntax-property-font-style)",
+        fontWeight: "var(--syntax-property-font-weight)",
+      },
+      {
+        tag: tags.attributeName,
+        color: "var(--syntax-attribute)",
+        fontStyle: "var(--syntax-attribute-font-style)",
+        fontWeight: "var(--syntax-attribute-font-weight)",
+      },
+      {
+        tag: tags.tagName,
+        color: "var(--syntax-tag)",
+        fontStyle: "var(--syntax-tag-font-style)",
+        fontWeight: "var(--syntax-tag-font-weight)",
+      },
+      {
+        tag: tags.heading,
+        color: "var(--syntax-heading)",
+        fontStyle: "var(--syntax-heading-font-style)",
+        fontWeight: "var(--syntax-heading-font-weight)",
+      },
+      {
+        tag: tags.invalid,
+        color: "var(--syntax-invalid)",
+        fontStyle: "var(--syntax-invalid-font-style)",
+        fontWeight: "var(--syntax-invalid-font-weight)",
+      },
       { tag: tags.link, textDecoration: "underline" },
       { tag: tags.emphasis, fontStyle: "italic" },
       { tag: tags.strong, fontWeight: "bold" },

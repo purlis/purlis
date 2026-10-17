@@ -145,7 +145,7 @@ fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
         .map(|(colour, _)| tint::tinted(theme, colour));
     for drawn in std::iter::once(theme.clone()).chain(tints) {
         for (floor, pair) in pairs() {
-            if ratio(&drawn, pair) < pair.floor {
+            if ratio(&drawn, pair).is_some_and(|ratio| ratio < pair.floor) {
                 found.push(Failure {
                     floor,
                     tokens: [Some(pair.front), Some(pair.back), pair.under]
