@@ -262,7 +262,7 @@ pub(crate) fn run_attributes(
         model: None,
         sandbox: if sandboxed {
             purlis_core::sandbox::Os::this()
-                .backend_word()
+                .backend_word(harness)
                 .map(str::to_owned)
         } else {
             none()
@@ -1270,6 +1270,19 @@ impl Chats {
             }
             // At the floor, the program it starts is never written by the chat (#2071, Q4).
             applied.hold_programs(&checked);
+            // And on Linux, purlis's own program the wrap starts it under, the same (#1040).
+            if applied.wrapped_by_purlis_here() {
+                let wrap = purlis_core::sandbox::program::checked_wrap(
+                    applied.root(),
+                    purlis_core::sandbox::program::Chat {
+                        cwd: &cwd,
+                        writable: &writable,
+                        env: &[],
+                    },
+                )
+                .map_err(|refused| refused.to_string())?;
+                applied.wrap_with(wrap);
+            }
             return Ok((Some((applied, checked[0].clone())), None, None));
         }
         Ok((None, lifted, floorless))
@@ -2978,6 +2991,8 @@ impl Chats {
                         hook_socket: socket.as_deref(),
                         confinement: confinement.as_ref(),
                         no_opt_out: false,
+                        // purlis's own program as the start checked it (#1040).
+                        purlis: applied.wrap_program(),
                     },
                 )?;
                 (line.program, line.args, line.env)
@@ -10899,7 +10914,7 @@ pub(crate) mod tests {
             ]
         };
         let backend = purlis_core::sandbox::Os::this()
-            .backend_word()
+            .backend_word(Some(Harness::ClaudeCode))
             .unwrap_or(UNKNOWN);
 
         assert_eq!(

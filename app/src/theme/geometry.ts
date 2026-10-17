@@ -20,7 +20,8 @@
  *
  * This list is the contract: `geometry.css` declares exactly these names, no other stylesheet
  * declares one, and `docs/design-system.md` lists every one. Values live in the CSS only, so
- * there is no second copy to drift.
+ * there is no second copy to drift. The core's theme engine refuses each name in a theme file
+ * (`purlis_core::theme::vocabulary::GEOMETRY`, held to this list by `core.test.ts`).
  */
 
 /** Each group of core tokens, and the custom properties in it. */
@@ -71,34 +72,3 @@ export const GEOMETRY_PROPERTIES: readonly string[] = Object.values(GEOMETRY).fl
 export function isGeometry(name: string): boolean {
   return GEOMETRY_PROPERTIES.includes(name);
 }
-
-/**
- * Whether a key a theme file wrote names geometry: a property (`--space-4`), its dotted form
- * the way a token is spelled (`space.4`, `radius.md`), or a whole group (`geometry`, `spacing`).
- * Used to tell a theme author why the key was ignored, rather than only that it was.
- */
-export function namesGeometry(key: string): boolean {
-  const dashed = key.startsWith("--") ? key : `--${key.split(".").join("-")}`;
-  if (isGeometry(dashed)) return true;
-  const group = key.replace(/^--/, "").split(/[.-]/)[0].toLowerCase();
-  return GEOMETRY_GROUPS.has(group);
-}
-
-/** The first word of a key that, on its own, says the key is about geometry. */
-const GEOMETRY_GROUPS = new Set([
-  "geometry",
-  "space",
-  "spacing",
-  "size",
-  "sizes",
-  "radius",
-  "radii",
-  "elevation",
-  "density",
-  "font",
-  "type",
-  "typography",
-  "line",
-  "leading",
-  "weight",
-]);

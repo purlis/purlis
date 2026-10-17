@@ -263,6 +263,8 @@ pub struct Held {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// The Asks that wait on the person to take a chat's browser over (#2015).
+    needs_you: crate::browserneedsyou::NeedsYou,
     /// How many brokered writes each chat has made lately (#1333).
     brokered: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
@@ -526,6 +528,11 @@ impl Held {
         &self.vault_refusals
     }
 
+    /// The Asks that wait on the person to take a chat's browser over (#2015).
+    pub fn needs_you(&self) -> &crate::browserneedsyou::NeedsYou {
+        &self.needs_you
+    }
+
     /// The workspaces each chat asked the person to remove, for the question on its tab
     /// (qw356).
     pub fn removal_asks(&self) -> &crate::removalasks::Asked {
@@ -767,7 +774,9 @@ impl Held {
     ///
     /// **In two halves** (`crate::restoring`): [`Self::begin_reopen`] reads and registers, and
     /// starts nothing; [`Self::finish_reopen`] starts the chats. This is both, in turn, on the
-    /// thread that asks. A launch does the second behind the window ([`Planes::reopen`]).
+    /// thread that asks. A launch does the second behind the window ([`Planes::reopen`]), once
+    /// its gate lets it (#2004); this is the tests' way in.
+    #[cfg(test)]
     pub(crate) fn reopen(&self, size: Size, record: Read, choice: Choice) {
         let begun = self.begin_reopen(record, choice);
         self.finish_reopen(begun, size);
@@ -1008,6 +1017,15 @@ impl Held {
         // Before it is off the board, while its conversation is still known: a dispatch it
         // was working on ends with it (#1452), unless a chat started in its place carries it.
         crate::dispatches::ended(self, session);
+        // What it asked the person to do in its browsers ends with them, each with an Update
+        // (#2015).
+        if self
+            .needs_you
+            .chat_closed(session, crate::sandboxing::now_secs())
+            > 0
+        {
+            self.chats.asks_may_have_moved();
+        }
         // What it asked for that still waited on the person is recorded as gone with it
         // (#1464), while the app still knows the chat, so its rows go just below with the rest.
         self.dispatch_grants.asker_closing(session);
@@ -1972,6 +1990,8 @@ pub struct Planes {
     project_settings: crate::projectsettings::Teller,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
+    /// Told each Ask about a chat's browser that ended with the browser (#2015).
+    browser_asks_ended: crate::browserneedsyou::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
     /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
@@ -2022,6 +2042,8 @@ pub struct Planes {
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
+    /// What putting back a project's chats waits on, if anything (#2004).
+    gate: Option<Gate>,
 }
 
 /// The projects an open or a close is under way for, one at a time each ([`OpenTurn`]).
@@ -2161,6 +2183,9 @@ pub struct PlaneClosed {
 /// Makes a plane's session host, given where its chats are to report and where the plane is.
 pub type Hosting = Arc<dyn Fn(Option<Reporting>, &Path) -> Box<dyn SessionHost> + Send + Sync>;
 
+/// What putting back a project's chats waits on (#2004): `Ok` to start them, or why not.
+pub type Gate = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+
 /// Where the launch's question stands (charter-app#250): what it holds back until the
 /// operator answers, and what the answer was.
 ///
@@ -2235,6 +2260,7 @@ impl Planes {
             refused_more: Arc::new(|_| {}),
             project_settings: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
+            browser_asks_ended: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
             browsers_listed: Arc::new(|_| {}),
@@ -2256,7 +2282,17 @@ impl Planes {
             letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
             network: None,
+            gate: None,
         }
+    }
+
+    /// Puts back no project's chats before `gate` lets it (#2004): what a window whose chats run
+    /// in its own process waits on, so a session host a crashed window left ends the chats it
+    /// kept first ([`crate::sessionhost::SessionHost::before_chats_are_put_back`]). A gate that
+    /// refuses puts nothing back and leaves the record as it is, for the next launch.
+    pub fn putting_back_chats_after(mut self, gate: Gate) -> Self {
+        self.gate = Some(gate);
+        self
     }
 
     /// Starts each project's chats behind the window (`crate::restoring`): an open answers
@@ -2460,6 +2496,13 @@ impl Planes {
     /// holds, so the window can show the ways forward on the chat's tab (#1430).
     pub fn telling_vault_refusals(mut self, refused: crate::vaultroute::Teller) -> Self {
         self.vault_refused = refused;
+        self
+    }
+
+    /// Tells `ended` each Ask about a chat's browser that ended with the browser, so the Inbox
+    /// keeps it as an Update (#2015).
+    pub fn telling_browser_asks_ended(mut self, ended: crate::browserneedsyou::Teller) -> Self {
+        self.browser_asks_ended = ended;
         self
     }
 
@@ -3107,8 +3150,26 @@ impl Planes {
         // **Registered here, started behind the window** (`crate::restoring`): the open that
         // asked answers at once, with every chat's tab to draw, and the programs start on a
         // thread of their own. Where no thread can be had, or a test asked for it, in turn.
+        //
+        // **Nothing starts before the gate lets it** (#2004), on whichever thread starts them: a
+        // gate that refuses leaves each chat registered and unstarted, and its record as it was.
+        let gate = self.gate.clone();
+        let let_through = move |root: &Path| match &gate {
+            Some(gate) => gate()
+                .inspect_err(|why| {
+                    tracing::warn!(
+                        "purlis: plane {}: its chats are not put back: {why}",
+                        root.display()
+                    );
+                })
+                .is_ok(),
+            None => true,
+        };
         if !self.restores_behind {
-            held.reopen(STARTING, record, choice);
+            let begun = held.begin_reopen(record, choice);
+            if let_through(held.root()) {
+                held.finish_reopen(begun, STARTING);
+            }
             return;
         }
         let begun = held.begin_reopen(record, choice);
@@ -3116,17 +3177,22 @@ impl Planes {
         let begun = Mutex::new(Some(begun));
         let begun = Arc::new(begun);
         let taken = Arc::clone(&begun);
+        let through = let_through.clone();
         let spawned = std::thread::Builder::new()
             .name("purlis-restore".into())
             .spawn(move || {
                 let begun = taken.lock().unwrap_or_else(PoisonError::into_inner).take();
-                if let Some(begun) = begun {
+                if let Some(begun) = begun
+                    && through(behind.root())
+                {
                     behind.finish_reopen(begun, STARTING);
                 }
             });
         if spawned.is_err() {
             let begun = begun.lock().unwrap_or_else(PoisonError::into_inner).take();
-            if let Some(begun) = begun {
+            if let Some(begun) = begun
+                && let_through(held.root())
+            {
                 held.finish_reopen(begun, STARTING);
             }
         }
@@ -3957,6 +4023,13 @@ impl Planes {
                 .ok()
         });
 
+        // The Asks about its chats' browsers, each that ends with its browser told to the
+        // window for the Inbox (#2015).
+        let needs_you = crate::browserneedsyou::NeedsYou::new({
+            let told = Arc::clone(&self.browser_asks_ended);
+            let plane = id.clone();
+            Arc::new(move |ended| told(crate::browserneedsyou::AskEnded::of(&plane, ended)))
+        });
         // What the chats of a dispatch said, expired once a day while the project is open
         // (#1556): the open and a timeline's read expire only what they read.
         let talk_sweep = crate::activity::Daily::start(root.clone(), Arc::clone(&me));
@@ -3987,6 +4060,7 @@ impl Planes {
             changes: Arc::clone(&self.changes),
             activity: Arc::clone(&self.activity),
             quiet: Arc::clone(&self.quiet),
+            needs_you,
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),

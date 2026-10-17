@@ -37,6 +37,10 @@ chrono = { version = "0.4", default-features = false, features = ["std", "serde"
 # A screenshot's blanked fields are painted over in purlis, not in the page: the engine's PNG is
 # decoded and encoded again. The version the app's icons already link, so the tree gains no crate.
 png = "0.18"
+# Which site a page is on (its registrable domain, by the public suffix list), so a screenshot
+# paints over what it cannot read only on the site a text was kept out on (#2303, the person's
+# ruling of 2026-10-17). The list is compiled in; no download.
+psl = "2.1"
 # A screenshot arrives from the engine as base64. The workspace's version.
 base64 = "0.23"
 

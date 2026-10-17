@@ -81,7 +81,7 @@ pub use hosting::{
 #[cfg(unix)]
 pub use hostrecord::{HOST_RECORD, Started, this_boot};
 #[cfg(unix)]
-pub use killswitch::KILL_SWITCH;
+pub use killswitch::{KILL_SWITCH, NoStopsElsewhere, StopsElsewhere};
 #[cfg(unix)]
 pub use lifetime::GRACE;
 /// The session protocol this host speaks, for a binary's [`Compose`].

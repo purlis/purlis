@@ -474,6 +474,11 @@ mod tests {
                 &purlis_core::profiletrust::fingerprint(work),
             )
             .expect("approved");
+            // Codex and opencode run wrapped on macOS and Linux (#1040); these tests are about
+            // the reference handed to the chat, so it starts without the sandbox here.
+            if matches!(kind, "codex" | "opencode") {
+                crate::sandboxing::no_sandbox_here_for_tests(&root);
+            }
             Self {
                 _dir: dir,
                 _bin: bin,
@@ -551,7 +556,8 @@ mod tests {
     #[test]
     fn start_a_chat_here_on_opencode_starts_it_and_copies_the_reference() {
         let project = Project::new("opencode");
-        let planes = planes();
+        let planes =
+            crate::sandboxing::keeping_events_for_tests(planes(), &project.root.join("events"));
         let held = planes.held(&planes.open(&project.root)).expect("held");
         let copied = Mutex::new(Vec::<String>::new());
 

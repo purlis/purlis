@@ -50,6 +50,8 @@ pub enum UpdateKind {
     /// purlis refused a chat a git command that would rewrite the project's root from another
     /// commit, so bringing the remote's commits in is the person's (qw348).
     RootUpdateRefused,
+    /// A chat asked the person to take its browser over, and the browser ended first (#2015).
+    BrowserAskEnded,
 }
 
 impl From<UpdateKind> for Kind {
@@ -65,6 +67,7 @@ impl From<UpdateKind> for Kind {
             UpdateKind::ReportUndelivered => Kind::ReportUndelivered,
             UpdateKind::CommitRefused => Kind::CommitRefused,
             UpdateKind::RootUpdateRefused => Kind::RootUpdateRefused,
+            UpdateKind::BrowserAskEnded => Kind::BrowserAskEnded,
         }
     }
 }
@@ -82,6 +85,7 @@ impl From<Kind> for UpdateKind {
             Kind::ReportUndelivered => UpdateKind::ReportUndelivered,
             Kind::CommitRefused => UpdateKind::CommitRefused,
             Kind::RootUpdateRefused => UpdateKind::RootUpdateRefused,
+            Kind::BrowserAskEnded => UpdateKind::BrowserAskEnded,
         }
     }
 }
@@ -361,6 +365,7 @@ mod tests {
             UpdateKind::Sandbox,
             UpdateKind::RefusedAway,
             UpdateKind::SmartClose,
+            UpdateKind::BrowserAskEnded,
         ] {
             assert_eq!(UpdateKind::from(Kind::from(kind)), kind);
         }

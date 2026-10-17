@@ -790,13 +790,17 @@ fn serve() -> ExitCode {
     );
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone(&place, |place| {
-            purlis_core::browsers::given_to(purlis_host::Hosting::keeping_its_switch_in(
-                &place.credentials,
-                Composes(purlis_core::hoststart::Kit::found(
-                    std::env::current_exe().ok(),
-                    None,
-                )),
-            ))
+            purlis_core::browsers::given_to(
+                purlis_host::Hosting::keeping_its_switch_in(
+                    &place.credentials,
+                    Composes(purlis_core::hoststart::Kit::found(
+                        std::env::current_exe().ok(),
+                        None,
+                    )),
+                )
+                // `purlis stop --all` is heard with no window there (#2190).
+                .heeding(purlis_core::halt::OnDisk(config.clone())),
+            )
         }))
         .unwrap_or(1),
     )
@@ -3860,6 +3864,11 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
+    // the hidden `purlis _sandbox`, never in help and not a public command line.
+    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+        std::process::exit(code);
+    }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed
     // must refuse the tool call, not allow it (#349).
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {

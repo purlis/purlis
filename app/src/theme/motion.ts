@@ -19,11 +19,11 @@
  * does not also speed up the spinner that happened to share a rung of a scale with it.
  *
  * **Values are numbers, never text.** A duration is a count of milliseconds and an easing is
- * the four numbers of a cubic Bézier. `motionVariables` writes the CSS from those numbers, so
- * nothing a theme file says is ever copied into a declaration — the parse-and-re-emit rule
- * (ADR 0041, property 4) that makes a theme safe to take from an extension. `hex and
- * only hex` is the same boundary for colour; `"150ms; } body { display: none"` has nowhere to
- * go when the only thing read is a number.
+ * the four numbers of a cubic Bézier, each held to its bounds by the core's theme engine
+ * (`purlis_core::theme`), which reads a theme file and hands the window numbers.
+ * `motionVariables` writes the CSS from those numbers, so nothing a theme file says is ever
+ * copied into a declaration — the parse-and-re-emit rule (ADR 0041, property 4) that makes a
+ * theme safe to take from an extension.
  *
  * **Reduced motion is this module's job and nobody else's.** Under `prefers-reduced-motion:
  * reduce` every duration is written as `0ms`, so every transition and every animation in the
@@ -86,103 +86,11 @@ export type Motion = {
 /** Every motion token, durations first — the order a theme file is easiest to read in. */
 export const MOTION_TOKENS: readonly MotionToken[] = [...DURATIONS, ...EASINGS];
 
-/**
- * The longest a duration may be. Ten seconds is far past anything a window should take to
- * change, and the ceiling is what stops a typo of `16000` for `1600` from leaving a menu
- * fading in for a quarter of a minute. `0` is allowed, and is how a theme turns motion off.
- */
-export const LONGEST = 10_000;
-
-/** Whether a value is a duration a theme may hold: a whole number of milliseconds, 0 to
- *  {@link LONGEST}. A string — `"150ms"` — is not one, on purpose: see this module's header. */
-export function isDuration(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= LONGEST;
-}
-
-/**
- * Whether a value is an easing a theme may hold: four finite numbers, the two `x` in 0..1 —
- * CSS's own rule, and a declaration that breaks it is dropped whole, so the motion would
- * silently vanish — and the two `y` in -1..2, which leaves room for an overshoot and none for
- * a curve that flings a menu off the window and back.
- */
-export function isEasing(value: unknown): value is Bezier {
-  if (!Array.isArray(value) || value.length !== 4) return false;
-  if (!value.every((n) => typeof n === "number" && Number.isFinite(n))) return false;
-  const [x1, y1, x2, y2] = value as number[];
-  const within = (n: number, low: number, high: number) => n >= low && n <= high;
-  return within(x1, 0, 1) && within(x2, 0, 1) && within(y1, -1, 2) && within(y2, -1, 2);
-}
-
-/** Whether a name is one of the durations rather than one of the easings. */
-export function isDurationToken(token: MotionToken): token is Duration {
-  return (DURATIONS as readonly string[]).includes(token);
-}
-
 /** The custom property a motion token is written to: `duration.enter` becomes
  *  `--motion-duration-enter`. The prefix keeps the two vocabularies from ever sharing a
  *  property, so a colour token called `duration.*` could not collide with one of these. */
 export function motionProperty(token: MotionToken): string {
   return `--motion-${token.split(".").join("-")}`;
-}
-
-/**
- * A built-in theme's motion, which is checked into this repo and therefore trusted to be
- * complete — and is still checked, because a built-in missing a token would otherwise show up
- * only as a transition that silently is not there.
- */
-export function builtInMotion(name: string, raw: unknown): Motion {
-  const from = (raw ?? {}) as Record<string, unknown>;
-  const motion = { durations: {}, easings: {} } as Motion;
-  for (const token of DURATIONS) {
-    const value = from[token];
-    if (!isDuration(value)) throw new Error(`the built-in theme ${name} has no ${token}`);
-    motion.durations[token] = value;
-  }
-  for (const token of EASINGS) {
-    const value = from[token];
-    if (!isEasing(value)) throw new Error(`the built-in theme ${name} has no ${token}`);
-    motion.easings[token] = [...value] as unknown as Bezier;
-  }
-  return motion;
-}
-
-/**
- * Reads the `motion` object of an untrusted theme, filling what it does not supply usably from
- * `base` and saying so. Nothing here throws, for `theme.load`'s reason: a window that will not
- * come up because an easing was mistyped is worse than every possible wrong easing.
- */
-export function loadMotion(raw: unknown, base: Motion): { motion: Motion; said: string[] } {
-  const said: string[] = [];
-  if (raw === undefined) return { motion: base, said };
-  const holds = raw !== null && typeof raw === "object" && !Array.isArray(raw);
-  if (!holds) said.push("motion is an object of motion token names to values");
-  const given = holds ? (raw as Record<string, unknown>) : {};
-
-  const known = new Set<string>(MOTION_TOKENS);
-  for (const name of Object.keys(given)) {
-    if (!known.has(name)) said.push(`${name} is not a purlis motion token`);
-  }
-
-  const motion = { durations: { ...base.durations }, easings: { ...base.easings } } as Motion;
-  for (const token of DURATIONS) {
-    const value = given[token];
-    if (value === undefined) continue;
-    if (isDuration(value)) motion.durations[token] = value;
-    else
-      said.push(
-        `${token} is ${JSON.stringify(value)}, which is not a whole number of milliseconds from 0 to ${LONGEST}; used ${base.durations[token]}`,
-      );
-  }
-  for (const token of EASINGS) {
-    const value = given[token];
-    if (value === undefined) continue;
-    if (isEasing(value)) motion.easings[token] = [...value] as unknown as Bezier;
-    else
-      said.push(
-        `${token} is ${JSON.stringify(value)}, which is not [x1, y1, x2, y2] with each x from 0 to 1 and each y from -1 to 2; used [${base.easings[token].join(", ")}]`,
-      );
-  }
-  return { motion, said };
 }
 
 /**

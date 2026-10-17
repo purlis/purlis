@@ -1240,16 +1240,23 @@ export const commands = {
 	setExtensionOn: __WINDOW_ONLY_RESULT,
 	openExtensionRecord: __WINDOW_ONLY_RESULT,
 	/**
-	 *  Every theme in force: the ones approved extensions contribute, and nothing else.
+	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it
+	 *  ([`purlis_core::theme::resolve`]) and the window only applies what comes back.
 	 * 
-	 *  An extension that is new, changed or unreadable contributes nothing here. That is the
-	 *  registry doing its one job — [`extension::Surveyed::themes_in_force`] is what answers, and
-	 *  this command only shapes it.
+	 *  `pick` is what the project or workspace in front picked (`project_theme_drawn`), `on` the
+	 *  extensions it has on (`extensions_on`), `None` with no project in front, when every approved
+	 *  extension's theme may be drawn. `light` is the operating system's appearance, which a
+	 *  `system` pick follows; the window asks again when it changes.
+	 * 
+	 *  The themes approved extensions contribute come from a survey, which reads and fingerprints
+	 *  every extension's files, so it is taken only when the answer needs one and kept until
+	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
+	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 	 */
-	extensionThemes: () => typedError<ExtensionTheme[], string>(__TAURI_INVOKE("extension_themes")),
+	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread })),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
-	 *  [`extension_themes`]'s terms and in its shape. The text is parsed by `theme/icons.ts`
+	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
 	 *  against its closed vocabulary — path data and `icon.*` tokens — and never by this crate.
 	 */
 	extensionIconThemes: () => typedError<ExtensionTheme[], string>(__TAURI_INVOKE("extension_icon_themes")),
@@ -1261,7 +1268,7 @@ export const commands = {
 	 *  cost of fingerprinting code — and folding that into `workspace_panels` would put it on the
 	 *  path that has 100 ms to draw, once per click on the workspace strip.
 	 * 
-	 *  It is the same shape as [`extension_themes`] one row down, and for the same reason: an
+	 *  It is the same shape as [`extension_icon_themes`] one row up, and for the same reason: an
 	 *  extension that is new, changed or unreadable contributes nothing here. That is the registry
 	 *  doing its one job, and a contributed panel rests on it entirely.
 	 */
@@ -2050,6 +2057,12 @@ export type AnswerPath =
  *  Keep off, with the person's reason (#2013).
  */
 { via: "browser" } | 
+/**
+ *  Take over sends `take_over_browser` for browser `program`, the session host's lease,
+ *  then opens its view, so the person's first click or key reaches the page (#2015). The
+ *  Ask ends on their Done (`hand_back_browser`), or with the browser.
+ */
+{ via: "take-over"; program: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2099,6 +2112,21 @@ export type Ask = {
 	changes: string[],
 	/**  Whether this is a first approval rather than a re-ask, so the dialog can say which. */
 	first: boolean,
+};
+
+/**
+ *  **An Ask about a chat's browser that ended with the browser**, as the window is told it: the
+ *  Inbox keeps it as an Update.
+ */
+export type AskEnded = {
+	plane: PlaneId,
+	session: number,
+	/**  The browser, by the name its chat knows it by. */
+	browser: string,
+	/**  When it ended, in seconds since 1970. */
+	at: number,
+	/**  What the Update says, in purlis's words. */
+	says: string,
 };
 
 /**  One ask policy takes off one chat's tab ([`AskOffer::locked_for`]). */
@@ -2174,7 +2202,12 @@ export type AskSource =
  */
 "sandbox-only" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
-"browser";
+"browser" | 
+/**
+ *  A chat's browser whose page needs the person (#2015): the chat asked them to take it
+ *  over, through `ask_operator` pointed at it.
+ */
+"browser-needs-you";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3857,14 +3890,9 @@ export type ExtensionTheme = {
 	/**  What to call it, as the manifest does. */
 	name: string,
 	/**
-	 *  The file's **text**, unparsed.
-	 * 
-	 *  **The vocabulary is `theme.ts`'s and the parser is `theme.ts`'s**, and this crate
-	 *  deliberately does not grow a second one. `TOKENS` is the closed vocabulary charter owns
-	 *  (ADR 0041 property 1) and `load` is the parse-and-re-emit that keeps a theme's bytes out
-	 *  of a stylesheet (property 4); both are already written and already tested. A Rust parser
-	 *  here would be a second vocabulary, and two vocabularies drift — which is property 1
-	 *  turning into a lie by accident rather than by decision.
+	 *  The file's **text**, unparsed: an icon theme's, which `theme/icons.ts` parses against its
+	 *  closed vocabulary (path data and `icon.*` tokens). A colour theme never reaches the window
+	 *  as text: the core's theme engine resolves it ([`theme_in_force`]).
 	 * 
 	 *  It is the text the fingerprint was taken over, handed on rather than fetched again.
 	 */
@@ -8442,6 +8470,19 @@ export type TheirAgentsMd = {
 	piece: string | null,
 };
 
+/**  What [`theme_in_force`] answers. */
+export type ThemeInForce = {
+	/**
+	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
+	 *  JSON at all, which nothing picked).
+	 */
+	theme: WindowTheme | null,
+	/**  What resolving it had to put right. */
+	complaints: string[],
+	/**  Whether it follows the operating system's appearance. */
+	follows_system: boolean,
+};
+
 /**  One theme a project may pick, as the Theme select lists it. */
 export type ThemeOption = {
 	/**  What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`. */
@@ -8566,7 +8607,9 @@ export type UpdateKind =
  *  purlis refused a chat a git command that would rewrite the project's root from another
  *  commit, so bringing the remote's commits in is the person's (qw348).
  */
-"root-update-refused";
+"root-update-refused" | 
+/**  A chat asked the person to take its browser over, and the browser ended first (#2015). */
+"browser-ask-ended";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
@@ -8914,6 +8957,12 @@ export type WhatChanged = {
 	diff: FileDiff,
 };
 
+/**  A resolved theme's motion: milliseconds, and the four numbers of each cubic Bézier. */
+export type WindowMotion = {
+	durations: { [key in string]: number },
+	easings: { [key in string]: [(number | null), (number | null), (number | null), (number | null)] },
+};
+
 /**
  *  What a window is holding, as it says so itself.
  * 
@@ -8929,6 +8978,18 @@ export type WindowTabs = {
 	 *  operator is not looking at, or holding none at all.
 	 */
 	active: number | null,
+};
+
+/**
+ *  A resolved theme as the window applies it: the window's `Theme`, every token and every
+ *  motion value present.
+ */
+export type WindowTheme = {
+	name: string,
+	/**  `dark` or `light`. */
+	appearance: string,
+	values: { [key in string]: string },
+	motion: WindowMotion,
 };
 
 /**  A person's opt-out, as the picker sends it. */

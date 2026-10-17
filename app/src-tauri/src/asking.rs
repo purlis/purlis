@@ -141,6 +141,9 @@ pub enum AskSource {
     SandboxOnly,
     /// A chat's first browser call, asking what its browser may reach (#2013).
     Browser,
+    /// A chat's browser whose page needs the person (#2015): the chat asked them to take it
+    /// over, through `ask_operator` pointed at it.
+    BrowserNeedsYou,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -183,6 +186,10 @@ pub enum AnswerPath {
     /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
     /// Keep off, with the person's reason (#2013).
     Browser,
+    /// Take over sends `take_over_browser` for browser `program`, the session host's lease,
+    /// then opens its view, so the person's first click or key reaches the page (#2015). The
+    /// Ask ends on their Done (`hand_back_browser`), or with the browser.
+    TakeOver { program: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -891,6 +898,69 @@ pub fn browser_posture(
     }
 }
 
+/// The key of the Ask about browser `program` (#2015): one per browser.
+fn needs_you_key(program: &str) -> String {
+    format!("browser-needs-you:{program}")
+}
+
+/// The id of Take over on a browser's Ask (#2015).
+pub const TAKE_OVER: &str = "take-over";
+
+/// The id of Open its view on a browser's Ask the person has taken over (#2015): it sends
+/// nothing, and opens the view again.
+pub const OPEN_VIEW: &str = "open-view";
+
+/// **The browser-needs-you adapter** (#2015): a chat asked the person to take its browser over.
+/// The words are the agent's, said as the chat's after purlis's own; the one answer is Take
+/// over, and Done in the browser's view ends it. Once the person drives it, the row says so,
+/// and its one answer opens the view again.
+pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
+    // Once the person drives it, the row says so: Done in its view hands it back, and the one
+    // answer opens that view again, sending nothing.
+    let (says, offered) = if waiting.taken {
+        (
+            format!(
+                "You are driving its browser {}: Done in its view hands it back. The chat said: \
+                 {}",
+                waiting.browser, waiting.question
+            ),
+            Offered {
+                id: OPEN_VIEW.to_owned(),
+                label: "Open its view".to_owned(),
+                allows: false,
+                preselected: None,
+            },
+        )
+    } else {
+        (
+            format!(
+                "Needs you in its browser {}. The chat says: {}",
+                waiting.browser, waiting.question
+            ),
+            Offered {
+                id: TAKE_OVER.to_owned(),
+                label: "Take over".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+        )
+    };
+    Shown {
+        session: waiting.session,
+        ask: needs_you_key(&waiting.program),
+        says: said_inertly(&says),
+        options: vec![offered],
+        source: AskSource::BrowserNeedsYou,
+        chain: Vec::new(),
+        answer: AnswerPath::TakeOver {
+            program: waiting.program.clone(),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
 /// The id of This project's sites, always for the chat's persona (#2241).
 pub const BROWSER_PROJECT_ALWAYS: &str = "project-always";
 /// The id of Also the open web, always for the chat's persona (#2241).
@@ -1143,6 +1213,8 @@ pub struct Waiting<'a> {
     pub sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
     pub browsers: Vec<crate::chatbrowsers::Waits>,
+    /// The browsers whose chat asked the person to take them over (#2015).
+    pub needs_you: Vec<crate::browserneedsyou::Waiting>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// The name a chat is shown under, where it is open.
@@ -1196,6 +1268,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|one| browser_posture(one, waiting.locks)),
     );
+    // And one whose browser needs the person waits on them to take it over (#2015).
+    asks.extend(waiting.needs_you.iter().map(browser_needs_you));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -1364,8 +1438,15 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &browsers {
         since.insert(browser_key(one.session), one.since);
     }
+    // An Ask whose browser is gone is not listed: it ends here, with its Update (#2015).
+    held.needs_you().settle(held.browsers(), now_secs);
+    let needs_you = held.needs_you().waiting();
+    for one in &needs_you {
+        since.insert(needs_you_key(&one.program), one.since);
+    }
     let waiting = Waiting {
         browsers,
+        needs_you,
         sandbox_only,
         sign_ins,
         removals,

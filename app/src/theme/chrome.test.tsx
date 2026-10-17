@@ -84,6 +84,7 @@ import { AddToAChat } from "../AddToAChat";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
+import { themeInForce } from "./inForce.testkit";
 
 vi.mock("../SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
@@ -166,6 +167,8 @@ function core(theme: string, colour: string | null) {
             unfiled: [],
             workspaces: [workspace("alpha", colour, [CHAT, TASK]), workspace("beta", null)],
           };
+        case "theme_in_force":
+          return themeInForce(args);
         case "project_theme_drawn":
           return theme;
         case "workspace_panels":
@@ -473,7 +476,8 @@ function dialogCore() {
           remote: "origin",
           mode: "push",
         };
-      case "extension_themes":
+      case "theme_in_force":
+        return { theme: null, complaints: [], follows_system: false };
       case "extension_views":
       case "extension_panels":
         return [];

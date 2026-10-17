@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_ICONS, DEFAULT_ICONS, ICON_THEME_ALIASES, builtInIcons } from "./icons";
-import { BUILT_IN, DEFAULT_THEME, THEME_ALIASES, builtIn } from "./theme";
+import { BUILT_IN, DEFAULT_THEME, THEME_ALIASES } from "./theme";
 
 /**
  * **The built-in themes' ids** (#1838, the #1719 theme-id item). The two themes are
@@ -41,18 +41,15 @@ describe("the built-in themes' ids", () => {
     expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
   });
 
-  it("read each old id as the renamed theme: a saved choice loads as the new theme", () => {
+  it("name a built-in for each old id: which theme an old id draws is the core's", () => {
+    // `purlis_core::theme::built_in` reads each old id as the renamed theme, keeping its
+    // appearance; the window spells the old ids only to label a pick that names one.
     const old = Object.keys(THEME_ALIASES);
     expect(old.length).toBeGreaterThan(0);
     for (const id of old) {
       expect(BUILT_IN[THEME_ALIASES[id]], `${id} names no built-in`).toBeDefined();
-      expect(builtIn(id)).toBe(BUILT_IN[THEME_ALIASES[id]]);
-      // Its appearance is kept: an old dark id never loads as light.
-      expect(builtIn(id)?.appearance).toBe(id.endsWith("light") ? "light" : "dark");
+      expect(BUILT_IN[THEME_ALIASES[id]].appearance).toBe(id.endsWith("light") ? "light" : "dark");
     }
-    for (const id of Object.keys(BUILT_IN)) expect(builtIn(id)).toBe(BUILT_IN[id]);
-    for (const id of ["system", "solarized/Solarized Dark", "", "toString", "__proto__"])
-      expect(builtIn(id), id).toBeUndefined();
   });
 
   it("are the core's: the alias table is the name module's THEME_DARK and THEME_LIGHT", () => {
@@ -85,7 +82,7 @@ describe("the built-in icon theme's id (#1854)", () => {
       expect(BUILT_IN_ICONS[ICON_THEME_ALIASES[id]], `${id} names no built-in`).toBeDefined();
       expect(builtInIcons(id)).toBe(BUILT_IN_ICONS[ICON_THEME_ALIASES[id]]);
       // An old icon theme id is no colour theme.
-      expect(builtIn(id)).toBeUndefined();
+      expect(BUILT_IN[id]).toBeUndefined();
     }
     for (const id of Object.keys(BUILT_IN_ICONS)) expect(builtInIcons(id)).toBe(BUILT_IN_ICONS[id]);
     for (const id of ["purlis-dark", "seti/Seti", "", "toString", "__proto__"])

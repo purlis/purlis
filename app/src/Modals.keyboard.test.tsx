@@ -377,7 +377,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
           dropped: [],
           unreadable: null,
         };
-      if (cmd === "extension_themes") return [];
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
       return null;
     });
     render(<Extensions onClose={() => {}} />);

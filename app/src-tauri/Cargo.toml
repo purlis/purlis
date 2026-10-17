@@ -37,6 +37,9 @@ tauri-plugin-notification = "2"
 purlis-core.workspace = true
 # The session host the window starts with its own binary and is the first client of (#1997).
 purlis-host.workspace = true
+# purlis's own wrap of a chat on Linux (#1040): the app answers the hidden `_sandbox` itself, so
+# the program that starts a chat can wrap it.
+purlis-linux-sandbox.workspace = true
 # What the window speaks to its session host: the link, its scope and its credential (#1997).
 purlis-session-protocol = { path = "../../crates/session-protocol" }
 # A file tab's image preview crosses to the window as base64 (FM-2).

@@ -25,19 +25,19 @@
  * asks for (`docs/design-system.md`). A theme that wanted the
  * first to shout and the second to whisper can say so; a palette token could not.
  *
- * **Values are hex and only hex.** Not a stylistic preference — a theme value is written
- * straight into a CSS declaration *and* into xterm's object, and a theme file is a file, which
- * means it is attacker-influenced in exactly the way `machine.rs` describes its own store as
- * being. `red; } body { display: none` is a CSS injection if the value is passed through, and
- * no amount of care elsewhere takes that back. Restricting the grammar to `#rgb`, `#rgba`,
- * `#rrggbb` and `#rrggbbaa` removes the question instead of answering it, and costs an author
- * nothing that a converter cannot give back. It also means every value is one xterm accepts.
+ * **The window only applies a theme; the core's theme engine decides it** (spec #2313,
+ * `purlis_core::theme`). Reading a theme file, holding every value to its closed grammar (hex
+ * and only hex for a colour, numbers for motion), filling a token that is missing or malformed
+ * from the built-in of the same appearance and saying so, choosing which theme a project draws,
+ * and checking whether its words can be read: all of it is the engine's, in Rust, tested once.
+ * What reaches this module is a resolved theme, every token present and every value one the
+ * engine wrote from a parsed colour or number — so nothing a theme file says is ever copied into
+ * a declaration (ADR 0041, property 4), and every value is one xterm accepts.
  *
- * **A bad theme never stops the window.** ADR 0026 holds cold start at 2 s and the window has
- * to come up. So a token that is missing, misspelled or malformed falls back to the built-in
- * theme of the same appearance and the substitution is *reported*, rather than the theme being
- * refused whole or — worse — half-applied into something nobody can read. `load` always
- * answers with a complete theme.
+ * **The first frame is drawn from what the window was handed as it was created** (ADR 0026's
+ * 2 s cold start): the core resolves the person's own theme and the built-ins before the window
+ * exists and puts them in the page ({@link AT_CREATION}), and `main.tsx` draws one before React
+ * renders. The built-ins are compiled into the core, so nothing is read from disk for them.
  *
  * **A theme also says how the window moves** (M7.2). Durations and easings are a second, smaller
  * vocabulary under a theme file's `motion`, held to the same rules — semantic names, a closed
@@ -45,30 +45,17 @@
  * where it and its reasons live, including why reduced motion is decided there and only there.
  */
 
-import dark from "./purlis-dark.json";
-import light from "./purlis-light.json";
-import {
-  builtInMotion,
-  loadMotion,
-  motionReduced,
-  motionVariables,
-  REDUCE,
-  type Motion,
-} from "./motion";
+import { motionReduced, motionVariables, REDUCE, type Motion } from "./motion";
 import { hueOf, tintHex } from "./tint";
-import { namesGeometry } from "./geometry";
-
-/** Why a theme's geometry was ignored, after the key that named it. */
-const GEOMETRY_IS_CORE =
-  "is geometry, which is the same in every theme; a theme sets colour, shadow colour and motion";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
  *
- * This array **is** the vocabulary: it is what a theme is validated against, what is written
- * to the document, and what the guard in `literals.test.ts` says the rest of the window may
- * not go around. Adding a colour to charter means adding a name here and a value to both
- * built-in themes; there is no third way to get one.
+ * This array is the vocabulary as the window writes it: what goes on the document, and what the
+ * guard in `literals.test.ts` says the rest of the window may not go around. The engine holds
+ * the same list (`purlis_core::theme::vocabulary::TOKENS`), which a theme is validated against,
+ * and `core.test.ts` fails when the two differ. Adding a colour to purlis means adding a name
+ * here and there, and a value to both built-in themes; there is no third way to get one.
  */
 export const TOKENS = [
   // The layers of the window, from the deepest to the one nearest the operator. `deep` is
@@ -236,28 +223,30 @@ export type Theme = {
   motion: Motion;
 };
 
-/**
- * The grammar of a value: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, and nothing else.
- *
- * See this module's header for why the set is this small. Anchored at both ends, so a value
- * that merely *starts* with a colour is not one.
- */
-const HEX = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-
-/** Whether a string is a value a theme may hold. */
-export function isColour(value: unknown): value is string {
-  return typeof value === "string" && HEX.test(value);
-}
-
 /** The custom property a token is written to: `surface.base` becomes `--surface-base`. */
 export function property(token: Token): string {
   return `--${token.split(".").join("-")}`;
 }
 
-/** purlis's dark theme, Verdigris on warm graphite (#1838). */
-const DARK = asTheme(dark);
-/** purlis's light theme, Verdigris on warm paper (#1838). */
-const LIGHT = asTheme(light);
+/**
+ * The global the core puts what the window needs for its first frame on, before any of the
+ * window's own code runs (`app/src-tauri/src/windowprefs.rs`, `windowprefs.ts`).
+ */
+export const AT_CREATION = "__CHARTER_AT_CREATION__";
+
+/** The themes purlis ships, as the core resolved them and handed them to the window: dark first,
+ *  the theme the window comes up in. The window always has them; a page opened without them is
+ *  not purlis's window. */
+function handedBuiltIns(): Theme[] {
+  const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
+    { built_in?: unknown } | undefined;
+  const themes = given?.built_in;
+  if (!Array.isArray(themes) || themes.length === 0)
+    throw new Error("purlis's window was opened without the themes its core hands it");
+  return themes as Theme[];
+}
+
+const [DARK, LIGHT] = handedBuiltIns();
 
 /** The two themes purlis ships, by the name a theme file or a setting names them by. */
 export const BUILT_IN: Record<string, Theme> = {
@@ -267,22 +256,16 @@ export const BUILT_IN: Record<string, Theme> = {
 
 /**
  * **The alias table** (#1838, the #1719 theme-id item): each id a built-in had before the
- * rename, and the id it has now. A project file, a workspace or a saved choice that still names
- * an old id draws the renamed theme. It is the window's half of `purlis_core::names`'
- * `THEME_DARK` and `THEME_LIGHT`, whose `reads` it must equal (`themeIds.test.ts` holds the
- * two to each other), and the only place in the window that spells an old id. It goes when the
- * rename's compatibility window closes (ADR 0091).
+ * rename, and the id it has now, as Settings labels a pick that names one. Which theme an old
+ * id draws is the core's (`purlis_core::theme::built_in`); this is the window's half of
+ * `purlis_core::names`' `THEME_DARK` and `THEME_LIGHT`, whose `reads` it must equal
+ * (`themeIds.test.ts` holds the two to each other), and the only place in the window that
+ * spells an old id. It goes when the rename's compatibility window closes (ADR 0091).
  */
 export const THEME_ALIASES: Readonly<Record<string, string>> = {
   "charter-dark": DARK.name,
   "charter-light": LIGHT.name,
 };
-
-/** The built-in `name` names, by its id or by an id it had before ({@link THEME_ALIASES}). */
-export function builtIn(name: string): Theme | undefined {
-  const id = Object.prototype.hasOwnProperty.call(THEME_ALIASES, name) ? THEME_ALIASES[name] : name;
-  return Object.prototype.hasOwnProperty.call(BUILT_IN, id) ? BUILT_IN[id] : undefined;
-}
 
 /** The theme the window comes up in when nothing has said otherwise. */
 export const DEFAULT_THEME: Theme = DARK;
@@ -294,14 +277,19 @@ export const SYSTEM = "system";
 /** The media query the operating system answers with its appearance: true when it is light. */
 export const PREFERS_LIGHT = "(prefers-color-scheme: light)";
 
-/**
- * The built-in that matches the operating system's appearance right now — what a project that
- * picked "follow the system" draws (charter-app#273). Dark where the platform cannot say, which
- * is what the window comes up in.
- */
-export function systemTheme(): Theme {
-  const light = typeof matchMedia === "function" && matchMedia(PREFERS_LIGHT).matches;
-  return light ? LIGHT : DARK;
+/** Whether the operating system is light right now: what the core is told a project that picked
+ *  "follow the system" draws. Dark where the platform cannot say. */
+export function systemIsLight(): boolean {
+  return typeof matchMedia === "function" && matchMedia(PREFERS_LIGHT).matches;
+}
+
+/** Whether two resolved themes draw the same, so a theme the core answers again is not drawn
+ *  again: the terminal is told only of a change. */
+export function sameTheme(a: Theme, b: Theme): boolean {
+  if (a === b) return true;
+  if (a.name !== b.name || a.appearance !== b.appearance) return false;
+  if (TOKENS.some((token) => a.values[token] !== b.values[token])) return false;
+  return JSON.stringify(a.motion) === JSON.stringify(b.motion);
 }
 
 /**
@@ -388,113 +376,14 @@ export function drawTint(colour: string | null): void {
   if (drawnOn !== null) paint(current, drawnOn, tint);
 }
 
-/** The built-in a theme of this appearance falls back to, token by token. */
-function fallbackFor(appearance: Appearance): Theme {
-  return appearance === "light" ? LIGHT : DARK;
-}
-
-/**
- * A built-in, which is checked into this repo beside this file and is therefore trusted to be
- * complete — but is still checked, because a built-in with a missing token is a defect that
- * would otherwise only show up as an unreadable window.
- */
-function asTheme(raw: unknown): Theme {
-  const from = raw as {
-    name: string;
-    appearance: Appearance;
-    tokens: Record<string, string>;
-    motion: unknown;
-  };
-  const values = {} as Record<Token, string>;
-  for (const token of TOKENS) {
-    const value = from.tokens[token];
-    if (!isColour(value)) throw new Error(`the built-in theme ${from.name} has no ${token}`);
-    values[token] = value;
-  }
-  return {
-    name: from.name,
-    appearance: from.appearance,
-    values,
-    motion: builtInMotion(from.name, from.motion),
-  };
-}
-
-/** What `load` had to put right. Every entry is a value the file did not supply usably. */
+/** What the engine had to put right in a theme: a value the file did not supply usably
+ *  (`purlis_core::theme::Complaint`). */
 export type Complaint = {
   /** What was wrong, in the words to put in front of whoever wrote the file. */
   said: string;
   /** The token it was about, when it was about one. */
   token?: string;
 };
-
-/** A theme, and what it cost to get one. */
-export type Loaded = { theme: Theme; complaints: Complaint[] };
-
-/**
- * Reads whatever a theme file parsed to, and always answers with a complete theme.
- *
- * `raw` is untrusted: it is `JSON.parse` of a file charter did not write. Nothing here throws
- * and nothing here trusts a type — a window that will not start because a colour was spelled
- * wrong is worse than every possible wrong colour.
- */
-export function load(raw: unknown): Loaded {
-  const complaints: Complaint[] = [];
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return { theme: DEFAULT_THEME, complaints: [{ said: "a theme is a JSON object" }] };
-  }
-  const from = raw as Record<string, unknown>;
-
-  const appearance: Appearance = from.appearance === "light" ? "light" : "dark";
-  if (from.appearance !== "light" && from.appearance !== "dark") {
-    complaints.push({ said: `appearance is "dark" or "light"; read this one as dark` });
-  }
-  const base = fallbackFor(appearance);
-
-  let name = base.name;
-  if (typeof from.name === "string" && from.name.trim() !== "") name = from.name.trim();
-  else complaints.push({ said: `a theme has a name; called this one ${base.name}` });
-
-  const holdsTokens =
-    from.tokens !== null && typeof from.tokens === "object" && !Array.isArray(from.tokens);
-  const tokens = holdsTokens ? (from.tokens as Record<string, unknown>) : {};
-  if (!holdsTokens) complaints.push({ said: "tokens is an object of token names to colours" });
-
-  const known = new Set<string>(TOKENS);
-  for (const given of Object.keys(tokens)) {
-    if (known.has(given)) continue;
-    if (namesGeometry(given))
-      complaints.push({ said: `${given} ${GEOMETRY_IS_CORE}`, token: given });
-    else complaints.push({ said: `${given} is not a purlis token`, token: given });
-  }
-  // Geometry is core (ADR 0094): a theme that tries to size the window is told so, by key,
-  // rather than being silently ignored. Nothing it says is read.
-  for (const key of Object.keys(from)) {
-    if (namesGeometry(key)) complaints.push({ said: `${key} ${GEOMETRY_IS_CORE}` });
-  }
-
-  const values = {} as Record<Token, string>;
-  for (const token of TOKENS) {
-    const given = tokens[token];
-    if (isColour(given)) {
-      values[token] = given;
-      continue;
-    }
-    values[token] = base.values[token];
-    if (given !== undefined) {
-      complaints.push({
-        said: `${token} is ${JSON.stringify(given)}, which is not #rgb, #rgba, #rrggbb or #rrggbbaa; used ${base.values[token]}`,
-        token,
-      });
-    }
-  }
-
-  // A theme that says nothing about motion moves the way the built-in of its appearance does,
-  // exactly as a token it does not name is coloured by that built-in.
-  const moved = loadMotion(from.motion, base.motion);
-  for (const said of moved.said) complaints.push({ said });
-
-  return { theme: { name, appearance, values, motion: moved.motion }, complaints };
-}
 
 /**
  * The theme as the custom properties the stylesheet reads.

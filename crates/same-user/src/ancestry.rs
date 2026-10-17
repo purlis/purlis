@@ -405,8 +405,39 @@ pub fn admit_host(
     if !ancestors.contains(&pid) {
         return Err(NotOurHost::NotAnAncestor { pid });
     }
-    let holds = holds_a_socket_at(pid, path, run).map_err(NotOurHost::NoSocketTable)?;
+    let holds = match holds_a_socket_at(pid, path, run) {
+        Ok(holds) => holds,
+        // **Inside purlis's own Linux sandbox** (#1040) no process outside it may have its
+        // descriptors read (Landlock keeps a sandboxed process from every right to trace one
+        // outside). There the listener is told by the pidfd the kernel gives for the far end:
+        // a pidfd names one process for its whole life and is never handed to another, so the
+        // listener is the ancestor `pid` names, alive, and no process given its number since.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        Err(why) if why.kind() == io::ErrorKind::PermissionDenied => {
+            listener_is(socket, pid).map_err(NotOurHost::NoSocketTable)?
+        }
+        Err(why) => return Err(NotOurHost::NoSocketTable(why)),
+    };
     judge(pid, &ancestors, holds)
+}
+
+/// Whether the process at the far end of `socket` is process `pid` now, by the pidfd the kernel
+/// gives for it (`SO_PEERPIDFD`, Linux 6.5): `false` where that process has ended.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn listener_is(socket: &impl AsFd, pid: u32) -> io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    let pidfd = nix::sys::socket::getsockopt(socket, nix::sys::socket::sockopt::PeerPidfd)
+        .map_err(io::Error::from)?;
+    let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{}", pidfd.as_raw_fd()))?;
+    Ok(pidfd_pid(&info) == Some(i64::from(pid)))
+}
+
+/// The process a pidfd's `/proc/self/fdinfo` text names: `-1` once it has ended.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn pidfd_pid(info: &str) -> Option<i64> {
+    info.lines()
+        .find_map(|line| line.strip_prefix("Pid:"))
+        .and_then(|it| it.trim().parse().ok())
 }
 
 /// The decision [`admit_host`] makes, given what it read: the listener's pid, this process's
@@ -621,6 +652,89 @@ fn resolves_to(name: &str, target: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_pidfd_names_its_process_until_it_ends() {
+        assert_eq!(
+            pidfd_pid(
+                "pos:\t0\nflags:\t02000002\nmnt_id:\t15\nino:\t1057\nPid:\t4242\nNSpid:\t4242\n"
+            ),
+            Some(4242)
+        );
+        assert_eq!(pidfd_pid("pos:\t0\nPid:\t-1\nNSpid:\t-1\n"), Some(-1));
+        assert_eq!(pidfd_pid("pos:\t0\n"), None);
+    }
+
+    /// Where [`a_listener_that_has_ended_is_told_as_gone`] has this test program listen, when
+    /// it starts it again as the listener.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const LISTEN_AT: &str = "PURLIS_SAME_USER_TEST_LISTEN_AT";
+
+    /// Not a test of its own: this test program, started again by
+    /// [`a_listener_that_has_ended_is_told_as_gone`], listening at [`LISTEN_AT`] until it is
+    /// ended.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    #[ignore = "started by a_listener_that_has_ended_is_told_as_gone"]
+    fn listens_until_ended() {
+        let Some(path) = std::env::var_os(LISTEN_AT) else {
+            return;
+        };
+        let _listening = std::os::unix::net::UnixListener::bind(path).expect("a socket");
+        println!("up");
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+
+    /// A listener that has ended is no listener: the pidfd of the far end names it while it
+    /// runs, and nobody once it has gone.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_listener_that_has_ended_is_told_as_gone() {
+        use std::io::BufRead;
+        let dir = tempfile::tempdir().expect("a folder");
+        let path = dir.path().join("s");
+        let mut listener = Command::new(std::env::current_exe().expect("this test program"))
+            .args([
+                "--exact",
+                "ancestry::tests::listens_until_ended",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(LISTEN_AT, &path)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("it listens");
+        let mut out = std::io::BufReader::new(listener.stdout.take().expect("its output"));
+        let mut line = String::new();
+        // The test runner prints the test's name first, on the same line.
+        while !line.trim_end().ends_with(" up") && line.trim() != "up" {
+            line.clear();
+            assert!(
+                out.read_line(&mut line).expect("it says") > 0,
+                "it never listened"
+            );
+        }
+        let socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+        assert!(listener_is(&socket, listener.id()).expect("read"));
+        listener.kill().expect("ended");
+        listener.wait().expect("reaped");
+        assert!(!listener_is(&socket, listener.id()).expect("read"));
+    }
+
+    /// The listener of a socket this process connected to is told by its pidfd: this test's
+    /// own process, listening, and nobody once it has gone.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn the_far_end_of_a_socket_is_told_by_its_pidfd() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let path = dir.path().join("s");
+        let _listening = std::os::unix::net::UnixListener::bind(&path).expect("a socket");
+        let socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+        assert!(listener_is(&socket, std::process::id()).expect("read"));
+        assert!(!listener_is(&socket, 1).expect("read"));
+    }
 
     /// 50 → 40 → 30 (a chat's program) → 20 → 1; 60 → 1, in session 30, its parent gone.
     fn tree(pid: u32) -> Option<u32> {

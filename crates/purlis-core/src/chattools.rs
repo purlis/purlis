@@ -582,8 +582,31 @@ pub static TOOLS: [Tool; 18] = [
         name: ASK_OPERATOR,
         description: "Ask the operator a question and wait for the answer, through this \
                       harness's own prompt. Never ask for a password, token or other secret: \
-                      a credential is used through `purlis secret`, never typed in.",
-        schema: || one_string("question", "The question, as the operator will read it."),
+                      a credential is used through `purlis secret`, never typed in. When a page \
+                      in one of your browsers needs a person (a CAPTCHA, a second factor, a \
+                      consent page), name that browser in `browser`: the person is asked to \
+                      take it over, and this returns at once. Leave that browser alone; you are \
+                      told when they hand it back, and never what they did there.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The question, as the operator will read it: for a \
+                                        browser, what the page needs of them.",
+                    },
+                    "browser": {
+                        "type": "string",
+                        "description": "One of your browsers, by the name the browser tools \
+                                        gave it (b1), when it is that browser that needs the \
+                                        person.",
+                    },
+                },
+                "required": ["question"],
+                "additionalProperties": false,
+            })
+        },
         read_only: true,
     },
 ];

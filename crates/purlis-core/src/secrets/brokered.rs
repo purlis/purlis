@@ -650,7 +650,7 @@ pub struct Asker {
     pub harness: Option<crate::harness::Harness>,
 }
 
-/// Why nothing is run where purlis has no sandbox to run it in (the Linux wrap is #1040). The
+/// Why nothing is run where purlis has no sandbox to run it in (on Linux, until #2342). The
 /// chat's `purlis secret exec` prints it, so it names no issue (#1422).
 pub const NO_WRAP: &str = "purlis cannot yet run a command in a sandbox on this system, so it \
                            runs none for a sandboxed chat here: run `purlis secret exec` in a \

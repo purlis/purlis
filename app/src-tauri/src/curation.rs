@@ -1630,6 +1630,11 @@ mod tests {
                 &purlis_core::profiletrust::fingerprint(work),
             )
             .expect("approved");
+            // Codex and opencode run wrapped on macOS and Linux (#1040); these tests are about
+            // typing into a chat, so it starts without the sandbox here.
+            if matches!(kind, "codex" | "opencode") {
+                crate::sandboxing::no_sandbox_here_for_tests(&root);
+            }
             Self { _dir: dir, root }
         }
     }
@@ -1869,7 +1874,8 @@ mod tests {
     #[test]
     fn a_codex_chat_is_typed_into_once_raw_and_quiet_with_no_hook_and_no_enter() {
         let plane = Plane::new("codex");
-        let planes = planes();
+        let planes =
+            crate::sandboxing::keeping_events_for_tests(planes(), &plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
@@ -1949,7 +1955,8 @@ mod tests {
     #[test]
     fn a_codex_chat_whose_operator_sends_a_prompt_first_is_never_typed_into() {
         let plane = Plane::new("codex");
-        let planes = planes();
+        let planes =
+            crate::sandboxing::keeping_events_for_tests(planes(), &plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
         let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
@@ -1983,7 +1990,8 @@ mod tests {
     #[test]
     fn a_prompt_codex_would_draw_as_a_placeholder_opens_nothing() {
         let plane = Plane::new("codex");
-        let planes = planes();
+        let planes =
+            crate::sandboxing::keeping_events_for_tests(planes(), &plane.root.join("events"));
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 

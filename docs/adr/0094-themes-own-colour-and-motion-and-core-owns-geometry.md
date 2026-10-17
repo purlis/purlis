@@ -135,3 +135,10 @@ its variants (DS-2, #1834).
   window's. That is the inconsistency this decision exists to remove.
 - `docs/design-system.md` lists every core token and its layer, and `geometry.test.ts` fails
   when one is missing from it.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0094/`](0094/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

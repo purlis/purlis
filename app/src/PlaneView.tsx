@@ -151,6 +151,7 @@ import {
 } from "./planeChanged";
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
 import { useOpenProposalAsked } from "./proposedChangeOpen";
+import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
@@ -172,6 +173,7 @@ import {
   LIVE,
   awayUpdateKey,
   awayUpdates,
+  browserAskUpdates,
   doctorUpdates,
   seenAt,
   reasonUpdates,
@@ -373,6 +375,7 @@ import type {
   Offered,
   PanelView,
   BrowsersEnded,
+  AskEnded,
   Rescreened,
   RowAction,
   SavedRecord,
@@ -4428,6 +4431,13 @@ export const PlaneView = memo(function PlaneView({
 
   // Open on a proposed change too long for a row opens its own tab (#1975, PC-7).
   useOpenProposalAsked(plane, showView);
+  /** A browser whose chat asked the person to take it over, taken over from its Ask (#2015):
+   *  its view opens, where the bar says they drive and Done hands it back. */
+  const showBrowserTakenOver = useCallback(
+    (program: string) => showView(browserView(program), BROWSER_TITLE),
+    [showView],
+  );
+  useOpenBrowserAsked(plane, showBrowserTakenOver);
 
   /** Asks for a workspace's new name. Nothing is renamed until the dialog is answered. */
   const renameWorkspace = useCallback(
@@ -5251,6 +5261,30 @@ export const PlaneView = memo(function PlaneView({
           const told = event.payload;
           if (gone || told.plane !== plane) return;
           redrawRescreened.current(told);
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane]);
+  /** **Asks about a chat's browser that ended with it** (#2015), as the core told them, for the
+   *  Inbox's updates. */
+  const [browserAsksEnded, setBrowserAsksEnded] = useState<readonly AskEnded[]>([]);
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<AskEnded>(BROWSER_ASK_ENDED, (event) => {
+          const told = event.payload;
+          if (gone || told.plane !== plane) return;
+          setBrowserAsksEnded((was) => [...was, told]);
         });
         if (gone) unlisten();
         else stop = unlisten;
@@ -7696,8 +7730,10 @@ export const PlaneView = memo(function PlaneView({
       ...awayUpdates(awayRefused ?? []),
       ...smartCloseUpdates(stopped, nameOf, at),
       ...reasonUpdates(foundFor, refusals, nameOf, at),
+      ...browserAskUpdates(browserAsksEnded, nameOf),
     ];
   }, [
+    browserAsksEnded,
     finishedTasks,
     nameOf,
     doctor.report,

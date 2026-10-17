@@ -3,6 +3,7 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { closeMenus } from "../acting.js";
+import { pressMenuPath, ROW } from "../menus.js";
 
 /**
  * **A view moved to its half of the Panel from the keyboard** (#1752, #1740, P-3), in the built
@@ -68,13 +69,12 @@ async function openMenuOf(bar: string, name: string): Promise<void> {
   );
 }
 
-/** Presses the open menu's row `title`. */
-async function pressRow(title: string): Promise<void> {
-  const row = await $(
-    `//*[@role="menu"]//*[@role="menuitem"][contains(normalize-space(.), "${title}")]`,
-  );
-  await row.waitForClickable({ timeout: 10_000 });
-  await row.click();
+/**
+ * Presses the open menu's row `name` **by its name** (`ROW.toPanel`, `e2e/menus.ts`), never by
+ * words written down here (#2387), and waits for the menu to close.
+ */
+async function pressRow(name: string): Promise<void> {
+  await pressMenuPath(name);
   await expect($(MENU)).not.toBeDisplayed();
 }
 
@@ -128,7 +128,7 @@ describe("moving a view from its icon's menu, by keyboard", function () {
     // Search back in the left sidebar, however far this spec got, and the side on Chats.
     if ((await iconsOf(LOWER_LEFT)).includes("Search")) {
       await openMenuOf(LOWER_LEFT, "Search");
-      await pressRow("Move to sidebar");
+      await pressRow(ROW.toSidebar);
     }
     await showChatsAgain();
   });
@@ -137,7 +137,7 @@ describe("moving a view from its icon's menu, by keyboard", function () {
     expect(await iconsOf(NAVIGATION)).toContain("Search");
 
     await openMenuOf(NAVIGATION, "Search");
-    await pressRow("Move to panel");
+    await pressRow(ROW.toPanel);
 
     await browser.waitUntil(async () => (await iconsOf(LOWER_LEFT)).includes("Search"), {
       timeout: 20_000,
@@ -186,7 +186,7 @@ describe("moving a view from its icon's menu, by keyboard", function () {
 
   it("moves it back to the sidebar from its Lower icon's menu", async () => {
     await openMenuOf(LOWER_LEFT, "Search");
-    await pressRow("Move to sidebar");
+    await pressRow(ROW.toSidebar);
 
     await browser.waitUntil(async () => (await iconsOf(NAVIGATION)).includes("Search"), {
       timeout: 20_000,

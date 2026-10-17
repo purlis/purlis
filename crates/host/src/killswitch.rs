@@ -27,6 +27,29 @@ use purlis_session_protocol::session::KillSwitch;
 /// The switch's file in the host's own folder.
 pub const KILL_SWITCH: &str = "kill-switch";
 
+/// **What tells the host a stop was written elsewhere** (#2190): `purlis stop --all` throws the
+/// switch by writing ADR 0071's two files in the config home, and the binary that builds the
+/// host reads them through this, as it composes a start through `Compose`, so the host links no
+/// core.
+pub trait StopsElsewhere: Send + Sync + 'static {
+    /// The newest stop the files hold, named so that each stop written is told from the one
+    /// before; `None` while they say every agent may run.
+    fn last_stop(&self) -> Option<String>;
+}
+
+/// What a host is given when its binary gives it nothing to read: it hears only `stop_all`.
+pub struct NoStopsElsewhere;
+
+impl StopsElsewhere for NoStopsElsewhere {
+    fn last_stop(&self) -> Option<String> {
+        None
+    }
+}
+
+/// How often the host looks for a stop written elsewhere when nothing else has made it look:
+/// as often as the window's own watch looks at the files (D-88l).
+pub const LOOK_EVERY: std::time::Duration = std::time::Duration::from_secs(3);
+
 const STOPPED: &str = "stopped";
 const ARMED: &str = "armed";
 
