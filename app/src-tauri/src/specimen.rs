@@ -280,67 +280,76 @@ mod photograph {
 
     #[cfg(target_os = "macos")]
     pub fn take(webview: tauri::webview::PlatformWebview, done: Sender<Result<Picture, String>>) {
-        use block2::RcBlock;
-        use objc2::MainThreadMarker;
-        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
-        use objc2_foundation::{NSDictionary, NSError};
-        use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
-
-        let Some(main) = MainThreadMarker::new() else {
+        let Some(main) = objc2::MainThreadMarker::new() else {
             let _ = done.send(Err(
                 "the specimen was photographed off the main thread".into()
             ));
             return;
         };
-        // SAFETY: on macOS Tauri's platform webview is wry's `WKWebView`, alive for as long as
-        // its window, which is destroyed only after this answers.
-        let view: &WKWebView = unsafe { &*webview.inner().cast::<WKWebView>() };
-        // SAFETY: made and used on the main thread, as WebKit requires.
-        let configuration = unsafe { WKSnapshotConfiguration::new(main) };
-        // The page has said it is drawn; a hidden window has no next screen update to wait for,
-        // and WebKit paints the snapshot in the web process from the page as it is.
-        unsafe { configuration.setAfterScreenUpdates(false) };
-        let answered = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
-            let picture = if image.is_null() {
-                // SAFETY: WebKit hands a valid error, or null, beside a null image.
-                Err(unsafe { error.as_ref() }.map_or_else(
-                    || "WebKit took no picture of the specimen".to_owned(),
-                    |error| {
-                        format!(
-                            "WebKit took no picture of the specimen: {}",
-                            error.localizedDescription()
-                        )
-                    },
-                ))
-            } else {
-                // SAFETY: a non-null image WebKit handed us, alive for this call.
-                let image = unsafe { &*image };
-                image
-                    .TIFFRepresentation()
-                    .and_then(|tiff| NSBitmapImageRep::imageRepWithData(&tiff))
-                    .and_then(|rep| {
-                        let properties = NSDictionary::new();
-                        // SAFETY: an empty dictionary of the key type the method takes.
-                        unsafe {
+        snapshot(&webview, main, done);
+    }
+
+    /// **WebKit's snapshot of the specimen's webview**, made a PNG and answered on `done`: one of
+    /// the workspace's audited blocks (see the workspace `Cargo.toml`).
+    #[cfg(target_os = "macos")]
+    #[allow(
+        unsafe_code,
+        reason = "the fourth audited block, WebKit's snapshot of the specimen; see the SAFETY comment"
+    )]
+    fn snapshot(
+        webview: &tauri::webview::PlatformWebview,
+        main: objc2::MainThreadMarker,
+        done: Sender<Result<Picture, String>>,
+    ) {
+        use objc2::rc::Retained;
+        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+        use objc2_foundation::{NSDictionary, NSError};
+        use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
+
+        // SAFETY: on macOS Tauri's platform webview is wry's `WKWebView`, a valid object for as
+        // long as its window, which is destroyed only after the snapshot answers; it is only
+        // borrowed here. Every call is made on the main thread (`main`), as WebKit and AppKit
+        // require. The configuration is made here and the block is copied by WebKit. The block's
+        // two pointers are WebKit's: each is null or a valid object for the call, and each is
+        // retained before it is read. `representationUsingType:properties:` is handed an empty
+        // dictionary of the key type it reads.
+        unsafe {
+            let view: &WKWebView = &*webview.inner().cast::<WKWebView>();
+            let configuration = WKSnapshotConfiguration::new(main);
+            // The page has said it is drawn; a hidden window has no screen update to wait for,
+            // and WebKit paints the snapshot in the web process from the page as it is.
+            configuration.setAfterScreenUpdates(false);
+            let handler = block2::RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+                let picture = match Retained::retain(image) {
+                    None => Err(Retained::retain(error).map_or_else(
+                        || "WebKit took no picture of the specimen".to_owned(),
+                        |error| {
+                            format!(
+                                "WebKit took no picture of the specimen: {}",
+                                error.localizedDescription()
+                            )
+                        },
+                    )),
+                    Some(image) => image
+                        .TIFFRepresentation()
+                        .and_then(|tiff| NSBitmapImageRep::imageRepWithData(&tiff))
+                        .and_then(|rep| {
                             rep.representationUsingType_properties(
                                 NSBitmapImageFileType::PNG,
-                                &properties,
+                                &NSDictionary::new(),
                             )
-                        }
-                        .map(|png| Picture {
-                            png: png.to_vec(),
-                            width: u32::try_from(rep.pixelsWide()).unwrap_or(0),
-                            height: u32::try_from(rep.pixelsHigh()).unwrap_or(0),
+                            .map(|png| Picture {
+                                png: png.to_vec(),
+                                width: u32::try_from(rep.pixelsWide()).unwrap_or(0),
+                                height: u32::try_from(rep.pixelsHigh()).unwrap_or(0),
+                            })
                         })
-                    })
-                    .ok_or_else(|| "the specimen's picture could not be made a PNG".to_owned())
-            };
-            let _ = done.send(picture);
-        });
-        // SAFETY: on the main thread, with a configuration and a block WebKit copies.
-        unsafe {
-            view.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &answered)
-        };
+                        .ok_or_else(|| "the specimen's picture could not be made a PNG".to_owned()),
+                };
+                let _ = done.send(picture);
+            });
+            view.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &handler);
+        }
     }
 
     #[cfg(target_os = "linux")]
