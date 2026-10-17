@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use purlis_browser_engine::drive::{Browser, Limits};
+use purlis_browser_engine::drive::{Browser, Judge, Limits};
 use purlis_browser_engine::launch::{Launch, ReachProxy};
 use purlis_browser_engine::machine::machine_chrome;
 use purlis_browser_engine::process::{Engine, Keeper};
@@ -70,6 +70,15 @@ fn say_failures_on_ci() {
 /// The fixture site, served until the test ends.
 pub struct Site {
     pub address: SocketAddr,
+    /// The host of every request it was sent, in order (#2018).
+    heard: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Site {
+    /// Whether any request reached it for `host`.
+    pub fn heard_from(&self, host: &str) -> bool {
+        self.heard.lock().unwrap().iter().any(|one| one == host)
+    }
 }
 
 /// Serves the fixture site on a loopback port of its own.
@@ -77,16 +86,19 @@ pub fn serve() -> Site {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/site");
+    let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hearing = std::sync::Arc::clone(&heard);
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let root = root.clone();
-            thread::spawn(move || answer(stream, &root));
+            let hearing = std::sync::Arc::clone(&hearing);
+            thread::spawn(move || answer(stream, &root, &hearing));
         }
     });
-    Site { address }
+    Site { address, heard }
 }
 
-fn answer(stream: TcpStream, root: &Path) {
+fn answer(stream: TcpStream, root: &Path, heard: &std::sync::Mutex<Vec<String>>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut first = String::new();
     if reader.read_line(&mut first).is_err() {
@@ -102,6 +114,14 @@ fn answer(stream: TcpStream, root: &Path) {
     }
     let mut words = first.split_whitespace();
     let (method, target) = (words.next().unwrap_or(""), words.next().unwrap_or(""));
+    // Whatever it was sent, a tunnel's target or a plain request's host.
+    let host = target
+        .strip_prefix("http://")
+        .unwrap_or(target)
+        .split(['/', ':'])
+        .next()
+        .unwrap_or_default();
+    heard.lock().unwrap().push(host.to_owned());
     let mut out = stream;
     if method != "GET" {
         let _ = respond(&mut out, "405 Method Not Allowed", "text/plain", &[], b"");
@@ -188,6 +208,15 @@ fn respond(
 /// `None` where no engine runs (and then nothing listens). Keep the folder and the site for as
 /// long as the browser.
 pub fn started() -> Option<(Browser, tempfile::TempDir, Site)> {
+    started_with(None)
+}
+
+/// [`started`], every request of its pages told to `judge` (#2018).
+pub fn started_judged(judge: Judge) -> Option<(Browser, tempfile::TempDir, Site)> {
+    started_with(Some(judge))
+}
+
+fn started_with(judge: Option<Judge>) -> Option<(Browser, tempfile::TempDir, Site)> {
     let program = engine_program()?;
     say_failures_on_ci();
     let site = serve();
@@ -207,5 +236,9 @@ pub fn started() -> Option<(Browser, tempfile::TempDir, Site)> {
         settle_within: Duration::from_secs(20),
         ..Limits::default()
     };
-    Some((Browser::new(engine, limits).unwrap(), data, site))
+    let browser = match judge {
+        Some(judge) => Browser::judged(engine, limits, judge),
+        None => Browser::new(engine, limits),
+    };
+    Some((browser.unwrap(), data, site))
 }

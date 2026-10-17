@@ -309,6 +309,20 @@ export async function answerTaken(
         opened = true;
         return { status: "ok" };
       }
+      case "browser-sites":
+        // Sites new to the project a chat's browser held back (#2018): an Allow is a browser
+        // site, for this chat or always here, for the browser alone; Keep blocked tells the chat
+        // not to retry, with the reason the person typed.
+        if (option === "chat" || option === "you")
+          return commands.allowBrowserSites(plane, ask.session, path.sites, option);
+        if (option === "keep")
+          return commands.keepBrowserSitesBlocked(
+            plane,
+            ask.session,
+            path.sites,
+            reason?.trim() || null,
+          );
+        break;
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

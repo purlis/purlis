@@ -142,6 +142,7 @@ pub const GEOMETRY: &[&str] = &[
     "--space-6",
     "--space-7",
     "--space-8",
+    "--font-size-2xs",
     "--font-size-xs",
     "--font-size-sm",
     "--font-size-md",

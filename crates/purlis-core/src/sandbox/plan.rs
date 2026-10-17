@@ -187,7 +187,7 @@ impl Plan {
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
             return Err(std::io::Error::other(
-                "a service on this Mac this chat was given is on a port purlis listens on now",
+                "a service this chat was given is on a port purlis listens on now",
             ));
         }
         let reach = Reach::from_written(&self.reach).map_err(std::io::Error::other)?;

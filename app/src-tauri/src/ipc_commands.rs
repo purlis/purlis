@@ -104,6 +104,8 @@ macro_rules! app_commands {
                 removalasks::keep_asked_workspace,
                 chatbrowsers::allow_chat_browser,
                 chatbrowsers::keep_chat_browser_off,
+                chatbrowsers::allow_browser_sites,
+                chatbrowsers::keep_browser_sites_blocked,
                 chatbrowsers::chat_browsers,
                 proposals::apply_proposed_change,
                 proposals::proposed_change,

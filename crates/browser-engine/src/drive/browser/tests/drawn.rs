@@ -754,3 +754,23 @@ fn a_page_on_no_site_opened_by_none_is_painted_over_while_anything_is_kept() {
 
     assert_eq!(pixel(&after, 9, 9), GREY);
 }
+
+#[test]
+fn the_site_a_text_is_kept_on_is_the_one_of_the_document_its_page_shows() {
+    let (browser, engine) = browser();
+    // The page is told of an address on another site, while it still shows the fixture's
+    // document: a load that has not yet replaced it.
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-1","type":"page","title":"","url":"https://shop.example.com/"}}),
+        None,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    keep_out_the_secret(&browser);
+    let sub = a_page_opens(&engine, "PAGE-8", "http://www.fixture.test/next.html", None);
+    a_canvas_on(&engine, "PAGE-8", "http://www.fixture.test/next.html");
+
+    let after = shot_of(&browser, &sub, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}

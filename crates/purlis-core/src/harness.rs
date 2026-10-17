@@ -498,8 +498,6 @@ impl Harness {
                     line: "reports_its_process",
                     words: "a later conversation you start inside it is not followed",
                 },
-                // FD-18: Codex is armed with no `SubagentStop` (`plugin::CODEX`, #1086).
-                Also("a helper reads working until the chat ends"),
             ],
             Self::Opencode => &[
                 Lacks {
@@ -581,14 +579,15 @@ mod tests {
     }
 
     #[test]
-    fn a_codex_chat_says_its_sub_agents_read_working_until_it_ends() {
-        // FD-18: Codex is armed with no `SubagentStop` (`plugin::CODEX`, #1086), so a child is
-        // never heard to finish, and the chat says so rather than showing it working for good.
-        assert!(!crate::plugin::CODEX.contains(&"subagentstop"));
+    fn a_codex_chat_hears_its_sub_agents_finish_and_says_nothing_about_them() {
+        // FD-18, #1086: Codex runs `SubagentStop`, with the child's `agent_id`, at the end of a
+        // thread-spawned child's turn (read from `rust-v0.147.0`, `plugin::CODEX` cites it), so
+        // it is armed, and the chat no longer says its helpers read working until it ends.
+        assert!(crate::plugin::CODEX.contains(&"subagentstop"));
         assert!(
-            Harness::Codex
+            !Harness::Codex
                 .unreported()
-                .is_some_and(|said| said.contains("helper reads working until")),
+                .is_some_and(|said| said.contains("helper")),
             "{:?}",
             Harness::Codex.unreported()
         );
@@ -1879,6 +1878,7 @@ mod tests {
                 "hooks.PreToolUse",
                 "hooks.PostToolUse",
                 "hooks.Stop",
+                "hooks.SubagentStop",
                 "hooks.SessionEnd",
                 "hooks.PermissionRequest"
             ]

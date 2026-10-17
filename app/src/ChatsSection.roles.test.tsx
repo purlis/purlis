@@ -239,9 +239,9 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     expect(drawnWith(section.querySelector(".chats-notes") as Element, "height")).toBe("1lh");
   });
 
-  it("leaves the scope switch the size it was: its line's text is the secondary's", () => {
-    // The switch is a control and is sized in `em` (`.ui-levels-small`): on a body's line it
-    // would grow by a tenth and run past a narrow sidebar (`chats-scope.e2e.ts`).
+  it("draws the switch's line in the secondary's size", () => {
+    // The switch has a fixed size of its own (`.ui-levels-small`, `--font-size-2xs`, #2319), so
+    // this line's size no longer sets it; the line is the notes', the secondary's.
     const section = draw();
 
     expect(named(drawnWith(section.querySelector(".chats-top") as Element, "font-size"))).toBe(

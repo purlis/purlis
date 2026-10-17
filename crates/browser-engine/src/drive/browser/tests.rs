@@ -21,6 +21,7 @@ use crate::drive::{
 };
 
 mod drawn;
+mod reach;
 mod takeover;
 
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
@@ -54,6 +55,9 @@ struct Model {
     /// What each session's documents draw, as `DOMSnapshot.captureSnapshot` answers (#2303);
     /// a session with none draws nothing.
     drawn: HashMap<String, Value>,
+    /// The address each page the stand-in was told of was opened at: the document its frame
+    /// tree says it shows.
+    opened_at: HashMap<String, String>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -67,6 +71,18 @@ struct Engine {
 
 impl Engine {
     fn emit(&self, method: &str, params: Value, session: Option<&str>) {
+        if method == "Target.targetCreated"
+            && let (Some(target), Some(url)) = (
+                params
+                    .pointer("/targetInfo/targetId")
+                    .and_then(Value::as_str),
+                params.pointer("/targetInfo/url").and_then(Value::as_str),
+            )
+        {
+            super::lock(&self.model)
+                .opened_at
+                .insert(target.to_owned(), url.to_owned());
+        }
         let _ = super::lock(&self.events).send(Event {
             method: method.to_owned(),
             params,
@@ -131,7 +147,13 @@ impl Engine {
                     "frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-2","name":"payment","url":"http://other.test/pay.html","securityOrigin":"http://other.test","mimeType":"text/html"}}}),
                 Some(other) => {
                     let id = other.trim_start_matches("S-");
-                    json!({"frameTree":{"frame":{"id":id,"loaderId":"L","url":"http://fixture.test/new.html","name":""}}})
+                    let url = super::lock(&self.model)
+                        .opened_at
+                        .get(id)
+                        .filter(|url| !url.is_empty())
+                        .cloned()
+                        .unwrap_or_else(|| "http://fixture.test/new.html".to_owned());
+                    json!({"frameTree":{"frame":{"id":id,"loaderId":"L","url":url,"name":""}}})
                 }
                 None => json!({}),
             }),
@@ -263,6 +285,15 @@ fn browser() -> (Browser, Arc<Engine>) {
 }
 
 fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
+    browser_over(limits, None)
+}
+
+/// A browser over the stand-in whose every request is told to `judge` (#2018).
+fn browser_judged(judge: crate::drive::Judge) -> (Browser, Arc<Engine>) {
+    browser_over(limits(), Some(judge))
+}
+
+fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser, Arc<Engine>) {
     let (events, receiver) = mpsc::sync_channel(1024);
     let nodes = |text: &str| serde_json::from_str::<Value>(text).unwrap()["nodes"].clone();
     let engine = Arc::new(Engine {
@@ -293,11 +324,12 @@ fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
             value: String::new(),
             active: String::new(),
             drawn: HashMap::new(),
+            opened_at: HashMap::new(),
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
     });
-    let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits).unwrap();
+    let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.
     let start = std::time::Instant::now();
     while engine

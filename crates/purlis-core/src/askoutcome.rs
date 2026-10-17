@@ -51,6 +51,9 @@ pub enum About {
     /// The chat's ask that the person take over its browser `browser` (#2015), by the name the
     /// chat knows it by: a page that needs a person, a CAPTCHA, a second factor.
     TakeOver { browser: String },
+    /// A site new to the project, `host:port`, that the chat's browser held back what it would
+    /// have opened, sent or typed there for (#2018). An Allow is for the browser alone.
+    BrowserSite { site: String },
 }
 
 impl About {
@@ -92,6 +95,9 @@ impl About {
                 )
             }
             Self::Vault { vault } => format!("using vault {}", code(vault)),
+            Self::BrowserSite { site } => {
+                format!("its browser going to and sending to {}", code(site))
+            }
             Self::Browser { open_web: None } => "using a browser".to_owned(),
             Self::Browser {
                 open_web: Some(false),

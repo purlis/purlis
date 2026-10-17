@@ -16,6 +16,8 @@ import { plainLine } from "./settings/iconsPick";
 import { iconThemeComplaints, offeredIconThemes, projectThemeChanged } from "./projectTheme";
 import {
   BUILT_IN,
+  CLASSIC,
+  DEFAULT_THEME,
   drawIn,
   inForce,
   PREFERS_LIGHT,
@@ -433,6 +435,7 @@ let following = false;
 function handedFor(pick: string | null): Theme | undefined {
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
   if (pick === null) return theirThemeOnce();
+  if (pick === CLASSIC) return DEFAULT_THEME;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
 }

@@ -16,6 +16,12 @@
    Corners and the focus ring are hairline-scale, and stay in px. */
 
 :root {
+  /* The window's own text: its family, and the default size every rem is a share of
+     (charter-app#283, `textSize.DEFAULT_TEXT`). What is in force is set on the element itself
+     before the first frame (`main.tsx`), so the text-size setting moves the whole scale. */
+  font-family: ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+
   /* The spacing scale. */
   --space-0: 0;
   --space-1: calc(2rem / 14);
@@ -27,7 +33,9 @@
   --space-7: calc(24rem / 14);
   --space-8: calc(32rem / 14);
 
-  /* The type scale, six steps. `base` is the window's own text. */
+  /* The type scale, seven steps. `base` is the window's own text; `2xs` is for a tight
+     secondary label only (the Chats view's scope switch), under the words' 11px floor. */
+  --font-size-2xs: calc(10rem / 14);
   --font-size-xs: calc(11rem / 14);
   --font-size-sm: calc(12rem / 14);
   --font-size-md: calc(13rem / 14);

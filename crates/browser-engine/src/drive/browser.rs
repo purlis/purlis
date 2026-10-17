@@ -4,8 +4,8 @@
 //! One browser's pages, driven over DevTools: what the engine's events say about its pages and
 //! frames, and each call made into the engine's own calls.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use super::blank::{Rect, paint_over};
 use super::drawn::{STYLES, drawn};
+use super::kept::Kept;
 use super::keys::key_events;
 use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
@@ -23,8 +24,8 @@ use super::settle::{Activity, Settle, activity};
 use super::site::site;
 use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
 use super::{
-    Aim, Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, PageInfo, Painted, Ref,
-    Refusal, Settled, lock,
+    Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Judge, Limits, Outbound,
+    PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
@@ -109,6 +110,15 @@ const POLL: Duration = Duration::from_millis(50);
 const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
+/// The most form submissions, and links followed, remembered until their request is seen
+/// (#2018).
+const FORMS_KEPT: usize = 16;
+/// The most document requests remembered for the redirects they may lead to (#2018).
+const DOCUMENTS_KEPT: usize = 64;
+/// The most sites asked about that wait for the next answer (#2018).
+const ASKED_KEPT: usize = 16;
+/// How long the driver waits for the engine to take its word on a held request (#2018).
+const JUDGED_WITHIN: Duration = Duration::from_secs(5);
 
 /// Whether a page may stay open at `address`: a web address, an empty page (or one with no
 /// address yet), or the engine's own page for a load that failed. Every other page is closed.
@@ -136,7 +146,7 @@ struct Page {
     settle: Settle,
     /// What blanked elements of this page held, kept out of every answer while the page lasts,
     /// whatever became of the elements.
-    scrubbed: Vec<String>,
+    scrubbed: Kept,
     /// What the page shows, as a number that changes each time it or any frame in it loads
     /// another document, or a frame in it goes (#2014): the document a frame's aim names.
     shows: u64,
@@ -148,23 +158,26 @@ struct Page {
 impl Page {
     /// `text` with what this page's blanked elements held taken out.
     fn shown(&self, text: &str) -> String {
-        let blanked: Vec<&str> = self.scrubbed.iter().map(String::as_str).collect();
-        scrubbed(text, &blanked)
+        scrubbed(text, &self.scrubbed.texts())
     }
 
     /// [`Page::shown`] for an address, read as its reader would read it (decoded).
     fn shown_address(&self, address: &str) -> String {
-        let blanked: Vec<&str> = self.scrubbed.iter().map(String::as_str).collect();
-        scrubbed_address(address, &blanked)
+        scrubbed_address(address, &self.scrubbed.texts())
+    }
+
+    /// The site this page is on: the one of the document it has loaded, not of an address it
+    /// is still loading; until its document is known, the one of its address.
+    fn site(&self) -> Option<String> {
+        match self.frames.get(&self.target) {
+            Some(frame) => site(&frame.url),
+            None => site(&self.url),
+        }
     }
 
     /// Keeps `held` out of every later answer about this page.
-    fn keep_out(&mut self, held: &[String]) {
-        for text in held {
-            if !self.scrubbed.iter().any(|t| t.eq_ignore_ascii_case(text)) {
-                self.scrubbed.push(text.clone());
-            }
-        }
+    fn keep_out(&mut self, held: &Kept) {
+        self.scrubbed.take_in(held);
     }
 
     /// The frames between this page and `frame` (itself included) that have sessions of their
@@ -263,7 +276,18 @@ struct State {
     size: Option<(u16, u16)>,
     /// What the person typed while driving (#2014): kept out of every answer about every page
     /// of the browser, a page opened later included.
-    kept: Vec<String>,
+    kept: Kept,
+    /// The page an act of the agent's is sending somewhere, while that act lasts, and what its
+    /// documents are (#2018): the agent's address, or a read for going back.
+    addressing: Option<(String, Why)>,
+    /// Addresses forms were submitted to, each until its request is seen (#2018).
+    forms: VecDeque<String>,
+    /// Addresses a page asked to go to by a link or a script, each until its request is seen.
+    offered: VecDeque<String>,
+    /// Each document request held lately, and why it was sent: what a redirect from it is.
+    documents: VecDeque<(String, Why)>,
+    /// The sites the judge asked about since the last answer, each once (#2018).
+    asked: Vec<String>,
     /// The sites a text was kept out on (#2303): their pages' screenshots paint over what
     /// cannot be read.
     kept_sites: HashSet<String>,
@@ -273,12 +297,101 @@ struct State {
 }
 
 impl State {
-    /// The site `target`'s page is on: its address's, or for a page at an address that is not a
-    /// web address, the site of the page that opened it.
+    /// **Why a held request is sent** (#2018). A body sends. A document is judged by how its
+    /// navigation began: a redirect as the request it came from; a form the page submitted
+    /// sends; the page an act of the agent's sends to an address is that address (or, going
+    /// back, a read); a link or a script of the page reads. A document the page asked for with
+    /// nothing said of how, whose address carries a query, sends, so a submission whose word
+    /// came late is never taken for a read. Anything else reads.
+    fn why(&mut self, held: &Held<'_>) -> Why {
+        let bare = without_fragment(held.address);
+        let why = if !matches!(held.method, "GET" | "HEAD" | "OPTIONS") {
+            Why::Sends
+        } else if !held.document {
+            return Why::Reads;
+        } else if let Some(from) = held
+            .redirected_from
+            .and_then(|from| self.documents.iter().find(|(id, _)| id == from))
+        {
+            from.1
+        } else if take(&mut self.forms, bare) {
+            Why::Sends
+        } else if let Some((page, why)) = &self.addressing
+            && held.frame == Some(page.as_str())
+        {
+            *why
+        } else if take(&mut self.offered, bare) {
+            Why::Reads
+        } else if bare.contains('?') {
+            Why::Sends
+        } else {
+            Why::Reads
+        };
+        if held.document {
+            if self.documents.len() >= DOCUMENTS_KEPT {
+                self.documents.pop_front();
+            }
+            self.documents.push_back((held.request.to_owned(), why));
+        }
+        why
+    }
+
+    /// **The addresses what is in document `frame` of `target`'s page goes to** (#2018): the
+    /// frame's own address where it is a web address; for a frame at none (`about:blank`, a
+    /// `srcdoc`), its nearest ancestor's that is, since that document holds it; and for a
+    /// frame the driver does not know, every document the page shows.
+    fn documents_of(&self, target: &str, frame: &str) -> Vec<String> {
+        let Some(page) = self.page(target) else {
+            return Vec::new();
+        };
+        let web = |url: &str| WebAddress::parse(url).is_ok();
+        if frame == target {
+            return vec![page.url.clone()];
+        }
+        let Some(mut at) = page.frames.get(frame) else {
+            return self.every_document(target);
+        };
+        for _ in 0..=page.frames.len() {
+            if web(&at.url) {
+                return vec![at.url.clone()];
+            }
+            match at.parent.as_deref() {
+                Some(parent) if parent == target => break,
+                Some(parent) => match page.frames.get(parent) {
+                    Some(up) => at = up,
+                    None => return self.every_document(target),
+                },
+                None => break,
+            }
+        }
+        vec![page.url.clone()]
+    }
+
+    /// Every document `target`'s page shows, its own first.
+    fn every_document(&self, target: &str) -> Vec<String> {
+        self.page(target).map_or_else(Vec::new, |page| {
+            let mut every: Vec<String> = page.frames.values().map(|f| f.url.clone()).collect();
+            every.sort();
+            every.dedup();
+            every.retain(|one| *one != page.url);
+            every.insert(0, page.url.clone());
+            every
+        })
+    }
+
+    /// Keeps `site` to be said in the next answer, once.
+    fn ask(&mut self, site: &str) {
+        if !self.asked.iter().any(|one| one == site) && self.asked.len() < ASKED_KEPT {
+            self.asked.push(site.to_owned());
+        }
+    }
+
+    /// The site `target`'s page is on ([`Page::site`]), or for a page on none, the site of the
+    /// page that opened it.
     fn site_of(&self, target: &str) -> Option<String> {
         let mut at = self.page(target)?;
         for _ in 0..=self.pages.len() {
-            if let Some(site) = site(&at.url) {
+            if let Some(site) = at.site() {
                 return Some(site);
             }
             at = self.page(at.opener.as_deref()?)?;
@@ -326,7 +439,7 @@ impl State {
             return true;
         };
         for _ in 0..=self.pages.len() {
-            let own = site(&at.url);
+            let own = at.site();
             if own.as_ref().is_some_and(|s| self.kept_sites.contains(s)) {
                 return true;
             }
@@ -358,12 +471,8 @@ impl State {
     }
 
     /// Keeps `held` out of every later answer about every page, and every page opened later.
-    fn keep_out_everywhere(&mut self, held: &[String]) {
-        for text in held.iter().filter(|text| !text.is_empty()) {
-            if !self.kept.iter().any(|kept| kept.eq_ignore_ascii_case(text)) {
-                self.kept.push(text.clone());
-            }
-        }
+    fn keep_out_everywhere(&mut self, held: &Kept) {
+        self.kept.take_in(held);
         let kept = self.kept.clone();
         for page in &mut self.pages {
             page.keep_out(&kept);
@@ -481,6 +590,11 @@ enum FollowUp {
     Close(String),
     SetUp(String),
     Release(String),
+    /// A request held until the judge says whether it goes (#2018).
+    Judge {
+        paused: Paused,
+        outbound: Outbound,
+    },
 }
 
 pub(crate) struct Inner {
@@ -492,6 +606,16 @@ pub(crate) struct Inner {
     pub(crate) cast: Screencast,
     /// Who is told once the engine has ended, however it ended.
     ends: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Who judges where its pages may go (#2018), when anyone does.
+    judge: Option<Judge>,
+    /// Whether the person drives (#2014): every request is then theirs (#2018).
+    person_drives: AtomicBool,
+    /// Where each held request is sent to be judged, on a thread of its own (#2018).
+    judging: Mutex<Option<std::sync::mpsc::Sender<(Paused, Outbound)>>>,
+    /// Where a judged browser's other follow-ups are carried out, in order, on a thread of their
+    /// own (#2018): each waits on the engine, and the event reader must stay free to hear every
+    /// held request, or a page's load waits on a call that waits on the load.
+    following: Mutex<Option<std::sync::mpsc::Sender<FollowUp>>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -545,19 +669,42 @@ pub struct Browser {
 impl Browser {
     /// Drives `engine`'s pages within `limits`. The engine's events are the browser's from now.
     #[cfg(unix)]
-    pub fn new(mut engine: crate::process::Engine, limits: Limits) -> Result<Self, Refusal> {
+    pub fn new(engine: crate::process::Engine, limits: Limits) -> Result<Self, Refusal> {
+        Self::driving(engine, limits, None)
+    }
+
+    /// [`Browser::new`], every request of every page held until `judge` has said whether it
+    /// goes (#2018). Refused where the engine will not hold them, so a browser never runs
+    /// unjudged that was meant to be judged.
+    #[cfg(unix)]
+    pub fn judged(
+        engine: crate::process::Engine,
+        limits: Limits,
+        judge: Judge,
+    ) -> Result<Self, Refusal> {
+        Self::driving(engine, limits, Some(judge))
+    }
+
+    #[cfg(unix)]
+    fn driving(
+        mut engine: crate::process::Engine,
+        limits: Limits,
+        judge: Option<Judge>,
+    ) -> Result<Self, Refusal> {
         let events = engine.take_events().ok_or(Refusal::Ended)?;
         let devtools: Arc<dyn DevTools> = engine.devtools_shared();
-        let mut browser = Self::over(devtools, events, limits)?;
+        let mut browser = Self::over(devtools, events, limits, judge)?;
         browser.engine = Mutex::new(Some(engine));
         Ok(browser)
     }
 
-    /// Drives the pages `devtools` reaches, reading their events from `events`.
+    /// Drives the pages `devtools` reaches, reading their events from `events`, each request
+    /// told to `judge` where there is one.
     pub(crate) fn over(
         devtools: Arc<dyn DevTools>,
         events: Receiver<Event>,
         limits: Limits,
+        judge: Option<Judge>,
     ) -> Result<Self, Refusal> {
         let inner = Arc::new(Inner {
             devtools,
@@ -566,8 +713,42 @@ impl Browser {
             limits: limits.clone(),
             cast: Screencast::new(),
             ends: Mutex::new(None),
+            judge,
+            person_drives: AtomicBool::new(false),
+            judging: Mutex::new(None),
+            following: Mutex::new(None),
         });
         Screencast::start(&inner);
+        if inner.judge.is_some() {
+            let (judging, held) = std::sync::mpsc::channel::<(Paused, Outbound)>();
+            let judge_for = Arc::downgrade(&inner);
+            thread::Builder::new()
+                .name("browser-judge".to_owned())
+                .spawn(move || {
+                    for (paused, outbound) in held {
+                        let Some(inner) = judge_for.upgrade() else {
+                            break;
+                        };
+                        inner.judged(&paused, &outbound);
+                    }
+                })
+                .map_err(|e| Refusal::Engine(e.to_string()))?;
+            *lock(&inner.judging) = Some(judging);
+            let (following, steps) = std::sync::mpsc::channel::<FollowUp>();
+            let follow_for = Arc::downgrade(&inner);
+            thread::Builder::new()
+                .name("browser-follow-ups".to_owned())
+                .spawn(move || {
+                    for step in steps {
+                        let Some(inner) = follow_for.upgrade() else {
+                            break;
+                        };
+                        inner.follow_up(step);
+                    }
+                })
+                .map_err(|e| Refusal::Engine(e.to_string()))?;
+            *lock(&inner.following) = Some(following);
+        }
         let reading = inner.clone();
         thread::Builder::new()
             .name("browser-events".to_owned())
@@ -583,6 +764,22 @@ impl Browser {
                 }
             })
             .map_err(|e| Refusal::Engine(e.to_string()))?;
+        // Held browser-wide, before any page is known, so no page sends anything unjudged:
+        // every frame's, every worker's. Only web addresses go out through the reach proxy,
+        // so only they are held: the engine's own pages and extensions load as they are.
+        if inner.judge.is_some() {
+            inner
+                .devtools
+                .call(
+                    "Fetch.enable",
+                    json!({ "patterns": [
+                        { "urlPattern": "http://*", "requestStage": "Request" },
+                        { "urlPattern": "https://*", "requestStage": "Request" },
+                    ] }),
+                    None,
+                )
+                .map_err(refusal)?;
+        }
         inner
             .devtools
             .call(
@@ -649,13 +846,16 @@ impl Browser {
         // is kept by id.
         if call.only_reads() {
             let _one = lock(&self.acting);
-            return self.run_at(epoch, call);
+            return self
+                .run_at(epoch, call)
+                .map(|answer| self.with_asked(answer));
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
                 let answer = {
                     let _one = lock(&self.acting);
                     self.run_at(epoch, call)
+                        .map(|answer| self.with_asked(answer))
                 };
                 ticket.finish(answer.clone());
                 answer
@@ -666,6 +866,73 @@ impl Browser {
             }),
             Begin::Reused => Err(Refusal::IdReused(id.as_str().to_owned())),
         }
+    }
+
+    /// `answer`, with the sites the judge asked about since the last answer (#2018).
+    fn with_asked(&self, mut answer: Answer) -> Answer {
+        answer.asked = std::mem::take(&mut lock(&self.inner.state).asked);
+        answer
+    }
+
+    /// **Where the agent is about to type, keys or choices into the documents at `addresses`
+    /// of `target`'s page** (#2018): each judged as something sent to its site. Where the judge
+    /// asks about any, nothing is sent to the page, and the answer says so.
+    fn typing_held(&self, target: &str, addresses: &[String]) -> Option<Answer> {
+        let judge = self.inner.judge.as_ref()?;
+        let site = addresses.iter().find_map(|address| {
+            let outbound = Outbound {
+                address: address.clone(),
+                method: String::new(),
+                why: Why::Sends,
+                by: Driver::Agent,
+            };
+            match judge(&outbound) {
+                Gate::Ask { site } => Some(site),
+                Gate::Go => None,
+            }
+        })?;
+        lock(&self.inner.state).ask(&site);
+        let mut answer = self.answer_now(target, Content::Nothing);
+        answer.note = Some(format!(
+            "nothing was typed: this page shows {site}, a site new to this project, where this \
+             would have gone, and purlis asked the person whether this browser may send to it"
+        ));
+        Some(answer)
+    }
+
+    /// The addresses what is typed into the element `written` names goes to: its document's.
+    fn addresses_of(&self, written: &Ref) -> Result<Vec<String>, Refusal> {
+        let state = lock(&self.inner.state);
+        let (page, key) = live_ref(&state, written)?;
+        Ok(state.documents_of(&page, &key.frame))
+    }
+
+    /// The addresses of the documents what has the focus on `target`'s page may be in: the one
+    /// document of the focused element, where one is focused, and otherwise every document the
+    /// page shows, since a key goes wherever the focus is.
+    fn focus_addresses(&self, target: &str) -> Vec<String> {
+        if self.inner.judge.is_none() {
+            return Vec::new();
+        }
+        let focused = self
+            .snapshot_of(target)
+            .ok()
+            .and_then(|snapshot| match snapshot.focused() {
+                [one] => Some(one.frame.clone()),
+                _ => None,
+            });
+        let state = lock(&self.inner.state);
+        match focused {
+            Some(frame) => state.documents_of(target, &frame),
+            None => state.every_document(target),
+        }
+    }
+
+    /// Marks `target`'s page as the one the agent's act is sending to an address, until the
+    /// mark is dropped (#2018).
+    fn addressing(&self, target: &str, why: Why) -> Addressing<'_> {
+        lock(&self.inner.state).addressing = Some((target.to_owned(), why));
+        Addressing(&self.inner)
     }
 
     /// The engine's own pid, while this browser holds its engine.
@@ -751,6 +1018,7 @@ impl Browser {
             Call::Navigate { page, address } => {
                 let target = self.target(page.as_ref())?;
                 let session = self.page_session(&target)?;
+                let _addressing = self.addressing(&target, Why::Addressed);
                 self.acting_on(&target, || self.navigate(&session, &address))
             }
             Call::Snapshot {
@@ -822,6 +1090,9 @@ impl Browser {
             Call::Type { page, fields } => self.type_into(page.as_ref(), &fields),
             Call::Press { page, keys } => {
                 let target = self.target(page.as_ref())?;
+                if let Some(held) = self.typing_held(&target, &self.focus_addresses(&target)) {
+                    return Ok(held);
+                }
                 let session = self.page_session(&target)?;
                 let mut events = Vec::new();
                 for chord in &keys {
@@ -863,6 +1134,7 @@ impl Browser {
                         content: Content::Nothing,
                         note: None,
                         repeated: false,
+                        asked: Vec::new(),
                     },
                 };
                 answer.content = Content::Pages(pages);
@@ -967,6 +1239,7 @@ impl Browser {
         drop(state);
         let session = self.page_session(&target)?;
         lock(&self.inner.state).current = Some(target.clone());
+        let _addressing = self.addressing(&target, Why::Addressed);
         self.acting_on(&target, || self.navigate(&session, address))
     }
 
@@ -1060,6 +1333,7 @@ impl Browser {
             content,
             note,
             repeated: false,
+            asked: Vec::new(),
         }
     }
 
@@ -1301,7 +1575,7 @@ impl Browser {
             };
             trees.push(frame);
         }
-        let snapshot = build(&trees, &excluded, &scrub);
+        let snapshot = build(&trees, &excluded, &scrub.texts());
         if let Some(page) = lock(&self.inner.state).page_mut(target) {
             page.keep_out(snapshot.blanked_text());
         }
@@ -1451,6 +1725,16 @@ impl Browser {
             Some(first) if page.is_none() => self.locate(first)?.target,
             _ => self.target(page)?,
         };
+        let mut into = Vec::new();
+        for field in fields {
+            match &field.into {
+                Some(written) => into.extend(self.addresses_of(written)?),
+                None => into.extend(self.focus_addresses(&target)),
+            }
+        }
+        if let Some(held) = self.typing_held(&target, &into) {
+            return Ok(held);
+        }
         let session = self.page_session(&target)?;
         let mut located = Vec::new();
         for field in fields {
@@ -1517,6 +1801,9 @@ impl Browser {
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
         let at = self.locate(target)?;
         let page = at.target.clone();
+        if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
+            return Ok(held);
+        }
         let resolved = self
             .devtools()
             .call(
@@ -1675,6 +1962,8 @@ impl Browser {
         let url = earlier.get("url").and_then(Value::as_str).unwrap_or("");
         WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
         let entry = earlier.get("id").cloned().unwrap_or_default();
+        // A page gone back to was read before: its documents read again (#2018).
+        let _revisiting = self.addressing(&target, Why::Reads);
         self.acting_on(&target, || {
             self.gated(|| {
                 self.devtools().call(
@@ -1896,7 +2185,7 @@ impl Browser {
             }
             (page.scrubbed.clone(), greys, roots)
         };
-        let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
+        let kept: Vec<&str> = kept.texts();
         // The frame elements whose documents are read in sessions of their own.
         let read_apart: HashSet<(String, i64)> = roots
             .iter()
@@ -2157,6 +2446,54 @@ impl Inner {
                         state.frame_seen(session, &params["frame"], true);
                     }
                 }
+                // A form submitted (#2018): its request, when it comes, sends what was typed.
+                "Page.frameRequestedNavigation" => {
+                    if let (Some(reason), Some(url)) = (text("/reason"), text("/url")) {
+                        let marks = if reason.starts_with("formSubmission") {
+                            &mut state.forms
+                        } else {
+                            &mut state.offered
+                        };
+                        if marks.len() >= FORMS_KEPT {
+                            marks.pop_front();
+                        }
+                        marks.push_back(without_fragment(&url).to_owned());
+                    }
+                }
+                "Fetch.requestPaused" => {
+                    if let Some(request) = text("/requestId") {
+                        let address = text("/request/url").unwrap_or_default();
+                        let method = text("/request/method").unwrap_or_default();
+                        let frame = text("/frameId");
+                        let redirected_from = text("/redirectedRequestId");
+                        let document = text("/resourceType").as_deref() == Some("Document");
+                        let why = state.why(&Held {
+                            request: &request,
+                            address: &address,
+                            method: &method,
+                            document,
+                            frame: frame.as_deref(),
+                            redirected_from: redirected_from.as_deref(),
+                        });
+                        let by = if self.person_drives.load(Ordering::SeqCst) {
+                            Driver::Person
+                        } else {
+                            Driver::Agent
+                        };
+                        follow.push(FollowUp::Judge {
+                            paused: Paused {
+                                id: request,
+                                document,
+                            },
+                            outbound: Outbound {
+                                address,
+                                method,
+                                why,
+                                by,
+                            },
+                        });
+                    }
+                }
                 "Page.frameDetached" => {
                     let swapped = text("/reason").as_deref() == Some("swap");
                     if !swapped
@@ -2178,8 +2515,59 @@ impl Inner {
         }
         self.changed.notify_all();
         for step in follow {
+            let step = match step {
+                // Handed to the judge's own thread at once.
+                judge @ FollowUp::Judge { .. } => judge,
+                other => match &*lock(&self.following) {
+                    Some(following) => match following.send(other) {
+                        Ok(()) => continue,
+                        Err(unsent) => unsent.0,
+                    },
+                    None => other,
+                },
+            };
             self.follow_up(step);
         }
+    }
+
+    /// Judges held request `paused` (#2018), and lets it on or holds it back as the judge says:
+    /// a document held back is answered with no content, so its frame stays on the page it
+    /// showed; anything else is failed.
+    fn judged(&self, paused: &Paused, outbound: &Outbound) {
+        let request = paused.id.as_str();
+        // Requests are held only where there is a judge, so this always has one.
+        let gate = self
+            .judge
+            .as_ref()
+            .map_or(Gate::Go, |judge| judge(outbound));
+        let said = match gate {
+            Gate::Go => self.devtools.call_within(
+                "Fetch.continueRequest",
+                json!({ "requestId": request }),
+                None,
+                JUDGED_WITHIN,
+            ),
+            Gate::Ask { site } => {
+                lock(&self.state).ask(&site);
+                if paused.document {
+                    self.devtools.call_within(
+                        "Fetch.fulfillRequest",
+                        json!({ "requestId": request, "responseCode": 204 }),
+                        None,
+                        JUDGED_WITHIN,
+                    )
+                } else {
+                    self.devtools.call_within(
+                        "Fetch.failRequest",
+                        json!({ "requestId": request, "errorReason": "BlockedByClient" }),
+                        None,
+                        JUDGED_WITHIN,
+                    )
+                }
+            }
+        };
+        // A request whose page has gone went with it: there is nothing more to say.
+        let _ = said;
     }
 
     fn follow_up(&self, step: FollowUp) {
@@ -2229,6 +2617,17 @@ impl Inner {
                 self.changed.notify_all();
                 let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
             }
+            FollowUp::Judge { paused, outbound } => {
+                // Judged on a thread of its own, so a request is never held up behind another
+                // follow-up's calls; where that thread is gone, judged here.
+                let unsent = match &*lock(&self.judging) {
+                    Some(judging) => judging.send((paused, outbound)).err().map(|e| e.0),
+                    None => Some((paused, outbound)),
+                };
+                if let Some((paused, outbound)) = unsent {
+                    self.judged(&paused, &outbound);
+                }
+            }
             FollowUp::Release(session) => {
                 let on = Some(session.as_str());
                 let _ = devtools.call("Runtime.runIfWaitingForDebugger", json!({}), on);
@@ -2240,6 +2639,45 @@ impl Inner {
             }
         }
     }
+}
+
+/// The mark of an act addressing a page (#2018), taken off when the act is done.
+struct Addressing<'a>(&'a Inner);
+
+impl Drop for Addressing<'_> {
+    fn drop(&mut self) {
+        lock(&self.0.state).addressing = None;
+    }
+}
+
+/// A request the engine holds for the judge (#2018): its id, and whether it is a document.
+struct Paused {
+    id: String,
+    document: bool,
+}
+
+/// A request held for the judge, as the engine said it (#2018).
+struct Held<'a> {
+    request: &'a str,
+    address: &'a str,
+    method: &'a str,
+    document: bool,
+    frame: Option<&'a str>,
+    redirected_from: Option<&'a str>,
+}
+
+/// Takes `address` out of `marks`, answering whether it was there.
+fn take(marks: &mut VecDeque<String>, address: &str) -> bool {
+    marks
+        .iter()
+        .position(|one| one == address)
+        .and_then(|at| marks.remove(at))
+        .is_some()
+}
+
+/// `address` without its fragment, which no request carries.
+fn without_fragment(address: &str) -> &str {
+    address.split_once('#').map_or(address, |(bare, _)| bare)
 }
 
 /// The live element `written` names: its page and node.

@@ -270,6 +270,14 @@ pub trait Running: Send + Sync + 'static {
             "this program is not a browser, so it takes no browser's act".into(),
         ))
     }
+    /// What a browser may reach from now on (#2018): nothing to do for any other program.
+    fn reach_now(
+        &self,
+        reach: &purlis_session_protocol::browsing::BrowserReach,
+    ) -> Result<(), String> {
+        let _ = reach;
+        Ok(())
+    }
     /// The person takes it over (#2014): refused for every program that is not a browser.
     fn take_over(&self) -> Result<Driver, Refusal> {
         Err(not_a_browser())
@@ -658,15 +666,9 @@ impl Hosting {
         Hosting::built(compose, run, hear, confine, Switch::in_memory(), None)
     }
 
-    /// A host whose starts `compose` composes, each run in a terminal of its own, which hears
-    /// no hooks and starts no confinement, with its kill switch kept in `folder`, its own, and
-    /// read from there now: a host started again while stopped starts nothing until the window
-    /// re-arms (ADR 0071). What `purlis serve` runs.
-    pub fn keeping_its_switch_in(folder: &Path, compose: impl Compose) -> Hosting {
-        Hosting::kept(folder, compose, Terminals, HearsNothing, ConfinesNothing)
-    }
-
-    /// [`Hosting::keeping_its_switch_in`], each start run by `run`.
+    /// A host whose starts `compose` composes and `run` runs, which hears no hooks and starts
+    /// no confinement, with its kill switch kept in `folder`, its own, and read from there now:
+    /// a host started again while stopped starts nothing until the window re-arms (ADR 0071).
     pub fn running_with_its_switch_in(
         folder: &Path,
         compose: impl Compose,
@@ -676,7 +678,8 @@ impl Hosting {
     }
 
     /// [`Hosting::with`], with its kill switch kept in `folder`, its own, and read from there
-    /// now (ADR 0071), and its host record kept there (#2007): what the window's host runs.
+    /// now (ADR 0071), and its host record kept there (#2007): what the window's host and
+    /// `purlis serve` run.
     pub fn kept(
         folder: &Path,
         compose: impl Compose,
@@ -1503,22 +1506,31 @@ impl Hosting {
         program: &str,
         call_id: String,
         act: purlis_session_protocol::browsing::Act,
+        reach: Option<purlis_session_protocol::browsing::BrowserReach>,
     ) -> Result<Answer, Refusal> {
         let running = self.running(program)?;
-        tokio::task::spawn_blocking(move || running.act(&call_id, act))
-            .await
-            .map_err(|why| not_started(why.to_string()))?
-            .map(|browsed| Answer::Browsed(Box::new(browsed)))
-            .map_err(|not| match not {
-                crate::browsers::NotActed::Ended => Refusal {
-                    code: session::BROWSER_ENDED.into(),
-                    why: crate::browsers::AN_ENDED_BROWSER.into(),
-                },
-                crate::browsers::NotActed::Refused(why) => Refusal {
-                    code: session::BROWSER_REFUSED.into(),
-                    why,
-                },
-            })
+        tokio::task::spawn_blocking(move || {
+            // What it reaches is what the window says now, before the act (#2018).
+            if let Some(reach) = &reach {
+                running
+                    .reach_now(reach)
+                    .map_err(crate::browsers::NotActed::Refused)?;
+            }
+            running.act(&call_id, act)
+        })
+        .await
+        .map_err(|why| not_started(why.to_string()))?
+        .map(|browsed| Answer::Browsed(Box::new(browsed)))
+        .map_err(|not| match not {
+            crate::browsers::NotActed::Ended => Refusal {
+                code: session::BROWSER_ENDED.into(),
+                why: crate::browsers::AN_ENDED_BROWSER.into(),
+            },
+            crate::browsers::NotActed::Refused(why) => Refusal {
+                code: session::BROWSER_REFUSED.into(),
+                why,
+            },
+        })
     }
 
     /// One of the person's commands on browser `program` (#2014), carried out off the runtime.
@@ -2204,7 +2216,8 @@ impl session::Host for Hosting {
                 program,
                 call_id,
                 act,
-            } => self.browse(&program, call_id, act).await,
+                reach,
+            } => self.browse(&program, call_id, act, reach).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
