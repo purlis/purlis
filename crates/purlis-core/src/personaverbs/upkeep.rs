@@ -430,5 +430,4 @@ pub fn log(root: &Path, ask: &Log, say: Sink) -> u8 {
 }
 
 #[cfg(test)]
-#[path = "upkeep_tests.rs"]
 mod tests;

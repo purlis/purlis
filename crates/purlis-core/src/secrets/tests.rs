@@ -5,6 +5,11 @@
 
 use super::*;
 
+// Unix only: its stand-in CLIs are shell scripts, and its vault files are judged by mode.
+// `cfg(unix)` alone: this module is already test-only, which cargo-mutants reads from `mod.rs`.
+#[cfg(unix)]
+mod store;
+
 #[test]
 fn redaction_masks_the_longer_value_whole_before_the_shorter_one_inside_it() {
     let values = vec!["abc".to_string(), "abcdef".to_string()];
