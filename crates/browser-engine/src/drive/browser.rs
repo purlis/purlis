@@ -30,7 +30,10 @@ use super::{
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
 
+mod login;
 mod takeover;
+
+pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use takeover::{Lease, Typing};
 
@@ -610,6 +613,8 @@ pub(crate) struct Inner {
     judge: Option<Judge>,
     /// Whether the person drives (#2014): every request is then theirs (#2018).
     person_drives: AtomicBool,
+    /// Whether purlis drives, performing a login (#2016): every request is then purlis's.
+    purlis_drives: AtomicBool,
     /// Where each held request is sent to be judged, on a thread of its own (#2018).
     judging: Mutex<Option<std::sync::mpsc::Sender<(Paused, Outbound)>>>,
     /// Where a judged browser's other follow-ups are carried out, in order, on a thread of their
@@ -715,6 +720,7 @@ impl Browser {
             ends: Mutex::new(None),
             judge,
             person_drives: AtomicBool::new(false),
+            purlis_drives: AtomicBool::new(false),
             judging: Mutex::new(None),
             following: Mutex::new(None),
         });
@@ -2588,6 +2594,8 @@ impl Inner {
                         });
                         let by = if self.person_drives.load(Ordering::SeqCst) {
                             Driver::Person
+                        } else if self.purlis_drives.load(Ordering::SeqCst) {
+                            Driver::Purlis
                         } else {
                             Driver::Agent
                         };

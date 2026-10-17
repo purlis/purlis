@@ -242,6 +242,46 @@ pub struct BrowserReach {
     pub open_web: bool,
 }
 
+/// **A value from a vault, on its way to the browser that fills it** (1.18, #2016): written on
+/// the wire as the text it is, never shown by `Debug`, and wiped from memory when dropped.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// The value itself, for the one place that fills it.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(withheld)")
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.0);
+    }
+}
+
+/// **A declared login, as purlis performs it in a browser** (1.18, #2016): the login page's
+/// address, whose origin is the one place it is filled, and the values from the vault. The
+/// user name is absent for a page that asks for a password alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogIn {
+    pub address: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<Secret>,
+    pub password: Secret,
+}
+
 /// Who drives a browser (1.14): the agent, through its acts, or the person who took it over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

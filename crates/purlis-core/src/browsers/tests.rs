@@ -381,3 +381,36 @@ fn the_engines_archive_is_a_third_partys_and_the_manifest_is_purliss_own() {
         .unwrap();
     assert!(crate::netlog::is_charters("github.com", path));
 }
+
+// ---- A login purlis performs (#2016) ----
+
+#[test]
+fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
+    use purlis_host::protocol::browsing::{LogIn, Secret};
+    let (login, site) = super::login_of(&LogIn {
+        address: "https://Shop.Example.test/login?next=/cart".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap();
+    assert_eq!(login.origin, "https://shop.example.test");
+    assert_eq!(site, Site::of("shop.example.test", 443));
+    assert!(login.user.is_none());
+    let local = super::login_of(&LogIn {
+        address: "http://127.0.0.1:8123/login".into(),
+        user: Some(Secret::new("fixture-user".into())),
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap();
+    assert_eq!(local.0.origin, "http://127.0.0.1:8123");
+    assert_eq!(local.1, Site::of("127.0.0.1", 8123));
+    let refused = super::login_of(&LogIn {
+        address: "file:///etc/passwd".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap_err();
+    assert!(refused.contains("not one a browser opens"), "{refused}");
+    // Neither the driver's login nor what the window handed says its values.
+    assert!(!format!("{login:?}").contains("fixture-word"));
+}

@@ -46,9 +46,8 @@ in.
 
 ## Credentials: never typed, never printed
 
-**In a sandboxed chat, log in with your persona's browser-login tool.** There
-`purlis secret exec` runs only a tool the chat's persona declares, and a shell or a `--dotenv`
-is never one. A project declares a login once, in its committed settings, and the user allows
+**In a chat purlis started, log in with your persona's browser login, through purlis's own
+browser tools.** A project declares a login once, in its committed settings, and the user allows
 it on their machine with the persona's hosts:
 
 ```toml
@@ -57,27 +56,18 @@ tools = { shop-login = { vault = "qa", browser = "https://shop.example.test/logi
                          user = "username", key = "password" } }
 ```
 
-Then run the tool by its name, with the session to log in:
+Then call the `browser_login` tool with `login = "shop-login"` (and `browser` to pick one of
+your browsers). purlis goes to the declared page in your browser, fills the login from the vault
+only while the page is on the declared origin, submits, waits for the password field to go, and
+hands the browser back logged in. You never see the login: it is kept out of every snapshot and
+screenshot, and the fields purlis filled are blanked. From then on that browser reaches the
+login's site alone; call `browser_new` for any other site. You choose which declared login, and
+nothing else. If the login is refused, tell the user the sentence: it names what to declare or
+allow. A page with a captcha or a second factor, or one that first sends the browser to a
+sign-in page on another site, does not log in this way; ask the user, or hand them the browser
+with `ask_operator` pointed at it.
 
-```bash
-shop-login -s=owner
-npx @playwright/cli@<version> -s=owner open
-npx @playwright/cli@<version> -s=owner state-load .playwright-cli/owner.login.json
-rm .playwright-cli/owner.login.json
-```
-
-purlis opens the declared page in a browser of its own, fills the login only while that page
-is on the declared host, submits, and leaves the logged-in session's cookies in
-`.playwright-cli/<session>.login.json` for you to load. You never see the login, and you cannot
-point it at another page or host: the tool takes the session's name and nothing else. It needs
-Playwright's command line installed where the chat cannot write (`npm install -g
-@playwright/cli@<version>`, which puts `playwright-cli` on the user's path). If the tool is
-refused, tell the user the sentence: it names what to declare or allow. A page with a captcha
-or a second factor, or one that first sends the browser to a sign-in page on another site,
-does not log in this way; ask the user.
-
-That cookie file is the logged-in session in another form. Load it, then delete it, and never
-print or commit it.
+Running the login's name as a command does nothing: it says to use `browser_login`.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
@@ -134,7 +124,7 @@ command substitution into the transcript, with nothing to redact it.
 
 - **Never read a filled secret back.** Do not evaluate `el.value`, take a screenshot of a
   filled password field, or dump the dotenv file.
-- Never type a credential in directly, even "just once to test". Use the browser-login tool
-  in a chat, or the bridge in the user's terminal.
+- Never type a credential in directly, even "just once to test". Use `browser_login` in a
+  chat, or the bridge in the user's terminal.
 - Never commit a session directory, a storage-state file or a trace. Each one holds live
   cookies or authenticated traffic, which is the credential in another form.

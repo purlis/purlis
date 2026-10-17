@@ -49,6 +49,7 @@ fn every_tool_the_spec_names_is_offered_each_with_a_schema() {
             "browser_screenshot",
             "browser_new",
             "browser_close",
+            "browser_login",
         ]
     );
     for tool in TOOLS {

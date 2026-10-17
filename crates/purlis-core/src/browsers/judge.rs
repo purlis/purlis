@@ -21,6 +21,12 @@
 //!   it. Nothing is sent until the person allows the site for the browser.
 //! - **The open web asks nothing**: every public site is carried, as the person allowed.
 //! - **What the person does while they drive is theirs**, and goes.
+//! - **What purlis sends while it performs a login goes to the login's own site** (#2016): the
+//!   declared address, and the form submitted there. Anything else it sends meanwhile is judged
+//!   as the agent's would be.
+//! - **A browser holding a login asks nothing** (#2016): its proxy carries the login's site
+//!   alone ([`Bound`]), so a request anywhere else is refused there, in words, and no Allow
+//!   would carry it.
 //! - **What is never a site** (this machine, a private or reserved address, an address of no
 //!   web scheme) asks nothing: the proxy refuses or carries it by its own rules.
 //!
@@ -34,7 +40,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use purlis_browser_engine::drive::{Driver, Gate, Outbound, Why};
 use purlis_host::protocol::browsing::BrowserReach;
 
-use crate::sandbox::browser_reach::{Lane, NewSites, Refusal, Site, Verdict};
+use crate::sandbox::browser_reach::{Bound, Lane, NewSites, Refusal, Site, Verdict};
 use crate::sandbox::reach::Reach;
 
 /// The most sites new to the project one browser's proxy carries: past them a new site is
@@ -44,6 +50,8 @@ const MOST_LET_ON: usize = 4096;
 /// **One browser's judge, and the sites new to the project it let on** (module docs).
 pub struct SiteJudge {
     now: Mutex<Now>,
+    /// What the browser reaches once it holds a login (#2016), shared with its reach proxy.
+    bound: Bound,
     /// This machine's addresses, where a test says them; read at each judgement otherwise.
     own: Option<Vec<IpAddr>>,
 }
@@ -52,6 +60,8 @@ struct Now {
     lane: Lane,
     open_web: bool,
     let_on: HashSet<Site>,
+    /// The site of the login purlis performs or performed in the browser (#2016).
+    login: Option<Site>,
 }
 
 impl std::fmt::Debug for SiteJudge {
@@ -68,7 +78,9 @@ impl SiteJudge {
                 lane: Lane::of(read(reach)?),
                 open_web: reach.open_web,
                 let_on: HashSet::new(),
+                login: None,
             }),
+            bound: Bound::default(),
             own: None,
         })
     }
@@ -79,6 +91,21 @@ impl SiteJudge {
     pub fn knowing_this_machine(mut self, own: Vec<IpAddr>) -> Self {
         self.own = Some(own);
         self
+    }
+
+    /// What the browser reaches once it holds a login (#2016): its reach proxy is given it.
+    pub fn bound(&self) -> &Bound {
+        &self.bound
+    }
+
+    /// **purlis is about to perform a login at `site`** (#2016): what it sends there while it
+    /// drives goes, and the proxy carries the site.
+    pub fn logging_in(&self, site: &Site) {
+        let mut now = self.lock();
+        now.login = Some(site.clone());
+        if now.let_on.len() < MOST_LET_ON {
+            now.let_on.insert(site.clone());
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Now> {
@@ -111,8 +138,15 @@ impl SiteJudge {
             .address
             .get(..6)
             .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"));
+        // A browser holding a login: its proxy refuses every other site, and nobody is asked.
+        if !self.bound.lets(&host, port) {
+            return Gate::Go;
+        }
         let own = self.own();
         let mut now = self.lock();
+        if out.by == Driver::Purlis && now.login.as_ref() == Some(&Site::of(&host, port)) {
+            return Gate::Go;
+        }
         let new = match now.lane.decide_here(&host, port, tunnel, own.as_deref()) {
             Verdict::Carry { .. } => return Gate::Go,
             Verdict::Site { .. } => true,

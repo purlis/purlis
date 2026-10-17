@@ -36,6 +36,12 @@
 //!   ([`browsed`]), a screenshot made to fit the control lane ([`MOST_SCREENSHOT_BYTES`]).
 //! - **Its data folder** is the one the host gives it, under `<data>/browsers`, fresh: the host
 //!   removes it once the browser has ended.
+//! - **Its logins** (#2016): a declared login is performed by the driver itself
+//!   ([`drive::Browser::log_in`]), on the address the window hands it with the vault's values.
+//!   The browser's reach proxy and judge are told first: what purlis sends to the login's site
+//!   goes, and just before the first value goes in the proxy is bound to that site alone, for
+//!   the browser's life ([`crate::sandbox::browser_reach::Bound`]). A browser started with no
+//!   reach, or holding a login at another site already, is logged in nowhere.
 //! - **Its driver** (#2014): the host's lease is the driver's own ([`drive::Browser::take_over`]),
 //!   each act made under the epoch the host checked; the person's input becomes the driver's own
 //!   event ([`input_of`]), and each frame names what it shows ([`aim_of`]).
@@ -55,9 +61,9 @@ use purlis_browser_engine::process::{Engine, Keeper};
 use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
-use purlis_host::{Browsers, FrameSink, NotActed, NotTaken, Screen};
+use purlis_host::{Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen};
 
-use crate::sandbox::browser_reach::{Lane, NewSites, ReachProxy};
+use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{Reach, Written};
 
 pub mod judge;
@@ -271,7 +277,11 @@ impl Browsers for EngineBrowsers {
         let new_sites = sites
             .as_ref()
             .map_or(new_sites, judge::SiteJudge::new_sites);
-        let proxy = ReachProxy::start(Lane::of(listed), new_sites)
+        // A chat's browser may hold a login (#2016): its proxy is bound with its judge.
+        let bound = sites
+            .as_ref()
+            .map_or_else(Bound::default, |sites| sites.bound().clone());
+        let proxy = ReachProxy::bound_by(Lane::of(listed), new_sites, bound)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let launch = Launch::new(&ready, data, launch::ReachProxy(proxy.address()));
         let engine =
@@ -589,6 +599,45 @@ fn not_taken(refusal: drive::Refusal) -> NotTaken {
     }
 }
 
+/// **The driver's login for what the window handed** (#2016): the address, its origin and the
+/// site it is on, and the values, or why it is no login a browser takes.
+pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
+    let address = WebAddress::parse(&login.address)
+        .map_err(|why| format!("the login's address is not one a browser opens: {why}"))?;
+    let (origin, (host, port)) = drive::origin_of(&login.address)
+        .zip(judge::site_of(&login.address))
+        .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())?;
+    Ok((
+        drive::Login {
+            address,
+            origin,
+            user: login
+                .user
+                .as_ref()
+                .map(|user| zeroize::Zeroizing::new(user.expose().to_owned())),
+            password: zeroize::Zeroizing::new(login.password.expose().to_owned()),
+        },
+        Site::of(&host, port),
+    ))
+}
+
+/// Who drives a browser after a login, in the protocol's words: never purlis, which hands every
+/// browser back; were it to say so, the browser is held from the agent.
+fn driver_of(driver: drive::Driver) -> wire::Driver {
+    match driver {
+        drive::Driver::Agent => wire::Driver::Agent,
+        drive::Driver::Person | drive::Driver::Purlis => wire::Driver::Person,
+    }
+}
+
+/// Why the driver did not carry an act or a login out, as the host says it.
+fn not_acted(refusal: drive::Refusal) -> NotActed {
+    match refusal {
+        drive::Refusal::Ended => NotActed::Ended,
+        other => NotActed::Refused(other.to_string()),
+    }
+}
+
 /// A running browser and its reach proxy, which lives exactly as long as it.
 struct Held {
     browser: Arc<Browser>,
@@ -670,10 +719,51 @@ impl Screen for EngineScreen {
                 browser.call_at(epoch, &id, call)
             })
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
-            .map_err(|refusal| match refusal {
-                drive::Refusal::Ended => NotActed::Ended,
-                other => NotActed::Refused(other.to_string()),
-            })
+            .map_err(not_acted)
+    }
+
+    fn log_in(&self, login: &wire::LogIn) -> Result<LoginEnded, NotActed> {
+        let (login, site) = login_of(login).map_err(NotActed::Refused)?;
+        let Some(sites) = &self.sites else {
+            return Err(NotActed::Refused(
+                "this browser was started with no reach, so purlis logs nothing in to it"
+                    .to_owned(),
+            ));
+        };
+        if let Some(held) = sites.bound().sites()
+            && !held.contains(&site)
+        {
+            return Err(NotActed::Refused(format!(
+                "this browser holds a login at {}, and reaches nothing else: open a new browser \
+                 with browser_new and log in to {} there",
+                held.iter()
+                    .map(Site::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                login.origin
+            )));
+        }
+        let browser = self.with(Arc::clone).ok_or(NotActed::Ended)?;
+        sites.logging_in(&site);
+        // Bound by the proxy itself, which ends every connection it carried until now.
+        let bind = || -> Result<(), String> {
+            let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+            let proxy = &held
+                .as_ref()
+                .ok_or_else(|| "the browser has ended".to_owned())?
+                .proxy;
+            proxy.bind(&site)
+        };
+        let ended = browser.log_in(&login, &bind).map_err(not_acted)?;
+        drop(login);
+        Ok(LoginEnded {
+            driver: driver_of(ended.driver),
+            epoch: ended.epoch,
+            outcome: ended
+                .outcome
+                .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
+                .map_err(not_acted),
+        })
     }
 
     fn take_over(&self) -> u64 {

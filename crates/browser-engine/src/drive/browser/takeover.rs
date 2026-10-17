@@ -86,23 +86,24 @@ pub(crate) struct Typing {
 }
 
 thread_local! {
-    /// The epoch of the agent's call this thread is carrying out, if it is carrying one out.
-    static AGENT_CALL: Cell<Option<u64>> = const { Cell::new(None) };
+    /// Who this thread carries a call out for, the agent or purlis performing a login (#2016),
+    /// and the epoch of the lease it was made under, if it is carrying one out.
+    static CARRYING: Cell<Option<(Driver, u64)>> = const { Cell::new(None) };
 }
 
-/// Marks this thread as carrying out an agent's call under `epoch` until dropped.
-struct Carrying;
+/// Marks this thread as carrying out a call of `driver`'s under `epoch` until dropped.
+pub(super) struct Carrying;
 
 impl Carrying {
-    fn under(epoch: u64) -> Self {
-        AGENT_CALL.with(|call| call.set(Some(epoch)));
+    pub(super) fn under(driver: Driver, epoch: u64) -> Self {
+        CARRYING.with(|call| call.set(Some((driver, epoch))));
         Carrying
     }
 }
 
 impl Drop for Carrying {
     fn drop(&mut self) {
-        AGENT_CALL.with(|call| call.set(None));
+        CARRYING.with(|call| call.set(None));
     }
 }
 
@@ -138,9 +139,9 @@ impl Browser {
     }
 
     /// The person takes the browser over: a new epoch, held by them. A call of the agent's in
-    /// flight is cut and answers [`Refusal::Interrupted`]; every later one is refused until
-    /// [`Browser::hand_back`]. Answers the lease's epoch. Taking over a browser the person
-    /// already drives changes nothing.
+    /// flight is cut and answers [`Refusal::Interrupted`], and so is a login purlis is
+    /// performing (#2016); every later one is refused until [`Browser::hand_back`]. Answers the
+    /// lease's epoch. Taking over a browser the person already drives changes nothing.
     pub fn take_over(&self) -> u64 {
         let epoch = {
             let mut lease = lock(&self.lease);
@@ -149,6 +150,7 @@ impl Browser {
                 lease.driver = Driver::Person;
             }
             self.inner.person_drives.store(true, Ordering::SeqCst);
+            self.inner.purlis_drives.store(false, Ordering::SeqCst);
             lease.epoch
         };
         // Whatever waits for the page wakes now, and finds itself cut.
@@ -161,7 +163,7 @@ impl Browser {
     /// under a new epoch, which it answers. Handing back a browser the agent drives changes
     /// nothing.
     pub fn hand_back(&self) -> u64 {
-        if self.driver() == Driver::Agent {
+        if self.driver() != Driver::Person {
             return self.epoch();
         }
         self.keep_typing_out();
@@ -180,6 +182,7 @@ impl Browser {
         let lease = lock(&self.lease);
         match lease.driver {
             Driver::Person => Err(Refusal::PersonDriving),
+            Driver::Purlis => Err(Refusal::PurlisDriving),
             Driver::Agent if lease.epoch != epoch => Err(Refusal::Interrupted),
             Driver::Agent => Ok(()),
         }
@@ -189,7 +192,7 @@ impl Browser {
     /// came to, if that lease ended before it answered.
     pub(super) fn run_at(&self, epoch: u64, call: Call) -> Result<super::Answer, Refusal> {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
-        let _carrying = Carrying::under(epoch);
+        let _carrying = Carrying::under(Driver::Agent, epoch);
         let answer = self.run(call);
         if self.cut() {
             return Err(Refusal::Interrupted);
@@ -197,21 +200,21 @@ impl Browser {
         answer
     }
 
-    /// Whether the agent's call this thread carries out has been cut by a take-over. Never, on
-    /// a thread that carries out none.
+    /// Whether the call this thread carries out (the agent's, or purlis's login) has been cut
+    /// by a take-over. Never, on a thread that carries out none.
     pub(super) fn cut(&self) -> bool {
-        AGENT_CALL.with(Cell::get).is_some_and(|epoch| {
+        CARRYING.with(Cell::get).is_some_and(|(driver, epoch)| {
             let lease = lock(&self.lease);
-            lease.driver != Driver::Agent || lease.epoch != epoch
+            lease.driver != driver || lease.epoch != epoch
         })
     }
 
     /// Runs `act`, which acts on a page, under the lease's lock: refused, before it runs, when
-    /// it is part of an agent's call the person has cut.
+    /// it is part of a call (the agent's, or purlis's login) the person has cut.
     pub(super) fn gated<T>(&self, act: impl FnOnce() -> T) -> Result<T, Refusal> {
         let lease = lock(&self.lease);
-        if let Some(epoch) = AGENT_CALL.with(Cell::get)
-            && (lease.driver != Driver::Agent || lease.epoch != epoch)
+        if let Some((driver, epoch)) = CARRYING.with(Cell::get)
+            && (lease.driver != driver || lease.epoch != epoch)
         {
             return Err(Refusal::Interrupted);
         }
