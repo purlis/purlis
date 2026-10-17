@@ -2358,10 +2358,7 @@ fn one_open_chat() -> (crate::chats::Chats, u32) {
                 name: "ide.7".to_owned(),
                 ..Default::default()
             },
-            purlis_core::engine::Size {
-                columns: 80,
-                rows: 24,
-            },
+            SIZE,
         )
         .expect("the host opens it");
     (chats, session)
@@ -2589,15 +2586,7 @@ fn an_audit_that_fails_while_the_chat_restarts_leaves_no_start_the_grant() {
     let (chats, session) = one_open_chat();
     let restarted = std::cell::Cell::new(None);
     let failing = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
-        let again = chats
-            .start_fresh(
-                session,
-                purlis_core::engine::Size {
-                    columns: 80,
-                    rows: 24,
-                },
-            )
-            .expect("it restarts");
+        let again = chats.start_fresh(session, SIZE).expect("it restarts");
         assert!(
             chats.grants_a_start_of(again).is_empty(),
             "the restart has it"
@@ -2693,4 +2682,110 @@ fn a_chat_that_closes_while_its_allow_is_audited_keeps_nothing_and_the_audit_say
     assert!(refused.contains("closed"), "{refused}");
     assert_eq!(*written.lock().unwrap(), [true, false]);
     assert!(chats.chat_grants().is_empty());
+    assert!(
+        chats.owed_restarts().is_empty(),
+        "a refusal owes no restart"
+    );
+}
+
+const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
+    columns: 80,
+    rows: 24,
+};
+
+/// #2454: a Revoke made while an Allow's audit is written stands. Two Allows of the same are
+/// reserved; the first is kept, the chat starts again to take it, the person revokes it, and
+/// the second is refused: nothing is kept, no restart is owed, and the audit records it ended.
+#[test]
+fn a_revoke_made_while_an_allow_is_audited_stands() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let (chats, session) = one_open_chat();
+    let written = std::sync::Mutex::new(Vec::new());
+    let restarted = std::cell::Cell::new(None);
+    let first = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        written.lock().unwrap().push(("first", audited.granted));
+        Ok(())
+    };
+    let second = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        written.lock().unwrap().push(("second", audited.granted));
+        if audited.granted {
+            judged_and_kept(
+                root,
+                &machine(),
+                &chats,
+                Some(session),
+                (HOST.0, HOST.1, GrantLevel::Chat),
+                &first,
+                101,
+            )
+            .expect("the first is kept");
+            // The chat starts again to take it, and its old run ends.
+            let again = chats.start_fresh(session, SIZE).expect("it starts again");
+            chats.close(session).expect("the old run ends");
+            restarted.set(Some(again));
+            let (id, kept) = chats.chat_grants().remove(0);
+            assert!(chats.revoke(&id, &kept.what), "the person revokes it");
+        }
+        Ok(())
+    };
+    let refused = judged_and_kept(
+        root,
+        &machine(),
+        &chats,
+        Some(session),
+        (HOST.0, HOST.1, GrantLevel::Chat),
+        &second,
+        100,
+    )
+    .expect_err("revoked meanwhile")
+    .to_string();
+    assert!(refused.contains("taken back"), "{refused}");
+    let again = restarted.get().expect("restarted");
+    assert!(chats.chat_grants().is_empty(), "the Revoke stands");
+    assert!(chats.grants_a_start_of(again).is_empty());
+    assert!(
+        chats.owed_restarts().is_empty(),
+        "a refusal owes no restart"
+    );
+    assert_eq!(
+        *written.lock().unwrap(),
+        [("second", true), ("first", true), ("second", false)]
+    );
+}
+
+/// #2454: an Allow for the chat is kept for the run a restart on its conversation began while
+/// its audit was written; one allowed once was for the run it was allowed in alone.
+#[test]
+fn an_allow_for_the_chat_is_kept_by_the_run_a_restart_began_while_it_was_audited() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let (chats, session) = one_open_chat();
+    let ran = std::cell::Cell::new(session);
+    let restarting = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        if audited.granted {
+            let again = chats.start_fresh(ran.get(), SIZE).expect("it restarts");
+            chats.close(ran.get()).expect("the old run ends");
+            ran.set(again);
+        }
+        Ok(())
+    };
+    let allow = |asked: (GrantWhat, &str), level| {
+        judged_and_kept(
+            root,
+            &machine(),
+            &chats,
+            Some(ran.get()),
+            (asked.0, asked.1, level),
+            &restarting,
+            100,
+        )
+    };
+    allow(HOST, GrantLevel::Chat).expect("kept for the new run");
+    assert_eq!(chats.grants_a_start_of(ran.get()).hosts.len(), 1);
+    let refused = allow(SERVICE, GrantLevel::Once)
+        .expect_err("once was for the run that ended")
+        .to_string();
+    assert!(refused.contains("closed"), "{refused}");
+    assert!(chats.grants_a_start_of(ran.get()).services.is_empty());
 }

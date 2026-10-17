@@ -1738,8 +1738,9 @@ pub(crate) struct Kept {
 
 /// **Keeps a grant [`judged`] made for chat `session`**: audited, then kept where `level`
 /// keeps it, and the chat owed a restart on its conversation unless its proxy took it live
-/// (#1666). For the chat alone it is held first and audited after, so a chat that closed is
-/// refused before anything is audited (#2454). An audit that cannot be written keeps nothing.
+/// (#1666). For the chat alone it is reserved first, so a chat that is not open is refused
+/// before anything is audited, and kept only once audited (#2454). An audit that cannot be
+/// written keeps nothing.
 pub(crate) fn kept(
     root: &std::path::Path,
     chats: &crate::chats::Chats,
@@ -1789,7 +1790,7 @@ pub(crate) fn kept_for(
     // open, so a chat that is not is refused before anything is audited; it keeps nothing, so
     // no start, Granted list or live ask has the grant until its audit is written; and a grant
     // whose audit cannot be written is never kept. Once made lasting is a new grant, audited.
-    let held = match (level, session) {
+    let reserved = match (level, session) {
         (Level::Once | Level::Chat, Some(session)) => {
             Some(chats.reserve_grant(session, what.clone(), at, level == Level::Once)?)
         }
@@ -1798,9 +1799,9 @@ pub(crate) fn kept_for(
     let already = match (what, level, session) {
         (What::Host(host), Level::You | Level::Project, _) => grant::allowed_already(root, host)
             .is_some_and(|held| held == level || held == Level::Project),
-        (_, Level::Once | Level::Chat, Some(_)) => {
-            held.as_ref().is_some_and(crate::chats::Held::already)
-        }
+        (_, Level::Once | Level::Chat, Some(_)) => reserved
+            .as_ref()
+            .is_some_and(crate::chats::ReservedGrant::already),
         (What::Socket(socket), Level::You, _) => {
             sandbox::local::granted_sockets(root).contains(socket)
         }
@@ -1816,8 +1817,8 @@ pub(crate) fn kept_for(
         (What::Port(port), Level::You, _) => sandbox::local::granted_ports(root).contains(port),
         _ => false,
     };
-    if !already
-        && let Err(why) = audit(
+    if !already {
+        audit(
             session,
             &grant::Audited {
                 granted: true,
@@ -1825,29 +1826,30 @@ pub(crate) fn kept_for(
                 target: &target,
                 level,
             },
-        )
-    {
-        return Err(why);
+        )?;
     }
-    // Kept once audited. A chat that closed while its audit was written keeps nothing, as its
-    // grants end with it: the audit is told so, so it never records a grant that stands.
-    if let Some(held) = held.filter(|held| !held.already())
-        && let Err(why) = chats.commit_grant(held)
+    // Kept once audited. Where the chat closed, or a grant of it was taken back, while the
+    // audit was written, nothing is kept, and the audit is told the grant it records ended.
+    if let Some(reserved) = reserved.filter(|reserved| !reserved.already())
+        && let Err(why) = chats.commit_grant(reserved)
     {
-        if let Err(unsaid) = audit(
-            session,
-            &grant::Audited {
-                granted: false,
-                what: what.word(),
-                target: &target,
-                level,
+        return Err(
+            match audit(
+                session,
+                &grant::Audited {
+                    granted: false,
+                    what: what.word(),
+                    target: &target,
+                    level,
+                },
+            ) {
+                Ok(()) => why,
+                Err(unsaid) => format!(
+                    "{why}. The audit records it allowed, and could not record that it was not kept \
+                 ({unsaid}): nothing was allowed."
+                ),
             },
-        ) {
-            tracing::warn!(
-                "purlis: an Allow for a chat that closed was not audited as ended ({unsaid})"
-            );
-        }
-        return Err(why);
+        );
     }
     let told = grant::told(what, level);
     // A Claude Code chat reaches a service on this Mac by name alone (qw384b): told which.
