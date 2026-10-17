@@ -132,7 +132,11 @@ let stopped = false;
  */
 async function openUntilFifty(): Promise<void> {
   for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
-    if (stopped) throw new Error(`stopped after ${opened - 1} opens: the test was over`);
+    if (stopped)
+      throw new Error(
+        `opening stopped after ${opened - 1} opens: the fifty-sessions test had already ` +
+          "run out of time or failed (#2367)",
+      );
     if (opened > FIFTY + 10) {
       throw new Error(
         `${opened - 1} tabs opened and only ${harnessesRunning()} sessions run: opening ` +
@@ -243,8 +247,7 @@ describe("the window", function () {
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
     await until(pane, "you said: with fifty sessions running");
-    // PROBE (#2367, removed before ready): force the timeout mid-opening.
-  }).timeout(20_000);
+  });
 
   /**
    * The strip collapsing, against a real layout (ADR 0039, as amended).
