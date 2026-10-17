@@ -79,6 +79,8 @@ pub enum Kind {
     /// purlis refused a chat a git command that would rewrite the project's root from another
     /// commit, so bringing the remote's commits in is the person's (qw348).
     RootUpdateRefused,
+    /// A chat asked the person to take its browser over, and the browser ended first (#2015).
+    BrowserAskEnded,
 }
 
 /// One update, as it is kept.

@@ -3,10 +3,10 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "app/src-tauri"]
+members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "app/src-tauri"]
 # Plain `cargo test` and `cargo clippy` cover the crates that need no built frontend.
 # The app crate compiles `app/dist` into itself, so it is checked through `npm run tauri`.
-default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host"]
+default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox"]
 
 [workspace.package]
 version = "0.4.2"
@@ -30,6 +30,8 @@ purlis-terminal = { path = "crates/terminal" }
 # window and by `purlis serve` without the rest of the core (#1997).
 purlis-host = { path = "crates/host" }
 purlis-browser-engine = { path = "crates/browser-engine" }
+# purlis's own sandbox on Linux: Landlock, a seccomp filter and its supervisor (#1040).
+purlis-linux-sandbox = { path = "crates/linux-sandbox" }
 # The session protocol, whose browser acts a chat's browser tools also speak (#2013).
 purlis-session-protocol = { path = "crates/session-protocol" }
 clap = { version = "4", features = ["derive"] }
@@ -41,14 +43,16 @@ tempfile = "3"
 portable-pty = "0.9"
 
 [workspace.lints.rust]
-# `deny`, not `forbid`, for exactly two audited blocks, each by the operator's ruling:
+# `deny`, not `forbid`, for exactly three audited blocks, each by the operator's ruling:
 # 1. `purlis_core::executor::inherit_nothing_else`, the `pre_exec` that closes every inherited
 #    descriptor in an extension's program (2026-09-23: "Allow one audited block");
 # 2. `purlis_same_user`'s `ancestry::pidinfo::read`, the `proc_pidinfo` call that reads a
 #    process's parent and start time in-process on macOS instead of running `/bin/ps`
 #    (D-1407-8, 2026-10-07: a second audited block, in purlis-same-user, for `proc_pidinfo`).
+# 3. `purlis_linux_sandbox`'s `linux::notify::raw`, the seccomp notification calls of the Linux
+#    sandbox's supervisor (2026-10-16, #1040: one more small, isolated, audited module).
 # `forbid` cannot be allowed anywhere, even there.
-# `crates/purlis-core/tests/two_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
+# `crates/purlis-core/tests/three_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
 # this lint appears anywhere else.
 unsafe_code = "deny"
 

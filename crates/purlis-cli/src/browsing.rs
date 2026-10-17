@@ -41,6 +41,41 @@ pub fn tool(
     ))
 }
 
+/// **`ask_operator` pointed at one of the chat's browsers** (#2015): handed to the app as one
+/// [`Ask::Browse`], which raises the Ask under Needs you and answers at once. What the person
+/// does in the browser is never told: the chat hears only that they handed it back.
+pub fn needs_you(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
+    let asked = browsertools::needs_you(args)?;
+    let call_id = browsertools::fresh_call_id();
+    the_person_was_asked(crate::brokered::replied(
+        move |chat| {
+            Ask::Browse(Box::new(BrowseAsk {
+                chat,
+                browser: asked.browser,
+                call_id,
+                asked: asked.asked,
+            }))
+        },
+        ASKED_WITHIN,
+    ))
+}
+
+/// What the app's answer to a browser question tells the model: its own words alone.
+fn the_person_was_asked(
+    replied: Result<std::io::Result<hookwire::framed::Reply>, NotTaken>,
+) -> Result<String, String> {
+    if let Ok(Ok(reply)) = &replied
+        && let Answer::Browsed { browsed, .. } = &reply.answer
+    {
+        return browsed.note.clone().ok_or_else(|| OLDER_APP.to_owned());
+    }
+    // Any other answer is the app's refusal in its own words, or an app too old to raise it.
+    Err(what_the_app_said(replied)
+        .0
+        .err()
+        .unwrap_or_else(|| OLDER_APP.to_owned()))
+}
+
 /// What the app's reply, or the failure to get one, tells the model.
 fn what_the_app_said(
     replied: Result<std::io::Result<hookwire::framed::Reply>, NotTaken>,

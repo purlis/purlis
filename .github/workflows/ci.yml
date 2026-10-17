@@ -65,6 +65,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # purlis's own Linux sandbox (#1040) needs Landlock ABI 6 (Linux 6.12), and its tests run
+      # in this job and never skip. The runner's kernel and its Landlock, as a notice on the run,
+      # so a red sandbox test is read against them without the job's log. A report: it never
+      # fails the job (the tests do, saying the version they need).
+      - name: The runner's kernel and its Landlock
+        continue-on-error: true
+        run: |
+          abi=$(python3 -c 'import ctypes; print(ctypes.CDLL(None).syscall(444, None, 0, 1))')
+          echo "::notice title=Landlock::kernel $(uname -r), Landlock ABI $abi"
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
       # purlis makes runs its chats sandboxed (ADR 0067 §1), so the start tests need them.
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,

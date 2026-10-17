@@ -146,8 +146,14 @@ fn a_codex_chat_whose_program_is_missing_is_refused_the_same_way() {
     // the launch's resolution is what answers for both kinds, in the same words.
     let plane = Plane::new();
     plane.running_kind("codex", NOWHERE);
+    // Without the sandbox, which wraps Codex on macOS and Linux (#1040) on a profile for
+    // sandboxed chats only (#2037): what is asked is how a missing program is said.
+    let start = Start {
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..plane.start()
+    };
 
-    let refusal = start::ready(&plane.start(), plane.root()).expect_err("nothing starts");
+    let refusal = start::ready(&start, plane.root()).expect_err("nothing starts");
 
     assert!(
         refusal.contains(&format!("could not find a program called {NOWHERE}")),

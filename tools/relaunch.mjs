@@ -48,7 +48,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { annotations, linesWritten, stepTimer } from "./relaunch-report.mjs";
+import { annotations, checkLine, linesWritten, stepTimer, stopLine } from "./relaunch-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const APP = join(process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"), "charter-app");
@@ -90,7 +90,7 @@ const failures = [];
 let launch = { name: "before the first launch", timer: undefined };
 const stepsOf = ({ timer }) => timer?.summary() ?? "";
 function check(what, ok, detail = "") {
-  console.log(`${ok ? "ok  " : "FAIL"} ${what}${detail ? ` — ${detail}` : ""}`);
+  console.log(checkLine(what, ok, detail));
   if (!ok) failures.push({ launch: launch.name, what, detail, steps: stepsOf(launch) });
 }
 
@@ -109,7 +109,7 @@ function finish(code) {
 // A run that throws (the app's WebDriver server refusing, a record that is not JSON) stops at a
 // launch's step too, and says which.
 process.on("uncaughtException", (error) => {
-  console.error(error);
+  console.error(stopLine(error));
   failures.push({
     launch: launch.name,
     what: "the run stopped",

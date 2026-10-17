@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Prove you are a person</title></head>
+<body>
+  <h1>Prove you are a person</h1>
+  <p>Type the letters in the picture to go on.</p>
+  <canvas id="picture" width="160" height="48" aria-label="Letters to type"></canvas>
+  <form>
+    <label for="letters">Letters</label>
+    <input id="letters" name="letters" autocomplete="off">
+    <button type="submit">Go on</button>
+  </form>
+  <script>
+    const picture = document.getElementById("picture").getContext("2d");
+    picture.font = "28px serif";
+    picture.fillText("Q7XK", 20, 34);
+  </script>
+</body></html>

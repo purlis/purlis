@@ -84,21 +84,22 @@ The check does not read these rows. The team building the image keeps them.
 | An architecture purlis builds | `amd64` or `arm64`. |
 | No secret | No credential, token or key is built into the image or set in its environment. What a runner chat needs comes from the person's desktop, one command at a time (spec #2041). |
 
-### What the Linux sandbox will need
+### What the Linux sandbox needs
 
-purlis's Linux sandbox (#1040) is not built yet. Once it is, a chat on a runner will run
-inside it, exactly as a chat on the person's machine does, and a runner image will need
-what the sandbox needs. As designed, the sandbox is Landlock plus a seccomp filter that
-purlis applies to itself. It needs no extra capability, no privileged container and no user
-namespace, so it will work the same in Docker and in a pod. It will need:
+A chat on a runner runs inside purlis's Linux sandbox, exactly as a chat on the person's
+machine does (#1040). The sandbox is Landlock, a seccomp filter the chat applies to itself,
+and a supervisor process that is the chat's parent. It needs no extra capability, no
+privileged container and no user namespace, so it works the same in Docker and in a pod. It
+needs:
 
-- a Linux kernel with Landlock enabled (`landlock` in the kernel's list of security
-  modules);
+- a Linux kernel with Landlock version 6 or later (Linux 6.12 or later), enabled
+  (`landlock` in the kernel's list of security modules);
 - a container runtime whose seccomp profile allows the `landlock_create_ruleset`,
-  `landlock_add_rule`, `landlock_restrict_self` and `seccomp` system calls. Docker's
-  default profile and Kubernetes' `RuntimeDefault` allow them.
+  `landlock_add_rule`, `landlock_restrict_self`, `seccomp` and `process_vm_readv` system
+  calls. Docker's default profile and Kubernetes' `RuntimeDefault` allow them.
 
-This section becomes part of the contract, with a row the check reads, when #1040 lands.
+On a kernel without it, a sandboxed chat is refused and the refusal says which version is
+needed.
 
 ## A team's own image
 

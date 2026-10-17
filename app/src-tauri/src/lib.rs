@@ -31,6 +31,7 @@ mod autosave;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browserneedsyou;
 mod browsers;
 mod changes;
 mod chatbrowsers;
@@ -2752,6 +2753,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::ChatTouching>()
         // What `chat-doing` carries (#1493).
         .typ::<doing::ChatDoing>()
+        // What `browser-ask-ended` carries (#2015).
+        .typ::<browserneedsyou::AskEnded>()
         // What `chat-sandbox-blocked` carries (#1338).
         .typ::<hooks::ChatBlocked>()
         // What `chat-sandbox-refused-more` carries (#1353).
@@ -3734,6 +3737,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             vaultroute::REFUSED,
+                            &told,
+                        );
+                    })
+                })
+                // An Ask about a chat's browser that ended with the browser: the Inbox keeps
+                // it as an Update (#2015).
+                .telling_browser_asks_ended({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: browserneedsyou::AskEnded| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            browserneedsyou::ENDED,
                             &told,
                         );
                     })

@@ -152,15 +152,11 @@ fn whether_a_harness_opens_sandboxed_comes_from_the_adapter_charter_ships() {
         );
     }
     assert!(has(card_of(&cards, "claude"), SANDBOX));
-    // A compiler is not enough: charter's wraps around Codex (#1123) and opencode are macOS's.
-    assert_eq!(
-        has(card_of(&cards, "codex"), SANDBOX),
-        cfg!(target_os = "macos")
-    );
-    assert_eq!(
-        has(card_of(&cards, "opencode"), SANDBOX),
-        cfg!(target_os = "macos")
-    );
+    // A compiler is not enough: charter's wraps around Codex (#1123) and opencode are macOS's
+    // and Linux's (#1040).
+    let wrapped_here = cfg!(any(target_os = "macos", target_os = "linux"));
+    assert_eq!(has(card_of(&cards, "codex"), SANDBOX), wrapped_here);
+    assert_eq!(has(card_of(&cards, "opencode"), SANDBOX), wrapped_here);
     assert_eq!(
         ability(card_of(&cards, "gemini"), SANDBOX).answer,
         Answer::No(NO_ADAPTER.to_owned())
@@ -233,7 +229,11 @@ fn the_lines_are_what_the_harness_lacks_in_the_cards_order() {
              has finished starting.",
             "opencode cannot be sandboxed by purlis yet, so a project that sandboxes its chats \
              opens none on it.",
-        ][..if cfg!(target_os = "macos") { 5 } else { 6 }]
+        ][..if cfg!(any(target_os = "macos", target_os = "linux")) {
+            5
+        } else {
+            6
+        }]
     );
 }
 

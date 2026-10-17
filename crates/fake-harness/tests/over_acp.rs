@@ -452,7 +452,16 @@ fn started_at_level_3(
         cwd: Some(project.to_path_buf()),
         ..purlis_core::start::Start::default()
     };
-    let ready = purlis_core::start::ready(&start, project).expect("the chat may start");
+    // On a machine where no sandbox can be applied: wherever purlis applies the floor (macOS,
+    // and Linux since #1040) a chat starts at it, and level 3 is refused under any sandbox.
+    let ready = purlis_core::start::ready_on(
+        &start,
+        project,
+        &purlis_core::harness_declaration::read(project),
+        &purlis_core::sandbox::Machine::this(),
+        &|_| false,
+    )
+    .expect("the chat may start");
     let launch = Launch::for_start(
         &ready,
         acp::Host {

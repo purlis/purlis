@@ -38,6 +38,9 @@ pub(crate) fn way_out(why: &str, opt_out: bool) -> Option<&'static str> {
         // The sandbox is not what is too long, so leaving it off is no way on.
         return Some(purlis_terminal::exec::TOO_LONG_WAY_OUT);
     }
+    if why == super::wrapper::NO_PURLIS {
+        return Some("Restart purlis, then start the chat again.");
+    }
     (why == TOO_LARGE).then_some(if opt_out {
         "Have the configs name fewer scripts, or start this chat without the sandbox from the \
          new-chat picker."
