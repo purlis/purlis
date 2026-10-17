@@ -31,8 +31,8 @@
 //! **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): it draws
 //! Purlis, and every complaint says what is wrong. A token or motion name purlis does not have is
 //! said and left out instead: a name reaches nothing, and a teammate's purlis may know a token
-//! this one does not yet. Options (#2325) and tint (#2329) are not read yet, so naming one
-//! refuses the theme rather than drawing something other than what it says.
+//! this one does not yet. Options (#2325) are not read yet, so naming them refuses the theme
+//! rather than drawing something other than what it says.
 //!
 //! - **`icons`** names the theme's icon set (#2337): a file inside the theme's folder, read under
 //!   the same containment and cap as `theme.json` ([`super::icons`]). A view the set does not
@@ -43,6 +43,8 @@
 //!   bound.
 //! - **Fonts** (#2326, [`super::fonts`]): the UI, mono and terminal fonts, from woff2 files in
 //!   the folder's `fonts/`, for every appearance.
+//! - **`tint`** says how a workspace's colour tints the theme (#2329): on or off, which tokens,
+//!   and its own hues ([`super::tint`]). What it does not say is its parent's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -52,6 +54,7 @@ use serde_json::{Map, Value};
 use super::fonts::Fonts;
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
+use super::tint;
 use super::vocabulary::{TOKENS, is_colour};
 use super::{
     Appearance, CLASSIC, Complaint, Resolved, ResolvedTheme, Theme, built_in_for, classic,
@@ -82,11 +85,12 @@ const KEYS: &[&str] = &[
     "icons",
     "compact",
     "fonts",
+    "tint",
 ];
 
 /// The keys the spec gives format 2 that this purlis does not read yet, each with the ticket
-/// that reads it: options #2325, tint #2329.
-const NOT_YET: &[(&str, &str)] = &[("options", "#2325"), ("tint", "#2329")];
+/// that reads it: options #2325.
+const NOT_YET: &[(&str, &str)] = &[("options", "#2325")];
 
 /// The longest path to an icon set purlis follows, in bytes.
 pub(super) const MOST_ICONS_PATH: usize = 256;
@@ -364,6 +368,15 @@ impl Library {
             .map(|one| one.icons.clone())
             .unwrap_or_default();
         let own_icons = icon_set(from.get("icons"), beside, &mut complaints, &mut notes);
+        // Every appearance of a theme carries its one recipe too.
+        let parents_tint = appearances
+            .first()
+            .map(|one| one.tint.clone())
+            .unwrap_or_default();
+        let tint = match from.get("tint") {
+            None => parents_tint,
+            Some(raw) => tint::read(raw, &parents_tint, &palette, &mut complaints, &mut notes),
+        };
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
@@ -416,6 +429,7 @@ impl Library {
             one.compact = geometry::compact_of(&one.geometry, &tuned);
             one.tuned.clone_from(&tuned);
             one.fonts.clone_from(&fonts);
+            one.tint.clone_from(&tint);
         }
         Ok((Theme { name, appearances }, notes))
     }
@@ -819,6 +833,7 @@ fn appearance(
         geometry: sizes,
         tuned: base.tuned.clone(),
         fonts: base.fonts.clone(),
+        tint: base.tint.clone(),
     })
 }
 

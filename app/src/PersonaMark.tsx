@@ -54,8 +54,7 @@ import {
   Zap,
 } from "lucide-react";
 import { commands, type PersonaImage, type PersonaMark as Mark, type PlaneId } from "./bindings";
-import { inForce, onDrawn, tintVariables, type Token } from "./theme/theme";
-import { PALETTE } from "./theme/tint";
+import { inForce, onDrawn, tintVariables, WORKSPACE_COLOURS, type Token } from "./theme/theme";
 
 /**
  * **A persona's mark** (#1449): the one thing that draws a persona, wherever one appears — a
@@ -194,7 +193,7 @@ export function initialsOf(persona: string): string {
 }
 
 /** The palette's names, in the order the picker offers them. */
-export const PERSONA_COLOURS: readonly string[] = Object.keys(PALETTE);
+export const PERSONA_COLOURS: readonly string[] = WORKSPACE_COLOURS;
 
 /**
  * The colour a persona that declares none is drawn on: one of the palette's, picked by its

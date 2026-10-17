@@ -17,7 +17,8 @@ use serde_json::{Map, Value, json};
 use super::fonts::{MOST_FACES, SLOTS};
 use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::geometry::{STEPS, Step, Unit};
-use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
+use super::tint::PALETTE;
+use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TINTABLE, TOKENS};
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
 pub const SCHEMA_URL: &str =
@@ -109,11 +110,12 @@ pub fn schema() -> Value {
             }),
         );
     }
+    let colours: Vec<&str> = PALETTE.iter().map(|(name, _)| *name).collect();
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": SCHEMA_URL,
         "title": format!("A purlis theme folder's {THEME_JSON} (format 2)"),
-        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, and its fonts. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, and how a workspace's colour tints it. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
         "type": "object",
         "additionalProperties": false,
         "required": ["name"],
@@ -160,6 +162,29 @@ pub fn schema() -> Value {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": fonts
+            },
+            "tint": {
+                "description": "How a workspace's colour tints this theme. A key not given is the parent's, or Purlis Classic's.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "on": {
+                        "description": "false: a workspace's colour tints nothing in this theme.",
+                        "type": "boolean"
+                    },
+                    "tokens": {
+                        "description": "The tokens a workspace's colour turns. The strip shades (layer.*) are tinted on a workspace's own tab and chat strip; the rest on the whole window too.",
+                        "type": "array",
+                        "items": { "enum": TINTABLE },
+                        "maxItems": TOKENS.len()
+                    },
+                    "hues": {
+                        "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
+                        "type": "object",
+                        "propertyNames": { "enum": colours },
+                        "additionalProperties": { "$ref": "#/$defs/colour" }
+                    }
+                }
             }
         },
         "$defs": {

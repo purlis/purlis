@@ -10461,6 +10461,16 @@ export type WhatChanged = {
 	diff: FileDiff,
 };
 
+/**
+ *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab
+ *  (`purlis_core::theme::apart_chroma`), giving less colour at that hue when it must.
+ */
+export type WindowApart = {
+	token: string,
+	from: string,
+	distance: number | null,
+};
+
 /**  One face of a font. */
 export type WindowFace = {
 	/**  The sha-256 of its bytes, which `theme_font` answers. */
@@ -10495,6 +10505,12 @@ export type WindowFonts = {
 export type WindowGeometry = {
 	comfortable: { [key in string]: string },
 	compact: { [key in string]: string },
+};
+
+/**  One workspace colour's hue in a theme, in degrees. */
+export type WindowHue = {
+	name: string,
+	hue: number | null,
 };
 
 /**  One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes. */
@@ -10541,6 +10557,23 @@ export type WindowTheme = {
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */
 	fonts: WindowFonts,
+	/**  How a workspace's colour tints it (#2329, #2393): the window keeps only the arithmetic. */
+	tint: WindowTint,
+};
+
+/**
+ *  A theme's tint recipe as the window draws it (`purlis_core::theme::Tint`): both lists are
+ *  empty for a theme a workspace's colour does not tint.
+ */
+export type WindowTint = {
+	/**  The tokens the colour of the workspace in front turns on the whole window. */
+	window: string[],
+	/**  The tokens a workspace's colour turns on its own tab and its chat strip. */
+	tabs: string[],
+	/**  Each workspace colour's name and the OKLCH hue it gives, in the palette's order. */
+	hues: WindowHue[],
+	/**  The floor a tint's hue is chosen under. */
+	apart: WindowApart,
 };
 
 /**  A person's opt-out, as the picker sends it. */
