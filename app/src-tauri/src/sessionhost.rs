@@ -177,7 +177,7 @@ impl Kept {
     /// The event log of this machine, as the window would open it
     /// (`purlis_core::eventlog::Recorder::open`).
     pub fn on_this_machine() -> Kept {
-        Kept(purlis_core::hookchannel::EventLog::on_this_machine())
+        Kept::opening(purlis_core::eventlog::Recorder::open)
     }
 
     /// The event log `open` opens, the first time it is needed.
