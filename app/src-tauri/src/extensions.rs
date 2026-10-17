@@ -233,7 +233,7 @@ fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
 fn theme_in_force_of(
     pick: Option<&str>,
     on: Option<&[String]>,
-    theirs: Option<&purlis_core::theme::ResolvedTheme>,
+    theirs: Option<&purlis_core::theme::Theme>,
     light: bool,
     offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
 ) -> ThemeInForce {

@@ -7,12 +7,18 @@
 //! [`crate::extension::project::theme::resolve`]; this answers what that pick, and everything
 //! else this machine has, draw:
 //!
-//! 1. **What the project picked**: a built-in, the built-in matching the operating system's
-//!    appearance, or the extension theme it names, which is drawn only while the project has that
+//! 1. **What the project picked**: an appearance of Purlis Classic by the id a pick names it by;
+//!    `system`, the person's own theme (else Purlis Classic) in the appearance the operating
+//!    system has; or the extension theme it names, which is drawn only while the project has that
 //!    extension on and this machine approved it. A pick that cannot be drawn draws the default.
 //! 2. With no pick, **the person's own theme file**, the one theme they wrote for this machine.
 //!    A project's pick is more specific than a machine's file, which is why it comes first.
 //! 3. With neither, the first theme from an extension the project has on, or the default.
+//!
+//! **Following the system works with any theme that has a dark and a light appearance**: the
+//! window is told it follows, and asks again when the system turns. A theme with only one
+//! appearance draws that one, and [`Drawn::note`] says that following the system stays there.
+//! With no `system` pick a theme draws its first appearance, as Purlis Classic draws its dark.
 //!
 //! An extension theme whose text is not JSON at all is dropped: with no pick the window keeps
 //! what it draws, and a pick of it draws the default (keeping it would leave the last project's
@@ -20,7 +26,9 @@
 
 use std::sync::Arc;
 
-use super::{Appearance, Complaint, Resolved, ResolvedTheme, built_in, default_theme};
+use super::{
+    Appearance, Complaint, Resolved, ResolvedTheme, Theme, built_in, classic, default_theme,
+};
 use crate::extension::project::theme::Pick;
 
 /// One theme an approved extension contributes, resolved from the text its fingerprint was taken
@@ -68,7 +76,7 @@ pub struct Inputs<'a> {
     /// What the project or workspace in front picked, in force; `None` when nothing picked.
     pub pick: Option<&'a Pick>,
     /// The person's own theme, when there is one in force.
-    pub theirs: Option<&'a ResolvedTheme>,
+    pub theirs: Option<&'a Theme>,
     /// Whose extension themes may be drawn.
     pub on: On<'a>,
     /// The operating system's appearance right now.
@@ -85,6 +93,9 @@ pub struct Drawn {
     /// Whether it follows the operating system's appearance: the window asks again when that
     /// changes.
     pub follows_system: bool,
+    /// What to tell the person about what they chose: that following the system stays in the
+    /// one appearance a theme has.
+    pub note: Option<String>,
 }
 
 impl Drawn {
@@ -93,6 +104,33 @@ impl Drawn {
             theme: Some(theme.clone()),
             complaints: Vec::new(),
             follows_system: false,
+            note: None,
+        }
+    }
+
+    /// `theme` following the operating system, which is `system` now.
+    fn following(theme: &Theme, system: Appearance) -> Self {
+        let (Some(dark), Some(light)) = (theme.of(Appearance::Dark), theme.of(Appearance::Light))
+        else {
+            let only = theme.first();
+            let word = match only.appearance {
+                Appearance::Dark => "dark",
+                Appearance::Light => "light",
+            };
+            return Self {
+                note: Some(format!(
+                    "{} has only a {word} appearance, so following the system stays {word}",
+                    theme.name
+                )),
+                ..Self::of(only)
+            };
+        };
+        Self {
+            follows_system: true,
+            ..Self::of(match system {
+                Appearance::Dark => dark,
+                Appearance::Light => light,
+            })
         }
     }
 }
@@ -102,12 +140,10 @@ impl Drawn {
 /// answer needs it, because a survey reads and fingerprints every extension's files.
 pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) -> Drawn {
     match inputs.pick {
+        // `system` is the spec's old id for "the picked theme, following the OS": the person's
+        // own theme, the machine's level, else Purlis Classic.
         Some(Pick::System) => {
-            let theme = super::built_in_for(inputs.system);
-            return Drawn {
-                follows_system: true,
-                ..Drawn::of(theme)
-            };
+            return Drawn::following(inputs.theirs.unwrap_or_else(|| classic()), inputs.system);
         }
         Some(Pick::BuiltIn(id)) => {
             return Drawn::of(built_in(id).unwrap_or_else(default_theme));
@@ -115,7 +151,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         Some(Pick::Extension { .. }) => {}
         None => {
             if let Some(theirs) = inputs.theirs {
-                return Drawn::of(theirs);
+                return Drawn::of(theirs.first());
             }
         }
     }
@@ -132,15 +168,13 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
     match chosen.map(|one| one.theme.as_ref()) {
         None => Drawn::of(default_theme()),
         Some(Some(resolved)) => Drawn {
-            theme: Some(resolved.theme.clone()),
             complaints: resolved.complaints.clone(),
-            follows_system: false,
+            ..Drawn::of(resolved.theme.first())
         },
         Some(None) if inputs.pick.is_some() => Drawn::of(default_theme()),
         Some(None) => Drawn {
             theme: None,
-            complaints: Vec::new(),
-            follows_system: false,
+            ..Drawn::of(default_theme())
         },
     }
 }

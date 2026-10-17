@@ -25,16 +25,25 @@ import {
  * engine's (`purlis_core::theme`, whose tests hold every rule a theme file is held to); what is
  * left here is how a resolved theme reaches the document, the terminal and the find bar.
  *
- * The built-ins' own files are read from the core as the independent source of what each token
- * is, so a value checked here was not computed by the code under test.
+ * Purlis Classic's own folder is read from the core as the independent source of what each
+ * token is, so a value checked here was not computed by the code under test.
  */
-const CORE = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "built-in");
-const file = (name: string) =>
-  JSON.parse(readFileSync(join(CORE, `${name}.json`), "utf8")) as {
-    tokens: Record<string, string>;
-  };
-const dark = file("purlis-dark");
-const light = file("purlis-light");
+const CLASSIC = join(
+  process.cwd(),
+  "..",
+  "crates",
+  "purlis-core",
+  "src",
+  "theme",
+  "built-in",
+  "purlis-classic",
+  "theme.json",
+);
+const [dark, light] = (
+  JSON.parse(readFileSync(CLASSIC, "utf8")) as {
+    appearances: { tokens: Record<string, string> }[];
+  }
+).appearances;
 
 describe("the themes the core hands the window", () => {
   it("are the core's built-ins, complete, the window coming up in the dark one", () => {

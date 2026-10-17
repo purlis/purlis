@@ -67,24 +67,18 @@ fn every_built_in_gives_every_token_and_every_motion_value() {
 }
 
 #[test]
-fn every_built_in_loads_as_itself_without_a_word() {
-    // A built-in is a theme file like any other: loading it is the identity.
-    for text in BUILT_IN_FILES {
-        let resolved = load_text(text).expect("JSON");
-        assert_eq!(said(&resolved), Vec::<String>::new());
-        assert_eq!(&resolved.theme, built_in(&resolved.theme.name).unwrap());
-    }
-}
-
-#[test]
-fn every_built_in_file_holds_a_name_an_appearance_colours_and_motion_and_no_geometry() {
-    for text in BUILT_IN_FILES {
-        let file: Value = serde_json::from_str(text).unwrap();
-        let mut keys: Vec<&String> = file.as_object().unwrap().keys().collect();
+fn every_built_in_appearance_holds_an_id_a_tag_colours_and_motion_and_no_geometry() {
+    let file: Value = serde_json::from_str(CLASSIC_FILE).unwrap();
+    let mut keys: Vec<&String> = file.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["$schema", "appearances", "name"]);
+    for one in file["appearances"].as_array().unwrap() {
+        let mut keys: Vec<&String> = one.as_object().unwrap().keys().collect();
         keys.sort();
-        assert_eq!(keys, ["appearance", "motion", "name", "tokens"]);
-        let tokens = file["tokens"].as_object().unwrap();
+        assert_eq!(keys, ["appearance", "id", "motion", "tokens"]);
+        let tokens = one["tokens"].as_object().unwrap();
         assert!(tokens.keys().all(|key| !vocabulary::names_geometry(key)));
+        assert_eq!(tokens.len(), TOKENS.len());
     }
 }
 
@@ -158,7 +152,7 @@ fn a_value_that_is_not_a_string_is_never_a_colour() {
     for value in [json!(null), json!(16_711_680), json!({}), json!([])] {
         let resolved = load(&file(json!({ "tokens": { "surface.base": value } })));
         assert_eq!(
-            resolved.theme.value("surface.base"),
+            resolved.theme.first().value("surface.base"),
             dark().value("surface.base")
         );
         assert_eq!(resolved.complaints.len(), 1);
@@ -178,7 +172,8 @@ fn a_document_that_is_not_an_object_is_the_default_with_one_complaint() {
         json!(["purlis-dark"]),
     ] {
         let resolved = load(&raw);
-        assert_eq!(&resolved.theme, default_theme());
+        assert_eq!(&resolved.theme, classic());
+        assert!(resolved.refused);
         assert_eq!(said(&resolved), ["a theme is a JSON object"]);
     }
 }
@@ -188,9 +183,9 @@ fn a_theme_falls_back_token_by_token() {
     let resolved = load(&file(json!({
         "tokens": { "surface.base": "#123456", "text.primary": "rgb(1 2 3)" }
     })));
-    assert_eq!(resolved.theme.value("surface.base"), "#123456");
+    assert_eq!(resolved.theme.first().value("surface.base"), "#123456");
     assert_eq!(
-        resolved.theme.value("text.primary"),
+        resolved.theme.first().value("text.primary"),
         dark().value("text.primary")
     );
     assert_eq!(resolved.complaints.len(), 1);
@@ -212,7 +207,7 @@ fn a_token_the_file_did_not_mention_is_the_built_in_s_silently() {
     let resolved = load(&file(json!({ "tokens": { "surface.base": "#123456" } })));
     assert!(resolved.complaints.is_empty());
     assert_eq!(
-        resolved.theme.value("state.failed"),
+        resolved.theme.first().value("state.failed"),
         dark().value("state.failed")
     );
 }
@@ -251,7 +246,7 @@ fn geometry_is_refused_by_key_and_never_read() {
         said.iter()
             .any(|one| one.starts_with("geometry is geometry"))
     );
-    assert!(!resolved.theme.values.contains_key("space.4"));
+    assert!(!resolved.theme.first().values.contains_key("space.4"));
 }
 
 #[test]
@@ -269,9 +264,19 @@ fn a_theme_that_tries_every_spelling_of_geometry_keeps_its_colours_and_is_told_e
         "geometry": { "space.4": "100px" }, "radius": { "md": "20px" },
         "sizes": { "control": "60px" }, "motion": { "duration.quick": 100 },
     }));
-    assert_eq!(resolved.theme.value("accent.base"), "#123456");
-    assert_eq!(resolved.theme.motion.durations["duration.quick"], 100);
-    assert!(resolved.theme.values.keys().all(|key| TOKENS.contains(key)));
+    assert_eq!(resolved.theme.first().value("accent.base"), "#123456");
+    assert_eq!(
+        resolved.theme.first().motion.durations["duration.quick"],
+        100
+    );
+    assert!(
+        resolved
+            .theme
+            .first()
+            .values
+            .keys()
+            .all(|key| TOKENS.contains(key))
+    );
     let said = said(&resolved);
     for key in keys
         .iter()
@@ -295,17 +300,17 @@ fn a_theme_that_tries_every_spelling_of_geometry_keeps_its_colours_and_is_told_e
 fn a_light_theme_is_filled_from_the_light_built_in() {
     let resolved = load(&file(json!({ "appearance": "light" })));
     assert_eq!(
-        resolved.theme.value("text.primary"),
+        resolved.theme.first().value("text.primary"),
         light().value("text.primary")
     );
-    assert_eq!(resolved.theme.appearance, Appearance::Light);
-    assert_eq!(resolved.theme.motion, light().motion);
+    assert_eq!(resolved.theme.first().appearance, Appearance::Light);
+    assert_eq!(resolved.theme.first().motion, light().motion);
 }
 
 #[test]
 fn an_unknown_appearance_is_read_as_dark_and_said() {
     let resolved = load(&file(json!({ "appearance": "solarized" })));
-    assert_eq!(resolved.theme.appearance, Appearance::Dark);
+    assert_eq!(resolved.theme.first().appearance, Appearance::Dark);
     assert!(
         said(&resolved)
             .contains(&"appearance is \"dark\" or \"light\"; read this one as dark".to_owned())
@@ -318,20 +323,20 @@ fn a_nameless_theme_is_called_after_its_built_in() {
         let mut raw = file(json!({}));
         raw["name"] = name;
         let resolved = load(&raw);
-        assert_eq!(resolved.theme.name, "purlis-dark");
+        assert_eq!(resolved.theme.first().name, "purlis-dark");
         assert!(
             said(&resolved).contains(&"a theme has a name; called this one purlis-dark".to_owned())
         );
     }
     let resolved = load(&file(json!({ "name": "  Mine  " })));
-    assert_eq!(resolved.theme.name, "Mine");
+    assert_eq!(resolved.theme.first().name, "Mine");
 }
 
 #[test]
 fn tokens_that_are_not_an_object_still_give_a_whole_theme() {
     let resolved = load(&file(json!({ "tokens": "purlis-dark" })));
     assert!(said(&resolved).contains(&"tokens is an object of token names to colours".to_owned()));
-    assert_eq!(resolved.theme.values, dark().values);
+    assert_eq!(resolved.theme.first().values, dark().values);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -341,7 +346,7 @@ fn tokens_that_are_not_an_object_still_give_a_whole_theme() {
 #[test]
 fn a_theme_that_says_nothing_about_motion_moves_as_its_built_in_silently() {
     let resolved = load(&json!({ "name": "quiet", "appearance": "light", "tokens": {} }));
-    assert_eq!(resolved.theme.motion, light().motion);
+    assert_eq!(resolved.theme.first().motion, light().motion);
     assert!(resolved.complaints.is_empty());
 }
 
@@ -352,7 +357,7 @@ fn motion_is_taken_where_given_and_filled_token_by_token() {
         "motion": { "duration.enter": 90, "easing.enter": [0, 0, 0.1, 1] },
     }));
     assert!(resolved.complaints.is_empty());
-    let motion = &resolved.theme.motion;
+    let motion = &resolved.theme.first().motion;
     assert_eq!(motion.durations["duration.enter"], 90);
     assert_eq!(motion.easings["easing.enter"], [0.0, 0.0, 0.1, 1.0]);
     assert_eq!(
@@ -378,7 +383,7 @@ fn a_duration_is_a_whole_number_of_milliseconds_up_to_the_ceiling() {
         let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "duration.quick": bad } }));
         assert_eq!(resolved.complaints.len(), 1, "{bad}");
-        assert_eq!(resolved.theme.motion, dark().motion);
+        assert_eq!(resolved.theme.first().motion, dark().motion);
     }
 }
 
@@ -413,7 +418,7 @@ fn a_bad_motion_value_falls_back_and_says_what_was_used() {
         "name": "typo", "appearance": "dark", "tokens": {},
         "motion": { "duration.enter": "160ms", "easing.enter": [2, 0, 0, 1] },
     }));
-    assert_eq!(resolved.theme.motion, dark().motion);
+    assert_eq!(resolved.theme.first().motion, dark().motion);
     assert_eq!(
         said(&resolved),
         [
@@ -428,7 +433,7 @@ fn a_bad_motion_value_falls_back_and_says_what_was_used() {
 #[test]
 fn motion_that_is_not_an_object_or_names_no_token_is_said() {
     let resolved = load(&json!({ "name": "x", "appearance": "dark", "motion": [1, 2] }));
-    assert_eq!(resolved.theme.motion, dark().motion);
+    assert_eq!(resolved.theme.first().motion, dark().motion);
     assert!(
         said(&resolved).contains(&"motion is an object of motion token names to values".to_owned())
     );
@@ -446,7 +451,15 @@ fn a_theme_may_turn_motion_off() {
     let resolved =
         load(&json!({ "name": "still", "appearance": "dark", "tokens": {}, "motion": off }));
     assert!(resolved.complaints.is_empty());
-    assert!(resolved.theme.motion.durations.values().all(|ms| *ms == 0));
+    assert!(
+        resolved
+            .theme
+            .first()
+            .motion
+            .durations
+            .values()
+            .all(|ms| *ms == 0)
+    );
 }
 
 #[test]
@@ -460,16 +473,14 @@ fn what_the_window_is_handed_is_written_from_parsed_values_never_from_the_file_s
         },
     }));
     let handed = serde_json::to_string(&resolved.theme).unwrap();
+    assert!(!resolved.refused);
     assert!(!handed.contains("display"), "{handed}");
 }
 
 #[test]
 fn text_that_is_not_json_is_no_theme() {
     assert!(load_text("{ not json").is_none());
-    assert_eq!(
-        load_text("[]").map(|it| it.theme),
-        Some(default_theme().clone())
-    );
+    assert_eq!(load_text("[]").map(|it| it.theme), Some(classic().clone()));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -495,6 +506,7 @@ fn the_person_s_theme_is_read_from_their_config_home_and_resolved() {
     assert!(mine.found && mine.trouble.is_none());
     let theme = mine.theme.expect("in force");
     assert_eq!(theme.name, "Mine");
+    let theme = theme.first();
     assert_eq!(theme.value("accent.base"), light().value("accent.base"));
     assert_eq!(mine.complaints.len(), 1);
 
@@ -520,7 +532,7 @@ fn offered() -> Arc<[Offered]> {
     ])
 }
 
-fn drawn(pick: Option<&str>, theirs: Option<&ResolvedTheme>, on: On<'_>) -> Drawn {
+fn drawn(pick: Option<&str>, theirs: Option<&Theme>, on: On<'_>) -> Drawn {
     let pick = pick.map(|value| Pick::parse(value).expect("a pick"));
     resolve(
         &Inputs {
@@ -545,7 +557,7 @@ fn a_built_in_pick_draws_that_built_in_by_any_id_it_has_had() {
         ("purlis-dark", "purlis-dark"),
     ] {
         assert_eq!(
-            name_of(&drawn(Some(pick), Some(light()), On::Every)),
+            name_of(&drawn(Some(pick), Some(classic()), On::Every)),
             Some(name)
         );
     }
@@ -574,7 +586,7 @@ fn following_the_system_draws_the_built_in_of_its_appearance_and_says_it_follows
 
 #[test]
 fn with_no_pick_the_person_s_own_theme_comes_before_any_extension_s() {
-    let mine = load(&file(json!({ "name": "Mine" }))).theme;
+    let mine = load(&file(json!({ "name": "Mine" }))).theme; // a whole theme
     let it = resolve(
         &Inputs {
             pick: None,
@@ -602,7 +614,7 @@ fn with_neither_the_first_theme_of_an_extension_that_is_on_is_drawn() {
 #[test]
 fn an_extension_pick_draws_its_theme_only_while_the_extension_is_on() {
     let acme = ["acme".to_owned()];
-    let it = drawn(Some("acme/Night"), Some(light()), On::Only(&acme));
+    let it = drawn(Some("acme/Night"), Some(classic()), On::Only(&acme));
     assert_eq!(name_of(&it), Some("Night"));
     assert_eq!(it.theme.unwrap().value("text.primary"), "#eeeeee");
     assert_eq!(
@@ -675,7 +687,9 @@ fn the_check_measures_the_way_wcag_does_and_holds_words_to_aa() {
     let probe = load(&file(json!({ "tokens": {
         "surface.base": "#ffffff", "text.muted": "#777777",
     } })))
-    .theme;
+    .theme
+    .first()
+    .clone();
     let report = check(&probe);
     let muted = report
         .findings
@@ -705,7 +719,9 @@ fn the_check_measures_the_way_wcag_does_and_holds_words_to_aa() {
     let stark = load(&file(json!({ "tokens": {
         "surface.base": "#ffffff", "text.primary": "#000000",
     } })))
-    .theme;
+    .theme
+    .first()
+    .clone();
     assert!(!check(&stark).findings.iter().any(|one| matches!(
         one,
         Finding::Contrast { tint: None, pair, .. }
@@ -745,7 +761,10 @@ fn the_person_s_theme_is_read_once_per_process_until_it_is_forgotten() {
 
 #[test]
 fn the_check_names_a_pair_that_cannot_be_read_with_its_ratio() {
-    let grey = load(&file(json!({ "tokens": { "text.muted": "#2a2a2a" } }))).theme;
+    let grey = load(&file(json!({ "tokens": { "text.muted": "#2a2a2a" } })))
+        .theme
+        .first()
+        .clone();
     let report = check(&grey);
     let untinted: Vec<&Finding> = report
         .findings
@@ -765,7 +784,9 @@ fn the_check_holds_the_ansi_colours_off_the_terminal_and_the_selected_row_apart(
         "terminal.ansi.blue": dark().value("terminal.background"),
         "list.selected": dark().value("surface.hover").to_uppercase(),
     } })))
-    .theme;
+    .theme
+    .first()
+    .clone();
     let report = check(&flat);
     assert!(report.findings.contains(&Finding::Ansi {
         tint: None,
@@ -786,7 +807,9 @@ fn the_check_measures_a_wash_over_what_it_is_laid_on() {
     let opaque = load(&file(json!({ "tokens": {
         "text.primary": "#ffffff", "danger.wash": "#ffffffff"
     } })))
-    .theme;
+    .theme
+    .first()
+    .clone();
     let washed = PAIRS.iter().find(|pair| pair.under.is_some()).unwrap();
     assert!(check(&opaque).findings.iter().any(|one| matches!(
         one,
@@ -795,7 +818,9 @@ fn the_check_measures_a_wash_over_what_it_is_laid_on() {
     let clear = load(&file(json!({ "tokens": {
         "text.primary": "#ffffff", "danger.wash": "#ffffff00"
     } })))
-    .theme;
+    .theme
+    .first()
+    .clone();
     assert!(!check(&clear).findings.iter().any(|one| matches!(
         one,
         Finding::Contrast { pair, .. } if pair == washed
