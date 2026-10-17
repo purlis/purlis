@@ -1587,7 +1587,7 @@ fn a_browser_sites_ask_answers_only_the_sites_its_line_names_whole() {
         "{}",
         sites.says
     );
-    assert_eq!(ids(sites), ["chat", "you", KEEP]);
+    assert_eq!(ids(sites), ["chat", "you", "project", KEEP]);
 }
 
 /// #2364: a site too long for the line to name whole is never offered an Allow.
