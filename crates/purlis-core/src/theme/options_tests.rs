@@ -456,3 +456,46 @@ fn an_option_value_s_geometry_outside_its_bound_refuses_the_theme_and_names_the_
         "{said:?}"
     );
 }
+
+#[test]
+fn compact_is_worked_out_from_the_geometry_an_option_draws() {
+    // space.4 is 8 comfortable and 6 compact in core: an option that draws it at 5 draws compact
+    // at 5 too, never core's 6 over a comfortable 5.
+    let theme = loaded(&with_options(json!([{
+        "id": "tight", "kind": "toggle", "label": "Tight", "default": false,
+        "on": { "tokens": { "space.4": 5 } }
+    }])));
+    assert_eq!(night(&theme).geometry["space.4"], 8.0);
+    assert_eq!(night(&theme).compact["space.4"], 6.0);
+    let (tight, _) = theme.with(&values(&[("tight", "on")]));
+    assert_eq!(night(&tight).geometry["space.4"], 5.0);
+    assert_eq!(night(&tight).compact["space.4"], 5.0);
+}
+
+// ---------------------------------------------------------------------------------------
+// The consent floors hold on every combination drawn
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn an_option_value_that_breaks_a_consent_floor_is_drawn_with_purlis_s_values_for_it() {
+    let theme = loaded(&with_options(json!([{
+        "id": "ember", "kind": "toggle", "label": "Ember", "default": false,
+        "on": { "tokens": { "danger.text": "#301010", "danger.surface": "#301010" } }
+    }])));
+    // Off, nothing is held.
+    assert_eq!(draw(night(&theme)).held, None);
+    // On, in every appearance, the window is drawn with purlis's own values for those tokens.
+    let (on, _) = theme.with(&values(&[("ember", "on")]));
+    for one in &on.appearances {
+        let drawn = draw(one);
+        let held = drawn.held.expect("the floor was held");
+        assert_eq!(held.floors, [Floor::Danger]);
+        let theme = drawn.theme.expect("drawn");
+        assert_eq!(
+            theme.value("danger.text"),
+            built_in_for(one.appearance).value("danger.text")
+        );
+        // What it was drawn with is still said.
+        assert_eq!(theme.options[0].value, "on");
+    }
+}
