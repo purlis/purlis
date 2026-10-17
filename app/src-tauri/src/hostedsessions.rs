@@ -1130,6 +1130,13 @@ impl HostedSessions {
 
     /// [`Self::new`], for a host that runs the project's chats on a runner (#2446): each harness
     /// chat is started there by its names, and each confinement is held as the runner's.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the window links to its first runner with a pool (#2044) or a move (#2048)"
+        )
+    )]
     pub fn on_a_runner(connection: Arc<Connection>, root: &Path) -> Self {
         HostedSessions {
             on_a_runner: true,
