@@ -99,6 +99,12 @@ describe("the question for several tasks (#1709)", () => {
       "Other scopes…",
       "Keep blocked",
     ]);
+    // Allow is drawn in the primary style, the rest in the plain one (ADR 0097 §6).
+    expect(
+      within(question)
+        .getAllByRole("button")
+        .map((one) => one.classList.contains("ui-button-primary")),
+    ).toEqual([true, false, false]);
     await userEvent.click(within(question).getByRole("button", { name: "Other scopes…" }));
     // Under the menu: only these tasks, then everyone in the project.
     expect(

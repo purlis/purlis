@@ -236,6 +236,17 @@ describe("the dispatch grant Notice", () => {
     expect(screen.getByRole("button", { name: "Keep blocked" })).toBeInTheDocument();
   });
 
+  it("draws Allow in the primary style and Keep blocked in the plain one (ADR 0097 §6)", async () => {
+    core([{ ...WAITING, asking: null, levels: ["chat"] }]);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
+
+    const allow = await screen.findByRole("button", { name: "Allow for this chat" });
+    const keep = screen.getByRole("button", { name: "Keep blocked" });
+    expect(allow).toHaveClass("ui-button", "ui-button-primary");
+    expect(keep).toHaveClass("ui-button");
+    expect(keep).not.toHaveClass("ui-button-primary");
+  });
+
   it("keeps it blocked on Keep blocked, grants nothing and goes", async () => {
     const asked = core([WAITING]);
     render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);

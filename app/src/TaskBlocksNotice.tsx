@@ -208,7 +208,8 @@ export function TaskBlocksNotice({
             <button
               key={level}
               type="button"
-              className="ui-button ui-button-sm"
+              // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
+              className="ui-button ui-button-sm ui-button-primary"
               tabIndex={0}
               disabled={busy}
               onClick={() => allow(level)}
@@ -224,7 +225,9 @@ export function TaskBlocksNotice({
   if (keepSaid === undefined) return null;
   const keep: NoticeAction = { label: keepSaid, onPress: keepBlocked };
   const allows: NoticeAction[] = [
-    ...(main !== undefined ? [{ label: scope[main], onPress: () => allow(main) }] : []),
+    ...(main !== undefined
+      ? [{ label: scope[main], onPress: () => allow(main), allows: true }]
+      : []),
     ...(others.length > 0
       ? [
           {

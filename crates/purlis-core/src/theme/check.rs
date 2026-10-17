@@ -137,6 +137,8 @@ pub const PAIRS: &[Pair] = &[
     p("needs-you.base", "surface.base", 3.0),
     // The needs-you mark on the strip it sits on.
     p("needs-you.base", "surface.deep", 3.0),
+    // The title bar's needs-you hand on its button under the pointer.
+    p("needs-you.base", "control.hover", 3.0),
     p("text.muted", "surface.hover", 3.0),
     p("state.running", "surface.hover", 3.0),
     p("state.waiting", "surface.hover", 3.0),
@@ -250,7 +252,8 @@ pub const PAIRS: &[Pair] = &[
     p("border.subtle", "surface.base", 1.2),
     p("border.strong", "surface.base", 1.5),
     // DS-6 (#629): the pairs the stylesheets draw in one rule.
-    // - A persona's mark is its initial, a word in the accent on the accent's surface.
+    // - A persona's mark is its initial, a word in the accent on the accent's surface. An
+    //   Allow's edge is the accent on the same ground (ADR 0097 §6).
     p("accent.base", "accent.surface", TEXT),
     // - A checklist's tick is a mark in the accent on a sunken box.
     p("accent.base", "surface.sunken", 3.0),

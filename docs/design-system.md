@@ -116,6 +116,12 @@ on the window. `danger.wash` follows
 it, since a wash is its base at a low alpha. The badge kept `#b85050`; purlis-light's
 `#a83232` already cleared 4.5 on each of them and did not move.
 
+The mark moved once more (#2504): the title bar's needs-you hand is drawn on its button's
+`control.hover` under the pointer, where `#b85050` measured **2.79:1**, under the 3:1 a mark is
+held to. Purlis Classic dark's `needs-you.base` is now `#bd5654`, the same hue a step lighter:
+**3.00:1** on `control.hover`, and the count's white on it **4.54:1**. Classic light's
+`#a83232` measures 4.70:1 on its `control.hover` and did not move.
+
 **Every theme is held to a contrast floor.** The theme engine's check (`purlis_core::theme::check`,
 which runs on any theme) holds each pair that ends up as
 something drawn on something: 4.5:1 for text (AA's floor for text under 24px, or 18.66px bold,
@@ -426,23 +432,32 @@ can be read. Its interface:
   finding with its ratio.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
-gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds four
+gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds five
 floors for any theme from any source:
 
 - **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
-  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and on `danger.wash`
-  over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
+  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` (Keep blocked's
+  button), on `accent.surface` (Allow's) and on `danger.wash` over the window and over a dialog,
+  and `needs-you.text` on `needs-you.base`;
+- **Allow is distinguishable from Keep blocked**: on every ask of the two, each Allow is the
+  primary button (`.ui-button-primary`, edged in `accent.base` on `accent.surface`) and Keep
+  blocked the plain one (`.ui-button`, edged in `border.strong` on `control.base`). The two edges
+  are at least 0.1 apart in OKLab as the theme writes them, and `accent.base` on
+  `accent.surface` clears its pair's floor, so the edge that tells them apart is seen;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
   in OKLab, five times the least difference a person can see, as the theme writes them;
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
-  token or `needs-you.base`.
+  token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
+  included.
 
 Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
 workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
 appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
-for the pair's other token when Classic's colour still fails on it. The rest of the theme draws
+for the pair's other token when Classic's colour still fails on it. A floor between tokens none
+of which is a consent token (Allow apart from Keep blocked, an answer's words on its button) is
+held by drawing Classic's values for each of them. The rest of the theme draws
 as written, and one Notice in the Inbox names the theme and the floors it breaks.
 
 **The window only applies.** It is handed a resolved theme, every token's final value and the

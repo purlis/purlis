@@ -119,6 +119,13 @@ describe("the refused vault Notice", () => {
       "Dispatch to devops…",
       "Keep blocked",
     ]);
+    // Allow is drawn in the primary style; Keep blocked and the dispatch in the plain one
+    // (ADR 0097 §6).
+    expect(
+      screen
+        .getAllByRole("button")
+        .map((button) => button.classList.contains("ui-button-primary")),
+    ).toEqual([true, false, false]);
     // What the press would do is on screen before it, and so is the way that is the chat's own.
     expect(screen.getByText(/Allow lets every chat opened as steward use vault/)).toHaveTextContent(
       "Allow lets every chat opened as steward use vault devops in this project on this machine. This chat does not restart. You can remove it in Settings › Sandbox › Network.",

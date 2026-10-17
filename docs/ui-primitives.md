@@ -495,7 +495,11 @@ buttons onto as many lines as they need, and a `.ui-button` in it may break its 
 when it alone is wider than the row, instead of being clipped: its height is then its least
 (`--size-control`, or `--size-chrome` for `.ui-button-sm`), not its only. Words before the buttons
 may stand in the row too. Every way out of a Notice is a `.ui-button-sm` in one (Dismiss is
-`.ui-button-ghost`), and so is "+N more" beside a pane's Notices. A press on its way
+`.ui-button-ghost`), and so is "+N more" beside a pane's Notices. **An Allow is
+`.ui-button-primary` and Keep blocked the plain `.ui-button`** (ADR 0097 §6), on every ask that
+offers the two: a sandbox Notice, a dispatch's, a refused vault's, and a permission prompt, a
+sandbox block and a browser's sites in the Inbox. The consent floors keep the two looks apart in
+every theme; the order, the words and the keyboard are the ask's. A press on its way
 (`aria-busy`) keeps the button reachable and shows the pointer as working.
 
 What every class holds to:
