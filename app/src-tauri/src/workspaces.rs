@@ -896,7 +896,7 @@ mod tests {
         assert!(
             refused
                 .said
-                .contains("svc/task: 1 commit(s) that exist nowhere else"),
+                .contains("svc/task: 1 commit that exists nowhere else"),
             "{refused:?}"
         );
         assert!(piece.exists());

@@ -38,6 +38,7 @@ use super::{
     Claim, Rebased, WRITE, changed_paths, count, fetch_branch, git_dir_of, prsave,
     rebase_in_progress, rebase_onto, tail,
 };
+use crate::counts::plural;
 use crate::forge;
 use crate::gitstate;
 use crate::planesave::{Mode, Plane};
@@ -307,10 +308,6 @@ pub(super) fn said_not_put_back(still: &StillMoved) -> String {
         (Some(one), None) | (None, Some(one)) => one,
         (None, None) => "purlis could not check that every file is as it was".into(),
     }
-}
-
-fn plural<'a>(n: usize, one: &'a str, many: &'a str) -> &'a str {
-    if n == 1 { one } else { many }
 }
 
 fn capitalised(text: &str) -> String {

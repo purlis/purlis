@@ -28,6 +28,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::counts::counted;
 use crate::repocmd::{Say, Sink};
 
 #[path = "browser_login.rs"]
@@ -290,8 +291,8 @@ pub fn install(
         return 1;
     }
     say(Say::Done(format!(
-        "Wrote {SKILL_DIR} ({} page(s))",
-        pages(&skill_dir)
+        "Wrote {SKILL_DIR} ({})",
+        counted(pages(&skill_dir), "page", "pages")
     )));
     say(Say::Info(
         "It is Playwright's, not purlis's — regenerate it with this command rather than \
@@ -448,7 +449,7 @@ mod tests {
         assert!(
             heard
                 .err
-                .contains("✓ Wrote .claude/skills/playwright-cli (2 page(s))\n")
+                .contains("✓ Wrote .claude/skills/playwright-cli (2 pages)\n")
         );
         assert!(heard.err.contains("✓ Ignored .playwright-cli/ — traces"));
         assert_eq!(

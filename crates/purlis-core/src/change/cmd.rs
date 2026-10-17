@@ -24,6 +24,7 @@ use super::record::{
     Exclusion, Member, Record, TEXT_LIMIT, branch_refusal, default_branch, name_ok,
 };
 use super::store::{self, WriteError};
+use crate::counts::counted;
 use crate::repocmd::Say;
 use crate::shown;
 use crate::tui::{self, Align};
@@ -373,9 +374,9 @@ pub fn drop(
     }
     say(Say::Done(if was_member {
         format!(
-            "'{}' excluded — {} member(s) left",
+            "'{}' excluded — {} left",
             named(repo),
-            record.members.len()
+            counted(record.members.len(), "member", "members")
         )
     } else {
         format!("'{}' excluded (never a member)", named(repo))
@@ -431,7 +432,7 @@ pub fn list(plane: &Path, ws: &str, say: &mut dyn FnMut(Say)) -> u8 {
     let names: Vec<String> = listing.records.iter().map(|r| cell(&r.change)).collect();
     let w = tui::column("", names.iter().map(String::as_str), 0, None);
     for (record, name) in listing.records.iter().zip(&names) {
-        let mut counts = format!("{} member(s)", record.members.len());
+        let mut counts = counted(record.members.len(), "member", "members");
         if !record.excluded.is_empty() {
             counts.push_str(&format!(", {} excluded", record.excluded.len()));
         }
@@ -473,9 +474,9 @@ pub fn show(
         Err(code) => return code,
     };
     let mut head = format!(
-        "{} · {} member(s)",
+        "{} · {}",
         cell(&record.change),
-        record.members.len()
+        counted(record.members.len(), "member", "members")
     );
     if !record.excluded.is_empty() {
         head.push_str(&format!(" · {} excluded", record.excluded.len()));

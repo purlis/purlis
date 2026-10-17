@@ -64,6 +64,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::counts::counted;
 use crate::forge::py_str;
 use crate::repocmd::{Say, Sink, clone};
 use crate::wscmd::ensure;
@@ -181,8 +182,8 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         Some(value) => py_str(value),
     };
     say(Say::Info(format!(
-        "Restoring '{ws}' — {} repo(s) from manifest (updated {} by {}).",
-        repos.len(),
+        "Restoring '{ws}' — {} from manifest (updated {} by {}).",
+        counted(repos.len(), "repo", "repos"),
         said("updated_at"),
         said("updated_by"),
     )));
@@ -320,8 +321,8 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         }
     }
     say(Say::Done(format!(
-        "Restored {done}/{} repo(s) into '{ws}'.",
-        rows.len()
+        "Restored {done}/{} into '{ws}'.",
+        counted(rows.len(), "repo", "repos")
     )));
     0
 }

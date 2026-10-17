@@ -39,6 +39,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
+use purlis_core::counts::counted;
 use purlis_core::personaverbs::stats;
 use serde_json::{Value, json};
 
@@ -203,10 +204,6 @@ fn note(text: &str) -> Value {
     json!({ "kind": "note", "text": text })
 }
 
-fn plural(count: usize, one: &str, many: &str) -> String {
-    format!("{count} {}", if count == 1 { one } else { many })
-}
-
 /// The memories `charter persona stats` counts as RECENT, counted by its own code.
 fn recent(persona: &Persona, now: NaiveDate) -> usize {
     let days: Vec<Option<NaiveDate>> = persona.dated.iter().copied().map(Some).collect();
@@ -219,8 +216,8 @@ fn about_all(personas: &[Persona], now: NaiveDate) -> String {
     let undated: usize = personas.iter().map(|it| it.undated).sum();
     let mut said = format!(
         "{} across {} · {} in the last {} days",
-        plural(total, "memory", "memories"),
-        plural(personas.len(), "persona", "personas"),
+        counted(total, "memory", "memories"),
+        counted(personas.len(), "persona", "personas"),
         lately,
         stats::RECENT_DAYS
     );
@@ -238,7 +235,7 @@ fn about_one(persona: &Persona, now: NaiveDate) -> String {
     format!(
         "{} remembers {} · {} in the last {} days · {last}",
         persona.name,
-        plural(persona.count(), "thing", "things"),
+        counted(persona.count(), "thing", "things"),
         recent(persona, now),
         stats::RECENT_DAYS
     )

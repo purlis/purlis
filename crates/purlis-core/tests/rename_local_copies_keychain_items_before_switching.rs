@@ -215,7 +215,7 @@ fn each_item_is_copied_read_back_and_switched_to_and_the_old_item_is_kept() {
     assert_eq!(item(&m, &old_id, SOURCE).as_deref(), Some(TOKEN));
     assert!(
         moved.said.iter().any(|l| l.contains("vault 'ops'")
-            && l.contains("2 secret(s) copied")
+            && l.contains("2 secrets copied")
             && l.contains("kept")),
         "{:#?}",
         moved.said

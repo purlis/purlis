@@ -1184,7 +1184,7 @@ fn vault_add_takes_the_token_from_standard_input_tests_it_and_registers_in_one_s
     assert!(rec.prompts.is_empty());
     assert!(
         rec.said().contains(
-            "ok: Signed in to 1Password: 2 item(s) in vault 'Engineering'; item \
+            "ok: Signed in to 1Password: 2 items in vault 'Engineering'; item \
              'charter-team' is there."
         ),
         "{}",

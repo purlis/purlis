@@ -15,6 +15,7 @@
 //! the preflight runs this row too.
 
 use super::{Doctor, Row};
+use crate::counts::counted;
 use crate::harness_declaration::{self, Declaration, Declarations};
 
 /// The row's name, as the Python charter printed it.
@@ -43,7 +44,10 @@ pub(super) fn row_of(declared: &Declarations) -> Row {
         .join("; ");
     let count = declared.declared.len();
     if declared.refused.is_empty() {
-        return Row::ok(NAME, format!("{count} harness(es) — {ceilings}"));
+        return Row::ok(
+            NAME,
+            format!("{} — {ceilings}", counted(count, "harness", "harnesses")),
+        );
     }
     let refused = declared
         .refused
@@ -54,8 +58,9 @@ pub(super) fn row_of(declared: &Declarations) -> Row {
     Row::warn(
         NAME,
         format!(
-            "{} declaration(s) refused: {refused} ({count} harness(es) read — {ceilings})",
-            declared.refused.len()
+            "{} refused: {refused} ({} read — {ceilings})",
+            counted(declared.refused.len(), "declaration", "declarations"),
+            counted(count, "harness", "harnesses")
         ),
         "A refused declaration declares nothing, so a profile that names its harness starts \
          no chat. Fix the file as the reason says, or remove it from harnesses/; `purlis \
@@ -99,7 +104,7 @@ mod tests {
         assert_eq!(row.status, Status::Ok);
         assert_eq!(
             row.detail,
-            "3 harness(es) — claude: level 2 (hooks); opencode: level 3 (ACP); codex: level 2 \
+            "3 harnesses — claude: level 2 (hooks); opencode: level 3 (ACP); codex: level 2 \
              (hooks)"
         );
     }
@@ -123,7 +128,7 @@ mod tests {
             "{}",
             row.detail
         );
-        assert!(row.detail.starts_with("4 harness(es) — "), "{}", row.detail);
+        assert!(row.detail.starts_with("4 harnesses — "), "{}", row.detail);
     }
 
     #[test]
@@ -141,14 +146,14 @@ mod tests {
         assert_eq!(row.status, Status::Warn);
         assert!(
             row.detail
-                .starts_with("1 declaration(s) refused: harnesses/x.toml declares 'y'"),
+                .starts_with("1 declaration refused: harnesses/x.toml declares 'y'"),
             "{}",
             row.detail
         );
         // A reason is one line in the row, whatever the file held.
         assert!(!row.detail.contains('\n'), "{}", row.detail);
         assert!(
-            row.detail.contains("(3 harness(es) read — claude"),
+            row.detail.contains("(3 harnesses read — claude"),
             "{}",
             row.detail
         );

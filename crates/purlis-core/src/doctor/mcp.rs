@@ -26,6 +26,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::{DISPLAY_LIMIT, Doctor, PATH_DISPLAY_LIMIT, Row, one_line};
+use crate::counts::counted;
 
 const NAME: &str = "mcp";
 
@@ -78,7 +79,11 @@ pub(super) fn mcp(d: &Doctor) -> Row {
         );
     }
     if missing.is_empty() {
-        let across = format!("{servers} persona server(s) across {declaring} persona(s)");
+        let across = format!(
+            "{} across {}",
+            counted(servers, "persona server", "persona servers"),
+            counted(declaring, "persona", "personas")
+        );
         return Row::ok(
             NAME,
             if checkable == 0 {
@@ -86,7 +91,10 @@ pub(super) fn mcp(d: &Doctor) -> Row {
                 // "nothing is registered", which is another claim about another fact.
                 format!("{across}, none on an absolute path")
             } else {
-                format!("{across}, {checkable} launcher(s) on an absolute path, all there")
+                format!(
+                    "{across}, {} on an absolute path, all there",
+                    counted(checkable, "launcher", "launchers")
+                )
             },
         );
     }
@@ -110,8 +118,9 @@ pub(super) fn mcp(d: &Doctor) -> Row {
     Row::warn(
         NAME,
         format!(
-            "{} of {checkable} launcher(s) missing: {}",
+            "{} of {} missing: {}",
             missing.len(),
+            counted(checkable, "launcher", "launchers"),
             named.join(", ")
         ),
         hints.join("; "),
@@ -191,7 +200,7 @@ mod tests {
         assert_eq!(r.status, Status::Ok, "{r:?}");
         assert_eq!(
             r.detail,
-            "3 persona server(s) across 1 persona(s), 1 launcher(s) on an absolute path, all there"
+            "3 persona servers across 1 persona, 1 launcher on an absolute path, all there"
         );
     }
 
@@ -205,7 +214,7 @@ mod tests {
         );
         assert_eq!(
             row(&root).detail,
-            "1 persona server(s) across 1 persona(s), none on an absolute path"
+            "1 persona server across 1 persona, none on an absolute path"
         );
     }
 
@@ -224,7 +233,7 @@ mod tests {
         persona(&root, "dev", None);
         let r = row(&root);
         assert_eq!(r.status, Status::Warn, "{r:?}");
-        assert_eq!(r.detail, "1 of 1 launcher(s) missing: ops/edm");
+        assert_eq!(r.detail, "1 of 1 launcher missing: ops/edm");
         assert!(r.hint.contains(&gone.display().to_string()), "{r:?}");
         assert!(r.hint.contains("personas/ops/mcp.json"), "{r:?}");
         assert!(!r.deferred(), "{r:?}");

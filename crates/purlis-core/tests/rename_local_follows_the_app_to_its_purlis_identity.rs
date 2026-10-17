@@ -297,7 +297,7 @@ fn the_first_launch_under_the_new_identity_holds_every_item_again_once() {
         moved
             .said
             .iter()
-            .any(|l| l.contains("vault 'ops'") && l.contains("2 secret(s) held again by")),
+            .any(|l| l.contains("vault 'ops'") && l.contains("2 secrets held again by")),
         "{:#?}",
         moved.said
     );
@@ -447,7 +447,7 @@ fn an_item_the_app_could_not_hold_is_left_to_the_next_read_through_the_command()
         moved
             .said
             .iter()
-            .any(|l| l.contains("0 of 2 secret(s) held again")),
+            .any(|l| l.contains("0 of 2 secrets held again")),
         "{:#?}",
         moved.said
     );

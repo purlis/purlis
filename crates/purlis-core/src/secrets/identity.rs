@@ -1244,7 +1244,8 @@ pub(super) fn keep_with(
     let left = forget_with(store, ctx, &before);
     if left > 0 {
         tracing::warn!(
-            "purlis: {left} replaced identity item(s) of vault '{}' could not be deleted from {}",
+            "purlis: {} of vault '{}' could not be deleted from {}",
+            crate::counts::counted(left, "replaced identity item", "replaced identity items"),
             crate::personas::one_line(&vault.name),
             keyring::STORE_NAME
         );

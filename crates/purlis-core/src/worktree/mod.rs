@@ -196,8 +196,10 @@ pub enum Refusal {
         kept: Option<String>,
     },
     #[error(
-        "'{piece}' has {count} commit(s) that exist nowhere else — refusing to remove. These \
+        "'{piece}' has {} that {} nowhere else — refusing to remove. These \
          would be lost:\n{}\nPush the branch or merge it, or discard with --force",
+        crate::counts::counted(*.count, "commit", "commits"),
+        crate::counts::plural(*.count, "exists", "exist"),
         listed(.commits, *.count as usize)
     )]
     WouldLoseWork {
@@ -350,8 +352,10 @@ impl Refusal {
                 count,
                 commits,
             } => format!(
-                "'{piece}' has {count} commit(s) that exist nowhere else, so purlis left its \
+                "'{piece}' has {} that {} nowhere else, so purlis left its \
                  folder where it is. These would be lost:\n{}",
+                crate::counts::counted(*count, "commit", "commits"),
+                crate::counts::plural(*count, "exists", "exist"),
                 listed(commits, *count as usize)
             ),
             // What is held is not listed: its names are git's own, of where that state lives.

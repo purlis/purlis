@@ -42,24 +42,35 @@ const SOURCE: &str = "• DISP adds the committed dispatch log (personas/_dispat
 const NONE_ANYWHERE: &str = "• No dispatch to a persona is in the committed dispatch log or in \
                              this machine's dispatch records.\n";
 
-const ONE_DRAFT: &str = "• 1 draft persona(s) — no chat is dispatched to a persona while \
-                         `draft: true` is set, so they are not counted above. Finish the \
+const ONE_DRAFT: &str = "• 1 draft persona — no chat is dispatched to a persona while \
+                         `draft: true` is set, so it is not counted above. Finish the \
                          charter, then drop the line.\n";
 
 fn dormant(n: usize) -> String {
+    let personas = if n == 1 { "persona" } else { "personas" };
     format!(
-        "! {n} dormant persona(s) — a REAL prune signal (old, zero memory, no declared \
+        "! {n} dormant {personas} — a REAL prune signal (old, zero memory, no declared \
          activity: profile). The steward can quiz-propose removal (cite this).\n"
     )
 }
 
 fn idle(n: usize) -> String {
-    format!("• {n} idle persona(s) — have memory but none recent; watch, don't prune yet.\n")
+    let (personas, have) = if n == 1 {
+        ("persona", "has")
+    } else {
+        ("personas", "have")
+    };
+    format!("• {n} idle {personas} — {have} memory but none recent; watch, don't prune yet.\n")
 }
 
 fn never_dispatched(n: usize) -> String {
+    if n == 1 {
+        return "! 1 persona NEVER dispatched — it exists, lint green, and is unused. Check \
+                whether a chat does its work itself where it could dispatch to it.\n"
+            .into();
+    }
     format!(
-        "! {n} persona(s) NEVER dispatched — they exist, lint green, and are unused. Check \
+        "! {n} personas NEVER dispatched — they exist, lint green, and are unused. Check \
          whether a chat does their work itself where it could dispatch to them.\n"
     )
 }
@@ -268,7 +279,7 @@ fn drift_advice_verification_and_duplicates_are_each_reported() {
         heard.err,
         [
             legend(100_000),
-            "• Routing advice: fired 1 time(s) · work handed to a persona 3 time(s) since the \
+            "• Routing advice: fired 1 time · work handed to a persona 3 times since the \
              first one (2026-03-02). Advice that fires and is never followed is the block \
              failing, not the roster — read it that way before adding more personas.\n"
                 .into(),

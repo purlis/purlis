@@ -32,6 +32,7 @@ use serde_json::{Map, Value};
 use super::registry::Vault;
 use super::run::{self, Ran, RunError};
 use super::{Cause, Ctx, VaultError};
+use crate::counts::{counted, plural};
 use crate::names::ONEPASSWORD_TAG;
 
 /// Every item charter writes carries this tag, and `<TAG>:<vault>` (`purlis`, #1261). Nothing
@@ -589,18 +590,27 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
             return (
                 false,
                 format!(
-                    "{legacy} item(s) from the old one-item-per-key layout are not readable as this \
-                     vault — purlis now keeps a vault in a single item ('{item}'). Their \
+                    "{} from the old one-item-per-key layout {} not readable as this \
+                     vault — purlis now keeps a vault in a single item ('{item}'). {} \
                      credentials still exist in 1Password; re-register them with `purlis secret \
-                     set`, then delete the old items."
+                     set`, then delete the old {}.",
+                    counted(legacy, "item", "items"),
+                    plural(legacy, "is", "are"),
+                    plural(legacy, "Its", "Their"),
+                    plural(legacy, "item", "items")
                 ),
             );
         }
         return (true, format!("no secrets yet in item '{item}'"));
     }
-    (true, format!("{n} secret(s) in 1Password item '{item}'"))
+    (
+        true,
+        format!(
+            "{} in 1Password item '{item}'",
+            counted(n, "secret", "secrets")
+        ),
+    )
 }
 
 #[cfg(test)]
-#[path = "onepassword_tests.rs"]
 mod tests;

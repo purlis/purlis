@@ -499,7 +499,7 @@ fn the_commit_lands_on_the_folders_branch_with_the_named_files_and_the_persons_i
     let id = t.git(&["rev-parse", "HEAD"]);
     assert_eq!(
         lines,
-        [Say::Done(format!("committed {id} on piece: 2 file(s)"))]
+        [Say::Done(format!("committed {id} on piece: 2 files"))]
     );
     assert_eq!(t.git(&["rev-parse", "HEAD^"]), before);
     assert_eq!(t.git(&["rev-parse", "refs/heads/piece"]), id);

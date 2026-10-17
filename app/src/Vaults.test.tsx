@@ -22,7 +22,7 @@ function vault(name: string, over: Partial<VaultSummary> = {}): VaultSummary {
     name,
     provider: "keyring",
     count: 2,
-    health: { ok: true, detail: "2 secret(s) in the system keyring" },
+    health: { ok: true, detail: "2 secrets in the system keyring" },
     reads_on_open: false,
     ...over,
   };

@@ -22,6 +22,7 @@ use std::path::Path;
 use super::fsx;
 use super::git::git_in;
 use super::{DISPLAY_LIMIT, Doctor, Row, first_line};
+use crate::counts::counted;
 use crate::forge::backend::{
     Capabilities, Capability, Fallback, Reach, Reason, Support, Tier, UnknownWhy,
 };
@@ -60,8 +61,8 @@ pub(super) fn forge_capabilities(d: &Doctor) -> Option<Row> {
     Some(Row::ok(
         NAME,
         format!(
-            "{} workspace repo(s) on a forge{MORE}{}",
-            lines.len(),
+            "{} on a forge{MORE}{}",
+            counted(lines.len(), "workspace repo", "workspace repos"),
             lines.join(MORE)
         ),
     ))

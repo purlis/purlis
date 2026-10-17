@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde_json::Value;
 
 use super::{Say, Sink};
+use crate::counts::{counted, plural};
 use crate::forge::{self, Caller, Forge, Owner, RepoRecord, py_str};
 use crate::inventory;
 
@@ -80,8 +81,8 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
             }
         };
         say(Say::Info(format!(
-            "Found {} project(s) on {}. {}",
-            repos.len(),
+            "Found {} on {}. {}",
+            counted(repos.len(), "project", "projects"),
             forge.kind.word(),
             if options.no_probe {
                 "Skipping stack probe."
@@ -144,11 +145,14 @@ pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) ->
     )));
     if probe_failures > 0 {
         say(Say::Warn(format!(
-            "⚠ stack probe FAILED for {probe_failures} repo(s) — their `stack` was written as \
+            "⚠ stack probe FAILED for {} — {} `stack` was written as \
              \"unknown\" because the probe itself errored (network/auth/a GitHub secondary rate \
-             limit), not because they lack a recognised build file. Re-run `purlis discover` \
+             limit), not because {} a recognised build file. Re-run `purlis discover` \
              to re-probe; if it keeps failing, check `purlis doctor` (forge auth) or wait out \
-             the rate-limit window."
+             the rate-limit window.",
+            counted(probe_failures, "repo", "repos"),
+            plural(probe_failures, "its", "their"),
+            plural(probe_failures, "it lacks", "they lack")
         )));
     }
     let added: Vec<&String> = after.difference(&before).collect();

@@ -225,7 +225,7 @@ fn what_is_about_to_be_committed_is_broken_down_by_directory_before_it_is() {
     });
 
     assert_eq!(code, 0, "{said}");
-    assert!(said.contains("4 file(s) across 3 directories"), "{said}");
+    assert!(said.contains("4 files across 3 directories"), "{said}");
     assert!(said.contains("2  personas/steward/memory"), "{said}");
     assert!(said.contains("1  personas/_shared/memory"), "{said}");
     assert!(said.contains("1  (the plane root)"), "{said}");
@@ -2028,7 +2028,7 @@ fn a_commit_left_unpushed_is_pushed_by_the_next_save_even_with_nothing_new_to_co
     });
 
     assert_eq!(code, 0, "{said}");
-    assert!(said.contains("carrying on 1 commit(s)"), "{said}");
+    assert!(said.contains("carrying on 1 commit"), "{said}");
     assert_eq!(
         ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
         "by an agent",
@@ -2610,7 +2610,7 @@ fn the_windows_save_pushes_a_mode_less_planes_commits_the_remote_lacks() {
 
     assert_eq!(code, 0, "{said}");
     assert!(!said.contains("Nothing to save"), "{said}");
-    assert!(said.contains("carrying on 1 commit(s)"), "{said}");
+    assert!(said.contains("carrying on 1 commit"), "{said}");
     assert_eq!(
         ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
         "mine",

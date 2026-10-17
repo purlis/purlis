@@ -35,6 +35,24 @@ test("a named row that moved only in its stdout is allowed, and said", () => {
   assert.deepEqual(moved, [{ name: "doctor-a", where: ["stdout.text"] }]);
 });
 
+test("a named row whose set-apart stderr lines moved is allowed, as the replay blesses them", () => {
+  const committed = [
+    row("save-a", { stderr: { masks: [], rule: "exact", text: "", dropped: "1 file(s)\n" } }),
+  ];
+  const blessed = [
+    {
+      ...committed[0],
+      expect: {
+        ...committed[0].expect,
+        stderr: { ...committed[0].expect.stderr, dropped: "1 file\n" },
+      },
+    },
+  ];
+  const { moved, problems } = check(committed, blessed, ["save-a"]);
+  assert.deepEqual(problems, []);
+  assert.deepEqual(moved, [{ name: "save-a", where: ["stderr.dropped"] }]);
+});
+
 test("a row that moved and was not named is refused", () => {
   const committed = [row("doctor-a"), row("init-b")];
   const blessed = [said(committed[0], "two\n"), said(committed[1], "two\n")];

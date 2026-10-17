@@ -331,7 +331,7 @@ fn a_fork_copies_the_folder_an_extension_keeps_even_while_it_is_off() {
     );
     assert!(
         ran.err
-            .contains("Carried the folder(s) extensions keep in 'alpha': notes/"),
+            .contains("Carried the folder extensions keep in 'alpha': notes/"),
         "{}",
         ran.err
     );

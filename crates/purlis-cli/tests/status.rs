@@ -87,13 +87,13 @@ fn status_says_which_plane_answered_and_why_the_workspace_was_chosen() {
     let lines: Vec<&str> = ran.out.lines().collect();
     assert_eq!(
         lines[0],
-        "acme: 0 repos in inventory · 2 workspace(s) · active: beta (via --workspace)"
+        "acme: 0 repos in inventory · 2 workspaces · active: beta (via --workspace)"
     );
     assert_eq!(lines[1], "");
     assert_eq!(lines[2], "    alpha  (0 cloned)");
     assert_eq!(lines[3], "  * beta  (0 cloned)");
     assert!(
-        ran.out.contains("— workspace: beta (active) · 0 repo(s) —"),
+        ran.out.contains("— workspace: beta (active) · 0 repos —"),
         "{}",
         ran.out
     );
@@ -125,7 +125,7 @@ fn a_shell_with_no_pane_id_is_told_that_is_why_it_is_on_default() {
 
     assert!(
         ran.out.starts_with(
-            "acme: 0 repos in inventory · 0 workspace(s) · active: default \
+            "acme: 0 repos in inventory · 0 workspaces · active: default \
              (via default (no pane id — nothing persists between sessions))\n"
         ),
         "{}",
@@ -194,8 +194,7 @@ fn a_repo_the_manifest_names_with_nothing_on_disk_is_not_drawn_as_a_clone() {
 
     assert_eq!(ran.err, "", "nothing was refused");
     assert!(
-        ran.out
-            .contains("— workspace: alpha (active) · 0 repo(s) —"),
+        ran.out.contains("— workspace: alpha (active) · 0 repos —"),
         "{}",
         ran.out
     );
