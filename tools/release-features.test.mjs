@@ -3,10 +3,18 @@
 
 // No release build carries a crate's test-only feature (#2216). Run with `node --test tools/`.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
-import { SHIPPING_WORKFLOWS, TAURI_PROJECT, annotations, builds, enablers, tauriConfigFeatures } from "./release-features.mjs";
+import {
+  SHIPPING_WORKFLOWS,
+  TAURI_PROJECT,
+  annotations,
+  builds,
+  enablers,
+  tauriConfigFeatures,
+  unlistedShipping,
+} from "./release-features.mjs";
 
 // Written by hand, in the shape `cargo tree --prefix depth -i purlis-session-protocol -e
 // normal,build,features -p purlis-cli` printed on 2026-10-17 (paths shortened to `/w`): one
@@ -167,4 +175,70 @@ test("the shipping workflows' builds, as read, one by one", () => {
     "runner-image.yml": [{ manifest: "Cargo.toml", packages: ["purlis-cli"] }],
     "operator-image.yml": [{ manifest: "operator/Cargo.toml", packages: [] }],
   });
+});
+
+test("a compiling cargo subcommand this check does not know is an error, not skipped", () => {
+  assert.match(one("cargo zigbuild --release -p a").error, /`cargo zigbuild` is not a subcommand this check knows/);
+  assert.match(one("cargo auditable zigbuild -p a").error, /`cargo zigbuild` is not a subcommand this check knows/);
+  assert.match(one("cargo +1.99.1 xtask dist").error, /`cargo xtask` is not a subcommand this check knows/);
+  assert.match(one('notes=$(cargo dist build -p a)').error, /`cargo dist` is not a subcommand this check knows/);
+});
+
+test("cargo's subcommands that make nothing someone is given are not builds", () => {
+  for (const line of [
+    "cargo run --locked --quiet -p changelog -- \"$VERSION\" CHANGELOG.md",
+    'if ! notes=$(cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md 2>&1); then',
+    "cargo test --locked",
+    "cargo clippy --locked --all-targets",
+    "cargo fmt --check",
+    "cargo deny --all-features --config ../deny.toml check",
+    "cargo audit bin dist/purlis",
+    "cargo metadata --format-version 1",
+    "cargo tree -e features",
+    "cargo --version",
+  ]) {
+    assert.deepEqual(builds(`      - run: ${line}`), [], line);
+  }
+});
+
+test("cargo called through a variable or by path is an error", () => {
+  assert.match(one('"$CARGO" build -p a').error, /through a variable/);
+  assert.match(one("$CARGO build -p a").error, /through a variable/);
+  assert.match(one("${CARGO} auditable build -p a").error, /through a variable/);
+  assert.match(one("~/.cargo/bin/cargo build -p a").error, /by path/);
+  assert.match(one('"$HOME/.cargo/bin/cargo" zigbuild -p a').error, /by path/);
+});
+
+test("a workflow that publishes and builds with cargo or tauri must be listed", () => {
+  const build = "      - run: cargo build --locked -p a";
+  const publishing = [
+    "      - run: gh release create v1 dist/*",
+    "      - run: gh release upload v1 dist/a",
+    "      - uses: softprops/action-gh-release@0123456789abcdef0123456789abcdef01234567 # v2",
+    "      - uses: docker/build-push-action@0123456789abcdef0123456789abcdef01234567 # v7",
+    "      - run: docker push ghcr.io/purlis/x:1",
+    "      - run: docker buildx build --push -t ghcr.io/purlis/x:1 .",
+    "    permissions:\n      packages: write",
+  ];
+  for (const publish of publishing) {
+    assert.deepEqual(unlistedShipping([{ name: "new.yml", text: `${publish}\n${build}` }]), ["new.yml"], publish);
+    assert.deepEqual(unlistedShipping([{ name: "release.yml", text: `${publish}\n${build}` }]), [], publish);
+  }
+  assert.deepEqual(unlistedShipping([{ name: "new.yml", text: "      - run: gh release create v1\n      - run: npx tauri build" }]), ["new.yml"]);
+  assert.deepEqual(unlistedShipping([{ name: "new.yml", text: "      - run: gh release create v1\n      - run: cargo zigbuild -p a" }]), ["new.yml"]);
+});
+
+test("a workflow that only publishes, or only builds, need not be listed", () => {
+  assert.deepEqual(unlistedShipping([{ name: "a.yml", text: "      - run: gh release create v1\n      - run: cargo run -p changelog" }]), []);
+  assert.deepEqual(unlistedShipping([{ name: "b.yml", text: "    permissions:\n      contents: write\n      - run: cargo build -p a" }]), []);
+  assert.deepEqual(unlistedShipping([{ name: "c.yml", text: "      # gh release create v1\n      - run: cargo build -p a" }]), []);
+});
+
+test("every workflow today that ships a build is listed", () => {
+  const dir = new URL("../.github/workflows/", import.meta.url);
+  const workflows = readdirSync(dir)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .map((name) => ({ name, text: readFileSync(new URL(name, dir), "utf8") }));
+  assert.ok(workflows.length > SHIPPING_WORKFLOWS.length);
+  assert.deepEqual(unlistedShipping(workflows), []);
 });

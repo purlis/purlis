@@ -10,10 +10,12 @@
 // that build resolves for the crate (`cargo tree -e normal,build,features`, every target,
 // nothing compiled), and fails with an error on the manifest that turned the feature on.
 //
-// It fails closed. A build line it cannot read whole, a feature flag on one, a shipping
-// workflow with no build it can read, `cargo tree` output it cannot parse, or a canary that no
-// longer finds the feature where a dev-dependency does turn it on: each is an error, so a
-// change in how a binary is built or in what Cargo prints cannot quietly turn the check off.
+// It fails closed. A build line it cannot read whole, a feature flag on one, a cargo
+// subcommand it does not know, cargo called by path or through a variable, a workflow that
+// publishes and builds but is not in its list, a shipping workflow with no build it can read,
+// `cargo tree` output it cannot parse, or a canary that no longer finds the feature where a
+// dev-dependency does turn it on: each is an error, so a change in how a binary is built or in
+// what Cargo prints cannot quietly turn the check off.
 //
 // Not cargo-deny's `bans.features`: the `deny` job runs with `--all-features` and cargo-deny
 // resolves dev-dependencies into its graph, so the feature the tests ask for is always there;
@@ -138,6 +140,14 @@ const CARGO_FLAGS = new Map([
 ]);
 /** The cargo subcommands that build. */
 const BUILDS = ["build", "b", "rustc"];
+/**
+ * The cargo subcommands that make nothing someone is given: a test, a lint, a report, a tool
+ * the workflow runs for itself. Any other subcommand is an error until it is read here.
+ */
+const NOT_BUILDS = [
+  "run", "r", "test", "t", "check", "c", "clippy", "fmt", "tree", "metadata", "deny", "audit",
+  "fetch", "update", "locate-project", "pkgid", "generate-lockfile", "help", "version", "--version", "-V",
+];
 const CARGO_FEATURE_FLAGS = ["--features", "-F", "--all-features", "--no-default-features"];
 
 /** Tauri's flags a release build line may carry before `--`, and whether each takes a value. */
@@ -196,11 +206,48 @@ function tauriArgs(tokens, into) {
   return null;
 }
 
-/** One build line's words, shell assignments in front dropped; null when it is not a command. */
+/** One build line's words, shell assignments in front dropped (not one that runs a command). */
 function words(command) {
   const tokens = command.replace(/\$\{\{[^}]*\}\}/g, "EXPR").trim().split(/\s+/);
-  while (tokens.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+  while (tokens.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=(?!\$?\()/.test(tokens[0])) tokens.shift();
   return tokens;
+}
+
+/** A shell variable standing for a command: `$CARGO`, `${CARGO}`, `"$CARGO"`. */
+const VARIABLE = /^\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$/;
+/** A line that may call cargo, by name, by path or through a variable. */
+const MAY_CALL_CARGO = /\bcargo\b|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?["']?\s+(build|b|rustc|auditable|\+\S+)(\s|$)/;
+
+/**
+ * Each command word in `tokens` that is cargo, and the subcommand after it (past a
+ * `+toolchain` and `auditable`): `{ k, at, sub, how }`, `how` being `name`, `path` or `variable`.
+ * A variable counts only where a cargo build's words follow it.
+ */
+function cargoCalls(tokens) {
+  return tokens.flatMap((token, k) => {
+    const word = unquote(token.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, "").replace(/^\$?\(+/, ""));
+    let at = k + 1;
+    if (tokens[at]?.startsWith("+")) at++;
+    if (tokens[at] === "auditable") at++;
+    const sub = tokens[at];
+    if (word === "cargo") return [{ k, at, sub, how: "name" }];
+    if (/\/cargo$/.test(word)) return [{ k, at, sub, how: "path" }];
+    if (VARIABLE.test(word) && (at > k + 1 || BUILDS.includes(sub))) return [{ k, at, sub, how: "variable" }];
+    return [];
+  });
+}
+
+/** Why a cargo call is one this check cannot read, or null when it is a build or not one. */
+function unreadCall({ sub, how }) {
+  if (how === "variable") return "cargo called through a variable is a build this check cannot read: call `cargo` by name";
+  if (how === "path") {
+    return NOT_BUILDS.includes(sub) ? null : "cargo called by path is a build this check cannot read: call `cargo` by name";
+  }
+  if (sub === undefined || BUILDS.includes(sub) || NOT_BUILDS.includes(sub) || sub === "install") return null;
+  if (sub.startsWith("-")) return `\`cargo ${sub}\` before the subcommand is not a form this check reads`;
+  // Prose after the word (an `echo` that names cargo) is not a subcommand.
+  if (!/^[a-z][a-z0-9-]*$/.test(sub)) return null;
+  return `\`cargo ${sub}\` is not a subcommand this check knows: if it compiles what ships, read its build here`;
 }
 
 /**
@@ -219,7 +266,7 @@ export function builds(workflow) {
     }
     const text = command.replace(/^\s*(-\s+)?(run:\s*)?/, "");
     if (text.trimStart().startsWith("#")) continue;
-    const cargo = /(^|[^\w-])cargo\s/.test(text);
+    const cargo = MAY_CALL_CARGO.test(text);
     const tauri = /\btauri\s+build\b/.test(text);
     if (!cargo && !tauri) continue;
     const tokens = words(text);
@@ -235,18 +282,16 @@ export function builds(workflow) {
       found.push(error ? { line, error } : { line, ...into });
       continue;
     }
-    // Each `cargo` word and the subcommand after it (past a `+toolchain` and `auditable`).
-    const calls = tokens.flatMap((token, k) => {
-      if (token.replace(/^\$?\(+/, "") !== "cargo") return [];
-      let at = k + 1;
-      if (tokens[at]?.startsWith("+")) at++;
-      if (tokens[at] === "auditable") at++;
-      return [{ k, at, sub: tokens[at] }];
-    });
+    const calls = cargoCalls(tokens);
+    const unread = calls.map(unreadCall).find((error) => error !== null);
+    if (unread) {
+      found.push({ line, error: unread });
+      continue;
+    }
     const building = calls.filter(({ sub, at }) => BUILDS.includes(sub) || (sub === "install" && tokens.slice(at).some((t) => /^--(path|git)(=|$)/.test(t))));
     if (building.length === 0) continue;
     const [{ k, at, sub }] = building;
-    if (k !== 0 || building.length > 1) {
+    if (k !== 0 || tokens[k] !== "cargo" || building.length > 1) {
       found.push({ line, error: "a cargo build after other words is not one this check reads" });
       continue;
     }
@@ -262,6 +307,30 @@ export function builds(workflow) {
     } else found.push({ line, ...into });
   }
   return found;
+}
+
+/** What publishes a release or pushes an image, in a workflow's text. */
+const PUBLISHES = [
+  /\bgh\s+release\s+(create|upload|edit)\b/,
+  /\buses:\s*["']?(softprops\/action-gh-release|ncipollo\/release-action|tauri-apps\/tauri-action|docker\/build-push-action)@/,
+  /\b(docker|podman|buildah)\s+(image\s+)?push\b/,
+  /\bbuildx\s+build\b.*\s--push\b/,
+  /^\s*packages:\s*write\b/m,
+];
+
+/**
+ * The workflows of `workflows` (`{ name, text }`) that publish a release or push an image and
+ * build with cargo or tauri, yet are not in `SHIPPING_WORKFLOWS`: each is an error until listed.
+ */
+export function unlistedShipping(workflows) {
+  return workflows
+    .filter(({ name, text }) => {
+      if (SHIPPING_WORKFLOWS.includes(name)) return false;
+      const live = text.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+      if (!PUBLISHES.some((publish) => publish.test(live))) return false;
+      return builds(text).length > 0 || /\buses:\s*["']?tauri-apps\/tauri-action@/.test(live);
+    })
+    .map(({ name }) => name);
 }
 
 /** `build.features` in a Tauri config, which `tauri build` passes to Cargo. */
@@ -306,6 +375,13 @@ function main() {
     if (features.length > 0) {
       errors.push(`::error file=${TAURI_PROJECT}/${file},title=features in a Tauri config::build.features (${features.join(", ")}) goes to every tauri build that reads this file`);
     }
+  }
+
+  const workflows = readdirSync(".github/workflows")
+    .filter((f) => /\.ya?ml$/.test(f))
+    .map((name) => ({ name, text: readFileSync(join(".github/workflows", name), "utf8") }));
+  for (const name of unlistedShipping(workflows)) {
+    errors.push(`::error file=.github/workflows/${name},title=a shipping workflow this check does not read::${name} publishes and builds with cargo or tauri: add it to SHIPPING_WORKFLOWS in tools/release-features.mjs`);
   }
 
   for (const workflow of SHIPPING_WORKFLOWS) {
