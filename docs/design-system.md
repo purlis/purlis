@@ -882,7 +882,8 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   with no declared height (one its padding makes tall) is not checked, and a custom property is
   held by its value, not by the scope it is declared in. The exceptions are named with their
   reason in the guard (`HEIGHT_EXCEPTIONS`): the title bar is the system's height, the
-  workspaces' row is kept at the control height pending the operator's look, an activity tab is
+  workspaces' row, the main navigation row, keeps control-height tabs (the operator,
+  2026-10-17), an activity tab is
   the square of its column, and two icon or confirm buttons outside a strip are drawn at the
   small control height.
 

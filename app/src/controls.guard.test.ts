@@ -653,11 +653,11 @@ export function componentHeights(source: string): string[] {
 const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
   "App.css": {
     ".title-bar | min-height: 2.1rem (a strip)":
-      "the system's title bar: on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the workspaces' row (ADR 0054)",
+      "the system's title bar: on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the workspaces' row (ADR 0054); kept pending the operator's look at 28px in a dev build",
     ".workspaces | min-height: var(--size-control) (a strip)":
-      "the middle of the three strips, kept at the control height pending the operator's look",
+      "the main navigation row keeps control-height tabs (operator, 2026-10-17)",
     ".workspaces-strip | min-height: var(--size-control) (a strip)":
-      "the middle of the three strips, as `.workspaces`, pending the operator's look",
+      "the main navigation row keeps control-height tabs (operator, 2026-10-17)",
     ".activity-tab | height: 2.5rem (a control)":
       "a square as wide as the side's icon column (`.activity-column`, 2.5rem, #1737)",
     ".pane-task-ends .task-end, .task-end-confirm button | height: var(--size-chrome) (a control)":
