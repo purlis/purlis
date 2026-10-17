@@ -401,30 +401,42 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
         "a job handed to launchd"
     );
     // The control: the same submit, under the same profile less that one rule, goes through,
-    // so the refusal above is the rule's. Only where launchd takes a job from a sandboxed
-    // process at all: some take none, even under a profile that allows everything (#2489, a
-    // macOS 26.6 runner), and there nothing can show the rule is what refuses it.
+    // so the refusal above is the rule's. The copy must submit outside any sandbox, or the
+    // refusal proves nothing. Some machines take no job from a sandboxed process at all, even
+    // under a profile that allows everything (#2489, a macOS 26.6 runner); there nothing can
+    // show the rule is what refuses it, and only there is the control skipped.
     assert!(profile.contains("(deny job-creation)\n"), "{profile}");
-    let submits_under = |profile: &str, label: &str| -> bool {
-        let out = crate::forklock::output(
-            std::process::Command::new(backend::SANDBOX_EXEC)
-                .args(["-p", profile, "/bin/sh", "-c"])
-                .arg(tried(&format!(
-                    "{} submit -l {label} -- /usr/bin/true",
-                    copied.display()
-                )))
-                .current_dir(&root),
-        )
-        .expect("it runs");
+    let submits = |wrap: Option<&str>, label: &str| -> bool {
+        let script = tried(&format!(
+            "{} submit -l {label} -- /usr/bin/true",
+            copied.display()
+        ));
+        let mut command = match wrap {
+            Some(profile) => {
+                let mut command = std::process::Command::new(backend::SANDBOX_EXEC);
+                command.args(["-p", profile, "/bin/sh", "-c", &script]);
+                command
+            }
+            None => {
+                let mut command = std::process::Command::new("/bin/sh");
+                command.args(["-c", &script]);
+                command
+            }
+        };
+        let out = crate::forklock::output(command.current_dir(&root)).expect("it runs");
         let _ = crate::forklock::status(
             std::process::Command::new("/bin/launchctl").args(["remove", label]),
         );
         String::from_utf8_lossy(&out.stdout).trim() == "yes"
     };
-    if submits_under("(version 1)(allow default)", "purlis.floor.anything") {
+    assert!(
+        submits(None, "purlis.floor.unsandboxed"),
+        "the copy of launchctl submits a job outside any sandbox"
+    );
+    if submits(Some("(version 1)(allow default)"), "purlis.floor.anything") {
         let without = profile.replace("(deny job-creation)\n", "");
         assert!(
-            submits_under(&without, "purlis.floor.control"),
+            submits(Some(&without), "purlis.floor.control"),
             "the same submit without the rule"
         );
     } else {
