@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   commands,
   type PersonaHosts,
@@ -29,7 +29,7 @@ import {
   ExpectedLines,
   mayAnswerExpects,
 } from "../ProjectExpectsNotice";
-import { sandboxCommandReturned } from "../sandboxAsked";
+import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
 import type { Collection, LiveSetting } from "./groups";
@@ -517,7 +517,9 @@ export function personaHostsRows(plane: PlaneId, sandbox: SandboxState | undefin
 export const EXPECTS_HERE = "project.sandbox.expects-here";
 
 /** **Allow on this machine**, or what stands: the window-only call the project's Notice makes
- *  too, kept in this machine's own file. Offered after a "Not now" as before it. */
+ *  too, kept in this machine's own file. Offered after a "Not now" as before it. What waits is
+ *  read again whenever a sandbox command of the window's returns (#1888), so an Allow made on
+ *  the project's Notice is not offered here again. */
 function ExpectsHere({
   plane,
   expects,
@@ -530,6 +532,23 @@ function ExpectsHere({
   const [left, setLeft] = useState(expects);
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const moved = useSandboxCommands();
+  /** The count when the row was drawn: what it was drawn from is read already. */
+  const drawnAt = useRef(moved);
+  useEffect(() => {
+    if (moved === drawnAt.current) return;
+    let live = true;
+    void commands
+      .sandboxState(plane)
+      .then((state) => {
+        if (live && state.status === "ok" && state.data !== null)
+          setLeft((was) => state.data?.expects ?? { ...was, items: [] });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [plane, moved]);
   const offered = left.locked === null && left.items.some(allowable) && mayAnswerExpects() && !busy;
   const allow = () => {
     setBusy(true);
@@ -568,6 +587,7 @@ function ExpectsHere({
       aria-describedby={ids.describedBy}
     >
       <ExpectedLines items={left.items} />
+      {left.items.length === 0 && said === undefined && <p>This machine allows all of it now.</p>}
       {left.locked !== null && <p>{left.locked}</p>}
       {said !== undefined && <p>{said}</p>}
       {offered && (
