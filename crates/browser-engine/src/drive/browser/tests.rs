@@ -20,6 +20,7 @@ use crate::drive::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, Ref, Refusal, Settled,
 };
 
+mod drawn;
 mod reach;
 mod takeover;
 
@@ -51,6 +52,9 @@ struct Model {
     active: String,
     pages: u32,
     pixel_ratio: f64,
+    /// What each session's documents draw, as `DOMSnapshot.captureSnapshot` answers (#2303);
+    /// a session with none draws nothing.
+    drawn: HashMap<String, Value>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -191,6 +195,14 @@ impl Engine {
             "Runtime.callFunctionOn" => {
                 Ok(json!({"result": {"type":"object","value": super::lock(&self.model).select}}))
             }
+            "DOMSnapshot.captureSnapshot" => {
+                let session = on.unwrap_or_default();
+                Ok(super::lock(&self.model)
+                    .drawn
+                    .get(session)
+                    .cloned()
+                    .unwrap_or_else(|| drawn::nothing(session.trim_start_matches("S-"))))
+            }
             "Page.getNavigationHistory" => Ok(super::lock(&self.model).history.clone()),
             "Page.navigate" => Ok(json!({"frameId":"PAGE-1","loaderId":"LOADER-9"})),
             _ => Ok(json!({})),
@@ -290,6 +302,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             pixel_ratio: 1.0,
             value: String::new(),
             active: String::new(),
+            drawn: HashMap::new(),
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),

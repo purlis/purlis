@@ -4935,19 +4935,19 @@ export function fileRows(what: FileOn): Offer[] {
   // copy (D-1143-1) and no chat started on a reference to the whole branch (D-1143-2).
   if (at.path === "")
     return [
-      can(`file.copyabsolute:${key}`, "Copy absolute path", {
+      can(`file.copyabsolute:${key}`, SAID.copyAbsolutePath, {
         verb: "copyPath",
         at,
         absolute: true,
       }),
       can(`file.reveal:${key}`, REVEAL_SAID, { verb: "revealPath", at }),
-      can(`file.shell:${key}`, "Open a shell tab here", { verb: "shellInFolder", at }),
+      can(`file.shell:${key}`, SAID.shellHere, { verb: "shellInFolder", at }),
     ];
   const placed = (id: string, title: string, does: Does): Offer =>
     kind === "link" ? cannot(id, title, NO_LINK_FOLLOWED) : can(id, title, does);
   const rows: Offer[] = [
-    can(`file.copy:${key}`, "Copy relative path", { verb: "copyPath", at, absolute: false }),
-    placed(`file.copyabsolute:${key}`, "Copy absolute path", {
+    can(`file.copy:${key}`, SAID.copyRelativePath, { verb: "copyPath", at, absolute: false }),
+    placed(`file.copyabsolute:${key}`, SAID.copyAbsolutePath, {
       verb: "copyPath",
       at,
       absolute: true,
@@ -4955,17 +4955,17 @@ export function fileRows(what: FileOn): Offer[] {
     placed(`file.reveal:${key}`, REVEAL_SAID, { verb: "revealPath", at }),
   ];
   if (kind === "folder") {
-    rows.push(can(`file.shell:${key}`, "Open a shell tab here", { verb: "shellInFolder", at }));
+    rows.push(can(`file.shell:${key}`, SAID.shellHere, { verb: "shellInFolder", at }));
   } else {
     // At the line its preview was last read at (#1143, D-1143-2), and line 1 when it was not.
     const line = what.line ?? 1;
     rows.push(
       what.refused !== undefined
-        ? cannot(`file.editor:${key}`, "Open in your editor", what.refused)
+        ? cannot(`file.editor:${key}`, SAID.openInEditor, what.refused)
         : line === 1
-          ? can(`file.editor:${key}`, "Open in your editor", { verb: "openInEditor", at, line })
+          ? can(`file.editor:${key}`, SAID.openInEditor, { verb: "openInEditor", at, line })
           : {
-              ...can(`file.editor:${key}`, "Open in your editor", {
+              ...can(`file.editor:${key}`, SAID.openInEditor, {
                 verb: "openInEditor",
                 at,
                 line,
@@ -4974,7 +4974,7 @@ export function fileRows(what: FileOn): Offer[] {
             },
     );
   }
-  rows.push(placed(`file.chat:${key}`, "Start a chat here", { verb: "startChatHere", at }));
+  rows.push(placed(`file.chat:${key}`, SAID.startAChatHere, { verb: "startChatHere", at }));
   // Into a chat that is open already (#1151): the preview's *Add to a chat's context*, from the
   // row, so the keyboard reaches it with the menu key. A link is refused as every placed row is.
   // On a row among two or more picked, every picked row, as one paste (D-1151-1); a row outside
@@ -4982,7 +4982,7 @@ export function fileRows(what: FileOn): Offer[] {
   const together = pickedWith(what);
   rows.push(
     together === undefined
-      ? placed(`file.addtochat:${key}`, "Add to a chat's context", {
+      ? placed(`file.addtochat:${key}`, SAID.addToChat, {
           verb: "addToChat",
           rows: [{ at, folder: kind === "folder" }],
         })

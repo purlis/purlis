@@ -257,7 +257,7 @@ pub(crate) fn scrubbed(text: &str, blanked: &[&str]) -> String {
 
 /// Whether `text` holds any of `blanked` (at least [`SHORTEST_SCRUBBED`] characters), ignoring
 /// case.
-fn holds_any(text: &str, blanked: &[&str]) -> bool {
+pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
     scrubbed(text, blanked) != text
 }
 

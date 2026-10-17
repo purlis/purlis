@@ -59,14 +59,14 @@ describe("the engine's pair list", () => {
 const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "unset", "initial"]);
 
 /**
- * The colours the stylesheet check below cannot read, each as `rule | declaration`. None of
- * these rules sets a background, so none draws a pair of its own; the colour each one mixes
- * from is held by the engine's `PAIRS` (`text.muted`, the change marks' state colours).
+ * The colours the stylesheet check below cannot read, each as `rule | declaration`. There are
+ * none: every colour and background a rule sets is one token, so each is read below (the
+ * explorer's change marks name their state's colour in each rule, #2318). Reading is not
+ * pairing: a rule that sets a colour and no background draws no pair of its own, so the change
+ * marks' colours are held on their backgrounds by hand, in the engine's `PAIRS` (the diff
+ * tokens' pairs are #2392).
  */
-const READ_BY_HAND: readonly string[] = [
-  ".explorer [data-mark] > .file-node > .spot-name | color: var(--change-colour)",
-  ".explorer .change-mark | color: var(--change-colour)",
-];
+const READ_BY_HAND: readonly string[] = [];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the
  *  keyboard on it, pressed, or chosen. */
