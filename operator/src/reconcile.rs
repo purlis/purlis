@@ -5,20 +5,26 @@
 //! binding changes, is brought to what [`crate::upstream`] says it asks for, and its status to
 //! what upstream says of it. A Claim not admitted under the policy ([`crate::admission`]) is
 //! never acted on: only its status says why.
+//!
+//! It changes only upstream objects it made ([`upstream::found`]). Each is read first: one it did
+//! not make is left as it is, and nothing is written for the Claim until that object is gone.
 
 use crate::admission::{POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
-    self, SandboxClaim, SandboxTemplate, SandboxWarmPool, sandbox_claim_for, template_for,
-    warm_pool_for,
+    self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, found, sandbox_claim_for,
+    template_for, warm_pool_for,
 };
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
-use kube::api::{Api, Patch, PatchParams};
+use kube::api::{Api, Patch, PatchParams, PostParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::reflector::ObjectRef;
 use kube::runtime::watcher;
-use kube::{Client, ResourceExt};
+use kube::{Client, Resource, ResourceExt};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -32,6 +38,8 @@ pub enum Error {
     Kube(#[from] kube::Error),
     #[error("the claim {0} has no namespace")]
     NoNamespace(String),
+    #[error("the upstream object {0} was not made by the operator")]
+    InTheWay(String),
 }
 
 /// A Claim's status from its upstream claim: `Ready` is upstream's `Ready`, with upstream's own
@@ -60,6 +68,22 @@ pub fn status_of_a_missing_pool(claim: &Claim) -> ClaimStatus {
             "False",
             "PoolNotFound",
             format!("There is no pool named {}.", claim.spec.pool),
+        )],
+    }
+}
+
+/// A Claim's status when an upstream object the operator would make or change, the `kind` named
+/// `name` in the Claim's namespace, is one it did not make: it is left as it is, and the Claim
+/// waits until it is removed or renamed.
+pub fn status_of_an_object_in_the_way(kind: &str, name: &str) -> ClaimStatus {
+    ClaimStatus {
+        conditions: vec![condition(
+            "False",
+            "UpstreamObjectInTheWay",
+            format!(
+                "The {kind} {name} in this namespace was not made by purlis's cluster operator, \
+                 so it is left as it is. Remove or rename it, and this claim goes on."
+            ),
         )],
     }
 }
@@ -103,30 +127,102 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
         write_status(client, &claim, &namespace, refused).await?;
         return Ok(Action::await_change());
     }
-    let apply = PatchParams::apply(FIELD_MANAGER).force();
     let pool = Api::<Pool>::all(client.clone())
         .get_opt(&claim.spec.pool)
         .await?;
     let status = match pool {
         None => status_of_a_missing_pool(&claim),
         Some(pool) => {
+            let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &namespace);
+            let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &namespace);
+            let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
             let template = template_for(&pool, &namespace);
-            Api::<SandboxTemplate>::namespaced(client.clone(), &namespace)
-                .patch(&template.name_any(), &apply, &Patch::Apply(&template))
-                .await?;
             let warm = warm_pool_for(&pool, &namespace);
-            Api::<SandboxWarmPool>::namespaced(client.clone(), &namespace)
-                .patch(&warm.name_any(), &apply, &Patch::Apply(&warm))
-                .await?;
             let wanted = sandbox_claim_for(&claim);
-            let applied = Api::<SandboxClaim>::namespaced(client.clone(), &namespace)
-                .patch(&name, &apply, &Patch::Apply(&wanted))
+            // All three are looked at before any is written: one in the way stops them all.
+            let template_found = look(&templates, &template, &pool).await?;
+            let warm_found = look(&warm_pools, &warm, &pool).await?;
+            let claim_found = look(&upstream_claims, &wanted, &*claim).await?;
+            let in_the_way = [
+                (
+                    &template_found,
+                    SandboxTemplate::kind(&()),
+                    template.name_any(),
+                ),
+                (&warm_found, SandboxWarmPool::kind(&()), warm.name_any()),
+                (&claim_found, SandboxClaim::kind(&()), wanted.name_any()),
+            ]
+            .into_iter()
+            .find(|(found, _, _)| **found == Found::InTheWay);
+            if let Some((_, kind, object)) = in_the_way {
+                tracing::warn!(
+                    claim = %name, %namespace, %kind, %object,
+                    "left as it is: an upstream object the operator did not make has the name it would use"
+                );
+                write_status(
+                    client,
+                    &claim,
+                    &namespace,
+                    status_of_an_object_in_the_way(&kind, &object),
+                )
                 .await?;
+                return Ok(Action::requeue(LOOK_AGAIN));
+            }
+            put(&templates, template, template_found).await?;
+            put(&warm_pools, warm, warm_found).await?;
+            let applied = put(&upstream_claims, wanted, claim_found).await?;
             status_of(Some(&applied))
         }
     };
     write_status(client, &claim, &namespace, status).await?;
     Ok(Action::await_change())
+}
+
+/// What the cluster holds under the name of `wanted`, an upstream object the operator would make
+/// for `owner`, read from the API server itself.
+async fn look<K, O>(api: &Api<K>, wanted: &K, owner: &O) -> Result<Found, Error>
+where
+    K: Resource + Clone + DeserializeOwned + Debug,
+    O: Resource,
+    O::DynamicType: Default,
+{
+    let held = api.get_opt(&wanted.name_any()).await?;
+    Ok(found(held.as_ref().map(|held| held.meta()), owner))
+}
+
+/// `wanted` written to the cluster as [`look`] found it: made when nothing holds its name, and
+/// applied server-side to the object the operator made, by its uid, so an object made again under
+/// that name since it was looked at is refused and looked at again. Never called for an object
+/// in the way.
+async fn put<K>(api: &Api<K>, mut wanted: K, found: Found) -> Result<K, Error>
+where
+    K: Resource + Clone + DeserializeOwned + Serialize + Debug,
+{
+    let name = wanted.name_any();
+    match found {
+        // Made, not applied: if someone made an object under the name since it was looked at,
+        // the cluster refuses this, and the next pass finds it in the way.
+        Found::Nothing => Ok(api
+            .create(
+                &PostParams {
+                    field_manager: Some(FIELD_MANAGER.to_owned()),
+                    ..PostParams::default()
+                },
+                &wanted,
+            )
+            .await?),
+        Found::Ours { uid } => {
+            wanted.meta_mut().uid = Some(uid);
+            Ok(api
+                .patch(
+                    &name,
+                    &PatchParams::apply(FIELD_MANAGER).force(),
+                    &Patch::Apply(&wanted),
+                )
+                .await?)
+        }
+        Found::InTheWay => Err(Error::InTheWay(name)),
+    }
 }
 
 /// `status` written on the Claim, unless it says what the Claim already says.
@@ -151,6 +247,10 @@ async fn write_status(
 
 /// How long a claim that could not be reconciled waits before it is tried again.
 const RETRY: Duration = Duration::from_secs(10);
+
+/// How often a claim an upstream object is in the way of looks again whether it is gone: the
+/// operator does not watch objects it did not make.
+const LOOK_AGAIN: Duration = Duration::from_secs(15);
 
 fn error_policy(claim: Arc<Claim>, error: &Error, _: Arc<Context>) -> Action {
     tracing::warn!(claim = %claim.name_any(), %error, retry = ?RETRY, "trying again");

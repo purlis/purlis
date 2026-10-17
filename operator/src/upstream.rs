@@ -88,6 +88,40 @@ pub fn name_for(pool: &str) -> String {
     format!("purlis-pool-{pool}")
 }
 
+/// What the cluster holds under the name an upstream object of the operator's takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Found {
+    /// Nothing: the operator makes it.
+    Nothing,
+    /// An object the operator made, with this uid: the operator applies to it.
+    Ours { uid: String },
+    /// An object the operator did not make: it is left as it is.
+    InTheWay,
+}
+
+/// Whether `held`, the object the cluster holds under the name the operator would use, is one
+/// the operator made for `owner`: it names `owner` as its controller, by uid. Anything else is
+/// in the way, however it is named or owned.
+pub fn found<K>(held: Option<&ObjectMeta>, owner: &K) -> Found
+where
+    K: Resource,
+    K::DynamicType: Default,
+{
+    let Some(held) = held else {
+        return Found::Nothing;
+    };
+    let owner_uid = owner.meta().uid.as_deref().filter(|uid| !uid.is_empty());
+    let controlled = held.owner_references.iter().flatten().any(|reference| {
+        reference.controller == Some(true)
+            && Some(reference.uid.as_str()) == owner_uid
+            && reference.kind == K::kind(&K::DynamicType::default())
+    });
+    match (&held.uid, controlled) {
+        (Some(uid), true) => Found::Ours { uid: uid.clone() },
+        _ => Found::InTheWay,
+    }
+}
+
 /// The one owner of an object the operator makes: its controller, which never blocks its own
 /// deletion. Blocking it would need update rights on the owner's finalizers wherever a cluster
 /// enforces owner-reference permissions; the garbage collector removes the object either way.
