@@ -7,7 +7,8 @@
  * A menu is about the thing it was opened on, so a row is a short verb and does not say that
  * thing's name again: *Rename…*, not *Rename chat console-developer 16…*. The catalogue's title
  * (`actions.ts`) still names it, for the palette, where a row stands among every other row of
- * the window. `menuModel.ts` gives each catalogue row its words from here.
+ * the window. `menuModel.ts` gives each catalogue row its words from here, and the menu-only
+ * builders of `actions.ts` (`viewRows`) read them from here too.
  *
  * **Nothing is imported here**, so the end-to-end specs read the same words the window draws
  * (`e2e/menus.ts`), and a rename is one edit.
@@ -41,6 +42,9 @@ export const SAID = {
   startChatsHere: "Start new chats here",
   toNewWindow: "Move to a new window",
   toMainWindow: "Move to the main window",
+  // A view's icon (`actions.ts`, `viewRows`): to its half of the Panel, or back to its sidebar.
+  toPanel: "Move to panel",
+  toSidebar: "Move to sidebar",
   close: "Close",
   open: "Open",
   edit: "Edit",
