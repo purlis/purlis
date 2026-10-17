@@ -22,7 +22,8 @@
 //! **Fail closed where the window would ask or hear.** A profile that is handed a key or a
 //! cloud's credentials is refused: credentials are read where the window starts its program and
 //! never pass in a launch. A confinement is started by the host as the program's own, and its
-//! proxy asks nobody, since no window hears it. A person's opt-out is written in the host's event
+//! proxy asks nobody, unless the start named it to the window's link: then the window hears it
+//! and answers its asks (#2407). A person's opt-out is written in the host's event
 //! log under the start's own run before anything runs, or the start is refused. A first message
 //! the harness takes on no line of its own is refused, never dropped.
 

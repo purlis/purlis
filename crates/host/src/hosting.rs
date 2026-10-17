@@ -52,7 +52,7 @@
 //! window is gone for a
 //! moment; the window's own stop, or every window letting go of the project, ends it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, Instant};
@@ -118,7 +118,9 @@ pub trait Compose: Send + Sync + 'static {
 pub trait Beside {
     /// Starts the confinement `plan` plans for the program being started, in its project: the
     /// program's own from the first, so it ends with the program, or with the start where the
-    /// start fails. Its proxy asks nobody: no window hears it.
+    /// start fails. Its proxy asks nobody, and no link hears it, unless the start named its
+    /// confinement ([`StartProgram::confinement`], #2407): then it is named to the link the
+    /// start came on, which hears it and is asked.
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String>;
     /// Writes `entry` in the event log this host holds, durably, or says why not.
     fn record(&self, entry: serde_json::Value) -> Result<(), String>;
@@ -485,7 +487,7 @@ struct State {
     /// Each project being saved, at the place it is held: one saver each (#2002, #2178).
     saving: HashMap<HeldAt, Box<dyn Saving>>,
     /// The window's links now (#2006): each `local-ui` link that subscribed or held a project.
-    windows: std::collections::HashSet<u64>,
+    windows: HashSet<u64>,
     /// A window has linked, or the one that started this host has gone: from then on, a host
     /// with no window and nothing a window could come back for stops.
     had_a_window: bool,
@@ -515,7 +517,7 @@ struct Confinement {
     /// The links the host named it to ([`may_act_on`]): the link that made it, from the first;
     /// none, for one the host made for a chat it composed; and each window that took its chat
     /// back. A link's names end with it.
-    named_to: std::collections::HashSet<u64>,
+    named_to: HashSet<u64>,
     confining: Arc<dyn Confining>,
     /// The plan it was started from, as the window sent it (#2006).
     plan: session::ConfinePlan,
@@ -540,6 +542,13 @@ fn may_act_on(state: &State, held: &Confinement, link: u64) -> bool {
                 held_by(state, &held.project, link).is_some_and(|at| *at == hosted.at)
             }),
         }
+}
+
+/// **Whether `subscriber` hears what confinement `held`'s proxy does** (#2444): its link may
+/// confine, and may act on that confinement ([`may_act_on`]). What `sandbox` is pushed to, and
+/// who a proxy holds a connection for an ask while.
+fn hears_its_proxy(state: &State, held: &Confinement, subscriber: &Subscriber) -> bool {
+    subscriber.confines && may_act_on(state, held, subscriber.link)
 }
 
 /// A place: a project, by its stable id, at the folder it is held at on this machine, by the
@@ -872,17 +881,17 @@ impl Hosting {
         let hearers: Option<Vec<u64>> = match pushed {
             Pushed::Sandbox { confinement, .. } => Some(
                 state
-                    .subscribers
-                    .iter()
-                    .filter(|subscriber| subscriber.confines)
-                    .map(|subscriber| subscriber.link)
-                    .filter(|link| {
+                    .confinements
+                    .get(confinement)
+                    .map(|held| {
                         state
-                            .confinements
-                            .get(confinement)
-                            .is_some_and(|held| may_act_on(&state, held, *link))
+                            .subscribers
+                            .iter()
+                            .filter(|subscriber| hears_its_proxy(&state, held, subscriber))
+                            .map(|subscriber| subscriber.link)
+                            .collect()
                     })
-                    .collect(),
+                    .unwrap_or_default(),
             ),
             _ => None,
         };
@@ -1139,7 +1148,7 @@ impl Hosting {
             let mut state = self.state();
             let held = std::mem::take(&mut state.projects);
             // Every program not yet closed, running or ended: closing is what takes one out.
-            let unclosed: std::collections::HashSet<HeldAt> = state
+            let unclosed: HashSet<HeldAt> = state
                 .programs
                 .values()
                 .map(|hosted| hosted.at.clone())
@@ -1240,6 +1249,20 @@ impl Hosting {
                     .values()
                     .any(|hosted| hosted.at == at && hosted.number == number)
             };
+            // The confinement a start the host composes is to have, named to this link (#2407):
+            // never one beside the window's own launch, nor an id the host already holds.
+            if let Some(named) = &start.confinement {
+                if start.launch.is_some() {
+                    return Err(Refusal {
+                        code: session::MALFORMED.into(),
+                        why: "a start with its own launch names its confinement in the launch"
+                            .into(),
+                    });
+                }
+                if state.confinements.contains_key(named) {
+                    return Err(already_confined(named));
+                }
+            }
             // The confinement it runs in becomes the program's, under the same hold, so no two
             // programs run in one. Only one this link made for this project, and nothing runs in
             // yet.
@@ -1302,6 +1325,7 @@ impl Hosting {
         let composed = {
             let hosting = self.clone();
             let start = start.clone();
+            let link = link_of(peer);
             let at = at.clone();
             let program = program.clone();
             tokio::task::spawn_blocking(move || {
@@ -1309,6 +1333,12 @@ impl Hosting {
                     hosting: hosting.clone(),
                     program,
                     at: at.clone(),
+                    named: Mutex::new(
+                        start
+                            .confinement
+                            .clone()
+                            .map(|confinement| NamedTo { confinement, link }),
+                    ),
                 };
                 hosting.inner.compose.compose(&ToCompose {
                     project: &at.project,
@@ -1333,6 +1363,16 @@ impl Hosting {
                 return Err(not_started(why));
             }
         };
+        // Its link ended while it was being composed: the name it gave the confinement composed
+        // for it goes with the link, as the link's end took every other (#2407). Checked after
+        // that confinement is kept, so either this or the link's end finds it.
+        if peer.has_ended() {
+            let unheld = unname(&mut self.state(), peer, |owner| {
+                *owner == Owner::Program(program.clone())
+            });
+            let weak = Arc::downgrade(&self.inner);
+            off_the_runtime(move || withdraw(&weak, unheld));
+        }
         // Where it runs, for a start the host composed: what its project's saver waits on.
         let cwd = spec.cwd.clone();
         // Starting a program opens a terminal and forks: off the runtime.
@@ -1442,10 +1482,24 @@ impl Hosting {
                 exit,
             });
         }));
+        // Where the confinement composed for it is, where the start named one to this link and
+        // its composition started one (#2407).
+        let confined = start.confinement.as_ref().and_then(|id| {
+            let state = self.state();
+            state
+                .confinements
+                .get(id)
+                .filter(|held| held.owner == Owner::Program(program.clone()))
+                .map(|held| Confined {
+                    confinement: id.clone(),
+                    ..held.confining.confined()
+                })
+        });
         Ok(Answer::ProgramStarted {
             program,
             number: Some(number),
             process,
+            confined,
         })
     }
 
@@ -1535,6 +1589,7 @@ impl Hosting {
             program,
             number: None,
             process,
+            confined: None,
         })
     }
 
@@ -1630,7 +1685,8 @@ impl Hosting {
 
     /// Every harness and shell `project` still has, running or ended, at the place the link
     /// `peer` came on holds it, which it must (#2006): what a window that comes back takes back,
-    /// each with the place of the confinement it runs in.
+    /// each with the place of the confinement it runs in. Each confinement it answers is named to
+    /// that link (#2444), which may act on it and hear it from then on.
     fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
         let mut state = self.state();
         let at = held_by(&state, project, link_of(peer))
@@ -1871,8 +1927,9 @@ impl Hosting {
         Ok(Answer::Confined(confined))
     }
 
-    /// What confinement `id`'s proxy tells, pushed to the links that may confine, and whether it
-    /// may hold a connection while the person is asked, now.
+    /// What confinement `id`'s proxy tells, pushed to the links that may hear it
+    /// ([`hears_its_proxy`]), and whether it may hold a connection while the person is asked,
+    /// now.
     fn heard_as(&self, id: &str) -> (crate::confining::Tell, crate::confining::Askable) {
         let weak = Arc::downgrade(&self.inner);
         let tell = {
@@ -1905,9 +1962,7 @@ impl Hosting {
         };
         matches!(held.owner, Owner::Program(_))
             && state.subscribers.iter().any(|subscriber| {
-                subscriber.confines
-                    && !subscriber.told.is_closed()
-                    && may_act_on(&state, held, subscriber.link)
+                !subscriber.told.is_closed() && hears_its_proxy(&state, held, subscriber)
             })
     }
 
@@ -1986,11 +2041,29 @@ struct ForTheProgram {
     hosting: Hosting,
     program: String,
     at: HeldAt,
+    /// What the start named for the confinement composed for it (#2407): taken by the first
+    /// confinement started.
+    named: Mutex<Option<NamedTo>>,
+}
+
+/// The id a start gave the confinement composed for it, and the link it is named to (#2407).
+struct NamedTo {
+    confinement: String,
+    link: u64,
 }
 
 impl Beside for ForTheProgram {
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
-        let id = ulid::Ulid::generate().to_string();
+        let taken = self
+            .named
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let (id, named_to) = match taken {
+            Some(NamedTo { confinement, link }) => (confinement, HashSet::from([link])),
+            // Named to no link: the host made it, for a chat it composed (#2444).
+            None => (ulid::Ulid::generate().to_string(), HashSet::new()),
+        };
         let (tell, askable) = self.hosting.heard_as(&id);
         let confining = self.hosting.inner.confine.confine(
             &ToConfine {
@@ -1999,8 +2072,8 @@ impl Beside for ForTheProgram {
                     confinement: id.clone(),
                     project: self.at.project.clone(),
                     plan: plan.clone(),
-                    // Nobody hears what it would ask about: it refuses instead.
-                    asks: false,
+                    // It asks the link it is named to; one named to none refuses instead.
+                    asks: !named_to.is_empty(),
                 },
             },
             tell,
@@ -2009,17 +2082,25 @@ impl Beside for ForTheProgram {
         let confining: Arc<dyn Confining> = Arc::from(confining);
         let mut confined = confining.confined();
         confined.confinement = id.clone();
-        self.hosting.state().confinements.insert(
-            id,
-            Confinement {
-                project: self.at.project.clone(),
-                owner: Owner::Program(self.program.clone()),
-                // Named to no link: the host made it, for a chat it composed (#2444).
-                named_to: std::collections::HashSet::new(),
-                confining,
-                plan: plan.clone(),
-            },
-        );
+        {
+            let mut state = self.hosting.state();
+            // One started meanwhile under the same id keeps it, and this one ends.
+            if state.confinements.contains_key(&id) {
+                drop(state);
+                end_off_the_runtime(vec![confining]);
+                return Err(already_confined(&id).why);
+            }
+            state.confinements.insert(
+                id,
+                Confinement {
+                    project: self.at.project.clone(),
+                    owner: Owner::Program(self.program.clone()),
+                    named_to,
+                    confining,
+                    plan: plan.clone(),
+                },
+            );
+        }
         Ok(confined)
     }
 
@@ -2028,16 +2109,90 @@ impl Beside for ForTheProgram {
     }
 }
 
-/// Ends `confinements` off the runtime: a proxy's end waits on its listeners.
-fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
-    if confinements.is_empty() {
-        return;
+/// A chat's confinement whose ports of the machine nobody is left to withdraw (#2407): those
+/// it was given, to withdraw now.
+struct Unheld {
+    id: String,
+    confining: Arc<dyn Confining>,
+    ports: Vec<u16>,
+}
+
+/// **Takes the name of `peer`'s link off each confinement `whose` picks** (#2444), once that
+/// link has ended. A chat's confinement left named to no link, by a link that cannot take its
+/// chat back, is to carry none of the machine's ports it was given from now on: nobody is left
+/// to withdraw one (#2407). Those are answered, and kept as withdrawn in its plan.
+fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec<Unheld> {
+    let link = link_of(peer);
+    let comes_back = peer.scope().may(Power::Reattach);
+    let mut unheld = Vec::new();
+    for (id, held) in &mut state.confinements {
+        if !whose(&held.owner) || !held.named_to.remove(&link) {
+            continue;
+        }
+        if comes_back || !held.named_to.is_empty() || !matches!(held.owner, Owner::Program(_)) {
+            continue;
+        }
+        let ports: Vec<u16> = held
+            .plan
+            .given
+            .iter()
+            .copied()
+            .filter(|port| !held.plan.withdrawn.contains(port))
+            .collect();
+        if !ports.is_empty() {
+            held.plan.withdrawn.extend(&ports);
+            unheld.push(Unheld {
+                id: id.clone(),
+                confining: Arc::clone(&held.confining),
+                ports,
+            });
+        }
     }
+    unheld
+}
+
+/// Withdraws each of `unheld`'s ports from its confinement, as a window's withdrawal would
+/// (#2407). One whose port cannot be withdrawn is ended: it carries no port nobody is left to
+/// withdraw. Blocking: a proxy's end waits on its listeners.
+fn withdraw(hosting: &Weak<Inner>, unheld: Vec<Unheld>) {
+    for Unheld {
+        id,
+        confining,
+        ports,
+    } in unheld
+    {
+        let withdrawn = ports.into_iter().all(|port| {
+            confining
+                .change(&session::ReachChange::WithdrawPort { port })
+                .is_ok()
+        });
+        if !withdrawn {
+            let ending = hosting.upgrade().and_then(|inner| {
+                Hosting { inner }
+                    .state()
+                    .confinements
+                    .remove(&id)
+                    .map(|held| held.confining)
+            });
+            drop((confining, ending));
+        }
+    }
+}
+
+/// Runs `blocking` off the runtime, where there is one: a proxy's end waits on its listeners.
+fn off_the_runtime(blocking: impl FnOnce() + Send + 'static) {
     match tokio::runtime::Handle::try_current() {
         Ok(runtime) => {
-            runtime.spawn_blocking(move || drop(confinements));
+            runtime.spawn_blocking(blocking);
         }
-        Err(_) => drop(confinements),
+        Err(_) => blocking(),
+    }
+}
+
+/// Ends `confinements` off the runtime: a proxy's end waits on its listeners.
+fn end_off_the_runtime(confinements: Vec<Arc<dyn Confining>>) {
+    if !confinements.is_empty() {
+        off_the_runtime(move || drop(confinements));
     }
 }
 
@@ -2334,15 +2489,18 @@ impl session::Host for Hosting {
         // What the link confined that nothing runs in yet goes with it; what a program runs in
         // stays with the program (#1999).
         let link = link_of(peer);
-        let ending = {
+        let (ending, unheld) = {
             let mut state = self.state();
-            // Its names end with it (#2444).
-            for held in state.confinements.values_mut() {
-                held.named_to.remove(&link);
-            }
-            take_confinements(&mut state, |owner| *owner == Owner::Link(link))
+            let unheld = unname(&mut state, peer, |_| true);
+            let ending = take_confinements(&mut state, |owner| *owner == Owner::Link(link));
+            (ending, unheld)
         };
-        end_off_the_runtime(ending);
+        // Its chats' ports are withdrawn before what it confined ends, on one blocking thread.
+        let weak = Arc::downgrade(&self.inner);
+        off_the_runtime(move || {
+            withdraw(&weak, unheld);
+            drop(ending);
+        });
     }
 
     async fn subscribe(

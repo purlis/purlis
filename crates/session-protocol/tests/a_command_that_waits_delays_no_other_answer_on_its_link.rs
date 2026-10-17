@@ -94,6 +94,7 @@ impl Host for Waiting {
                     program: ONE.into(),
                     number: None,
                     process: None,
+                    confined: None,
                 })
             }
             Command::Write { chat, bytes } => {

@@ -1443,12 +1443,86 @@ fn allow(
     audit: Audit<'_>,
     at: u64,
 ) -> Result<Allowed, NotJudged> {
-    let folder = chats.folder_of(session);
-    let (what, level) = judged(root, machine, folder.as_deref(), session, asked)?;
-    let kept = kept(root, chats, session, (&what, level), audit, at)?;
+    let (_, level, kept) = judged_and_kept(root, machine, chats, Some(session), asked, audit, at)?;
+    Ok(Allowed {
+        said: allowed_said(Some(session), level, &kept),
+        live: kept.live.contains(&session),
+    })
+}
+
+/// **The one path an Allow of what a sandbox refused is granted by** (#1342, #1970): `asked`
+/// is [`judged`] by the core (never on the window's word), then audited and kept by
+/// [`kept_for`], for chat `session` or for no chat. A block's Notice ([`allow`]) and Settings'
+/// port form ([`allow_port`]) both come through here, so neither can grant what the other
+/// refuses.
+pub(crate) fn judged_and_kept(
+    root: &std::path::Path,
+    machine: &sandbox::Machine,
+    chats: &crate::chats::Chats,
+    session: Option<u32>,
+    asked: (GrantWhat, &str, GrantLevel),
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<(sandbox::grant::What, sandbox::grant::Level, Kept), NotJudged> {
+    let folder = session.and_then(|session| chats.folder_of(session));
+    let (what, level) = judged(
+        root,
+        machine,
+        folder.as_deref(),
+        session.unwrap_or(0),
+        asked,
+    )?;
+    let kept = kept_for(root, chats, session, (&what, level), audit, at)?;
+    Ok((what, level, kept))
+}
+
+/// **A service on this Mac added by its port on Settings' Network page** (#1970): `port` as
+/// typed, for open chat `chat` alone ([`GrantLevel::Chat`]) or for every chat of the project at
+/// `root` on this machine ([`GrantLevel::You`], where `chat` is not read). Granted through
+/// [`judged_and_kept`] exactly as a block's Notice grants a port, so a range, every port,
+/// purlis's own port, any other scope and a policy lock are refused in the Notice's own words,
+/// and nothing refused is audited or kept. For one chat, the core also checks, before anything
+/// is judged or audited, that it names a chat open in this project (`chats` is this project's
+/// alone) that runs a harness, never a shell. That chat then restarts on its conversation once
+/// its turn ends, as after its Notice; for this project on this machine, a chat that is running
+/// takes it from its next start.
+pub(crate) fn allow_port(
+    root: &std::path::Path,
+    machine: &sandbox::Machine,
+    chats: &crate::chats::Chats,
+    chat: Option<u32>,
+    (port, level): (&str, GrantLevel),
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<Allowed, NotJudged> {
+    let session = match (level, chat) {
+        (GrantLevel::Chat, None) => {
+            return refused(format!(
+                "purlis did not allow port {}: no open chat was named.",
+                port.trim()
+            ));
+        }
+        (GrantLevel::Chat, Some(chat)) if chats.harness(chat).is_none() => {
+            return refused(format!(
+                "purlis did not allow port {}: chat {chat} is not a chat open in this project.",
+                port.trim()
+            ));
+        }
+        (GrantLevel::Chat, Some(chat)) => Some(chat),
+        _ => None,
+    };
+    let (_, level, kept) = judged_and_kept(
+        root,
+        machine,
+        chats,
+        session,
+        (GrantWhat::Port, port, level),
+        audit,
+        at,
+    )?;
     Ok(Allowed {
         said: allowed_said(session, level, &kept),
-        live: kept.live.contains(&session),
+        live: session.is_some_and(|session| kept.live.contains(&session)),
     })
 }
 
@@ -1839,8 +1913,24 @@ fn everywhere_made(
     })
 }
 
-/// What an Allow on chat `session`'s Notice says, once [`kept`] came to `kept` at `level`.
-pub(crate) fn allowed_said(session: u32, level: sandbox::grant::Level, kept: &Kept) -> String {
+/// What an Allow says once [`kept`] came to `kept` at `level`: on chat `session`'s Notice, or
+/// for no chat (#1970, Settings' port form), where a chat that is running takes it from its
+/// next start.
+pub(crate) fn allowed_said(
+    session: Option<u32>,
+    level: sandbox::grant::Level,
+    kept: &Kept,
+) -> String {
+    let Some(session) = session else {
+        return if kept.already {
+            format!("It was allowed already, {}.", level.said())
+        } else {
+            format!(
+                "Allowed {}. A chat that is running reaches it from its next start.",
+                level.said()
+            )
+        };
+    };
     let retry = kept.retry.contains(&session);
     match (kept.already, kept.live.contains(&session)) {
         (true, true) => format!(
@@ -1922,6 +2012,37 @@ pub async fn allow_sandbox_block(
         // Answered: neither this Notice nor a question for several tasks answers it again.
         held.chats().blocks().answered(session, &block);
         Ok(allowed)
+    })
+    .await
+}
+
+/// **Allow port** on Settings' Network page (#1970): the service on this Mac at `port`, for open
+/// chat `chat` alone or for every chat of this project on this machine, granted by
+/// [`allow_port`] through the path a block's Notice takes. The window's alone (`WINDOW_ONLY`).
+///
+/// Off the window's thread (#1949): it is judged, audited and kept on disk before it answers.
+#[tauri::command]
+#[specta::specta]
+pub async fn allow_sandbox_port(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    port: String,
+    chat: Option<u32>,
+    level: GrantLevel,
+) -> Result<Allowed, String> {
+    let held = planes.held(&plane)?;
+    let network = planes.network().cloned();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        allow_port(
+            held.root(),
+            &sandbox::Machine::this(),
+            held.chats(),
+            chat,
+            (&port, level),
+            &held.audit_then_record(network.as_ref()),
+            now_secs(),
+        )
+        .map_err(String::from)
     })
     .await
 }

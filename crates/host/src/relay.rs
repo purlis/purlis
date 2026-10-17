@@ -15,7 +15,8 @@
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
 //! `launch`, the window's reply to a line a chat's hooks wrote, and a chat's confinement (its
-//! start, the window's answers to its asks, a port withdrawn from it, #2217) cross only for a
+//! start, the window's answers to its asks, a port withdrawn from it, #2217, and a start that
+//! names the confinement the other host composes for it, #2407) cross only for a
 //! `local-ui` client, whatever else this host's grants let a client send; and what only the
 //! window hears (a held project's hook lines, how saving it goes, what a chat's sandbox did)
 //! reaches only a `local-ui` client. This is the one place that rule is enforced: the other
@@ -179,7 +180,9 @@ async fn push_on(
 /// client alone.
 fn the_windows_alone(command: &Command) -> bool {
     match command {
-        Command::StartProgram(start) => start.launch.is_some() || start.without_sandbox,
+        Command::StartProgram(start) => {
+            start.launch.is_some() || start.without_sandbox || start.confinement.is_some()
+        }
         command => the_windows_power(command.power()),
     }
 }

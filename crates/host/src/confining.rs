@@ -16,9 +16,11 @@
 //! while the window's link is gone.
 //!
 //! **Only the window hears it and answers it.** What a proxy refused, carried and asks about is
-//! pushed only to a link that may confine (`local-ui`), and every answer to its asks comes from
-//! one (`crate::grants`' row for 1.4). Its proxy holds a connection while the person is asked
-//! only once a program runs in it and a window is there to ask.
+//! pushed only to a link that may confine and that the confinement is named to, and every
+//! answer to its asks comes from one (`crate::grants`' row for 1.4, #2444). Its proxy holds a
+//! connection while the person is asked only once a program runs in it and such a link is there
+//! to ask. A confinement the host composes for a chat is named to the link that started it,
+//! where the start asked (1.16, #2407).
 
 use std::path::Path;
 use std::sync::Arc;

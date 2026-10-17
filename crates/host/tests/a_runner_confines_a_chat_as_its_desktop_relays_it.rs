@@ -533,3 +533,339 @@ async fn the_runners_confinement_of_a_chat_it_composed_is_not_the_desktop_window
         "nobody named it to the window"
     );
 }
+
+/// The id the window asks the runner to give the confinement it composes for a chat it starts
+/// by its names (#2407).
+const NAMED: &str = "01J9CNFNMNT0000000000000002";
+
+/// A start by its names, naming the confinement the runner composes for it.
+fn by_its_names() -> StartProgram {
+    StartProgram {
+        confinement: Some(NAMED.into()),
+        ..StartProgram::of(PROJECT, ProgramKind::Harness)
+    }
+}
+
+async fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = std::time::Instant::now() + PATIENCE;
+    while !done() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what} never happened"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_chat_the_runner_composes_by_its_names_is_heard_and_answered_by_the_window_that_started_it()
+ {
+    let hosts = hosts();
+    let (window, mut events) = the_window(&hosts).await;
+
+    let started = window
+        .start_program_told(by_its_names())
+        .await
+        .expect("composed on host B");
+    let asked = SandboxTold::Asked {
+        targets: vec!["pypi.example.com:443".into()],
+    };
+    hosts.confines.proxy_did(NAMED, asked.clone());
+    let answered = window
+        .call(Command::ChangeReach {
+            confinement: NAMED.into(),
+            change: ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: Layer::Chat,
+            },
+        })
+        .await
+        .expect("answered on host B");
+    window
+        .call(Command::ChangeReach {
+            confinement: NAMED.into(),
+            change: ReachChange::WithdrawPort { port: 5432 },
+        })
+        .await
+        .expect("withdrawn on host B");
+
+    assert_eq!(
+        started.confined.map(|confined| confined.confinement),
+        Some(NAMED.to_owned())
+    );
+    assert!(hosts.confines.askable(NAMED), "its proxy asks the window");
+    assert_eq!(
+        next_sandbox(&mut events).await,
+        Some(Pushed::Sandbox {
+            confinement: NAMED.into(),
+            told: asked,
+        })
+    );
+    assert_eq!(
+        answered,
+        Answer::ReachChanged {
+            retry: vec!["pypi.example.com:443".into()]
+        }
+    );
+    assert_eq!(
+        hosts.confines.seen()[0].changes,
+        [
+            ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: Layer::Chat,
+            },
+            ReachChange::WithdrawPort { port: 5432 },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn host_a_names_a_composed_confinement_for_its_window_alone() {
+    let hosts = hosts();
+    let (other, _events) = another_host(&hosts).await;
+    let (terminal, _terminal_events) = a_client(&hosts, Scope::Terminal).await;
+    let dialed = hosts.dials.load(Ordering::SeqCst);
+
+    for client in [&other, &terminal] {
+        let refused = client.start_program(by_its_names()).await.unwrap_err();
+        assert_eq!(
+            refused.refusal().map(|r| r.code.as_str()),
+            Some(session::NOT_ALLOWED)
+        );
+    }
+
+    assert_eq!(
+        hosts.dials.load(Ordering::SeqCst),
+        dialed,
+        "nothing was sent on"
+    );
+    assert!(hosts.runs.ran().is_empty());
+}
+
+#[tokio::test]
+async fn the_window_is_named_on_the_runner_only_the_confinement_of_the_chat_it_started() {
+    let hosts = hosts();
+    let (window, mut events) = the_window(&hosts).await;
+    let (runners, _runners_events) = the_runners_own_window(&hosts).await;
+    confine(&runners)
+        .await
+        .expect("confined by the runner's window");
+    runners
+        .start_program(a_launch(None, Some(CONFINEMENT)))
+        .await
+        .expect("the runner's own chat");
+    window
+        .start_program(by_its_names())
+        .await
+        .expect("composed on host B");
+
+    let refused = window
+        .call(Command::ChangeReach {
+            confinement: CONFINEMENT.into(),
+            change: ReachChange::WithdrawPort { port: 5432 },
+        })
+        .await
+        .unwrap_err();
+    let taken_back = window
+        .call(Command::ProgramsOf {
+            project: PROJECT.into(),
+        })
+        .await
+        .unwrap_err();
+    hosts.confines.proxy_did(
+        CONFINEMENT,
+        SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NO_SUCH_CHAT)
+    );
+    assert_eq!(
+        taken_back.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED),
+        "a relayed link is never named a place's every confinement"
+    );
+    assert!(
+        timeout(Duration::from_millis(300), next_sandbox(&mut events))
+            .await
+            .ok()
+            .flatten()
+            .is_none(),
+        "the desktop's window hears nothing of the runner's own chat"
+    );
+}
+
+#[tokio::test]
+async fn a_runner_withdraws_the_ports_given_to_its_window_s_chats_once_that_window_s_link_ends() {
+    let hosts = hosts();
+    let (window, events) = the_window(&hosts).await;
+    confine(&window).await.expect("confined");
+    window
+        .start_program(a_launch(None, Some(CONFINEMENT)))
+        .await
+        .expect("a chat in the window's confinement");
+    window
+        .start_program(by_its_names())
+        .await
+        .expect("a chat composed by its names");
+
+    drop((window, events));
+
+    let withdrawn = |id: &str| {
+        hosts
+            .confines
+            .seen()
+            .iter()
+            .find(|one| one.confine.confinement == id)
+            .is_some_and(|one| one.changes == [ReachChange::WithdrawPort { port: 5432 }])
+    };
+    until("both chats' given port withdrawn", || {
+        withdrawn(CONFINEMENT) && withdrawn(NAMED)
+    })
+    .await;
+    assert!(!hosts.confines.ended(CONFINEMENT), "each keeps its network");
+    assert!(!hosts.confines.ended(NAMED));
+}
+
+#[tokio::test]
+async fn a_chat_whose_given_port_cannot_be_withdrawn_once_its_window_is_gone_loses_its_network() {
+    let hosts = hosts();
+    let (window, events) = the_window(&hosts).await;
+    window
+        .start_program(by_its_names())
+        .await
+        .expect("a chat composed by its names");
+    hosts.confines.refuse_changes("the proxy is not answering");
+
+    drop((window, events));
+
+    until("its confinement ended", || hosts.confines.ended(NAMED)).await;
+}
+
+#[tokio::test]
+async fn a_second_window_relayed_to_the_runner_may_not_read_act_on_or_hear_the_first_s_chat() {
+    let hosts = hosts();
+    let (window, mut events) = the_window(&hosts).await;
+    let (second, mut second_events) = the_window(&hosts).await;
+    confine(&window).await.expect("confined");
+    window
+        .start_program(a_launch(None, Some(CONFINEMENT)))
+        .await
+        .expect("a chat in the first window's confinement");
+
+    let read = second
+        .call(Command::ReachOf {
+            confinement: CONFINEMENT.into(),
+        })
+        .await
+        .unwrap_err();
+    let withdrawn = second
+        .call(Command::ChangeReach {
+            confinement: CONFINEMENT.into(),
+            change: ReachChange::WithdrawPort { port: 5432 },
+        })
+        .await
+        .unwrap_err();
+    hosts.confines.proxy_did(
+        CONFINEMENT,
+        SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+
+    for refused in [read, withdrawn] {
+        assert_eq!(
+            refused.refusal().map(|r| r.code.as_str()),
+            Some(session::NO_SUCH_CHAT)
+        );
+    }
+    assert!(hosts.confines.seen()[0].changes.is_empty(), "unchanged");
+    assert!(
+        next_sandbox(&mut events).await.is_some(),
+        "the first hears it"
+    );
+    assert!(
+        timeout(Duration::from_millis(300), next_sandbox(&mut second_events))
+            .await
+            .ok()
+            .flatten()
+            .is_none(),
+        "the second window hears nothing of it"
+    );
+    assert!(
+        window
+            .call(Command::ReachOf {
+                confinement: CONFINEMENT.into(),
+            })
+            .await
+            .is_ok(),
+        "the first reads it through host A"
+    );
+}
+
+/// Lets the stand-in's held starts go as it is dropped, so a test that fails while they are held
+/// ends rather than waits on them.
+struct LetsStartsGo(StandInConfines);
+
+impl Drop for LetsStartsGo {
+    fn drop(&mut self) {
+        self.0.let_starts_go();
+    }
+}
+
+#[tokio::test]
+async fn a_chat_whose_peer_s_link_ends_while_the_runner_composes_it_has_its_given_port_withdrawn() {
+    let hosts = hosts();
+    // The runner's peer, on a link of its own to host B, whose end the test decides.
+    let (peer, _views, events) = Client::new(between_hosts(hosts.runner.clone()).await);
+    peer.hold_project(PROJECT, hosts._project.path().to_str().unwrap())
+        .await
+        .expect("held on host B");
+    peer.subscribe(Default::default())
+        .await
+        .expect("subscribed");
+    // A chat already running in a confinement the peer made: its port withdrawn says the runner
+    // has heard the peer's link end.
+    confine(&peer).await.expect("confined");
+    peer.start_program(a_launch(None, Some(CONFINEMENT)))
+        .await
+        .expect("a chat in the peer's confinement");
+    hosts.confines.hold_starts();
+    let _lets_go = LetsStartsGo(hosts.confines.clone());
+    let starting = tokio::spawn(async move {
+        let _ = peer.start_program(by_its_names()).await;
+        drop(events);
+    });
+    until("the composed confinement is being started", || {
+        hosts.confines.waiting() == 1
+    })
+    .await;
+
+    // The peer's link ends while the runner composes its chat.
+    starting.abort();
+    let _ = starting.await;
+    let withdrawn = |id: &str| {
+        hosts
+            .confines
+            .seen()
+            .iter()
+            .find(|one| one.confine.confinement == id)
+            .is_some_and(|one| one.changes == [ReachChange::WithdrawPort { port: 5432 }])
+    };
+    until("the runner heard the peer's link end", || {
+        withdrawn(CONFINEMENT)
+    })
+    .await;
+    hosts.confines.let_starts_go();
+
+    until("the composed chat's given port withdrawn", || {
+        withdrawn(NAMED)
+    })
+    .await;
+    assert!(!hosts.confines.ended(NAMED), "it keeps its network");
+}

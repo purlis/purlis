@@ -139,9 +139,14 @@ use crate::view::{Limits, Views};
 /// 1.15 added a browser's reach Asks (#2018): `browse` may carry what the browser reaches from
 /// that act on (`reach`), and `browsed` says the sites new to the project it asked about
 /// (`asked`).
+///
+/// 1.16 added the window hearing a chat its host composes by its names (#2407): a start with no
+/// launch may name the id of the confinement the host composes for it (`confinement`), which
+/// the host then names to the link the start came on, whose proxy asks that link, and whose
+/// place `program_started` answers (`confined`).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 15,
+    minor: 16,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -347,16 +352,19 @@ pub enum Command {
     /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
     /// Boxed: a plan lists every host a chat reaches.
     Confine(Box<Confine>),
-    /// End a confinement, whether or not a program runs in it (1.4).
+    /// End a confinement, whether or not a program runs in it (1.4). One the host does not hold
+    /// is let go of already; one the link may not act on is refused [`NO_SUCH_CHAT`] (#2444).
     LetGoOfConfinement { confinement: String },
     /// The window's answer to a confinement's live ask, or a port withdrawn from it (1.4):
-    /// answered [`Answer::ReachChanged`].
+    /// answered [`Answer::ReachChanged`], or refused [`NO_SUCH_CHAT`] for a confinement the
+    /// link may not act on (#2444).
     ChangeReach {
         confinement: String,
         #[serde(flatten)]
         change: ReachChange,
     },
-    /// What a confinement's board of live asks holds now (1.4): answered [`Answer::Reach`].
+    /// What a confinement's board of live asks holds now (1.4): answered [`Answer::Reach`], or
+    /// refused [`NO_SUCH_CHAT`] for a confinement the link may not act on (#2444).
     ReachOf { confinement: String },
     /// Throw the kill switch (1.5, ADR 0071): end every program the host runs, in every
     /// project, and start none until the window re-arms it. The host keeps the stop across its
@@ -389,7 +397,9 @@ pub enum Command {
     },
     /// Every program a held project still has, running or ended, that no client has closed
     /// (1.13): what a window that comes back to the host takes back. Answered
-    /// [`Answer::Programs`]. The window's alone ([`crate::grants::Power::Reattach`]).
+    /// [`Answer::Programs`]. The window's alone ([`crate::grants::Power::Reattach`]). Each
+    /// confinement it answers is named to the link that asked, which may act on it and hear it
+    /// from then on (#2444).
     ProgramsOf { project: String },
     /// The window is quitting (1.13, ADR 0068 §2): the host ends every program it runs as a quit
     /// would, answers once they are gone, and stops. A window's link that ends without it is a
@@ -626,6 +636,14 @@ pub struct StartProgram {
     /// every site new to the project refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reach: Option<crate::browsing::BrowserReach>,
+    /// For a start the host composes (no `launch`), the id the confinement it starts the
+    /// program in is to have (1.16): that confinement is named to the link the start came on,
+    /// its proxy asks that link about each host nothing lists, and the answer says where it is
+    /// ([`Answer::ProgramStarted`]'s `confined`). Taken from a link that may confine alone
+    /// ([`crate::grants::Power::Confine`]). Absent, the host names it to no link and its proxy
+    /// asks nobody.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confinement: Option<String>,
 }
 
 impl StartProgram {
@@ -648,6 +666,7 @@ impl StartProgram {
             without_sandbox: false,
             launch: None,
             reach: None,
+            confinement: None,
         }
     }
 }
@@ -767,6 +786,10 @@ pub enum Answer {
         number: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         process: Option<u32>,
+        /// Where the confinement the host composed for it is, named to the link the start came
+        /// on, where the start asked for it by [`StartProgram::confinement`] (1.16).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confined: Option<Confined>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -846,6 +869,9 @@ pub struct ProgramStarted {
     pub number: Option<u32>,
     /// Its process, while it runs.
     pub process: Option<u32>,
+    /// Where the confinement the host composed for it is, where the start named one to this
+    /// link (1.16).
+    pub confined: Option<Confined>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -978,7 +1004,9 @@ pub enum Pushed {
         line: serde_json::Value,
     },
     /// What a confinement's proxy did (1.4). Pushed only to a link that may confine
-    /// ([`crate::grants::Power::Confine`]).
+    /// ([`crate::grants::Power::Confine`]) and that the host named the confinement to (#2444):
+    /// the link that made it, one a start's `confinement` named it to (1.16), and a window that
+    /// took its chat back with [`Command::ProgramsOf`].
     Sandbox {
         confinement: String,
         #[serde(flatten)]
@@ -1716,6 +1744,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
+        && start.confinement.is_some()
+        && !scope.may(Power::Confine)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a chat's confinement is named to purlis's window, or its host's relay, only, and \
+                 this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
         && start.without_sandbox
         && !scope.may(Power::OptOut)
     {
@@ -1984,10 +2024,12 @@ impl Client {
                 program,
                 number,
                 process,
+                confined,
             } => Ok(ProgramStarted {
                 program,
                 number,
                 process,
+                confined,
             }),
             other => Err(unexpected(&other)),
         }
