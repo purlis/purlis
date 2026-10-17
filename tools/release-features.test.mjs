@@ -3,10 +3,19 @@
 
 // No release build carries a crate's test-only feature (#2216). Run with `node --test tools/`.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
-import { SHIPPING_WORKFLOWS, TAURI_PROJECT, annotations, builds, enablers, tauriConfigFeatures } from "./release-features.mjs";
+import {
+  SHIPPING_WORKFLOWS,
+  TAURI_PROJECT,
+  annotations,
+  builds,
+  enablers,
+  tauriConfigFeatures,
+  NOT_SHIPPING,
+  workflowErrors,
+} from "./release-features.mjs";
 
 // Written by hand, in the shape `cargo tree --prefix depth -i purlis-session-protocol -e
 // normal,build,features -p purlis-cli` printed on 2026-10-17 (paths shortened to `/w`): one
@@ -163,8 +172,122 @@ test("the shipping workflows' builds, as read, one by one", () => {
   );
   const app = { manifest: `${TAURI_PROJECT}/Cargo.toml`, packages: [] };
   assert.deepEqual(read, {
-    "release.yml": [{ manifest: "Cargo.toml", packages: ["purlis-cli", "persona-statistics"] }, app, app],
+    "release.yml": [
+      { manifest: "Cargo.toml", packages: ["purlis-cli", "persona-statistics"] },
+      app,
+      app,
+      // `cargo run --release -p release-manifest`: the tool that writes the update manifests.
+      { manifest: "Cargo.toml", packages: ["release-manifest"] },
+    ],
     "runner-image.yml": [{ manifest: "Cargo.toml", packages: ["purlis-cli"] }],
     "operator-image.yml": [{ manifest: "operator/Cargo.toml", packages: [] }],
   });
+});
+
+test("a compiling cargo subcommand this check does not know is an error, not skipped", () => {
+  assert.match(one("cargo zigbuild --release -p a").error, /`cargo zigbuild` is not a subcommand this check knows/);
+  assert.match(one("cargo auditable zigbuild -p a").error, /`cargo zigbuild` is not a subcommand this check knows/);
+  assert.match(one("cargo +1.99.1 xtask dist").error, /`cargo xtask` is not a subcommand this check knows/);
+  assert.match(one('notes=$(cargo dist build -p a)').error, /`cargo dist` is not a subcommand this check knows/);
+});
+
+test("cargo's subcommands that make nothing someone is given are not builds", () => {
+  for (const line of [
+    "cargo run --locked --quiet -p changelog -- \"$VERSION\" CHANGELOG.md",
+    'if ! notes=$(cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md 2>&1); then',
+    "cargo test --locked",
+    "cargo clippy --locked --all-targets",
+    "cargo fmt --check",
+    "cargo deny --all-features --config ../deny.toml check",
+    "cargo audit bin dist/purlis",
+    "cargo metadata --format-version 1",
+    "cargo tree -e features",
+    "cargo --version",
+  ]) {
+    assert.deepEqual(builds(`      - run: ${line}`), [], line);
+  }
+});
+
+test("cargo called through a variable or by path is an error", () => {
+  assert.match(one('"$CARGO" build -p a').error, /through a variable/);
+  assert.match(one("$CARGO build -p a").error, /through a variable/);
+  assert.match(one("${CARGO} auditable build -p a").error, /through a variable/);
+  assert.match(one("~/.cargo/bin/cargo build -p a").error, /by path/);
+  assert.match(one('"$HOME/.cargo/bin/cargo" zigbuild -p a').error, /by path/);
+});
+
+test("a workflow that builds is shipping or not shipping, never neither", () => {
+  for (const text of [
+    "      - run: cargo build --locked -p a",
+    "      - run: npx tauri build",
+    "      - run: cargo zigbuild -p a",
+    "      - uses: tauri-apps/tauri-action@0123456789abcdef0123456789abcdef01234567 # v0",
+  ]) {
+    assert.deepEqual(workflowErrors([{ name: "new.yml", text }]).map((e) => e.name), ["new.yml"], text);
+    assert.match(workflowErrors([{ name: "new.yml", text }])[0].error, /neither SHIPPING_WORKFLOWS nor NOT_SHIPPING/);
+    assert.deepEqual(workflowErrors([{ name: SHIPPING_WORKFLOWS[0], text }]), [], text);
+  }
+  for (const text of ["      - run: cargo build --locked -p a", "      - run: npx tauri build"]) {
+    assert.deepEqual(workflowErrors([{ name: Object.keys(NOT_SHIPPING)[0], text }]), [], text);
+  }
+  assert.deepEqual(workflowErrors([{ name: "docs.yml", text: "      - run: cargo run -p changelog" }]), []);
+});
+
+test("each workflow that does not ship says why", () => {
+  for (const [name, why] of Object.entries(NOT_SHIPPING)) {
+    assert.ok(why.length > 20, name);
+    assert.ok(!SHIPPING_WORKFLOWS.includes(name), name);
+  }
+});
+
+test("a workflow listed as not shipping that publishes is an error", () => {
+  const listed = Object.keys(NOT_SHIPPING)[0];
+  for (const publish of [
+    "      - run: gh release create v1 dist/*",
+    "      - uses: docker/build-push-action@0123456789abcdef0123456789abcdef01234567 # v7",
+    "    permissions:\n      packages: write",
+  ]) {
+    const [found] = workflowErrors([{ name: listed, text: `${publish}\n      - run: cargo build -p a` }]);
+    assert.equal(found?.name, listed, publish);
+    assert.match(found.error, /publishes/);
+  }
+  assert.deepEqual(workflowErrors([{ name: listed, text: "      # gh release create v1\n      - run: cargo build -p a" }]), []);
+});
+
+test("cargo run or test with a release profile is a build, never skipped", () => {
+  assert.deepEqual(one("cargo run --locked --release -p release-manifest -- --out x"), {
+    line: 1, manifest: "Cargo.toml", packages: ["release-manifest"],
+  });
+  assert.deepEqual(one("cargo r -r -p a"), { line: 1, manifest: "Cargo.toml", packages: ["a"] });
+  assert.deepEqual(one("cargo run --profile dev-release -p a"), { line: 1, manifest: "Cargo.toml", packages: ["a"] });
+  assert.match(one("cargo test --release -p a").error, /test build/);
+  assert.match(one("cargo t --profile=x -p a").error, /test build/);
+  assert.match(one("cargo test --no-run -p a").error, /test build/);
+  assert.deepEqual(builds('      - run: notes=$(cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md)'), []);
+});
+
+test("cargo inside a quoted command, a plugin's own binary or cargo.exe is a build this check cannot read", () => {
+  assert.match(one("sh -c 'cargo build --release -p a'").error, /after other words/);
+  assert.match(one('bash -c "cargo build -p a"').error, /after other words/);
+  assert.match(one("cargo-zigbuild build -p a").error, /plugin/);
+  assert.match(one("cd x && cargo-auditable auditable build -p a").error, /plugin/);
+  assert.match(one("cargo.exe build -p a").error, /by path/);
+  assert.deepEqual(builds("      - name: cargo-auditable"), []);
+  assert.deepEqual(builds("      - run: cargo install --locked cargo-auditable --version \"$CARGO_AUDITABLE_VERSION\""), []);
+});
+
+test("cargo through any variable expansion, or a variable named for cargo, is an error", () => {
+  assert.match(one("${CARGO:-cargo} build -p a").error, /through a variable/);
+  assert.match(one('"$CARGO" zigbuild -p a').error, /through a variable/);
+  assert.match(one("$cargo nextest run").error, /through a variable/);
+  assert.match(one("cd x && $MY_CARGO xtask dist").error, /through a variable/);
+});
+
+test("every workflow today that ships a build is listed", () => {
+  const dir = new URL("../.github/workflows/", import.meta.url);
+  const workflows = readdirSync(dir)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .map((name) => ({ name, text: readFileSync(new URL(name, dir), "utf8") }));
+  assert.ok(workflows.length > SHIPPING_WORKFLOWS.length);
+  assert.deepEqual(workflowErrors(workflows), []);
 });
