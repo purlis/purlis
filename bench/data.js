@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792213979870,
+  "lastUpdate": 1792215324348,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14868,6 +14868,48 @@ window.BENCHMARK_DATA = {
             "value": 104.2582655,
             "unit": "ms",
             "extra": "median of 5 runs: 103.139, 104.108, 104.258, 105.782, 106.944 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "61a942d7b6f5de015f2ba1783eaa9446a71d75df",
+          "message": "fix(save): Merge as it stands merges exactly what was shown (#1978)\n\nThe press's merge read the kept head and standing again under its own claim\nand merged whatever was there: a save that pushed, or a look that found the\nchecks failed, between the fresh look and the merge would have been merged\npast without being shown. What the confirmation showed (`Seen`) is now handed\ndown to the merge that reads no check, compared again under its claim with\nchanged_since, and the forge's merge is pinned to the shown commit.\n\nThe core's merge as it stands is private to planegit and reposave, reached\nonly from merge_as_seen; a guard holds merge_as_seen to the window's one\ncommand across every crate, and the window's send to SavingMerge.tsx.\nreposave::merge_as_seen is driven end to end against the stand-in gh, and\nFix is read from a real clone, the project's and a repo's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward",
+          "timestamp": "2026-10-17T09:34:05+04:00",
+          "tree_id": "e32fdf659949d96a4d9265946dbf9914399ae2a3",
+          "url": "https://github.com/purlis/purlis/commit/61a942d7b6f5de015f2ba1783eaa9446a71d75df"
+        },
+        "date": 1792215323023,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.523174,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.511, 0.523, 0.545, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0109405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.418, 16.952, 17.011, 17.119, 17.201 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.67422400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.147, 104.223, 104.674, 104.799, 107.439 ms"
           }
         ]
       }
