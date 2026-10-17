@@ -5,20 +5,18 @@
 //! standard input and output joined to the runner's host's link socket, as the same OS user.
 //! The link's handshake ends in the host, so the bridge holds no key and decides nothing.
 //!
-//! `purlis bridge --pair` pairs the runner (ADR 0078 §3, #2044): it reads the desktop's pin on
-//! its standard input, one line of [`purlis_core::runnerlink::to_line`], pins it as the
-//! runner's one desktop, makes the runner's link key at the first pairing, and writes the
-//! runner's own pin on its standard output for the desktop to keep. The connector's own login
-//! vouches for this one exchange; after it, the keys decide.
+//! `purlis bridge --pair` pairs the runner, once (ADR 0078 §3, as ruled 2026-10-17, #2044): it
+//! reads the desktop's device id and public link key on its standard input, one line of
+//! [`purlis_core::runnerlink::to_line`], keeps them as the runner's one peer, makes the
+//! runner's link key, and writes the runner's own device id and public key on its standard
+//! output for the desktop to keep. It is the bridge's one act that is not a pipe. The
+//! connector's own login vouches for this one exchange; after it, the keys decide.
 
 use std::io::{BufRead, Read, Write};
 use std::time::{Duration, Instant};
 
 /// How long the bridge waits for the host's link socket, for a host that is still starting.
 const HOST_WITHIN: Duration = Duration::from_secs(60);
-
-/// The longest pin line the pairing reads.
-const MOST_PIN: u64 = 4096;
 
 pub fn run(pair: bool) -> Result<u8, String> {
     let config = purlis_core::machine::config_root()
@@ -28,9 +26,9 @@ pub fn run(pair: bool) -> Result<u8, String> {
         let mut line = String::new();
         std::io::stdin()
             .lock()
-            .take(MOST_PIN)
+            .take(purlis_core::runnerlink::MOST_LINE)
             .read_line(&mut line)
-            .map_err(|why| format!("the desktop's pin could not be read: {why}"))?;
+            .map_err(|why| format!("the desktop's device id and key could not be read: {why}"))?;
         let desktop = purlis_core::runnerlink::from_line(&line)?;
         let device = purlis_core::machine::device_id(&config)
             .map_err(|why| format!("this runner has no device id: {why}"))?;
@@ -38,7 +36,7 @@ pub fn run(pair: bool) -> Result<u8, String> {
         let mut out = std::io::stdout().lock();
         writeln!(out, "{}", purlis_core::runnerlink::to_line(&ours))
             .and_then(|()| out.flush())
-            .map_err(|why| format!("the runner's pin could not be written: {why}"))?;
+            .map_err(|why| format!("the runner's device id and key could not be written: {why}"))?;
         return Ok(0);
     }
     let link = purlis_host::Place::at(purlis_core::hostsocket::here(), folder).link();

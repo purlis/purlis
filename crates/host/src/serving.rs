@@ -169,7 +169,12 @@ async fn answer_links(listener: Listener, answering: Answering, hosting: Hosting
                 return;
             }
         };
-        let (ours, desktop) = match answering() {
+        // What the runner keeps is read off the runtime: two files, read as each link arrives.
+        let reading = Arc::clone(&answering);
+        let paired = tokio::task::spawn_blocking(move || reading())
+            .await
+            .unwrap_or_else(|why| Err(format!("its pairing could not be read: {why}")));
+        let (ours, desktop) = match paired {
             Ok(Some(paired)) => paired,
             Ok(None) => {
                 say("a link was refused: this runner is not paired with a desktop");

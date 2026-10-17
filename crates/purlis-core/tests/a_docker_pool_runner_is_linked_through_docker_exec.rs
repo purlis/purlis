@@ -7,7 +7,9 @@
 //! and refuses any other. Everything it made is removed, whatever the outcome.
 //!
 //! It needs Docker and a runner image of this build for the machine's architecture, named by
-//! digest in `PURLIS_RUNNER_IMAGE` (`docker` on `PATH`, or the command `PURLIS_DOCKER` names).
+//! digest in `DOCKER_POOL_TEST_IMAGE` (`docker` on `PATH`, or the command `DOCKER_POOL_TEST_DOCKER` names). Neither
+//! is spelled as purlis's own variables are, so a test that runs again without the shell's
+//! steering keeps them.
 //! Without the image it runs nothing and passes: a sandboxed agent cannot run it, and the parity
 //! suite against Docker (#2045) is what builds the image and runs it on every merge.
 
@@ -76,13 +78,13 @@ async fn linked(
 #[test]
 fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
     purlis_core::unsteered!();
-    let Ok(image) = std::env::var("PURLIS_RUNNER_IMAGE") else {
+    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
         // No runner image of this build is named: nothing is run (the module's docs say where
         // it runs).
         return;
     };
     let docker = Docker(
-        std::env::var_os("PURLIS_DOCKER")
+        std::env::var_os("DOCKER_POOL_TEST_DOCKER")
             .unwrap_or("docker".into())
             .into(),
     );
@@ -103,15 +105,15 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
         device: ours.device.clone(),
         key: ours.key.public(),
     };
-    let runner_pin = docker.pair(&made, &pinned).expect("the runner is paired");
-    // Pairing again with the same desktop keeps the runner's key; another desktop is refused.
-    assert_eq!(docker.pair(&made, &pinned).unwrap(), runner_pin);
+    let runner_pinned = docker.pair(&made, &pinned).expect("the runner is paired");
+    // A runner is paired once: again with the same desktop, or with another, is refused.
+    assert!(docker.pair(&made, &pinned).is_err());
     let stranger = desktop("01JC0STRANGER00000000000000");
-    let stranger_pin = Pinned {
+    let stranger_pinned = Pinned {
         device: stranger.device.clone(),
         key: stranger.key.public(),
     };
-    assert!(docker.pair(&made, &stranger_pin).is_err());
+    assert!(docker.pair(&made, &stranger_pinned).is_err());
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -119,12 +121,12 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let client = linked(&docker, &made, ours, runner_pin.clone())
+        let client = linked(&docker, &made, ours, runner_pinned.clone())
             .await
             .expect("the paired desktop is linked");
         assert_eq!(client.list().await.expect("listed").len(), 0);
 
-        let refused = linked(&docker, &made, stranger, runner_pin)
+        let refused = linked(&docker, &made, stranger, runner_pinned)
             .await
             .err()
             .expect("another desktop's key is refused");
