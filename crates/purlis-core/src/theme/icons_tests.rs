@@ -439,4 +439,5 @@ fn the_schema_names_icons_as_a_path() {
     let icons = &schema()["properties"]["icons"];
     assert_eq!(icons["type"], "string");
     assert_eq!(icons["minLength"], 1);
+    assert_eq!(icons["maxLength"], 256);
 }

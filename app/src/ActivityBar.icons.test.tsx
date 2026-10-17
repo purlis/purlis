@@ -83,6 +83,19 @@ describe("the rails' icons", () => {
     expect(iconOf("Chats")?.classList.contains("lucide")).toBe(true);
   });
 
+  it("draw no path outside the path grammar, whatever reached the window", () => {
+    act(() =>
+      drawIn({
+        ...DEFAULT_THEME,
+        name: "Odd",
+        icons: { chats: { paths: ["M1 1h2", 'M1 1"/><g onload="x', "L1 1"] } },
+      }),
+    );
+    bar();
+    const drawn = [...(iconOf("Chats")?.querySelectorAll("path") ?? [])];
+    expect(drawn.map((p) => p.getAttribute("d"))).toEqual(["M1 1h2"]);
+  });
+
   it("never take a name an object inherits as a view the set draws", () => {
     expect(symbolOf({}, "toString")).toBeUndefined();
     expect(symbolOf({}, "constructor")).toBeUndefined();

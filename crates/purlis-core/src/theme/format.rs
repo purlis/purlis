@@ -80,7 +80,7 @@ const KEYS: &[&str] = &[
 const NOT_YET: &[(&str, &str)] = &[("fonts", "#2326"), ("options", "#2325"), ("tint", "#2329")];
 
 /// The longest path to an icon set purlis follows, in bytes.
-const MOST_ICONS_PATH: usize = 256;
+pub(super) const MOST_ICONS_PATH: usize = 256;
 
 /// The keys of an appearance.
 const APPEARANCE_KEYS: &[&str] = &["id", "appearance", "high-contrast", "tokens", "motion"];

@@ -56,7 +56,8 @@
     "icons": {
       "description": "The theme's icon set: the path of a JSON file inside this theme's folder, such as icons/icons.json, that draws each view's tab on the rails. A view it does not draw is the parent's.",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 256
     }
   },
   "$defs": {

@@ -14,7 +14,7 @@
 
 use serde_json::{Map, Value, json};
 
-use super::format::{MOST_APPEARANCES, THEME_JSON};
+use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
@@ -102,7 +102,8 @@ pub fn schema() -> Value {
             "icons": {
                 "description": "The theme's icon set: the path of a JSON file inside this theme's folder, such as icons/icons.json, that draws each view's tab on the rails. A view it does not draw is the parent's.",
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "maxLength": MOST_ICONS_PATH
             }
         },
         "$defs": {
