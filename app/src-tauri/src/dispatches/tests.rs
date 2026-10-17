@@ -486,3 +486,27 @@ fn an_entry_that_vanished_mid_read_says_something_is_still_writing() {
     assert_eq!(not_sealed(NotSealed::Unread), unread());
     assert_eq!(not_sealed(NotSealed::TooMany), TOO_MANY);
 }
+
+#[test]
+fn a_secret_in_a_row_s_brief_report_or_changed_words_is_masked() {
+    // #1872: a token built here from its parts, so no line of this file holds one.
+    let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+    let record = Record {
+        brief: format!("Deploy with {token} today."),
+        report: Some(Report {
+            outcome: Outcome::Done,
+            text: format!("Signed in with {token}."),
+            changed: Changed {
+                said: Some(format!("Rotated {token}.")),
+                ..Changed::default()
+            },
+        }),
+        ..a_record()
+    };
+
+    let row = row(&record, &[], at("2026-10-07T12:04:30Z"));
+
+    assert_eq!(row.brief, "Deploy with *** today.");
+    assert_eq!(row.report.as_deref(), Some("Signed in with ***."));
+    assert_eq!(row.changed.as_deref(), Some("Rotated ***."));
+}

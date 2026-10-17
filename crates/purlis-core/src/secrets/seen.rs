@@ -45,11 +45,14 @@ struct Seen {
     by_length: BTreeMap<usize, BTreeSet<Digest>>,
     /// A value was read and could not be remembered: every text is then said to hold one.
     blind: bool,
+    /// How many times what is remembered has changed ([`generation`]).
+    generation: u64,
 }
 
 static SEEN: Mutex<Seen> = Mutex::new(Seen {
     by_length: BTreeMap::new(),
     blind: false,
+    generation: 0,
 });
 
 fn seen() -> MutexGuard<'static, Seen> {
@@ -84,14 +87,16 @@ impl Seen {
             if bytes.len() < SHORTEST {
                 continue;
             }
-            match keyed {
-                Some(keyed) => {
-                    self.by_length
-                        .entry(bytes.len())
-                        .or_default()
-                        .insert(digest(keyed, bytes));
-                }
-                None => self.blind = true,
+            let changed = match keyed {
+                Some(keyed) => self
+                    .by_length
+                    .entry(bytes.len())
+                    .or_default()
+                    .insert(digest(keyed, bytes)),
+                None => !std::mem::replace(&mut self.blind, true),
+            };
+            if changed {
+                self.generation = self.generation.wrapping_add(1);
             }
         }
     }
@@ -181,6 +186,22 @@ pub fn holds(text: &str) -> bool {
     seen().holds(keyed(), text)
 }
 
+/// **How many times what [`remember`] holds has changed**: a caller that keeps what it worked
+/// out from [`holds`] or [`found_in`] keeps it only while this stays the same.
+pub fn generation() -> u64 {
+    seen().generation
+}
+
+/// **The length in bytes of the longest value [`remember`] holds**: `None` while it holds none,
+/// and `usize::MAX` once a value could not be remembered, as any length could then be one.
+pub fn longest() -> Option<usize> {
+    let seen = seen();
+    if seen.blind {
+        return Some(usize::MAX);
+    }
+    seen.by_length.keys().next_back().copied()
+}
+
 /// **Where in `text` a value [`remember`] was given stands**: each stretch of its bytes, in
 /// order, those that overlap or touch joined into one, for a caller that masks them (#1047).
 /// Once a value could not be remembered it is the whole of every text that is not empty, as
@@ -251,10 +272,29 @@ mod tests {
     }
 
     #[test]
+    fn remembering_a_new_value_moves_the_generation_and_the_longest_counts_it() {
+        let before = generation();
+        let value = format!("{}-{}", "generation value", "x".repeat(300));
+        remember(&value);
+        assert_ne!(generation(), before);
+        assert!(longest().is_some_and(|longest| longest >= value.len()));
+        // A value held already changes nothing, asked of a store no other test shares.
+        let mut alone = Seen {
+            by_length: BTreeMap::new(),
+            blind: false,
+            generation: 0,
+        };
+        alone.remember(keyed(), &value);
+        alone.remember(keyed(), &value);
+        assert_eq!(alone.generation, 1);
+    }
+
+    #[test]
     fn with_no_key_the_whole_of_every_text_is_where_a_value_stands() {
         let mut alone = Seen {
             by_length: BTreeMap::new(),
             blind: false,
+            generation: 0,
         };
         assert!(alone.found_in(None, "nothing remembered yet").is_empty());
         alone.remember(None, "a value no key could digest");
@@ -271,6 +311,7 @@ mod tests {
         let mut alone = Seen {
             by_length: BTreeMap::new(),
             blind: false,
+            generation: 0,
         };
         assert!(!alone.holds(None, "nothing remembered yet"));
         // Shorter than the shortest: nothing to remember, so nothing to go blind over.

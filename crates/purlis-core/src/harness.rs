@@ -1594,12 +1594,41 @@ mod tests {
         let deny = settings["permissions"]["deny"]
             .as_array()
             .expect("deny rules");
+        // Under each of its names (#1418): on macOS its firmlink twin follows
+        // (`/System/Volumes/Data/private/var/…`), so the rules from the kernel's name on are
+        // all the folder's.
+        let at = deny
+            .iter()
+            .position(|rule| *rule == serde_json::json!(format!("Edit(/{folder})")))
+            .unwrap_or_else(|| panic!("the folder is denied: {deny:?}"));
         assert_eq!(
-            deny[deny.len() - 2..],
-            [
-                serde_json::json!(format!("Edit(/{folder})")),
-                serde_json::json!(format!("Edit(/{folder}/**)")),
-            ]
+            deny.get(at + 1),
+            Some(&serde_json::json!(format!("Edit(/{folder}/**)"))),
+            "the folder's own rule is followed by its contents': {deny:?}"
+        );
+        // On macOS the folder is under `/private/var`, a firmlink, so its twin on the data
+        // volume is denied as well.
+        #[cfg(target_os = "macos")]
+        {
+            let twin = format!("/System/Volumes/Data{folder}");
+            assert!(
+                deny.contains(&serde_json::json!(format!("Edit(/{twin})")))
+                    && deny.contains(&serde_json::json!(format!("Edit(/{twin}/**)"))),
+                "the folder's firmlink twin is denied too: {deny:?}"
+            );
+        }
+        let name = sockets
+            .path()
+            .file_name()
+            .expect("a name")
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            deny[at..].iter().all(|rule| rule
+                .as_str()
+                .is_some_and(|rule| rule.ends_with(&format!("/{name})"))
+                    || rule.ends_with(&format!("/{name}/**)")))),
+            "after the compiled rules, only the socket's folder: {deny:?}"
         );
 
         // Without a socket to report on, it reaches none.

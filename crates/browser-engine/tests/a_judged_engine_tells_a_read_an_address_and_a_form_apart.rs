@@ -16,7 +16,7 @@ mod common;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use common::site::started_judged;
+use common::site::{Site, started_judged};
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{
     Answer, Browser, Call, CallId, Content, Field, Gate, Judge, Outbound, Ref, Why,
@@ -167,17 +167,12 @@ fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
 }
 
 /// A form on the page of ways out, typed into and submitted: it sends, and nothing reaches the
-/// other site. Each in a browser of its own.
-fn a_form_sends(field: &str, button: &str) {
-    let (judge, told) = judge();
-    let _one = one_engine_at_a_time();
-    let Some((browser, _data, site)) = started_judged(judge) else {
-        return;
-    };
-    open_the_way_out(&browser, &told);
-    let page = snapshot(&browser);
+/// other site.
+fn a_form_sends(browser: &Browser, told: &Told, site: &Site, field: &str, button: &str) {
+    open_the_way_out(browser, told);
+    let page = snapshot(browser);
     call(
-        &browser,
+        browser,
         Call::Type {
             page: None,
             fields: vec![Field {
@@ -187,31 +182,59 @@ fn a_form_sends(field: &str, button: &str) {
             }],
         },
     );
+    let before = told_about(told, "http://other.test/deep.html").len();
     let answer = call(
-        &browser,
+        browser,
         Call::Click {
             target: ref_on(&page, button),
         },
     );
     assert_eq!(answer.asked, ["other.test:80"], "{button}: {answer:?}");
     assert!(
-        !snapshot(&browser).contains("Deep button"),
+        !snapshot(browser).contains("Deep button"),
         "{button}: nothing was sent, so the other site's page did not load"
     );
     assert!(
         !site.heard_from("other.test"),
         "{button}: the other site was sent nothing"
     );
-    let sent = told_about(&told, "http://other.test/deep.html");
-    assert_eq!(sent, [Why::Sends], "{sent:?}");
+    let sent = told_about(told, "http://other.test/deep.html");
+    assert_eq!(sent[before..], [Why::Sends], "{button}: {sent:?}");
 }
 
-#[test]
-fn a_form_submitted_to_the_site_by_get_sends() {
-    a_form_sends("textbox \"Search\"", "button \"Search the other site\"");
+/// After a form it held back, the same browser opens its next page (#2442).
+fn the_next_page_opens(browser: &Browser, told: &Told, after: &str) {
+    let address = WebAddress::parse("http://fixture.test/counter.html").unwrap();
+    let answer = browser
+        .call(&next_id(), Call::Open { address })
+        .unwrap_or_else(|why| {
+            let heard = format!("{:?}", told.lock().unwrap());
+            panic!("after {after}, the next page did not open: {why}; the judge was told {heard}")
+        });
+    assert_eq!(
+        answer.page.map(|page| page.address).as_deref(),
+        Some("http://fixture.test/counter.html"),
+        "after {after}"
+    );
+    assert!(
+        snapshot(browser).contains("Add one"),
+        "after {after}, the next page loaded"
+    );
 }
 
+/// Both forms in one browser: each is held back, and the browser opens its next page after
+/// each.
 #[test]
-fn a_form_submitted_to_the_site_by_post_sends() {
-    a_form_sends("textbox \"Note\"", "button \"Post to the other site\"");
+fn a_form_submitted_to_the_site_sends_and_the_browser_opens_its_next_page() {
+    let (judge, told) = judge();
+    let _one = one_engine_at_a_time();
+    let Some((browser, _data, site)) = started_judged(judge) else {
+        return;
+    };
+    let by_get = "button \"Search the other site\"";
+    a_form_sends(&browser, &told, &site, "textbox \"Search\"", by_get);
+    the_next_page_opens(&browser, &told, by_get);
+    let by_post = "button \"Post to the other site\"";
+    a_form_sends(&browser, &told, &site, "textbox \"Note\"", by_post);
+    the_next_page_opens(&browser, &told, by_post);
 }

@@ -2539,20 +2539,34 @@ pub fn listening(path: &std::path::Path) -> bool {
     std::os::unix::net::UnixStream::connect(path).is_ok()
 }
 
-/// Sends one report to the socket at `path`. Answers whether the app took it.
+/// Sends one report to the socket at `path`. Answers whether it was written: what the app made
+/// of it, taken or refused, is not read.
 ///
-/// One connection is one report, written and closed. Nothing is waited for: the app has the
-/// line, and a hook that waited for an answer would be spending a harness's turn on a
-/// spinner.
+/// One connection is one report, written, and then **held until the app lets it go**
+/// (D-1407-10), as [`tell`] and [`deliver`] hold theirs: the app judges a line by the process
+/// that sent it, read once the line has arrived. On macOS the kernel names that process
+/// (`LOCAL_PEERPID`) only while the connection is still open, so a sender that closed the
+/// moment it wrote was refused unread whenever the app accepted after the close (#2458). The
+/// wait is bounded by [`A_REPORT_TAKES_AT_MOST`] for an app that has stopped reading.
 #[cfg(unix)]
 pub fn send(path: &std::path::Path, token: Option<&ChatToken>, report: &Report) -> io::Result<()> {
-    use std::io::Write;
+    use std::io::{Read, Write};
 
     // A path that is not there, and a socket file whose app has gone, both refuse at once
     // — `ENOENT` and `ECONNREFUSED`. Neither can hang, so no timeout is armed for them.
     let mut socket = std::os::unix::net::UnixStream::connect(path)?;
     socket.write_all(&line_with(token, report)?)?;
-    socket.flush()
+    socket.flush()?;
+    // An app that has handled the line and closed already makes these fail on macOS
+    // (`ENOTCONN`): the line was written, which is all this answers.
+    let _ = socket.shutdown(std::net::Shutdown::Write);
+    if socket
+        .set_read_timeout(Some(A_REPORT_TAKES_AT_MOST))
+        .is_ok()
+    {
+        let _ = socket.read_to_end(&mut Vec::new());
+    }
+    Ok(())
 }
 
 /// Tells the app at `path` a harness was started by hand. Answers whether the app took it.
@@ -7116,7 +7130,13 @@ mod tests {
                 .as_bytes(),
             )
             .expect("written");
-        drop(socket);
+        // And stays until the app lets go, as a hook does (D-1407-10): on macOS a sender that
+        // closed at once may be gone before the app can name it (#2458).
+        let _ = socket.shutdown(std::net::Shutdown::Write);
+        socket
+            .set_read_timeout(Some(A_REPORT_TAKES_AT_MOST))
+            .expect("a deadline");
+        let _ = std::io::Read::read_to_end(&mut socket, &mut Vec::new());
 
         let report = rx
             .recv_timeout(std::time::Duration::from_secs(2))

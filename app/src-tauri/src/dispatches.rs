@@ -822,12 +822,16 @@ pub(crate) fn row(
         messages: record.messages,
         cost: usage.and_then(|usage| usage.cost_usd).map(dollars),
         tokens: usage.and_then(|usage| counted(usage.input_tokens, usage.output_tokens)),
-        brief: record.brief.clone(),
-        report: record.report.as_ref().map(|report| report.text.clone()),
+        // Drawn masked (#1872): a secret in a brief or a report is not shown back.
+        brief: dispatchrecord::masked(&record.brief),
+        report: record
+            .report
+            .as_ref()
+            .map(|report| dispatchrecord::masked(&report.text)),
         changed: record
             .report
             .as_ref()
-            .and_then(|report| report.changed.said.clone()),
+            .and_then(dispatchrecord::Report::changed_said_masked),
         open_session,
         session_record: record.worker.session_record.clone(),
         // Read from the project by the caller that lists rows ([`worktree_row`]).
