@@ -146,12 +146,12 @@ fn the_operator_may_do_exactly_what_it_needs() {
         (
             "extensions.agents.x-k8s.io",
             "sandboxtemplates",
-            "create,get,patch",
+            "create,get,list,patch,watch",
         ),
         (
             "extensions.agents.x-k8s.io",
             "sandboxwarmpools",
-            "create,get,patch",
+            "create,get,list,patch,watch",
         ),
         ("runners.purlis.dev", "claims", "list,watch"),
         ("runners.purlis.dev", "claims/status", "patch"),
