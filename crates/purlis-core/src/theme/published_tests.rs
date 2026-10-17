@@ -184,3 +184,30 @@ fn a_keyword_the_rule_does_not_know_is_a_narrowing_until_it_is_taught() {
         "{found:?}"
     );
 }
+
+#[test]
+fn a_keyword_the_rule_cannot_judge_anywhere_is_a_narrowing() {
+    for keyword in ["not", "if", "oneOf"] {
+        let after = changed(|it| {
+            // Inside a new token, where the walk itself has nothing to compare it with.
+            it["$defs"]["tokens"]["properties"]["brand.new"] =
+                json!({ keyword: { "type": "string" } });
+        });
+        let found = narrowings(&schema(), &after);
+        assert_eq!(found.len(), 1, "{keyword}: {found:?}");
+        assert!(
+            found[0].starts_with(&format!(
+                "/$defs/tokens/properties/brand.new/{keyword}: a keyword this check cannot judge"
+            )),
+            "{found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_property_named_like_a_keyword_is_only_a_name() {
+    let after = changed(|it| {
+        it["properties"]["if"] = json!({ "type": "string" });
+    });
+    assert_eq!(narrowings(&schema(), &after), Vec::<String>::new());
+}
