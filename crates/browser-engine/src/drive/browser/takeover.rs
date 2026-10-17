@@ -144,6 +144,7 @@ impl Browser {
                 lease.epoch += 1;
                 lease.driver = Driver::Person;
             }
+            self.inner.person_drives.store(true, Ordering::SeqCst);
             lease.epoch
         };
         // Whatever waits for the page wakes now, and finds itself cut.
@@ -164,6 +165,7 @@ impl Browser {
         if lease.driver == Driver::Person {
             lease.epoch += 1;
             lease.driver = Driver::Agent;
+            self.inner.person_drives.store(false, Ordering::SeqCst);
             lock(&self.inner.state).refs.void();
         }
         lease.epoch

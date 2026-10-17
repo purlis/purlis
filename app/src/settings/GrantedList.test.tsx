@@ -374,6 +374,30 @@ describe("the Allowed list", () => {
     );
   });
 
+  it("says a browser site is the browsers' alone, apart from a host the chats' commands reach (#2018)", () => {
+    const site: SandboxGrant = {
+      id: "you\u001fbrowser-site\u001fnews.example.org:443",
+      what: "browser-site",
+      target: "news.example.org:443",
+      persona: null,
+      level: "you",
+      by: null,
+      at: null,
+      chat: "qa 8",
+      locked: null,
+      waiting: null,
+      for_no_persona: false,
+      expected: false,
+    };
+    expect(grantSaid(site)).toBe(
+      "Browsers open, send and type on news.example.org:443 (browsers only; chats' commands still ask) · This project on this machine · allowed by you, from qa 8",
+    );
+    const host: SandboxGrant = { ...site, what: "host", id: "you\u001fhost\u001fsite" };
+    expect(grantSaid(host)).toBe(
+      "Reach news.example.org:443 · This project on this machine · allowed by you, from qa 8",
+    );
+  });
+
   it("lists Always for a persona's browser, credited to the persona, held by policy, and removes it (#2241)", async () => {
     const QA: SandboxGrant = {
       id: "you\u001fbrowser\u001fqa",

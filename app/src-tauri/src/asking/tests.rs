@@ -107,6 +107,8 @@ struct World {
     browsers: Vec<crate::chatbrowsers::Waits>,
     /// The browsers whose chat asked the person to take them over (#2015).
     needs_you: Vec<crate::browserneedsyou::Waiting>,
+    /// The chats whose browser's sites wait on the person (#2018).
+    browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -131,6 +133,7 @@ impl World {
             sandbox_only: None,
             browsers: Vec::new(),
             needs_you: Vec::new(),
+            browser_sites: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -161,6 +164,7 @@ impl World {
             proposals: Vec::new(),
             browsers: self.browsers.clone(),
             needs_you: self.needs_you.clone(),
+            browser_sites: self.browser_sites.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -1466,4 +1470,53 @@ fn what_a_chat_says_its_browser_needs_is_drawn_inert_on_one_line_and_cut() {
         ask.says.chars().count()
     );
     assert_eq!(ask.options.len(), 1, "its answers are purlis's own");
+}
+// ---- a chat's browser sites (#2018) ----
+
+#[test]
+fn a_browser_site_and_a_host_for_the_chats_commands_are_two_rows_each_its_own_allow() {
+    use purlis_core::sandbox::browser_reach::Site;
+    let mut world = World::new();
+    world.blocks = vec![(5, a_host_block("api.example.com"))];
+    world.browser_sites = vec![crate::chatbrowsers::SitesWait {
+        session: 5,
+        since: 1_700_000_000,
+        sites: vec![
+            Site::parse("news.example.org:443").unwrap(),
+            Site::parse("api.example.com:443").unwrap(),
+        ],
+    }];
+
+    let asks = world.asks();
+
+    let mine: Vec<&Shown> = asks.iter().filter(|one| one.session == 5).collect();
+    assert_eq!(mine.len(), 2, "{mine:?}");
+    let host = mine
+        .iter()
+        .find(|one| one.source == AskSource::SandboxHost)
+        .unwrap();
+    let sites = mine
+        .iter()
+        .find(|one| one.source == AskSource::BrowserSite)
+        .unwrap();
+    assert!(host.says.contains("api.example.com"), "{}", host.says);
+    assert_eq!(
+        sites.says,
+        "Its browser wants to open, send or type on sites new to this project: \
+         news.example.org:443, api.example.com:443. An Allow is for its browser alone"
+    );
+    assert_eq!(ids(sites), ["chat", "you", KEEP]);
+    assert_eq!(
+        sites.answer,
+        AnswerPath::BrowserSites {
+            sites: vec![
+                "news.example.org:443".to_owned(),
+                "api.example.com:443".to_owned()
+            ]
+        }
+    );
+    assert_ne!(
+        host.answer, sites.answer,
+        "each is answered by its own Allow"
+    );
 }

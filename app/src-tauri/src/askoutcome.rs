@@ -27,7 +27,7 @@ pub(crate) fn about(what: GrantWhat, target: &str) -> Option<About> {
         GrantWhat::Port => Some(About::Port { port: target }),
         GrantWhat::Vault => Some(About::Vault { vault: target }),
         // Allowed from its own Notice or the browser's Ask, which no chat's refusal raises.
-        GrantWhat::PersonaHosts | GrantWhat::Browser => None,
+        GrantWhat::PersonaHosts | GrantWhat::Browser | GrantWhat::BrowserSite => None,
     }
 }
 
