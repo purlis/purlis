@@ -186,15 +186,6 @@ describe("moving a view from its icon's menu, by keyboard", function () {
   });
 
   it("moves it back to the sidebar from its Lower icon's menu", async () => {
-    // #1973 reproduction: the keyboard leaves the icon right after it takes it, as the moved
-    // view's own hand-off (`moveSideView`'s frame) can do.
-    await browser.execute(() => {
-      const steal = () => {
-        document.removeEventListener("focusin", steal);
-        queueMicrotask(() => (document.activeElement as HTMLElement | null)?.blur());
-      };
-      document.addEventListener("focusin", steal);
-    });
     await openMenuOf(LOWER_LEFT, "Search");
     await pressRow("Move to sidebar");
 
