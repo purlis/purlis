@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792270423941,
+  "lastUpdate": 1792271931169,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15960,6 +15960,48 @@ window.BENCHMARK_DATA = {
             "value": 104.82396399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.851, 104.271, 104.824, 105.067, 106.039 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dfeb18a4aaa6a9ad99fbd5a97b870bca983078c8",
+          "message": "Runners: the relay links again to the runner on its own (#2497)\n\n* Runners: the relay links again to the runner on its own (#2215)\n\nThe desktop host's relay keeps its link to a runner for each window link\nthrough hostlink::keep_linked. Over each new link it holds the window's\nprojects again, subscribes again from the window's cursor and attaches\nthe window's views again, each with a snapshot under the number the\nwindow knows it by. While no link is up every command is refused in\nwords and none is sent later in its place.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Relay: a renewal answers what is in flight; review fixes (#2215)\n\nkeep_linked ends a renewed link once its reader has moved to the new one\n(Links::moved), or after the ping's deadline. The relay keeps the old link\ncarrying commands while the new one is carried over, moves once nothing is\nin flight on it, and waits for holds, attaches and subscribes in flight so\nit carries what they changed. The cursor moves only once an event is\nhanded on, and the relay subscribes again from it where it fell behind.\nA view stream that waits for its attach is let go after the link's\ndeadline. The view header is view::Header, used by the host's own writer.\nA runner chat's confinement after a re-link is pinned by a test (#2511).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Relay: a carry-over carries a let go and a new subscribe made during it (#2215)\n\nThe second pass lets go on the new link of a project the window let go\nof during the first, and subscribes again when the window subscribed\nfrom somewhere new. A command that changes what the window stands on is\ncounted, then checked against the link still up. A new link that ends\nduring its carry-over leaves the renewed link carrying commands until it\nends, and a view's end is told to the window once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T01:15:34+04:00",
+          "tree_id": "5e4ca762618fc3cdc453ef9f4dff501a73c9b042",
+          "url": "https://github.com/purlis/purlis/commit/dfeb18a4aaa6a9ad99fbd5a97b870bca983078c8"
+        },
+        "date": 1792271929754,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4808895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.473, 0.477, 0.481, 0.482, 0.487 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.277238,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.227, 16.272, 16.277, 16.660, 16.738 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.661214,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.963, 101.157, 101.661, 101.677, 102.072 ms"
           }
         ]
       }
