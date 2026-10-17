@@ -431,16 +431,45 @@ fn a_removal_is_recorded_after_its_audit_and_not_without_one() {
 #[test]
 fn a_chat_that_is_not_open_has_nothing_to_say() {
     let dir = tempfile::tempdir().expect("a project");
-    let shown = chat_network_of(dir.path(), &crate::chats::Chats::new(), 4, None, 100);
+    let shown = chat_network_of(dir.path(), &crate::chats::Chats::new(), 4, &[], None, 100);
     assert_eq!(
         shown,
         ChatNetwork {
             open: false,
             sandboxed: false,
             reach: Vec::new(),
+            browser_sites: Vec::new(),
             refused: Vec::new(),
             local_ports: None,
         }
+    );
+}
+
+/// #2364: a chat's Network view lists the sites only its browser reaches apart from its
+/// commands' hosts: those allowed for this chat alone, then those kept for every chat of this
+/// project on this machine, each once. Another chat's are never its.
+#[test]
+fn a_chats_browser_sites_are_its_own_then_this_projects_each_once_and_never_another_chats() {
+    use purlis_core::sandbox::browser_reach::Site;
+    let site = |written: &str| Site::parse(written).expect("a site");
+
+    let shown = browser_sites_of(
+        &[
+            (4, site("news.example.org:443")),
+            (5, site("theirs.example:443")),
+            (4, site("docs.example.com:443")),
+        ],
+        4,
+        &[site("docs.example.com:443"), site("kept.example:443")],
+    );
+
+    assert_eq!(
+        shown,
+        [
+            "news.example.org:443",
+            "docs.example.com:443",
+            "kept.example:443"
+        ]
     );
 }
 
@@ -679,7 +708,7 @@ fn a_started_sandboxed_chat_shows_what_its_sandbox_reaches_and_only_its_own_refu
     // Another chat that once had this number: never shown as this one.
     refused("theirs.example:443", Some("01SOMEONE-ELSE".to_owned()), 60);
 
-    let shown = chat_network_of(project.path(), &chats, session, Some(&record), 100);
+    let shown = chat_network_of(project.path(), &chats, session, &[], Some(&record), 100);
 
     assert!(shown.open && shown.sandboxed, "{shown:?}");
     assert_eq!(

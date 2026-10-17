@@ -11,6 +11,7 @@ import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { PROFILE_SIGN_IN } from "./settings/links";
+import { useSandboxCommands } from "./sandboxAsked";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -152,7 +153,7 @@ const NEEDS_YOU: Shown = {
 const BROWSER_SITES: Shown = {
   session: 8,
   ask: "browser-sites:8",
-  says: "Its browser wants to open, send or type on a site new to this project: news.example.org:443. An Allow is for its browser alone",
+  says: "Its browser wants to reach news.example.org:443, new to this project. An Allow is for its browser alone and reaches it at its next step; nothing restarts.",
   options: [
     { id: "chat", label: "Allow for this chat", allows: true },
     { id: "you", label: "Always allow in this project, on this machine", allows: true },
@@ -396,6 +397,14 @@ describe("answering through the path an ask names", () => {
       ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "you" }],
       ["keep_browser_sites_blocked", { plane: PLANE, session: 8, sites, reason: "not this one" }],
     ]);
+  });
+
+  it("tells what reads a chat's network to read it again once a browser site is allowed (#2364)", async () => {
+    sent({ allow_browser_sites: null });
+    const { result } = renderHook(() => useSandboxCommands());
+    const before = result.current;
+    await act(() => answerThrough(PLANE, BROWSER_SITES, "chat"));
+    expect(result.current).toBeGreaterThan(before);
   });
 
   it("says the source's own sentence when the source refuses", async () => {

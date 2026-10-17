@@ -977,23 +977,26 @@ fn browser_sites_key(session: u32) -> String {
     format!("browser-sites:{session}")
 }
 
-/// **The browser sites adapter** (#2018): one ask per chat, naming every site new to the project
+/// **The browser sites adapter** (#2018): one ask per chat, naming the sites new to the project
 /// its browser held back what it would open, send or type on, oldest first, each whole. Allow
 /// for this chat; Allow always here, on this machine, unless an administrator's policy leaves
 /// out `you`; Keep blocked. Every word is purlis's, and the line says an Allow is the browser's
-/// alone: the chat's own commands still need their own Allow for a host.
+/// alone (the chat's own commands still need their own Allow for a host) and what it does
+/// (#2364): the browser reaches the site at its next act, and nothing restarts.
+///
+/// **It answers only what its line names whole** (#2364): where every site does not fit, it
+/// names the oldest that do and answers those, and the rest wait for the next ask. A site too
+/// long to be named whole is offered Keep blocked alone.
 pub fn browser_sites(
     waits: &crate::chatbrowsers::SitesWait,
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Shown {
     use purlis_core::sandbox::grant::Level;
-    let sites: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
-    let says = format!(
-        "Its browser wants to open, send or type on {} new to this project: {}. An Allow is for \
-         its browser alone",
-        if sites.len() == 1 { "a site" } else { "sites" },
-        sites.join(", ")
-    );
+    let all: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
+    let named = (1..=all.len())
+        .rev()
+        .map(|count| (count, sites_said(&all[..count], all.len() - count)))
+        .find(|(_, says)| said_inertly(says) == *says);
     let mut options = Vec::new();
     let allow = |level: Level, label: &str| Offered {
         id: level.word().to_owned(),
@@ -1001,15 +1004,26 @@ pub fn browser_sites(
         allows: true,
         preselected: None,
     };
-    if locks.scope_removed(Level::Chat).is_none() {
-        options.push(allow(Level::Chat, "Allow for this chat"));
-    }
-    if locks.scope_removed(Level::You).is_none() {
-        options.push(allow(
-            Level::You,
-            "Always allow in this project, on this machine",
-        ));
-    }
+    let (sites, says) = match named {
+        Some((count, says)) => {
+            if locks.scope_removed(Level::Chat).is_none() {
+                options.push(allow(Level::Chat, "Allow for this chat"));
+            }
+            if locks.scope_removed(Level::You).is_none() {
+                options.push(allow(
+                    Level::You,
+                    "Always allow in this project, on this machine",
+                ));
+            }
+            (all[..count].to_vec(), says)
+        }
+        // Not even the oldest fits whole: nothing is allowed that the person cannot read.
+        None => {
+            let oldest: Vec<String> = all.iter().take(1).cloned().collect();
+            let says = sites_said(&oldest, all.len() - oldest.len());
+            (oldest, says)
+        }
+    };
     options.push(refuses(KEEP, "Keep blocked"));
     Shown {
         session: waits.session,
@@ -1023,6 +1037,25 @@ pub fn browser_sites(
         held_until: None,
         writes: None,
     }
+}
+
+/// The line of a browser sites ask that names `sites`, with `more` waiting after them.
+fn sites_said(sites: &[String], more: usize) -> String {
+    let named = match sites {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first @ .., last] => format!("{} and {last}", first.join(", ")),
+    };
+    let it = if sites.len() == 1 { "it" } else { "them" };
+    let after = if more == 0 {
+        String::new()
+    } else {
+        format!(", and {more} more after {it}")
+    };
+    format!(
+        "Its browser wants to reach {named}, new to this project{after}. An Allow is for its \
+         browser alone and reaches {it} at its next step; nothing restarts."
+    )
 }
 
 /// The id of This project's sites, always for the chat's persona (#2241).

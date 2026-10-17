@@ -16,7 +16,7 @@
 
 use std::path::Path;
 
-use purlis_core::sandbox::{self, grant, hosts::Host};
+use purlis_core::sandbox::{self, browser_reach::Site, grant, hosts::Host};
 use purlis_core::sandboxblock::record::{self, Entry, Record};
 use purlis_core::sandboxblock::{Kind, Operation};
 
@@ -334,6 +334,11 @@ pub struct ChatNetwork {
     pub sandboxed: bool,
     /// What its sandbox lets it reach, as it was started.
     pub reach: Vec<Reached>,
+    /// **The sites only its browser reaches** (#2364): its browser sites, those allowed for this
+    /// chat alone first, then those kept for every chat of this project on this machine that
+    /// policy leaves in force, each once as `host:port`. Its commands reach none of them, so
+    /// the view lists them apart from `reach`.
+    pub browser_sites: Vec<String>,
     /// What it was refused, newest first.
     pub refused: Vec<BlockedLately>,
     /// **Where an administrator's managed Claude Code settings let it reach every local port**
@@ -523,11 +528,13 @@ pub async fn sandbox_network(
 /// window's thread.
 const READING_NETWORK: &str = "reading the network record";
 
-/// [`ChatNetwork`] for chat `session` of the project at `root`.
+/// [`ChatNetwork`] for chat `session` of the project at `root`, where `chat_sites` are the
+/// browser sites the app holds for one chat alone, each with its chat.
 fn chat_network_of(
     root: &Path,
     chats: &crate::chats::Chats,
     session: u32,
+    chat_sites: &[(u32, Site)],
     record: Option<&Record>,
     now: u64,
 ) -> ChatNetwork {
@@ -536,6 +543,7 @@ fn chat_network_of(
             open: false,
             sandboxed: false,
             reach: Vec::new(),
+            browser_sites: Vec::new(),
             refused: Vec::new(),
             local_ports: None,
         };
@@ -548,6 +556,7 @@ fn chat_network_of(
             open: true,
             sandboxed: false,
             reach: Vec::new(),
+            browser_sites: Vec::new(),
             refused: Vec::new(),
             local_ports: None,
         };
@@ -576,6 +585,11 @@ fn chat_network_of(
         open: true,
         sandboxed: true,
         reach: reach_of(&confines.hosts, &open, &persona),
+        browser_sites: browser_sites_of(
+            chat_sites,
+            session,
+            &sandbox::local::browser_sites_in_force(root, &locks),
+        ),
         refused: refused_of(
             &entries,
             (recorded.identity.id.as_deref(), session),
@@ -605,6 +619,24 @@ fn reach_of(hosts: &[String], open: &[String], persona: &[String]) -> Vec<Reache
             },
         })
         .collect()
+}
+
+/// **The sites only chat `session`'s browser reaches** (#2364): of `chat_sites`, the ones
+/// allowed for it alone, then each of `kept_here`, the browser sites kept for every chat of
+/// this project on this machine, each once.
+fn browser_sites_of(chat_sites: &[(u32, Site)], session: u32, kept_here: &[Site]) -> Vec<String> {
+    let mine = chat_sites
+        .iter()
+        .filter(|(chat, _)| *chat == session)
+        .map(|(_, site)| site);
+    let mut shown: Vec<String> = Vec::new();
+    for site in mine.chain(kept_here) {
+        let written = site.to_string();
+        if !shown.contains(&written) {
+            shown.push(written);
+        }
+    }
+    shown
 }
 
 /// What the chat whose id is `id` (or, with none, whose number is `session`) was refused, as
@@ -647,6 +679,7 @@ pub async fn chat_network(
             held.root(),
             held.chats(),
             session,
+            &held.browsers().chat_sites(),
             network.as_ref(),
             now_secs(),
         ))

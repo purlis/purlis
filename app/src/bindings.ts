@@ -4245,6 +4245,13 @@ export type ChatNetwork = {
 	sandboxed: boolean,
 	/**  What its sandbox lets it reach, as it was started. */
 	reach: Reached[],
+	/**
+	 *  **The sites only its browser reaches** (#2364): its browser sites, those allowed for this
+	 *  chat alone first, then those kept for every chat of this project on this machine that
+	 *  policy leaves in force, each once as `host:port`. Its commands reach none of them, so
+	 *  the view lists them apart from `reach`.
+	 */
+	browser_sites: string[],
 	/**  What it was refused, newest first. */
 	refused: BlockedLately[],
 	/**
