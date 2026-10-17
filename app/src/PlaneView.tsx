@@ -5350,14 +5350,27 @@ export const PlaneView = memo(function PlaneView({
     return chats.store.subscribe(drive);
   }, [owedRestarts, chats, plane, restartOwed]);
   /**
+   * The state of each chat owed a restart, in `owedRestarts`' order and as one string, so it
+   * moves when any of them does (#1888): the pane's words follow the chat's state as well as
+   * the owed list, and a chat owed a restart before it said it was mid-turn says that the
+   * restart waits for its turn. A state is one word.
+   */
+  const owedStates = useSyncExternalStore(
+    useCallback((listener: () => void) => chats.store.subscribe(listener), [chats]),
+    () => {
+      const states = chats.store.statesFor(chats.plane);
+      return owedRestarts.map((session) => stateOf(states, session)).join(" ");
+    },
+  );
+  /**
    * What each chat's pane says of its restart ({@link RestartSaid}): under way, not yet, owed by
    * hand, or why it failed.
    */
   const restartsSaid = useMemo(() => {
-    const states = chats.store.statesFor(chats.plane);
+    const states = owedStates.split(" ");
     const out: Record<number, RestartSaid> = {};
-    for (const session of owedRestarts) {
-      const state = stateOf(states, session);
+    for (const [at, session] of owedRestarts.entries()) {
+      const state = states[at];
       // Mid-turn it waits for the turn to end, and its pane says so, with Restart now (qw351).
       out[session] = { owed: true, byHand: state === "unknown", midTurn: state === "running" };
     }
@@ -5368,7 +5381,7 @@ export const PlaneView = memo(function PlaneView({
     for (const [session, trouble] of Object.entries(restartTrouble))
       out[Number(session)] = { trouble };
     return out;
-  }, [owedRestarts, restartsRunning, restartNotYet, restartTrouble, chats]);
+  }, [owedRestarts, owedStates, restartsRunning, restartNotYet, restartTrouble]);
   /** What a row of the Chats list says of its chat's restart (#1462): why it was refused, or
    *  why it waits. */
   const restartsOnRows = useMemo(() => {

@@ -12,7 +12,7 @@ import {
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
-import { sandboxCommandReturned } from "./sandboxAsked";
+import { sandboxCommandReturned, useSandboxCommands } from "./sandboxAsked";
 import { inertly } from "./sandboxBlocks";
 import { useWindowFocused } from "./windowFocused";
 
@@ -105,8 +105,10 @@ export function ProjectExpectsNotice({
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
   const onDisk = usePlaneChanged([plane], SETTINGS);
-  // And when the window comes back: an Allow made in Settings, or in another window.
+  // And when the window comes back: an Allow made in another window.
   const focused = useWindowFocused();
+  // And when a sandbox command of this window's returns: an Allow made in Settings (#1888).
+  const moved = useSandboxCommands();
 
   /** Asked again after an Allow that was refused: what waits may stand otherwise by now. */
   const [again, setAgain] = useState(0);
@@ -124,7 +126,7 @@ export function ProjectExpectsNotice({
     return () => {
       live = false;
     };
-  }, [plane, onDisk, focused, again]);
+  }, [plane, onDisk, focused, again, moved]);
 
   if (expects === undefined || !expects.asked || expects.items.length === 0) return null;
 

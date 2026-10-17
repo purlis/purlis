@@ -117,6 +117,8 @@ type Core = {
   held?: Promise<void>;
   /** Chat 4's tasks, which the sidebar lists beside it. */
   tasks?: (typeof CHAT)[];
+  /** The chats the core owes a restart when the view is drawn (`owed_restarts`). */
+  owed?: number[];
 };
 
 function core(now: Core) {
@@ -145,7 +147,7 @@ function core(now: Core) {
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
-      if (cmd === "owed_restarts") return [];
+      if (cmd === "owed_restarts") return now.owed ?? [];
       if (cmd === "chats_on_older_sandbox") return now.older;
       if (cmd === "restart_chat") {
         if (now.refused !== undefined) throw new Error(now.refused);
@@ -256,6 +258,21 @@ describe("Restart chat on a chat's tab", () => {
     await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
     expect(await screen.findByText("session 9")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(RESTART_WAITS_FOR_THE_TURN)).toBeNull());
+  });
+
+  // #1888: the pane's words followed only the owed list, so a chat owed a restart before its
+  // state was heard kept the by-hand Notice once it said it was mid-turn.
+  it("says an owed restart waits for the turn once the chat says it is mid-turn", async () => {
+    const { asked } = await aChat({ owed: [4] });
+    expect(
+      await screen.findByText(/Its harness does not say when a turn ends/),
+    ).toBeInTheDocument();
+
+    await act(() => emit("chat-moved", RUNNING));
+
+    expect(await screen.findByText(RESTART_WAITS_FOR_THE_TURN)).toBeInTheDocument();
+    expect(screen.queryByText(/Its harness does not say when a turn ends/)).toBeNull();
+    expect(asked("restart_chat")).toEqual([]);
   });
 
   it("says the wait beside the row of a chat whose turns purlis can see", async () => {
