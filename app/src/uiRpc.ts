@@ -371,6 +371,7 @@ export const commands = {
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
 	chatNetwork: (plane: PlaneId, session: number) => typedError<ChatNetwork, string>(__TAURI_INVOKE("chat_network", { plane, session })),
 	allowBlockedHost: __WINDOW_ONLY_RESULT,
+	allowSandboxPort: __WINDOW_ONLY_RESULT,
 	sandboxKeptBlocked: __WINDOW_ONLY_RESULT,
 	listGrantableFolder: __WINDOW_ONLY_RESULT,
 	unlistGrantableFolder: __WINDOW_ONLY_RESULT,
@@ -3891,6 +3892,11 @@ export type ExtensionRow = {
 	 *  says what is in force rather than what was asked for.
 	 */
 	themes_in_force: string[],
+	/**
+	 *  What is wrong with each colour theme it is contributing right now, as the theme engine
+	 *  read it: one entry per theme with something to say, beside the row's other complaints.
+	 */
+	theme_trouble: ThemeTrouble[],
 	/**  Every contribution it declares, whether or not any of it is in force. */
 	declares: string[],
 	/**
@@ -8520,6 +8526,19 @@ export type ThemeOption = {
 	value: string,
 	/**  What the select shows. */
 	label: string,
+};
+
+/**
+ *  What is wrong with one colour theme an extension is contributing (#2321), in the theme
+ *  engine's words: why it is refused, or what it left out of a theme it draws.
+ */
+export type ThemeTrouble = {
+	/**  The theme's name, as the manifest gives it. */
+	name: string,
+	/**  The engine's sentences, one each: why it is refused, or what it left out. */
+	complaints: string[],
+	/**  Whether the engine refused the theme, so Purlis is drawn in its place. */
+	refused: boolean,
 };
 
 /**  What a close that stops the chats below does next with the chat itself. */

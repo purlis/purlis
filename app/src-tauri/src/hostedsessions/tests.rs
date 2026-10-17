@@ -573,7 +573,7 @@ struct HooksHeard {
     relaying: Arc<Mutex<Option<Arc<purlis_core::hookwire::relay::Relaying>>>>,
     issued: Arc<Mutex<Vec<u32>>>,
     /// The project's board, kept as the window's binary keeps it in the host (#2194).
-    board: crate::sessionhost::KeptBoard,
+    board: purlis_core::hookchannel::KeptBoard,
 }
 
 impl HooksHeard {
@@ -608,7 +608,7 @@ impl purlis_host::Hear for HooksHeard {
 struct StandInChannel {
     relaying: Arc<purlis_core::hookwire::relay::Relaying>,
     issued: Arc<Mutex<Vec<u32>>>,
-    board: crate::sessionhost::KeptBoard,
+    board: purlis_core::hookchannel::KeptBoard,
 }
 
 impl purlis_host::Channel for StandInChannel {
@@ -1607,4 +1607,159 @@ fn a_record_put_back_reattaches_what_the_host_still_runs_and_starts_the_rest() {
         left.seen().stopped
     });
     assert!(!kept.seen().stopped, "the reattached one runs on");
+}
+
+/// Composes a start with no launch as a host's binary does, in a confinement it asks the host
+/// for, and runs a stand-in (#2171).
+struct ComposesConfined;
+
+impl purlis_host::Compose for ComposesConfined {
+    fn compose(
+        &self,
+        starting: &purlis_host::ToCompose<'_>,
+    ) -> Result<purlis_core::session::Spec, String> {
+        starting.beside.confine(&session::ConfinePlan {
+            listed: Vec::new(),
+            never: Vec::new(),
+            withdrawn: Vec::new(),
+            anything: false,
+            tunnel_ports: vec![443],
+            plain_ports: vec![80],
+            any_port: false,
+            beside: session::Beside::Wrapped,
+            given: vec![5432],
+        })?;
+        Ok(purlis_core::session::Spec::new("/bin/true", starting.size))
+    }
+}
+
+fn by_its_names() -> Named {
+    Named {
+        profile: Some("work".to_owned()),
+        persona: Some("steward".to_owned()),
+        workspace: None,
+        resume: None,
+        first_message: None,
+        without_sandbox: false,
+        size: SIZE,
+    }
+}
+
+/// **A chat the host composes by its names is heard by the window, and its asks answered from
+/// it** (#2407): what its proxy refused and asks about reaches the window's hearing, the
+/// window's answer and a port withdrawn reach its confinement, and closing it lets the host end
+/// it, as for a confinement the window planned.
+#[test]
+fn a_chat_the_host_composes_by_its_names_is_heard_by_the_window_and_answered_from_it() {
+    use purlis_core::sandbox::asks::Heard;
+    use purlis_core::sandbox::egress::Refusals;
+    use purlis_core::sandbox::hosts::Host;
+    use purlis_core::sandbox::plan::{Asking, Hearing};
+    use purlis_core::sandbox::reach::By;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let confines = purlis_host::standin::StandInConfines::default();
+    let hosting = Hosting::confining(ComposesConfined, confines.clone(), StandIns::default());
+    let (connection, _link) = in_memory(hosting, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    let refused = Arc::new(Mutex::new(Vec::new()));
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let hearing = Hearing {
+        refusals: Refusals::telling({
+            let refused = Arc::clone(&refused);
+            Arc::new(move |host: &str, port: u16| {
+                refused.lock().unwrap().push(format!("{host}:{port}"));
+            })
+        }),
+        more: None,
+        reached: None,
+        asks: Some(Asking {
+            tell: {
+                let asked = Arc::clone(&asked);
+                Arc::new(move |heard: Heard| {
+                    if let Heard::Asked(targets) = heard {
+                        asked.lock().unwrap().extend(targets);
+                    }
+                })
+            },
+            askable: Arc::new(|| true),
+            known: Arc::new(|_| None),
+        }),
+    };
+
+    let (_id, confinement) = sessions
+        .open_named(None, &by_its_names(), hearing, &|_| {})
+        .expect("composed in the host");
+    let confinement = confinement.expect("named to the window");
+    let id = confinement.held_as().expect("held in the host").to_owned();
+    confines.proxy_did(
+        &id,
+        session::SandboxTold::Refused {
+            host: "tracker.example.com".into(),
+            port: 443,
+        },
+    );
+    confines.proxy_did(
+        &id,
+        session::SandboxTold::Asked {
+            targets: vec!["pypi.example.com:443".into()],
+        },
+    );
+    until("the window hears its proxy", || {
+        !refused.lock().unwrap().is_empty() && !asked.lock().unwrap().is_empty()
+    });
+    confinement
+        .asks()
+        .expect("its asks are answered from the window")
+        .allow(&Host::parse("pypi.example.com").unwrap(), By::Chat);
+    confinement
+        .withdraw_port(5432)
+        .expect("withdrawn in the host");
+
+    assert_eq!(*refused.lock().unwrap(), ["tracker.example.com:443"]);
+    assert_eq!(*asked.lock().unwrap(), ["pypi.example.com:443"]);
+    assert_eq!(
+        confines.seen()[0].changes,
+        [
+            session::ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: session::Layer::Chat,
+            },
+            session::ReachChange::WithdrawPort { port: 5432 },
+        ]
+    );
+    drop(confinement);
+    until("the host ends it", || confines.ended(&id));
+}
+
+/// A chat started by its names whose hearing asks nobody has its confinement named to no link:
+/// the window holds none of it (#2407).
+#[test]
+fn a_chat_started_by_its_names_with_a_hearing_that_asks_nobody_names_nothing_to_the_window() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let confines = purlis_host::standin::StandInConfines::default();
+    let hosting = Hosting::confining(ComposesConfined, confines.clone(), StandIns::default());
+    let (connection, _link) = in_memory(hosting, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+
+    let (_id, confinement) = sessions
+        .open_named(
+            None,
+            &by_its_names(),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("composed in the host");
+
+    assert!(confinement.is_none());
+    assert!(!confines.seen()[0].confine.asks);
 }

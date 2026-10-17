@@ -215,7 +215,7 @@ pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
         folder,
         crate::sessionhost::Composes::as_the_tests_ship(),
         purlis_host::Terminals,
-        crate::sessionhost::HookChannels(kept.clone()),
+        crate::sessionhost::hook_channels(&kept),
         crate::hostedconfinement::ConfinesHere,
     )
     .recording_with(kept)
@@ -595,7 +595,12 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
     if target.host.is_none() {
         let refused = target
             .sessions
-            .open_named(None, &named("hello", false), &|_| {})
+            .open_named(
+                None,
+                &named("hello", false),
+                purlis_core::sandbox::plan::Hearing::default(),
+                &|_| {},
+            )
             .unwrap_err();
         assert_eq!(refused, crate::host::NOT_COMPOSED_HERE);
         return;
@@ -603,8 +608,14 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
 
     let id = target
         .sessions
-        .open_named(None, &named("carry on with the plan", false), &|_| {})
-        .expect("it starts");
+        .open_named(
+            None,
+            &named("carry on with the plan", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("it starts")
+        .0;
     Pane::on(target, id).shows("COMPOSED as steward:");
     Pane::on(target, id).shows("carry on with the plan :END");
     target.sessions.close(id).expect("it closes");
@@ -614,7 +625,12 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
     elsewhere.profile = Some("someone-elses".to_owned());
     let refused = target
         .sessions
-        .open_named(None, &elsewhere, &|_| {})
+        .open_named(
+            None,
+            &elsewhere,
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
         .unwrap_err();
     assert!(refused.contains("someone-elses"), "{refused}");
 }
@@ -636,8 +652,14 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 
     let id = target
         .sessions
-        .open_named(None, &named("without the sandbox", true), &|_| {})
-        .expect("it starts");
+        .open_named(
+            None,
+            &named("without the sandbox", true),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("it starts")
+        .0;
 
     Pane::on(target, id).shows("without the sandbox :END");
     let events = purlis_core::eventlog::read(&target.log).expect("the log reads");

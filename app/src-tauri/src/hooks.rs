@@ -1611,98 +1611,9 @@ impl Events {
     }
 }
 
-/// Where this app listens, and where containment of that path begins.
-///
-/// The two travel together because `Listener::bind` needs both: a link anywhere between them
-/// is refused, and the root is named rather than worked out — a walk from the root of the
-/// filesystem would refuse every path on macOS, where `/tmp` and `/var` are themselves links.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Where {
-    /// A directory the caller already trusts. Nothing above it is checked.
-    pub within: PathBuf,
-    pub socket: PathBuf,
-}
-
-/// Where this app listens for its sessions' hooks.
-///
-/// Beside the record M1.7 already writes (`.charter/app/`) when there is a plane, so
-/// everything the app keeps for a plane is in one place and an operator looking for it finds
-/// it. `Listener::bind` makes that directory 0700.
-///
-/// **There is always somewhere.** The channel belongs to the APP, not to the plane: a chat
-/// started outside a plane is still a chat, and it would be a strange rule that a harness can
-/// report what it is doing only when there happens to be a `charter.toml` above it. An
-/// earlier version answered `None` here, which quietly made every chat in such a run
-/// `unknown` — including every chat in the scenario tests, which is how it was found.
-///
-/// The fallback is keyed by the plane (or by nothing) so two apps do not land on one socket,
-/// and by the user so two accounts on one machine do not either. A path is handed to each
-/// session in its environment, so nothing ever has to guess it.
-pub fn socket_for(plane: Option<&Path>) -> Where {
-    if let Some(plane) = plane {
-        let beside_the_record = purlis_core::names::state(plane)
-            .join("app")
-            .join("hooks.sock");
-        // macOS allows 104 bytes for a unix socket path including the terminator
-        // (`sys/un.h`), Linux 108; the smaller is the one to hold to, since a plane is
-        // portable. A plane nested deeper than that is not a failure, just not somewhere the
-        // socket can live.
-        if beside_the_record.as_os_str().len() <= LONGEST_SOCKET_PATH {
-            // The plane is the root: it is the operator's own tree, and `.charter/app` below
-            // it is charter's own directory (charter-app#28 rules the same for the record
-            // that already lives there).
-            return Where {
-                within: plane.to_path_buf(),
-                socket: beside_the_record,
-            };
-        }
-    }
-    let within = private_dir();
-    let socket = within
-        .join(format!(
-            "charter-{}-{:016x}",
-            whoami(),
-            purlis_core::renamelocal::busy::fallback_key(plane)
-        ))
-        .join("hooks.sock");
-    Where { within, socket }
-}
-
-/// Where a socket goes when it cannot go beside the plane.
-///
-/// `$XDG_RUNTIME_DIR` first: on Linux it is the standard per-user 0700 directory for exactly
-/// this, and the temp directory there is `/tmp`, which everyone can write to. macOS has no
-/// such variable and its `TMPDIR` is already a per-user 0700 directory.
-///
-/// Either way `Listener::bind` creates the socket's own directory with the mode set as it is
-/// made and refuses one it does not own, so this chooses a good neighbourhood rather than
-/// being the thing that keeps anyone out.
-fn private_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .filter(|dir| dir.is_absolute() && dir.is_dir())
-        .unwrap_or_else(std::env::temp_dir)
-}
-
-/// The longest a unix socket path may be, on the stricter of the two platforms charter builds
-/// for. One byte is left for the terminator.
-const LONGEST_SOCKET_PATH: usize = 103;
-
-/// Something short and stable that differs between users on one machine.
-///
-/// `TMPDIR` is already per-user on macOS and is not on Linux, so this is what keeps two
-/// accounts apart there. It is not a secret and is not relied on to be one — the directory's
-/// 0700 is what keeps others out.
-fn whoami() -> String {
-    std::env::var("USER")
-        .or_else(|_| std::env::var("LOGNAME"))
-        .ok()
-        .filter(|user| {
-            user.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        })
-        .unwrap_or_else(|| "charter".to_owned())
-}
+/// Where this app listens for its sessions' hooks: one place for both binaries' hosts and the
+/// window's own hearing (`purlis_core::hookchannel::socket_for`, #2447).
+pub use purlis_core::hookchannel::{Where, socket_for};
 
 impl Hooks {
     /// Nothing listening: every chat is `unknown`, which is what the spec says a harness with
@@ -2937,207 +2848,26 @@ fn record(events: &Mutex<Option<Events>>, entry: Entry) -> std::io::Result<()> {
     })
 }
 
-/// What a drain of the hook spool found, each item into the host's log and made durable before
-/// the next: the drain removes a line's file only once this answers `Ok` for it. The log is
-/// held for one item at a time, as a live line holds it, so the hooks of every other chat go
-/// on being recorded while one chat's spool is drained.
-fn into_the_log<'a>(
-    log: &'a Mutex<purlis_core::eventlog::Recorder>,
-    root: &'a Path,
-) -> impl FnMut(purlis_core::hookwire::spool::Drained) -> std::io::Result<()> + 'a {
-    move |item| {
-        let (event, durable) = {
-            let mut log = log.lock().unwrap_or_else(PoisonError::into_inner);
-            (log.spooled(root, item), log.durable())
-        };
-        durable.through(event?.seq)
-    }
-}
-
-/// **Drains the hook spool beside `socket`, of the project at `root`, into `log`, as the project
-/// is held** ([`Hooks::drain_spool`]): the window's, or the session host's as it first holds
-/// the project (#2003), whichever writes the event log. With no log, the keys of the chats the
-/// reopen record does not bring back are dropped, unless their spools still hold a line.
-pub(crate) fn drain_at_open(
-    socket: &Path,
-    root: &Path,
-    log: Option<&Mutex<purlis_core::eventlog::Recorder>>,
-) {
-    let dir = purlis_core::hookwire::spool::dir_for(socket);
-    let record = purlis_core::reopen::path(root)
-        .is_file()
-        .then(|| purlis_core::reopen::read_or_refusal(root).ok())
-        .flatten();
-    let chats = record.map(|record| record.chats).unwrap_or_default();
-    // The numbers of the chats this open brings back.
-    let back: Vec<u32> = chats.iter().filter_map(|chat| chat.number).collect();
-    let Some(log) = log else {
-        if let Err(why) = purlis_core::hookwire::spool::forget_ended_at_open(&dir, &back) {
-            tracing::warn!(
-                "purlis: the ended chats' hook spool keys were not dropped ({why}); they are \
-                 dropped at the next start"
-            );
-        }
-        return;
-    };
-    let mut log = log.lock().unwrap_or_else(PoisonError::into_inner);
-    for chat in chats {
-        if let (Some(number), Some(id), Some(run)) =
-            (chat.number, chat.identity.id, chat.identity.run)
-        {
-            log.knows(
-                root,
-                number,
-                purlis_core::eventlog::RunOf {
-                    chat: &id,
-                    run: &run,
-                },
-            );
-        }
-    }
-    let durable = log.durable();
-    let drained = purlis_core::hookwire::spool::drain_at_open(&dir, &back, &mut |item| {
-        let event = log.spooled(root, item)?;
-        durable.through(event.seq)
-    });
-    if let Err(why) = drained {
-        tracing::warn!(
-            "purlis: the hook spool was not drained ({why}); it is drained at the next start"
-        );
-    }
-}
-
-/// **Chat `chat` of the project at `root` was closed**: what its hooks spooled is drained into
-/// `log` and its spool keys dropped ([`Hooks::chat_ended`]), by whichever process writes the
-/// event log (#2003). With no log the keys are dropped all the same.
-pub(crate) fn spool_ended(
-    socket: &Path,
-    root: &Path,
-    log: Option<&Mutex<purlis_core::eventlog::Recorder>>,
-    chat: u32,
-) {
-    use purlis_core::hookwire::spool;
-    let dir = spool::dir_for(socket);
-    let ended = match log {
-        Some(log) => spool::end_chat(&dir, chat, &mut into_the_log(log, root)),
-        None => spool::forget_chat(&dir, chat),
-    };
-    if let Err(why) = ended {
-        tracing::warn!(
-            "purlis: chat {chat}'s hook spool was not drained as it ended ({why}); its key is \
-             kept until the next open of the project"
-        );
-    }
-}
-
-/// How long after one of a chat's lines is heard its spool is looked at (#952). A hook spools
-/// a line once the host has not taken it in a quarter of a second, and gives the disk a second
-/// to keep it, so a line the host heard late is in the spool by then. Short under test, so a
-/// test waits on the look, not on the clock.
-const A_SPOOL_IS_LOOKED_AT_AFTER: std::time::Duration = if cfg!(test) {
-    std::time::Duration::from_millis(20)
-} else {
-    std::time::Duration::from_secs(2)
+/// The drains of a hook spool, one for the window's own hearing and both binaries' hosts
+/// (`purlis_core::hookchannel`, #2447).
+pub(crate) use purlis_core::hookchannel::{
+    SpoolWatch, drain_at_open, drain_while_running, spool_ended,
 };
 
-/// Where the host's hearers tell which chat they heard from, so its spool is drained while the
-/// host runs (#952): one thread per project, [`watching_spools`]'s.
-#[derive(Clone)]
-pub(crate) struct SpoolWatch(std::sync::mpsc::Sender<u32>);
+/// How long after one of a chat's lines is heard its spool is looked at (#952): the host's
+/// ([`purlis_core::hookchannel::A_SPOOL_IS_LOOKED_AT_AFTER`]), short under test, so a test waits
+/// on the look, not on the clock.
+pub(crate) const A_SPOOL_IS_LOOKED_AT_AFTER: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(20)
+} else {
+    purlis_core::hookchannel::A_SPOOL_IS_LOOKED_AT_AFTER
+};
 
-impl SpoolWatch {
-    /// Chat `chat` was heard from on the hook channel. Never waits: the look is the thread's.
-    pub(crate) fn heard_from(&self, chat: u32) {
-        // A thread that is gone (it could not be started) drains nothing, and the spool waits
-        // for the chat's end or the project's next open, as it did before #952.
-        let _ = self.0.send(chat);
-    }
-}
-
-/// **A chat's spool is drained while the host runs** (#952), set off from the hook channel: a
-/// line of the chat heard there has the chat's spool looked at [`A_SPOOL_IS_LOOKED_AT_AFTER`]
-/// later, and drained into the event log if it holds a line. So a line a hook spooled because
-/// this host was slow to take it is recorded within seconds, once the chat is heard from
-/// again, or at its end or the project's next open, whichever comes first; a line the host
-/// took late and the hook spooled as well is recorded once (`hookwire::Deliveries`).
-///
-/// **One look per chat per wait**: lines heard while a look is pending add none, so a chat that
-/// is busy has its spool looked at once every few seconds at most, and a look at a spool that
-/// holds no line is one listing of its folder ([`spool::holds_lines`]). The drain keeps the
-/// chat's keys ([`spool::drain_running`]). With no event log nothing is drained: there is
-/// nowhere to record a line, and the spool waits for a host that has one.
-///
-/// The thread ends with the hearers, when the project stops listening; a look still pending
-/// then is let go, and the chat's spool is drained at its end or the next open.
-///
-/// **With chats in the session host, the host looks** (#2003): it takes each live line and
-/// drains each spool into the log it writes, so which copy of a line was recorded is known in
-/// one process, and a line its hook spooled after the host took it late is recorded once.
-/// `drain` drains one chat's spool, where there is a log to drain it into.
-///
-/// [`spool::holds_lines`]: purlis_core::hookwire::spool::holds_lines
-/// [`spool::drain_running`]: purlis_core::hookwire::spool::drain_running
+/// **A chat's spool is drained while the window hears its hooks** (#952), looked at
+/// [`A_SPOOL_IS_LOOKED_AT_AFTER`] after one of its lines is heard
+/// ([`purlis_core::hookchannel::watching_spools`]).
 pub(crate) fn watching_spools(drain: impl Fn(u32) + Send + 'static) -> SpoolWatch {
-    use std::sync::mpsc::RecvTimeoutError;
-    use std::time::Instant;
-    let (heard, hears) = std::sync::mpsc::channel::<u32>();
-    let watching = std::thread::Builder::new()
-        .name("purlis-spool-watch".into())
-        .spawn(move || {
-            let mut due: std::collections::BTreeMap<u32, Instant> = Default::default();
-            loop {
-                let next = due.values().min().copied();
-                let got = match next {
-                    None => hears.recv().map_err(|_| RecvTimeoutError::Disconnected),
-                    Some(at) => hears.recv_timeout(at.saturating_duration_since(Instant::now())),
-                };
-                match got {
-                    Ok(chat) => {
-                        due.entry(chat)
-                            .or_insert_with(|| Instant::now() + A_SPOOL_IS_LOOKED_AT_AFTER);
-                    }
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => return,
-                }
-                let now = Instant::now();
-                let ready: Vec<u32> = due
-                    .iter()
-                    .filter(|(_, at)| **at <= now)
-                    .map(|(chat, _)| *chat)
-                    .collect();
-                for chat in ready {
-                    due.remove(&chat);
-                    drain(chat);
-                }
-            }
-        });
-    if let Err(why) = watching {
-        tracing::warn!(
-            "purlis: the hook spool cannot be drained while this project runs ({why}); it is \
-             drained as each chat ends and at the next open"
-        );
-    }
-    SpoolWatch(heard)
-}
-
-/// Chat `chat`'s spool in `dir`, of the project at `root`, drained into `log` while the host
-/// runs, where it holds a line ([`watching_spools`]).
-pub(crate) fn drain_while_running(
-    dir: &Path,
-    root: &Path,
-    log: &Mutex<purlis_core::eventlog::Recorder>,
-    chat: u32,
-) {
-    use purlis_core::hookwire::spool;
-    if !spool::holds_lines(dir, chat) {
-        return;
-    }
-    if let Err(why) = spool::drain_running(dir, chat, &mut into_the_log(log, root)) {
-        tracing::warn!(
-            "purlis: chat {chat}'s hook spool was not drained while it runs ({why}); it is \
-             drained at the next look, at its end or at the next open"
-        );
-    }
+    purlis_core::hookchannel::watching_spools(A_SPOOL_IS_LOOKED_AT_AFTER, drain)
 }
 
 /// The board, whether or not a thread panicked while holding it.

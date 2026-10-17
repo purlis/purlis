@@ -606,6 +606,14 @@ export const commands = {
 	/**  **Allow** on a row of Blocked lately (#1662): the window's alone (`WINDOW_ONLY`). */
 	allowBlockedHost: (plane: PlaneId, host: string, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_blocked_host", { plane, host, level })),
 	/**
+	 *  **Allow port** on Settings' Network page (#1970): the service on this Mac at `port`, for open
+	 *  chat `chat` alone or for every chat of this project on this machine, granted by
+	 *  [`allow_port`] through the path a block's Notice takes. The window's alone (`WINDOW_ONLY`).
+	 * 
+	 *  Off the window's thread (#1949): it is judged, audited and kept on disk before it answers.
+	 */
+	allowSandboxPort: (plane: PlaneId, port: string, chat: number | null, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_sandbox_port", { plane, port, chat, level })),
+	/**
 	 *  **What the person kept blocked here** (#1700), from this machine's network record, newest
 	 *  first: the window's alone (`WINDOW_ONLY`).
 	 */
@@ -5306,6 +5314,11 @@ export type ExtensionRow = {
 	 *  says what is in force rather than what was asked for.
 	 */
 	themes_in_force: string[],
+	/**
+	 *  What is wrong with each colour theme it is contributing right now, as the theme engine
+	 *  read it: one entry per theme with something to say, beside the row's other complaints.
+	 */
+	theme_trouble: ThemeTrouble[],
 	/**  Every contribution it declares, whether or not any of it is in force. */
 	declares: string[],
 	/**
@@ -9935,6 +9948,19 @@ export type ThemeOption = {
 	value: string,
 	/**  What the select shows. */
 	label: string,
+};
+
+/**
+ *  What is wrong with one colour theme an extension is contributing (#2321), in the theme
+ *  engine's words: why it is refused, or what it left out of a theme it draws.
+ */
+export type ThemeTrouble = {
+	/**  The theme's name, as the manifest gives it. */
+	name: string,
+	/**  The engine's sentences, one each: why it is refused, or what it left out. */
+	complaints: string[],
+	/**  Whether the engine refused the theme, so Purlis is drawn in its place. */
+	refused: boolean,
 };
 
 /**  What a close that stops the chats below does next with the chat itself. */

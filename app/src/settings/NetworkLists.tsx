@@ -6,14 +6,16 @@ import {
   commands,
   type BlockedLately,
   type GrantLevel,
+  type OpenChat,
   type PlaneId,
   type SandboxNetwork,
 } from "../bindings";
 import { ALLOW_SAID } from "../allowLabels";
 import { Notice } from "../Notice";
+import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
-import type { RowIds } from "./components";
+import { Choice, Field, type RowIds } from "./components";
 
 /**
  * **Settings › Sandbox › Network** (#1662, spec #1661): the hosts every sandboxed chat here
@@ -223,6 +225,142 @@ export function BlockedLatelyList({ plane, ids }: { plane: PlaneId; ids: RowIds 
         <RefusedRows plane={plane} rows={network.blocked} label="Blocked lately" />
       )}
       {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
+    </div>
+  );
+}
+
+/** Who a port is allowed for: every chat of this project on this machine, or one open chat. */
+type PortFor = { kind: "project" } | { kind: "chat"; session: number };
+
+/** One pick of the form's select: who it allows, and what the select says of it. */
+type PortChoice = { for: PortFor; label: string };
+
+/** The Notice's wider Allow, and the form's first pick. */
+const EVERY_CHAT: PortChoice = {
+  for: { kind: "project" },
+  label: "every chat of this project on this machine",
+};
+
+/** What a pick is written as in the select: the select holds only text. */
+function keyOf(one: PortFor): string {
+  return one.kind === "project" ? "project" : `chat:${one.session}`;
+}
+
+/** The picks: every chat here, then each chat open here alone, never a shell. */
+function choicesOf(open: readonly OpenChat[]): PortChoice[] {
+  return [
+    EVERY_CHAT,
+    ...open
+      .filter((one) => one.harness !== null)
+      .map((one) => ({
+        for: { kind: "chat", session: one.session } as const,
+        label: `only ${one.label ?? one.name}`,
+      })),
+  ];
+}
+
+/**
+ * **A service on this Mac, added by its port** (#1970): one port, for every chat of this project
+ * on this machine or for one open chat alone, which the core judges, audits and keeps through
+ * the one function a block's Notice's Allow does (`sandboxing::judged_and_kept`), so whatever
+ * the Notice refuses (a range, every port, purlis's own port, a scope past them, a policy lock)
+ * is refused here in the same words. The Allowed list beside it shows it once kept.
+ */
+export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
+  const [typed, setTyped] = useState("");
+  const [scope, setScope] = useState<PortFor>(EVERY_CHAT.for);
+  const [choices, setChoices] = useState<readonly PortChoice[]>([EVERY_CHAT]);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string>();
+  const [trouble, setTrouble] = useState<string>();
+  const moved = useSandboxCommands();
+  useEffect(() => {
+    let gone = false;
+    void commands
+      .openedChats(plane)
+      .then((done) => {
+        if (!gone && done.status === "ok") setChoices(choicesOf(done.data ?? []));
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [plane, moved]);
+  // A chat that closed is no scope to pick.
+  const picked = choices.find((one) => keyOf(one.for) === keyOf(scope))?.for ?? EVERY_CHAT.for;
+  const add = () => {
+    const port = typed.trim();
+    const level: GrantLevel = picked.kind === "project" ? "you" : "chat";
+    setSaid(undefined);
+    setTrouble(undefined);
+    setBusy(true);
+    void commands
+      .allowSandboxPort(plane, port, picked.kind === "chat" ? picked.session : null, level)
+      .then((done) => {
+        if (done.status === "error") setTrouble(done.error);
+        else {
+          setSaid(done.data.said);
+          setTyped("");
+          allowedOnAList();
+        }
+      })
+      .catch((err: unknown) => setTrouble(`purlis could not allow port ${port}: ${String(err)}`))
+      .finally(() => {
+        setBusy(false);
+        // What chats here reach moved, or did not: whatever reads it asks again.
+        sandboxCommandReturned();
+      });
+  };
+  // The window's alone (`WINDOW_ONLY`): a link's page never widens what a chat reaches.
+  if (!inTheWindow(commands, "allowSandboxPort"))
+    return (
+      <p id={ids.id} className="granted-note" aria-labelledby={ids.labelledBy}>
+        Add one from purlis's own window on this machine.
+      </p>
+    );
+  return (
+    <div aria-labelledby={ids.labelledBy}>
+      <Field
+        kind="text"
+        ids={ids}
+        value={typed}
+        onChange={setTyped}
+        placeholder="50795"
+        inputMode="numeric"
+        size={7}
+        disabled={busy}
+      />{" "}
+      <label>
+        for{" "}
+        <Choice
+          kind="select"
+          ids={{ id: `${ids.id}-for`, label: "Allowed for" }}
+          options={choices.map((one) => ({ value: keyOf(one.for), label: one.label }))}
+          value={keyOf(picked)}
+          disabled={busy}
+          onValueChange={(key) =>
+            setScope(choices.find((one) => keyOf(one.for) === key)?.for ?? EVERY_CHAT.for)
+          }
+        />
+      </label>{" "}
+      <button
+        type="button"
+        className="ui-button"
+        tabIndex={0}
+        disabled={busy || typed.trim() === ""}
+        onClick={add}
+      >
+        Allow port
+      </button>
+      <p className="granted-note">
+        A Claude Code chat reaches it by name only, as <code>this-mac.internal</code> at that port.
+      </p>
+      {said !== undefined && (
+        <Notice cause={`port-allowed:${said}`} at="pane" onDismiss={() => setSaid(undefined)}>
+          {said}
+        </Notice>
+      )}
+      {trouble !== undefined && <Trouble said={trouble} onDismiss={() => setTrouble(undefined)} />}
     </div>
   );
 }

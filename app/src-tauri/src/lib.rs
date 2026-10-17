@@ -3031,7 +3031,7 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
             &place.credentials,
             sessionhost::Composes::shipped(),
             purlis_host::Terminals,
-            sessionhost::HookChannels(kept.clone()),
+            sessionhost::hook_channels(&kept),
             hostedconfinement::ConfinesHere,
         )
         .recording_with(kept)

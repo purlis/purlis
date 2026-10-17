@@ -103,6 +103,8 @@ pub mod harness_plugin;
 #[cfg(unix)]
 pub(crate) mod held;
 pub mod heredoc;
+#[cfg(unix)]
+pub mod hookchannel;
 pub mod hookreg;
 pub mod hookstate;
 pub mod hookwire;
@@ -216,6 +218,8 @@ pub mod template;
 pub mod testfixture;
 #[cfg(test)]
 mod testgit;
+#[cfg(all(test, unix))]
+mod testmulticall;
 // Public, and not `cfg(test)`, for one reason: purlis-core's integration tests are separate
 // crates, and they re-run themselves through it (charter-app#267). Nothing in the product
 // calls it.

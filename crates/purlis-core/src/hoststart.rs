@@ -22,7 +22,8 @@
 //! **Fail closed where the window would ask or hear.** A profile that is handed a key or a
 //! cloud's credentials is refused: credentials are read where the window starts its program and
 //! never pass in a launch. A confinement is started by the host as the program's own, and its
-//! proxy asks nobody, since no window hears it. A person's opt-out is written in the host's event
+//! proxy asks nobody, unless the start named it to the window's link: then the window hears it
+//! and answers its asks (#2407). A person's opt-out is written in the host's event
 //! log under the start's own run before anything runs, or the start is refused. A first message
 //! the harness takes on no line of its own is refused, never dropped.
 
@@ -57,6 +58,49 @@ impl Kit {
             binary,
             plugin,
             git_hooks,
+        }
+    }
+
+    /// **What a host with no window arms a chat with** (`purlis serve`, #2447): its own
+    /// `binary`, the plugin installed beside it ([`crate::plugin_install::bundle_beside`]: where
+    /// a package or the runner image puts it), and purlis's git hooks, written now in `data`,
+    /// its data folder, to run `binary`, as the window writes them at its launch. Where none is
+    /// installed beside it, the kit has no plugin, and a sandboxed Claude Code chat is refused
+    /// as it is anywhere the plugin is missing. Git hooks that cannot be written leave a chat's
+    /// commits unscanned, and say so in the host's log.
+    pub fn installed_beside(binary: PathBuf, data: &Path) -> Kit {
+        let plugin = crate::plugin_install::bundle_beside(&binary);
+        let dir = data.join(crate::names::BUNDLE_ID.write).join(GIT_HOOKS);
+        let hooks = crate::githooks::GitHooks::at(&dir);
+        let git_hooks = match hooks.write(&binary) {
+            Ok(()) => Some(hooks),
+            Err(why) if why.kind() == std::io::ErrorKind::Unsupported => None,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: no git hooks at {} ({why}); a chat's commits will not be scanned \
+                     for secrets",
+                    dir.display()
+                );
+                None
+            }
+        };
+        Kit {
+            binary: Some(binary),
+            plugin,
+            git_hooks,
+        }
+    }
+
+    /// [`Kit::installed_beside`] for this process: this binary, and this user's data folder.
+    /// With no binary to name, it arms nothing, and a sandboxed chat is refused.
+    pub fn installed_beside_this_binary() -> Kit {
+        match (std::env::current_exe(), dirs::data_dir()) {
+            (Ok(binary), Some(data)) => Kit::installed_beside(binary, &data),
+            (binary, _) => Kit {
+                binary: binary.ok(),
+                plugin: None,
+                git_hooks: None,
+            },
         }
     }
 }

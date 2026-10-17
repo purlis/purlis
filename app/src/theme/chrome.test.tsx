@@ -387,6 +387,7 @@ function dialogCore() {
               standing: "trusted",
               refused: null,
               themes_in_force: [],
+              theme_trouble: [],
               ask: {
                 id: "solarized",
                 name: "Solarized",

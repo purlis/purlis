@@ -36,9 +36,9 @@ impl Drop for Ends {
     }
 }
 
-/// `purlis serve` with its config home and runtime directory in `dir`, once it says it is ready.
+/// `purlis serve` with its config, data and runtime homes in `dir`, once it says it is ready.
 fn serving(dir: &Path) -> Ends {
-    for folder in ["run", "config"] {
+    for folder in ["run", "config", "data"] {
         std::fs::create_dir_all(dir.join(folder)).unwrap();
     }
     std::fs::set_permissions(dir.join("run"), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -46,6 +46,9 @@ fn serving(dir: &Path) -> Ends {
     serve
         .arg("serve")
         .env("PURLIS_CONFIG_HOME", dir.join("config"))
+        // Its event log and purlis's git hooks, which it writes as it starts (#2447).
+        .env("PURLIS_DATA_HOME", dir.join("data"))
+        .env("XDG_DATA_HOME", dir.join("data"))
         .env("XDG_RUNTIME_DIR", dir.join("run"))
         .env("TMPDIR", dir)
         .stdin(Stdio::null())
