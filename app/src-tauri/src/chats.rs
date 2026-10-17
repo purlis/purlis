@@ -870,33 +870,29 @@ fn no_conversation(session: u32) -> String {
 pub const SANDBOXED_AGAIN: &str = "This chat ran without the sandbox until this restart. It runs \
                                    in the sandbox now, because that choice lasts for one start.";
 
-/// **A grant held for one chat** ([`Chats::hold_grant_as`], #2454), and what holding it
-/// changed: what [`Chats::let_go`] puts back where its audit cannot be written.
+/// **A grant reserved for one chat and not kept yet** ([`Chats::reserve_grant`], #2454): it
+/// is held by nothing but this, so no start, no Granted list, no live ask and no later Allow
+/// sees it until [`Chats::commit_grant`] keeps it, once its audit is written. Dropped, it was
+/// never kept.
 #[derive(Debug)]
-#[must_use = "a grant held before its audit is let go where the audit cannot be written"]
 pub(crate) struct Held {
+    session: u32,
     /// The chat's id, which its grants are kept by.
     id: String,
     what: purlis_core::sandbox::grant::What,
-    change: Change,
+    at: u64,
+    /// The chat's name as its tab showed it.
+    chat: String,
+    once: bool,
+    already: bool,
 }
 
 impl Held {
-    /// Whether holding it changed what the chat holds: if not, it held it already.
-    pub(crate) fn changed(&self) -> bool {
-        self.change != Change::Nothing
+    /// Whether the chat held it already, at least as long, when it was reserved: then keeping
+    /// it changes nothing, and nothing is audited.
+    pub(crate) fn already(&self) -> bool {
+        self.already
     }
-}
-
-/// What holding a grant changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Change {
-    /// Nothing: the chat held it already, at least as long.
-    Nothing,
-    /// It was not held, and is now.
-    Added,
-    /// It was held once, and lasts now.
-    MadeLasting,
 }
 
 /// One grant a person made for one chat (#1342), as Settings' Granted list shows it.
@@ -1592,6 +1588,16 @@ impl Chats {
         grants
     }
 
+    /// What a start of open chat `session` would be granted now ([`Self::grants_of`]): for a
+    /// test of what a start or a restart composes into its sandbox.
+    #[cfg(test)]
+    pub(crate) fn grants_a_start_of(&self, session: u32) -> purlis_core::sandbox::grant::Grants {
+        let chat = lock(&self.open)
+            .get(&session)
+            .map(|running| running.chat.clone());
+        chat.map(|chat| self.grants_of(&chat)).unwrap_or_default()
+    }
+
     /// **Lets chat `session` do `what`** (#1342), for as long as the app holds it, and owes it a
     /// restart on its conversation that tells it `told`. A chat that is not open, or one with no
     /// id, gets nothing, and is told why.
@@ -1617,7 +1623,7 @@ impl Chats {
         what: purlis_core::sandbox::grant::What,
         at: u64,
     ) -> Result<(), String> {
-        self.hold_grant_as(session, what, at, false).map(|_| ())
+        self.commit_grant(self.reserve_grant(session, what, at, false)?)
     }
 
     /// [`Self::hold_grant`], once (D-sock-3): the restart that takes it starts with it, and it
@@ -1629,78 +1635,82 @@ impl Chats {
         what: purlis_core::sandbox::grant::What,
         at: u64,
     ) -> Result<(), String> {
-        self.hold_grant_as(session, what, at, true).map(|_| ())
+        self.commit_grant(self.reserve_grant(session, what, at, true)?)
     }
 
-    /// [`Self::hold_grant`] (or [`Self::hold_grant_once`] where `once`), answering what it
-    /// changed (#2454), so a grant whose audit then cannot be written is let go again by
-    /// [`Self::let_go`]. The hold is the one check that chat `session` is open, made under the
-    /// lock a chat closing takes: a grant is held for an open chat, or refused before anything
-    /// is audited.
-    pub(crate) fn hold_grant_as(
+    /// **Reserves a grant of `what` for open chat `session`** (#2454), once where `once`: the
+    /// first of two steps, made before its audit is written. It checks that the chat is open,
+    /// so a chat that is not is refused before anything is audited; and it keeps nothing, so
+    /// what the chat holds is unchanged until [`Self::commit_grant`].
+    pub(crate) fn reserve_grant(
         &self,
         session: u32,
         what: purlis_core::sandbox::grant::What,
         at: u64,
         once: bool,
     ) -> Result<Held, String> {
-        let (id, name) = {
-            let open = lock(&self.open);
-            let running = open
-                .get(&session)
-                .ok_or_else(|| format!("chat {session} is not open, so nothing was allowed"))?;
-            let id = running.chat.identity.id.clone().ok_or_else(|| {
+        let open = lock(&self.open);
+        let running = open
+            .get(&session)
+            .ok_or_else(|| format!("chat {session} is not open, so nothing was allowed"))?;
+        let id =
+            running.chat.identity.id.clone().ok_or_else(|| {
                 "that chat has no id yet, so nothing was allowed for it".to_owned()
             })?;
-            (
-                id,
-                running
-                    .chat
-                    .label
-                    .clone()
-                    .unwrap_or_else(|| running.chat.name.clone()),
-            )
-        };
-        let mut grants = lock(&self.grants);
-        let made = grants.entry(id.clone()).or_default();
-        let change = match made.iter_mut().find(|one| one.what == what) {
-            // Allowed for the chat after once: it lasts now.
-            Some(one) if one.once && !once => {
-                one.once = false;
-                Change::MadeLasting
-            }
-            Some(_) => Change::Nothing,
-            None => {
-                made.push(ChatGrant {
-                    what: what.clone(),
-                    at,
-                    chat: name,
-                    once,
-                    from: session,
-                });
-                Change::Added
-            }
-        };
-        Ok(Held { id, what, change })
+        let chat = running
+            .chat
+            .label
+            .clone()
+            .unwrap_or_else(|| running.chat.name.clone());
+        // Held already where it lasts, or is once and once is asked: once made lasting is a new
+        // grant, and audited.
+        let already = lock(&self.grants).get(&id).is_some_and(|made| {
+            made.iter()
+                .any(|one| one.what == what && (once || !one.once))
+        });
+        Ok(Held {
+            session,
+            id,
+            what,
+            at,
+            chat,
+            once,
+            already,
+        })
     }
 
-    /// **Lets go of a grant [`Self::hold_grant_as`] held** (#2454), back to what the chat held
-    /// before: a grant it added goes, and one it made lasting is once again. A grant revoked
-    /// since is not brought back.
-    pub(crate) fn let_go(&self, held: Held) {
-        let mut grants = lock(&self.grants);
-        let Some(made) = grants.get_mut(&held.id) else {
-            return;
-        };
-        match held.change {
-            Change::Nothing => {}
-            Change::Added => made.retain(|one| one.what != held.what),
-            Change::MadeLasting => {
-                if let Some(one) = made.iter_mut().find(|one| one.what == held.what) {
-                    one.once = true;
-                }
-            }
+    /// **Keeps a grant [`Self::reserve_grant`] reserved** (#2454), once its audit is written:
+    /// from now on the chat's starts, the Granted list and a later Allow see it. Kept once only:
+    /// a grant the chat holds already at least as long is left as it is, and one held once is
+    /// made lasting where this one lasts. Refused where the chat closed since it was reserved,
+    /// as its grants end with it (D-1348-1); checked under the lock a chat closing takes, so a
+    /// grant is never kept for a chat that is gone.
+    pub(crate) fn commit_grant(&self, held: Held) -> Result<(), String> {
+        let open = lock(&self.open);
+        let still = open
+            .get(&held.session)
+            .is_some_and(|running| running.chat.identity.id.as_deref() == Some(&held.id));
+        if !still {
+            return Err(format!(
+                "chat {} closed before it was allowed, so nothing was kept",
+                held.session
+            ));
         }
+        let mut grants = lock(&self.grants);
+        let made = grants.entry(held.id).or_default();
+        match made.iter_mut().find(|one| one.what == held.what) {
+            // Allowed for the chat after once: it lasts now.
+            Some(one) if one.once && !held.once => one.once = false,
+            Some(_) => {}
+            None => made.push(ChatGrant {
+                what: held.what,
+                at: held.at,
+                chat: held.chat,
+                once: held.once,
+                from: held.session,
+            }),
+        }
+        Ok(())
     }
 
     /// **Points chat `session`'s kubectl at a cluster on this Mac** (qw384b): `config` is the

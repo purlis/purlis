@@ -1785,14 +1785,13 @@ pub(crate) fn kept_for(
                 .to_owned(),
         );
     }
-    // **For one chat, held first and audited after** (#2454): the hold is the one check that
-    // the chat is open, made under the lock its closing takes, so a chat that closed is refused
-    // before anything is audited; and a hold whose audit cannot be written is let go, so no
-    // grant for a chat is ever kept unaudited. Allowed already is what the hold left as it was:
-    // a grant once that this Allow makes lasting is a new grant, and audited.
+    // **For one chat: reserved, audited, then kept** (#2454). Reserving checks the chat is
+    // open, so a chat that is not is refused before anything is audited; it keeps nothing, so
+    // no start, Granted list or live ask has the grant until its audit is written; and a grant
+    // whose audit cannot be written is never kept. Once made lasting is a new grant, audited.
     let held = match (level, session) {
         (Level::Once | Level::Chat, Some(session)) => {
-            Some(chats.hold_grant_as(session, what.clone(), at, level == Level::Once)?)
+            Some(chats.reserve_grant(session, what.clone(), at, level == Level::Once)?)
         }
         _ => None,
     };
@@ -1800,7 +1799,7 @@ pub(crate) fn kept_for(
         (What::Host(host), Level::You | Level::Project, _) => grant::allowed_already(root, host)
             .is_some_and(|held| held == level || held == Level::Project),
         (_, Level::Once | Level::Chat, Some(_)) => {
-            held.as_ref().is_some_and(|held| !held.changed())
+            held.as_ref().is_some_and(crate::chats::Held::already)
         }
         (What::Socket(socket), Level::You, _) => {
             sandbox::local::granted_sockets(root).contains(socket)
@@ -1828,8 +1827,25 @@ pub(crate) fn kept_for(
             },
         )
     {
-        if let Some(held) = held {
-            chats.let_go(held);
+        return Err(why);
+    }
+    // Kept once audited. A chat that closed while its audit was written keeps nothing, as its
+    // grants end with it: the audit is told so, so it never records a grant that stands.
+    if let Some(held) = held.filter(|held| !held.already())
+        && let Err(why) = chats.commit_grant(held)
+    {
+        if let Err(unsaid) = audit(
+            session,
+            &grant::Audited {
+                granted: false,
+                what: what.word(),
+                target: &target,
+                level,
+            },
+        ) {
+            tracing::warn!(
+                "purlis: an Allow for a chat that closed was not audited as ended ({unsaid})"
+            );
         }
         return Err(why);
     }
@@ -1842,7 +1858,7 @@ pub(crate) fn kept_for(
         _ => told,
     };
     match (what, level, session) {
-        // Held above, before the audit.
+        // Kept above, once audited.
         (_, Level::Once | Level::Chat, _) => {}
         // For every project on this machine (R2): this machine's one file, with when it was
         // allowed, never a project's or a clone's.
