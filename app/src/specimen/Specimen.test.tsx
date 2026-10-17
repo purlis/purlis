@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// <reference types="node" />
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, posix } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { BUILT_IN, DEFAULT_THEME } from "../theme/theme";
@@ -158,25 +158,61 @@ describe("the theme specimen shows nothing of the person's", () => {
     for (const row of rows) expect(fixture, row).toContain(row);
   });
 
-  it("imports nothing that reads the person's state or the core", () => {
-    // The page's own modules, read as text: none reaches the generated bindings, the UI RPC,
-    // the window's prefs or the project in front. (Its window is granted no command either:
-    // `ipc.rs`, the theme specimen's window may invoke nothing.)
-    for (const file of ["main.tsx", "page.ts", "Specimen.tsx", "fixture.ts"]) {
-      const source = readFileSync(join(process.cwd(), "src", "specimen", file), "utf8");
-      for (const forbidden of [
-        "../bindings",
-        "../uiRpc",
-        "../windowprefs",
-        "../here",
-        "@tauri-apps/api",
-        "localStorage",
-        "sessionStorage",
-      ])
-        expect(source, `${file} names ${forbidden}`).not.toContain(forbidden);
+  it("imports nothing that reads the person's state or the core, however deep", () => {
+    // Every module the page loads, followed through imports of imports from its entry: none is
+    // the generated bindings, the UI RPC, the window's prefs, its actions or the project in
+    // front, and none loads Tauri's API. (Its window is granted no command either: `ipc.rs`,
+    // the theme specimen's window may invoke nothing.)
+    const loaded = loadedFrom("src/specimen/main.tsx");
+    expect(loaded.size, "the walk found the page's modules").toBeGreaterThan(10);
+    const reached = [...loaded].filter(
+      (file) => FORBIDDEN.includes(file) || readFileSync(file, "utf8").match(TAURI_API) !== null,
+    );
+    expect(reached).toEqual([]);
+    // And the page's own files keep away from the window's storage.
+    for (const file of [...loaded].filter((one) => one.startsWith("src/specimen/"))) {
+      const source = readFileSync(file, "utf8");
+      for (const storage of ["localStorage", "sessionStorage"])
+        expect(source, `${file} names ${storage}`).not.toContain(storage);
     }
   });
 });
+
+/** The modules that read the person's state or ask the core for anything. */
+const FORBIDDEN = [
+  "src/bindings.ts",
+  "src/uiRpc.ts",
+  "src/windowprefs.ts",
+  "src/here.ts",
+  "src/actions.ts",
+  "src/textSize.ts",
+];
+
+/** A module that loads Tauri's API at all. */
+const TAURI_API = /^\s*(?:import|export)\s(?!type\s)[^;]*?from\s+["']@tauri-apps\/api/m;
+
+/**
+ * Every module `entry` loads, by path from `app`: its static imports and re-exports followed to
+ * the end, leaving out `import type`, which loads nothing.
+ */
+function loadedFrom(entry: string): Set<string> {
+  const loaded = new Set<string>();
+  const next = [entry];
+  const edge = /^\s*(?:import|export)\s+(?!type\s)(?:[^;]*?\sfrom\s+)?["'](\.{1,2}\/[^"']+)["']/gm;
+  while (next.length > 0) {
+    const file = next.pop() as string;
+    if (loaded.has(file)) continue;
+    loaded.add(file);
+    for (const [, spec] of readFileSync(file, "utf8").matchAll(edge)) {
+      const base = posix.join(posix.dirname(file), spec);
+      const found = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]
+        .map((end) => base + end)
+        .find((one) => /\.tsx?$/.test(one) && existsSync(one));
+      if (found !== undefined) next.push(found);
+    }
+  }
+  return loaded;
+}
 
 describe("the specimen page's contract with the app", () => {
   it("reads what it is handed, and says it is drawn or why not in its title", () => {
