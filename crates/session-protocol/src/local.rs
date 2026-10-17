@@ -60,7 +60,7 @@ pub trait Chats: Send + Sync + 'static {
     fn programs(&self) -> Vec<u32>;
 
     /// The process every chat runs below when the chats are not this host's own: the window,
-    /// while chats run in its process (spec #1974's start-time switch, in-app by default). A
+    /// while chats run in its process (spec #1974's start-time switch set to `0`). A
     /// peer below it is inside a chat as surely as one below a chat's program, and is refused
     /// the same way; the window itself is not inside one. `None`, the default, is a host whose
     /// chats are all its own.

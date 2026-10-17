@@ -29,17 +29,19 @@ pub struct Place {
 
 impl Place {
     /// The place of a host whose socket is `socket` and whose credentials are in
-    /// `credentials`: its lock is [`LOCK`], beside the socket.
+    /// `credentials`: its lock is beside the socket, named as it is with `.lock` for `.sock`
+    /// ([`LOCK`] beside `purlisd.sock`), so the host of another config home, whose socket has a
+    /// name of its own in the same folder (#2114), holds a lock of its own.
     pub fn at(socket: PathBuf, credentials: PathBuf) -> Place {
         Place {
-            lock: socket.with_file_name(LOCK),
+            lock: socket.with_extension("lock"),
             socket,
             credentials,
         }
     }
 }
 
-/// The lock's file name, beside the socket.
+/// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
 pub const LOCK: &str = "purlisd.lock";
 
 /// The window that started this host and runs its chats in its own process, by pid: a peer
@@ -99,9 +101,13 @@ pub async fn serve(
             .map_err(unsafe_at("mint its credentials", &place.credentials))?,
     );
     let hosting = hosting.started_by(window);
+    // A stop written elsewhere is heard with no window there, as the host starts and every few
+    // seconds while it serves; every start looks first too (#2190).
+    let heeding = tokio::spawn(hosting.clone().heed_stops_written_elsewhere());
     ready();
 
     let served = accept(&listener, &credentials, &hosting, until).await;
+    heeding.abort();
     // Quitting still ends every chat (ADR 0068 §2), as does the grace period passing.
     let ending = hosting.clone();
     let _ = tokio::task::spawn_blocking(move || ending.end_all()).await;

@@ -774,7 +774,9 @@ impl Held {
     ///
     /// **In two halves** (`crate::restoring`): [`Self::begin_reopen`] reads and registers, and
     /// starts nothing; [`Self::finish_reopen`] starts the chats. This is both, in turn, on the
-    /// thread that asks. A launch does the second behind the window ([`Planes::reopen`]).
+    /// thread that asks. A launch does the second behind the window ([`Planes::reopen`]), once
+    /// its gate lets it (#2004); this is the tests' way in.
+    #[cfg(test)]
     pub(crate) fn reopen(&self, size: Size, record: Read, choice: Choice) {
         let begun = self.begin_reopen(record, choice);
         self.finish_reopen(begun, size);
@@ -2040,6 +2042,8 @@ pub struct Planes {
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
+    /// What putting back a project's chats waits on, if anything (#2004).
+    gate: Option<Gate>,
 }
 
 /// The projects an open or a close is under way for, one at a time each ([`OpenTurn`]).
@@ -2179,6 +2183,9 @@ pub struct PlaneClosed {
 /// Makes a plane's session host, given where its chats are to report and where the plane is.
 pub type Hosting = Arc<dyn Fn(Option<Reporting>, &Path) -> Box<dyn SessionHost> + Send + Sync>;
 
+/// What putting back a project's chats waits on (#2004): `Ok` to start them, or why not.
+pub type Gate = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+
 /// Where the launch's question stands (charter-app#250): what it holds back until the
 /// operator answers, and what the answer was.
 ///
@@ -2275,7 +2282,17 @@ impl Planes {
             letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
             network: None,
+            gate: None,
         }
+    }
+
+    /// Puts back no project's chats before `gate` lets it (#2004): what a window whose chats run
+    /// in its own process waits on, so a session host a crashed window left ends the chats it
+    /// kept first ([`crate::sessionhost::SessionHost::before_chats_are_put_back`]). A gate that
+    /// refuses puts nothing back and leaves the record as it is, for the next launch.
+    pub fn putting_back_chats_after(mut self, gate: Gate) -> Self {
+        self.gate = Some(gate);
+        self
     }
 
     /// Starts each project's chats behind the window (`crate::restoring`): an open answers
@@ -3133,8 +3150,26 @@ impl Planes {
         // **Registered here, started behind the window** (`crate::restoring`): the open that
         // asked answers at once, with every chat's tab to draw, and the programs start on a
         // thread of their own. Where no thread can be had, or a test asked for it, in turn.
+        //
+        // **Nothing starts before the gate lets it** (#2004), on whichever thread starts them: a
+        // gate that refuses leaves each chat registered and unstarted, and its record as it was.
+        let gate = self.gate.clone();
+        let let_through = move |root: &Path| match &gate {
+            Some(gate) => gate()
+                .inspect_err(|why| {
+                    tracing::warn!(
+                        "purlis: plane {}: its chats are not put back: {why}",
+                        root.display()
+                    );
+                })
+                .is_ok(),
+            None => true,
+        };
         if !self.restores_behind {
-            held.reopen(STARTING, record, choice);
+            let begun = held.begin_reopen(record, choice);
+            if let_through(held.root()) {
+                held.finish_reopen(begun, STARTING);
+            }
             return;
         }
         let begun = held.begin_reopen(record, choice);
@@ -3142,17 +3177,22 @@ impl Planes {
         let begun = Mutex::new(Some(begun));
         let begun = Arc::new(begun);
         let taken = Arc::clone(&begun);
+        let through = let_through.clone();
         let spawned = std::thread::Builder::new()
             .name("purlis-restore".into())
             .spawn(move || {
                 let begun = taken.lock().unwrap_or_else(PoisonError::into_inner).take();
-                if let Some(begun) = begun {
+                if let Some(begun) = begun
+                    && through(behind.root())
+                {
                     behind.finish_reopen(begun, STARTING);
                 }
             });
         if spawned.is_err() {
             let begun = begun.lock().unwrap_or_else(PoisonError::into_inner).take();
-            if let Some(begun) = begun {
+            if let Some(begun) = begun
+                && let_through(held.root())
+            {
                 held.finish_reopen(begun, STARTING);
             }
         }

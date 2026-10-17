@@ -132,7 +132,7 @@ fn an_event_log(dir: &Path) -> std::io::Result<purlis_core::eventlog::Recorder> 
 /// The device every target's event log is written for.
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 
-/// A chat in the window's own process: the switch off, the default.
+/// A chat in the window's own process: the switch set to `0`, the way back until #2005.
 pub(crate) fn in_the_window() -> Target {
     let (project, root) = a_project();
     let (hooks, moved) = hooks_of(&root, false);
@@ -159,7 +159,7 @@ pub(crate) fn in_the_window() -> Target {
     }
 }
 
-/// A chat in the session host: the switch on. The host's own code, serving the session protocol
+/// A chat in the session host: the default. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them, and its projects saved as the window's binary saves them.
 pub(crate) fn in_the_host() -> Target {
@@ -206,7 +206,7 @@ pub(crate) fn through_a_link() -> Target {
 /// starts composed from the window's launch, each in a real terminal, its chats' hooks heard on
 /// their project's channel, each confined here, and the device's event log kept in `data`,
 /// opened as it first holds a project (#2003).
-fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
+pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
     let kept = {
         let data = data.to_path_buf();
         crate::sessionhost::Kept::opening(move || an_event_log(&data))
@@ -407,8 +407,10 @@ fn a_host_home(home: &Path) -> HostHome {
     let log = data
         .join(purlis_core::eventlog::EVENTS)
         .join(purlis_core::machine::device_id(&config).expect("the host's device"));
+    // The place the host process names for itself: its runtime directory, and the name its
+    // config home gives its socket (#2114).
     let place = purlis_host::Place::at(
-        purlis_core::hostsocket::socket_for(Some(run.as_os_str())),
+        purlis_core::hostsocket::here_for(Some(run.as_os_str()), Some(&config)),
         purlis_core::machine::charterd(&config),
     );
     HostHome {
@@ -1682,7 +1684,7 @@ fn a_window_killed_and_back_reads_every_chats_state_and_needs_you_as_the_host_ke
         first.told_it_needs_you(ended_its_turn)
     });
     // Every move the first window made has reached the host: a read of the board follows them.
-    let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).expect("its id");
     first
         .connection
         .of_project(&first.root, PATIENCE)
@@ -1846,6 +1848,73 @@ fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
     // The window quits: the host ends every chat and stops, and so ends the first one's host.
     drop(back);
     first.ended_by_the_quit();
+}
+
+/// **The way back after a crash** (#2004): a window running its chats in the session host is
+/// killed outright, and the host keeps a chat for the grace period. The window started again
+/// with its chats in its own process (`PURLIS_CHATS_IN_THE_HOST=0`) ends that host as a quit
+/// before it puts any chat back: by the time its gate lets the chats back, the chat the host
+/// kept has ended, so its conversation never has two programs at once. Then it starts a host of
+/// its own. A host process's target only. The test ends every host it started.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_window_flipped_back_after_a_crash_ends_the_chats_the_host_kept_before_it_puts_any_back() {
+    let home = tempfile::tempdir().expect("the host's home");
+    let HostHome {
+        place, inherited, ..
+    } = a_host_home(home.path());
+    let (_project, root) = a_project();
+    let marks = tempfile::tempdir().expect("a folder for the chat's process");
+    let pid_file = marks.path().join("pid");
+    let starts = {
+        let inherited = inherited.clone();
+        move || {
+            let mut command = crate::sessionhost::command(&charter_app());
+            command.env_clear().envs(inherited.iter().cloned());
+            Ok(command)
+        }
+    };
+    let first = KilledWindow::start(&place, &root, starts.clone());
+    let script = format!("echo $$ > '{}'; exec sleep 600", pid_file.display());
+    first
+        .sessions
+        .open(None, &a_shell(&script), &|_| {})
+        .expect("the chat starts in the host");
+    until("the chat to say its process", || {
+        std::fs::read_to_string(&pid_file).is_ok_and(|said| said.ends_with('\n'))
+    });
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .expect("its process")
+        .trim()
+        .parse()
+        .expect("a pid");
+    let first = first.killed();
+    // Running, and not a zombie waiting for its parent.
+    let alive = |pid: i32| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .is_ok_and(|stat| stat.split_whitespace().nth(2) != Some("Z"))
+    };
+    assert!(
+        alive(pid),
+        "the host keeps the chat while no window is there"
+    );
+
+    let back = Ends(crate::sessionhost::SessionHost::default());
+    back.0.ending_a_host_it_finds();
+    purlis_core::hostsocket::make_the_folder(&place.socket).expect("the socket's folder");
+    back.0.start_at(place, starts);
+    let gate = back.0.before_chats_are_put_back(PATIENCE);
+
+    assert_eq!(gate(), Ok(()), "the window may put its chats back");
+    assert!(
+        !alive(pid),
+        "the chat the host kept still runs as the window puts chats back"
+    );
+    first.ended_by_the_quit();
+    back.0
+        .connection()
+        .wait(PATIENCE)
+        .expect("a host of the window's own serves");
 }
 
 /// **A change written while the window is gone is committed by the host process** (#2287,
@@ -2303,7 +2372,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
     // The window goes: its holds on the project go with it, and the host runs on. The project
     // is held on its root's own link (#2178).
     let link = host.of_project(&root, PATIENCE).expect("the root's link");
-    let project = purlis_core::scaffold::planefile::ensure_project_id(&root).expect("its id");
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).expect("its id");
     link.call(session::Command::LetGoOfProject { project })
         .expect("let go of");
     // The task's program ends by itself.

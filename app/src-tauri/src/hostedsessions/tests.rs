@@ -16,6 +16,8 @@ use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
 
+mod upgrading;
+
 /// The window's connection to the host `hosting` serves as, over in-memory links, run on
 /// `runtime`: its own link, ready, and one more opened for each project root, as the window's
 /// are over the host's socket.
@@ -200,10 +202,12 @@ fn two_clones_of_one_project_in_one_window_both_start_chats() {
 }
 
 #[test]
-fn only_the_switch_set_to_one_runs_chats_in_the_host() {
-    assert!(switched_on(Some("1")));
-    for off in [None, Some(""), Some("0"), Some("true"), Some("yes")] {
-        assert!(!switched_on(off), "{off:?}");
+fn chats_run_in_the_host_unless_the_switch_is_set_to_zero() {
+    // #2004: the session host is the default, and `0` is the way back to the window's own
+    // process until #2005 deletes it.
+    assert!(!switched_on(Some("0")));
+    for on in [None, Some(""), Some("1"), Some("true"), Some("no")] {
+        assert!(switched_on(on), "{on:?}");
     }
 }
 
@@ -297,9 +301,10 @@ fn a_start_hands_the_host_what_the_window_composed_and_the_host_composes_it_as_t
         },
     );
     assert_eq!(spec.env, in_the_window.env, "the same environment and PATH");
-    assert!(
-        purlis_core::scaffold::planefile::project_id(&hosted.root).is_some(),
-        "the host names the project by its stable id"
+    assert_eq!(
+        purlis_core::scaffold::planefile::project_id(&hosted.root),
+        None,
+        "holding the project wrote no id into it (#2004)"
     );
 }
 

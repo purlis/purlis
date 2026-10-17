@@ -1,14 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A project's chats run in the session host, behind the start-time switch (#1998).
+//! A project's chats run in the session host, the default since #2004 (#1998).
 //!
 //! **One build holds both ways of running a chat, for the migration only** (spec #1974, ruled
-//! 2026-10-14): in the window's own process ([`crate::sessions::Sessions`], the default), or in
-//! the session host the window started ([`HostedSessions`]), chosen once as the app starts
-//! ([`chats_run_in_the_host`]) and never switched while it runs. With the switch on and no host
-//! of the window's own, the window runs no chats and says why: there is no fallback to the
-//! window's own process (ADR 0068, Ruled 3).
+//! 2026-10-14): in the session host the window started ([`HostedSessions`], the default), or in
+//! the window's own process ([`crate::sessions::Sessions`]) where the start-time switch says so
+//! ([`SWITCH`] set to `0`), chosen once as the app starts ([`chats_run_in_the_host`]) and never
+//! switched while it runs. #2005 deletes the window's own path. With no host of the window's
+//! own, the window runs no chats and says why: there is no fallback to the window's own process
+//! (ADR 0068, Ruled 3).
 //!
 //! **Above the seam nothing changes.** The window composes a chat's start as it always has (its
 //! sandbox, its hooks, its `PATH`), and hands the host that start as its [`Launch`];
@@ -74,25 +75,49 @@ use crate::hooks::Relayed;
 use crate::host::{Ends, Named, Opening, Readiness, SessionHost, Sink, Watching};
 use crate::sessions::{ENDED, STOPPED, Utf8Stream};
 
-/// The variable that turns the switch on: chats run in the session host. Read once, as the app
-/// starts; internal to the migration, and gone with it (spec #1974).
+/// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
+/// the way back while the window's own path is still built (#2004). Read once, as the app
+/// starts; internal to the migration, and gone with it (#2005, spec #1974).
 pub const SWITCH: &str = "PURLIS_CHATS_IN_THE_HOST";
 
-/// Whether this launch runs its chats in the session host ([`SWITCH`] set to `1`). Anything
-/// else, and no value, is the window's own process, the default.
+/// Whether this launch runs its chats in the session host: the default, and anything but
+/// [`SWITCH`] set to `0`, which is the window's own process.
 pub fn chats_run_in_the_host() -> bool {
     switched_on(purlis_core::envvar::var(SWITCH).as_deref())
 }
 
 fn switched_on(value: Option<&str>) -> bool {
-    value == Some("1")
+    value != Some("0")
+}
+
+/// **What a launch whose chats run in the session host makes of its planes** (#1998 to #2003):
+/// every project's chats run in the host `connection` reaches, over a link of each root's own;
+/// their hooks are heard through the host, which owns each project's hook channel, so nothing
+/// in the window reports anywhere (#2000); and the host writes the event log, the window
+/// handing it every write it decides (#2003). The app's launch and the upgrade test (#2004)
+/// both build it here, so what the test upgrades to is what a person's purlis runs.
+pub fn chats_in_the_host(
+    planes: crate::planes::Planes,
+    connection: &Arc<Connection>,
+) -> crate::planes::Planes {
+    let events = crate::hooks::Events::in_the_host({
+        let connection = Arc::clone(connection);
+        move |entry| record_in_the_host(&connection, &entry)
+    });
+    let connection = Arc::clone(connection);
+    planes
+        .recording_events(Some(events))
+        .running_sessions_on(Arc::new(move |_reporting, root: &Path| {
+            Box::new(HostedSessions::new(Arc::clone(&connection), root)) as Box<dyn SessionHost>
+        }))
+        .hearing_hooks_through_the_host()
 }
 
 /// Why a chat whose profile hands it credentials is not started in the session host (#2036).
 pub const NOT_HANDED_IN_THE_HOST: &str = "this chat's profile signs it in with credentials from \
      your vault, and purlis hands those only to a chat the window starts, never over the link to \
-     the session host, so nothing was started. Start purlis without PURLIS_CHATS_IN_THE_HOST to \
-     run it.";
+     the session host, so nothing was started. Start purlis with PURLIS_CHATS_IN_THE_HOST=0 to \
+     run it in the window.";
 
 /// How long a start waits for the host's link to be ready, before it says why there is none.
 const LINK_WITHIN: Duration = Duration::from_secs(30);
@@ -1154,7 +1179,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     {
         return Ok((link, project.clone()));
     }
-    let project = purlis_core::scaffold::planefile::ensure_project_id(root)
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(root)
         .map_err(|why| format!("this project has no id the session host can name it by: {why}"))?;
     // Before the hold, so the host's first line for the project is heard.
     if let Some(relayed) = lock(relayed).clone() {
