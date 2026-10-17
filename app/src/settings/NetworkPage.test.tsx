@@ -454,7 +454,7 @@ describe("Settings › Sandbox adds a service on this Mac by its port (#1970)", 
         "only cluster",
       ]),
     );
-    await pickIn(scope, "7", user);
+    await pickIn(scope, "chat:7", user);
     await user.type(screen.getByRole("textbox"), "50795");
     await user.click(screen.getByRole("button", { name: "Allow port" }));
     await waitFor(() =>
@@ -479,5 +479,11 @@ describe("Settings › Sandbox adds a service on this Mac by its port (#1970)", 
     portCore();
     render(<Row id="port" />);
     expect(screen.getByRole("button", { name: "Allow port" })).toBeDisabled();
+  });
+
+  it("names the name a Claude Code chat reaches it by as code", () => {
+    portCore();
+    render(<Row id="port" />);
+    expect(screen.getByText("this-mac.internal").tagName).toBe("CODE");
   });
 });

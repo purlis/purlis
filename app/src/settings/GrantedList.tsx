@@ -415,7 +415,7 @@ export function networkGroup(
         label: "A service on this Mac",
         // Kept on this machine, or for one open chat in memory: never committed.
         writes: "this machine",
-        help: "Allow one port of a service on this Mac, such as a local cluster's, by its number: for every chat of this project on this machine, or for one open chat only. One port, never a range or every port, and never one purlis itself listens on. It lets a chat connect to whatever listens on that port, as you; a container engine's or a cluster's port can reach much of your machine. A chat reaches it from its next start; a Claude Code chat reaches it by name only, as this-mac.internal and that port.",
+        help: "Allow one port of a service on this Mac, such as a local cluster's, by its number: for every chat of this project on this machine, or for one open chat only. One port, never a range or every port, and never one purlis itself listens on. It lets a chat connect to whatever listens on that port, as you; a container engine's or a cluster's port can reach much of your machine. A chat reaches it from its next start.",
         useControl: function useAddPort() {
           return { control: (ids) => <AddPort plane={plane} ids={ids} /> };
         },

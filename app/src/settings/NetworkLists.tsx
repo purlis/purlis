@@ -229,14 +229,34 @@ export function BlockedLatelyList({ plane, ids }: { plane: PlaneId; ids: RowIds 
   );
 }
 
-/** What the port form's scope says for this project on this machine: the Notice's wider Allow. */
-const FOR_YOU = "you";
+/** Who a port is allowed for: every chat of this project on this machine, or one open chat. */
+type PortFor = { kind: "project" } | { kind: "chat"; session: number };
 
-/** The chats a port can be allowed for alone: each chat open here, never a shell. */
-function chatsHere(open: readonly OpenChat[]): { value: string; label: string }[] {
-  return open
-    .filter((one) => one.harness !== null)
-    .map((one) => ({ value: String(one.session), label: `only ${one.label ?? one.name}` }));
+/** One pick of the form's select: who it allows, and what the select says of it. */
+type PortChoice = { for: PortFor; label: string };
+
+/** The Notice's wider Allow, and the form's first pick. */
+const EVERY_CHAT: PortChoice = {
+  for: { kind: "project" },
+  label: "every chat of this project on this machine",
+};
+
+/** What a pick is written as in the select: the select holds only text. */
+function keyOf(one: PortFor): string {
+  return one.kind === "project" ? "project" : `chat:${one.session}`;
+}
+
+/** The picks: every chat here, then each chat open here alone, never a shell. */
+function choicesOf(open: readonly OpenChat[]): PortChoice[] {
+  return [
+    EVERY_CHAT,
+    ...open
+      .filter((one) => one.harness !== null)
+      .map((one) => ({
+        for: { kind: "chat", session: one.session } as const,
+        label: `only ${one.label ?? one.name}`,
+      })),
+  ];
 }
 
 /**
@@ -248,8 +268,8 @@ function chatsHere(open: readonly OpenChat[]): { value: string; label: string }[
  */
 export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
   const [typed, setTyped] = useState("");
-  const [scope, setScope] = useState(FOR_YOU);
-  const [chats, setChats] = useState<{ value: string; label: string }[]>([]);
+  const [scope, setScope] = useState<PortFor>(EVERY_CHAT.for);
+  const [choices, setChoices] = useState<readonly PortChoice[]>([EVERY_CHAT]);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
@@ -259,7 +279,7 @@ export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
     void commands
       .openedChats(plane)
       .then((done) => {
-        if (!gone && done.status === "ok") setChats(chatsHere(done.data ?? []));
+        if (!gone && done.status === "ok") setChoices(choicesOf(done.data ?? []));
       })
       .catch(() => undefined);
     return () => {
@@ -267,15 +287,15 @@ export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
     };
   }, [plane, moved]);
   // A chat that closed is no scope to pick.
-  const picked = scope === FOR_YOU || chats.some((one) => one.value === scope) ? scope : FOR_YOU;
+  const picked = choices.find((one) => keyOf(one.for) === keyOf(scope))?.for ?? EVERY_CHAT.for;
   const add = () => {
     const port = typed.trim();
-    const level: GrantLevel = picked === FOR_YOU ? "you" : "chat";
+    const level: GrantLevel = picked.kind === "project" ? "you" : "chat";
     setSaid(undefined);
     setTrouble(undefined);
     setBusy(true);
     void commands
-      .allowSandboxPort(plane, port, picked === FOR_YOU ? null : Number(picked), level)
+      .allowSandboxPort(plane, port, picked.kind === "chat" ? picked.session : null, level)
       .then((done) => {
         if (done.status === "error") setTrouble(done.error);
         else {
@@ -315,13 +335,12 @@ export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
         <Choice
           kind="select"
           ids={{ id: `${ids.id}-for`, label: "Allowed for" }}
-          options={[
-            { value: FOR_YOU, label: "every chat of this project on this machine" },
-            ...chats,
-          ]}
-          value={picked}
+          options={choices.map((one) => ({ value: keyOf(one.for), label: one.label }))}
+          value={keyOf(picked)}
           disabled={busy}
-          onValueChange={setScope}
+          onValueChange={(key) =>
+            setScope(choices.find((one) => keyOf(one.for) === key)?.for ?? EVERY_CHAT.for)
+          }
         />
       </label>{" "}
       <button
@@ -333,6 +352,9 @@ export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
       >
         Allow port
       </button>
+      <p className="granted-note">
+        A Claude Code chat reaches it by name only, as <code>this-mac.internal</code> at that port.
+      </p>
       {said !== undefined && (
         <Notice cause={`port-allowed:${said}`} at="pane" onDismiss={() => setSaid(undefined)}>
           {said}

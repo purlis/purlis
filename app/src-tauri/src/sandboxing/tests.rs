@@ -35,19 +35,19 @@ fn an_allow_says_whether_the_command_carries_on_or_the_chat_restarts() {
         already: false,
     };
     assert_eq!(
-        allowed_said(4, Level::You, &live),
+        allowed_said(Some(4), Level::You, &live),
         "Allowed for me on this machine. The command that asked carries on now; nothing \
              restarts."
     );
     // Taken live by other chats only: this one still restarts.
-    assert!(allowed_said(5, Level::You, &live).contains("restarts on the same conversation"));
+    assert!(allowed_said(Some(5), Level::You, &live).contains("restarts on the same conversation"));
     // Allowed already, and this chat is not on the proxy: said so, and it restarts to take
     // it, where pressing Allow used to be refused and the Notice stayed up.
     // A held connection that had given up: the chat is told to run it again.
     assert!(
-        allowed_said(6, Level::You, &live).contains("told to run it again"),
+        allowed_said(Some(6), Level::You, &live).contains("told to run it again"),
         "{}",
-        allowed_said(6, Level::You, &live)
+        allowed_said(Some(6), Level::You, &live)
     );
     // Allowed already, and taken live: said so, and the command carries on.
     let both = Kept {
@@ -55,13 +55,13 @@ fn an_allow_says_whether_the_command_carries_on_or_the_chat_restarts() {
         retry: Vec::new(),
         already: true,
     };
-    assert!(allowed_said(4, Level::You, &both).starts_with("It was allowed already"));
+    assert!(allowed_said(Some(4), Level::You, &both).starts_with("It was allowed already"));
     let already = Kept {
         live: Vec::new(),
         retry: Vec::new(),
         already: true,
     };
-    let said = allowed_said(4, Level::Project, &already);
+    let said = allowed_said(Some(4), Level::Project, &already);
     assert!(
         said.starts_with("It was allowed already, for everyone in this project."),
         "{said}"
@@ -2199,16 +2199,13 @@ fn a_port_added_in_settings_is_refused_exactly_where_the_notice_s_allow_is() {
         "0x1F",
         own.as_str(),
     ];
+    // For this project on this machine no chat is read, so a chat named or not is the same
+    // Allow. For one open chat the same comparison runs where a chat can be started
+    // (`chats::tests::a_port_added_in_settings_for_one_chat_is_held_for_it_alone`).
     for target in never {
-        for level in [GrantLevel::Chat, GrantLevel::You] {
-            let said = notice(target, level);
-            assert_eq!(form(target, Some(3), level), said, "{target:?} {level:?}");
-        }
-        assert_eq!(
-            form(target, None, GrantLevel::You),
-            notice(target, GrantLevel::You),
-            "{target:?}"
-        );
+        let said = notice(target, GrantLevel::You);
+        assert_eq!(form(target, None, GrantLevel::You), said, "{target:?}");
+        assert_eq!(form(target, Some(3), GrantLevel::You), said, "{target:?}");
     }
     assert_eq!(
         form(&own, None, GrantLevel::You),
@@ -2226,14 +2223,20 @@ fn a_port_added_in_settings_is_refused_exactly_where_the_notice_s_allow_is() {
         r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
         std::path::Path::new("/etc/purlis/policy.json"),
     ));
-    for level in [GrantLevel::Chat, GrantLevel::You] {
-        let said = notice("50795", level);
-        assert!(said.contains("Policy forbids"), "{said}");
-        assert_eq!(form("50795", Some(3), level), said);
-    }
+    let said = notice("50795", GrantLevel::You);
+    assert!(said.contains("Policy forbids"), "{said}");
+    assert_eq!(form("50795", None, GrantLevel::You), said);
     set_for_this_test(Locks::none());
-    // For this chat names the chat: the form never keeps one for no chat.
-    assert!(form("50795", None, GrantLevel::Chat).contains("Pick the open chat"));
+    // For this chat names a chat open in this project, which the core also checks before
+    // anything is judged or audited: never no chat, nor one that is not open here.
+    assert_eq!(
+        form("50795", None, GrantLevel::Chat),
+        "purlis did not allow port 50795: no open chat was named."
+    );
+    assert_eq!(
+        form("50795", Some(3), GrantLevel::Chat),
+        "purlis did not allow port 50795: chat 3 is not a chat open in this project."
+    );
     assert!(
         seen.lock().unwrap().is_empty(),
         "nothing refused is audited"
@@ -2274,8 +2277,7 @@ fn a_port_added_in_settings_is_audited_kept_and_listed_as_allowed() {
     assert!(!added.live);
     assert_eq!(
         added.said,
-        "Allowed port 50795 for me on this machine. A chat that is running reaches it from its \
-         next start."
+        "Allowed for me on this machine. A chat that is running reaches it from its next start."
     );
     assert_eq!(sandbox::local::granted_ports(root), [50795]);
     let listed: Vec<_> = grants_of(root, &chats)
@@ -2297,7 +2299,7 @@ fn a_port_added_in_settings_is_audited_kept_and_listed_as_allowed() {
     .expect("allowed already");
     assert_eq!(
         again.said,
-        "Port 50795 was allowed already, for me on this machine."
+        "It was allowed already, for me on this machine."
     );
     assert_eq!(sandbox::local::granted_ports(root), [50795]);
     assert_eq!(
