@@ -50,6 +50,9 @@ purlis-core = { workspace = true, features = ["fenced", "test-support"] }
 changelog.workspace = true
 stand-in.workspace = true
 tempfile.workspace = true
+# `purlis serve` spoken to as the window speaks to its host (#2217).
+purlis-session-protocol.workspace = true
+tokio = { version = "1", default-features = false, features = ["rt", "net"] }
 # The recorded-behaviour replay (ADR 0046): the scenarios' masks, and the file contents they
 # carry compressed and by hash.
 base64 = "0.23"

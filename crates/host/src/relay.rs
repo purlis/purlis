@@ -14,12 +14,16 @@
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
-//! `launch`, and the window's reply to a line a chat's hooks wrote cross only for a `local-ui`
-//! client, whatever else this host's grants let a client send. This is the one place that rule
-//! is enforced: the other host cannot tell a relayed command from one its peer composed, and
-//! trusts its peer, this host, as it trusts the window. A start marked as opting out of the
-//! sandbox is refused by the other host from any scope but its own window's, so one sent on is
-//! refused there. Everything else the other host decides: it serves its link
+//! `launch`, the window's reply to a line a chat's hooks wrote, and a chat's confinement (its
+//! start, the window's answers to its asks, a port withdrawn from it, #2217) cross only for a
+//! `local-ui` client, whatever else this host's grants let a client send; and what only the
+//! window hears (a held project's hook lines, how saving it goes, what a chat's sandbox did)
+//! reaches only a `local-ui` client. This is the one place that rule is enforced: the other
+//! host cannot tell a relayed command from one its peer composed, and trusts its peer, this
+//! host, as it trusts the window. A start marked as opting out of the sandbox, and a launch
+//! that names a harness, are refused by the other host from any scope but its own window's, so
+//! one sent on is refused there: a runner composes its harness chats by their names, with its
+//! own sandbox. Everything else the other host decides: it serves its link
 //! as the scope that link was admitted as, `remote-link` for the link between hosts, and its
 //! own check of that scope's grants (FD-27) refuses what the scope may not send, before its
 //! host hears of it; the client is told that refusal.
@@ -102,7 +106,11 @@ impl Relay {
                     code: session::NOT_STARTED.into(),
                     why: format!("the host this one relays to could not be reached: {why}"),
                 })?;
-                Ok(Arc::new(relay(link, peer.opener().clone())))
+                Ok(Arc::new(relay(
+                    link,
+                    peer.opener().clone(),
+                    peer.scope() == Scope::LocalUi,
+                )))
             })
             .await
             .cloned()?;
@@ -115,11 +123,13 @@ impl Relay {
     }
 }
 
-fn relay(link: Link, to_the_client: Opener) -> Relayed {
+/// The link to the other host for one client link, whose client is the window where `window`
+/// says.
+fn relay(link: Link, to_the_client: Opener, window: bool) -> Relayed {
     let (client, views, events) = Client::new(link);
     let subscriber: Arc<Mutex<Option<mpsc::Sender<Pushed>>>> = Arc::default();
     let joining = tokio::spawn(join_views(views, to_the_client)).abort_handle();
-    let pushing = tokio::spawn(push_on(events, Arc::clone(&subscriber))).abort_handle();
+    let pushing = tokio::spawn(push_on(events, Arc::clone(&subscriber), window)).abort_handle();
     Relayed {
         client,
         subscriber,
@@ -140,14 +150,22 @@ async fn join_views(mut views: Acceptor, to_the_client: Opener) {
     }
 }
 
-/// Hands what the other host pushes to the client's subscription, while it has one.
-async fn push_on(mut events: Events, subscriber: Arc<Mutex<Option<mpsc::Sender<Pushed>>>>) {
+/// Hands what the other host pushes to the client's subscription, while it has one: what only
+/// the window hears reaches it only where the client is the `window`.
+async fn push_on(
+    mut events: Events,
+    subscriber: Arc<Mutex<Option<mpsc::Sender<Pushed>>>>,
+    window: bool,
+) {
     while let Some(told) = events.recv().await {
         let Told::Pushed(pushed) = told else {
             // The relay fell behind the other host: the client's own cursor is what it
             // subscribes again from, and a reader that fell behind is told so by its own link.
             continue;
         };
+        if !window && heard_by_the_window_alone(&pushed) {
+            continue;
+        }
         let target = subscriber
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -167,8 +185,25 @@ async fn push_on(mut events: Events, subscriber: Arc<Mutex<Option<mpsc::Sender<P
 fn the_windows_alone(command: &Command) -> bool {
     match command {
         Command::StartProgram(start) => start.launch.is_some() || start.without_sandbox,
-        command => matches!(command.power(), Power::Hold | Power::Heard | Power::Save),
+        command => matches!(
+            command.power(),
+            Power::Hold | Power::Heard | Power::Save | Power::Confine
+        ),
     }
+}
+
+/// Whether `pushed` is one only the window hears: a held project's hook lines, how saving it
+/// goes, and what a chat's sandbox did. The other host pushes them to the relay's link for
+/// every client, as it pushes them to a link that may hear them; only a `local-ui` client is
+/// handed them.
+fn heard_by_the_window_alone(pushed: &Pushed) -> bool {
+    matches!(
+        pushed,
+        Pushed::Heard { .. }
+            | Pushed::Saving { .. }
+            | Pushed::WhoIsMidTurn { .. }
+            | Pushed::Sandbox { .. }
+    )
 }
 
 fn refused(why: &session::CallError) -> Refusal {

@@ -1675,6 +1675,21 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
+        && start
+            .launch
+            .as_ref()
+            .is_some_and(|launch| launch.harness.is_some())
+        && !scope.may(Power::LaunchAHarness)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a chat's harness on this host is started by its names, composed here with this \
+                 machine's own sandbox, and never from a launch a `{scope}` link hands it"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
         && start.without_sandbox
         && !scope.may(Power::OptOut)
     {
