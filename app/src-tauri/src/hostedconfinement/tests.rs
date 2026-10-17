@@ -367,3 +367,74 @@ fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
     drop(sessions);
     drop(runtime);
 }
+
+/// **A runner starts a plan the desktop relays only where it fits the runner** (#2445): the
+/// host's own code with the binary's real check ([`super::ConfinesHere`]), reached over the link
+/// between hosts. A service on the runner its sandbox for the project does not give is refused
+/// `not_allowed`, and nothing starts; once you give it on the runner, the same plan starts.
+/// Binds the loopback interface: CI.
+#[test]
+fn a_runner_starts_a_relayed_plan_only_where_it_fits_the_runner() {
+    use purlis_session_protocol::session::{self, Answer, Client, Command, Confine};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let service = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a service");
+    let port = service.local_addr().expect("its port").port();
+    let project = tempfile::tempdir().expect("a project");
+    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
+    let hosting = purlis_host::Hosting::confining(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        super::ConfinesHere,
+        purlis_host::standin::StandIns::default(),
+    );
+    let plan = super::wire(&Plan {
+        reach: Reach::of(vec![(format!("127.0.0.1:{port}"), By::You)]).written(),
+        tunnel_ports: TUNNEL_PORTS.to_vec(),
+        plain_ports: PLAIN_PORTS.to_vec(),
+        any_port: false,
+        beside: Beside::Wrapped,
+        given: vec![port],
+    });
+    let confine = |id: &str| {
+        Command::Confine(Box::new(Confine {
+            confinement: id.into(),
+            project: PROJECT.into(),
+            plan: plan.clone(),
+            asks: false,
+        }))
+    };
+    runtime.block_on(async {
+        let (peer, _views, _events) =
+            Client::new(crate::behaviour::linked_to(hosting.clone()).await);
+        peer.hold_project(PROJECT, root.to_str().expect("a path"))
+            .await
+            .expect("held on the runner");
+
+        let refused = peer
+            .call(confine("01J9CNFNMNT0000000000000000"))
+            .await
+            .expect_err("refused");
+        let refusal = refused.refusal().expect("the runner's refusal");
+        assert_eq!(refusal.code, session::NOT_ALLOWED);
+        assert!(
+            refusal
+                .why
+                .starts_with("the runner does not start the chat's confinement"),
+            "{}",
+            refusal.why
+        );
+        assert!(refusal.why.contains(&port.to_string()), "{}", refusal.why);
+
+        purlis_core::sandbox::local::grant_port(&root, port).expect("you gave it on the runner");
+        match peer.call(confine("01J9CNFNMNT0000000000000001")).await {
+            Ok(Answer::Confined(_)) => {}
+            other => panic!("not confined: {other:?}"),
+        }
+    });
+    hosting.end_all();
+    drop(service);
+}

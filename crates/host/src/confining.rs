@@ -40,6 +40,19 @@ use purlis_session_protocol::session::{self, Confined, ReachChange, ReachNow, Sa
 pub struct ToConfine<'a> {
     pub project_path: &'a Path,
     pub confine: &'a session::Confine,
+    /// Where its plan was made.
+    pub planned: Planned,
+}
+
+/// **Where a confinement's plan was made** (#2445).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Planned {
+    /// On this machine: by its window, or by the host for a chat it composes.
+    Here,
+    /// On another machine, sent by a link other than this machine's window: it fits this one
+    /// ([`Confine::fits`]), and its proxy reaches an internal address of this machine's
+    /// networks only where this machine's policy lists it.
+    Elsewhere,
 }
 
 /// Who hears what a confinement's proxy did: the window, through the host.

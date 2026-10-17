@@ -545,7 +545,7 @@ is listed, with who set the policy.
 |---|---|---|
 | `owner` | string | nothing; who set the policy, as Settings and a block's Notice name them (absent: "this machine's administrator") |
 | `sandbox.presets` | list of preset words | the Internet access presets a project may turn on; any other is off |
-| `sandbox.hosts` | list of hosts | the hosts the project (its own and its `[[forge]]` blocks'), you, a persona or a block's Allow may add (`*.domain` covers every name under it; no port covers every port); any other is not reached. A preset's fixed list is `presets`' to lock |
+| `sandbox.hosts` | list of hosts | the hosts the project (its own and its `[[forge]]` blocks'), you, a persona or a block's Allow may add (`*.domain` covers every name under it; no port covers every port); any other is not reached. A preset's fixed list is `presets`' to lock. **On a runner, they are also the internal services a chat the desktop planned reaches** (#2445, ruled 2026-10-17): an address of a private network, a cluster's or a link's, or of the runner itself, by that address or a name listed here that resolves to it. Absent, such a chat reaches none of them. A cloud metadata service is never one |
 | `sandbox.personal-hosts` | bool | `false`: your own hosts, and a block's Allow for one chat or for you, reach no chat |
 | `sandbox.persona-hosts` | bool | `false`: a persona's own hosts reach no chat |
 | `sandbox.persona-tools` | bool | `false`: no persona's tools (`[sandbox.personas.<persona>].tools`) are given to a chat, nothing asks to allow them, and a save of the project file that adds one is refused with the policy's sentence (#1407). A chat's `purlis secret exec` then runs nothing, since it runs only a declared tool (D-PE-ruling-2) |

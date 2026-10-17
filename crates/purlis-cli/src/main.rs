@@ -867,6 +867,10 @@ impl purlis_host::Confine for Confines {
         purlis_core::sandbox::hosted::start(
             confining.project_path,
             confining.confine,
+            match confining.planned {
+                purlis_host::Planned::Here => purlis_core::sandbox::hosted::Planned::Here,
+                purlis_host::Planned::Elsewhere => purlis_core::sandbox::hosted::Planned::Elsewhere,
+            },
             tell,
             askable,
         )

@@ -342,6 +342,24 @@ fn metadata_v6(ip: Ipv6Addr) -> bool {
     (first == 0xfd00 && second == 0x0ec2) || METADATA_V6.contains(&ip)
 }
 
+/// Whether `ip` is a cloud metadata service's (#2445), as itself or carried in an IPv6 address:
+/// the link-local ones every cloud and its container service answer at, and the others
+/// ([`METADATA_V4`], [`METADATA_V6`]).
+pub(super) fn metadata_address(ip: IpAddr) -> bool {
+    let v4 = |ip: Ipv4Addr| metadata_v4(ip) || METADATA_LINK_LOCAL.contains(&ip);
+    match ip {
+        IpAddr::V4(ip) => v4(ip),
+        IpAddr::V6(ip) => embedded_v4(ip).map_or_else(|| metadata_v6(ip), v4),
+    }
+}
+
+/// The link-local addresses cloud metadata services answer at: every cloud's instance
+/// metadata, and AWS's container metadata.
+const METADATA_LINK_LOCAL: [Ipv4Addr; 2] = [
+    Ipv4Addr::new(169, 254, 169, 254),
+    Ipv4Addr::new(169, 254, 170, 2),
+];
+
 fn metadata(name: &str) -> String {
     format!("{name} is a cloud metadata address, so it is never a host a chat reaches.")
 }

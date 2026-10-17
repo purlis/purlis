@@ -153,25 +153,59 @@ fn a_board_here_answers_as_a_board() {
     assert!(!board.asks_about(&host));
 }
 
-/// **A plan another machine made, held to this one** (#2445): the folders it names are this
-/// machine's own for the project, and every service of this machine it gives is one this
-/// machine's sandbox for the project gives.
+/// **A plan another machine made, held to the runner that starts it** (#2445, ruled
+/// 2026-10-17): the folders it names are the runner's own for the project, every service of the
+/// runner it gives is one the runner's sandbox for the project gives, and an internal address
+/// is reached only where the runner's policy lists it.
 mod made_elsewhere {
     use std::net::IpAddr;
     use std::path::Path;
 
-    use super::super::plan::{Beside, Here, Plan};
-    use super::super::reach::{By, Reach};
+    use super::super::{Beside, Here, Plan};
     use super::plan;
+    use crate::sandbox::hosts::Host;
+    use crate::sandbox::internal::Internal;
+    use crate::sandbox::reach::{By, Reach};
 
     const ROUTES: &str = "/plane/.charter/app/ssh";
 
-    fn here<'a>(given: &'a [u16], own: &'a [IpAddr]) -> Here<'a> {
+    fn ip(text: &str) -> IpAddr {
+        text.parse().expect("an address")
+    }
+
+    /// How the runner resolves a name, in these tests: a few names, fixed.
+    fn resolve(name: &str, _port: u16) -> Vec<IpAddr> {
+        match name {
+            "localhost" => vec![ip("127.0.0.1")],
+            "db.corp.example" => vec![ip("203.0.113.40"), ip("10.0.0.9")],
+            "metadata.google.internal" => vec![ip("169.254.169.254")],
+            "api.anthropic.com" => vec![ip("203.0.113.7")],
+            _ => Vec::new(),
+        }
+    }
+
+    fn policy(hosts: &[&str]) -> Internal {
+        Internal::listing(
+            hosts
+                .iter()
+                .map(|host| Host::parse(host).expect("a host"))
+                .collect(),
+        )
+    }
+
+    fn held_to<'a>(given: &'a [u16], own: &'a [IpAddr], internal: &'a Internal) -> Here<'a> {
         Here {
             routes: Path::new(ROUTES),
             given,
             own,
+            internal,
+            resolve: &resolve,
         }
+    }
+
+    fn here<'a>(given: &'a [u16], own: &'a [IpAddr]) -> Here<'a> {
+        static NONE: std::sync::LazyLock<Internal> = std::sync::LazyLock::new(Internal::default);
+        held_to(given, own, &NONE)
     }
 
     fn listing(entries: &[&str], given: Vec<u16>) -> Plan {
@@ -199,15 +233,16 @@ mod made_elsewhere {
         let refused = elsewhere.fits(&here(&[], &[])).expect_err("refused");
 
         assert!(refused.contains("/tmp"), "{refused}");
+        assert!(refused.contains("the runner"), "{refused}");
     }
 
     #[test]
-    fn a_plan_whose_ssh_route_is_in_this_machines_folder_fits() {
+    fn a_plan_whose_ssh_route_is_in_the_runners_folder_fits() {
         assert_eq!(plan(Vec::new()).fits(&here(&[], &[])), Ok(()));
     }
 
     #[test]
-    fn a_plan_giving_a_service_this_machine_does_not_give_does_not_fit() {
+    fn a_plan_giving_a_service_the_runner_does_not_give_does_not_fit() {
         let refused = plan(vec![5432])
             .fits(&here(&[6379], &[]))
             .expect_err("refused");
@@ -216,7 +251,7 @@ mod made_elsewhere {
     }
 
     #[test]
-    fn a_plan_giving_only_services_this_machine_gives_fits() {
+    fn a_plan_giving_only_services_the_runner_gives_fits() {
         let fits = listing(
             &["127.0.0.1:5432", "[::1]:5432", "localhost:5432"],
             vec![5432],
@@ -227,7 +262,7 @@ mod made_elsewhere {
     }
 
     #[test]
-    fn a_plan_listing_a_port_of_this_machine_it_does_not_give_does_not_fit() {
+    fn a_plan_listing_a_port_of_the_runner_it_does_not_give_does_not_fit() {
         for entry in ["127.0.0.1:22", "[::1]:22", "[::ffff:127.0.0.1]:22"] {
             let refused = listing(&[entry], Vec::new())
                 .fits(&here(&[], &[]))
@@ -238,10 +273,14 @@ mod made_elsewhere {
     }
 
     #[test]
-    fn a_plan_listing_another_address_of_this_machine_does_not_fit() {
-        let own: [IpAddr; 1] = ["10.1.2.3".parse().expect("an address")];
+    fn a_plan_listing_an_internal_address_its_policy_does_not_list_does_not_fit() {
+        let own = [ip("203.0.113.9")];
         for entry in [
-            "10.1.2.3:5432",
+            "203.0.113.9:5432",
+            "10.96.0.1:443",
+            "192.168.1.20",
+            "100.64.0.10:6443",
+            "[fd00::1]:5432",
             "169.254.169.254:80",
             "0.0.0.0:5432",
             "[fe80::1]:22",
@@ -255,9 +294,54 @@ mod made_elsewhere {
     }
 
     #[test]
-    fn a_plan_listing_hosts_elsewhere_fits() {
+    fn a_plan_listing_an_internal_address_its_policy_lists_fits() {
+        let internal = policy(&["10.96.0.1:443", "192.168.1.20"]);
+
+        let fits = listing(&["10.96.0.1:443", "192.168.1.20:5432"], Vec::new()).fits(&held_to(
+            &[],
+            &[],
+            &internal,
+        ));
+
+        assert_eq!(fits, Ok(()));
+    }
+
+    #[test]
+    fn a_plan_listing_a_name_the_runner_resolves_to_an_internal_address_does_not_fit() {
+        let refused = listing(&["db.corp.example:5432"], Vec::new())
+            .fits(&here(&[], &[]))
+            .expect_err("refused");
+
+        assert!(refused.contains("db.corp.example:5432"), "{refused}");
+        assert!(refused.contains("10.0.0.9"), "{refused}");
+    }
+
+    #[test]
+    fn a_name_its_policy_lists_fits_whatever_it_resolves_to_but_a_metadata_service() {
+        let internal = policy(&["*.corp.example", "*.google.internal"]);
+        let here = held_to(&[], &[], &internal);
+
+        assert_eq!(
+            listing(&["db.corp.example:5432"], Vec::new()).fits(&here),
+            Ok(())
+        );
+        assert!(
+            listing(&["metadata.google.internal"], Vec::new())
+                .fits(&here)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_plan_listing_public_hosts_and_names_under_a_domain_fits() {
         let fits = listing(
-            &["api.anthropic.com", "203.0.113.7:443", "localhost:22"],
+            &[
+                "api.anthropic.com",
+                "203.0.113.7:443",
+                "localhost:22",
+                "*.corp.example",
+                "unresolved.example",
+            ],
             Vec::new(),
         )
         .fits(&here(&[], &[]));
@@ -266,35 +350,55 @@ mod made_elsewhere {
     }
 
     /// What a session host holds a relayed plan to: the project's own folder for ssh routes on
-    /// this machine, and the services on this machine you let every chat of it reach.
+    /// the runner, and the services on it you let every chat of it reach.
     #[test]
-    fn a_relayed_plan_fits_the_project_on_this_machine_only_as_its_own_sandbox_gives() {
+    fn a_relayed_plan_fits_the_project_on_the_runner_only_as_its_own_sandbox_gives() {
         let project = tempfile::tempdir().expect("a project");
         let root = project.path();
-        super::super::local::grant_port(root, 50861).expect("granted");
+        crate::sandbox::local::grant_port(root, 50861).expect("granted");
         let wired = |given: Vec<u16>| {
             Plan {
                 beside: Beside::ProxyOnly {
-                    routes: super::super::tunnel::routes_folder(root),
+                    routes: crate::sandbox::tunnel::routes_folder(root),
                 },
                 ..plan(given)
             }
             .wired()
         };
+        let fits = |plan: &purlis_session_protocol::session::ConfinePlan| {
+            crate::sandbox::hosted::fits_with(root, plan, Some(Vec::new()), &resolve)
+        };
 
-        assert_eq!(
-            super::super::hosted::fits_here(root, &wired(vec![50861])),
-            Ok(())
-        );
-        let refused =
-            super::super::hosted::fits_here(root, &wired(vec![50862])).expect_err("refused");
+        assert_eq!(fits(&wired(vec![50861])), Ok(()));
+        let refused = fits(&wired(vec![50862])).expect_err("refused");
         assert!(refused.contains("50862"), "{refused}");
+        assert!(
+            refused.starts_with("the runner does not start the chat's confinement"),
+            "{refused}"
+        );
         let elsewhere = Plan {
             beside: Beside::ProxyOnly {
-                routes: "/plane/.charter/app/ssh".into(),
+                routes: ROUTES.into(),
             },
             ..plan(Vec::new())
         };
-        assert!(super::super::hosted::fits_here(root, &elsewhere.wired()).is_err());
+        assert!(fits(&elsewhere.wired()).is_err());
+    }
+
+    /// The runner could not tell its own addresses from another's: nothing fits.
+    #[test]
+    fn a_relayed_plan_does_not_fit_where_the_runner_cannot_read_its_own_addresses() {
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path();
+        let wired = Plan {
+            beside: Beside::Wrapped,
+            ..plan(Vec::new())
+        }
+        .wired();
+
+        let refused =
+            crate::sandbox::hosted::fits_with(root, &wired, None, &resolve).expect_err("refused");
+
+        assert!(refused.contains("its own addresses"), "{refused}");
     }
 }

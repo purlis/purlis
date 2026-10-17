@@ -74,7 +74,7 @@ use purlis_terminal::session::{Session, Spec};
 use tokio::sync::mpsc;
 
 use crate::browsers::{Browser, Browsers, NoBrowsers};
-use crate::confining::{Confine, ConfinesNothing, Confining, ToConfine};
+use crate::confining::{Confine, ConfinesNothing, Confining, Planned, ToConfine};
 use crate::hearing::{Channel, HandOn, Hear, HearsNothing};
 use crate::hostrecord::{HostRecord, Started};
 use crate::killswitch::{NoStopsElsewhere, StopsElsewhere, Switch};
@@ -1879,13 +1879,18 @@ impl Hosting {
         let hosting = self.clone();
         // A plan from any link but this machine's window was made on another machine: it is
         // held to this one's own folders and services before anything starts (#2445).
-        let made_elsewhere = peer.scope() != Scope::LocalUi;
+        let planned = if peer.scope() == Scope::LocalUi {
+            Planned::Here
+        } else {
+            Planned::Elsewhere
+        };
         let confining = tokio::task::spawn_blocking(move || {
             let confining = ToConfine {
                 project_path: &path,
                 confine: &confine,
+                planned,
             };
-            if made_elsewhere {
+            if planned == Planned::Elsewhere {
                 hosting
                     .inner
                     .confine
@@ -2085,6 +2090,7 @@ impl Beside for ForTheProgram {
                     // It asks the link it is named to; one named to none refuses instead.
                     asks: !named_to.is_empty(),
                 },
+                planned: Planned::Here,
             },
             tell,
             askable,

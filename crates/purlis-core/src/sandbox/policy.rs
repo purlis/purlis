@@ -68,7 +68,8 @@
 //! - `presets`: the Internet access presets a project may turn on; any other is off.
 //! - `hosts`: the hosts a project (its own and its forges'), you, a persona or a chat's grant
 //!   may add; any other is refused. A preset's fixed list is the `presets` lock's. A `*.domain` entry allows every name under it; an entry without a port allows
-//!   every port.
+//!   every port. On a runner they are also the only internal services a chat planned on
+//!   another machine reaches ([`super::internal`], #2445).
 //! - `personal-hosts`, `persona-hosts`: `false` forbids your own hosts on this machine (and a
 //!   block's Allow for this chat or for you), and a persona's own hosts.
 //! - `persona-tools`: `false` forbids a persona's tools (`[sandbox.personas.<p>] tools`,

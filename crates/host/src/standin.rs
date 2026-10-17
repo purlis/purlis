@@ -290,6 +290,8 @@ impl Drop for StoodIn {
 /// What a stand-in confinement was planned with and asked, and whether it has ended (#1999).
 pub struct Confinement {
     pub confine: Confine,
+    /// Where its plan was made, as the host said (#2445).
+    pub planned: crate::confining::Planned,
     pub changes: Vec<ReachChange>,
     pub ended: bool,
     tell: Tell,
@@ -443,6 +445,7 @@ impl crate::confining::Confine for StandInConfines {
         }
         self.seen().push(Confinement {
             confine: confining.confine.clone(),
+            planned: confining.planned,
             changes: Vec::new(),
             ended: false,
             tell,

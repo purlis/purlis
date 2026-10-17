@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use purlis_host::standin::{StandInConfines, StandIns};
-use purlis_host::{Compose, Dial, Hosting, Relay, ToCompose};
+use purlis_host::{Compose, Dial, Hosting, Planned, Relay, ToCompose};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::{self, Link};
@@ -870,10 +870,8 @@ async fn a_chat_whose_peer_s_link_ends_while_the_runner_composes_it_has_its_give
     assert!(!hosts.confines.ended(NAMED), "it keeps its network");
 }
 
-
-/// A plan the window made on the desktop is held to the runner's own folders and services for
-/// the project before anything starts (#2445).
-const NOT_ITS_OWN: &str = "it gives the chat the service on port 5432 of this machine";
+/// Why the runner's binary says a plan the window made on the desktop does not fit (#2445).
+const NOT_ITS_OWN: &str = "it gives the chat the service on port 5432 of the runner";
 
 #[tokio::test]
 async fn a_plan_from_the_desktop_that_does_not_fit_the_runner_is_refused_and_nothing_starts() {
@@ -909,6 +907,7 @@ async fn a_plan_from_the_desktop_that_fits_the_runner_starts_as_it_is() {
         "held to the project as host B holds it"
     );
     assert_eq!(hosts.confines.seen()[0].confine, planned());
+    assert_eq!(hosts.confines.seen()[0].planned, Planned::Elsewhere);
 }
 
 #[tokio::test]
@@ -927,5 +926,12 @@ async fn a_confinement_the_runner_plans_itself_is_not_held_to_a_plan_made_elsewh
         .expect("the runner's own window plans on this machine");
 
     assert_eq!(hosts.confines.seen().len(), 2);
+    assert!(
+        hosts
+            .confines
+            .seen()
+            .iter()
+            .all(|one| one.planned == Planned::Here)
+    );
     assert!(hosts.confines.fitted().is_empty());
 }

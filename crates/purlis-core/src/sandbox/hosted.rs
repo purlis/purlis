@@ -13,6 +13,7 @@
 //! hosts wherever it runs. Each binary hands it to its host through the host crate's `Confine`
 //! seam, which links no core.
 
+use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ use super::Confinement;
 use super::asks::{Asks, Heard};
 use super::egress;
 use super::hosts::Host;
+use super::internal::Internal;
 use super::plan::{Asking, Here, Plan, Telling};
 use super::reach::{By, by_of, layer_of};
 
@@ -32,6 +34,17 @@ pub type Tell = Arc<dyn Fn(SandboxTold) + Send + Sync + 'static>;
 
 /// Whether a confinement's proxy may hold a connection while the person is asked, now.
 pub type Askable = Arc<dyn Fn() -> bool + Send + Sync + 'static>;
+
+/// **Where a confinement's plan was made** (#2445).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Planned {
+    /// On this machine, by its own window, or by the host for a chat it composes.
+    Here,
+    /// On another machine, as the desktop's window plans a chat on a runner: it is started only
+    /// where it fits this machine ([`fits_here`]), and its proxy reaches an internal address
+    /// only where this machine's policy lists it ([`super::internal`]).
+    Elsewhere,
+}
 
 /// **A confinement a session host started**: its proxy, the folders beside it and its board of
 /// live asks, where its proxy asks live. Dropping it ends its proxy and removes its folders.
@@ -47,6 +60,7 @@ pub struct Hosted {
 pub fn start(
     project_path: &Path,
     confine: &session::Confine,
+    planned: Planned,
     tell: Tell,
     askable: Askable,
 ) -> Result<Hosted, String> {
@@ -106,25 +120,52 @@ pub fn start(
         )),
         asks: board.clone(),
     };
-    let confinement = plan.start(telling).map_err(|why| why.to_string())?;
+    let confinement = match planned {
+        Planned::Here => plan.start(telling),
+        Planned::Elsewhere => plan.start_held(telling, Internal::of(project_path)),
+    }
+    .map_err(|why| why.to_string())?;
     Ok(Hosted { confinement, board })
 }
 
 /// **Whether `wired`, a plan another machine made, fits the project at `project_path` on this
-/// machine** (#2445), or why not, in a sentence: its ssh route goes in this machine's own folder
-/// for the project ([`super::tunnel::routes_folder`]), and every service on this machine it
-/// gives the chat is one this machine's sandbox for the project gives a chat started here,
-/// with no grant of another machine's.
+/// machine, the runner** (#2445, [`Plan::fits`]), or why not, in a sentence. Refused where the
+/// runner's own addresses cannot be read: it could not tell them from another's.
 pub fn fits_here(project_path: &Path, wired: &session::ConfinePlan) -> Result<(), String> {
-    let plan = Plan::from_wire(wired)?;
+    let resolve = |name: &str, port: u16| {
+        (name, port)
+            .to_socket_addrs()
+            .map(|found| found.map(|at| at.ip()).collect())
+            .unwrap_or_default()
+    };
+    fits_with(
+        project_path,
+        wired,
+        super::hosts::own_addresses_read(),
+        &resolve,
+    )
+}
+
+/// [`fits_here`], with this machine's addresses `own` as they were read (`None` where they
+/// could not be) and names resolved by `resolve`.
+pub(crate) fn fits_with(
+    project_path: &Path,
+    wired: &session::ConfinePlan,
+    own: Option<Vec<std::net::IpAddr>>,
+    resolve: &dyn Fn(&str, u16) -> Vec<std::net::IpAddr>,
+) -> Result<(), String> {
+    let refused = |why: String| format!("the runner does not start the chat's confinement: {why}");
+    let plan = Plan::from_wire(wired).map_err(refused)?;
+    let own = own.ok_or_else(|| refused("it could not read its own addresses".into()))?;
     let given = given_here(project_path);
-    let own = super::hosts::own_addresses();
     plan.fits(&Here {
         routes: &super::tunnel::routes_folder(project_path),
         given: &given,
         own: &own,
+        internal: &Internal::of(project_path),
+        resolve,
     })
-    .map_err(|why| format!("this machine does not start the chat's confinement as planned: {why}"))
+    .map_err(refused)
 }
 
 /// The services on this machine every chat of the project at `root` is given here: yours for

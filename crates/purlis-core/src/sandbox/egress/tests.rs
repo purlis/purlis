@@ -1556,3 +1556,31 @@ fn a_name_of_this_mac_is_pinned_to_loopback_at_connect_and_never_looked_up() {
         Vec::<SocketAddr>::new()
     );
 }
+
+/// A chat planned on another machine (#2445): its runner's policy decides every internal
+/// address it reaches, at every connect, whatever its reach lists.
+#[test]
+fn an_internal_address_the_runners_policy_does_not_list_is_never_connected_to() {
+    let held = super::connect_held("10.255.255.1", 443, &Reach::anything(), &[], &|at| {
+        crate::sandbox::internal::Internal::default().carries("10.255.255.1", at, Some(&[]))
+    });
+
+    assert!(matches!(held, super::Connected::OnlyLocal));
+}
+
+#[test]
+fn a_proxy_for_a_chat_planned_on_another_machine_refuses_an_internal_address() {
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        internal: Some(crate::sandbox::internal::Internal::default()),
+        ..heard.serving(Reach::anything())
+    })
+    .expect("a proxy");
+
+    let said = status(&mut to(&proxy), "CONNECT 10.255.255.1:443 HTTP/1.1\r\n\r\n");
+
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "10.255.255.1", 443), 2);
+    proxy.settled();
+    assert_eq!(heard.local(), ["10.255.255.1:443", "10.255.255.1:443"]);
+}

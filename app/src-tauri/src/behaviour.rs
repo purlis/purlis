@@ -222,8 +222,9 @@ pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
     .saving_with(crate::hostsaving::InTheHost)
 }
 
-/// A link from host A to `host_b`, over the link between hosts on an in-memory stream.
-async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
+/// A link from host A to `host_b`, over the link between hosts on an in-memory stream: what
+/// `host_b` serves as `remote-link`.
+pub(crate) async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
     use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
     let identity = |device: &str| Identity {
         device: device.to_owned(),
