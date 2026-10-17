@@ -484,19 +484,21 @@ impl HostLink {
                 runtime: runtime.clone(),
             },
         );
+        static LINKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let id = LINKS.fetch_add(1, Ordering::Relaxed);
         let lost = Arc::clone(&shared);
         let hearing = runtime
             .spawn(async move {
                 hearing.await;
                 // Off the runtime: each end told reads and moves the window's board.
-                let _ = tokio::task::spawn_blocking(move || everything_ended_with_the_host(&lost))
-                    .await;
+                let _ =
+                    tokio::task::spawn_blocking(move || everything_ended_with_the_host(&lost, id))
+                        .await;
                 ended();
             })
             .abort_handle();
-        static LINKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Ok(HostLink {
-            id: LINKS.fetch_add(1, Ordering::Relaxed),
+            id,
             client,
             runtime,
             shared,
@@ -667,6 +669,7 @@ impl HostLink {
 
     /// Hear the lines `project`'s hooks write with `relayed`, from now on.
     fn hear_project(&self, project: &str, relayed: Arc<Relayed>) {
+        relayed.linked(self.id);
         lock(&self.shared.hearing).insert(project.to_owned(), relayed);
     }
 }
@@ -674,7 +677,12 @@ impl HostLink {
 /// **The link ended, and every program on it with its host** (#2007): each program still to be
 /// told its end is told it ended with the host, and every view drawn from the link ends, its
 /// pane told so.
-fn everything_ended_with_the_host(shared: &Shared) {
+fn everything_ended_with_the_host(shared: &Shared, link: u64) {
+    // What each project's hook lines kept on this link is kept no longer (#2271).
+    let projects: Vec<Arc<Relayed>> = lock(&shared.hearing).values().cloned().collect();
+    for relayed in projects {
+        relayed.unlinked(link);
+    }
     let ends: Vec<TellEnd> = lock(&shared.ends).drain().map(|(_, tell)| tell).collect();
     for tell in ends {
         tell(Ending::WithTheHost);

@@ -409,11 +409,18 @@ impl Relayed {
         }
         if Heeding::waits(&heard) {
             let heeding = Arc::clone(&self.heeding);
+            let exec = matches!(heard, purlis_core::hookwire::relay::Heard::SecretExec(_));
+            let replies = Arc::clone(&reply);
             let spawned = std::thread::Builder::new()
                 .name("purlis-hook-ask".into())
                 .spawn(move || heeding.hear(id, heard, reply));
             if let Err(why) = spawned {
                 tracing::warn!("purlis: a chat's ask could not be heard ({why})");
+                // A secret exec that will not run keeps no input, and its host is told so
+                // (#2271).
+                if exec {
+                    self.heeding.not_begun(id, &replies);
+                }
             }
             return;
         }
@@ -439,6 +446,19 @@ impl Relayed {
         if let Some(lines) = in_order.as_ref() {
             let _ = lines.send((id, heard, reply));
         }
+    }
+
+    /// The host's lines for this project come over link `link` from now on: a link other than
+    /// the one before may be a host started again, so nothing kept for the one before is kept
+    /// on (#2271).
+    pub fn linked(&self, link: u64) {
+        self.heeding.linked(link);
+    }
+
+    /// Link `link` to the host ended: where this project's lines came over it, nothing kept
+    /// for them is kept on (#2271).
+    pub fn unlinked(&self, link: u64) {
+        self.heeding.unlinked(link);
     }
 
     /// The socket the host listens on for this project.
