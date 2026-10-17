@@ -217,6 +217,110 @@ async fn a_pool_names_its_image_by_digest_and_a_claim_keeps_its_pool() {
     scratch.end().await;
 }
 
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_is_removed() {
+    use purlis_cluster_operator::upstream::{self, SandboxTemplate};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-in-the-way").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-in-the-way",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-in-the-way",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    // A template under the name the operator would use, made by hand: no owner.
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
+    let mut by_hand = upstream::template_for(&pool, &scratch.name);
+    by_hand.metadata.owner_references = None;
+    let containers = &mut by_hand
+        .spec
+        .pod_template
+        .spec
+        .as_mut()
+        .expect("a pod")
+        .containers;
+    containers[0].name = "by-hand".into();
+    let made = templates
+        .create(&PostParams::default(), &by_hand)
+        .await
+        .expect("the template made by hand");
+    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-in-the-way"))
+        .await
+        .expect("the claim");
+
+    let message = eventually(
+        "the claim names the template in its way",
+        Duration::from_secs(60),
+        || async {
+            let claim = claims.get("ada-1").await.ok()?;
+            let ready = claim
+                .status?
+                .conditions
+                .into_iter()
+                .find(|c| c.type_ == "Ready")?;
+            (ready.reason == "UpstreamObjectInTheWay").then_some(ready.message)
+        },
+    )
+    .await;
+    assert!(
+        message.contains(&format!("SandboxTemplate {}", made.name_any())),
+        "{message}"
+    );
+    // Long enough for the operator to look again: still as it was made, and nothing asked of
+    // upstream for the claim.
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    let held = templates.get(&made.name_any()).await.expect("the template");
+    // Upstream's own controller labels every template; the operator writes nothing to it.
+    assert_eq!(held.spec, made.spec);
+    assert!(held.owner_references().is_empty(), "{held:?}");
+    assert!(
+        held.managed_fields()
+            .iter()
+            .all(|entry| entry.manager.as_deref() != Some(purlis_cluster_operator::FIELD_MANAGER)),
+        "{held:?}"
+    );
+    assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+
+    templates
+        .delete(&made.name_any(), &DeleteParams::default())
+        .await
+        .expect("the template removed");
+    eventually(
+        "with it gone, the claim goes on",
+        Duration::from_secs(300),
+        || async {
+            let claim = claims.get("ada-1").await.ok()?;
+            (ready_of(&claim)?.0 == "True").then_some(())
+        },
+    )
+    .await;
+    let ours = templates
+        .get(&made.name_any())
+        .await
+        .expect("the operator's template");
+    assert_eq!(
+        ours.owner_references().first().map(|o| o.kind.as_str()),
+        Some("Pool")
+    );
+
+    let _ = pools
+        .delete("e2e-in-the-way", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}
+
 async fn may(
     client: &Client,
     group: &str,

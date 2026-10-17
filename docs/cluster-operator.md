@@ -198,8 +198,9 @@ spec:
   a tag can move.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
-  `PoolNotFound` when there is no such pool, `Starting` until upstream reports, and upstream's
-  own reason after that. `kubectl get claims` shows it.
+  `PoolNotFound` when there is no such pool, `UpstreamObjectInTheWay` when an upstream object
+  the operator did not make has the name it would use (below), `Starting` until upstream
+  reports, and upstream's own reason after that. `kubectl get claims` shows it.
 - **Deleting a Claim** deletes its runner. Deleting a Pool removes the template and warm pool
   the operator made for it in each namespace, and its Claims then say `PoolNotFound`; each
   runner goes when its Claim is deleted.
@@ -240,7 +241,7 @@ again.
 
 ## What it makes
 
-For a Claim in namespace `ns` on Pool `p`, the operator applies, server-side:
+For a Claim in namespace `ns` on Pool `p`, the operator makes, and then applies server-side:
 
 | Upstream object | Name | What it holds |
 |---|---|---|
@@ -251,6 +252,13 @@ For a Claim in namespace `ns` on Pool `p`, the operator applies, server-side:
 The template and the warm pool belong to the Pool and the upstream claim to the Claim, so the
 cluster's garbage collector removes each with its owner. Upstream's controller makes the pod
 from the template and writes the upstream claim's status, which the operator reads.
+
+**It changes only objects it made.** Before it writes any of the three, it reads what the
+cluster holds under that name. An object it made names its owner, the Pool or the Claim, as its
+controller; any other object under that name, one made by hand or by another tool, is left
+exactly as it is. The Claim then says `UpstreamObjectInTheWay`, naming the object's kind and
+name, and nothing is made for it. Remove or rename that object and the Claim goes on: the
+operator looks again every 15 seconds.
 
 ## What it may do
 
@@ -263,8 +271,8 @@ it holds:
 | `runners.purlis.dev` | `claims` | list, watch |
 | `runners.purlis.dev` | `claims/status` | patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
-| `extensions.agents.x-k8s.io` | `sandboxclaims` | create, list, patch, watch |
-| `extensions.agents.x-k8s.io` | `sandboxtemplates`, `sandboxwarmpools` | create, patch |
+| `extensions.agents.x-k8s.io` | `sandboxclaims` | create, get, list, patch, watch |
+| `extensions.agents.x-k8s.io` | `sandboxtemplates`, `sandboxwarmpools` | create, get, patch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod, reads no Secret, and touches no
 pod at all; its Kubernetes client is built without the websocket support `exec` would need.
