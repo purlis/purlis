@@ -272,7 +272,7 @@ fn the_doctor_runs_the_lint_for_the_personas_and_persona_grant_rows() {
     );
     assert_eq!(
         row(&doc, "personas")["detail"],
-        "1 with error(s): steward · 1 draft: devops"
+        "1 with errors: steward · 1 draft: devops"
     );
 }
 
