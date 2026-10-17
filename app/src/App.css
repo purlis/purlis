@@ -3637,9 +3637,10 @@ h2.sidebar-title .node-icon {
    own controls sit in its title bar; where the sidebar is too narrow for both, the switch goes
    under the title and is never cut. */
 .chats-top {
-  /* The line's text is the notes', the secondary's: the size the Inbox's own scope switch
-     stands in (#1920). The switch itself is the smallest type size (`.ui-levels-small`), and
-     the title and the notes each wear their own role. */
+  /* **The scope switch is sized by the text of the line it is on** (`.ui-levels-small`, in
+     `em`), and that line's text is the notes', the secondary's: the size the Inbox's own
+     switch stands in, and within a tenth of a pixel of what this one was before the list's
+     words took their roles (#1920). The title and the notes each wear their own role. */
   font-size: var(--font-size-sm);
   display: flex;
   flex-wrap: wrap;
@@ -7691,7 +7692,7 @@ h2.sidebar-title .node-icon {
 
 .ui-levels-small {
   flex: none;
-  font-size: var(--font-size-xs);
+  font-size: 0.8em;
 }
 
 .ui-levels-small .ui-level {

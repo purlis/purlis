@@ -406,6 +406,7 @@ export const GEOMETRY_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".repo-instruction-text | border-radius: 4px",
     ".repo-instruction-text .invisible-char | padding: 0 0.15rem",
     ".repo-instruction-text .invisible-char | border-radius: 2px",
+    ".ui-levels-small | font-size: 0.8em",
     ".ui-field-range | max-width: 20rem",
     ".ui-field-range output | min-width: 3em",
     ".doctor-form | margin-top: 0.4rem",
