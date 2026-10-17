@@ -587,10 +587,21 @@ export function terminalFont(): string {
   return drawnFont("terminal") ?? "monospace";
 }
 
-/** The faces already made, by digest: a face is asked for once a launch. */
-const loaded = new Set<string>();
+/** The faces already made, each by the name it is registered under and its digest: two slots,
+ *  or two themes, that share a file still each get a face under their own name. */
+const made = new Set<string>();
 
-/** How a face's bytes are asked for: `theme_font` (`fonts.ts` sets it, so this module stays
+/** Each face's bytes as asked for, by digest: one file is asked for once a launch, however many
+ *  names it is made under. */
+const asked = new Map<string, Promise<ArrayBuffer | undefined>>();
+
+/** Forgets the faces made and asked for, as a new launch would. For tests. */
+export function forgetFaces(): void {
+  made.clear();
+  asked.clear();
+}
+
+/** How a face's bytes are asked for: `theme_font` (`faces.ts` sets it, so this module stays
  *  free of the IPC). */
 let fetchFace: ((asset: string) => Promise<ArrayBuffer | undefined>) | undefined;
 
@@ -607,27 +618,34 @@ export function fetchFacesWith(fetch: typeof fetchFace): void {
  * the person's font, so its faces are not asked for.
  */
 function loadFaces(theme: Theme, over: Person): void {
-  if (fetchFace === undefined || typeof FontFace === "undefined" || !theme.fonts) return;
+  const fetch = fetchFace;
+  if (fetch === undefined || typeof FontFace === "undefined" || !theme.fonts) return;
   for (const slot of ["ui", "mono", "terminal"] as const) {
     if (over.fonts[slot] !== undefined) continue;
     const font = theme.fonts[slot];
     const name = /^"([a-z0-9-]+)"/.exec(font.stack)?.[1];
     if (name === undefined) continue;
     for (const face of font.faces) {
-      if (loaded.has(face.asset)) continue;
-      loaded.add(face.asset);
-      const fetch = fetchFace;
+      const key = `${name}:${face.asset}`;
+      if (made.has(key)) continue;
+      made.add(key);
+      let bytes = asked.get(face.asset);
+      if (bytes === undefined) {
+        bytes = fetch(face.asset).catch(() => undefined);
+        asked.set(face.asset, bytes);
+      }
       void (async () => {
         try {
-          const bytes = await fetch(face.asset);
-          if (bytes === undefined) return;
-          const made = new FontFace(name, bytes, {
+          const given = await bytes;
+          if (given === undefined) return;
+          // A face takes its own copy: one file made under two names is two faces.
+          const one = new FontFace(name, given.slice(0), {
             weight: String(face.weight),
             style: face.style,
           });
-          await made.load();
-          document.fonts.add(made);
-          if (slot === "terminal") for (const follow of fontFollowers) follow(terminalFont());
+          await one.load();
+          document.fonts.add(one);
+          if (slot === "terminal") for (const follow of fontFollowers) follow(terminalFont(), true);
         } catch {
           // A face that cannot be made draws the family list's fallback; it is not asked again.
         }
@@ -652,15 +670,16 @@ export function drawPerson(next: Person): void {
     apply(current, drawnOn);
     if (tint !== null) paint(current, drawnOn, tint);
   }
-  for (const follow of fontFollowers) follow(terminalFont());
+  for (const follow of fontFollowers) follow(terminalFont(), false);
 }
 
 /** Everything following the terminal's family: one per terminal on screen. */
-const fontFollowers = new Set<(family: string) => void>();
+const fontFollowers = new Set<(family: string, arrived: boolean) => void>();
 
-/** Calls `follow` with the terminal's family whenever it changes: a theme, the person's font,
- *  or a face that arrived. Answers the way to stop. */
-export function onTerminalFont(follow: (family: string) => void): () => void {
+/** Calls `follow` with the terminal's family whenever it changes: a theme or the person's font,
+ *  and with `arrived` when a face of it has just been made, so its cells are measured again.
+ *  Answers the way to stop. */
+export function onTerminalFont(follow: (family: string, arrived: boolean) => void): () => void {
   fontFollowers.add(follow);
   return () => {
     fontFollowers.delete(follow);
@@ -695,7 +714,7 @@ export function drawIn(theme: Theme, to: HTMLElement = document.documentElement)
   followReducedMotion();
   if (changed) {
     for (const follow of followers) follow(theme);
-    for (const follow of fontFollowers) follow(terminalFont());
+    for (const follow of fontFollowers) follow(terminalFont(), false);
   }
 }
 

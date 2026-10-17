@@ -26,7 +26,7 @@
 //! face, the sha-256 of the bytes the engine read ([`Face::asset`]), never a path or an
 //! address; it asks for those bytes by that digest ([`served`]) and makes the face from them
 //! (`FontFace` over an `ArrayBuffer`), so nothing is fetched from a URL and no scheme reaches a
-//! file. [`served`] answers only a digest the engine registered while reading a theme folder,
+//! file. [`served`] answers only a digest of a theme folder the engine read and accepted,
 //! reads that file again under the same containment and cap, and answers its bytes only when they
 //! still have that digest.
 //!
@@ -79,6 +79,9 @@ pub struct Face {
     pub asset: String,
     pub weight: u16,
     pub style: Style,
+    /// Where it was read from: registered for [`served`] once the theme is accepted.
+    #[serde(skip)]
+    pub(crate) from: Option<Kept>,
 }
 
 /// **One of a theme's fonts, complete**: the family the window draws, and the faces it loads.
@@ -168,15 +171,19 @@ fn face_file(file: &str) -> Option<&str> {
 }
 
 /// One file the engine read for a face, kept so it can be served by its digest.
-#[derive(Debug, Clone)]
-struct Kept {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Kept {
     /// The theme folder, the containment root.
     folder: PathBuf,
     file: PathBuf,
 }
 
-/// Every font file the engine read, by its digest: each place it was read from, since two
-/// themes may bring the same face.
+/// Every font file of an accepted theme the engine read, by its digest: each place it was read
+/// from, since two themes may bring the same face.
+///
+/// It is kept for the process: a theme that is no longer in force leaves its faces here. That
+/// serves nothing new: each is a file of a theme folder purlis accepted, answered only while its
+/// bytes still have the digest, and the window asks only for the faces of the theme it draws.
 fn kept() -> std::sync::MutexGuard<'static, BTreeMap<String, Vec<Kept>>> {
     static KEPT: OnceLock<Mutex<BTreeMap<String, Vec<Kept>>>> = OnceLock::new();
     KEPT.get_or_init(|| Mutex::new(BTreeMap::new()))
@@ -230,7 +237,7 @@ fn read_face(folder: &Path, file: &Path, shown: &str) -> Result<Vec<u8>, String>
 }
 
 /// **The bytes of the font file whose digest is `asset`**, for the window to make the face
-/// from. Only a file the engine read while reading a theme folder is served, read again under
+/// from. Only a file of a theme folder the engine accepted is served, read again under
 /// the same containment and cap, and only while its bytes still have that digest.
 pub fn served(asset: &str) -> Result<Vec<u8>, String> {
     let Some(places) = kept().get(asset).cloned() else {
@@ -246,6 +253,21 @@ pub fn served(asset: &str) -> Result<Vec<u8>, String> {
         }
     }
     Err(why)
+}
+
+/// **Registers the faces of an accepted theme's fonts** for [`served`]. A theme that is refused
+/// registers nothing, so none of its files is served.
+pub(super) fn register(fonts: &Fonts) {
+    let mut kept = kept();
+    for font in [&fonts.ui, &fonts.mono, &fonts.terminal] {
+        for face in &font.faces {
+            let Some(place) = &face.from else { continue };
+            let places = kept.entry(face.asset.clone()).or_default();
+            if !places.iter().any(|one| one.file == place.file) {
+                places.push(place.clone());
+            }
+        }
+    }
 }
 
 /// The name purlis registers a font's faces under: the slot and the digest of its faces, so two
@@ -430,19 +452,14 @@ fn face_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>)
     match read_face(folder, &path, &shown) {
         Ok(bytes) => {
             let asset = hex(&bytes);
-            let place = Kept {
-                folder: folder.to_path_buf(),
-                file: path,
-            };
-            let mut kept = kept();
-            let places = kept.entry(asset.clone()).or_default();
-            if !places.iter().any(|one| one.file == place.file) {
-                places.push(place);
-            }
             Some(Face {
                 asset,
                 weight,
                 style,
+                from: Some(Kept {
+                    folder: folder.to_path_buf(),
+                    file: path,
+                }),
             })
         }
         Err(why) => {

@@ -656,3 +656,104 @@ fn the_schema_bounds_every_geometry_token_and_describes_fonts_and_compact() {
         "^fonts/[A-Za-z0-9_-][A-Za-z0-9._-]*\\.woff2$"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// Review round: compact is never looser, faces of a refused theme, the person's icons path
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_theme_s_compact_is_never_looser_than_its_comfortable() {
+    let loaded = load(&dark(
+        json!({ "size.control": 22, "size.chrome": 16, "space.4": 5, "space.6": 20 }),
+        json!({}),
+    ));
+    assert_eq!(said(&loaded), Vec::<String>::new());
+    let theme = loaded.theme.first();
+    // Tighter than core's compact already: compact keeps the theme's own.
+    assert_eq!(theme.compact["size.control"], 22.0);
+    assert_eq!(theme.compact["size.chrome"], 16.0);
+    assert_eq!(theme.compact["space.4"], 5.0);
+    // Looser than core's compact: core's compact.
+    assert_eq!(theme.compact["space.6"], 12.0);
+    for step in geometry::STEPS {
+        if step.compact != step.classic {
+            assert!(
+                theme.compact[step.token] <= theme.geometry[step.token],
+                "{}",
+                step.token
+            );
+        }
+    }
+}
+
+/// The sha-256 of `bytes`, as the engine names a face.
+fn sha(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+#[test]
+fn a_refused_theme_s_faces_are_never_served() {
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = woff2("a face of a refused theme");
+    // The fonts are fine; a colour elsewhere is not, so the theme is refused.
+    let theme = dark(
+        json!({ "accent.base": "red" }),
+        json!({ "fonts": { "ui": { "family": "Refused", "faces": [
+            { "file": "fonts/Refused.woff2" }
+        ] } } }),
+    );
+    folder(
+        dir.path(),
+        "refused",
+        &theme,
+        &[("Refused.woff2", bytes.clone())],
+    );
+    let loaded = Library::new().load_folder(dir.path(), "refused");
+    assert!(loaded.refused);
+    assert!(served(&sha(&bytes)).is_err());
+    // The same folder, put right, is served.
+    let fixed = dark(
+        json!({}),
+        json!({ "fonts": { "ui": { "family": "Refused", "faces": [
+            { "file": "fonts/Refused.woff2" }
+        ] } } }),
+    );
+    folder(dir.path(), "refused", &fixed, &[]);
+    assert!(!Library::new().load_folder(dir.path(), "refused").refused);
+    assert_eq!(served(&sha(&bytes)).unwrap(), bytes);
+}
+
+#[test]
+fn the_person_s_icon_set_is_a_file_beside_their_theme_or_in_its_icons_folder() {
+    let config = tempfile::tempdir().unwrap();
+    let home = crate::machine::dir(config.path());
+    std::fs::create_dir_all(&home).unwrap();
+    let theme = |icons: &str| {
+        std::fs::write(
+            home.join("theme.json"),
+            dark(json!({}), json!({ "icons": icons })).to_string(),
+        )
+        .unwrap();
+        read_theirs(Some(config.path()))
+    };
+    for deeper in ["vaults/icons.json", "icons/sub/set.json", "../icons.json"] {
+        let theirs = theme(deeper);
+        let trouble = theirs.trouble.unwrap_or_default();
+        assert!(
+            trouble.contains("which is not a file beside theme.json or in its icons/ folder"),
+            "{deeper}: {trouble}"
+        );
+    }
+    // A plain file beside it, and one in its icons/, are read (here: not there, and said so).
+    for allowed in ["icons.json", "icons/set.json"] {
+        let trouble = theme(allowed).trouble.unwrap_or_default();
+        assert!(
+            trouble.contains(&format!("has no {allowed}")),
+            "{allowed}: {trouble}"
+        );
+    }
+}

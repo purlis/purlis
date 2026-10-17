@@ -36,6 +36,7 @@ import {
 } from "./terminalRows";
 import { onTextSizes, textSizes } from "./textSize";
 import { inForce, onDrawn, onTerminalFont, terminalFont, xtermTheme } from "./theme/theme";
+import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { useProjectShown } from "./projectShown";
 
@@ -282,15 +283,10 @@ export function SessionPane({
       fit.fit();
     });
     // **And so is the terminal's font** (#2326): another theme's, the person's, or a face that
-    // has just arrived. xterm measures its cells again when the family is set, so a refit
+    // has just arrived, which has xterm measure its cells again (`terminalFont.ts`); a refit
     // follows, as for a size.
-    const unfont = onTerminalFont((family) => {
-      if (pane.options.fontFamily === family) {
-        // The same family with a face that has just arrived: its glyphs are drawn again.
-        pane.clearTextureAtlas();
-        pane.refresh(0, pane.rows - 1);
-      } else pane.options.fontFamily = family;
-      fit.fit();
+    const unfont = onTerminalFont((family, arrived) => {
+      if (drawTerminalFont(pane, family, arrived)) fit.fit();
     });
     // **And so is screen-reader mode turned on or off** while it is up: `options` is xterm's
     // own way to change it on a live terminal, which builds or drops the rows it keeps.

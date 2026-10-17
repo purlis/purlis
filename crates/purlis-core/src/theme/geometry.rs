@@ -13,8 +13,8 @@
 //! **Density** is the person's setting, comfortable or compact, and every theme has both: core
 //! defines what compact means for Purlis Classic ([`Step::compact`]), and a theme may tune its
 //! own compact values in a `compact` layer. A token core's compact leaves as it is follows the
-//! theme's comfortable value; one core's compact moves is core's compact value unless the
-//! theme's `compact` layer names it.
+//! theme's comfortable value; one core's compact moves is the smaller of core's compact value and
+//! the theme's comfortable one, unless the theme's `compact` layer names it.
 //!
 //! A geometry value is a number. What reaches the window is written here from that number
 //! ([`properties`]), never copied from a file (ADR 0041, property 4).
@@ -297,17 +297,19 @@ pub fn classic_compact() -> Geometry {
     STEPS.iter().map(|one| (one.token, one.compact)).collect()
 }
 
-/// **The compact geometry of a theme whose comfortable geometry is `comfortable`**: core's
-/// compact value where core's compact moves a token, the comfortable value where it does not,
-/// and then the theme's own `compact` layer over both.
+/// **The compact geometry of a theme whose comfortable geometry is `comfortable`**: where core's
+/// compact moves a token, the smaller of core's compact value and the theme's comfortable one,
+/// so a theme's compact is never looser than its comfortable; where core's compact does not,
+/// the comfortable value; and then the theme's own `compact` layer over both.
 pub fn compact_of(comfortable: &Geometry, layer: &Geometry) -> Geometry {
     STEPS
         .iter()
         .map(|one| {
+            let own = comfortable.get(one.token).copied().unwrap_or(one.classic);
             let value = match layer.get(one.token) {
                 Some(tuned) => *tuned,
-                None if one.compact != one.classic => one.compact,
-                None => comfortable.get(one.token).copied().unwrap_or(one.classic),
+                None if one.compact != one.classic => one.compact.min(own),
+                None => own,
             };
             (one.token, value)
         })

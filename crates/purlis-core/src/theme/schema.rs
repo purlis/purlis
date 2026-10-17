@@ -150,7 +150,7 @@ pub fn schema() -> Value {
                 "maxLength": MOST_ICONS_PATH
             },
             "compact": {
-                "description": "What compact draws, for every appearance, when the person chose compact density: geometry tokens and their numbers. A token not named is Purlis Classic's compact where that moves it, else the appearance's own.",
+                "description": "What compact draws, for every appearance, when the person chose compact density: geometry tokens and their numbers. A token not named is the smaller of Purlis Classic's compact and the appearance's own where Classic's compact moves it, else the appearance's own.",
                 "type": "object",
                 "additionalProperties": false,
                 "properties": sizes

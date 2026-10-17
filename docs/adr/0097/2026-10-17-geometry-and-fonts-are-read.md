@@ -20,8 +20,8 @@ the engine resolved.
   folder: one plain name, reached with no link on the way, under a 2 MiB cap, with the woff2
   signature. The engine reads it with the theme and hands the window its sha-256, never a path
   or an address. The window asks for the bytes by that digest over the app's own IPC
-  (`theme_font`, the window's alone), and the engine answers only a digest it registered while
-  reading a theme folder, reading that file again under the same containment and cap and
+  (`theme_font`, the window's alone), and the engine answers only a digest of a face of a theme
+  it read and accepted (a refused theme registers none), reading that file again under the same containment and cap and
   answering only while the bytes still have that digest. The window makes the face with
   `FontFace` from the bytes. So no URL scheme or file address exists for a page to reach, the
   window's content security policy is unchanged, and the stylesheet names a face only by a name

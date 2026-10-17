@@ -779,8 +779,9 @@ shadow's shape is two of these numbers per lift; its colour is the theme's `over
 comfortable or compact, kept in the layout file beside the text sizes (`appearance`). Core
 defines Purlis Classic's compact (the compact column below), and a theme tunes its own in a
 `compact` object of geometry tokens, held to the same bounds, for every appearance. A token
-the theme's `compact` does not name is core's compact where core's compact moves it, and the
-appearance's own comfortable value where it does not. The engine resolves both geometries for
+the theme's `compact` does not name is the smaller of core's compact and the appearance's own
+comfortable value where core's compact moves it, so compact is never looser than comfortable,
+and the appearance's comfortable value where it does not. The engine resolves both geometries for
 every theme, and the window writes the one the person's density picks.
 
 **Fonts are woff2 files in the theme's folder, served by purlis.** A theme's `fonts` names

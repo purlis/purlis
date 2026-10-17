@@ -13,7 +13,8 @@
  * (`purlis_core::theme::geometry`), and its fonts as woff2 files in its folder; the engine writes
  * each property here from those and hands the window the result for both densities, comfortable
  * and compact (`theme.ts` puts the person's on the document). A value outside its bound refuses
- * the theme, so alignment is as safe as when geometry was core's alone.
+ * the theme. The bounds hold each token on its own: a theme stays within the range every view
+ * was drawn to take, though tokens are not checked against one another.
  *
  * This list is the contract: `geometry.css` declares exactly these names, holding Purlis
  * Classic's values, no other stylesheet declares one, and `docs/design-system.md` lists every

@@ -199,10 +199,17 @@ impl Library {
 
     /// [`Self::load`] of a `theme.json` read from `folder`, the theme's own folder: the icon set
     /// and the fonts it names are read from inside it. The person's own theme is read so, from
-    /// the config folder its `theme.json` is in.
+    /// the config folder its `theme.json` is in, which holds more than the theme: so its icon
+    /// set is a plain file beside `theme.json` or one in its own `icons/`, never a deeper path.
     pub fn load_in(&self, id: Option<&str>, document: &Value, folder: &Path) -> Resolved {
         let icons = match document.get("icons") {
-            Some(Value::String(named)) => Some(read_icons(folder, folder, named)),
+            Some(Value::String(named)) if beside_or_in_icons(named) => {
+                Some(read_icons(folder, folder, named))
+            }
+            Some(Value::String(named)) => Some(Err(format!(
+                "icons is {}, which is not a file beside theme.json or in its icons/ folder",
+                stringify(&Value::String(named.clone()))
+            ))),
             _ => None,
         };
         let beside = Beside::Folder {
@@ -222,11 +229,15 @@ impl Library {
         }
         let mut path: Vec<String> = id.into_iter().map(str::to_owned).collect();
         match self.format_2(from, beside, &mut path) {
-            Ok((theme, notes)) => Resolved {
-                theme,
-                complaints: notes,
-                refused: false,
-            },
+            Ok((theme, notes)) => {
+                // A face is served only once the theme that brings it is accepted.
+                super::fonts::register(&theme.first().fonts);
+                Resolved {
+                    theme,
+                    complaints: notes,
+                    refused: false,
+                }
+            }
             Err(refused) => Resolved::refusal(refused.complaints),
         }
     }
@@ -497,6 +508,18 @@ fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
         document,
         beside: Beside::Folder { icons, folder },
     })
+}
+
+/// Whether `named` is one plain file name, or `icons/` and one plain file name.
+fn beside_or_in_icons(named: &str) -> bool {
+    let parts: Vec<std::path::Component> = Path::new(named).components().collect();
+    let plain = |part: &std::path::Component| matches!(part, std::path::Component::Normal(_));
+    !named.contains(['\\', ':'])
+        && match parts.as_slice() {
+            [one] => plain(one),
+            [first, one] => *first == std::path::Component::Normal("icons".as_ref()) && plain(one),
+            _ => false,
+        }
 }
 
 /// The icon set `named` inside the theme folder `folder`, parsed, or why not: `named` is a
