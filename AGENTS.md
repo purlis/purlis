@@ -39,7 +39,7 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   `CHARTER_RECORDED_BLESS=1 cargo test -p purlis-cli --test recorded_behaviour -- <name>`, read
   the fixture's diff, and say in the PR which contract moved and why. Never re-record to make a
   red run green without that sentence (ADR 0046).
-- **No `unsafe`, with two audited exceptions** (`unsafe_code = "deny"` workspace-wide), each
+- **No `unsafe`, with three audited exceptions** (`unsafe_code = "deny"` workspace-wide), each
   by the operator's ruling:
   1. `purlis_core::executor::inherit_nothing_else`: the `pre_exec` hook that closes every
      descriptor above 2 in an extension's program, because nothing but code run between `fork`
@@ -48,10 +48,14 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
      safe wrapper, that reads a process's parent and start time in-process on macOS, where
      each hook line cost a `/bin/ps` run before. Ruling D-1407-8, 2026-10-07: a second audited
      block, in `purlis-same-user`, for `proc_pidinfo`.
+  3. `purlis_linux_sandbox`'s `linux::notify::raw`: the seccomp notification calls (install a
+     filter with a listener, receive, answer, check and hand over a descriptor) that the Linux
+     sandbox's supervisor makes, where no safe crate has them. Ruling of 2026-10-16 (#1040):
+     one more small, isolated, audited `unsafe` module, with no new C dependency.
 
   Each has a `// SAFETY:` comment (clippy's `undocumented_unsafe_blocks` is denied), and
-  `crates/purlis-core/tests/two_unsafe_blocks.rs` names both and fails if `unsafe` or an
-  allow of the lint appears anywhere else. A third block is a new ruling, not an edit.
+  `crates/purlis-core/tests/three_unsafe_blocks.rs` names all three and fails if `unsafe` or an
+  allow of the lint appears anywhere else. A fourth block is a new ruling, not an edit.
 - **UI is built from Radix primitives, never hand-rolled markup**, and never behind a purlis API
   of our own — no `<Modal>`, no `<Field>`. A shadcn/ui component's source **copied into the repo
   is allowed** and is not that layer (ADR 0037, amended 2026-09-22). **One house set is the

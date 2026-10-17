@@ -47,6 +47,9 @@ glob = "0.3"
 # `engine`), and the fork lock every program is started under (`forklock`): a crate of their
 # own, which a session host links without the rest of this one (#1995).
 purlis-terminal.workspace = true
+# purlis's own sandbox on Linux (#1040): the words a wrapped chat's line starts with, and
+# whether this kernel has the Landlock it needs. Its Linux half is linked on Linux alone.
+purlis-linux-sandbox.workspace = true
 # What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
 # from the tool server through the window to the session host. A crate of this workspace.
 purlis-session-protocol.workspace = true

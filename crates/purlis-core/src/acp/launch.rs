@@ -60,12 +60,13 @@ pub enum NotOffered {
         "a chat cannot run over ACP on this system until purlis can sandbox it here, so it starts in its terminal, where the sandbox's state is shown"
     )]
     Unsupported,
-    /// D-87h: the project turns the sandbox on, and charter cannot wrap a level-3 agent yet.
+    /// D-87h: the chat runs sandboxed (at the full sandbox or the floor), and charter cannot
+    /// wrap a level-3 agent yet.
     /// Whatever the chat: a confined chat would run outside its sandbox, and a chat a person
     /// started without it must show that on its tab for its whole life (ADR 0067 §7), which a
     /// chat with no terminal shown cannot (V24a).
     #[error(
-        "this project turns the sandbox on, and purlis cannot sandbox a chat over ACP yet, so it starts in its terminal, where its sandbox is shown for as long as it runs"
+        "this chat runs sandboxed, and purlis cannot sandbox a chat over ACP yet, so it starts in its terminal, where its sandbox is shown for as long as it runs"
     )]
     Sandboxed,
 }

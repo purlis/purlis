@@ -3860,6 +3860,11 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
+    // the hidden `purlis _sandbox`, never in help and not a public command line.
+    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+        std::process::exit(code);
+    }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed
     // must refuse the tool call, not allow it (#349).
     if is_a_pretooluse_call(&std::env::args_os().collect::<Vec<_>>()) {

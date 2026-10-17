@@ -162,6 +162,11 @@ impl Plane {
             &purlis_core::profiletrust::fingerprint(set.get(profile).expect("it reads")),
         )
         .expect("approved");
+        // Codex and opencode run wrapped on macOS and Linux (#1040); these tests are about the
+        // handoff, so the persona's chat starts without the sandbox here.
+        if matches!(kind, "codex" | "opencode") {
+            crate::sandboxing::no_sandbox_here_for_tests(&self.root);
+        }
         self.a_persona(persona, &format!("profile: {profile}\n"))
     }
 
@@ -315,6 +320,9 @@ fn the_start_for_a_codex_persona_runs_codex_on_the_brief_whatever_harness_asked(
             persona: Some("ops".to_owned()),
             name: "2".to_owned(),
             cwd: Some(root.join("workspaces").join("alpha")),
+            // What is asked is whose profile: a sandboxed Codex chat starts only on a profile
+            // for sandboxed chats (#2037), wrapped on macOS and Linux (#1040).
+            without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
             ..Default::default()
         },
         root,
@@ -466,7 +474,7 @@ fn the_start_for_a_persona_falls_back_from_an_unoffered_profile_and_refuses_an_u
 #[test]
 fn a_claude_chat_hands_off_to_a_persona_on_a_codex_profile_and_codex_gets_the_brief() {
     let plane = Plane::new().with_a_codex_persona();
-    let planes = planes();
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     // The asking chat runs as `ops` itself: a handoff to its own persona needs no
@@ -584,7 +592,7 @@ fn a_handoff_to_a_persona_on_a_profile_nobody_approved_opens_nothing() {
         format!("{text}env = {{ CODEX_HOME = \"/elsewhere\" }}\n"),
     )
     .expect("changed");
-    let planes = planes();
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     // The asking chat runs as `ops` itself: a handoff to its own persona needs no
@@ -1054,7 +1062,7 @@ fn a_handoff_counts_toward_the_running_limit_of_a_chat_nobody_is_at_and_of_no_ot
 #[test]
 fn a_codex_chat_hands_off_to_its_own_persona_though_its_harness_reports_its_prompts_off() {
     let plane = Plane::new().with_a_codex_persona();
-    let planes = planes();
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let start = purlis_core::start::Start {
@@ -1062,6 +1070,9 @@ fn a_codex_chat_hands_off_to_its_own_persona_though_its_harness_reports_its_prom
         persona: Some("ops".to_owned()),
         name: "1".to_owned(),
         cwd: Some(plane.root.clone()),
+        // A sandboxed Codex chat starts only on a profile for sandboxed chats (#2037), wrapped
+        // on macOS and Linux (#1040); what is asked here is the handoff.
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
         ..Default::default()
     };
     let ready = purlis_core::start::ready(&start, &plane.root).expect("the Codex chat starts");

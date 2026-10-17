@@ -249,6 +249,18 @@ fn a_codex_record_resumes_by_its_subcommand() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     plane.declares("codex");
+    // Your level here is no sandbox, which this machine's record confirms: what is asked is the
+    // resume, and a sandboxed Codex chat starts only on a profile for sandboxed chats (#2037),
+    // wrapped on macOS and Linux (#1040).
+    let local = plane.root().join(profiles::LOCAL_FILE);
+    let text = fs::read_to_string(&local).unwrap_or_default();
+    fs::write(&local, format!("{text}\n[sandbox]\nlevel = \"off\"\n")).unwrap();
+    purlis_core::sandbox::personal::set_by_you(
+        plane.root(),
+        None,
+        Some(purlis_core::sandbox::personal::Choice::Off),
+    )
+    .unwrap();
     let shown = plane.record(Some("codex"), Some(ID), None);
 
     let resumed = sessionresume::ready(plane.root(), &shown, "codex 9", false).expect("it starts");

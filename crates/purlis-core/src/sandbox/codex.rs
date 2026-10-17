@@ -74,6 +74,8 @@ use crate::harness::Harness;
 /// What a Codex chat is wrapped in, before the place it opens is known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wrap {
+    /// The system it is applied on, whose mechanism applies it ([`super::wrapper`]).
+    pub os: Os,
     /// How much it holds ([`super::Level`]): at the floor every folder is written and the
     /// network is open, but what [`Self::denied`] and [`Self::held`] name.
     pub level: super::Level,
@@ -132,16 +134,19 @@ pub const HOME_ENV: &str = "CODEX_HOME";
 /// program, which the chat runs.
 pub const PROGRAMS: &str = "packages";
 
-/// `compiled`, for Codex, or why it cannot be wrapped on this system. The Linux wrap is #1040.
+/// `compiled`, for Codex, or why it cannot be wrapped on this system.
 pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
-    if compiled.os != Os::MacOs {
+    // macOS (Seatbelt) and Linux (purlis's own wrap, #1040) apply the same profile.
+    if !matches!(compiled.os, Os::MacOs | Os::Linux) {
         return Err(Uncompilable {
             harness: Harness::Codex,
             unheld: Unheld::Wrap(compiled.os),
         });
     }
     let mut denied = compiled.denied.paths.clone();
-    denied.extend(seatbelt::keychains(compiled.homes.home.as_deref()));
+    if compiled.os == Os::MacOs {
+        denied.extend(seatbelt::keychains(compiled.homes.home.as_deref()));
+    }
     // D-88q: the operator's own home, where every thread the operator resumes keeps its state.
     if let Some(operator) = &compiled.homes.codex {
         denied.push(Denial {
@@ -152,6 +157,7 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         });
     }
     Ok(Wrap {
+        os: compiled.os,
         level: compiled.level,
         held: compiled.held.clone(),
         denied,

@@ -1,0 +1,580 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **What a chat inside purlis's Linux sandbox can do, tried from inside it** (#1040).
+//!
+//! Each test starts `sandbox-probe` under the wrap with a profile of the shape purlis compiles
+//! (a project with a vault, the chat's folder and its temp folder written, the later-code names
+//! held at any depth, the proxy's port and the hook socket the only places reached), has it try
+//! one thing, and reads what happened. Every denial class is tried, with the ways round each:
+//! a link, `..`, a folder moved into place, a process the chat starts, and the chat's own
+//! seccomp listener.
+//!
+//! These run wherever Linux does, and never skip: a kernel without Landlock ABI 6 fails them
+//! with a sentence saying so, since the sandbox cannot start there either.
+
+#![cfg(target_os = "linux")]
+
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::os::unix::net::UnixListener;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const PROBE: &str = env!("CARGO_BIN_EXE_sandbox-probe");
+
+struct Project {
+    _dir: tempfile::TempDir,
+    root: PathBuf,
+    cwd: PathBuf,
+    tmp: PathBuf,
+    outside: PathBuf,
+    vault: PathBuf,
+    proxy: Option<(u16, std::thread::JoinHandle<()>)>,
+    hook: PathBuf,
+    bus: PathBuf,
+}
+
+fn real(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).expect("a real path")
+}
+
+/// A project as purlis lays one out, beside a folder outside it, and the profile its chat in
+/// `w` starts under.
+fn project() -> Project {
+    assert!(
+        purlis_linux_sandbox::abi() >= purlis_linux_sandbox::MIN_ABI,
+        "this kernel's Landlock is version {}, and purlis's Linux sandbox needs {} (Linux 6.12 or \
+         later): its tests cannot run here, and neither can a sandboxed chat",
+        purlis_linux_sandbox::abi(),
+        purlis_linux_sandbox::MIN_ABI
+    );
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = real(dir.path());
+    let root = base.join("project");
+    let cwd = root.join("w");
+    let tmp = base.join("chat-tmp");
+    let outside = base.join("outside");
+    for folder in [
+        &cwd,
+        &tmp,
+        &outside,
+        &root.join(".purlis/vaults"),
+        &cwd.join("repo/.git/hooks"),
+    ] {
+        std::fs::create_dir_all(folder).expect("a folder");
+    }
+    let vault = root.join(".purlis/vaults/ops.json");
+    std::fs::write(&vault, "{\"token\":\"held\"}").expect("a vault");
+    std::fs::write(outside.join("notes.txt"), "outside").expect("a file outside");
+    std::fs::write(cwd.join("repo/.git/config"), "[core]\n").expect("a clone's config");
+    Project {
+        root,
+        cwd,
+        tmp,
+        outside,
+        vault,
+        proxy: None,
+        hook: base.join("hooks.sock"),
+        bus: base.join("bus"),
+        _dir: dir,
+    }
+}
+
+impl Project {
+    fn profile(&self, port: u16) -> String {
+        let cwd = self.cwd.display();
+        let tmp = self.tmp.display();
+        let vaults = self.root.join(".purlis/vaults");
+        let mut out = format!(
+            "(version 1)\n(deny default)\n(allow process-exec)\n(allow file-read*)\n\
+             (allow network-outbound (remote ip \"localhost:{port}\"))\n\
+             (allow network-outbound (remote unix-socket (path-literal \"{}\")))\n\
+             (allow file-write*\n  (subpath \"{cwd}\")\n  (subpath \"{tmp}\")\n  (literal \"/dev/null\"))\n\
+             (deny file-read* file-write* (subpath \"{}\"))\n\
+             (deny file-write* (literal \"{cwd}\"))\n(deny file-write* (literal \"{tmp}\"))\n\
+             (deny file-read* file-write* (literal \"{cwd}/held.key\"))\n",
+            self.hook.display(),
+            vaults.display()
+        );
+        for root in [&self.cwd, &self.tmp] {
+            let root = root.display().to_string().replace('.', "\\\\.");
+            for planted in [
+                "\\\\.git$",
+                "\\\\.git/config(/.*)?$",
+                "\\\\.git/hooks(/.*)?$",
+                "\\\\.envrc$",
+                "\\\\.vscode(/.*)?$",
+            ] {
+                out.push_str(&format!(
+                    "(deny file-write* (regex \"^{root}/(.*/)?{planted}\"))\n"
+                ));
+            }
+            out.push_str(&format!(
+                "(deny file-write-create (require-all (vnode-type DIRECTORY) (regex \"^{root}/(.*/)?\\\\.git/modules/.+\")))\n"
+            ));
+        }
+        out
+    }
+
+    /// `probe` run under the wrap in the chat's folder: what it printed.
+    fn run(&mut self, probe: &[&str]) -> String {
+        let port = self.proxy_port();
+        let words = purlis_linux_sandbox::line(
+            &self.profile(port),
+            PROBE.to_owned(),
+            probe.iter().map(|it| (*it).to_owned()).collect(),
+        );
+        let out = Command::new(PROBE)
+            .args(&words)
+            .current_dir(&self.cwd)
+            .env("TMPDIR", &self.tmp)
+            .output()
+            .expect("the wrap ran");
+        let said = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        assert!(
+            out.status.success(),
+            "the wrap ended {:?}: {said}\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        said
+    }
+
+    /// A stand-in proxy on a loopback port that answers what it is sent.
+    fn proxy_port(&mut self) -> u16 {
+        if let Some((port, _)) = &self.proxy {
+            return *port;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("its address").port();
+        let serving = std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                echo(stream);
+            }
+        });
+        self.proxy = Some((port, serving));
+        port
+    }
+
+    fn s(&self, path: &Path) -> String {
+        path.display().to_string()
+    }
+}
+
+fn echo(mut stream: impl Read + Write) {
+    let mut got = [0u8; 2];
+    if stream.read_exact(&mut got).is_ok() {
+        let _ = stream.write_all(&got);
+    }
+}
+
+fn unix_echo(at: &Path) {
+    let listener = UnixListener::bind(at).expect("a socket");
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            echo(stream);
+        }
+    });
+}
+
+#[test]
+fn the_chat_writes_its_own_folder_and_temp_folder_and_nothing_else() {
+    let mut p = project();
+    assert_eq!(p.run(&["write", "made.txt"]), "ok");
+    assert_eq!(
+        std::fs::read_to_string(p.cwd.join("made.txt")).expect("made"),
+        "x"
+    );
+    assert_eq!(p.run(&["write", &p.s(&p.tmp.join("t"))]), "ok");
+    assert_eq!(p.run(&["mkdir", "sub"]), "ok");
+    assert_eq!(p.run(&["write", "sub/deeper.txt"]), "ok");
+    assert_eq!(p.run(&["write", "/dev/null"]), "ok");
+    for outside in [
+        p.root.join("notes.md"),
+        p.outside.join("notes.txt"),
+        p.outside.join("new.txt"),
+        PathBuf::from("/etc/purlis-probe"),
+        PathBuf::from("/tmp/purlis-probe"),
+        PathBuf::from("/dev/shm/purlis-probe"),
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join(".purlis-probe"),
+    ] {
+        assert_eq!(
+            p.run(&["write", &p.s(&outside)]),
+            "EACCES",
+            "{}",
+            outside.display()
+        );
+    }
+    assert_eq!(
+        p.run(&["append", &p.s(&p.outside.join("notes.txt"))]),
+        "EACCES"
+    );
+    assert_eq!(
+        p.run(&["truncate", &p.s(&p.outside.join("notes.txt"))]),
+        "EACCES"
+    );
+    assert_eq!(
+        p.run(&["chmod", &p.s(&p.outside.join("notes.txt")), "777"]),
+        "EACCES"
+    );
+    assert_eq!(
+        p.run(&["unlink", &p.s(&p.outside.join("notes.txt"))]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["mkdir", &p.s(&p.outside.join("d"))]), "EACCES");
+    assert_eq!(
+        p.run(&["touch", &p.s(&p.outside.join("notes.txt"))]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["touch", "made.txt"]), "ok");
+    assert_eq!(p.run(&["chown", "made.txt"]), "EPERM");
+    assert_eq!(
+        std::fs::read_to_string(p.outside.join("notes.txt")).expect("still there"),
+        "outside"
+    );
+}
+
+#[test]
+fn a_link_or_dot_dot_reaches_nothing_the_chat_could_not_reach_by_name() {
+    let mut p = project();
+    let out = p.s(&p.outside);
+    assert_eq!(p.run(&["symlink", &out, "away"]), "ok");
+    assert_eq!(p.run(&["write", "away/through-link.txt"]), "EACCES");
+    assert_eq!(p.run(&["mkdir", "away/d"]), "EACCES");
+    assert_eq!(
+        p.run(&["symlink", &format!("{out}/dangling.txt"), "dangling"]),
+        "ok"
+    );
+    assert_eq!(p.run(&["write", "dangling"]), "EACCES");
+    assert!(!p.outside.join("dangling.txt").exists());
+    assert_eq!(p.run(&["write", "../../outside/up.txt"]), "EACCES");
+    assert_eq!(p.run(&["write", "sub/../../notes.md"]), "ENOENT");
+    assert_eq!(p.run(&["mkdir", "sub"]), "ok");
+    assert_eq!(p.run(&["write", "sub/../../notes.md"]), "EACCES");
+    assert_eq!(p.run(&["rename", "made-later", "../moved"]), "ENOENT");
+    assert_eq!(p.run(&["write", "made-later"]), "ok");
+    assert_eq!(p.run(&["rename", "made-later", "../moved"]), "EACCES");
+    assert_eq!(p.run(&["rename", "made-later", "away/moved"]), "EACCES");
+    assert_eq!(
+        p.run(&["link", &p.s(&p.outside.join("notes.txt")), "hard"]),
+        "EACCES"
+    );
+    assert_eq!(
+        p.run(&[
+            "write",
+            &format!("/proc/self/root{}", p.outside.join("x").display())
+        ]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["write", "/proc/self/cwd/../escaped"]), "EACCES");
+    assert!(!p.outside.join("through-link.txt").exists());
+    assert!(!p.outside.join("up.txt").exists());
+    assert!(!p.root.join("moved").exists());
+}
+
+#[test]
+fn a_vault_is_never_read_by_any_way_to_it() {
+    let mut p = project();
+    let vault = p.s(&p.vault);
+    assert_eq!(p.run(&["read", &vault]), "EACCES");
+    assert_eq!(
+        p.run(&["list", &p.s(&p.root.join(".purlis/vaults"))]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["read", "../.purlis/vaults/ops.json"]), "EACCES");
+    assert_eq!(p.run(&["symlink", &vault, "v"]), "ok");
+    assert_eq!(p.run(&["read", "v"]), "EACCES");
+    assert_eq!(p.run(&["link", &vault, "hard"]), "EACCES");
+    assert_eq!(p.run(&["rename", &vault, "stolen"]), "EACCES");
+    assert_eq!(
+        p.run(&["read", &format!("/proc/self/root{vault}")]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["write", &vault]), "EACCES");
+    // A path-only descriptor is the kernel's to open, and reading through it is judged again.
+    assert_eq!(p.run(&["path-then-read", &vault]), "EACCES");
+    assert_eq!(
+        p.run(&["path-then-read", &p.s(&p.outside.join("notes.txt"))]),
+        "ok"
+    );
+    assert_eq!(p.run(&["read", &p.s(&p.outside.join("notes.txt"))]), "ok");
+}
+
+#[test]
+fn what_a_later_program_loads_is_never_written_at_any_depth() {
+    let mut p = project();
+    assert_eq!(p.run(&["write", "repo/.git/hooks/pre-commit"]), "EACCES");
+    assert_eq!(p.run(&["append", "repo/.git/config"]), "EACCES");
+    assert_eq!(p.run(&["truncate", "repo/.git/config"]), "EACCES");
+    assert_eq!(p.run(&["touch", "repo/.git/config"]), "EACCES");
+    assert_eq!(p.run(&["unlink", "repo/.git/config"]), "EACCES");
+    assert_eq!(p.run(&["write", ".envrc"]), "EACCES");
+    assert_eq!(p.run(&["mkdir", "a"]), "ok");
+    assert_eq!(p.run(&["mkdir", "a/.git"]), "EACCES");
+    assert_eq!(p.run(&["mkdir", "a/.vscode"]), "EACCES");
+    // Built under another name and moved into place, whole.
+    assert_eq!(p.run(&["mkdir", "a/hooks-to-be"]), "ok");
+    assert_eq!(p.run(&["write", "a/hooks-to-be/post-checkout"]), "ok");
+    assert_eq!(
+        p.run(&["rename", "a/hooks-to-be", "repo/.git/hooks"]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["rename", "repo/.git/hooks", "a/taken"]), "EACCES");
+    assert_eq!(p.run(&["write", "script"]), "ok");
+    assert_eq!(p.run(&["rename", "script", ".envrc"]), "EACCES");
+    assert_eq!(
+        p.run(&["link", "script", "repo/.git/hooks/pre-push"]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["symlink", "script", ".envrc"]), "EACCES");
+    assert_eq!(
+        p.run(&["tmpfile-link", ".", "repo/.git/hooks/post-merge"]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["tmpfile-link", ".", "fine-name"]), "ok");
+    assert_eq!(p.run(&["mkdir", "repo/.git/modules"]), "ok");
+    assert_eq!(p.run(&["mkdir", "repo/.git/modules/sub"]), "EACCES");
+    assert_eq!(
+        p.run(&["write", &p.s(&p.tmp.join("x/.git/config"))]),
+        "ENOENT"
+    );
+    assert_eq!(p.run(&["mkdir", &p.s(&p.tmp.join(".git"))]), "EACCES");
+    assert!(!p.cwd.join("repo/.git/hooks/pre-commit").exists());
+}
+
+#[test]
+fn the_chat_s_own_folders_are_never_moved_or_removed() {
+    let mut p = project();
+    let cwd = p.s(&p.cwd);
+    let tmp = p.s(&p.tmp);
+    assert_eq!(p.run(&["rename", &cwd, &format!("{cwd}-moved")]), "EACCES");
+    assert_eq!(p.run(&["rename", &tmp, &format!("{cwd}/tmp-in")]), "EACCES");
+    assert_eq!(p.run(&["rmdir", &tmp]), "EACCES");
+    assert_eq!(p.run(&["chmod", &cwd, "700"]), "EACCES");
+}
+
+#[test]
+fn only_the_proxy_and_the_hook_socket_are_reached() {
+    let mut p = project();
+    let port = p.proxy_port().to_string();
+    unix_echo(&p.hook);
+    unix_echo(&p.bus);
+    assert_eq!(p.run(&["tcp", "127.0.0.1", &port]), "ok");
+    let other = TcpListener::bind("127.0.0.1:0").expect("another port");
+    let other_port = other.local_addr().expect("its address").port().to_string();
+    assert_eq!(p.run(&["tcp", "127.0.0.1", &other_port]), "EACCES");
+    // Another machine, on the proxy's own port: refused before any packet leaves.
+    assert_eq!(p.run(&["tcp", "192.0.2.1", &port]), "EACCES");
+    assert_eq!(p.run(&["tcp", "2001:db8::1", &port]), "EACCES");
+    assert_eq!(p.run(&["udp", "192.0.2.1", "53"]), "EACCES");
+    assert_eq!(p.run(&["udp", "127.0.0.1", &port]), "EACCES");
+    assert_eq!(p.run(&["unix", &p.s(&p.hook)]), "ok");
+    // Through a link, a socket is judged by what it reaches, as the kernel names it.
+    std::os::unix::fs::symlink(&p.hook, p.cwd.join("hook-link")).expect("a link");
+    std::os::unix::fs::symlink(&p.bus, p.cwd.join("bus-link")).expect("a link");
+    assert_eq!(p.run(&["unix", "hook-link"]), "ok");
+    assert_eq!(p.run(&["unix", "bus-link"]), "EACCES");
+    // The session bus, where the credential store answers, as any socket but the hook's.
+    assert_eq!(p.run(&["unix", &p.s(&p.bus)]), "EACCES");
+    assert_eq!(p.run(&["abstract", "purlis-probe"]), "EACCES");
+}
+
+#[test]
+fn a_process_the_chat_starts_is_held_the_same_and_cannot_lift_it() {
+    let mut p = project();
+    let status = p.run(&["status"]);
+    assert!(status.starts_with("seccomp=2 "), "{status}");
+    assert!(status.ends_with("nnp=1"), "{status}");
+    // A shell started inside, and a program it starts in turn.
+    let shell = format!(
+        "{PROBE} write {o} ; {PROBE} write inner.txt ; {PROBE} status",
+        o = p.outside.join("from-shell").display()
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            &{
+                let port = p.proxy_port();
+                p.profile(port)
+            },
+            "/bin/sh".to_owned(),
+            vec!["-c".to_owned(), shell],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    let said = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = said.lines().collect();
+    assert_eq!(lines.first().copied(), Some("EACCES"), "{said}");
+    assert_eq!(lines.get(1).copied(), Some("ok"), "{said}");
+    assert!(
+        lines.get(2).is_some_and(|it| it.starts_with("seccomp=2 ")),
+        "{said}"
+    );
+    assert!(!p.outside.join("from-shell").exists());
+    // Undumpable, it is still served, and still held.
+    assert_eq!(p.run(&["undumpable", "after.txt"]), "ok");
+    // Nothing outside the sandbox is signalled.
+    assert_eq!(p.run(&["signal-parent"]), "EPERM");
+}
+
+#[test]
+fn the_calls_round_the_supervisor_are_refused() {
+    let mut p = project();
+    let Ok(python) = which("python3") else {
+        panic!("python3 is needed for this test's raw system calls");
+    };
+    let script = r#"
+import ctypes, os, sys
+libc = ctypes.CDLL(None, use_errno=True)
+def call(nr, *args):
+    r = libc.syscall(nr, *[ctypes.c_long(a) for a in args])
+    return "ok" if r >= 0 else os.strerror(ctypes.get_errno())
+import platform
+x86 = platform.machine() == "x86_64"
+SECCOMP = 317 if x86 else 277
+KEYCTL = 250 if x86 else 219
+ADD_KEY = 248 if x86 else 217
+IO_URING_SETUP = 425
+OPENAT2 = 437
+print("listener", call(SECCOMP, 1, 8, 0))
+print("keyctl", call(KEYCTL, 0, -3, 0))
+print("add_key", call(ADD_KEY, 0, 0, 0, 0, 0))
+print("io_uring", call(IO_URING_SETUP, 1, 0))
+print("openat2", call(OPENAT2, -100, 0, 0, 0))
+"#;
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            &{
+                let port = p.proxy_port();
+                p.profile(port)
+            },
+            python,
+            vec!["-c".to_owned(), script.to_owned()],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("listener Operation not permitted"), "{said}");
+    assert!(said.contains("keyctl Operation not permitted"), "{said}");
+    assert!(said.contains("add_key Operation not permitted"), "{said}");
+    assert!(said.contains("io_uring Function not implemented"), "{said}");
+    assert!(said.contains("openat2 Function not implemented"), "{said}");
+}
+
+#[test]
+fn the_supervisor_s_own_process_is_out_of_reach() {
+    let mut p = project();
+    let said = p.run(&["read", "/proc/self/status"]);
+    assert_eq!(said, "ok");
+    // The wrap's own process: the probe's parent.
+    let script = format!(
+        "{PROBE} read /proc/$PPID/environ; {PROBE} read /proc/1/environ; {PROBE} read /proc/$$/status; \
+         {PROBE} read /proc/$PPID/stat; {PROBE} read /proc/$PPID/cwd/x; {PROBE} read /proc/$PPID/task/$PPID/environ; \
+         {PROBE} read /proc/$PPID/cmdline; {PROBE} read /proc/$PPID/status; {PROBE} read-at /proc/$PPID cmdline; \
+         {PROBE} read-at /proc/$PPID stat; {PROBE} path-then-read /proc/$PPID/cmdline; \
+         {PROBE} path-then-read /proc/$PPID/stat"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            &{
+                let port = p.proxy_port();
+                p.profile(port)
+            },
+            "/bin/sh".to_owned(),
+            vec!["-c".to_owned(), script],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    let said = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = said.lines().collect();
+    // Of a process outside the sandbox, its `stat` alone, from the top of `/proc`, from its own
+    // folder held already, or through a descriptor of one of its files held already.
+    assert_eq!(
+        lines,
+        vec![
+            "EACCES", "EACCES", "ok", "ok", "EACCES", "EACCES", "EACCES", "EACCES", "EACCES", "ok",
+            "EACCES", "ok"
+        ],
+        "{said}"
+    );
+}
+
+#[test]
+fn a_file_held_by_name_stays_held_once_it_is_no_longer_linked() {
+    let mut p = project();
+    let key = p.cwd.join("held.key");
+    std::fs::write(&key, "held").expect("a key");
+    assert_eq!(p.run(&["read", "held.key"]), "EACCES");
+    let port = p.proxy_port();
+    let go = p.tmp.join("go");
+    let reader = std::process::Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            &p.profile(port),
+            PROBE.to_owned(),
+            vec!["path-wait-read".to_owned(), p.s(&key), p.s(&go)],
+        ))
+        .current_dir(&p.cwd)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the wrap ran");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::fs::remove_file(&key).expect("unlinked");
+    std::fs::write(&go, "").expect("go");
+    let out = reader.wait_with_output().expect("it ends");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "EACCES");
+}
+
+#[test]
+fn a_pipe_made_in_the_chat_s_folder_works() {
+    let mut p = project();
+    assert_eq!(p.run(&["mkfifo", "pipe"]), "ok");
+    assert_eq!(p.run(&["mkfifo", &p.s(&p.outside.join("pipe"))]), "EACCES");
+}
+
+#[test]
+fn the_wrap_ends_with_its_program_s_status() {
+    let p = project();
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            &p.profile(1),
+            PROBE.to_owned(),
+            vec!["exit".to_owned(), "7".to_owned()],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(7));
+}
+
+#[test]
+fn a_profile_the_wrap_cannot_read_starts_nothing() {
+    let p = project();
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            "(version 1)\n(allow file-write* (path-regex \"x\"))\n",
+            PROBE.to_owned(),
+            vec!["write".to_owned(), "never".to_owned()],
+        ))
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(126));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing was started"));
+    assert!(!p.cwd.join("never").exists());
+}
+
+fn which(program: &str) -> Result<String, ()> {
+    std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .map(|dir| dir.join(program))
+        .find(|it| it.is_file())
+        .map(|it| it.display().to_string())
+        .ok_or(())
+}

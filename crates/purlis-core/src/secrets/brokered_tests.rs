@@ -1791,7 +1791,7 @@ fn what_a_sandboxed_chat_is_compiled_to_denies_it_every_place_a_listing_would_re
     // Why `vault list` in a chat is the app's answer: the chat's own sandbox denies it the
     // provider's session and the project's vaults, reads included, on every harness purlis
     // sandboxes on this system. Where it has no wrap for one yet (Codex and opencode off
-    // macOS), no sandboxed chat of it starts, so there is no chat to deny anything.
+    // macOS and Linux), no sandboxed chat of it starts, so there is no chat to deny anything.
     let project = project_with_ops();
     let root = project.path().canonicalize().unwrap();
     let home = tempfile::tempdir().unwrap();
@@ -1802,9 +1802,9 @@ fn what_a_sandboxed_chat_is_compiled_to_denies_it_every_place_a_listing_would_re
             home: Some(home.clone()),
             os: Os::this(),
         };
-        // As `sandbox/tests.rs` holds it: off macOS, the wrap of Codex and of opencode is
-        // refused, by name.
-        if harness != Harness::ClaudeCode && machine.os != Os::MacOs {
+        // Off macOS and Linux, the wrap of Codex and of opencode is refused, by name, and
+        // there is no chat to deny anything.
+        if harness != Harness::ClaudeCode && !matches!(machine.os, Os::MacOs | Os::Linux) {
             assert_eq!(
                 held_to(harness, &root, &machine).err(),
                 Some(crate::sandbox::NotStarted::Uncompilable(

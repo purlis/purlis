@@ -179,8 +179,14 @@ fn a_codex_chat_is_started_plain_because_codex_names_no_flag_to_choose_an_id() {
     let bin = plane.harness();
     // Nothing in the Codex home: the app arms a Codex chat with `-c` flags of its own.
     plane.profile("codex", &bin, "");
+    // Without the sandbox: a sandboxed Codex chat starts only on a profile for sandboxed chats
+    // (#2037), wrapped on macOS and Linux (#1040), and what is asked here is its line.
+    let start = Start {
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..plane.start("work")
+    };
 
-    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    let ready = start::ready(&start, plane.root()).expect("it starts");
 
     assert_eq!(ready.harness, Some(Harness::Codex));
     assert_eq!(ready.args, Vec::<String>::new());
@@ -226,6 +232,9 @@ fn a_persona_with_a_deny_list_starts_only_where_purlis_can_enforce_it() {
     let bin = plane.harness();
     plane.profile("claude", &bin, "");
     let mut start = plane.start("work");
+    // Without the sandbox: a sandboxed Codex chat starts only on a profile for sandboxed chats
+    // (#2037), wrapped on macOS and Linux (#1040), and what is asked here is the deny-list.
+    start.without_sandbox = Some(purlis_core::sandbox::OptOut { reason: None });
     start.persona = Some("reviewer".to_owned());
     start::ready(&start, plane.root()).expect("it starts on Claude Code");
 
@@ -713,6 +722,9 @@ fn a_codex_wrapper_resumes_after_its_own_words_and_the_apps_flags() {
     let id = SessionId::new("11111111-2222-4333-8444-555555555555").unwrap();
     let mut start = plane.start("work");
     start.resume = Some(id.clone());
+    // Without the sandbox: a sandboxed Codex chat starts only on a profile for sandboxed chats
+    // (#2037), wrapped on macOS and Linux (#1040), and what is asked here is its line.
+    start.without_sandbox = Some(purlis_core::sandbox::OptOut { reason: None });
 
     let ready = start::ready(&start, plane.root()).expect("it starts");
     let hooks = armed(Harness::Codex, plane.root());
@@ -829,7 +841,13 @@ fn a_codex_chat_is_started_with_no_plugin_choice_whatever_its_project_says() {
         ),
     );
 
-    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    // Started without the sandbox: what is asked here is the plugins, and a sandboxed Codex chat
+    // starts only on a profile for sandboxed chats (#2037), wrapped on macOS and Linux (#1040).
+    let start = Start {
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..plane.start("work")
+    };
+    let ready = start::ready(&start, plane.root()).expect("it starts");
 
     assert!(ready.plugins.is_empty(), "{:?}", ready.plugins);
     let line = ready.command_line(armed_with(Harness::Codex, plane.root(), &ready.plugins));
@@ -1129,6 +1147,33 @@ fn an_opencode_chat_in_a_sandboxed_plane()
     (plane, outside, started)
 }
 
+/// #1040: at the floor on Linux, purlis's own program, which the wrap starts the harness
+/// under, is held unwritten as the harness's own program is.
+#[cfg(target_os = "linux")]
+#[test]
+fn at_the_floor_on_linux_the_wrap_s_own_program_is_never_written_by_the_chat() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let outside = stand_in::NoChatWrites::new();
+    let bin = harness_outside(&plane, &outside, "opencode");
+    plane.profile("opencode", &bin, "");
+    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    let applied = ready.sandbox.expect("at the floor");
+    let this = std::env::current_exe()
+        .expect("this program")
+        .canonicalize()
+        .expect("its real path");
+    assert!(
+        applied
+            .confines()
+            .held
+            .iter()
+            .any(|held| this.starts_with(held)),
+        "{:?}",
+        applied.confines().held
+    );
+}
+
 /// A profile's command, made in a plane.
 type Command<'a> = dyn Fn(&Plane) -> Vec<String> + 'a;
 
@@ -1305,7 +1350,7 @@ fn a_claude_code_profile_whose_program_is_not_claude_code_is_not_started_sandbox
     );
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn an_opencode_chat_in_a_sandboxed_plane_starts_inside_charters_wrap() {
     purlis_core::unsteered!();
@@ -1318,7 +1363,7 @@ fn an_opencode_chat_in_a_sandboxed_plane_starts_inside_charters_wrap() {
     assert!(!plane.root().join("ran").exists(), "the harness was run");
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 #[test]
 fn an_opencode_chat_in_a_sandboxed_plane_is_not_started_rather_than_started_unconfined() {
     purlis_core::unsteered!();
