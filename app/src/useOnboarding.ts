@@ -21,9 +21,15 @@ import {
  * a project the steps asked for is held behind the harness step rather than drawn, and the
  * window's own ways of opening a project are where it arrives.
  *
- * - **Read each time the steps appear** (`reread`, which `Onboarding.tsx` asks as it mounts),
- *   from the core's `onboarding.json` (Machine tier, no secrets), so a quit at any step, or a
- *   person who left the welcome for a project and came back, is at the same step.
+ * - **Read once, as the window mounts**, from the core's `onboarding.json` (Machine tier, no
+ *   secrets), so a quit at any step is at the same step, and a person who left the welcome for a
+ *   project and came back is where this window's steps left them. Read before the welcome is
+ *   ever drawn, and not as it appears (#2400): a read that answered after a door press on Add
+ *   another project could say the steps were finished, which turned the guided welcome into the
+ *   plain one under the press and dropped the page it opened. Until it answers, `read` is false,
+ *   and `Onboarding.tsx` draws nothing in a window that already holds a project.
+ * - **Which harnesses this machine has is looked at each time the steps appear**
+ *   (`lookAtHarnesses`), because one may have been installed since.
  * - **Kept on every change**, the whole of it. A machine with no config home keeps nothing and
  *   says so once, in `trouble`; the steps still work for this launch.
  * - **The git check is the git gate's** (`gitPresence.ts`): while an act waits for git at the
@@ -38,6 +44,9 @@ export type Onboarding = {
   harnessMissing: boolean;
   /** Why the steps' place could not be kept, in the core's words. */
   trouble: string | undefined;
+  /** Whether the kept place has answered (or could not be read), so whether the steps guide a
+   *  window that already holds a project is known. */
+  read: boolean;
   /** Whether the steps guide this window now: a window that holds no project, a machine that
    *  has never been through them, or a project held at their harness step. A window full of
    *  projects on a machine that finished them adds one with the plain welcome, and nothing it
@@ -48,8 +57,8 @@ export type Onboarding = {
   /** Whether a project opening now is the one the steps asked for. */
   awaiting: boolean;
   dispatch: (event: Event) => void;
-  /** Reads the kept place again, and looks at which harnesses this machine has. */
-  reread: () => void;
+  /** Looks at which harnesses this machine has. */
+  lookAtHarnesses: () => void;
   /** A project the steps asked for opened. */
   arrived: (made: Made) => void;
 };
@@ -81,7 +90,7 @@ export function useOnboarding({
   /** Bumped by every press, so a read that answers after the person moved on does not take
    *  them back: it only adds what the machine kept about having been through the steps. */
   const pressed = useRef(0);
-  const reread = useCallback(() => {
+  useEffect(() => {
     const at = pressed.current;
     void commands
       .onboardingProgress()
@@ -98,6 +107,8 @@ export function useOnboarding({
         setRead(true);
       })
       .catch(() => setRead(true));
+  }, []);
+  const lookAtHarnesses = useCallback(() => {
     void commands
       .harnessSetupFound()
       .then((answer) => {
@@ -140,11 +151,12 @@ export function useOnboarding({
     counted: stepsOf(progress, { harnessMissing }),
     harnessMissing,
     trouble,
+    read,
     guiding,
     holding: progress.step === "harness" ? progress.made?.plane : undefined,
     awaiting: guiding && (progress.step === "project" || progress.step === "git"),
     dispatch,
-    reread,
+    lookAtHarnesses,
     arrived,
   };
 }

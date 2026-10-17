@@ -52,12 +52,11 @@ export function Onboarding({
   /** Opens a project again, for a harness step resumed at a launch that did not bring it back. */
   reopen: (path: string) => void;
 }) {
-  const { progress, counted, dispatch, reread } = steps;
+  const { progress, counted, dispatch, lookAtHarnesses } = steps;
   const { step } = progress;
 
-  // Each time the steps appear, at the place this machine kept: a quit, or a project the person
-  // went to and came back from, picks up where it was.
-  useEffect(() => reread(), [reread]);
+  // Each time the steps appear, what this machine has now: a harness installed since counts.
+  useEffect(() => lookAtHarnesses(), [lookAtHarnesses]);
 
   const chose = useCallback(
     (to: Chose) => {
@@ -101,6 +100,11 @@ export function Onboarding({
     if (fromGit && step === "project")
       page.current?.querySelector<HTMLElement>("h1, button")?.focus();
   }, [fromGit, step]);
+
+  // A window that already holds a project, before the kept place has answered (#2400): whether
+  // the steps guide it is not known yet, and a welcome drawn now could be swapped for the other
+  // one under a press. It is one small local read, made as the window mounts.
+  if (!steps.read && welcome.adding) return null;
 
   // Not guiding (a window full of projects, on a machine that has been through the steps): the
   // plain welcome, still behind the git gate, with no step drawn and no door kept.
