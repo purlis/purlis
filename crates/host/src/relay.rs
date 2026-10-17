@@ -270,6 +270,22 @@ impl Relayed {
     }
 }
 
+impl Relayed {
+    /// [`Relayed::up`], for a command that changes what the client's link stands on: counted
+    /// as changing it, on a link that is still the one up once it is counted, so a carry-over
+    /// that began meanwhile waits for it, or it waits for the carry-over.
+    async fn up_changing(&self, peer: &Peer) -> Result<(Arc<Upstream>, Counted<'_>), Refusal> {
+        loop {
+            let upstream = self.up(peer).await?;
+            let changing = Counted::start(&self.client.changing);
+            if matches!(&*self.standing.borrow(), Standing::Up(now) if Arc::ptr_eq(now, &upstream))
+            {
+                return Ok((upstream, changing));
+            }
+        }
+    }
+}
+
 fn not_linked(why: &str) -> Refusal {
     Refusal {
         code: session::NOT_STARTED.into(),
@@ -326,13 +342,18 @@ async fn keep(
                                     links.moved();
                                 }
                             }
-                            None => {
-                                up = None;
-                                retiring = None;
-                                tell.send_replace(Standing::Down(
-                                    "the link to it ended as it came up".into(),
-                                ));
-                            }
+                            // The new link ended first: a link renewed ahead of its limit carries
+                            // on until it ends, and with none, no link is up.
+                            None => match &up {
+                                Some(old) => {
+                                    tell.send_replace(Standing::Up(Arc::clone(old)));
+                                }
+                                None => {
+                                    tell.send_replace(Standing::Down(
+                                        "the link to it ended as it came up".into(),
+                                    ));
+                                }
+                            },
                         }
                     }
                     Some(Linked::Down(why)) => {
@@ -379,6 +400,8 @@ struct Kept {
     held: BTreeMap<String, String>,
     /// Where what the other host pushes goes: the client's subscription, while it has one.
     subscriber: Option<mpsc::Sender<Pushed>>,
+    /// How many times the client has subscribed: a carry-over carries the last.
+    subscriptions: u64,
     /// For each device, the last event handed to the client, or where it subscribed from.
     cursor: Since,
     /// Its views, by the number the client knows each by.
@@ -437,6 +460,13 @@ impl ClientLink {
         };
         if target.send(pushed).await.is_err() {
             self.kept().subscriber = None;
+        }
+    }
+
+    /// The client's view `ours` ended for good: it is told so once, however many links say so.
+    async fn view_ended(&self, ours: u32, why: ViewEnd) {
+        if self.kept().views.remove(&ours).is_some() {
+            self.tell(Pushed::ViewEnded { view: ours, why }).await;
         }
     }
 
@@ -590,7 +620,8 @@ impl Upstream {
 #[derive(Default)]
 struct Carried {
     held: BTreeMap<String, String>,
-    subscribed: bool,
+    /// The client's subscription carried, by its number ([`Kept::subscriptions`]).
+    subscribed: Option<u64>,
     /// Each view carried, by the client's number, with its program.
     views: BTreeMap<u32, String>,
 }
@@ -632,7 +663,7 @@ async fn carry(
     fn closed<T>(result: &Result<T, CallError>) -> bool {
         matches!(result, Err(CallError::Closed(_)))
     }
-    let (held, subscribe, attach, detach) = {
+    let (held, let_go, subscribe, attach, detach) = {
         let kept = client.kept();
         let held: Vec<(String, String)> = kept
             .held
@@ -640,11 +671,19 @@ async fn carry(
             .filter(|(project, path)| carried.held.get(*project) != Some(*path))
             .map(|(project, path)| (project.clone(), path.clone()))
             .collect();
+        let let_go: Vec<String> = carried
+            .held
+            .keys()
+            .filter(|project| !kept.held.contains_key(*project))
+            .cloned()
+            .collect();
         let subscribe = kept
             .subscriber
             .as_ref()
-            .filter(|subscriber| !subscriber.is_closed() && !carried.subscribed)
-            .map(|_| kept.cursor.clone());
+            .filter(|subscriber| {
+                !subscriber.is_closed() && carried.subscribed != Some(kept.subscriptions)
+            })
+            .map(|_| (kept.subscriptions, kept.cursor.clone()));
         let attach: Vec<(u32, String, Command)> = kept
             .views
             .iter()
@@ -657,8 +696,20 @@ async fn carry(
             .filter(|ours| !kept.views.contains_key(ours))
             .copied()
             .collect();
-        (held, subscribe, attach, detach)
+        (held, let_go, subscribe, attach, detach)
     };
+    for project in let_go {
+        let let_go = upstream
+            .client
+            .call(Command::LetGoOfProject {
+                project: project.clone(),
+            })
+            .await;
+        if closed(&let_go) {
+            return Err(LinkEnded);
+        }
+        carried.held.remove(&project);
+    }
     for (project, path) in held {
         let held = upstream.client.hold_project(&project, &path).await;
         if closed(&held) {
@@ -666,12 +717,12 @@ async fn carry(
         }
         carried.held.insert(project, path);
     }
-    if let Some(cursor) = subscribe {
+    if let Some((subscription, cursor)) = subscribe {
         let subscribed = upstream.client.subscribe(cursor).await;
         if closed(&subscribed) {
             return Err(LinkEnded);
         }
-        carried.subscribed = true;
+        carried.subscribed = Some(subscription);
     }
     for (ours, program, attach) in attach {
         let attached = upstream.client.call(attach).await;
@@ -682,13 +733,7 @@ async fn carry(
         if let Ok(Answer::Attached(attached)) = attached {
             upstream.joined(attached.view, ours, client);
         } else {
-            client.kept().views.remove(&ours);
-            client
-                .tell(Pushed::ViewEnded {
-                    view: ours,
-                    why: ViewEnd::Closed,
-                })
-                .await;
+            client.view_ended(ours, ViewEnd::Closed).await;
         }
     }
     for ours in detach {
@@ -783,8 +828,7 @@ async fn push_on(
                 let Some(ours) = lock(joins).of.remove(&view) else {
                     continue;
                 };
-                client.kept().views.remove(&ours);
-                client.tell(Pushed::ViewEnded { view: ours, why }).await;
+                client.view_ended(ours, why).await;
             }
             pushed => client.tell(pushed).await,
         }
@@ -848,8 +892,7 @@ impl session::Host for Relay {
                 role,
                 rate,
             } => {
-                let upstream = relayed.up(peer).await?;
-                let _changing = Counted::start(&client.changing);
+                let (upstream, _changing) = relayed.up_changing(peer).await?;
                 let view = KeptView {
                     program,
                     kind,
@@ -902,8 +945,7 @@ impl session::Host for Relay {
                 project,
                 project_path,
             } => {
-                let upstream = relayed.up(peer).await?;
-                let _changing = Counted::start(&client.changing);
+                let (upstream, _changing) = relayed.up_changing(peer).await?;
                 let answer = upstream
                     .call(Command::HoldProject {
                         project: project.clone(),
@@ -914,8 +956,7 @@ impl session::Host for Relay {
                 Ok(answer)
             }
             Command::LetGoOfProject { project } => {
-                let upstream = relayed.up(peer).await?;
-                let _changing = Counted::start(&client.changing);
+                let (upstream, _changing) = relayed.up_changing(peer).await?;
                 let answer = upstream
                     .call(Command::LetGoOfProject {
                         project: project.clone(),
@@ -938,12 +979,12 @@ impl session::Host for Relay {
         peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
         let relayed = self.relayed(peer)?;
-        let upstream = relayed.up(peer).await?;
-        let _changing = Counted::start(&relayed.client.changing);
+        let (upstream, _changing) = relayed.up_changing(peer).await?;
         let (told, pushed) = mpsc::channel(MOST_PUSHED_QUEUED);
         {
             let mut kept = relayed.client.kept();
             kept.subscriber = Some(told);
+            kept.subscriptions += 1;
             kept.cursor = since.clone();
         }
         match upstream.call(Command::Subscribe { since }).await? {

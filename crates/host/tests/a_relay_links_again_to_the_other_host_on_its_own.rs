@@ -15,6 +15,7 @@
 
 #![cfg(unix)]
 
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -723,4 +724,159 @@ impl Drop for LetGo {
     fn drop(&mut self) {
         self.0.let_starts_go();
     }
+}
+
+/// A host B that keeps what each link held and how it last subscribed, and holds back every
+/// attach on a link after the first until the test lets them go: so what the window does while
+/// a renewed link is carried over lands between the carry-over's passes.
+#[derive(Clone, Default)]
+struct Gated {
+    links: Arc<Mutex<Vec<u64>>>,
+    held: Arc<Mutex<HashMap<u64, BTreeSet<String>>>>,
+    subscribed: Arc<Mutex<HashMap<u64, session::Since>>>,
+    waiting: Arc<Mutex<usize>>,
+    open: Arc<tokio::sync::watch::Sender<bool>>,
+}
+
+impl Gated {
+    fn new() -> Gated {
+        Gated {
+            open: Arc::new(tokio::sync::watch::channel(false).0),
+            ..Gated::default()
+        }
+    }
+
+    /// Which link this is, in the order they came: 0 for the first.
+    fn nth(&self, peer: &session::Peer) -> usize {
+        let mut links = self.links.lock().unwrap();
+        if !links.contains(&peer.link()) {
+            links.push(peer.link());
+        }
+        links.iter().position(|link| *link == peer.link()).unwrap()
+    }
+
+    fn held_on(&self, nth: usize) -> BTreeSet<String> {
+        let link = self.links.lock().unwrap()[nth];
+        self.held
+            .lock()
+            .unwrap()
+            .get(&link)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn subscribed_on(&self, nth: usize) -> Option<session::Since> {
+        let link = self.links.lock().unwrap()[nth];
+        self.subscribed.lock().unwrap().get(&link).cloned()
+    }
+}
+
+impl session::Host for Gated {
+    async fn call(
+        &self,
+        command: Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        let nth = self.nth(peer);
+        match command {
+            Command::HoldProject { project, .. } => {
+                self.held
+                    .lock()
+                    .unwrap()
+                    .entry(peer.link())
+                    .or_default()
+                    .insert(project);
+                Ok(Answer::Done)
+            }
+            Command::LetGoOfProject { project } => {
+                if let Some(held) = self.held.lock().unwrap().get_mut(&peer.link()) {
+                    held.remove(&project);
+                }
+                Ok(Answer::Done)
+            }
+            Command::AttachView { .. } => {
+                if nth > 0 {
+                    *self.waiting.lock().unwrap() += 1;
+                    let _ = self.open.subscribe().wait_for(|open| *open).await;
+                }
+                Ok(Answer::Attached(session::Attached {
+                    view: 1,
+                    cols: 80,
+                    rows: 24,
+                    kind: Some(ViewKind::Terminal),
+                }))
+            }
+            _ => Ok(Answer::Chats(Vec::new())),
+        }
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, session::Refusal> {
+        self.nth(peer);
+        self.subscribed.lock().unwrap().insert(peer.link(), since);
+        let (tell, told) = mpsc::channel(1);
+        tokio::spawn(async move { tell.closed().await });
+        Ok(told)
+    }
+}
+
+#[tokio::test]
+async fn what_the_window_changes_while_a_renewed_link_is_carried_over_is_carried_too() {
+    let b = Gated::new();
+    let liveness = Liveness {
+        renew_after: Some(Duration::from_millis(300)),
+        ..Liveness::default()
+    };
+    let window = a_window_on(b.clone(), StandIns::default(), liveness).await;
+    let path = window._project.path().to_str().unwrap().to_owned();
+    window.client.hold_project(PROJECT, &path).await.unwrap();
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+    window
+        .client
+        .call(Command::AttachView {
+            program: "01J9ZQ3V7K8M2N4P6R8T0V2X4Z".into(),
+            kind: ViewKind::Terminal,
+            role: None,
+            rate: None,
+        })
+        .await
+        .unwrap();
+
+    // The renewed link is part-way through its carry-over: it holds the project, and its
+    // attach waits.
+    timeout(PATIENCE, async {
+        while *b.waiting.lock().unwrap() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the renewed link is carried over");
+    assert!(b.held_on(1).contains(PROJECT));
+
+    // Meanwhile the window lets go of the project and subscribes from somewhere new.
+    window
+        .client
+        .call(Command::LetGoOfProject {
+            project: PROJECT.into(),
+        })
+        .await
+        .unwrap();
+    let since: session::Since = [(HOST_B.to_owned(), 7)].into();
+    window.client.subscribe(since.clone()).await.unwrap();
+    b.open.send_replace(true);
+
+    timeout(PATIENCE, async {
+        while b.held_on(1).contains(PROJECT) || b.subscribed_on(1) != Some(since.clone()) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the renewed link lets go of the project and subscribes from where the window did");
 }
