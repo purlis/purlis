@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792249320014,
+  "lastUpdate": 1792250634160,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15288,6 +15288,48 @@ window.BENCHMARK_DATA = {
             "value": 101.291372,
             "unit": "ms",
             "extra": "median of 5 runs: 100.979, 101.225, 101.291, 101.297, 101.715 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "57fb217a4f2ae8b81bfc153eb03045607d28868b",
+          "message": "Browsers: an engine that ends while its Ask waits is noticed at once (#2402)\n\n* Browsers: an engine that ends while its Ask waits is noticed at once (#2385)\n\nThe window hears the session host's word of a browser program's end,\nwhich the host already pushes. A chat's browser whose engine ended\nleaves its rows at once, and an Ask about it ends with an Update in the\nInbox; the chat's next call on it says the browser has gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: an engine that ends while its Ask waits, review round (#2385)\n\nA question about a browser whose engine ended raises no Ask: the chat\nis told the browser has gone, and lets go of it. An Ask is looked at\nagain once raised, so an engine whose end was settled meanwhile ends\nit at once with an Update. Tests for the project limit and for the\nproject-wide path.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T19:02:18+04:00",
+          "tree_id": "0e7e0282ac2592e7bc8878d685997a3fb9e711e5",
+          "url": "https://github.com/purlis/purlis/commit/57fb217a4f2ae8b81bfc153eb03045607d28868b"
+        },
+        "date": 1792250632957,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5544605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.550, 0.554, 0.558, 0.558 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.905849500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.454, 16.646, 16.906, 17.136, 17.268 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.54947349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.462, 103.019, 103.549, 105.575, 106.637 ms"
           }
         ]
       }
