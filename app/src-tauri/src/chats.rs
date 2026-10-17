@@ -3103,6 +3103,13 @@ impl Chats {
             })?),
             None => None,
         };
+        // A runner starts the chat without the services you allowed for this chat alone on this
+        // machine, and the tab says so (#2510).
+        late.extend(
+            confinement
+                .as_ref()
+                .and_then(purlis_core::sandbox::Confinement::said_of_what_was_left_out),
+        );
         // Under a sandbox, the sandbox decides the line: a flag of the harness's own in the
         // chat's own words can outrank it, so such a chat is refused here, where every chat
         // opens, and flags it rides on go last among the flags. A harness charter wraps runs as

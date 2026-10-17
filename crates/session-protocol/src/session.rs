@@ -144,9 +144,13 @@ use crate::view::{Limits, Views};
 /// launch may name the id of the confinement the host composes for it (`confinement`), which
 /// the host then names to the link the start came on, whose proxy asks that link, and whose
 /// place `program_started` answers (`confined`).
+///
+/// 1.17 added what a host leaves out of a plan made on another machine (#2510): `confined` may
+/// name the services of the host's machine the plan gave the chat for it alone, which the host
+/// started it without (`left_out`).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 16,
+    minor: 17,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -532,6 +536,11 @@ pub struct Confined {
     pub routed: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<String>,
+    /// The services of the host's machine, by port, that the plan gave the chat for it alone and
+    /// the host started it without, since the host's own sandbox for the project does not give
+    /// them (1.17, #2510).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<u16>,
 }
 
 /// What a confinement's board of live asks holds now (1.4).

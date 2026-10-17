@@ -3736,6 +3736,7 @@ struct Elsewhere {
     http: u16,
     socks: u16,
     held: Box<dyn HeldElsewhere>,
+    left_out: Vec<u16>,
 }
 
 impl Drop for Elsewhere {
@@ -3825,6 +3826,9 @@ pub struct Placed {
     pub routed: Option<PathBuf>,
     /// The ssh route's folder.
     pub ssh: Option<PathBuf>,
+    /// The services the chat was planned to reach on the host's machine for it alone, which
+    /// that host started it without (#2510).
+    pub left_out: Vec<u16>,
 }
 
 impl Placed {
@@ -3836,6 +3840,7 @@ impl Placed {
             tmp: confined.tmp.as_ref().map(PathBuf::from),
             routed: confined.routed.as_ref().map(PathBuf::from),
             ssh: confined.ssh.as_ref().map(PathBuf::from),
+            left_out: confined.left_out.clone(),
         }
     }
 }
@@ -3922,6 +3927,7 @@ impl Confinement {
                 http: placed.http,
                 socks: placed.socks,
                 held,
+                left_out: placed.left_out,
             }),
             tmp: placed.tmp.map(Folder::Theirs),
             asks,
@@ -3939,7 +3945,39 @@ impl Confinement {
             tmp: self.tmp().map(Path::to_path_buf),
             routed: self.routed.as_ref().map(|dir| dir.path().to_path_buf()),
             ssh: self.ssh.as_ref().map(|route| route.dir().to_path_buf()),
+            left_out: self.left_out().to_vec(),
         }
+    }
+
+    /// **The services the chat was planned to reach that the host holding its proxy started it
+    /// without** (#2510): those the person allowed for this chat alone on this machine, which a
+    /// runner's own sandbox does not give. None for a proxy that runs here.
+    pub fn left_out(&self) -> &[u16] {
+        match &self.proxy {
+            Proxied::Here(_) => &[],
+            Proxied::Elsewhere(elsewhere) => &elsewhere.left_out,
+        }
+    }
+
+    /// **What the window says of the services left out** ([`Self::left_out`]), in a sentence for
+    /// the chat's tab: `None` where none was.
+    pub fn said_of_what_was_left_out(&self) -> Option<String> {
+        let (last, rest) = self.left_out().split_last()?;
+        let ports = match rest {
+            [] => format!("the service on port {last}"),
+            _ => format!(
+                "the services on ports {} and {last}",
+                rest.iter()
+                    .map(u16::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        Some(format!(
+            "This chat runs on a runner, which does not give it {ports} that you allowed for \
+             this chat alone on this machine, so the chat cannot reach {it} there.",
+            it = if rest.is_empty() { "it" } else { "them" }
+        ))
     }
 
     /// What holds this one in another process calls it ([`HeldElsewhere::id`]); `None` for one

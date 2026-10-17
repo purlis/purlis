@@ -20,7 +20,7 @@ use super::asks::Asks;
 use super::egress;
 use super::internal::Internal;
 use super::localport;
-use super::reach::{Reach, Written};
+use super::reach::{By, Reach, Written};
 use super::{Confinement, tunnel};
 
 /// **A chat's confinement, planned** (module docs).
@@ -193,7 +193,15 @@ impl Plan {
     ///   listed only where the runner's policy lists it ([`super::internal`]), and so is a name
     ///   that resolves to one there. A name under `*.` resolves to nothing here, and is held to
     ///   the same rule at every connect.
+    ///
+    /// A service the plan gives for this chat alone, which the runner does not give, is not
+    /// held to it: the runner starts the plan without it ([`Self::as_the_runner_starts_it`]).
     pub fn fits(&self, here: &Here<'_>) -> Result<(), String> {
+        self.as_the_runner_starts_it(here.given).0.fitting(here)
+    }
+
+    /// [`Self::fits`], for the plan as the runner starts it.
+    fn fitting(&self, here: &Here<'_>) -> Result<(), String> {
         if let Beside::ProxyOnly { routes } = &self.beside
             && routes != here.routes
         {
@@ -213,6 +221,48 @@ impl Plan {
             .listed
             .iter()
             .try_for_each(|(entry, _)| fits_here(entry, here))
+    }
+
+    /// **This plan as the runner starts it, and the services of the runner it leaves out**
+    /// (#2510): each service the plan gives for this chat alone ([`Self::for_this_chat_alone`])
+    /// that the runner's sandbox for the project, `given_here`, does not give is taken out, its
+    /// port and its loopback entries, so the chat does not reach it there. Everything else is
+    /// as planned.
+    pub fn as_the_runner_starts_it(&self, given_here: &[u16]) -> (Plan, Vec<u16>) {
+        let left_out: Vec<u16> = self
+            .given
+            .iter()
+            .copied()
+            .filter(|port| !given_here.contains(port) && self.for_this_chat_alone(*port))
+            .collect();
+        if left_out.is_empty() {
+            return (self.clone(), left_out);
+        }
+        let entries: Vec<String> = left_out
+            .iter()
+            .flat_map(|port| localport::reach_entries(*port))
+            .collect();
+        let mut plan = self.clone();
+        plan.given.retain(|port| !left_out.contains(port));
+        plan.reach
+            .listed
+            .retain(|(entry, by)| !(*by == By::Chat && entries.contains(entry)));
+        (plan, left_out)
+    }
+
+    /// Whether the plan gives the service on `port` for this chat alone, as the window plans a
+    /// service the person allowed for one chat: it lists the port's loopback entries, at the
+    /// chat's layer and at no other.
+    fn for_this_chat_alone(&self, port: u16) -> bool {
+        let entries = localport::reach_entries(port);
+        let mut layers = self
+            .reach
+            .listed
+            .iter()
+            .filter(|(entry, _)| entries.contains(entry))
+            .map(|(_, by)| *by)
+            .peekable();
+        layers.peek().is_some() && layers.all(|by| by == By::Chat)
     }
 
     /// What the proxy serves: this plan, told to `telling`.

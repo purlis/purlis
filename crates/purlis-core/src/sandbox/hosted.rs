@@ -51,6 +51,9 @@ pub enum Planned {
 pub struct Hosted {
     confinement: Confinement,
     board: Option<Arc<Asks>>,
+    /// The services of this machine its plan gave the chat for it alone, which this machine's
+    /// sandbox for the project does not give, so it was started without them (#2510).
+    left_out: Vec<u16>,
 }
 
 /// **Starts the confinement `confine` plans, in the project at `project_path`**, its proxy
@@ -64,7 +67,13 @@ pub fn start(
     tell: Tell,
     askable: Askable,
 ) -> Result<Hosted, String> {
-    let plan = Plan::from_wire(&confine.plan)?;
+    let planned_as = Plan::from_wire(&confine.plan)?;
+    // A plan made elsewhere is started without what it gives for this chat alone and this
+    // machine does not give (#2510).
+    let (plan, left_out) = match planned {
+        Planned::Here => (planned_as, Vec::new()),
+        Planned::Elsewhere => planned_as.as_the_runner_starts_it(&given_here(project_path)),
+    };
     let root = project_path.to_path_buf();
     let board = confine.asks.then(|| {
         Asking {
@@ -125,7 +134,11 @@ pub fn start(
         Planned::Elsewhere => plan.start_held(telling, Internal::of(project_path)),
     }
     .map_err(|why| why.to_string())?;
-    Ok(Hosted { confinement, board })
+    Ok(Hosted {
+        confinement,
+        board,
+        left_out,
+    })
 }
 
 /// **Whether `wired`, a plan another machine made, fits the project at `project_path` on this
@@ -193,6 +206,7 @@ impl Hosted {
             tmp: shown(placed.tmp),
             routed: shown(placed.routed),
             ssh: shown(placed.ssh),
+            left_out: self.left_out.clone(),
         }
     }
 

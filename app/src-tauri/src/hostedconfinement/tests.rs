@@ -438,3 +438,62 @@ fn a_runner_starts_a_relayed_plan_only_where_it_fits_the_runner() {
     hosting.end_all();
     drop(service);
 }
+
+/// **A service the person allowed for this chat alone, on the window's machine, never keeps a
+/// runner chat from starting** (#2510): the runner starts the relayed plan without it, says so
+/// in its answer, and the chat does not reach it there. Binds the loopback interface: CI.
+#[test]
+fn a_runner_starts_a_relayed_plan_without_a_service_allowed_for_this_chat_alone() {
+    use purlis_session_protocol::session::{Answer, Client, Command, Confine};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let service = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a service");
+    let port = service.local_addr().expect("its port").port();
+    let project = tempfile::tempdir().expect("a project");
+    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
+    let hosting = purlis_host::Hosting::confining(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        super::ConfinesHere,
+        purlis_host::standin::StandIns::default(),
+    );
+    let plan = super::wire(&Plan {
+        reach: Reach::of(
+            purlis_core::sandbox::localport::reach_entries(port)
+                .into_iter()
+                .map(|entry| (entry, By::Chat))
+                .collect(),
+        )
+        .written(),
+        tunnel_ports: TUNNEL_PORTS.to_vec(),
+        plain_ports: PLAIN_PORTS.to_vec(),
+        any_port: false,
+        beside: Beside::Wrapped,
+        given: vec![port],
+    });
+    runtime.block_on(async {
+        let (peer, _views, _events) =
+            Client::new(crate::behaviour::linked_to(hosting.clone()).await);
+        peer.hold_project(PROJECT, root.to_str().expect("a path"))
+            .await
+            .expect("held on the runner");
+
+        match peer
+            .call(Command::Confine(Box::new(Confine {
+                confinement: "01J9CNFNMNT0000000000000000".into(),
+                project: PROJECT.into(),
+                plan: plan.clone(),
+                asks: false,
+            })))
+            .await
+        {
+            Ok(Answer::Confined(confined)) => assert_eq!(confined.left_out, [port]),
+            other => panic!("not confined: {other:?}"),
+        }
+    });
+    hosting.end_all();
+    drop(service);
+}

@@ -103,6 +103,7 @@ impl Beside for Host {
                 .map(|tmp| tmp.path().display().to_string()),
             routed: None,
             ssh: None,
+            left_out: Vec::new(),
         })
     }
 
