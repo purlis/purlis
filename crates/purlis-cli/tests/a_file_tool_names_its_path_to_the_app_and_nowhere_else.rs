@@ -16,14 +16,16 @@ use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::hookwire::{
-    CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, Touching,
+    CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, Touching, spool,
 };
 
 const CANARY: &str = "CANARY-touched-4f2a";
 
 /// What the host heard of one `charter hook <word>` run as chat 7 with `payload`.
 struct Heard {
-    tool: Option<ToolCall>,
+    /// Every copy of the tool call the host was told: spooled, live, or both
+    /// ([`support::told`]).
+    tools: Vec<ToolCall>,
     touching: Vec<Touching>,
     /// What the hook printed: its answer to the harness.
     said: String,
@@ -31,7 +33,7 @@ struct Heard {
 
 fn hook(word: &str, payload: &serde_json::Value) -> Heard {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let (tools, heard_tool) = mpsc::channel();
@@ -46,7 +48,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         saved: Box::new(|_| {}),
         refused: Box::new(|_| Ok(())),
         tool: Box::new(move |call| {
-            tools.lock().unwrap().send(call).unwrap();
+            let _ = tools.lock().unwrap().send(call);
             Ok(())
         }),
         blocked: Box::new(|_| {}),
@@ -77,12 +79,16 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         "the hook's stderr, which goes to the harness's log, names the path: {stderr}"
     );
     let said = String::from_utf8_lossy(&out.stdout).into_owned();
-    let tool = heard_tool.recv_timeout(Duration::from_secs(5)).ok();
+    // Spooled, where the host was slower than the hook waits, or recorded live.
+    let tools = support::told(&path, &heard_tool, |line| match line {
+        spool::Spooled::Tool(call) => Some(call),
+        _ => None,
+    });
     // The touch is written after the tool call, by the same process, which has exited.
     let touching =
         std::iter::from_fn(|| heard_touch.recv_timeout(Duration::from_millis(300)).ok()).collect();
     Heard {
-        tool,
+        tools,
         touching,
         said,
     }
@@ -90,6 +96,15 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
 
 fn named(heard: &Heard) -> Vec<&str> {
     heard.touching.iter().map(|t| t.touching.as_str()).collect()
+}
+
+/// The tool call the host heard, every copy of whose line holds no part of the path.
+fn the_call(heard: &Heard) -> &ToolCall {
+    assert!(!heard.tools.is_empty(), "the host heard the tool call");
+    for call in &heard.tools {
+        holds_no_path(call);
+    }
+    &heard.tools[0]
 }
 
 /// The tool call's line as the host would record it holds no part of the path.
@@ -115,7 +130,7 @@ fn a_claude_code_read_names_its_file_to_the_app() {
     );
     assert_eq!(named(&heard), [file.as_str()]);
     assert!(heard.touching.iter().all(|t| t.chat == 7));
-    holds_no_path(&heard.tool.expect("the host heard the tool call"));
+    the_call(&heard);
 }
 
 #[test]
@@ -131,7 +146,7 @@ fn a_claude_code_edit_names_its_file_before_and_after() {
             }),
         );
         assert_eq!(named(&heard), [file.as_str()], "{word}");
-        holds_no_path(&heard.tool.expect("the host heard the tool call"));
+        the_call(&heard);
     }
 }
 
@@ -151,7 +166,7 @@ fn an_opencode_edit_names_its_file_to_the_app() {
         }),
     );
     assert_eq!(named(&heard), [file.as_str()]);
-    holds_no_path(&heard.tool.expect("the host heard the tool call"));
+    the_call(&heard);
 }
 
 #[test]
@@ -172,7 +187,7 @@ fn a_file_tool_the_guard_refuses_names_no_file() {
         heard.said
     );
     assert_eq!(named(&heard), Vec::<&str>::new());
-    let call = heard.tool.expect("the host heard the tool call");
+    let call = the_call(&heard).clone();
     assert_eq!(call.decision, purlis_core::hookwire::Decision::Deny);
     holds_no_path(&call);
 }
@@ -188,7 +203,7 @@ fn a_shell_command_names_no_file() {
             "cwd": "/w/branch",
         }),
     );
-    assert!(heard.tool.is_some(), "the host heard the tool call");
+    the_call(&heard);
     assert_eq!(named(&heard), Vec::<&str>::new());
 }
 
