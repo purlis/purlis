@@ -127,6 +127,7 @@ mod settings;
 mod silence;
 mod slowstart;
 mod smartclose;
+mod specimen;
 mod staleclones;
 mod stopping;
 mod taskblocks;
@@ -3305,6 +3306,8 @@ pub fn run() {
         })
         .setup(|app| {
             reached("setup");
+            // The theme specimen's painter (#2330): hidden windows of this app's own.
+            specimen::install(app.handle());
             // One charter per user even without a session bus (`instance.rs`). After the
             // single-instance plugin, which has already handed an ordinary second launch over;
             // before the window and before any plane, whose hook socket `hookwire` removes

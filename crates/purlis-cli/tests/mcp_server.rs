@@ -189,8 +189,26 @@ fn a_harness_lists_charter_s_tools() {
             "browser_screenshot",
             "browser_new",
             "browser_close",
+            "theme_preview",
         ]
     );
+}
+
+#[test]
+fn theme_preview_with_no_app_says_the_app_draws_the_specimen_and_the_session_goes_on() {
+    // #2330: the theme specimen is drawn by the app, in a window of its own; a chat no app
+    // started has none to ask, and is told so as a tool error, not a dropped session.
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+    let said = server.call("theme_preview", json!({ "theme": "purlis-classic" }));
+    assert_eq!(said["isError"], true, "{said}");
+    assert!(text(&said).contains("the purlis app draws it"), "{said}");
+    // A theme this purlis does not have is refused before any app is asked.
+    let said = server.call("theme_preview", json!({ "theme": "solarized" }));
+    assert_eq!(said["isError"], true, "{said}");
+    assert!(text(&said).contains("no theme `solarized`"), "{said}");
+    assert_eq!(server.call("todo_list", json!({}))["isError"], false);
 }
 
 const RECORD_BODY: &str = "## Goal\n\ng\n\n## Done\n\nd\n\n## Decisions\n\nx\n\n## Open\n\no\n\n\

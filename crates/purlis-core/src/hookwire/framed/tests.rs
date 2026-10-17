@@ -474,3 +474,42 @@ fn on_a_line_a_browsers_screenshot_is_left_out_and_the_answer_says_so() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn each_theme_specimen_s_picture_goes_back_as_an_image_in_the_order_drawn() {
+    use crate::theme::Appearance;
+    use crate::themepreview::Painted;
+    let painted = |appearance, png: &[u8]| Painted {
+        theme: "purlis-classic".into(),
+        appearance,
+        width: 2,
+        height: 1,
+        millis: 9,
+        png: png.to_vec(),
+    };
+    let answer = Answer::Previewed {
+        painted: vec![
+            painted(Appearance::Dark, b"dark"),
+            painted(Appearance::Light, b"light"),
+        ],
+    };
+
+    let reply = Reply::from(answer);
+
+    let image = |bytes: &[u8]| Attached {
+        media_type: "image/png".into(),
+        bytes: bytes.to_vec(),
+    };
+    assert_eq!(reply.attached, [image(b"dark"), image(b"light")]);
+    match &reply.answer {
+        Answer::Previewed { painted } => {
+            assert!(painted.iter().all(|one| one.png.is_empty()), "{painted:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    // And it is read back whole: the answer, then each picture after it.
+    let mut wire = Vec::new();
+    write_reply(&mut wire, &reply).expect("written");
+    let read = read_reply(&mut Cursor::new(wire)).expect("read");
+    assert_eq!(read, reply);
+}
