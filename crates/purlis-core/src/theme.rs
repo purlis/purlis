@@ -39,7 +39,8 @@
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
-//!   vocabulary (`docs/schema/theme.schema.json`, held to it by a test).
+//!   vocabulary (`docs/schema/theme.v2.schema.json`, held to it by a test), and [`SCHEMA_URL`]
+//!   its address at this release, which a format only ever grows at (`published`).
 //!
 //! **Geometry and fonts** (#2326, [`geometry`], [`Fonts`]) are read from a theme folder within
 //! their bounds, and [`Person`] reads the person's density and font override, whose [`Layer`]
@@ -68,6 +69,7 @@ pub mod geometry;
 mod icons;
 mod options;
 mod person;
+mod published;
 mod resolve;
 mod schema;
 mod tint;
@@ -87,8 +89,9 @@ pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
 };
 pub use person::{Density, Layer, Person};
+pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
-pub use schema::{SCHEMA_URL, schema, schema_text};
+pub use schema::{schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
 pub use typed::Typed;
 use vocabulary::{
@@ -105,6 +108,8 @@ mod geometry_tests;
 mod icons_tests;
 #[cfg(test)]
 mod options_tests;
+#[cfg(test)]
+mod published_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

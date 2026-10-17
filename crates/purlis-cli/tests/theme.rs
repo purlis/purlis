@@ -643,3 +643,20 @@ fn a_theme_past_64_combinations_is_refused_with_its_count_and_exits_one() {
         ran.out
     );
 }
+
+#[test]
+fn both_answers_name_the_theme_schema_of_this_purlis() {
+    let rig = Rig::new();
+
+    for args in [&["list", "--json"][..], &["check", "purlis-classic", "--json"]] {
+        let ran = rig.run(args);
+
+        assert_eq!(ran.code, 0, "{}", ran.err);
+        assert_eq!(
+            ran.json()["theme_schema"],
+            purlis_core::theme::SCHEMA_URL,
+            "{args:?}"
+        );
+    }
+    assert!(purlis_core::theme::SCHEMA_URL.contains(concat!("/v", env!("CARGO_PKG_VERSION"), "/")));
+}
