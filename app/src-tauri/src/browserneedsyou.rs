@@ -13,7 +13,7 @@
 //!   words, so the agent never moves the page the person was asked about.
 //! - **Its one answer is Take over**: the window takes the browser over (`take_over_browser`,
 //!   the session host's lease) and opens its view, so the person's first click or key reaches
-//!   the page. Nothing else answers it.
+//!   the page. Once they drive it, the row says so and offers only to open its view again.
 //! - **Done ends it** ([`NeedsYou::handed_back`]): the person's hand-back, from the view's bar
 //!   or its chord, ends the Ask, and the chat is woken with one line of purlis's own that says
 //!   the person finished and nothing of what they did ([`finished`], [`tell`]). That line is a
@@ -48,6 +48,8 @@ pub struct Waiting {
     pub program: String,
     pub question: String,
     pub since: u64,
+    /// The person has taken the browser over since it was asked: the row says they drive it.
+    pub taken: bool,
 }
 
 /// **An Ask that ended with its browser**, as the Inbox keeps it as an Update.
@@ -144,6 +146,17 @@ impl NeedsYou {
             return false;
         }
         waiting.push(one);
+        true
+    }
+
+    /// **The person took browser `program` over**, from its Ask or its view: the Ask waits on,
+    /// for their Done, and says they drive it. Whether an Ask waited on it.
+    pub fn taken_over(&self, program: &str) -> bool {
+        let mut waiting = self.lock();
+        let Some(one) = waiting.iter_mut().find(|one| one.program == program) else {
+            return false;
+        };
+        one.taken = true;
         true
     }
 
@@ -246,9 +259,13 @@ pub fn answered_first(
 ) -> Option<Answer> {
     match &browse.asked {
         Browsing::NeedsYou { question } => {
-            let Some((name, program)) = browsers.which(browse.chat, browse.browser.as_deref())
+            // Always a browser by its name (D-2015-1): never the one the chat used last.
+            let name = browse.browser.as_deref().unwrap_or_default();
+            let Some((name, program)) = browse
+                .browser
+                .as_deref()
+                .and_then(|named| browsers.which(browse.chat, Some(named)))
             else {
-                let name = browse.browser.as_deref().unwrap_or_default();
                 return Some(Answer::No {
                     why: format!(
                         "this chat has no browser {name}, so the person was asked nothing: name \
@@ -262,6 +279,7 @@ pub fn answered_first(
                 program,
                 question: question.clone(),
                 since: now,
+                taken: false,
             });
             Some(if raised {
                 told(&name, asked_said(&name))
@@ -351,6 +369,16 @@ pub fn handed_back(projects: &[Arc<crate::planes::Held>], program: &str) {
             back.browser
         );
         held.chats().asks_may_have_moved();
+    }
+}
+
+/// **The person took browser `program` over** (#2015), in whichever project its chat is: an
+/// Ask about it says from now on that they drive it, and offers no second Take over.
+pub fn taken_over(projects: &[Arc<crate::planes::Held>], program: &str) {
+    for held in projects {
+        if held.needs_you().taken_over(program) {
+            held.chats().asks_may_have_moved();
+        }
     }
 }
 

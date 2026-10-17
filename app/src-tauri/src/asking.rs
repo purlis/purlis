@@ -906,24 +906,50 @@ fn needs_you_key(program: &str) -> String {
 /// The id of Take over on a browser's Ask (#2015).
 pub const TAKE_OVER: &str = "take-over";
 
+/// The id of Open its view on a browser's Ask the person has taken over (#2015): it sends
+/// nothing, and opens the view again.
+pub const OPEN_VIEW: &str = "open-view";
+
 /// **The browser-needs-you adapter** (#2015): a chat asked the person to take its browser over.
 /// The words are the agent's, said as the chat's after purlis's own; the one answer is Take
-/// over, and Done in the browser's view ends it.
+/// over, and Done in the browser's view ends it. Once the person drives it, the row says so,
+/// and its one answer opens the view again.
 pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
-    let says = format!(
-        "Needs you in its browser {}. The chat says: {}",
-        waiting.browser, waiting.question
-    );
+    // Once the person drives it, the row says so: Done in its view hands it back, and the one
+    // answer opens that view again, sending nothing.
+    let (says, offered) = if waiting.taken {
+        (
+            format!(
+                "You are driving its browser {}: Done in its view hands it back. The chat said: \
+                 {}",
+                waiting.browser, waiting.question
+            ),
+            Offered {
+                id: OPEN_VIEW.to_owned(),
+                label: "Open its view".to_owned(),
+                allows: false,
+                preselected: None,
+            },
+        )
+    } else {
+        (
+            format!(
+                "Needs you in its browser {}. The chat says: {}",
+                waiting.browser, waiting.question
+            ),
+            Offered {
+                id: TAKE_OVER.to_owned(),
+                label: "Take over".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+        )
+    };
     Shown {
         session: waiting.session,
         ask: needs_you_key(&waiting.program),
         says: said_inertly(&says),
-        options: vec![Offered {
-            id: TAKE_OVER.to_owned(),
-            label: "Take over".to_owned(),
-            allows: true,
-            preselected: None,
-        }],
+        options: vec![offered],
         source: AskSource::BrowserNeedsYou,
         chain: Vec::new(),
         answer: AnswerPath::TakeOver {

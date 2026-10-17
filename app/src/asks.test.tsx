@@ -335,6 +335,29 @@ describe("answering through the path an ask names", () => {
     expect(opened).toEqual([{ plane: PLANE, program: "P1" }]);
   });
 
+  it("only opens the view of a browser the person already drives, sending nothing (#2015)", async () => {
+    const calls = sent();
+    const driving: Shown = {
+      ...NEEDS_YOU,
+      says: "You are driving its browser b1: Done in its view hands it back. The chat said: q",
+      options: [{ id: "open-view", label: "Open its view", allows: false }],
+    };
+    const opened: OpenBrowserAsk[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent<OpenBrowserAsk>).detail);
+    window.addEventListener(OPEN_BROWSER_ASK, heard);
+    try {
+      expect(await answerTaken(PLANE, driving, "open-view")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+    } finally {
+      window.removeEventListener(OPEN_BROWSER_ASK, heard);
+    }
+    expect(calls).toEqual([]);
+    expect(opened).toEqual([{ plane: PLANE, program: "P1" }]);
+  });
+
   it("opens no view of a browser the host would not hand over (#2015)", async () => {
     sent({ take_over_browser: new Error("this browser has ended") });
     const opened: unknown[] = [];

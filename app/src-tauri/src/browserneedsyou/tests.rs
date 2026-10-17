@@ -154,6 +154,7 @@ fn a_captcha_page_raises_an_ask_whose_source_is_the_browser_and_the_tool_returns
             program: "program-1".into(),
             question: "The page asks for the letters in the picture".into(),
             since: 1000,
+            taken: false,
         }]
     );
 }
@@ -175,9 +176,11 @@ fn a_browser_the_chat_does_not_have_raises_nothing() {
 
     let why = refusal(project.call(&browse(CHAT, Some("b7"), needs_you())));
     let other = refusal(project.call(&browse(9, Some("b1"), needs_you())));
+    let unnamed = refusal(project.call(&browse(CHAT, None, needs_you())));
 
     assert!(why.contains("no browser b7"), "{why}");
     assert!(other.contains("no browser b1"), "{other}");
+    assert!(unnamed.contains("name one"), "{unnamed}");
     assert!(project.needs.waiting().is_empty());
 }
 
@@ -237,6 +240,7 @@ fn a_waiting_chat_is_woken_with_the_line_and_a_busy_one_when_its_turn_ends() {
         program: "program-1".into(),
         question: "q".into(),
         since: 1,
+        taken: false,
     };
     let sent: Mutex<Vec<String>> = Mutex::default();
     let next_turn: Mutex<Vec<String>> = Mutex::default();
@@ -295,4 +299,21 @@ fn a_chat_that_closes_and_stop_all_each_end_their_asks_with_an_update() {
     other.needs.all_ended(1003);
     assert!(other.needs.waiting().is_empty());
     assert_eq!(other.ended.lock().unwrap()[0].at, 1003);
+}
+
+#[test]
+fn taking_the_browser_over_keeps_the_ask_until_done_and_marks_it_driven() {
+    let project = Project::new();
+    project.call(&browse(CHAT, Some("b1"), needs_you()));
+
+    assert!(project.needs.taken_over("program-1"));
+    assert!(
+        !project.needs.taken_over("program-9"),
+        "no Ask waits on that one"
+    );
+
+    let waiting = project.needs.waiting();
+    assert_eq!(waiting.len(), 1, "it waits for Done");
+    assert!(waiting[0].taken);
+    assert!(project.needs.handed_back("program-1").is_some());
 }

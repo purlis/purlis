@@ -5273,8 +5273,6 @@ export const PlaneView = memo(function PlaneView({
       stop?.();
     };
   }, [plane]);
-  // **A chat whose browsers ended because the person narrowed its reach** (#2013): its tab
-  // says so, once. Filtered on the plane, as `chat-moved` is.
   /** **Asks about a chat's browser that ended with it** (#2015), as the core told them, for the
    *  Inbox's updates. */
   const [browserAsksEnded, setBrowserAsksEnded] = useState<readonly AskEnded[]>([]);
@@ -5299,6 +5297,8 @@ export const PlaneView = memo(function PlaneView({
       stop?.();
     };
   }, [plane]);
+  // **A chat whose browsers ended because the person narrowed its reach** (#2013): its tab
+  // says so, once. Filtered on the plane, as `chat-moved` is.
   useEffect(() => {
     let gone = false;
     let stop: (() => void) | undefined;

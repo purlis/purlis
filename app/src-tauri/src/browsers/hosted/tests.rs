@@ -338,10 +338,15 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
         },
         |_| panic!("a waiting chat is told now"),
     );
+    // Purlis's fixed words and the browser's name: nothing the person typed or saw.
     assert_eq!(
         *sent.lock().unwrap(),
-        [browserneedsyou::finished(&back).line()]
+        [
+            "⬢ purlis: your ask that the person take over browser `b1` — They finished and handed \
+          it back — take a fresh snapshot before you act: references from before are void."
+        ]
     );
+    assert!(!sent.lock().unwrap()[0].contains('Q'), "the key they typed");
     assert!(needs.waiting().is_empty());
     assert!(
         matches!(call(Browsing::Act(Act::Pages)), Answer::Browsed { .. }),

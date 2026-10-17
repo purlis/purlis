@@ -20,6 +20,9 @@ export const BROWSER_ASK_ENDED = "browser-ask-ended";
 /** The id of Take over, as the core offers it. */
 export const TAKE_OVER = "take-over";
 
+/** The id of Open its view, offered once the person drives the browser: it sends nothing. */
+export const OPEN_VIEW = "open-view";
+
 /** What an answer asked of a project's window: which project, which browser. */
 export type OpenBrowserAsk = { plane: string; program: string };
 

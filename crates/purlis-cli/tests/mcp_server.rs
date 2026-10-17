@@ -341,9 +341,10 @@ fn ask_operator_on_a_harness_that_cannot_ask_says_so() {
 }
 
 #[test]
-fn ask_operator_pointed_at_a_browser_asks_the_app_and_never_the_harness() {
+fn ask_operator_pointed_at_a_browser_sends_no_elicitation_and_with_no_app_says_there_is_no_browser()
+{
     // #2015: a browser that needs the person is the app's Ask, raised at once; the harness's own
-    // prompt is not used, so no elicitation goes out. With no app, it says there is none.
+    // prompt is not used, so the call's own answer is the next thing the harness hears.
     let p = project();
     let mut server = Server::start(p.path(), "alpha");
     server.initialize(true);
@@ -353,6 +354,31 @@ fn ask_operator_pointed_at_a_browser_asks_the_app_and_never_the_harness() {
     );
     assert_eq!(said["isError"], true, "{said}");
     assert!(text(&said).contains("no browser"), "{said}");
+}
+
+#[test]
+fn ask_operator_with_no_browser_named_still_asks_the_person_through_the_harness() {
+    // #2015: a null `browser` is the plain question, put through the harness's own prompt.
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(true);
+
+    server.send(&json!({
+        "jsonrpc": "2.0",
+        "id": 98,
+        "method": "tools/call",
+        "params": {
+            "name": "ask_operator",
+            "arguments": { "question": "Merge the train?", "browser": null },
+        },
+    }));
+
+    let asked = server.read();
+    assert_eq!(asked["method"], "elicitation/create", "{asked}");
+    assert_eq!(
+        asked["params"]["message"], "This chat asks: Merge the train?",
+        "{asked}"
+    );
 }
 
 #[test]

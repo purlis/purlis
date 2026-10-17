@@ -630,18 +630,26 @@ pub async fn unwatch_browser(
 /// words until [`hand_back_browser`], and a call in flight is cut.
 #[tauri::command]
 #[specta::specta]
-pub async fn take_over_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+pub async fn take_over_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    program: String,
+) -> Result<(), String> {
+    // An Ask that asked the person to take it over says from now on that they drive it (#2015).
+    let projects = planes.every_held();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("taking a browser over", move || {
-            browsers.take_over(&program)
+            browsers.take_over(&program)?;
+            crate::browserneedsyou::taken_over(&projects, &program);
+            Ok(())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program);
+        let _ = (app, program, projects);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }
