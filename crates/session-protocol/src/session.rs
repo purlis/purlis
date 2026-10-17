@@ -186,7 +186,9 @@ pub const MALFORMED: &str = "malformed";
 pub const NO_SUCH_CHAT: &str = "no_such_chat";
 /// The project named is not one the host holds.
 pub const NO_SUCH_PROJECT: &str = "no_such_project";
-/// The link's scope may not do this (FD-27).
+/// The link's scope may not do this (FD-27); or a chat's confinement planned on another machine
+/// asks for a folder or a service of this one that is not the project's own here (1.4, #2445),
+/// for a reason its `why` gives.
 pub const NOT_ALLOWED: &str = "not_allowed";
 /// The host cannot carry this out now, for a reason its `why` gives (1.2): a start the host
 /// cannot compose, or a program it could not run.
@@ -350,7 +352,8 @@ pub enum Command {
     Board { project: String },
     /// Start a chat's confinement, its proxy and what runs beside it, from the window's plan
     /// (1.4): answered [`Answer::Confined`]. The window's alone ([`crate::grants::Power::Confine`]).
-    /// Boxed: a plan lists every host a chat reaches.
+    /// A plan from a link other than this machine's window is refused [`NOT_ALLOWED`] unless it
+    /// fits this machine (#2445). Boxed: a plan lists every host a chat reaches.
     Confine(Box<Confine>),
     /// End a confinement, whether or not a program runs in it (1.4). One the host does not hold
     /// is let go of already; one the link may not act on is refused [`NO_SUCH_CHAT`] (#2444).

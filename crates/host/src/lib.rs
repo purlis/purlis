@@ -70,7 +70,7 @@ pub use browsers::{
     NoBrowsers, NotActed, NotTaken, Screen, THUMBNAIL_EVERY,
 };
 #[cfg(unix)]
-pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfine};
+pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]

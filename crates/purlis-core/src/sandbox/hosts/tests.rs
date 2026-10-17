@@ -3,7 +3,7 @@
 
 //! What a host entry may be, and why one is refused (#1341).
 
-use super::hosts::{Granted, Host, Level, Locks, in_force};
+use super::{Granted, Host, Level, Locks, in_force};
 
 fn ok(typed: &str) -> String {
     Host::parse(typed)
@@ -241,7 +241,7 @@ fn cloud_metadata_addresses_are_never_hosts() {
 /// Review of #1341, 3 and 4: what a name may resolve to, and this machine's own addresses.
 #[test]
 fn a_resolved_address_a_chat_never_reaches_is_refused() {
-    use super::hosts::refused_address;
+    use super::refused_address;
     let own: Vec<std::net::IpAddr> = vec!["192.168.1.7".parse().unwrap()];
     for ip in [
         "127.0.0.1",
@@ -274,7 +274,7 @@ fn a_resolved_address_a_chat_never_reaches_is_refused() {
 #[test]
 fn a_host_that_is_one_of_this_machine_s_addresses_is_dropped() {
     let own: Vec<std::net::IpAddr> = vec!["10.0.0.5".parse().unwrap()];
-    let kept = super::hosts::off_this_machine(
+    let kept = super::off_this_machine(
         in_force(
             &hosts(&["10.0.0.5:22", "10.0.0.6", "a.example"]),
             &[],
@@ -303,7 +303,7 @@ fn an_ipv6_address_carrying_a_refused_ipv4_one_is_refused() {
     // One that carries an address a chat may reach is a host.
     assert_eq!(ok("[64:ff9b::a64:2791]:6443"), "[64:ff9b::a64:2791]:6443");
 
-    use super::hosts::refused_address;
+    use super::refused_address;
     for ip in [
         "::7f00:1",
         "64:ff9b::a9fe:a9fe",
@@ -317,7 +317,7 @@ fn an_ipv6_address_carrying_a_refused_ipv4_one_is_refused() {
 
 #[test]
 fn only_the_hosts_you_confirmed_are_yours() {
-    let mine = super::hosts::confirmed_only(
+    let mine = super::confirmed_only(
         hosts(&["10.0.0.6", "10.0.0.7:22", "a.example"]),
         &["10.0.0.7:22".to_owned(), "b.example".to_owned()],
     );

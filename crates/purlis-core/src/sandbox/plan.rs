@@ -10,6 +10,7 @@
 //! exactly ([`super::reach::Reach::from_written`]) and started there by this same code. So a
 //! chat's proxy decides alike wherever it runs: one compile, one plan, one start.
 
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use purlis_session_protocol::session;
 
 use super::asks::Asks;
 use super::egress;
+use super::internal::Internal;
 use super::localport;
 use super::reach::{Reach, Written};
 use super::{Confinement, tunnel};
@@ -47,6 +49,19 @@ pub enum Beside {
     /// A Claude Code chat (#1699): the proxy alone, and its ssh route in a folder of its own
     /// inside `routes`, where no chat writes (#1667).
     ProxyOnly { routes: PathBuf },
+}
+
+/// **What a plan made on another machine is held to on the runner that starts it** (#2445):
+/// the runner's own folder for the project's ssh routes, the services on the runner its
+/// sandbox for the project gives, the networks its interfaces are on, the internal services its
+/// policy lists, and how it resolves a name.
+#[derive(Clone, Copy)]
+pub struct Here<'a> {
+    pub routes: &'a std::path::Path,
+    pub given: &'a [u16],
+    pub own: &'a [super::hosts::Network],
+    pub internal: &'a Internal,
+    pub resolve: &'a dyn Fn(&str, u16) -> Vec<IpAddr>,
 }
 
 /// Who hears what a chat's proxy does: what it refused, what it carried, and its board of live
@@ -167,6 +182,39 @@ impl Plan {
         })
     }
 
+    /// **Whether this plan, made on another machine, fits the runner that is to start it**
+    /// (#2445, ruled 2026-10-17), or why not, in a sentence:
+    ///
+    /// - a Claude Code chat's ssh route goes in the runner's own folder for the project;
+    /// - every service on the runner it gives the chat is one the runner's sandbox for the
+    ///   project gives;
+    /// - the runner's loopback is listed only on such a port;
+    /// - an address of a private network, a cluster's or a link's, or of the runner itself, is
+    ///   listed only where the runner's policy lists it ([`super::internal`]), and so is a name
+    ///   that resolves to one there. A name under `*.` resolves to nothing here, and is held to
+    ///   the same rule at every connect.
+    pub fn fits(&self, here: &Here<'_>) -> Result<(), String> {
+        if let Beside::ProxyOnly { routes } = &self.beside
+            && routes != here.routes
+        {
+            return Err(format!(
+                "it puts the chat's ssh route in {}, which is not the runner's folder for it ({})",
+                routes.display(),
+                here.routes.display()
+            ));
+        }
+        if let Some(port) = self.given.iter().find(|port| !here.given.contains(port)) {
+            return Err(format!(
+                "it gives the chat the service on port {port} of the runner, which the runner's \
+                 sandbox for the project does not give"
+            ));
+        }
+        self.reach
+            .listed
+            .iter()
+            .try_for_each(|(entry, _)| fits_here(entry, here))
+    }
+
     /// What the proxy serves: this plan, told to `telling`.
     pub fn serving(&self, reach: Reach, telling: Telling) -> egress::Serving {
         egress::Serving {
@@ -184,6 +232,21 @@ impl Plan {
     /// Refused where a port the chat was given is one purlis listens on now in this process,
     /// so no proxy and no chat ever share a port, and where the reach does not read back.
     pub fn start(&self, telling: Telling) -> std::io::Result<Confinement> {
+        self.starting(telling, None)
+    }
+
+    /// [`Self::start`], for a plan made on another machine (#2445): its proxy carries an
+    /// internal address only where `internal`, the runner's policy, lists it, checked at every
+    /// connect ([`super::internal`]).
+    pub fn start_held(&self, telling: Telling, internal: Internal) -> std::io::Result<Confinement> {
+        self.starting(telling, Some(internal))
+    }
+
+    fn starting(
+        &self,
+        telling: Telling,
+        internal: Option<Internal>,
+    ) -> std::io::Result<Confinement> {
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
             return Err(std::io::Error::other(
@@ -191,7 +254,10 @@ impl Plan {
             ));
         }
         let reach = Reach::from_written(&self.reach).map_err(std::io::Error::other)?;
-        let serving = self.serving(reach, telling);
+        let serving = egress::Serving {
+            internal,
+            ..self.serving(reach, telling)
+        };
         match &self.beside {
             Beside::Wrapped => Confinement::serving(serving),
             Beside::ProxyOnly { routes } => Confinement::proxy_only_routed(serving, routes),
@@ -199,7 +265,53 @@ impl Plan {
     }
 }
 
+/// Whether listed `entry` fits the runner `here` describes ([`Plan::fits`]), or why not.
+fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
+    let (name, port) = egress::entry_parts(entry);
+    if name.is_empty() || name.starts_with("*.") {
+        return Ok(());
+    }
+    let Ok(ip) = name.parse::<IpAddr>() else {
+        // A name: what it resolves to on the runner, held as the address would be.
+        let listed = here.internal.lists_entry(entry);
+        return match (here.resolve)(name, port.unwrap_or(HTTPS))
+            .into_iter()
+            .find(|ip| {
+                super::internal::held(*ip, Some(here.own))
+                    && (!listed || super::hosts::metadata_address(*ip))
+            }) {
+            Some(ip) => Err(format!(
+                "it lets the chat reach {entry}, which the runner resolves to {ip}, an internal \
+                 address its policy does not list"
+            )),
+            None => Ok(()),
+        };
+    };
+    // `127.0.0.1` and `::1` alone: the rest of the loopback network is internal, below.
+    if ip == Ipv4Addr::LOCALHOST || ip == Ipv6Addr::LOCALHOST {
+        return match port {
+            Some(port) if here.given.contains(&port) => Ok(()),
+            _ => Err(format!(
+                "it lets the chat reach {entry}, a port of the runner's own that the runner's \
+                 sandbox for the project does not give"
+            )),
+        };
+    }
+    if super::internal::held(ip, Some(here.own)) && !here.internal.lists_entry(entry) {
+        return Err(format!(
+            "it lets the chat reach {entry}, an internal address the runner's policy does not list"
+        ));
+    }
+    Ok(())
+}
+
+/// The port a listed name without one is resolved on: the name's addresses are the same on any.
+const HTTPS: u16 = 443;
+
 /// The plan's routes folder for a Claude Code chat of the plane at `root`.
 pub(super) fn routes(root: &std::path::Path) -> PathBuf {
     tunnel::routes_folder(root)
 }
+
+#[cfg(test)]
+mod tests;
