@@ -227,11 +227,13 @@ fn a_project_made_from_a_template_has_a_steward_that_points_to_its_personas() {
             "{}: the steward still says there are none\n{steward}",
             one.id
         );
+        // As the plane spells the program: `charter` until it migrates, `purlis` after.
+        let list = format!(
+            "`{} persona list`",
+            purlis_core::names::BINARY.writes_for(&root)
+        );
         assert!(
-            // As the plane spells the program: `purlis`, or `charter` until it migrates.
-            ["`purlis persona list`", "`charter persona list`"]
-                .iter()
-                .any(|cmd| steward.contains(cmd)),
+            steward.contains(&list),
             "{}: the steward does not say how to list them\n{steward}",
             one.id
         );
