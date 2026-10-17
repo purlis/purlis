@@ -41,6 +41,9 @@ export const SAID = {
   startChatsHere: "Start new chats here",
   toNewWindow: "Move to a new window",
   toMainWindow: "Move to the main window",
+  // A view's icon (`actions.ts`, `viewRows`): to its half of the Panel, or back to its sidebar.
+  toPanel: "Move to panel",
+  toSidebar: "Move to sidebar",
   close: "Close",
   open: "Open",
   edit: "Edit",

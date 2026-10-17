@@ -62,6 +62,7 @@ import {
   type MemoryRef,
 } from "./memories";
 import { publishedSaid } from "./memoryMoves";
+import { SAID } from "./menuWords";
 import { searchFromFocus, type SearchAsk } from "./contentSearch";
 import { pieceFilesTitle, pieceFilesView, type Place } from "./pieceViews";
 import { screenReaderMode, setScreenReaderMode } from "./screenReader";
@@ -4817,7 +4818,7 @@ export function menuRows(what: MenuOn, offers: Catalogued): { above: Offer[]; be
 export function viewRows(what: Extract<MenuOn, { on: "view" }>): Offer[] {
   if (what.to === undefined) return [];
   return [
-    can(`view.move:${what.view}`, what.to === "panel" ? "Move to panel" : "Move to sidebar", {
+    can(`view.move:${what.view}`, what.to === "panel" ? SAID.toPanel : SAID.toSidebar, {
       verb: "moveView",
       view: what.view,
       to: what.to,
