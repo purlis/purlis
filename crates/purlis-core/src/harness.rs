@@ -1016,6 +1016,7 @@ mod tests {
                 "mcp__purlis__browser_screenshot",
                 "mcp__purlis__browser_new",
                 "mcp__purlis__browser_close",
+                "mcp__purlis__browser_login",
             ]})
         );
     }
@@ -1199,6 +1200,7 @@ mod tests {
                 "mcp__purlis__browser_screenshot",
                 "mcp__purlis__browser_new",
                 "mcp__purlis__browser_close",
+                "mcp__purlis__browser_login",
             ]
         );
         // And each names a tool the server serves, so a renamed tool fails here, not quietly.
@@ -1526,6 +1528,7 @@ mod tests {
                 "mcp__purlis__browser_screenshot",
                 "mcp__purlis__browser_new",
                 "mcp__purlis__browser_close",
+                "mcp__purlis__browser_login",
             ])
         );
         assert_eq!(

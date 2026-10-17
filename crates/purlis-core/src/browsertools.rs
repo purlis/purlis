@@ -168,6 +168,17 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
                 asked: Browsing::Close,
             });
         }
+        "browser_login" => {
+            let login = required(args, "login")?.trim().to_owned();
+            if login.is_empty() {
+                return Err("give `login` the name of one of your persona's browser logins".into());
+            }
+            return Ok(Asked {
+                browser,
+                call_id,
+                asked: Browsing::LogIn { login },
+            });
+        }
         other => return Err(format!("purlis has no browser tool {other:?}")),
     };
     Ok(Asked {
@@ -556,8 +567,15 @@ fn s_none() -> Value {
     schema(json!({}), &[])
 }
 
+fn s_login() -> Value {
+    schema(
+        json!({ "login": { "type": "string", "description": "The browser login's name, as your persona declares it in the project's settings (shop-login)." } }),
+        &["login"],
+    )
+}
+
 /// **The browser tools**, in the order the spec names them.
-pub const TOOLS: [Tool; 19] = [
+pub const TOOLS: [Tool; 20] = [
     Tool {
         name: "browser_open",
         description: "Open a new page at an http or https address in this chat's browser; it \
@@ -680,6 +698,15 @@ pub const TOOLS: [Tool; 19] = [
         name: "browser_close",
         description: "End one of this chat's browsers, and everything it held.",
         schema: s_none,
+        read_only: false,
+    },
+    Tool {
+        name: "browser_login",
+        description: "Log this chat's browser in with one of your persona's browser logins, by \
+                      its name. purlis goes to the login's page, fills it from the vault and \
+                      submits it: the login never reaches you. Once logged in, the browser \
+                      reaches the login's site alone; use browser_new for any other site.",
+        schema: s_login,
         read_only: false,
     },
 ];

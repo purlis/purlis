@@ -693,8 +693,10 @@ the browsers it opened.
 _Avoid_: remember, persona grant (that is a persona's hosts and tools)
 
 **Browser login**:
-A persona's declared tool that signs a browser in from a vault: purlis drives the browser to the
-declared address, fills and submits. The value reaches the browser and never the chat.
+A persona's declared tool that signs a browser in from a vault: the chat names it, and purlis,
+as the browser's **driver**, goes to the declared address, fills on its origin alone and
+submits. The value reaches the browser and never the chat, and the browser then reaches that
+login's site alone.
 _Avoid_: autofill, credential tool, password tool
 
 **Reach** (of a browser):

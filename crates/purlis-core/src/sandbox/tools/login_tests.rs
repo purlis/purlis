@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A browser-login tool (D-PE-browser-1): what is read, the page it is bound to, what a chat's
-//! run of it may ask for, and what the app then runs.
+//! A browser-login tool (D-PE-browser-1): what is read, the page it is bound to, and that run as
+//! a command it runs nothing, since purlis performs it in the chat's own browser (#2016).
 
 use std::path::{Path, PathBuf};
 
@@ -10,10 +10,10 @@ use super::super::policy::Locks;
 use super::login::{self, Login};
 use super::{Asked, Handed, Ready, Tool, Value, declared, keyed, resolve_beside, run_words, shim};
 
+const LOGIN_BY_THE_BROWSER_TOOL: &str = "call the browser_login tool with login = \"shop-login\"";
+
 const HERE: &str = "sandbox.personas.qa";
 const PURLIS: &str = "/Applications/Purlis.app/Contents/MacOS/purlis";
-const CLI: &str = "/opt/homebrew/bin/playwright-cli";
-const ROOT: &str = "/Users/someone/project";
 
 fn read(text: &str) -> (Vec<Tool>, Vec<String>) {
     let value: toml::Value = toml::from_str(text).expect("TOML");
@@ -58,7 +58,7 @@ fn shop_login() -> Tool {
 fn armed() -> Vec<Ready> {
     vec![Ready {
         tool: shop_login(),
-        program: PathBuf::from(CLI),
+        program: PathBuf::new(),
     }]
 }
 
@@ -77,10 +77,6 @@ fn asked<'a>(program: &'a str, file: &'a [String]) -> Asked<'a> {
         dotenv: &[],
         program,
     }
-}
-
-fn args(words: &[&str]) -> Vec<String> {
-    words.iter().map(|word| (*word).to_owned()).collect()
 }
 
 #[test]
@@ -230,7 +226,7 @@ fn a_login_s_keys_are_quoted_so_no_two_logins_share_a_line() {
 }
 
 #[test]
-fn a_login_runs_playwright_s_program_found_where_no_chat_writes_never_one_its_name_finds() {
+fn a_login_is_armed_with_no_program_of_its_own_whatever_its_name_finds() {
     let base = tempfile::tempdir().expect("a folder").keep();
     let root = base.join("project");
     let system = base.join("system");
@@ -244,8 +240,6 @@ fn a_login_runs_playwright_s_program_found_where_no_chat_writes_never_one_its_na
     };
     // A program named as the tool, even where no chat writes, is not what a login runs.
     make(&system, "shop-login");
-    make(&root.join("bin"), login::PROGRAM);
-    let real = make(&system, login::PROGRAM);
     let resolved = resolve_beside(
         &root,
         "qa",
@@ -260,52 +254,14 @@ fn a_login_runs_playwright_s_program_found_where_no_chat_writes_never_one_its_na
         resolved.ready,
         [Ready {
             tool: shop_login(),
-            program: real.canonicalize().expect("real"),
+            program: PathBuf::new(),
         }]
     );
     let _ = std::fs::remove_dir_all(&base);
 }
 
 #[test]
-fn an_armed_browser_login_logs_in_on_its_declared_page_only() {
-    let armed = armed();
-    let ready = declared(
-        &armed,
-        &[shop_login()],
-        "qa",
-        &asked("shop-login", &files()),
-    )
-    .expect("declared");
-    for (said, session) in [
-        (args(&[]), "default"),
-        (args(&["-s=owner"]), "owner"),
-        (args(&["-s", "viewer"]), "viewer"),
-        (args(&["--session=w-1.a_b"]), "w-1.a_b"),
-    ] {
-        let words =
-            run_words(ready, &said, Some(Path::new(PURLIS)), Path::new(ROOT), &[]).expect("runs");
-        assert_eq!(
-            words,
-            args(&[
-                PURLIS,
-                "browser",
-                "_login",
-                "--cli",
-                CLI,
-                "--url",
-                "https://shop.example.test/login",
-                "--session",
-                session,
-            ]),
-            "{said:?}"
-        );
-    }
-    let none = run_words(ready, &[], None, Path::new(ROOT), &[]).expect_err("no purlis");
-    assert!(none.contains("nothing ran"), "{none}");
-}
-
-#[test]
-fn a_chat_cannot_steer_a_login_to_another_page_host_or_program() {
+fn a_login_run_as_a_command_runs_nothing_and_names_the_browser_tool() {
     let armed = armed();
     let ready = declared(
         &armed,
@@ -315,30 +271,13 @@ fn a_chat_cannot_steer_a_login_to_another_page_host_or_program() {
     )
     .expect("declared");
     for said in [
-        args(&["https://evil.example/"]),
-        args(&["--url", "https://evil.example/"]),
-        args(&["--cli", "/tmp/evil"]),
-        args(&["-s=owner", "--url=https://evil.example/"]),
-        args(&["-s=owner", "--", "sh", "-c", "id"]),
-        args(&["-s=../owner"]),
-        args(&["-s=a b"]),
-        args(&["-s="]),
-        args(&["-s=-x"]),
+        Vec::new(),
+        vec!["-s=owner".to_owned()],
+        vec!["https://evil.example/".to_owned()],
     ] {
-        let why = run_words(ready, &said, Some(Path::new(PURLIS)), Path::new(ROOT), &[])
-            .expect_err("refused");
-        assert!(
-            why.contains("logs in to https://shop.example.test/login"),
-            "{said:?}: {why}"
-        );
-        assert!(why.contains("nothing ran"), "{why}");
-    }
-    // Playwright's program itself, by its path or its name, is not the tool: a chat that names
-    // it would choose the page.
-    for program in [CLI, login::PROGRAM] {
-        let why = declared(&armed, &[shop_login()], "qa", &asked(program, &files()))
-            .expect_err("not the tool");
-        assert!(why.contains("is not one"), "{program}: {why}");
+        let why = run_words(ready, &said).expect_err("runs nothing");
+        assert!(why.contains(LOGIN_BY_THE_BROWSER_TOOL), "{said:?}: {why}");
+        assert!(why.contains("Nothing ran"), "{why}");
     }
 }
 
@@ -397,56 +336,17 @@ fn an_undeclared_browser_login_is_refused() {
 }
 
 #[test]
-fn a_login_s_shim_asks_the_app_and_runs_nothing_without_one() {
+fn a_login_s_shim_names_the_browser_tool_and_runs_nothing() {
     let text = shim(
         Path::new(PURLIS),
         "qa",
         &Ready {
             tool: shop_login(),
-            program: PathBuf::from(CLI),
+            program: PathBuf::new(),
         },
     );
-    assert!(
-        text.ends_with(
-            "exec '/Applications/Purlis.app/Contents/MacOS/purlis' 'secret' 'exec' 'qa' '--file' \
-             'BROWSER_LOGIN_PASS=password' '--file' 'BROWSER_LOGIN_USER=username' '--' \
-             'shop-login' \"$@\"\n"
-        ),
-        "{text}"
-    );
-    // Outside a chat the app started there is no app to log in through, and Playwright's
-    // program is never run in its place.
-    assert!(text.contains("exit 1\nfi\n"), "{text}");
-    assert!(!text.contains(CLI), "{text}");
-}
-
-#[test]
-fn a_purlis_in_a_folder_a_chat_writes_is_never_handed_the_login() {
-    let armed = armed();
-    let ready = declared(
-        &armed,
-        &[shop_login()],
-        "qa",
-        &asked("shop-login", &files()),
-    )
-    .expect("declared");
-    let granted = PathBuf::from("/Users/someone/granted");
-    for purlis in [
-        "/Users/someone/project/target/debug/purlis",
-        "/Users/someone/granted/bin/purlis",
-        "relative/purlis",
-    ] {
-        let why = run_words(
-            ready,
-            &[],
-            Some(Path::new(purlis)),
-            Path::new(ROOT),
-            std::slice::from_ref(&granted),
-        )
-        .expect_err("refused");
-        assert!(why.contains("a folder a chat may write"), "{purlis}: {why}");
-    }
-    let temp = std::env::temp_dir().join("purlis");
-    let why = run_words(ready, &[], Some(&temp), Path::new(ROOT), &[]).expect_err("temp");
-    assert!(why.contains("nothing ran"), "{why}");
+    assert!(text.contains(LOGIN_BY_THE_BROWSER_TOOL), "{text}");
+    assert!(text.ends_with(">&2\nexit 2\n"), "{text}");
+    assert!(!text.contains("secret"), "{text}");
+    assert!(!text.contains("exec "), "{text}");
 }

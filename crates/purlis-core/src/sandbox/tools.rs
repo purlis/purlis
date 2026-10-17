@@ -70,8 +70,9 @@
 //! sentence is never part of the line an Allow is bound to.
 //!
 //! **A browser login** is a tool of its own kind ([`login`], D-PE-browser-1): `browser = "<login
-//! page>"` in place of `as`, and purlis, not the chat, opens that page and fills the login on
-//! its origin alone.
+//! page>"` in place of `as`, and purlis, not the chat, opens that page in the chat's own browser
+//! and fills the login on its origin alone (#2016). It runs no program, and its shim runs
+//! nothing: the chat asks for it through the browser tools (`browser_login`).
 
 use std::path::{Path, PathBuf};
 
@@ -187,6 +188,13 @@ impl Tool {
             .filter(|value| value.handed == handed)
             .map(Value::spec)
             .collect()
+    }
+
+    /// **A browser login's keys** ([`login`], #2016): the user name's where the page asks for
+    /// one, and the password's. None for a tool that is no browser login.
+    pub fn login_keys(&self) -> Option<(Option<&str>, &str)> {
+        self.login.as_ref()?;
+        Some((self.key_in(login::USER_VAR), self.key_in(login::PASS_VAR)?))
     }
 
     /// The key of the vault the value handed in `var` comes from, where one is.
@@ -969,7 +977,8 @@ fn inside_any(path: &Path, writable: &[PathBuf]) -> bool {
     })
 }
 
-/// A tool and the absolute program its shim runs.
+/// A tool and the absolute program its shim runs: none (an empty path) for a browser login,
+/// which runs no program (#2016).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ready {
     pub tool: Tool,
@@ -1085,12 +1094,15 @@ pub(crate) fn resolve_beside(
             left.push(why);
             continue;
         }
-        // A browser login runs Playwright's program, never one the tool's name finds.
-        let wanted = if tool.login.is_some() {
-            login::PROGRAM
-        } else {
-            tool.name.as_str()
-        };
+        // A browser login runs no program: purlis fills it in the chat's own browser (#2016).
+        if tool.login.is_some() {
+            ready.push(Ready {
+                tool: tool.clone(),
+                program: PathBuf::new(),
+            });
+            continue;
+        }
+        let wanted = tool.name.as_str();
         // What runs is the program as its links resolve, judged here: nothing a chat could
         // change later is on the way to it.
         let found = found_in(wanted, search, &written);
@@ -1234,43 +1246,17 @@ pub fn declared<'a>(
 }
 
 /// **What a declared tool's run is**, once [`declared`] took it: the tool's own program by its
-/// absolute path, then the chat's arguments; for a browser login, `purlis browser _login` by
-/// `purlis`'s absolute path, on the declared page, for the session the chat's arguments name and
-/// nothing else ([`login::session_of`]). Refused where the arguments are anything more, or no
-/// `purlis` is there to run it outside the project at `root`, `writable` and the temporary
-/// folders: the login's values are handed to it.
-pub fn run_words(
-    ready: &Ready,
-    args: &[String],
-    purlis: Option<&Path>,
-    root: &Path,
-    writable: &[PathBuf],
-) -> Result<Vec<String>, String> {
-    let Some(login) = &ready.tool.login else {
-        return Ok(std::iter::once(ready.program.display().to_string())
-            .chain(args.iter().cloned())
-            .collect());
-    };
-    let session = login::session_of(args, &ready.tool.name, &login.url)?;
-    let Some(purlis) = purlis else {
-        return Err(format!(
-            "{} logs in through purlis's own command line, and none was found beside the app, so \
-             nothing ran",
-            ready.tool.name
-        ));
-    };
-    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
-    written.extend(writable.iter().cloned());
-    written.extend(temp_folders());
-    if !purlis.is_absolute() || inside_any(purlis, &written) {
-        return Err(format!(
-            "{} logs in through purlis's own command line, and the one found ({}) is in a folder \
-             a chat may write, so nothing ran",
-            ready.tool.name,
-            purlis.display()
+/// absolute path, then the chat's arguments. Refused for a browser login, which runs no program:
+/// purlis performs it in the chat's own browser (#2016).
+pub fn run_words(ready: &Ready, args: &[String]) -> Result<Vec<String>, String> {
+    if ready.tool.login.is_some() {
+        return Err(crate::secrets::brokered::login_by_the_browser_tool(
+            &ready.tool.name,
         ));
     }
-    Ok(login::words(purlis, &ready.program, login, &session))
+    Ok(std::iter::once(ready.program.display().to_string())
+        .chain(args.iter().cloned())
+        .collect())
 }
 
 /// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at
@@ -1406,6 +1392,22 @@ fn quoted(text: &str) -> String {
 
 /// The shim for `ready`, run by `purlis`.
 pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
+    if ready.tool.login.is_some() {
+        // A browser login runs nothing here: purlis performs it in the chat's own browser, and
+        // the shim only says how to ask for it (#2016).
+        return format!(
+            "#!/bin/sh\n# Written by purlis as a chat of {persona} starts (#2016). `{name}` is a \
+             browser login:\n# purlis fills it from the {vault} vault in the chat's own browser, \
+             asked through\n# the browser tools. Edits here are overwritten.\n\
+             echo {said} >&2\nexit 2\n",
+            name = ready.tool.name,
+            vault = ready.tool.vault,
+            said = quoted(&format!(
+                "purlis: {}",
+                crate::secrets::brokered::login_by_the_browser_tool(&ready.tool.name)
+            )),
+        );
+    }
     let words: Vec<String> = std::iter::once(purlis.display().to_string())
         .chain(ready.tool.secret_exec(&ready.program))
         .map(|word| quoted(&word))
@@ -1419,25 +1421,6 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
         .spellings()
         .map(|prefix| format!("${{{prefix}{rest}:-}}"))
         .collect();
-    if ready.tool.login.is_some() {
-        return format!(
-            "#!/bin/sh\n# Written by purlis as a chat of {persona} starts (D-PE-browser-1). A \
-             plain `{name}` in that chat\n# asks the app to log a browser in to {url} with a \
-             login from the {vault} vault:\n# the chat never reads the vault. Edits here are \
-             overwritten.\n\
-             if [ -z \"{channel}\" ]; then\n\
-             echo 'purlis: {name} logs a browser in only in a chat the app started' >&2\n\
-             exit 1\nfi\nexec {words} \"$@\"\n",
-            name = ready.tool.name,
-            url = ready
-                .tool
-                .login
-                .as_ref()
-                .map_or("", |login| login.url.as_str()),
-            vault = ready.tool.vault,
-            words = words.join(" "),
-        );
-    }
     format!(
         "#!/bin/sh\n# Written by purlis as a chat of {persona} starts (#1407). A plain `{name}` in \
          that chat runs\n# through `purlis secret exec`, which hands it {var} from the {vault} \

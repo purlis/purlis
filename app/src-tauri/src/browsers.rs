@@ -220,6 +220,10 @@ mod hosted {
     /// the page settling after it.
     const AN_ACT_TAKES_AT_MOST: Duration = Duration::from_secs(85);
 
+    /// How long a login purlis performs waits for its browser (#2016): its page, its form
+    /// showing, and its password field going, each within its own limit.
+    const A_LOGIN_TAKES_AT_MOST: Duration = Duration::from_secs(150);
+
     /// A chat's browsers run here (#2013): the window's session host.
     impl crate::chatbrowsers::Driver for WindowBrowsers {
         fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, String> {
@@ -246,6 +250,32 @@ mod hosted {
                 Ok(other) => Err(Refused::Said(format!(
                     "the session host answered a browser's act with {other:?}"
                 ))),
+                Err(refusal)
+                    if refusal.code == session::NO_SUCH_CHAT
+                        || refusal.code == session::BROWSER_ENDED =>
+                {
+                    Err(Refused::Gone)
+                }
+                Err(refusal) => Err(Refused::Said(refusal.why)),
+            }
+        }
+
+        fn log_in(
+            &self,
+            program: &str,
+            login: purlis_session_protocol::browsing::LogIn,
+        ) -> Result<Browsed, crate::chatbrowsers::Refused> {
+            use crate::chatbrowsers::Refused;
+            let link = self.link().map_err(Refused::Said)?;
+            let command = Command::LogIn {
+                program: program.to_owned(),
+                login,
+            };
+            match link.call_refused_within(command, A_LOGIN_TAKES_AT_MOST) {
+                Ok(Answer::Browsed(browsed)) => Ok(*browsed),
+                Ok(_) => Err(Refused::Said(
+                    "the session host answered a login with something else".into(),
+                )),
                 Err(refusal)
                     if refusal.code == session::NO_SUCH_CHAT
                         || refusal.code == session::BROWSER_ENDED =>

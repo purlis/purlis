@@ -189,6 +189,7 @@ fn a_harness_lists_charter_s_tools() {
             "browser_screenshot",
             "browser_new",
             "browser_close",
+            "browser_login",
         ]
     );
 }

@@ -30,6 +30,9 @@
 //! link that ended, a chat's confinement among them, is not named again by this: the other host
 //! names a link only what that link made or took back (#2511).
 //!
+//! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
+//! client, so a vault's value never reaches another host this way.
+//!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
 //! `launch`, the window's reply to a line a chat's hooks wrote, and a chat's confinement (its
@@ -872,6 +875,16 @@ fn refused(why: &CallError) -> Refusal {
 
 impl session::Host for Relay {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
+        // A login's values never leave this host (#2016): not for any client, the window's
+        // included.
+        if command.power() == Power::LogIn {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a browser on another host is logged in to nothing: a login's values are \
+                      not sent to another host"
+                    .into(),
+            });
+        }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
