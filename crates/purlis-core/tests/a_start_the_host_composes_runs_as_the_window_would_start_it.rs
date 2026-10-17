@@ -25,12 +25,17 @@ struct Project {
 
 impl Project {
     fn on(kind: &str) -> Project {
+        Project::on_with(kind, "")
+    }
+
+    /// [`Project::on`], with `charter` as its committed `charter.toml`.
+    fn on_with(kind: &str, charter: &str) -> Project {
         let project = Project {
             dir: tempfile::tempdir().unwrap(),
             bin: tempfile::tempdir().unwrap(),
         };
         let root = project.root();
-        fs::write(root.join("charter.toml"), "").unwrap();
+        fs::write(root.join("charter.toml"), charter).unwrap();
         fs::create_dir_all(root.join("personas/steward")).unwrap();
         fs::write(root.join("personas/steward/persona.md"), "# steward\n").unwrap();
         fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
@@ -565,6 +570,10 @@ fn a_sandboxed_start_runs_in_the_confinement_the_host_started_for_it() {
     // Its reach: a project that has not turned the sandbox on runs at the floor (#2081), whose
     // proxy carries every host and lists none.
     assert!(host.confined.borrow()[0].anything, "its reach");
+    assert!(
+        host.confined.borrow()[0].listed.is_empty(),
+        "the floor lists no host"
+    );
     assert_eq!(
         launch.confinement.as_deref(),
         Some("01J9CNFNMNT0000000000000000")
@@ -572,5 +581,29 @@ fn a_sandboxed_start_runs_in_the_confinement_the_host_started_for_it() {
     assert_eq!(
         set(&launch, purlis_core::hookwire::SANDBOXED_ENV).as_deref(),
         Some("1")
+    );
+}
+
+/// Where this machine sandboxes a chat, a project that turned the full sandbox on has its
+/// confinement carry the hosts its sandbox lists, and no other.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_fully_sandboxed_start_runs_in_a_confinement_that_lists_its_hosts() {
+    purlis_core::unsteered!();
+    let project = Project::on_with(
+        "claude",
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n",
+    );
+    let host = Host::default();
+
+    let launch = composed(&project, &asking(|_| {}), &host).expect("composed");
+
+    assert_eq!(host.confined.borrow().len(), 1, "one confinement");
+    let plan = host.confined.borrow()[0].clone();
+    assert!(!plan.anything, "{plan:?}");
+    assert!(!plan.listed.is_empty(), "its reach: {plan:?}");
+    assert_eq!(
+        launch.confinement.as_deref(),
+        Some("01J9CNFNMNT0000000000000000")
     );
 }
