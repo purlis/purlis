@@ -2429,6 +2429,7 @@ export const commands = {
 	 *  layout's `appearance` as JSON text.
 	 */
 	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
+	/**
 	 *  **The window draws the specimen itself** (Settings › Theme's cards, and the scenario tests):
 	 *  `theme` by id and `appearance` (`dark`, `light`, or none for the theme's first), as a chat's
 	 *  `theme_preview` is drawn.
