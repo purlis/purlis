@@ -537,19 +537,84 @@ fn a_screenshot_paints_over_what_was_kept_out_inside_a_frame_where_the_frame_put
     frame.text(111, line, "Card for open sesame");
     // Within the frame, the line is at (3, 3); the frame's box starts at (5, 5) on the page.
     draws(&engine, "S-PAYMENT", &frame, &[(110, [3.0, 3.0, 4.0, 4.0])]);
-    engine.on(|sent, _| {
-        (sent.method == "DOM.getBoxModel").then(|| {
-            Ok(
-                json!({"model":{"content":[5,5,9,5,9,9,5,9],"padding":[],"border":[],
-                "margin":[],"width":4,"height":4}}),
-            )
-        })
-    });
+    frame_drawn_as(&engine, json!([5, 5, 9, 5, 9, 9, 5, 9]), 4.0, 4.0);
     keep_out_the_secret(&browser);
 
     let after = shot(&browser, 1);
 
     assert_eq!(pixel(&after, 9, 9), GREY);
+    assert_eq!(
+        pixel(&after, 3, 9),
+        WHITE,
+        "a frame drawn at its own size is painted over only where it draws the text"
+    );
+}
+
+/// The payment frame's element is drawn at `quad` on the page (its border and content boxes
+/// both), laid out `width` by `height` CSS pixels before any transform.
+fn frame_drawn_as(engine: &super::Engine, quad: Value, width: f64, height: f64) {
+    engine.on(move |sent, _| {
+        (sent.method == "DOM.getBoxModel").then(|| {
+            Ok(json!({"model":{"content":quad,"padding":quad,"border":quad,
+                "margin":quad,"width":width,"height":height}}))
+        })
+    });
+}
+
+/// The payment frame shows "Card for open sesame" at (`x`, `y`) to (`x` + 1, `y` + 1) of its
+/// own document.
+fn the_frame_shows_the_secret_at(engine: &super::Engine, x: f64, y: f64) {
+    let mut frame = Document::new("PAYMENT-FRAME");
+    let line = frame.element(110, None, "P");
+    frame.text(111, line, "Card for open sesame");
+    draws(
+        engine,
+        "S-PAYMENT",
+        &frame,
+        &[(110, [x, y, x + 1.0, y + 1.0])],
+    );
+}
+
+#[test]
+fn a_screenshot_paints_over_the_whole_of_a_frame_the_page_draws_smaller_than_it_lays_it_out() {
+    let (browser, engine) = browser();
+    // The frame is laid out 10 by 10 and drawn half that size at (4, 4): the line at (9, 9) of
+    // its document is drawn at (8.5, 8.5) on the page.
+    the_frame_shows_the_secret_at(&engine, 9.0, 9.0);
+    frame_drawn_as(&engine, json!([4, 4, 9, 4, 9, 9, 4, 9]), 10.0, 10.0);
+    keep_out_the_secret(&browser);
+
+    let after = shot(&browser, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}
+
+#[test]
+fn a_screenshot_paints_over_the_whole_of_a_frame_the_page_turns() {
+    let (browser, engine) = browser();
+    // The frame is turned an eighth of a turn about (6, 6): its corners are the points of a
+    // diamond.
+    the_frame_shows_the_secret_at(&engine, 0.0, 0.0);
+    frame_drawn_as(&engine, json!([6, 2, 10, 6, 6, 10, 2, 6]), 5.66, 5.66);
+    keep_out_the_secret(&browser);
+
+    let after = shot(&browser, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}
+
+#[test]
+fn a_screenshot_is_withheld_when_where_a_frame_is_drawn_is_not_known() {
+    let (browser, engine) = browser();
+    the_frame_shows_the_secret_at(&engine, 0.0, 0.0);
+    engine.on(|sent, _| {
+        (sent.method == "DOM.getBoxModel").then(|| Ok(json!({"model":{"width":4,"height":4}})))
+    });
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
 }
 
 #[test]
