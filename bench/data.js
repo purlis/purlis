@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792253030166,
+  "lastUpdate": 1792254494086,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15414,6 +15414,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5245615,
             "unit": "ms",
             "extra": "median of 5 runs: 100.827, 100.956, 101.525, 101.974, 103.067 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b9e67506c6e84d9aa375cf7032d85d7fe691a747",
+          "message": "Runners: a sandboxed chat starts on a runner through the link (#2406)\n\n* Runners: a sandboxed chat starts on a runner through the link (#2217)\n\nA chat's confinement crosses the link between hosts as the window's other\nrelayed commands do: over remote-link a runner's host takes confine,\nchange_reach, reach_of and let_go_of_confinement and pushes sandbox, and\nthe desktop's relay sends them on, and hands sandbox notices on, for its\nown local-ui client alone. A runner composes every harness chat it runs:\na launch that names a harness is taken from a host's own local-ui link\nonly. purlis serve starts a chat's confinement through the core function\nthe app's host now uses (purlis_core::sandbox::hosted::start).\n\nThe behaviour suite's three confinement behaviours run through a link.\nADR 0068 and ADR 0078 amended, D-2217-1 to D-2217-5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: the serve test finds the host of its own config home (#2217)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: the rulings of 2026-10-17 recorded, and the review's fixes (#2217)\n\nD-2217-1 and D-2217-3 as ruled in the ADR 0068 and ADR 0078 amendments,\nand #2407 a protocol addition of its own. The relay keeps a client's\nscope and takes which push needs which power from Pushed::heard_with, a\nunit test tying its window-only list to FD-27's table. Stale docs fixed,\nHosting::keeping_its_switch_in removed, purlis serve's adapter renamed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T20:22:28+04:00",
+          "tree_id": "b59f37bf29c9783c353121f1d1797dce656d6f95",
+          "url": "https://github.com/purlis/purlis/commit/b9e67506c6e84d9aa375cf7032d85d7fe691a747"
+        },
+        "date": 1792254492225,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5191714999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.516, 0.517, 0.519, 0.537, 0.574 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1595365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.529, 16.918, 17.160, 17.178, 17.345 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.40672599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.549, 103.516, 104.407, 105.512, 105.677 ms"
           }
         ]
       }
