@@ -33,6 +33,9 @@
 //! - [`resolve`] decides which theme, and which of its appearances, the window draws from every
 //!   source there is today: the project's or workspace's pick, the person's own theme file, the
 //!   themes approved extensions contribute, and the operating system's appearance ([`Inputs`]).
+//! - **The consent floors hold whenever a theme is drawn** ([`Floor`], ADR 0097 §6): every
+//!   answer [`resolve`], [`follow`] and [`draw`] give draws purlis's own values for the tokens of
+//!   a floor the theme breaks, and says so in [`Drawn::held`].
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
@@ -58,6 +61,7 @@ use std::sync::OnceLock;
 use serde_json::Value;
 
 mod check;
+mod floors;
 mod fonts;
 mod format;
 pub mod geometry;
@@ -69,6 +73,7 @@ mod tint;
 pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
+pub use floors::{DANGER_APART, Floor, Held};
 pub use fonts::{
     CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
     Style, served,
@@ -77,11 +82,13 @@ pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use person::{Density, Layer, Person};
-pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
+pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
 use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
 
+#[cfg(test)]
+mod floors_tests;
 #[cfg(test)]
 mod format_tests;
 #[cfg(test)]

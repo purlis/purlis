@@ -51,7 +51,8 @@
 //!     "socket-grants": false,
 //!     "proposed-changes": "off",
 //!     "allow-scopes": ["you", "machine"],
-//!     "never-hosts": ["*.paste.example"]
+//!     "never-hosts": ["*.paste.example"],
+//!     "relayed-internal": ["10.96.0.1:443", "*.svc.cluster.local"]
 //!   },
 //!   "dispatch": {
 //!     "running-per-chat": 4,
@@ -114,6 +115,13 @@
 //! - `never-hosts`: hosts no level may ever add and no Allow may ever keep, written as `hosts`
 //!   is; a chat's connection to one is refused and never asked about. A preset's fixed list is
 //!   still the `presets` lock's.
+//! - `relayed-internal`: on a runner, the internal services a chat the desktop planned may
+//!   reach (#2445, ruled 2026-10-18): an address of a private network, a cluster's or a link's,
+//!   or of the runner itself, is carried for such a chat only where this list names it, written
+//!   as `hosts` is. Absent, such a chat reaches none. A name or a `*.domain` entry trusts DNS:
+//!   it carries whatever internal address the name resolves to, so a resolver someone else can
+//!   change widens it. A cloud metadata service is never carried. It gives nothing to a chat
+//!   this machine plans itself, and `hosts` gives nothing to a relayed one.
 //! - `dispatch.allow`: `false` forbids one chat dispatching to another at all (#1437), a chat's
 //!   own persona included.
 //! - `dispatch.locked`: the pairs no chat may dispatch across, each a `from` persona and a `to`
@@ -186,6 +194,8 @@ pub struct Locks {
     allow_scopes: Option<Vec<grant::Level>>,
     /// The hosts no level may add and no Allow may keep (#1666).
     never_hosts: Vec<Host>,
+    /// The internal services a chat planned on another machine reaches on this one (#2445).
+    relayed_internal: Vec<Host>,
     /// The most each dispatch limit may be, where the policy says (#1440).
     dispatch: crate::dispatchlimits::Level,
     /// Whether every dispatch from one chat to another is forbidden (#1437).
@@ -277,6 +287,7 @@ impl Locks {
             no_proposed_changes: true,
             allow_scopes: Some(Vec::new()),
             never_hosts: Vec::new(),
+            relayed_internal: Vec::new(),
             dispatch: crate::dispatchlimits::ceiling_when_refused(),
             no_dispatch: true,
             dispatch_locked: Vec::new(),
@@ -440,6 +451,12 @@ impl Locks {
             .iter()
             .any(|pinned| pinned.covers(host))
             .then(|| format!("Policy never allows {host}. {}", self.locked_by()))
+    }
+
+    /// **The internal services a chat planned on another machine reaches on this one** (#2445,
+    /// ruled 2026-10-18): the `relayed-internal` list, and nothing else of the policy's.
+    pub fn relayed_internal(&self) -> &[Host] {
+        &self.relayed_internal
     }
 
     /// The hosts policy pins as never allowed (#1666).
@@ -684,7 +701,7 @@ impl Locks {
 }
 
 /// The keys `sandbox` may hold, each a lock.
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 14] = [
     "presets",
     "hosts",
     "personal-hosts",
@@ -698,6 +715,7 @@ const KEYS: [&str; 13] = [
     "proposed-changes",
     "allow-scopes",
     "never-hosts",
+    "relayed-internal",
 ];
 
 /// `text` as a policy read from `file`, or why it is refused.
@@ -797,6 +815,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
     };
     let hosts = hosts_of("hosts")?;
     let never_hosts = hosts_of("never-hosts")?.unwrap_or_default();
+    let relayed_internal = hosts_of("relayed-internal")?.unwrap_or_default();
     let allow_scopes = words("allow-scopes")?
         .map(|words| {
             words
@@ -835,6 +854,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_proposed_changes,
         allow_scopes,
         never_hosts,
+        relayed_internal,
         dispatch,
         no_dispatch,
         dispatch_locked,
@@ -1030,5 +1050,4 @@ pub fn machine_folder() -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "policy_tests.rs"]
 mod tests;

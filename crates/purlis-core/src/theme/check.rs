@@ -26,6 +26,8 @@ use super::{ResolvedTheme, tint, vocabulary::TOKENS};
 
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
 /// a `back` that is a wash with alpha. A `front` with alpha is measured laid over the `back`.
+/// `fade` is the opacity a stylesheet draws `front` at, for words drawn faded: the front is
+/// measured laid over the `back` at that opacity.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Pair {
     pub front: &'static str,
@@ -33,6 +35,8 @@ pub struct Pair {
     pub floor: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub under: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fade: Option<f64>,
 }
 
 impl Pair {
@@ -40,6 +44,14 @@ impl Pair {
     const fn over(self, under: &'static str) -> Self {
         Self {
             under: Some(under),
+            ..self
+        }
+    }
+
+    /// The same pair, with `front` drawn at `opacity`.
+    const fn faded(self, opacity: f64) -> Self {
+        Self {
+            fade: Some(opacity),
             ..self
         }
     }
@@ -51,6 +63,7 @@ const fn p(front: &'static str, back: &'static str, floor: f64) -> Pair {
         back,
         floor,
         under: None,
+        fade: None,
     }
 }
 
@@ -113,6 +126,8 @@ pub const PAIRS: &[Pair] = &[
     // A chat's state on a row of a list (#1484): its mark in the state's colour and its word in
     // secondary text, on the window and on a row that is current or under the pointer.
     p("needs-you.base", "surface.base", 3.0),
+    // The needs-you mark on the strip it sits on.
+    p("needs-you.base", "surface.deep", 3.0),
     p("text.muted", "surface.hover", 3.0),
     p("state.running", "surface.hover", 3.0),
     p("state.waiting", "surface.hover", 3.0),
@@ -128,6 +143,12 @@ pub const PAIRS: &[Pair] = &[
     p("danger.base", "surface.overlay", TEXT),
     p("danger.base", "surface.base", TEXT),
     p("danger.base", "surface.raised", TEXT),
+    // Trouble said in `danger.text` words on the ground around it, not only on its own surface:
+    // a dialog, a strip, the window and a pane.
+    p("danger.text", "surface.overlay", TEXT),
+    p("danger.text", "surface.deep", TEXT),
+    p("danger.text", "surface.base", TEXT),
+    p("danger.text", "surface.raised", TEXT),
     // Marks on a menu or popover, and the status line's bell on its button.
     p("state.waiting", "surface.overlay", 3.0),
     p("state.failed", "surface.overlay", 3.0),
@@ -226,6 +247,10 @@ pub const PAIRS: &[Pair] = &[
     p("accent.base", "surface.sunken", 3.0),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.
     p("text.primary", "danger.wash", 4.5).over("surface.base"),
+    // - The same, in a dialog: its refusal and its unrun command on the danger wash.
+    p("text.primary", "danger.wash", 4.5).over("surface.overlay"),
+    // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
+    p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.
     p("text.primary", "terminal.background", 4.5),
     // - A notice's "and N more" is secondary words on a bar of the hairline's colour.
@@ -320,14 +345,7 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {
     for pair in PAIRS {
-        let back = theme.value(pair.back);
-        let drawn = match pair.under {
-            Some(under) => onto(back, theme.value(under)),
-            None => back.to_owned(),
-        };
-        // A see-through front is drawn laid over its ground, and measured as drawn.
-        let front = onto(theme.value(pair.front), &drawn);
-        let ratio = two_places(contrast(&front, &drawn));
+        let ratio = ratio(theme, pair);
         if ratio < pair.floor {
             findings.push(Finding::Contrast {
                 tint,
@@ -355,6 +373,22 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
             findings.push(Finding::SelectedNotApart { tint, other });
         }
     }
+}
+
+/// **The contrast `pair` has in `theme`**, to two places, as it is drawn: `back` laid over
+/// `under` when it names one, and a see-through `front` laid over that.
+pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> f64 {
+    let back = theme.value(pair.back);
+    let drawn = match pair.under {
+        Some(under) => onto(back, theme.value(under)),
+        None => back.to_owned(),
+    };
+    let front = onto(theme.value(pair.front), &drawn);
+    let front = match pair.fade {
+        Some(opacity) => mix(&front, &drawn, opacity),
+        None => front,
+    };
+    two_places(contrast(&front, &drawn))
 }
 
 /// A ratio to two places, as it is said and compared: 4.495 is under 4.5 only once rounded.
@@ -401,6 +435,19 @@ pub(super) fn contrast(a: &str, b: &str) -> f64 {
     let (x, y) = (luminance(a), luminance(b));
     let (light, dark) = if x >= y { (x, y) } else { (y, x) };
     (light + 0.05) / (dark + 0.05)
+}
+
+/// The opaque `top` laid over the opaque `under` at `opacity`, as the screen draws it.
+fn mix(top: &str, under: &str, opacity: f64) -> String {
+    let (top, bottom) = (long(top), long(under));
+    let mixed: String = [0, 2, 4]
+        .iter()
+        .map(|at| {
+            let value = byte(&top, *at) * opacity + byte(&bottom, *at) * (1.0 - opacity);
+            format!("{:02x}", (value + 0.5).floor() as u8)
+        })
+        .collect();
+    format!("#{mixed}")
 }
 
 /// `wash` laid over the opaque `under`, as the screen draws it. An opaque `wash` is itself.

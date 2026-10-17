@@ -18,5 +18,4 @@ record's rule that *the consent surfaces and the state colours are purlis's, not
   execution and safety from deception stands; the floors are how purlis holds the second for
   colour.
 
-**Built by the theme engine tickets of spec #2313** (#2320, #2332). Until then, the window keeps
-today's rule: the consent surfaces and the state colours are purlis's.
+**The engine holds the consent floors whenever a theme is drawn**, for every source (#2451).

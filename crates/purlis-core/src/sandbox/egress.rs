@@ -81,6 +81,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::asks::{Answer, Asks};
+use super::internal::Internal;
 use super::reach::{Decision, Reach, Refused};
 
 /// The port a tunnel is carried to: HTTPS's.
@@ -574,6 +575,10 @@ pub struct Serving {
     /// The chat's live asks (#1666): a connection to a host nothing lists is held while the
     /// person is asked. None refuses it at once, as where policy turns asking off.
     pub asks: Option<Arc<Asks>>,
+    /// For a chat planned on another machine (#2445): the internal services the runner's
+    /// policy lists, the only internal addresses its connections are carried to
+    /// ([`super::internal`]). None holds no address to it.
+    pub internal: Option<Internal>,
 }
 
 impl Serving {
@@ -589,6 +594,7 @@ impl Serving {
             refusals: Refusals::default(),
             reached: None,
             asks: None,
+            internal: None,
         }
     }
 }
@@ -687,6 +693,7 @@ impl Proxy {
             refusals: serving.refusals.clone(),
             reached: serving.reached,
             asks: serving.asks,
+            internal: serving.internal,
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
         });
@@ -902,6 +909,7 @@ struct Allowed {
     refusals: Refusals,
     reached: Option<Reached>,
     asks: Option<Arc<Asks>>,
+    internal: Option<Internal>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -939,6 +947,14 @@ impl Teller {
 }
 
 impl Allowed {
+    /// Whether `host`, reached at `at`, is carried past what its runner's policy lists, for a
+    /// chat planned on another machine (#2445): always, for any other.
+    fn carries(&self, host: &str, at: SocketAddr, own: Option<&[super::hosts::Network]>) -> bool {
+        self.internal
+            .as_ref()
+            .is_none_or(|internal| internal.carries(host, at, own))
+    }
+
     /// The decision for a connection to `host` on `port`, a tunnel or not.
     fn decide(&self, host: &str, port: u16, tunnel: bool, own: &[std::net::IpAddr]) -> Decision {
         // A service on this Mac is reached by a name of this Mac too (qw384b), never looked up.
@@ -1082,7 +1098,8 @@ fn refusal_said(host: &str, port: u16, decision: &Decision) -> String {
         ),
         Decision::Refused(Refused::LocalAddress) => format!(
             "purlis's sandbox does not allow {host}:{port}: it is this machine, a link-local \
-             address or a cloud metadata service"
+             address, a cloud metadata service, or, for a chat on a runner, an internal address \
+             the runner's policy does not list"
         ),
         _ => format!(
             "purlis's sandbox does not allow {host}:{port}: no egress preset or host of this \
@@ -1124,8 +1141,9 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         );
         return;
     }
-    // This machine's addresses, read once for the decision and the connect.
-    let own = super::hosts::own_addresses();
+    // This machine's networks, read once for the decision and the connect.
+    let read = super::hosts::own_networks_read();
+    let own: Vec<std::net::IpAddr> = read.iter().flatten().map(|one| one.address).collect();
     let tunnel = request.forward.is_none();
     let decision = allowed.decide(&request.host, request.port, tunnel, &own);
     let decision = match allowed.asked(&request.host, request.port, tunnel, decision) {
@@ -1149,27 +1167,30 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return;
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    let mut upstream = match connect(&request.host, request.port, &allowed.reach, &own) {
-        Connected::To(upstream) => upstream,
-        Connected::OnlyLocal => {
-            let local = Decision::Refused(Refused::LocalAddress);
-            allowed.refused(&request.host, request.port, &local);
-            answer(
-                &mut client,
-                "403 Forbidden",
-                &refusal_said(&request.host, request.port, &local),
-            );
-            return;
-        }
-        Connected::Not => {
-            answer(
-                &mut client,
-                "502 Bad Gateway",
-                &format!("purlis's egress proxy could not reach {}", request.host),
-            );
-            return;
-        }
-    };
+    let mut upstream =
+        match connect_held(&request.host, request.port, &allowed.reach, &own, &|at| {
+            allowed.carries(&request.host, at, read.as_deref())
+        }) {
+            Connected::To(upstream) => upstream,
+            Connected::OnlyLocal => {
+                let local = Decision::Refused(Refused::LocalAddress);
+                allowed.refused(&request.host, request.port, &local);
+                answer(
+                    &mut client,
+                    "403 Forbidden",
+                    &refusal_said(&request.host, request.port, &local),
+                );
+                return;
+            }
+            Connected::Not => {
+                answer(
+                    &mut client,
+                    "502 Bad Gateway",
+                    &format!("purlis's egress proxy could not reach {}", request.host),
+                );
+                return;
+            }
+        };
     let _ = upstream.set_write_timeout(Some(allowed.idle));
     let sent = match &request.forward {
         None => client.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n"),
@@ -1221,7 +1242,8 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         Ok(target) => target,
         Err(code) => return socks_reply(&mut client, code),
     };
-    let own = super::hosts::own_addresses();
+    let read = super::hosts::own_networks_read();
+    let own: Vec<std::net::IpAddr> = read.iter().flatten().map(|one| one.address).collect();
     let decision = match allowed.asked(&host, port, true, allowed.decide(&host, port, true, &own)) {
         Ok(decision) => decision,
         Err(_) => return socks_reply(&mut client, reply::NOT_ALLOWED),
@@ -1231,7 +1253,9 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return socks_reply(&mut client, reply::NOT_ALLOWED);
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    let upstream = match connect(&host, port, &allowed.reach, &own) {
+    let upstream = match connect_held(&host, port, &allowed.reach, &own, &|at| {
+        allowed.carries(&host, at, read.as_deref())
+    }) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
             allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));
@@ -1517,6 +1541,19 @@ pub(crate) enum Connected {
 /// service reaches nothing. An address literal was decided as itself
 /// ([`super::reach::Reach::decide`]) and is held to the same check here.
 pub(crate) fn connect(host: &str, port: u16, reach: &Reach, own: &[std::net::IpAddr]) -> Connected {
+    connect_held(host, port, reach, own, &|_| true)
+}
+
+/// [`connect`], only at the addresses `carries` keeps besides (#2445): what a chat planned on
+/// another machine reaches of its runner's networks ([`super::internal`]), held at every connect
+/// since a name can resolve to another address later.
+pub(crate) fn connect_held(
+    host: &str,
+    port: u16,
+    reach: &Reach,
+    own: &[std::net::IpAddr],
+    carries: &dyn Fn(SocketAddr) -> bool,
+) -> Connected {
     let resolve = |host: &str, port: u16| {
         (host, port)
             .to_socket_addrs()
@@ -1531,7 +1568,8 @@ pub(crate) fn connect(host: &str, port: u16, reach: &Reach, own: &[std::net::IpA
         answered.set(!found.is_empty());
         found
     };
-    let reached = addresses(host, port, reach, own, &once);
+    let mut reached = addresses(host, port, reach, own, &once);
+    reached.retain(|at| carries(*at));
     if reached.is_empty() {
         return if answered.get() {
             Connected::OnlyLocal
@@ -1673,3 +1711,6 @@ fn pump(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

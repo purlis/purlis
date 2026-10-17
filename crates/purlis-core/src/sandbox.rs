@@ -5881,6 +5881,7 @@ pub mod grant;
 pub mod held;
 pub mod hosted;
 pub mod hosts;
+pub mod internal;
 pub mod kubeconfig;
 pub mod local;
 pub mod localport;
@@ -5907,19 +5908,13 @@ mod claude_tests;
 #[cfg(test)]
 mod codex_tests;
 #[cfg(test)]
-mod egress_tests;
-#[cfg(test)]
 mod floor_tests;
-#[cfg(test)]
-mod hosts_tests;
 #[cfg(test)]
 mod kept_tests;
 #[cfg(test)]
 mod opencode_tests;
 #[cfg(test)]
 mod persona_tests;
-#[cfg(test)]
-mod plan_tests;
 #[cfg(test)]
 mod reach_tests;
 #[cfg(test)]

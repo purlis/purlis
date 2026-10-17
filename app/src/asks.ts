@@ -25,6 +25,7 @@ import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
+import { sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { askProfileSignIn } from "./settings/links";
 
@@ -312,9 +313,13 @@ export async function answerTaken(
       case "browser-sites":
         // Sites new to the project a chat's browser held back (#2018): an Allow is a browser
         // site, for this chat or always here, for the browser alone; Keep blocked tells the chat
-        // not to retry, with the reason the person typed.
-        if (option === "chat" || option === "you")
-          return commands.allowBrowserSites(plane, ask.session, path.sites, option);
+        // not to retry, with the reason the person typed. An Allow is told to what reads a
+        // chat's network, so its Network view lists the site apart from then on (#2364).
+        if (option === "chat" || option === "you") {
+          const allowed = await commands.allowBrowserSites(plane, ask.session, path.sites, option);
+          if (allowed.status === "ok") sandboxCommandReturned();
+          return allowed;
+        }
         if (option === "keep")
           return commands.keepBrowserSitesBlocked(
             plane,

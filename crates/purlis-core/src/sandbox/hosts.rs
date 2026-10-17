@@ -342,6 +342,24 @@ fn metadata_v6(ip: Ipv6Addr) -> bool {
     (first == 0xfd00 && second == 0x0ec2) || METADATA_V6.contains(&ip)
 }
 
+/// Whether `ip` is a cloud metadata service's (#2445), as itself or carried in an IPv6 address:
+/// the link-local ones every cloud and its container service answer at, and the others
+/// ([`METADATA_V4`], [`METADATA_V6`]).
+pub(super) fn metadata_address(ip: IpAddr) -> bool {
+    let v4 = |ip: Ipv4Addr| metadata_v4(ip) || METADATA_LINK_LOCAL.contains(&ip);
+    match ip {
+        IpAddr::V4(ip) => v4(ip),
+        IpAddr::V6(ip) => embedded_v4(ip).map_or_else(|| metadata_v6(ip), v4),
+    }
+}
+
+/// The link-local addresses cloud metadata services answer at: every cloud's instance
+/// metadata, and AWS's container metadata.
+const METADATA_LINK_LOCAL: [Ipv4Addr; 2] = [
+    Ipv4Addr::new(169, 254, 169, 254),
+    Ipv4Addr::new(169, 254, 170, 2),
+];
+
 fn metadata(name: &str) -> String {
     format!("{name} is a cloud metadata address, so it is never a host a chat reaches.")
 }
@@ -386,23 +404,102 @@ pub fn own_addresses() -> Vec<IpAddr> {
 /// This machine's own interface addresses, as the system lists them now, or `None` where the
 /// list cannot be read: what a caller that must refuse without it asks.
 pub fn own_addresses_read() -> Option<Vec<IpAddr>> {
+    own_networks_read().map(|networks| networks.iter().map(|one| one.address).collect())
+}
+
+/// **This machine's own networks** (#2445), as its interfaces are on them now: each interface
+/// address with its prefix; or `None` where the list cannot be read.
+pub fn own_networks_read() -> Option<Vec<Network>> {
     #[cfg(unix)]
     {
         let found = nix::ifaddrs::getifaddrs().ok()?;
         Some(
             found
                 .filter_map(|one| {
-                    let address = one.address?;
-                    address
-                        .as_sockaddr_in()
-                        .map(|v4| IpAddr::V4(v4.ip()))
-                        .or_else(|| address.as_sockaddr_in6().map(|v6| IpAddr::V6(v6.ip())))
+                    let ip = |at: &nix::sys::socket::SockaddrStorage| {
+                        at.as_sockaddr_in()
+                            .map(|v4| IpAddr::V4(v4.ip()))
+                            .or_else(|| at.as_sockaddr_in6().map(|v6| IpAddr::V6(v6.ip())))
+                    };
+                    let address = ip(one.address.as_ref()?)?;
+                    let prefix = one
+                        .netmask
+                        .as_ref()
+                        .and_then(ip)
+                        .filter(|mask| mask.is_ipv4() == address.is_ipv4())
+                        .map(prefix_of);
+                    Some(match prefix {
+                        Some(prefix) => Network::of(address, prefix),
+                        None => Network::host(address),
+                    })
                 })
                 .collect(),
         )
     }
     #[cfg(not(unix))]
     None
+}
+
+/// The length of the prefix netmask `mask` writes, its leading ones.
+#[cfg(unix)]
+fn prefix_of(mask: IpAddr) -> u8 {
+    let ones = match mask {
+        IpAddr::V4(mask) => u32::from(mask).leading_ones(),
+        IpAddr::V6(mask) => u128::from(mask).leading_ones(),
+    };
+    u8::try_from(ones).unwrap_or(u8::MAX)
+}
+
+/// **A network an interface of this machine is on** (#2445): its address and the length of its
+/// prefix. A prefix shorter than any one network a machine is on (`/8`, or `/16` for IPv6) is
+/// read as the address alone, so a misread mask never takes in the whole Internet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Network {
+    pub address: IpAddr,
+    prefix: u8,
+}
+
+impl Network {
+    /// The network `address` is on, `prefix` bits long.
+    pub fn of(address: IpAddr, prefix: u8) -> Self {
+        let (shortest, whole) = if address.is_ipv4() {
+            (8, 32)
+        } else {
+            (16, 128)
+        };
+        Self {
+            address,
+            prefix: if prefix < shortest || prefix > whole {
+                whole
+            } else {
+                prefix
+            },
+        }
+    }
+
+    /// `address` alone.
+    pub fn host(address: IpAddr) -> Self {
+        Self::of(address, if address.is_ipv4() { 32 } else { 128 })
+    }
+
+    /// Whether `ip` is on this network.
+    pub fn holds(&self, ip: IpAddr) -> bool {
+        match (self.address, ip) {
+            (IpAddr::V4(mine), IpAddr::V4(theirs)) => {
+                let mask = u32::MAX
+                    .checked_shl(32 - u32::from(self.prefix))
+                    .unwrap_or(0);
+                u32::from(mine) & mask == u32::from(theirs) & mask
+            }
+            (IpAddr::V6(mine), IpAddr::V6(theirs)) => {
+                let mask = u128::MAX
+                    .checked_shl(128 - u32::from(self.prefix))
+                    .unwrap_or(0);
+                u128::from(mine) & mask == u128::from(theirs) & mask
+            }
+            _ => false,
+        }
+    }
 }
 
 fn v4(ip: Ipv4Addr) -> Result<Ipv4Addr, String> {
@@ -423,7 +520,8 @@ fn v4(ip: Ipv4Addr) -> Result<Ipv4Addr, String> {
 
 /// The IPv4 address an IPv6 address carries, in each form Claude Code's sandbox runtime
 /// decodes (2.1.291): IPv4-mapped `::ffff:0:0/96`, SIIT `::ffff:0:0:0/96`, NAT64
-/// `64:ff9b::/96`, IPv4-compatible `::/96` (not `::` or `::1`), and 6to4 `2002::/16`.
+/// `64:ff9b::/96`, IPv4-compatible `::/96` (not `::` or `::1`), and 6to4 `2002::/16`; and NAT64's
+/// local-use `64:ff9b:1::/48` as a /96 in it carries one (#2445).
 pub(super) fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     let s = ip.segments();
     let of = |hi: u16, lo: u16| {
@@ -437,6 +535,8 @@ pub(super) fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     match s {
         [0, 0, 0, 0, 0xffff, 0, _, _] => Some(low()),
         [0x64, 0xff9b, 0, 0, 0, 0, _, _] => Some(low()),
+        // NAT64's local-use prefix (RFC 8215), as a /96 carries an address: its last 32 bits.
+        [0x64, 0xff9b, 1, ..] => Some(low()),
         [0, 0, 0, 0, 0, 0, _, _] if !ip.is_unspecified() && !ip.is_loopback() => Some(low()),
         [0x2002, hi, lo, ..] => Some(of(hi, lo)),
         _ => None,
@@ -633,3 +733,6 @@ pub fn confirmed_only(listed: Vec<Host>, confirmed: &[String]) -> Vec<Host> {
         .filter(|host| confirmed.contains(&host.to_string()))
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

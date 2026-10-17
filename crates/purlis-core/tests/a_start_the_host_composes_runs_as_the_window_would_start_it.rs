@@ -551,7 +551,7 @@ fn a_sandboxed_composed_start_without_its_confinement_is_not_started() {
 }
 
 /// Where this machine sandboxes a chat, the host starts its confinement, as the program's own,
-/// and the chat is wrapped in it.
+/// with the floor's reach, and the chat is wrapped in it.
 #[cfg(target_os = "macos")]
 #[test]
 fn a_sandboxed_start_runs_in_the_confinement_the_host_started_for_it() {
@@ -562,7 +562,13 @@ fn a_sandboxed_start_runs_in_the_confinement_the_host_started_for_it() {
     let launch = composed(&project, &asking(|_| {}), &host).expect("composed");
 
     assert_eq!(host.confined.borrow().len(), 1, "one confinement");
-    assert!(!host.confined.borrow()[0].listed.is_empty(), "its reach");
+    // Its reach: a project that has not turned the sandbox on runs at the floor (#2081), whose
+    // proxy carries every host and lists none.
+    assert!(host.confined.borrow()[0].anything, "its reach");
+    assert!(
+        host.confined.borrow()[0].listed.is_empty(),
+        "the floor lists no host"
+    );
     assert_eq!(
         launch.confinement.as_deref(),
         Some("01J9CNFNMNT0000000000000000")

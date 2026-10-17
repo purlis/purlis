@@ -19,6 +19,7 @@ import {
 } from "./theme/theme";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
+import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
 
 /**
  * A colour for a theme an extension contributes, taken out of charter's own light theme
@@ -85,7 +86,12 @@ type Row = {
 };
 
 /** What the core's theme engine answers `theme_in_force` with. */
-type InForce = { theme: Theme | null; complaints: string[]; follows_system: boolean };
+type InForce = {
+  theme: Theme | null;
+  complaints: string[];
+  follows_system: boolean;
+  floors?: string | null;
+};
 const KEEPS: InForce = { theme: null, complaints: [], follows_system: false };
 
 /** A theme as the core resolves one: complete, `over` laid on the dark built-in. */
@@ -713,6 +719,21 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     answer = KEEPS;
     await drawThemeFor(new Set(["solarized"]));
     expect(inForce().name).toBe("Solarized Dark");
+  });
+
+  it("says the consent floors a theme breaks in one Notice, and takes it back for one that does not", async () => {
+    const floors = "Solarized Dark breaks the consent floors (an ask contrasts with its surface)";
+    let answer: InForce = { ...KEEPS, theme: resolved("Solarized Dark"), floors };
+    core({ inForce: () => answer });
+    await drawThemeFor(new Set(["solarized"]));
+    const said = aboutThisMachine().filter((one) => one.subject === "consent floors");
+    expect(said.map((one) => one.detail)).toEqual([floors]);
+    expect(said[0].builtIn).toBeUndefined();
+
+    answer = { ...KEEPS, theme: resolved("Solarized Dark"), floors: null };
+    await drawThemeFor(new Set(["solarized"]));
+    expect(aboutThisMachine().some((one) => one.subject === "consent floors")).toBe(false);
+    sayAboutThisMachine("consent floors", undefined);
   });
 
   it("asks for a new survey once an approval or a removal changed what is installed", async () => {

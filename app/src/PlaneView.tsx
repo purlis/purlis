@@ -1572,6 +1572,9 @@ export const PlaneView = memo(function PlaneView({
     [sidebar],
   );
   const tasksMoved = useTurnsEnded(chats, unreported);
+  // A sandbox command of the window's returned, such as a browser site allowed or removed
+  // (#2364): each chat's tab says how many sites only its browser reaches, so it is read again.
+  const sandboxMoved = useSandboxCommands();
 
   // The sidebar is read from the plane, and re-read whenever the chats change: the plane is a
   // directory the operator also edits by hand and another charter process writes, so there is
@@ -1641,7 +1644,17 @@ export const PlaneView = memo(function PlaneView({
     return () => {
       gone = true;
     };
-  }, [change, sidebarChanges, plane, replan, startedIn, stopsEnded, tabs, tasksMoved]);
+  }, [
+    change,
+    sidebarChanges,
+    plane,
+    replan,
+    sandboxMoved,
+    startedIn,
+    stopsEnded,
+    tabs,
+    tasksMoved,
+  ]);
 
   /**
    * What the machine store says this operator has pinned here, and what it says is gone.
@@ -1718,7 +1731,9 @@ export const PlaneView = memo(function PlaneView({
       for (const chats of [...sidebar.workspaces.map((ws) => ws.chats), sidebar.unfiled]) {
         const found = chats.find((chat) => chat.session === session);
         if (found)
-          return found.sandbox == null ? null : { level: found.sandbox, why: found.sandbox_why };
+          return found.sandbox == null
+            ? null
+            : { level: found.sandbox, why: found.sandbox_why, sites: found.browser_sites };
       }
       return null;
     },

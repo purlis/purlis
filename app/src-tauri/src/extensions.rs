@@ -271,6 +271,7 @@ fn theme_in_force_of(
         theme: drawn.theme.as_ref().map(WindowTheme::from),
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
+        floors: drawn.held.map(|held| held.said()),
     }
 }
 
@@ -284,6 +285,9 @@ pub struct ThemeInForce {
     pub complaints: Vec<String>,
     /// Whether it follows the operating system's appearance.
     pub follows_system: bool,
+    /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
+    /// drawn has purlis's own values for those tokens.
+    pub floors: Option<String>,
 }
 
 /// A resolved theme as the window applies it: the window's `Theme`, every token and every

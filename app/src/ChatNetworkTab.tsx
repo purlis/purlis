@@ -16,7 +16,8 @@ const BY: Readonly<Record<ReachedBy, string>> = {
 
 /**
  * **A chat's Network view** (#1662, spec #1661): what chat `session` can reach now, by why it
- * reaches each host (Open hosts, Persona hosts, Allowed hosts), and what its sandbox refused,
+ * reaches each host (Open hosts, Persona hosts, Allowed hosts), the sites only its browser
+ * reaches, apart (#2364), and what its sandbox refused,
  * each with Allow where one may be kept. A chat started without the sandbox says it can reach
  * anything, and nothing more: purlis records nothing of it. Read once as the tab opens, and
  * again when a sandbox command of the window's returns.
@@ -90,6 +91,28 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
           ))
         )}
       </section>
+      {/* **Apart from what the chat reaches** (#2364, spec #2008 story 74): a browser site is
+          for its browser alone (ruled 2026-10-17), so it is never listed among the hosts above.
+          Drawn only where there is one: a chat with no browser site says nothing of it. */}
+      {network.browser_sites.length > 0 && (
+        <section aria-label="Only its browser can reach">
+          <h3 className="ui-text-heading">Only its browser can reach</h3>
+          <p className="ui-text-secondary">
+            You allowed these for its browser alone. Its commands reach one only where it is allowed
+            for them as well.
+          </p>
+          <div className="sandbox-hosts">
+            <span className="sandbox-what ui-text-label">Browser sites</span>
+            <ul aria-label="Browser sites">
+              {network.browser_sites.map((site) => (
+                <li key={site} className="ui-text-body">
+                  <code className="ui-text-code">{site}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
       <section aria-label="Refused">
         <h3>Refused</h3>
         {network.refused.length === 0 ? (

@@ -923,7 +923,15 @@ impl ChatBrowsers {
                 ));
             }
             let program = driver
-                .start(root, with_sites(reach(), open_web, &chat.sites))
+                .start(
+                    root,
+                    with_sites(
+                        reach(),
+                        open_web,
+                        &chat.sites,
+                        &purlis_core::sandbox::policy::Locks::of(root),
+                    ),
+                )
                 .map_err(|why| {
                     format!(
                         "the browser did not start: {why}. Try once more; if it fails again, \
@@ -1021,7 +1029,12 @@ impl ChatBrowsers {
         let ended = chat.ended.contains(&program);
         // The act may wait on its page a while: never under the lock.
         drop(chats);
-        let reach_now = with_sites(reach(), open_web, &chat_sites);
+        let reach_now = with_sites(
+            reach(),
+            open_web,
+            &chat_sites,
+            &purlis_core::sandbox::policy::Locks::of(root),
+        );
         let acted = if ended {
             Err(Refused::Gone)
         } else {
@@ -1588,8 +1601,12 @@ pub fn sites_allowed(
         .sites_waiting()
         .into_iter()
         .find(|one| one.session == session);
-    if !waiting.is_some_and(|one| sites.iter().all(|site| one.sites.contains(site))) {
+    let Some(waiting) = waiting.filter(|one| sites.iter().all(|site| one.sites.contains(site)))
+    else {
         return Err(SITES_WAIT_NO_MORE.to_owned());
+    };
+    if !named_whole(&waiting.sites, &sites) {
+        return Err(SITES_NOT_NAMED.to_owned());
     }
     for site in &sites {
         audit(
@@ -1683,17 +1700,55 @@ pub fn sites_kept_blocked(
     Ok(())
 }
 
+/// **Whether each of `sites` is one the ask of `waiting` names whole** (#2364): the same reading
+/// the ask was drawn by ([`crate::asking::sites_named`]), so an Allow takes no site the person
+/// could not read.
+fn named_whole(waiting: &[Site], sites: &[Site]) -> bool {
+    let waits: Vec<String> = waiting.iter().map(ToString::to_string).collect();
+    let named = crate::asking::sites_named(&waits)
+        .map(|(named, _)| named)
+        .unwrap_or_default();
+    sites.iter().all(|site| named.contains(&site.to_string()))
+}
+
+/// What an Allow of a site its ask did not name whole is refused with (#2364).
+const SITES_NOT_NAMED: &str = "Nothing was allowed: the ask did not name each of those sites \
+                               whole. Answer the ask as it is shown now.";
+
 /// What an answer to sites that wait no more is refused with (#2018).
 const SITES_WAIT_NO_MORE: &str = "Those sites do not wait on you for that chat any more.";
 
+/// Each of `sites`, browser sites allowed for one chat alone, that policy leaves in force
+/// (#2364): one a policy came to hold since is kept and reaches nothing.
+pub fn chat_sites_in_force<'a>(
+    sites: &'a [Site],
+    locks: &'a purlis_core::sandbox::policy::Locks,
+) -> impl Iterator<Item = &'a Site> + 'a {
+    sites.iter().filter(move |site| {
+        purlis_core::sandbox::local::browser_site_held_at(
+            site,
+            purlis_core::sandbox::grant::Level::Chat,
+            locks,
+        )
+        .is_none()
+    })
+}
+
 /// `reach`, reaching the open web too with `open_web`, and listing `sites`, the browser sites
-/// allowed for its chat alone (#2018).
-fn with_sites(reach: BrowserReach, open_web: bool, sites: &[Site]) -> BrowserReach {
+/// allowed for its chat alone (#2018) that policy leaves in force.
+fn with_sites(
+    reach: BrowserReach,
+    open_web: bool,
+    sites: &[Site],
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> BrowserReach {
     let mut reach = BrowserReach { open_web, ..reach };
-    reach.listed.extend(sites.iter().map(|site| Listed {
-        host: site.to_string(),
-        layer: Layer::Chat,
-    }));
+    reach
+        .listed
+        .extend(chat_sites_in_force(sites, locks).map(|site| Listed {
+            host: site.to_string(),
+            layer: Layer::Chat,
+        }));
     reach
 }
 

@@ -104,6 +104,16 @@ pub fn quote(path: &Path) -> Result<String, &'static str> {
     string(&real(path).display().to_string())
 }
 
+/// `path` under every name the kernel may give it, each as an SBPL string: as it resolves, and
+/// across a macOS firmlink (`/Users` and `/System/Volumes/Data/Users`), which resolving leaves
+/// as spelled (#1356).
+pub fn kernel_strings(path: &Path) -> Result<Vec<String>, &'static str> {
+    super::kernel_names(path)
+        .iter()
+        .map(|name| string(&name.display().to_string()))
+        .collect()
+}
+
 /// The names a rule on `path` is written under: as the kernel names it, and, where its last part
 /// is a link, that link itself in the folder as the kernel names it. A rule on the target alone
 /// would let the link be removed and a file made in its place (#1336).
@@ -341,12 +351,6 @@ pub fn profile(
     // Each under every name the kernel may give it: as it resolves, and across a macOS
     // firmlink (`/Users` and `/System/Volumes/Data/Users`), which resolving leaves as spelled
     // (#1356).
-    let named = |path: &Path| -> Result<Vec<String>, &'static str> {
-        super::kernel_names(path)
-            .iter()
-            .map(|name| string(&name.display().to_string()))
-            .collect()
-    };
     for denial in denied {
         let what = match denial.access {
             Access::ReadWrite => "file-read* file-write*",
@@ -373,7 +377,7 @@ pub fn profile(
     // otherwise move `.charter` aside and write `.charter/app` under its new name).
     let mut pinned = std::collections::BTreeSet::new();
     let mut pin = |folder: &Path, line: &mut dyn FnMut(String)| -> Result<(), &'static str> {
-        let names = named(folder)?;
+        let names = kernel_strings(folder)?;
         if pinned.insert(names.first().cloned()) {
             for name in names {
                 line(format!("(deny file-write* (literal {name}))"));
@@ -482,12 +486,6 @@ pub fn floor_profile(
         access: Access::Write,
         named: None,
     }));
-    let named = |path: &Path| -> Result<Vec<String>, &'static str> {
-        super::kernel_names(path)
-            .iter()
-            .map(|name| string(&name.display().to_string()))
-            .collect()
-    };
     for denial in &all {
         let what = match denial.access {
             Access::ReadWrite => "file-read* file-write*",
@@ -516,7 +514,7 @@ pub fn floor_profile(
                 if ancestor.parent().is_none() {
                     continue;
                 }
-                for name in named(ancestor)? {
+                for name in kernel_strings(ancestor)? {
                     if pinned.insert(name.clone()) {
                         line(format!("(deny file-write* (literal {name}))"));
                     }
