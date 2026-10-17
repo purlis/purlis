@@ -45,8 +45,9 @@ export const AGAINST_MAIN = 1.15;
 
 // **Whether a change's cold start is slower than main's, measured in the same job** (#1866).
 //
-// A pass is rounds `{ base, head }` in ms, each one launch of main's build and one of the
-// change's, in alternating order. Its ratio is the median of its rounds' ratios, the change over
+// A pass is rounds `{ base, head }`, each one launch of main's build and one of the change's,
+// in alternating order, each a launch as the bench keeps it (`{ ms, appMs, use, ... }`; only `ms`
+// is judged). Its ratio is the median of its rounds' ratios, the change over
 // main, so one slow launch of either is never the verdict. A pass past `threshold` asks for a
 // second (`confirm`); the change has REGRESSED only when every pass is past it. A first pass
 // past it that a second does not confirm passes, said as `unconfirmed`. No rounds at all is
@@ -59,7 +60,7 @@ export function coldStartAgainstMain({ passes, threshold = AGAINST_MAIN }) {
   const judged = passes
     .filter((rounds) => rounds.length > 0)
     .map((rounds) => {
-      const ratio = medianOf(rounds.map(({ base, head }) => head / base));
+      const ratio = medianOf(rounds.map(({ base, head }) => head.ms / base.ms));
       return { ratio: Math.round(ratio * 1000) / 1000, past: ratio > threshold };
     });
   if (judged.length === 0) return { verdict: "no baseline" };
@@ -97,10 +98,10 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
   const split = (launch) => `${ms(launch.ms - launch.appMs)} before the app's clock + ${ms(launch.appMs)} in the app`;
   const use = ({ cpuMs, majorFaults, processes }) =>
     `CPU ${ms(cpuMs)} in ${processes} processes, ${majorFaults} major faults`;
-  // A round's launch, whole where the bench kept it: its split and what its process tree used.
-  const inRound = (at, launch) => {
-    const parts = [...(Number.isFinite(launch?.appMs) ? [split(launch)] : []), ...(launch?.use ? [use(launch.use)] : [])];
-    return parts.length > 0 ? `${ms(at)} (${parts.join("; ")})` : ms(at);
+  // A round's launch: its time, then its split and what its process tree used where it has them.
+  const inRound = (launch) => {
+    const parts = [...(Number.isFinite(launch.appMs) ? [split(launch)] : []), ...(launch.use ? [use(launch.use)] : [])];
+    return parts.length > 0 ? `${ms(launch.ms)} (${parts.join("; ")})` : ms(launch.ms);
   };
   const one = (launch) => {
     const parts = [ms(launch.ms)];
@@ -127,8 +128,7 @@ export function coldStartAnnotation({ name, launches, warmUp, traced, limit, cei
           .at(-1)
           .map(
             (round, n) =>
-              `round ${n + 1}: main ${inRound(round.base, round.baseLaunch)}, ` +
-              `this change ${inRound(round.head, round.headLaunch)}`,
+              `round ${n + 1}: main ${inRound(round.base)}, this change ${inRound(round.head)}`,
           ),
       ]
     : [];

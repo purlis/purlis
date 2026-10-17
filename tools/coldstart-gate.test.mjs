@@ -114,7 +114,7 @@ const runners = {
 
 /** Rounds of main's launches against `head`'s, the head's taken one launch later in the job. */
 function rounds(base, head = base) {
-  return base.map((ms, n) => ({ base: ms, head: head[(n + 1) % head.length] }));
+  return base.map((ms, n) => ({ base: { ms }, head: { ms: head[(n + 1) % head.length] } }));
 }
 
 test("main against itself in one job passes, on every runner, the slowest included", () => {
@@ -159,7 +159,7 @@ test("one pass past the line that a second does not confirm passes, said as unco
 test("the line is a ratio of 1.15, the median of the rounds' ratios", () => {
   assert.equal(AGAINST_MAIN, 1.15);
   const at = (ratio) =>
-    coldStartAgainstMain({ passes: [[1000, 1000, 1000].map((base) => ({ base, head: base * ratio }))] });
+    coldStartAgainstMain({ passes: [[1000, 1000, 1000].map((ms) => ({ base: { ms }, head: { ms: ms * ratio } }))] });
   assert.equal(at(1.15).verdict, "pass");
   assert.equal(at(1.16).verdict, "confirm");
   assert.equal(at(1.16).ratio, 1.16);
@@ -167,9 +167,9 @@ test("the line is a ratio of 1.15, the median of the rounds' ratios", () => {
   const one = coldStartAgainstMain({
     passes: [
       [
-        { base: 1000, head: 2000 },
-        { base: 1000, head: 1000 },
-        { base: 1000, head: 1010 },
+        { base: { ms: 1000 }, head: { ms: 2000 } },
+        { base: { ms: 1000 }, head: { ms: 1000 } },
+        { base: { ms: 1000 }, head: { ms: 1010 } },
       ],
     ],
   });
@@ -211,17 +211,18 @@ test("against main, a confirmed regression is an error annotation", () => {
   assert.match(line, /^::error title=Cold start%2C i3::against main in this job: .*: REGRESSED/);
 });
 
-// The two red runs of the relative gate on unchanged launch code, out of 524 pull request runs
-// from 2026-10-14 to 2026-10-17 (#1866): one build steadily slower than the other through a
-// whole job, both passes. Run 38704550907 (a test-only commit; the commits either side of it
-// were at 1.00), its i3 case: the gap was steady, not a slow launch now and then.
+// A characterization of the record, not of a change: one of the two red runs of the relative
+// gate on unchanged launch code, out of 524 pull request runs from 2026-10-14 to 2026-10-17
+// (#1866). One build was steadily slower than the other through a whole job, in both passes; the
+// gate reads that as a regression, and only the round lines below can say why. Run 38704550907
+// (a test-only commit; the commits either side of it were at 1.00), its i3 case.
 const steadyGap = {
   base: [1784, 1775, 1744, 1773, 1808, 1759, 1783],
   head: [2125, 2127, 2104, 2118, 2114, 2173, 2115],
 };
 
 test("a steady gap through a whole job is what the gate reads as a regression", () => {
-  const pass = steadyGap.base.map((base, n) => ({ base, head: steadyGap.head[n] }));
+  const pass = steadyGap.base.map((ms, n) => ({ base: { ms }, head: { ms: steadyGap.head[n] } }));
   assert.equal(coldStartAgainstMain({ passes: [pass, pass] }).verdict, "regressed");
 });
 
@@ -230,13 +231,13 @@ test("against main, each round says where both builds' time went", () => {
   // (a binary read off the disk on every launch, against code that runs slower, against a
   // runner that is busy), not only the change's.
   const launch = (ms, appMs, cpuMs, majorFaults) => ({ ms, appMs, use: { cpuMs, majorFaults, processes: 3 } });
-  const round = { base: 1784, head: 2125, baseLaunch: launch(1784, 1404, 1910, 2), headLaunch: launch(2125, 1745, 2330, 4100) };
+  const round = { base: launch(1784, 1404, 1910, 2), head: launch(2125, 1745, 2330, 4100) };
   const passes = [[round]];
   const line = coldStartAnnotation({
     name: "i3",
     limit: 2000,
     ceiling: 2500,
-    launches: [round.headLaunch],
+    launches: [round.head],
     againstMain: { passes, ...coldStartAgainstMain({ passes }) },
   });
   assert.match(

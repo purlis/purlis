@@ -385,8 +385,8 @@ async function againstMainPass(cwd, profile, baseline, rounds) {
     const first = round % 2 ? await ofHead() : await ofMain();
     const second = round % 2 ? await ofMain() : await ofHead();
     const [head, base] = round % 2 ? [first, second] : [second, first];
-    // Both launches whole too, for the annotation to say where each build's time went (#1866).
-    pass.push({ base: base.ms, head: head.ms, baseLaunch: base, headLaunch: head });
+    // Both launches whole, for the annotation to say where each build's time went (#1866).
+    pass.push({ base, head });
     launches.push(head);
   }
   return { pass, launches };
@@ -427,10 +427,7 @@ async function coldStart(chats = 0) {
     firstRunIsColdestOnDisk: warmUp ? undefined : samples[0]?.ms,
     ...(warmUp && { coldDiskWarmUp: { ms: warmUp.ms, appMs: warmUp.appMs } }),
     freshProfileEachLaunch: options["fresh-profile"],
-    // The rounds' times only: each launch whole is for the annotation, not the record.
-    ...(againstMain && {
-      againstMain: { ...againstMain, passes: againstMain.passes.map((pass) => pass.map(({ base, head }) => ({ base, head }))) },
-    }),
+    ...(againstMain && { againstMain }),
   };
 }
 
@@ -990,7 +987,7 @@ if (options.limit && results.coldStart) {
     for (const [n, pass] of againstMain.passes.entries())
       console.log(
         `against main, pass ${n + 1}: ` +
-          pass.map(({ base, head }) => `${Math.round(base)} / ${Math.round(head)}`).join(", ") +
+          pass.map(({ base, head }) => `${Math.round(base.ms)} / ${Math.round(head.ms)}`).join(", ") +
           " ms (main / this change)",
       );
     console.log(
@@ -1009,7 +1006,7 @@ if (options.limit && results.coldStart) {
         traced: coldStartLaunches.traced,
         limit,
         ceiling,
-        againstMain: coldStartLaunches.againstMain ?? againstMain,
+        againstMain,
         evidence: options.evidence,
       }),
     );
