@@ -1703,12 +1703,12 @@ pub(crate) fn serve_recorded(
     // (`sandbox-exec`, purlis's own on Linux) starts a program under the path it is given, so
     // the run is of a link of that name, the app's own for this run beside the credential files
     // no chat reads, to the program as resolved: what runs is that program still.
-    let named = match declared_as
+    let name_link = match declared_as
         .as_deref()
         .map(|name| named_link(&within, name, &program))
         .transpose()
     {
-        Ok(named) => named,
+        Ok(name_link) => name_link,
         Err(e) => {
             return refuse(
                 &mut *writer,
@@ -1720,7 +1720,7 @@ pub(crate) fn serve_recorded(
             );
         }
     };
-    let run_as = named
+    let run_as = name_link
         .as_ref()
         .map_or_else(|| program.clone(), |(_, link)| link.clone());
     // The run's credential files and its named link: given back to the run alone.
@@ -1728,7 +1728,7 @@ pub(crate) fn serve_recorded(
         .files
         .iter()
         .cloned()
-        .chain(named.iter().map(|(_, link)| link.clone()))
+        .chain(name_link.iter().map(|(_, link)| link.clone()))
         .collect();
     let profile = || {
         let mut ports = beside.proxy_ports();
