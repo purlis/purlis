@@ -1,0 +1,571 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use super::*;
+
+const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn image() -> Image {
+    Image::pinned(&format!("ghcr.io/purlis/purlis-runner@{DIGEST}")).unwrap()
+}
+
+fn runner() -> Runner {
+    Runner::new(
+        "first",
+        image(),
+        User::new(10001, 10001).unwrap(),
+        "/home/purlis",
+    )
+    .unwrap()
+}
+
+fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
+    args.windows(2).any(|w| w[0] == flag && w[1] == value)
+}
+
+#[test]
+fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges() {
+    let args = runner().create_args();
+    assert_eq!(args[0], "run");
+    assert!(has_pair(&args, "--cap-drop", "ALL"), "{args:?}");
+    assert!(
+        has_pair(&args, "--security-opt", "no-new-privileges"),
+        "{args:?}"
+    );
+    assert!(has_pair(&args, "--user", "10001:10001"), "{args:?}");
+    assert!(has_pair(&args, "--network", "bridge"), "{args:?}");
+}
+
+#[test]
+fn a_runner_container_keeps_the_default_seccomp_profile_and_is_never_privileged() {
+    let args = runner().create_args();
+    assert!(!args.iter().any(|a| a.contains("privileged")), "{args:?}");
+    assert!(!args.iter().any(|a| a.contains("seccomp")), "{args:?}");
+    assert!(!args.iter().any(|a| a.contains("apparmor")), "{args:?}");
+    assert!(!args.iter().any(|a| a == "--cap-add"), "{args:?}");
+}
+
+#[test]
+fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
+    let args = runner().create_args();
+    let at = args
+        .iter()
+        .position(|a| a == &format!("ghcr.io/purlis/purlis-runner@{DIGEST}"))
+        .expect("the image is named by its digest");
+    assert_eq!(&args[at + 1..], ["serve"]);
+}
+
+#[test]
+fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_this_machine() {
+    let args = runner().create_args();
+    let mounts: Vec<&String> = args
+        .windows(2)
+        .filter(|w| w[0] == "--mount")
+        .map(|w| &w[1])
+        .collect();
+    assert_eq!(
+        mounts,
+        ["type=volume,source=purlis-runner-first-home,target=/home/purlis"]
+    );
+    assert!(!args.iter().any(|a| a == "-v" || a == "--volume"));
+}
+
+#[test]
+fn a_runner_container_is_named_and_labelled_as_the_pools() {
+    let args = runner().create_args();
+    assert!(has_pair(&args, "--name", "purlis-runner-first"), "{args:?}");
+    assert!(
+        has_pair(&args, "--label", "purlis.runner=first"),
+        "{args:?}"
+    );
+    assert!(args.iter().any(|a| a == "--detach"));
+}
+
+#[test]
+fn an_image_named_by_a_tag_is_refused() {
+    for refused in [
+        "ghcr.io/purlis/purlis-runner:main",
+        "ghcr.io/purlis/purlis-runner",
+        "ghcr.io/purlis/purlis-runner@sha256:abc",
+        "ghcr.io/purlis/purlis-runner:main@sha256:ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "-v/:/host@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+    ] {
+        assert!(Image::pinned(refused).is_err(), "{refused} was taken");
+    }
+}
+
+#[test]
+fn an_image_with_a_tag_beside_its_digest_is_taken_by_the_digest() {
+    let image = Image::pinned(&format!("localhost:5000/team/runner:v1@{DIGEST}")).unwrap();
+    assert_eq!(
+        image.as_str(),
+        format!("localhost:5000/team/runner:v1@{DIGEST}")
+    );
+}
+
+#[test]
+fn root_is_refused_as_a_runners_user() {
+    assert!(User::new(0, 10001).is_err());
+    assert!(User::new(10001, 0).is_err());
+}
+
+#[test]
+fn a_runner_name_that_is_not_lower_case_letters_digits_and_dashes_is_refused() {
+    for refused in [
+        "",
+        "-x",
+        "x-",
+        "First",
+        "a b",
+        "a/b",
+        "a.b",
+        &"x".repeat(41),
+    ] {
+        assert!(
+            Runner::new(
+                refused,
+                image(),
+                User::new(10001, 10001).unwrap(),
+                "/home/purlis"
+            )
+            .is_err(),
+            "{refused:?} was taken"
+        );
+    }
+}
+
+#[test]
+fn a_home_that_is_not_an_absolute_plain_path_is_refused() {
+    for refused in ["", "home", "/home/../etc", "/home/a,b", "/home/a=b", "/"] {
+        assert!(
+            Runner::new("first", image(), User::new(10001, 10001).unwrap(), refused).is_err(),
+            "{refused:?} was taken"
+        );
+    }
+}
+
+const ID: &str = "bedaed78395a1217511b3b656d2e4d5d3b9f279c0c7270290596f86688c01fe4";
+
+fn made() -> Made {
+    Made {
+        container: ContainerId::new(ID).unwrap(),
+        runner: runner(),
+    }
+}
+
+/// What `docker inspect` printed for a container made by [`Runner::create_args`] (Docker
+/// 29.8, 2026-10-17), cut to the fields the check reads and a few beside them.
+fn inspected() -> serde_json::Value {
+    serde_json::json!([{
+        "Id": ID,
+        "State": { "Running": true },
+        "Image": DIGEST,
+        "AppArmorProfile": "",
+        "HostConfig": {
+            "Privileged": false,
+            "SecurityOpt": ["no-new-privileges"],
+            "CapAdd": null,
+            "CapDrop": ["ALL"],
+            "NetworkMode": "bridge",
+            "PidMode": "",
+            "IpcMode": "private",
+            "UTSMode": "",
+            "UsernsMode": "",
+            "CgroupnsMode": "private",
+            "Devices": [],
+            "DeviceRequests": null,
+            "Binds": null,
+            "VolumesFrom": null,
+            "ReadonlyRootfs": false,
+            "Runtime": "runc"
+        },
+        "Mounts": [{
+            "Type": "volume",
+            "Name": "purlis-runner-first-home",
+            "Destination": "/home/purlis",
+            "RW": true
+        }],
+        "Config": {
+            "User": "10001:10001",
+            "Image": format!("ghcr.io/purlis/purlis-runner@{DIGEST}"),
+            "Labels": { "purlis.runner": "first" }
+        }
+    }])
+}
+
+fn with(change: impl FnOnce(&mut serde_json::Value)) -> serde_json::Value {
+    let mut inspected = inspected();
+    change(&mut inspected[0]);
+    inspected
+}
+
+#[test]
+fn a_container_confined_as_it_was_made_passes_the_check() {
+    assert_eq!(check(&inspected(), &made()), Ok(()));
+}
+
+/// One way a container differs from how it was made.
+type Change = Box<dyn Fn(&mut serde_json::Value)>;
+
+#[test]
+fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
+    let cases: Vec<(&str, Change)> = vec![
+        (
+            "privileged",
+            Box::new(|c| c["HostConfig"]["Privileged"] = true.into()),
+        ),
+        (
+            "seccomp off",
+            Box::new(|c| {
+                c["HostConfig"]["SecurityOpt"] =
+                    serde_json::json!(["no-new-privileges", "seccomp=unconfined"])
+            }),
+        ),
+        (
+            "a seccomp profile of its own",
+            Box::new(|c| {
+                c["HostConfig"]["SecurityOpt"] = serde_json::json!([
+                    "no-new-privileges",
+                    "seccomp={\"defaultAction\":\"SCMP_ACT_ALLOW\"}"
+                ])
+            }),
+        ),
+        (
+            "apparmor off",
+            Box::new(|c| {
+                c["HostConfig"]["SecurityOpt"] =
+                    serde_json::json!(["no-new-privileges", "apparmor=unconfined"])
+            }),
+        ),
+        (
+            "apparmor off, read from the profile",
+            Box::new(|c| c["AppArmorProfile"] = "unconfined".into()),
+        ),
+        (
+            "labels off",
+            Box::new(|c| {
+                c["HostConfig"]["SecurityOpt"] =
+                    serde_json::json!(["no-new-privileges", "label=disable"])
+            }),
+        ),
+        (
+            "new privileges",
+            Box::new(|c| c["HostConfig"]["SecurityOpt"] = serde_json::json!([])),
+        ),
+        (
+            "a capability added",
+            Box::new(|c| c["HostConfig"]["CapAdd"] = serde_json::json!(["SYS_ADMIN"])),
+        ),
+        (
+            "capabilities kept",
+            Box::new(|c| c["HostConfig"]["CapDrop"] = serde_json::json!(["NET_RAW"])),
+        ),
+        (
+            "the machine's network",
+            Box::new(|c| c["HostConfig"]["NetworkMode"] = "host".into()),
+        ),
+        (
+            "another container's network",
+            Box::new(|c| c["HostConfig"]["NetworkMode"] = "container:abc".into()),
+        ),
+        (
+            "the machine's processes",
+            Box::new(|c| c["HostConfig"]["PidMode"] = "host".into()),
+        ),
+        (
+            "another container's processes",
+            Box::new(|c| c["HostConfig"]["PidMode"] = "container:abc".into()),
+        ),
+        (
+            "the machine's shared memory",
+            Box::new(|c| c["HostConfig"]["IpcMode"] = "host".into()),
+        ),
+        (
+            "the machine's host name",
+            Box::new(|c| c["HostConfig"]["UTSMode"] = "host".into()),
+        ),
+        (
+            "the machine's users",
+            Box::new(|c| c["HostConfig"]["UsernsMode"] = "host".into()),
+        ),
+        (
+            "the machine's cgroups",
+            Box::new(|c| c["HostConfig"]["CgroupnsMode"] = "host".into()),
+        ),
+        (
+            "a device",
+            Box::new(|c| {
+                c["HostConfig"]["Devices"] = serde_json::json!([{"PathOnHost": "/dev/kvm"}])
+            }),
+        ),
+        (
+            "a GPU",
+            Box::new(|c| {
+                c["HostConfig"]["DeviceRequests"] = serde_json::json!([{"Driver": "nvidia"}])
+            }),
+        ),
+        (
+            "another container's volumes",
+            Box::new(|c| c["HostConfig"]["VolumesFrom"] = serde_json::json!(["abc"])),
+        ),
+        (
+            "another runtime",
+            Box::new(|c| c["HostConfig"]["Runtime"] = "sysbox-runc".into()),
+        ),
+        (
+            "a folder of this machine",
+            Box::new(
+                |c| c["Mounts"] = serde_json::json!([{"Type": "bind", "Source": "/var/run/docker.sock", "Destination": "/var/run/docker.sock", "RW": true}]),
+            ),
+        ),
+        (
+            "a second volume",
+            Box::new(|c| {
+                c["Mounts"].as_array_mut().unwrap().push(serde_json::json!({"Type": "volume", "Name": "other", "Destination": "/data", "RW": true}))
+            }),
+        ),
+        (
+            "another volume as its home",
+            Box::new(|c| c["Mounts"][0]["Name"] = "purlis-runner-second-home".into()),
+        ),
+        ("root", Box::new(|c| c["Config"]["User"] = "0:0".into())),
+        (
+            "root by name",
+            Box::new(|c| c["Config"]["User"] = "root".into()),
+        ),
+        (
+            "the image's own user",
+            Box::new(|c| c["Config"]["User"] = "".into()),
+        ),
+        (
+            "another user",
+            Box::new(|c| c["Config"]["User"] = "10002:10002".into()),
+        ),
+        (
+            "another image",
+            Box::new(|c| c["Config"]["Image"] = "ghcr.io/purlis/purlis-runner:main".into()),
+        ),
+        (
+            "another runner's label",
+            Box::new(|c| c["Config"]["Labels"]["purlis.runner"] = "second".into()),
+        ),
+        (
+            "no label",
+            Box::new(|c| c["Config"]["Labels"] = serde_json::json!({})),
+        ),
+        (
+            "another container",
+            Box::new(|c| c["Id"] = "0".repeat(64).into()),
+        ),
+        (
+            "stopped",
+            Box::new(|c| c["State"]["Running"] = false.into()),
+        ),
+        (
+            "a field missing",
+            Box::new(|c| {
+                c["HostConfig"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("Privileged");
+            }),
+        ),
+        (
+            "a field of another shape",
+            Box::new(|c| c["HostConfig"]["SecurityOpt"] = "no-new-privileges".into()),
+        ),
+    ];
+    for (case, change) in cases {
+        assert!(
+            check(&with(|c| change(c)), &made()).is_err(),
+            "{case} passed the check"
+        );
+    }
+}
+
+#[test]
+fn what_is_not_one_container_is_refused() {
+    assert!(check(&serde_json::json!([]), &made()).is_err());
+    assert!(check(&serde_json::json!({}), &made()).is_err());
+    let mut two = inspected();
+    two.as_array_mut().unwrap().push(inspected()[0].clone());
+    assert!(check(&two, &made()).is_err());
+}
+
+#[test]
+fn a_container_id_is_sixty_four_lower_case_hex() {
+    assert!(ContainerId::new(ID).is_ok());
+    for refused in [
+        "",
+        "bedaed78395a",
+        "purlis-runner-first",
+        &ID.to_uppercase(),
+        &format!("-{}", &ID[1..]),
+    ] {
+        assert!(ContainerId::new(refused).is_err(), "{refused:?} was taken");
+    }
+}
+
+#[test]
+fn the_connector_runs_the_bridge_as_the_runners_user_and_group_in_the_container_it_pinned() {
+    assert_eq!(
+        made().connect_args(),
+        ["exec", "-i", "--user", "10001:10001", ID, PURLIS, "bridge"]
+    );
+}
+
+#[test]
+fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_container_it_pinned() {
+    assert_eq!(
+        made().pair_args(),
+        [
+            "exec",
+            "-i",
+            "--user",
+            "10001:10001",
+            ID,
+            PURLIS,
+            "bridge",
+            "--pair"
+        ]
+    );
+}
+
+/// A stand-in for `docker`: a script that logs each call's words, answers `run` with [`ID`],
+/// `container inspect` with what `inspect` holds, `image inspect` with what `image` holds,
+/// and `exec` with what `paired` holds, after keeping its standard input.
+struct FakeDocker {
+    dir: tempfile::TempDir,
+}
+
+impl FakeDocker {
+    fn new(inspect: &serde_json::Value) -> FakeDocker {
+        let dir = tempfile::tempdir().unwrap();
+        let at = |name: &str| dir.path().join(name).display().to_string();
+        std::fs::write(dir.path().join("inspect"), inspect.to_string()).unwrap();
+        let script = format!(
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  'run '*) echo {ID} ;;\n  \
+             'container inspect') cat '{inspect}' ;;\n  'image inspect') cat '{image}' ;;\n  \
+             'exec '*) cat > '{input}'; cat '{paired}' ;;\nesac\n",
+            log = at("log"),
+            inspect = at("inspect"),
+            image = at("image"),
+            input = at("input"),
+            paired = at("paired"),
+        );
+        stand_in::program(dir.path(), "docker", &script);
+        FakeDocker { dir }
+    }
+
+    fn docker(&self) -> Docker {
+        Docker(self.dir.path().join("docker"))
+    }
+
+    fn file(&self, name: &str) -> String {
+        std::fs::read_to_string(self.dir.path().join(name)).unwrap_or_default()
+    }
+
+    fn set(&self, name: &str, text: &str) {
+        std::fs::write(self.dir.path().join(name), text).unwrap();
+    }
+}
+
+#[test]
+fn a_runner_made_and_confined_as_it_should_be_is_handed_back_by_its_container_id() {
+    let fake = FakeDocker::new(&inspected());
+    let made = fake.docker().make(&runner()).unwrap();
+    assert_eq!(made, self::made());
+    let log = fake.file("log");
+    assert!(
+        log.starts_with("run --detach --name purlis-runner-first"),
+        "{log}"
+    );
+    assert!(log.contains(&format!("container inspect {ID}")), "{log}");
+    assert!(!log.contains("rm"), "{log}");
+}
+
+#[test]
+fn a_runner_whose_container_fails_the_check_is_removed_with_its_volume() {
+    let fake = FakeDocker::new(&with(|c| c["HostConfig"]["Privileged"] = true.into()));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("privileged"), "{refused}");
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {ID}")),
+        "{log}"
+    );
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+}
+
+#[test]
+fn pairing_hands_the_desktops_pin_to_the_runner_and_keeps_the_runners() {
+    use purlis_session_protocol::hostlink::{LinkKey, Pinned};
+    let fake = FakeDocker::new(&inspected());
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap().public(),
+    };
+    let runner_pin = Pinned {
+        device: "01JB0RUNNER0000000000000000".into(),
+        key: LinkKey::generate().unwrap().public(),
+    };
+    fake.set(
+        "paired",
+        &format!("{}\n", crate::runnerlink::to_line(&runner_pin)),
+    );
+    assert_eq!(fake.docker().pair(&made(), &desktop).unwrap(), runner_pin);
+    assert_eq!(
+        fake.file("input"),
+        format!("{}\n", crate::runnerlink::to_line(&desktop))
+    );
+    assert!(fake.file("log").contains(&format!(
+        "exec -i --user 10001:10001 {ID} {PURLIS} bridge --pair"
+    )),);
+}
+
+#[test]
+fn a_runner_whose_container_fails_the_check_is_not_paired() {
+    use purlis_session_protocol::hostlink::{LinkKey, Pinned};
+    let fake = FakeDocker::new(&with(|c| {
+        c["HostConfig"]["CapAdd"] = serde_json::json!(["ALL"])
+    }));
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap().public(),
+    };
+    assert!(fake.docker().pair(&made(), &desktop).is_err());
+    assert!(!fake.file("log").contains("exec"));
+}
+
+#[test]
+fn the_user_and_home_a_runner_is_made_with_are_the_images_own() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "image",
+        r#"[{"Config":{"User":"10001:10001","Env":["PATH=/usr/bin","HOME=/home/purlis"]}}]"#,
+    );
+    assert_eq!(
+        fake.docker().declared(&image()).unwrap(),
+        (User::new(10001, 10001).unwrap(), "/home/purlis".to_owned())
+    );
+    for (user, env) in [
+        ("", r#"["HOME=/home/purlis"]"#),
+        ("purlis", r#"["HOME=/home/purlis"]"#),
+        ("10001", r#"["HOME=/home/purlis"]"#),
+        ("0:0", r#"["HOME=/root"]"#),
+        ("10001:10001", r#"["PATH=/usr/bin"]"#),
+    ] {
+        fake.set(
+            "image",
+            &format!(r#"[{{"Config":{{"User":"{user}","Env":{env}}}}}]"#),
+        );
+        assert!(
+            fake.docker().declared(&image()).is_err(),
+            "{user} {env} was taken"
+        );
+    }
+}

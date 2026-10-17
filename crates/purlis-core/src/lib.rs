@@ -58,6 +58,8 @@ pub mod dispatchtalk;
 pub mod dispatchunattended;
 pub mod dispatchwants;
 pub mod dispatchwithin;
+#[cfg(unix)]
+pub mod dockerpool;
 pub mod docsrc;
 pub mod doctor;
 pub mod doing;
@@ -182,6 +184,8 @@ pub mod rewrite;
 pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
+#[cfg(unix)]
+pub mod runnerlink;
 pub mod sandbox;
 pub mod sandboxblock;
 pub mod savefix;

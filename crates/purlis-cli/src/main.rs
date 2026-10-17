@@ -28,6 +28,8 @@ use purlis_core::shown;
 use purlis_core::state::Event;
 use purlis_core::workspaces::Plane;
 
+#[cfg(unix)]
+mod bridge;
 mod brokered;
 mod browsing;
 mod change;
@@ -95,6 +97,14 @@ enum Command {
     /// session protocol. The app starts its own; this is the same host for a machine with no
     /// window, such as a runner.
     Serve,
+    /// On a runner: join this standard input and output to the session host's link socket,
+    /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
+    Bridge {
+        /// Pair this runner with the desktop whose pin is on standard input, and print this
+        /// runner's own pin.
+        #[arg(long)]
+        pair: bool,
+    },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
     /// Additive and idempotent — never touches existing content. A path purlis would write
@@ -794,25 +804,58 @@ fn serve() -> ExitCode {
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
     );
+    // A runner's host answers links from the one desktop it is paired with, reading its
+    // pairing as each link arrives (`runnerlink`, #2044); unpaired, it links nobody.
+    let answering: purlis_host::Answering = {
+        let config = config.clone();
+        std::sync::Arc::new(move || {
+            let device = purlis_core::machine::device_id(&config)
+                .map_err(|why| format!("this runner has no device id: {why}"))?;
+            purlis_core::runnerlink::answering(&config, &device)
+        })
+    };
     ExitCode::from(
-        u8::try_from(purlis_host::serve_alone(&place, |place| {
-            purlis_core::browsers::given_to(
-                purlis_host::Hosting::kept(
-                    &place.credentials,
-                    Composes(purlis_core::hoststart::Kit::found(
-                        std::env::current_exe().ok(),
-                        None,
-                    )),
-                    purlis_host::Terminals,
-                    purlis_host::HearsNothing,
-                    Confines,
+        u8::try_from(purlis_host::serve_alone_answering(
+            &place,
+            |place| {
+                purlis_core::browsers::given_to(
+                    purlis_host::Hosting::kept(
+                        &place.credentials,
+                        Composes(purlis_core::hoststart::Kit::found(
+                            std::env::current_exe().ok(),
+                            None,
+                        )),
+                        purlis_host::Terminals,
+                        purlis_host::HearsNothing,
+                        Confines,
+                    )
+                    // `purlis stop --all` is heard with no window there (#2190).
+                    .heeding(purlis_core::halt::OnDisk(config.clone())),
                 )
-                // `purlis stop --all` is heard with no window there (#2190).
-                .heeding(purlis_core::halt::OnDisk(config.clone())),
-            )
-        }))
+            },
+            answering,
+        ))
         .unwrap_or(1),
     )
+}
+
+/// `purlis bridge`: a runner's pipe to its host's link socket, or its pairing.
+#[cfg(unix)]
+fn bridge(pair: bool) -> ExitCode {
+    match bridge::run(pair) {
+        Ok(code) => ExitCode::from(code),
+        Err(why) => {
+            voice::err(&why);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `purlis bridge`: a runner's pipe, on macOS and Linux only.
+#[cfg(not(unix))]
+fn bridge(_pair: bool) -> ExitCode {
+    voice::err("a runner's bridge runs on macOS and Linux only");
+    ExitCode::FAILURE
 }
 
 /// **How `purlis serve` composes each start** (#2174, #2171): a launch by its words, or, for a
@@ -3045,6 +3088,7 @@ fn run(command: Command) -> Result<u8, String> {
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
         | Command::Serve
+        | Command::Bridge { .. }
         | Command::Init(_)
         | Command::Reinit
         | Command::News(_)
@@ -4081,6 +4125,10 @@ fn main() -> ExitCode {
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
     if let Command::Serve = &cli.command {
         return serve();
+    }
+    // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
+    if let Command::Bridge { pair } = &cli.command {
+        return bridge(*pair);
     }
     // Needs no project: the app that started the chat answers it, from its own record (#1450).
     if let Command::Persona(memory::PersonaCommand::Where { now }) = &cli.command {
