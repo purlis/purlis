@@ -3364,9 +3364,22 @@ pub fn run() {
                 }
                 host.start();
                 // The person's browsers run in it too (#2012).
-                app.manage(std::sync::Arc::new(browsers::WindowBrowsers::new(
-                    host.connection(),
-                )));
+                // A browser whose engine ends by itself leaves its chat at once, with any Ask
+                // about it (#2385).
+                let window = app.handle().clone();
+                app.manage(std::sync::Arc::new(
+                    browsers::WindowBrowsers::new(host.connection()).telling_ended(
+                        std::sync::Arc::new(move |program: String| {
+                            let window = window.clone();
+                            // The link's thread tells it: what follows is done off it.
+                            tauri::async_runtime::spawn_blocking(move || {
+                                if let Some(planes) = window.try_state::<planes::Planes>() {
+                                    chatbrowsers::engine_ended(&planes.every_held(), &program);
+                                }
+                            });
+                        }),
+                    ),
+                ));
                 app.manage(host);
             }
             // No session host to fail where none runs.
