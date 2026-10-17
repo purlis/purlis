@@ -75,6 +75,23 @@ pub fn spec(app: impl IntoIterator<Item = (OsString, OsString)>, chat: &Terminal
     spec
 }
 
+/// **`spec`, with what the chat's profile `handed` it set last** in its program's environment
+/// ([`crate::profilesignin::handed_onto`]), carried with the rest where the chat runs on
+/// purlis's own wrap. Applied where the program is spawned, after everything else is settled.
+pub fn with_handed(mut spec: Spec, handed: &crate::profilesignin::Handed) -> Spec {
+    if handed.is_empty() {
+        return spec;
+    }
+    let env = std::mem::take(&mut spec.env);
+    spec.env = match purlis_linux_sandbox::carried::read(env.iter().cloned()) {
+        Ok(carried) => purlis_linux_sandbox::carried::carried(crate::profilesignin::handed_onto(
+            carried, handed,
+        )),
+        Err(_) => crate::profilesignin::handed_onto(env, handed),
+    };
+    spec
+}
+
 /// Whether a chat's arguments, after its program, are purlis's own wrap's line
 /// ([`purlis_linux_sandbox::line`]).
 fn wraps(args: &[String]) -> bool {

@@ -56,11 +56,9 @@ pub fn carried<K: AsRef<OsStr>, V: AsRef<OsStr>>(
 
 /// **What [`carried`] carried, read back from the wrap's own environment `own`**, in its
 /// order; or [`NotBuilt`] where `own` is not what [`carried`] makes.
-#[cfg(unix)]
 pub fn read(
     own: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Result<Vec<(OsString, OsString)>, NotBuilt> {
-    use std::os::unix::ffi::OsStringExt;
     let mut count = None;
     let mut each = std::collections::BTreeMap::new();
     for (name, value) in own {
@@ -87,20 +85,33 @@ pub fn read(
     if each.len() != count || each.keys().next_back().is_some_and(|last| *last >= count) {
         return Err(NotBuilt);
     }
-    each.into_values()
-        .map(|pair| {
-            let mut name = pair.into_vec();
-            let at = name
-                .iter()
-                .position(|byte| *byte == b'=')
-                .filter(|at| *at > 0)
-                .ok_or(NotBuilt)?;
-            let value = name.split_off(at + 1);
-            name.pop();
-            Ok((OsString::from_vec(name), OsString::from_vec(value)))
-        })
-        .collect()
+    each.into_values().map(split).collect()
 }
 
-#[cfg(all(test, unix))]
+/// `NAME=value`, as a name and its value; a name is never empty.
+#[cfg(unix)]
+fn split(pair: OsString) -> Result<(OsString, OsString), NotBuilt> {
+    use std::os::unix::ffi::OsStringExt;
+    let mut name = pair.into_vec();
+    let at = name
+        .iter()
+        .position(|byte| *byte == b'=')
+        .filter(|at| *at > 0)
+        .ok_or(NotBuilt)?;
+    let value = name.split_off(at + 1);
+    name.pop();
+    Ok((OsString::from_vec(name), OsString::from_vec(value)))
+}
+
+/// `NAME=value`, as a name and its value, where both are text; a name is never empty.
+#[cfg(not(unix))]
+fn split(pair: OsString) -> Result<(OsString, OsString), NotBuilt> {
+    let pair = pair.into_string().map_err(|_| NotBuilt)?;
+    match pair.split_once('=') {
+        Some((name, value)) if !name.is_empty() => Ok((name.into(), value.into())),
+        _ => Err(NotBuilt),
+    }
+}
+
+#[cfg(test)]
 mod tests;

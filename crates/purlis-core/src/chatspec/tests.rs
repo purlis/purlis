@@ -217,7 +217,6 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn a_chat_on_purlis_s_own_wrap_starts_it_with_only_what_it_carries_for_the_chat() {
     let set = [
@@ -274,4 +273,49 @@ fn a_chat_whose_words_only_look_like_the_wrap_s_is_started_as_it_is() {
         },
     );
     assert_eq!(value(&spec, "PATH").as_deref(), Some("/usr/bin:/bin"));
+}
+
+#[test]
+fn what_a_profile_hands_a_chat_on_purlis_s_own_wrap_is_carried_to_its_program() {
+    let args = purlis_linux_sandbox::line("(version 1)\n", "/usr/bin/codex".to_owned(), Vec::new());
+    let set = [("API_KEY".to_owned(), "from-the-chat".to_owned())];
+    let wrapped = spec(
+        app(),
+        &Terminal {
+            program: "/opt/purlis/bin/purlis",
+            args: &args,
+            ..a_chat(&set, None)
+        },
+    );
+    let handed = crate::profilesignin::Handed::of(vec![(
+        "API_KEY".to_owned(),
+        "from-the-profile".to_owned(),
+    )]);
+    let wrapped = with_handed(wrapped, &handed);
+    assert!(
+        wrapped.env.iter().all(|(name, _)| name
+            .to_str()
+            .is_some_and(|name| name.starts_with(purlis_linux_sandbox::carried::COUNT))),
+        "{:?}",
+        wrapped.env
+    );
+    let given = purlis_linux_sandbox::carried::read(wrapped.env).expect("carried");
+    let keys: Vec<_> = given.iter().filter(|(name, _)| name == "API_KEY").collect();
+    assert_eq!(keys, [&("API_KEY".into(), "from-the-profile".into())]);
+}
+
+#[test]
+fn what_a_profile_hands_a_chat_is_set_last() {
+    let set = [("API_KEY".to_owned(), "from-the-chat".to_owned())];
+    let plain = spec(app(), &a_chat(&set, None));
+    let handed = crate::profilesignin::Handed::of(vec![(
+        "API_KEY".to_owned(),
+        "from-the-profile".to_owned(),
+    )]);
+    let plain = with_handed(plain, &handed);
+    assert_eq!(
+        value(&plain, "API_KEY").as_deref(),
+        Some("from-the-profile")
+    );
+    assert_eq!(value(&plain, "PATH").as_deref(), Some("/usr/bin:/bin"));
 }
