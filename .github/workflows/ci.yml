@@ -714,10 +714,21 @@ jobs:
   # test's, not a neighbour's. `--reap` is safe here because the runner is the job's own.
   # The browser engine's tests run here too: they start the runner's own Chrome, and macOS,
   # with no parent-death signal, is where an engine outliving its host would show (#2009).
+  #
+  # **In three parts, as `rust` is in two (#2458).** One runner ran out of its 45 minutes on
+  # 2026-10-13, -14, -16 and -17: the build alone took 9 to 22 minutes, since no night had ever
+  # saved a cache (rust-cache saves after a green job only, and this one was never green), and
+  # the tests are some 6,000 s of test time on a runner that runs three at once. Each part
+  # builds every test binary and runs a third of each one's tests (`count:`), and a red night
+  # still saves its build (`cache-on-failure`), so the next night starts from it.
   macos-tests:
-    name: macos (core and app tests, no orphans, evidence only)
+    name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -726,6 +737,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
@@ -734,7 +746,12 @@ jobs:
       - name: Build the tests
         run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci --partition count:${{ matrix.part }}/3
+      # What makes a part slow, as notices on the run, as in `rust`.
+      - name: Annotate the slowest tests
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
 
   # The browser engine's tests on macOS, against the runner's own Chrome, on a pull request
   # that changes the engine's crate (#2009). macOS has no parent-death signal, so an engine
