@@ -4352,6 +4352,15 @@ export type ChatWorktree = {
 	stale: boolean,
 };
 
+/**  A plane's chats that are reconnecting, or drawn again, as their panes show it. */
+export type ChatsReconnecting = {
+	plane: PlaneId,
+	/**  The chats, by their number in the plane. */
+	sessions: number[],
+	/**  While the link to the runner they run on is down; `false` once it is back. */
+	reconnecting: boolean,
+};
+
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
 export type ChildAgent = {
 	/**  The harness's id for it, unique within the chat. */

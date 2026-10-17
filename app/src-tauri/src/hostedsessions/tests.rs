@@ -1763,3 +1763,108 @@ fn a_chat_started_by_its_names_with_a_hearing_that_asks_nobody_names_nothing_to_
     assert!(confinement.is_none());
     assert!(!confines.seen()[0].confine.asks);
 }
+
+/// Every line cut so far, each its own task: aborting one cuts it.
+type Lines = Arc<Mutex<Vec<tokio::task::AbortHandle>>>;
+
+/// A `local-ui` link to `hosting` over a line `lines` can cut.
+async fn a_cuttable_link_to<H: session::Host>(hosting: H, lines: Lines) -> Result<Link, String> {
+    use purlis_session_protocol::auth::{Credentials, Scope};
+    use purlis_session_protocol::link;
+
+    static HELD: std::sync::LazyLock<Credentials> =
+        std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
+
+    let (ours, line_a) = tokio::io::duplex(1 << 20);
+    let (line_b, theirs) = tokio::io::duplex(1 << 20);
+    let line = tokio::spawn(async move {
+        let (mut line_a, mut line_b) = (line_a, line_b);
+        let _ = tokio::io::copy_bidirectional(&mut line_a, &mut line_b).await;
+    });
+    lines.lock().unwrap().push(line.abort_handle());
+    let (client, served) = tokio::join!(
+        link::connect(
+            ours,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(theirs, session::speaks(), &HELD)
+    );
+    let served = served.map_err(|why| why.to_string())?;
+    tokio::spawn(session::serve(served, hosting, None));
+    client.map_err(|why| why.to_string())
+}
+
+/// A project's chats on a runner whose programs are stand-ins, reached through this machine's
+/// host, which relays to it (#2042): each link the relay dials runs over a line the test cuts.
+fn on_a_runner() -> (Hosted, Lines) {
+    let runtime = a_runtime();
+    let runs = StandIns::default();
+    let runner = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    );
+    let lines: Lines = Arc::default();
+    let relay = purlis_host::Relay::new({
+        let lines = Arc::clone(&lines);
+        Arc::new(move || Box::pin(a_cuttable_link_to(runner.clone(), Arc::clone(&lines))))
+    });
+    let (connection, link) = in_memory(relay, &runtime);
+    let (dir, root) = a_project();
+    let hosted = Hosted {
+        sessions: HostedSessions::new(connection, &root),
+        link,
+        runs,
+        savers: Savers::default(),
+        root,
+        _dir: dir,
+        _runtime: runtime,
+    };
+    (hosted, lines)
+}
+
+/// Which chats the window was told are reconnecting, `true`, or drawn again, `false`.
+type Reconnects = (Vec<u32>, bool);
+
+#[test]
+fn a_runners_chats_are_reconnecting_while_its_link_is_down_and_drawn_again_once_it_is_back() {
+    let (hosted, lines) = on_a_runner();
+    let told: Arc<Mutex<Vec<Reconnects>>> = Arc::default();
+    hosted.sessions.when_reconnecting({
+        let told = Arc::clone(&told);
+        Arc::new(move |chats, reconnecting| told.lock().unwrap().push((chats, reconnecting)))
+    });
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    hosted.runs.last().writes(b"ready> ");
+    let (sink, seen) = a_pane();
+    hosted.sessions.watch(id, sink).expect("a view opens");
+    until("the screen is drawn", || {
+        seen.lock().unwrap().contains("ready> ")
+    });
+
+    for line in lines.lock().unwrap().drain(..) {
+        line.abort();
+    }
+    until("the chat is said to be reconnecting", || {
+        *told.lock().unwrap() == [(vec![id], true)]
+    });
+
+    // What the window sends next links again, and the chat draws again from its snapshot.
+    until("the runner is linked again", || {
+        hosted.sessions.input(id, b"typed").is_ok()
+    });
+    until("the chat is said to be drawn again", || {
+        *told.lock().unwrap() == [(vec![id], true), (vec![id], false)]
+    });
+    until("the screen is drawn again", || {
+        seen.lock().unwrap().ends_with("ready> typed")
+    });
+    assert!(
+        !seen.lock().unwrap().contains(ENDED),
+        "a pane whose runner's link dropped was told its program ended"
+    );
+}

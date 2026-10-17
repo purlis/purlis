@@ -18,6 +18,7 @@ import * as bench from "./bench";
 import { commands, type PlaneId } from "./bindings";
 import { FindBar } from "./FindBar";
 import { paneDrawn } from "./paneKeyboard";
+import { useReconnecting } from "./reconnecting";
 import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
@@ -57,6 +58,9 @@ import { useProjectShown } from "./projectShown";
  * the program's, a right-click too, and Shift held is the way past it, as in every terminal.
  * The menu key opens the menu under the cursor whichever it is, and Shift+F10 does while no
  * program has the mouse.
+ *
+ * **A chat on a runner whose link is down says "Reconnecting" over its last screen** (#2496),
+ * quietly, until the core says the link is back and the screen draws again from its snapshot.
  */
 export function SessionPane({
   plane,
@@ -77,6 +81,7 @@ export function SessionPane({
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
+  const reconnecting = useReconnecting(plane, session);
   /** The terminal's rows as they stood when its menu opened: whether anything was selected is
    *  read then, once, and not while the menu is up. */
   const [rows, setRows] = useState<TerminalRow[]>([]);
@@ -408,7 +413,9 @@ export function SessionPane({
         onPassKey={passTheKey}
       >
         <div
-          className={focused ? "pane focused" : "pane"}
+          className={["pane", focused && "focused", reconnecting && "reconnecting"]
+            .filter(Boolean)
+            .join(" ")}
           data-testid="pane"
           // Everything under here is a shell's keyboard, and the window's own bindings stand
           // back from the chords a terminal encodes (`actions.CHAT_KEYBOARD`, charter-app#106).
@@ -420,6 +427,13 @@ export function SessionPane({
           ref={holder}
         />
       </TerminalMenu>
+      {reconnecting && (
+        <div className="pane-reconnecting">
+          <span className="pane-reconnecting-said" role="status">
+            Reconnecting
+          </span>
+        </div>
+      )}
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
     </>
   );
