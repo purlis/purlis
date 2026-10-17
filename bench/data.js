@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792257311151,
+  "lastUpdate": 1792258400719,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15540,6 +15540,48 @@ window.BENCHMARK_DATA = {
             "value": 104.6912465,
             "unit": "ms",
             "extra": "median of 5 runs: 102.655, 103.682, 104.691, 105.261, 106.529 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fcb9781939fe6fcf98de17aac056c939b7691cfc",
+          "message": "Flaky: mcp_server's Host reads the spool its server writes, on the covered layout (#2409) (#2452)\n\n* mcp_server's Host reads the spool too, and a stalled host shows it (red) (#2409)\n\nCause: `purlis mcp` says an ask_operator wait with `deliver_report`, which\nspools the line when the host is slower than 250 ms. The test Host binds\n`<tmp>/hooks.sock`, outside a covered spool (V63), so the spool refuses the\nline, mcp.rs drops the error, and `next()` waited 5 s for a line that never\ncomes.\n\nThe Host now reads what it was told without waiting: a strict\n`spool::drain_running` of chat 7 (`support::spooled_running`), then the live\nchannel, each report once across reads. It reads only where the test knows the\nserver has sent the report (the harness has its answer, or the server exited),\nso no append is in progress. `nothing_more` hangs the server up first.\n\nRed: the socket is still at `<tmp>/hooks.sock`, so the new stalled-host test\nfinds nothing in the spool.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* mcp_server's Host binds its socket where the app does, so a spooled report is kept (green) (#2409)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* A report said twice live is two reports (red) (#2409)\n\nReview: the Host's dedupe across reads, by content, also swallowed a genuine\nduplicate, so a server saying the wait twice passed (#1089's wait once, end\nonce went unguarded). This test says the same wait twice more and expects two\nreports, then that said() refuses a doubled report. Red: the Host still drops\nevery report equal to one told before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* A spooled report cancels one live copy of itself, never more (green) (#2409)\n\nsupport::paired: each spooled line cancels at most one live copy of itself,\nin the same read or a later one; live is never merged with live, nor spooled\nwith spooled. The Host keeps the spooled reports still awaiting their live\ncopy, and the stalled-host test now waits for the late live copy of the wait\nand checks it is not said again, so that branch runs on CI.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T21:32:02+04:00",
+          "tree_id": "e5ea2cf8bde7f28ba43f4ffd17e3347086d43b62",
+          "url": "https://github.com/purlis/purlis/commit/fcb9781939fe6fcf98de17aac056c939b7691cfc"
+        },
+        "date": 1792258399675,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5380389999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.526, 0.538, 0.541, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.2785465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.482, 17.160, 17.279, 17.602, 17.642 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.856566,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.299, 104.132, 105.857, 105.996, 106.280 ms"
           }
         ]
       }
