@@ -58,6 +58,7 @@ impl Host for Board {
                 program: CHAT.into(),
                 number: None,
                 process: None,
+                confined: None,
             },
             Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,
@@ -246,6 +247,12 @@ fn every_command() -> Vec<Command> {
         Command::LetGoOfConfinement {
             confinement: CONFINEMENT.into(),
         },
+        // A start whose composed confinement is named to its link: the window's alone, or
+        // relayed by its host (1.16).
+        Command::StartProgram(Box::new(session::StartProgram {
+            confinement: Some(CONFINEMENT.into()),
+            ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Harness)
+        })),
         // The kill switch (1.5, ADR 0071): any scope that may stop stops every program, and
         // only the window re-arms.
         Command::StopAll,
@@ -351,6 +358,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "change_reach",
             "reach_of",
             "let_go_of_confinement",
+            "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
             "rearm",
@@ -414,6 +422,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "change_reach",
             "reach_of",
             "let_go_of_confinement",
+            "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
         ],

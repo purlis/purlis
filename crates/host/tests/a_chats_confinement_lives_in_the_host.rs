@@ -877,3 +877,215 @@ async fn a_confinement_the_host_made_for_a_chat_it_composed_is_acted_on_by_no_li
     );
     assert!(confines.seen()[0].changes.is_empty());
 }
+
+/// The id a start by its names asks the host to give the confinement it composes (#2407).
+const NAMED: &str = "01J9CNFNMNT0000000000000002";
+
+/// A start by its names, naming the confinement composed for it where `named` says.
+fn by_its_names(named: Option<&str>) -> StartProgram {
+    StartProgram {
+        confinement: named.map(str::to_owned),
+        ..StartProgram::of(PROJECT, ProgramKind::Harness)
+    }
+}
+
+/// A window holding the project in a host that composes each start by its names in a
+/// confinement of its own.
+async fn composing() -> Linked {
+    let confines = StandInConfines::default();
+    let hosting = Hosting::confining(ComposesConfined, confines.clone(), StandIns::default());
+    let (client, events) = linked_as(&hosting, Scope::LocalUi).await;
+    let project = tempfile::tempdir().unwrap();
+    client
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("held");
+    client
+        .subscribe(Default::default())
+        .await
+        .expect("subscribed");
+    Linked {
+        client,
+        events,
+        confines,
+        hosting,
+        _project: project,
+    }
+}
+
+#[tokio::test]
+async fn a_chat_started_by_its_names_has_its_confinement_named_to_the_window_that_started_it() {
+    let mut linked = composing().await;
+
+    let started = linked
+        .client
+        .start_program_told(by_its_names(Some(NAMED)))
+        .await
+        .expect("composed in the host");
+    linked.confines.proxy_did(
+        NAMED,
+        SandboxTold::Asked {
+            targets: vec!["pypi.example.com:443".into()],
+        },
+    );
+
+    let confined = started.confined.expect("the answer says where it is");
+    assert_eq!(confined.confinement, NAMED);
+    assert_eq!((confined.http, confined.socks), (50811, 50812));
+    assert!(
+        linked.confines.seen()[0].confine.asks,
+        "its proxy asks the window"
+    );
+    assert!(linked.confines.askable(NAMED));
+    assert!(hears_a_sandbox(&mut linked.events).await);
+    assert_eq!(
+        changed(
+            &linked.client,
+            NAMED,
+            ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: Layer::Chat,
+            },
+        )
+        .await,
+        Ok(Answer::ReachChanged {
+            retry: vec!["pypi.example.com:443".into()]
+        })
+    );
+    assert_eq!(
+        changed(
+            &linked.client,
+            NAMED,
+            ReachChange::WithdrawPort { port: 5432 }
+        )
+        .await,
+        Ok(Answer::ReachChanged { retry: Vec::new() })
+    );
+    assert_eq!(linked.confines.seen()[0].changes.len(), 2);
+}
+
+#[tokio::test]
+async fn a_chat_started_by_its_names_with_no_confinement_named_asks_nobody() {
+    let linked = composing().await;
+
+    let started = linked
+        .client
+        .start_program_told(by_its_names(None))
+        .await
+        .expect("composed in the host");
+
+    assert_eq!(started.confined, None);
+    assert!(!linked.confines.seen()[0].confine.asks);
+}
+
+#[tokio::test]
+async fn a_start_may_not_name_a_confinement_the_host_already_holds() {
+    let linked = composing().await;
+    confine(&linked.client, NAMED).await.expect("confined");
+
+    let refused = linked
+        .client
+        .start_program(by_its_names(Some(NAMED)))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::MALFORMED)
+    );
+    assert_eq!(linked.confines.seen().len(), 1, "nothing else was started");
+    linked
+        .client
+        .start_program(running_in(NAMED))
+        .await
+        .expect("the window's own confinement is still its own to run a chat in");
+}
+
+#[tokio::test]
+async fn a_link_that_may_not_confine_may_not_name_a_composed_confinement() {
+    let linked = composing().await;
+    let (terminal, _events) = linked_as(&linked.hosting, Scope::Terminal).await;
+
+    let refused = terminal
+        .start_program(by_its_names(Some(NAMED)))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED)
+    );
+    assert!(linked.confines.seen().is_empty());
+}
+
+#[tokio::test]
+async fn a_window_that_can_come_back_leaves_its_chats_given_ports_as_they_are() {
+    let linked = composing().await;
+    // A confinement nothing runs in: it ends with the window's link, after the host has dealt
+    // with every chat's ports that link's end leaves.
+    const UNUSED: &str = "01J9CNFNMNT0000000000000003";
+    confine(&linked.client, UNUSED).await.expect("confined");
+    linked
+        .client
+        .start_program(by_its_names(Some(NAMED)))
+        .await
+        .expect("composed in the host");
+
+    let Linked {
+        client,
+        events,
+        confines,
+        hosting,
+        ..
+    } = linked;
+    drop((client, events));
+    until("the host heard the window's link end", || {
+        confines.ended(UNUSED)
+    })
+    .await;
+
+    let named = confines
+        .seen()
+        .iter()
+        .find(|one| one.confine.confinement == NAMED)
+        .map(|one| (one.changes.clone(), one.ended));
+    assert_eq!(
+        named,
+        Some((Vec::new(), false)),
+        "a window that comes back takes the chat back as it was"
+    );
+    drop(hosting);
+}
+
+#[tokio::test]
+async fn what_a_proxy_did_is_told_once_a_chat_runs_in_it_and_to_a_window_that_took_the_chat_back() {
+    let mut linked = linked().await;
+    confine(&linked.client, CONFINEMENT)
+        .await
+        .expect("confined");
+    linked
+        .client
+        .start_program(running_in(CONFINEMENT))
+        .await
+        .expect("started");
+    let (back, mut back_events) = another_window(&linked).await;
+    let refused = || SandboxTold::Refused {
+        host: "tracker.example.com".into(),
+        port: 443,
+    };
+
+    linked.confines.proxy_did(CONFINEMENT, refused());
+    assert!(
+        hears_a_sandbox(&mut linked.events).await,
+        "the window that started the chat hears it"
+    );
+    assert!(!hears_a_sandbox(&mut back_events).await, "not yet told it");
+
+    back.programs_of(PROJECT).await.expect("its programs");
+    linked.confines.proxy_did(CONFINEMENT, refused());
+
+    assert!(
+        hears_a_sandbox(&mut back_events).await,
+        "the window that took the chat back hears it"
+    );
+}

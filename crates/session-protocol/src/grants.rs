@@ -30,7 +30,7 @@
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | relayed |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | relayed |
 //! | a start's sandbox opt-out (`without_sandbox`) | yes | | | | | |
-//! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4) | yes | | | | | relayed |
+//! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4); a start's `confinement`, the composed confinement named to its link (1.16) | yes | | | | | relayed |
 //! | a start's `launch` that names a harness, the window's composed chat | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn`, and the pushed `saving` and `who_is_mid_turn` (1.7) | yes | | | | | |
@@ -65,7 +65,10 @@
 //!   **This row says which links may confine; each confinement is the links' it is named to**
 //!   (#2444): a host acts on a confinement, and pushes what its proxy did, only for a link it
 //!   named that confinement to, and every other is one it does not hold (ADR 0068, amended for
-//!   #2444).
+//!   #2444). A start's `confinement` (1.16) is in this row: it names the confinement the host
+//!   composes for a chat to the link the start came on, so only a link that may confine sends
+//!   one, and the desktop's relay sends it on for its window alone (ADR 0068, amended for
+//!   #2407).
 //! - **A launch that names a harness is the window's for its own host alone** (#2217). It is a
 //!   chat the window composed with the sandbox it compiled for its own machine. A runner
 //!   composes every harness chat it runs by its names (#2171), with the sandbox it compiles

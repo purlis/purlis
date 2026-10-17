@@ -42,6 +42,7 @@ impl Host for Board {
                 program: "01J9ZQ5000000000000000000A".into(),
                 number: None,
                 process: None,
+                confined: None,
             }),
             Command::Stop { chat } if chat == "nobody" => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
