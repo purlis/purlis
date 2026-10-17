@@ -77,6 +77,8 @@ const LONGEST_TEXT: usize = 200;
 /// The shortest value of a blanked element that is also taken out of other lines: shorter ones
 /// would take ordinary words out of the page.
 const SHORTEST_SCRUBBED: usize = 3;
+/// The most characters shown between two blanked boxes of one group (a dash, a space).
+const LONGEST_SEPARATOR: usize = 2;
 /// How deep a tree is followed; a page nested deeper shows its content no deeper than this.
 const DEEPEST: usize = 256;
 /// How many matches a find lists.
@@ -144,26 +146,33 @@ enum Part {
 }
 
 impl Group {
-    /// What the group holds joined, without its separators and with them, `key`'s box holding
-    /// `held` in place of what it held when read.
-    fn joined(&self, key: Option<&NodeKey>, held: &str) -> Vec<String> {
+    /// What the group holds joined: in its order on the page without its separators and with
+    /// them, and in `order` (the order its boxes were typed into) where that differs. A box in
+    /// `held` holds what `held` says in place of what it held when read.
+    fn joined(&self, held: &HashMap<NodeKey, String>, order: &[NodeKey]) -> Vec<String> {
+        let holds = |at: &NodeKey, was: &str| held.get(at).map_or(was, String::as_str).to_owned();
         let mut bare = String::new();
         let mut spaced = String::new();
+        let mut boxes = Vec::new();
         for part in &self.parts {
             match part {
                 Part::Box(at, was) => {
-                    let text = if Some(at) == key { held } else { was };
-                    bare.push_str(text);
-                    spaced.push_str(text);
+                    let text = holds(at, was);
+                    bare.push_str(&text);
+                    spaced.push_str(&text);
+                    boxes.push((at, text));
                 }
                 Part::Between(text) => spaced.push_str(text),
             }
         }
-        let mut out = vec![bare];
-        if out[0] != spaced {
-            out.push(spaced);
+        boxes.sort_by_key(|(at, _)| order.iter().position(|o| o == *at).unwrap_or(usize::MAX));
+        let typed: String = boxes.into_iter().map(|(_, text)| text).collect();
+        let mut out: Vec<String> = Vec::new();
+        for text in [bare, spaced, typed] {
+            if !text.is_empty() && !out.contains(&text) {
+                out.push(text);
+            }
         }
-        out.retain(|text| !text.is_empty());
         out
     }
 
@@ -179,23 +188,26 @@ impl Group {
             .iter()
             .any(|part| matches!(part, Part::Box(at, _) if at == key))
     }
+
+    fn boxes(&self) -> usize {
+        self.parts
+            .iter()
+            .filter(|part| matches!(part, Part::Box(..)))
+            .count()
+    }
 }
 
 /// The groups of blanked boxes among `lines`: blanked elements of one frame next to each other,
-/// with nothing between them but lines that show less than [`SHORTEST_SCRUBBED`] characters.
-/// A group has two boxes or more.
+/// each holding less than [`SHORTEST_SCRUBBED`] characters (one holding more is kept out on its
+/// own, and ends a group), with nothing between two of them but lines that show at most
+/// [`LONGEST_SEPARATOR`] characters. A group has two boxes or more.
 fn groups_of(lines: &[Line], held: &HashMap<NodeKey, String>) -> Vec<Group> {
     let mut out = Vec::new();
-    let mut open: Option<(Group, Option<String>)> = None;
+    let mut open: Option<Group> = None;
     let mut between: Vec<String> = Vec::new();
-    let mut close = |open: &mut Option<(Group, Option<String>)>| {
-        if let Some((group, _)) = open.take()
-            && group
-                .parts
-                .iter()
-                .filter(|part| matches!(part, Part::Box(..)))
-                .count()
-                >= 2
+    let mut close = |open: &mut Option<Group>| {
+        if let Some(group) = open.take()
+            && group.boxes() >= 2
         {
             out.push(group);
         }
@@ -204,30 +216,36 @@ fn groups_of(lines: &[Line], held: &HashMap<NodeKey, String>) -> Vec<Group> {
         match &line.key {
             Some(key) if line.blanked => {
                 let text = held.get(key).cloned().unwrap_or_default();
-                match &mut open {
-                    Some((group, frame)) if *frame == line.frame => {
-                        group.parts.extend(between.drain(..).map(Part::Between));
-                        group.parts.push(Part::Box(key.clone(), text));
-                    }
-                    _ => {
-                        close(&mut open);
-                        open = Some((
-                            Group {
-                                parts: vec![Part::Box(key.clone(), text)],
-                            },
-                            line.frame.clone(),
-                        ));
-                    }
+                let joins = open
+                    .as_ref()
+                    .and_then(Group::first)
+                    .is_some_and(|first| first.frame == key.frame);
+                if text.chars().count() >= SHORTEST_SCRUBBED {
+                    close(&mut open);
+                } else if joins && let Some(group) = &mut open {
+                    group.parts.extend(between.drain(..).map(Part::Between));
+                    group.parts.push(Part::Box(key.clone(), text));
+                } else {
+                    close(&mut open);
+                    open = Some(Group {
+                        parts: vec![Part::Box(key.clone(), text)],
+                    });
                 }
                 between.clear();
             }
             _ => {
                 let shown = format!("{}{}", line.name, line.value.as_deref().unwrap_or_default());
-                let separates = line.address.is_none()
-                    && open.as_ref().is_some_and(|(_, frame)| *frame == line.frame)
+                let same_frame = line.key.as_ref().is_none_or(|key| {
+                    open.as_ref()
+                        .and_then(Group::first)
+                        .is_some_and(|first| first.frame == key.frame)
+                });
+                let separates = open.is_some()
+                    && line.address.is_none()
+                    && same_frame
                     && between.iter().map(|t| t.chars().count()).sum::<usize>()
                         + shown.chars().count()
-                        < SHORTEST_SCRUBBED;
+                        <= LONGEST_SEPARATOR;
                 if separates {
                     if !shown.is_empty() {
                         between.push(shown);
@@ -243,9 +261,117 @@ fn groups_of(lines: &[Line], held: &HashMap<NodeKey, String>) -> Vec<Group> {
     out
 }
 
+/// What is taken out of an answer: texts kept out, matched as they are, and the texts groups of
+/// boxes hold together, matched also with any spaces or dashes between their characters.
+pub(crate) struct Scrub<'k> {
+    exact: Vec<&'k str>,
+    loose: Vec<&'k str>,
+}
+
+impl<'k> Scrub<'k> {
+    pub(crate) fn of(kept: &'k Kept) -> Self {
+        Self {
+            exact: kept.texts(),
+            loose: kept.loose(),
+        }
+    }
+
+    /// `text` with every text kept out taken out.
+    pub(crate) fn text(&self, text: &str) -> String {
+        loosely(&scrubbed(text, &self.exact), &self.loose)
+    }
+
+    /// [`Scrub::text`] for an address, read as its reader would read it ([`scrubbed_address_by`]).
+    pub(crate) fn address(&self, address: &str) -> String {
+        scrubbed_address_by(address, |text| self.text(text))
+    }
+
+    /// Whether `text` holds any text kept out.
+    pub(crate) fn holds(&self, text: &str) -> bool {
+        self.text(text) != text
+    }
+}
+
+/// Whether `text` holds any of `loose`, ignoring case and any spaces or dashes between its
+/// characters.
+pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
+    loosely(text, loose) != text
+}
+
+/// Characters a page may put between the characters of a code: spaces and dashes.
+fn separates(c: char) -> bool {
+    c.is_whitespace() || matches!(c, '-' | '\u{2010}'..='\u{2015}' | '\u{2212}')
+}
+
+/// `text` with every one of `loose` (at least [`SHORTEST_SCRUBBED`] characters once its
+/// separators are left out) taken out, ignoring case and any separators between its characters.
+fn loosely(text: &str, loose: &[&str]) -> String {
+    let mut needles: Vec<Vec<char>> = loose
+        .iter()
+        .map(|needle| {
+            needle
+                .chars()
+                .filter(|c| !separates(*c))
+                .flat_map(char::to_lowercase)
+                .collect::<Vec<char>>()
+        })
+        .filter(|needle| needle.len() >= SHORTEST_SCRUBBED)
+        .collect();
+    needles.sort_by_key(|needle| std::cmp::Reverse(needle.len()));
+    let mut out: Vec<char> = text.chars().collect();
+    for needle in needles {
+        out = replace_loosely(&out, &needle);
+    }
+    out.into_iter().collect()
+}
+
+fn replace_loosely(text: &[char], needle: &[char]) -> Vec<char> {
+    let mut out = Vec::with_capacity(text.len());
+    let mut at = 0;
+    while at < text.len() {
+        let mut look = at;
+        let mut matched = 0;
+        while look < text.len() && matched < needle.len() {
+            let c = text[look];
+            if matched > 0 && separates(c) {
+                look += 1;
+                continue;
+            }
+            let mut lower = c.to_lowercase();
+            if lower.next() == Some(needle[matched]) && lower.next().is_none() {
+                matched += 1;
+                look += 1;
+            } else {
+                break;
+            }
+        }
+        if matched == needle.len() {
+            out.extend("(blanked)".chars());
+            at = look;
+        } else {
+            out.push(text[at]);
+            at += 1;
+        }
+    }
+    out
+}
+
 /// Builds the tree of `frames` (the page's own frame first), blanking every element in
 /// `excluded`.
+#[cfg(test)]
 pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&str]) -> Snapshot {
+    let mut kept = Kept::default();
+    kept.run(scrub);
+    build_kept(frames, excluded, &kept)
+}
+
+/// Builds the tree of `frames` (the page's own frame first), blanking every element in
+/// `excluded`, with every text `scrub` keeps out taken out.
+pub(crate) fn build_kept(
+    frames: &[FrameAx],
+    excluded: &HashSet<NodeKey>,
+    scrub: &Kept,
+) -> Snapshot {
     let Some(main) = frames.first() else {
         return Snapshot {
             title: String::new(),
@@ -283,36 +409,31 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&s
     let groups = groups_of(&lines, &builder.held);
     for group in &groups {
         if let Some(first) = group.first() {
-            blanked_text.group(first, &group.joined(None, ""));
+            blanked_text.group_tree(first, &group.joined(&HashMap::new(), &[]));
         }
     }
-    let all: Vec<&str> = blanked_text
-        .texts()
-        .into_iter()
-        .chain(scrub.iter().copied())
-        .collect();
-    title = cut(&scrubbed(&title, &all));
+    let mut all = scrub.clone();
+    all.take_in(&blanked_text);
+    let all = Scrub::of(&all);
+    title = cut(&all.text(&title));
     let mut echoes = Vec::new();
     for line in &mut lines {
         if let Some(key) = &line.key
-            && (holds_any(&line.name, &all)
-                || line
-                    .value
-                    .as_deref()
-                    .is_some_and(|value| holds_any(value, &all)))
+            && (all.holds(&line.name)
+                || line.value.as_deref().is_some_and(|value| all.holds(value)))
         {
             echoes.push(key.clone());
         }
-        line.name = cut(&scrubbed(&line.name, &all));
+        line.name = cut(&all.text(&line.name));
         if let Some(value) = &mut line.value {
-            *value = cut(&scrubbed(value, &all));
+            *value = cut(&all.text(value));
         }
         if let Some(address) = &mut line.address {
-            *address = scrubbed_address(address, &all);
+            *address = all.address(address);
         }
         if let Some(frame) = &mut line.frame {
             // A frame's label is its name, or its address when it has none.
-            *frame = cut(&scrubbed_address(frame, &all));
+            *frame = cut(&all.address(frame));
         }
     }
     Snapshot {
@@ -325,17 +446,19 @@ pub(crate) fn build(frames: &[FrameAx], excluded: &HashSet<NodeKey>, scrub: &[&s
     }
 }
 
-/// `address` with every one of `blanked` taken out of it as a reader of the address would read
-/// it: percent-decoded, and in its query a `+` read as a space. An address that held none is
-/// given back as it was written.
+/// `address` with every one of `blanked` taken out of it ([`scrubbed_address_by`]).
+#[cfg(test)]
 pub(crate) fn scrubbed_address(address: &str, blanked: &[&str]) -> String {
+    scrubbed_address_by(address, |text| scrubbed(text, blanked))
+}
+
+/// `address` with what `scrub` takes out of a text taken out of it as a reader of the address
+/// would read it: percent-decoded, and in its query a `+` read as a space. An address that held
+/// none is given back as it was written.
+fn scrubbed_address_by(address: &str, scrub: impl Fn(&str) -> String) -> String {
     let decoded = decoded_address(address);
-    let out = scrubbed(&decoded, blanked);
-    if out == decoded {
-        scrubbed(address, blanked)
-    } else {
-        out
-    }
+    let out = scrub(&decoded);
+    if out == decoded { scrub(address) } else { out }
 }
 
 /// `address` percent-decoded (as UTF-8, any byte that is not read as `?`), with `+` read as a
@@ -438,12 +561,19 @@ impl Snapshot {
         &self.blanked_text
     }
 
-    /// What the group of blanked boxes `key` is in holds with `key` holding `held`, joined as
-    /// [`Kept::group`] keeps it: the group's first box, and the joined texts. `None` when `key`
-    /// is in no group.
-    pub(crate) fn group_with(&self, key: &NodeKey, held: &str) -> Option<(NodeKey, Vec<String>)> {
-        let group = self.groups.iter().find(|group| group.holds(key))?;
-        Some((group.first()?.clone(), group.joined(Some(key), held)))
+    /// What each group of blanked boxes that holds one of `held`'s boxes holds, joined as
+    /// [`Kept::group`] keeps it, each box in `held` holding what `held` says: each group's first
+    /// box, and its joined texts. `order` is the order the boxes were typed into.
+    pub(crate) fn groups_holding(
+        &self,
+        held: &HashMap<NodeKey, String>,
+        order: &[NodeKey],
+    ) -> Vec<(NodeKey, Vec<String>)> {
+        self.groups
+            .iter()
+            .filter(|group| held.keys().any(|key| group.holds(key)))
+            .filter_map(|group| Some((group.first()?.clone(), group.joined(held, order))))
+            .collect()
     }
 
     /// Every element whose name or value held a text kept out: where the page shows it.

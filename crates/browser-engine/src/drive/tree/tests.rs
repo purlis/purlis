@@ -457,7 +457,6 @@ fn ax(id: i64, role: &str, name: &str, value: Option<&str>, children: &[i64]) ->
 /// the fourth), the code typed in, and the page then showing it whole: in its title, a line of
 /// its own and the address of a frame.
 fn code_page(boxes: [&str; 6], shows: &str) -> Vec<FrameAx> {
-    let code: String = boxes.concat();
     let mut nodes = vec![
         ax(
             1,
@@ -493,7 +492,6 @@ fn code_page(boxes: [&str; 6], shows: &str) -> Vec<FrameAx> {
             &[],
         ));
     }
-    assert!(shows.contains(&code[..3]));
     vec![
         FrameAx {
             id: "CODE-FRAME".into(),
@@ -543,4 +541,38 @@ fn a_code_typed_across_several_boxes_is_taken_out_whole_wherever_the_page_shows_
         assert!(!snapshot.shows_text("739214"));
         assert!(snapshot.blanked_text().texts().contains(&"739214"));
     }
+}
+
+#[test]
+fn a_code_is_taken_out_with_any_spaces_or_dashes_the_page_puts_between_its_digits() {
+    let snapshot = build(
+        &code_page(["7", "3", "9", "2", "1", "4"], "7 3 9-2 1 4"),
+        &boxes(),
+        &[],
+    );
+    let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
+
+    assert!(
+        text.contains("- paragraph \"You entered (blanked), thank you\""),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_blanked_field_holding_a_value_of_its_own_next_to_the_boxes_is_no_part_of_their_code() {
+    let mut frames = code_page(["7", "3", "9", "2", "1", "4"], "739214");
+    let nodes = frames[0].nodes.as_array_mut().unwrap();
+    nodes.push(ax(17, "textbox", "Email", Some("ada@fixture.test"), &[]));
+    let group = nodes.iter_mut().find(|n| n["nodeId"] == "2").unwrap();
+    group["childIds"].as_array_mut().unwrap().push(json!("17"));
+    let mut excluded = boxes();
+    excluded.insert(key("CODE-FRAME", 17));
+
+    let snapshot = build(&frames, &excluded, &[]);
+    let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
+
+    assert!(
+        text.contains("- paragraph \"You entered (blanked), thank you\""),
+        "{text}"
+    );
 }

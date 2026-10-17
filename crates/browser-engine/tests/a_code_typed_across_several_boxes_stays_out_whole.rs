@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A code typed one character a box, each box blanked as a login fills it, is kept out of every
-//! later answer as a whole once the page shows it whole somewhere else (#2144).
+//! answer as a whole once the page shows it whole somewhere else (#2144).
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -27,21 +27,25 @@ fn a_code_typed_into_six_boxes_shows_nowhere_once_the_page_shows_it_whole() {
         return;
     };
     open(&browser, "code-boxes.html");
+    // Each box is blanked, then its digit typed into it, as a login fills one.
     for (at, digit) in CODE.chars().enumerate() {
         let label = format!("Digit {}", at + 1);
         let field = ref_on(&find(&browser, &label), &label);
-        call(
+        browser.blank(&field).unwrap();
+        let typed = call(
             &browser,
             Call::Type {
                 page: None,
                 fields: vec![Field {
-                    into: Some(field.clone()),
+                    into: Some(field),
                     text: digit.to_string(),
                     replace: true,
                 }],
             },
         );
-        browser.blank(&field).unwrap();
+        let page = typed.page.expect("a typing answers its page");
+        assert!(!page.title.contains(CODE), "{page:?}");
+        assert!(!page.address.contains(CODE), "{page:?}");
     }
 
     let read = snapshot(&browser);

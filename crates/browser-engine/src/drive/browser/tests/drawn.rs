@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::takeover::{aim_now, key};
+use super::takeover::{aim_now, key, the_person_types_the_code};
 use super::{browser, focus_on, id, pixel, ref_of, snapshot, wait_for};
 use crate::cdp::CallError;
 use crate::drive::drawn::STYLES;
@@ -771,6 +771,20 @@ fn the_site_a_text_is_kept_on_is_the_one_of_the_document_its_page_shows() {
     a_canvas_on(&engine, "PAGE-8", "http://www.fixture.test/next.html");
 
     let after = shot_of(&browser, &sub, 1);
+
+    assert_eq!(pixel(&after, 9, 9), GREY);
+}
+
+#[test]
+fn a_screenshot_paints_over_a_code_typed_across_several_boxes_wherever_the_page_draws_it() {
+    let (browser, engine) = browser();
+    the_person_types_the_code(&browser, &engine, &[1, 2, 3, 4, 5, 6], false);
+    let mut page = Document::new("PAGE-1");
+    let said = page.element(116, None, "P");
+    page.text(117, said, "Your code 739-214 is right");
+    draws(&engine, "S-PAGE-1", &page, &[(116, [8.0, 8.0, 9.0, 9.0])]);
+
+    let after = shot(&browser, 1);
 
     assert_eq!(pixel(&after, 9, 9), GREY);
 }

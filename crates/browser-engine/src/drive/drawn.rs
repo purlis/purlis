@@ -22,7 +22,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use super::tree::holds_any;
+use super::tree::{holds_any, holds_loosely};
 
 /// The styles read for each element laid out: an image in any of them is painted over, and a
 /// reflection (the last) withholds the screenshot.
@@ -69,8 +69,9 @@ pub(crate) struct Drawn {
 pub(crate) struct Unread(&'static str);
 
 /// What `answer` (of `DOMSnapshot.captureSnapshot`, with [`STYLES`]) draws that is to be painted
-/// over on a page that keeps `kept` out.
-pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
+/// over on a page that keeps `kept` out, and `loose` out also with any spaces or dashes between
+/// its characters (what a group of boxes holds together).
+pub(crate) fn drawn(answer: &Value, kept: &[&str], loose: &[&str]) -> Result<Drawn, Unread> {
     let strings: Vec<&str> = answer
         .get("strings")
         .and_then(Value::as_array)
@@ -97,7 +98,7 @@ pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
         out.address = at.map(|a| (*a).to_owned());
     }
     for document in documents {
-        read_document(document, &strings, &kept, &mut out)?;
+        read_document(document, &strings, (&kept, loose), &mut out)?;
     }
     Ok(out)
 }
@@ -127,7 +128,7 @@ fn collapsed(text: &str) -> String {
 fn read_document(
     document: &Value,
     strings: &[&str],
-    kept: &[&str],
+    (kept, loose): (&[&str], &[&str]),
     out: &mut Drawn,
 ) -> Result<(), Unread> {
     let nodes = document
@@ -196,7 +197,9 @@ fn read_document(
         }
         out
     };
-    let holds = |text: &str| !text.is_empty() && holds_any(&collapsed(text), kept);
+    let holds = |text: &str| {
+        !text.is_empty() && (holds_any(&collapsed(text), kept) || holds_loosely(text, loose))
+    };
     let mut painted: HashSet<usize> = HashSet::new();
     let mut paint = |at: usize, out: &mut Drawn| {
         if painted.insert(at) {

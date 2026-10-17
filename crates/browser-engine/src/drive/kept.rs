@@ -6,9 +6,10 @@
 //! key, and a read drops that field's earlier values that it contains while they are shorter
 //! than [`KEPT_WHOLE_FROM`]: a field keeps its latest value, not every short value it held on
 //! the way. A read of a page's tree drops nothing, and a text read from no element (a run of
-//! the person's keys, or what they pasted) is kept as it is. A code typed across several boxes
-//! (#2144) is kept whole as the boxes' group holds it, and a read of the group is read like a
-//! field's: the group keeps its latest code, not every short part of it on the way.
+//! the person's keys, or what they pasted) is kept as it is. What a group of boxes holds
+//! together, such as a code typed one character a box (#2144), is kept whole too: read from
+//! the boxes themselves, like a field's (the group keeps its latest code, not every short part
+//! of it on the way); read from a page's tree, it drops nothing.
 
 use super::tree::NodeKey;
 
@@ -63,10 +64,16 @@ impl Kept {
         self.read(&Of::Element(from.clone()), texts);
     }
 
-    /// One read of what the group of boxes that begins with `first` holds, joined: read like a
-    /// field ([`Kept::field`]).
+    /// One read of what the group of boxes that begins with `first` holds, joined, from the
+    /// boxes themselves: read like a field's ([`Kept::field`]).
     pub(crate) fn group<S: AsRef<str>>(&mut self, first: &NodeKey, texts: &[S]) {
         self.read(&Of::Group(first.clone()), texts);
+    }
+
+    /// One read of what the group of boxes that begins with `first` holds, joined, from its
+    /// page's tree: `texts` are kept, and nothing goes.
+    pub(crate) fn group_tree<S: AsRef<str>>(&mut self, first: &NodeKey, texts: &[S]) {
+        self.add(Some(&Of::Group(first.clone())), Source::Tree, texts);
     }
 
     fn read<S: AsRef<str>>(&mut self, from: &Of, texts: &[S]) {
@@ -120,6 +127,16 @@ impl Kept {
     /// Every text kept.
     pub(crate) fn texts(&self) -> Vec<&str> {
         self.texts.iter().map(|kept| kept.text.as_str()).collect()
+    }
+
+    /// Every text a group of boxes holds together: taken out also with any spaces or dashes
+    /// between its characters.
+    pub(crate) fn loose(&self) -> Vec<&str> {
+        self.texts
+            .iter()
+            .filter(|kept| matches!(kept.from, Some(Of::Group(_))))
+            .map(|kept| kept.text.as_str())
+            .collect()
     }
 
     /// Whether nothing is kept.
@@ -236,5 +253,14 @@ mod tests {
         kept.group(&field(11), &["7392"]);
         kept.group(&field(11), &["739214"]);
         assert_eq!(kept.texts(), vec!["739", "739214"]);
+    }
+
+    #[test]
+    fn a_groups_tree_read_drops_nothing() {
+        let mut kept = Kept::default();
+        kept.group(&field(11), &["739214"]);
+        kept.group_tree(&field(11), &["x739214"]);
+        assert_eq!(kept.texts(), vec!["739214", "x739214"]);
+        assert_eq!(kept.loose(), vec!["739214", "x739214"]);
     }
 }

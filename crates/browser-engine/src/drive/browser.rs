@@ -22,7 +22,7 @@ use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
 use super::settle::{Activity, Settle, activity};
 use super::site::site;
-use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
+use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Judge, Limits, Outbound,
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
@@ -158,12 +158,12 @@ struct Page {
 impl Page {
     /// `text` with what this page's blanked elements held taken out.
     fn shown(&self, text: &str) -> String {
-        scrubbed(text, &self.scrubbed.texts())
+        Scrub::of(&self.scrubbed).text(text)
     }
 
     /// [`Page::shown`] for an address, read as its reader would read it (decoded).
     fn shown_address(&self, address: &str) -> String {
-        scrubbed_address(address, &self.scrubbed.texts())
+        Scrub::of(&self.scrubbed).address(address)
     }
 
     /// The site this page is on: the one of the document it has loaded, not of an address it
@@ -1579,7 +1579,7 @@ impl Browser {
             };
             trees.push(frame);
         }
-        let snapshot = build(&trees, &excluded, &scrub.texts());
+        let snapshot = build_kept(&trees, &excluded, &scrub);
         if let Some(page) = lock(&self.inner.state).page_mut(target) {
             page.keep_out(snapshot.blanked_text());
         }
@@ -1747,7 +1747,7 @@ impl Browser {
                 None => None,
             });
         }
-        self.acting_on(&target, || {
+        let mut answer = self.acting_on(&target, || {
             let total = fields.len();
             for (done, (field, at)) in fields.iter().zip(&located).enumerate() {
                 let typed = self.type_field(field, at.as_ref(), &session);
@@ -1765,6 +1765,28 @@ impl Browser {
                 }
             }
             Ok(None)
+        })?;
+        // A blanked field holds what was just typed into it: once the page has settled it is
+        // read again, so that is kept out of this answer and every later one.
+        if self.blanks_on(&target) {
+            let _ = self.snapshot_of(&target);
+            let state = lock(&self.inner.state);
+            answer.page = answer.page.and_then(|page| {
+                let at = state.pages.iter().find(|p| p.id == page.id)?;
+                state.info(&at.target)
+            });
+        }
+        Ok(answer)
+    }
+
+    /// Whether any element of `target`'s page is blanked.
+    fn blanks_on(&self, target: &str) -> bool {
+        let state = lock(&self.inner.state);
+        state.page(target).is_some_and(|page| {
+            state
+                .excluded
+                .iter()
+                .any(|key| page.frames.contains_key(&key.frame))
         })
     }
 
@@ -2189,6 +2211,7 @@ impl Browser {
             }
             (page.scrubbed.clone(), greys, roots)
         };
+        let loose: Vec<&str> = kept.loose();
         let kept: Vec<&str> = kept.texts();
         // The frame elements whose documents are read in sessions of their own.
         let read_apart: HashSet<(String, i64)> = roots
@@ -2217,7 +2240,8 @@ impl Browser {
                     Some(&root.session),
                 )
                 .map_err(|why| Refusal::Withheld(why.to_string()))?;
-            let found = drawn(&answer, &kept).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let found =
+                drawn(&answer, &kept, &loose).map_err(|why| Refusal::Withheld(why.to_string()))?;
             reads.push((root, found));
         }
         // What the page shows is the top document read, whatever address the page was last
