@@ -153,7 +153,7 @@ const NEEDS_YOU: Shown = {
 const BROWSER_SITES: Shown = {
   session: 8,
   ask: "browser-sites:8",
-  says: "Its browser wants to reach news.example.org:443, new to this project. An Allow is for its browser alone and reaches it at its next step; nothing restarts.",
+  says: "Its browser wants to reach news.example.org:443. An Allow is its browser's alone, from its next act; nothing restarts.",
   options: [
     { id: "chat", label: "Allow for this chat", allows: true },
     { id: "you", label: "Always allow in this project, on this machine", allows: true },
@@ -397,6 +397,18 @@ describe("answering through the path an ask names", () => {
       ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "you" }],
       ["keep_browser_sites_blocked", { plane: PLANE, session: 8, sites, reason: "not this one" }],
     ]);
+  });
+
+  it("sends no Allow for a browser sites ask that offers Keep blocked alone, and keeps it blocked (#2364)", async () => {
+    const calls = sent({ allow_browser_sites: null, keep_browser_sites_blocked: null });
+    const keepOnly: Shown = {
+      ...BROWSER_SITES,
+      options: BROWSER_SITES.options.filter((one) => !one.allows),
+    };
+    const refused = await answerThrough(PLANE, keepOnly, "chat");
+    expect(refused).toMatch(/not one of the answers this ask offers/);
+    await answerTaken(PLANE, keepOnly, "keep");
+    expect(calls.map((one) => one.cmd)).toEqual(["keep_browser_sites_blocked"]);
   });
 
   it("tells what reads a chat's network to read it again once a browser site is allowed (#2364)", async () => {

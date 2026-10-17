@@ -96,14 +96,17 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
           Drawn only where there is one: a chat with no browser site says nothing of it. */}
       {network.browser_sites.length > 0 && (
         <section aria-label="Only its browser can reach">
-          <h3>Only its browser can reach</h3>
-          <p>You allowed these for its browser alone; its commands do not reach them.</p>
+          <h3 className="ui-text-heading">Only its browser can reach</h3>
+          <p className="ui-text-secondary">
+            You allowed these for its browser alone. Its commands reach one only where it is allowed
+            for them as well.
+          </p>
           <div className="sandbox-hosts">
-            <span className="sandbox-what">Browser sites</span>
+            <span className="sandbox-what ui-text-label">Browser sites</span>
             <ul aria-label="Browser sites">
               {network.browser_sites.map((site) => (
-                <li key={site}>
-                  <code>{site}</code>
+                <li key={site} className="ui-text-body">
+                  <code className="ui-text-code">{site}</code>
                 </li>
               ))}
             </ul>

@@ -22,12 +22,17 @@ public site its browser's lane does not list.
    drives, what they do goes. A browser the person opened with no chat keeps refusing every site
    new to the project at its proxy.
 3. **A browser site is a grant of its own, for the browser alone** (ruled 2026-10-17, #2018,
-   D-2018-1). A chat's sites wait as one Ask in the registry, every site of the chat on it, with
-   Allow for this chat, Always allow in this project on this machine, and Keep blocked. An Allow
+   D-2018-1). A chat's sites wait as one Ask in the registry, with Allow for this chat, Always
+   allow in this project on this machine, and Keep blocked. *The Ask names whole, oldest first,
+   the sites its line has room for, and answers those alone; the others wait for the next. A
+   site too long to be named whole is offered Keep blocked alone, and an Allow is taken only for
+   a site the Ask names whole: decided in implementation, 2026-10-17 (D-2364-4), to be
+   confirmed.* An Allow
    lists the site in the browser's lane only: the judge and the reach proxy read it, and the
    chat's own commands never do, so they still need their own Allow for that host. It is listed
-   apart in the Granted list and in the chat's Network view, under "Only its browser can reach"
-   (#2364), and removing it ends the browsers it reached; one an
+   apart in the Granted list and in the chat's Network view, under "Only its browser can reach",
+   and the chat's tab's sandbox mark says how many it has (*decided in implementation,
+   2026-10-17, D-2364-1, to be confirmed*), and removing it ends the browsers it reached; one an
    administrator's policy later holds (a scope left out, a host never allowed) is kept and
    reaches no browser. This supersedes the sentence "nothing is listed for the browser alone"
    in item 1 of the amendment *a browser's reach is a lane of its chat's*. A browser site for

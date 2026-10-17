@@ -336,8 +336,8 @@ pub struct ChatNetwork {
     pub reach: Vec<Reached>,
     /// **The sites only its browser reaches** (#2364): its browser sites, those allowed for this
     /// chat alone first, then those kept for every chat of this project on this machine that
-    /// policy leaves in force, each once as `host:port`. Its commands reach none of them, so
-    /// the view lists them apart from `reach`.
+    /// policy leaves in force, each once as `host:port`. Each was allowed for the browser
+    /// alone, so the view lists them apart from `reach`.
     pub browser_sites: Vec<String>,
     /// What it was refused, newest first.
     pub refused: Vec<BlockedLately>,
@@ -586,7 +586,7 @@ fn chat_network_of(
         sandboxed: true,
         reach: reach_of(&confines.hosts, &open, &persona),
         browser_sites: browser_sites_of(
-            chat_sites,
+            &chat_sites_in_force(chat_sites, &locks),
             session,
             &sandbox::local::browser_sites_in_force(root, &locks),
         ),
@@ -618,6 +618,32 @@ fn reach_of(hosts: &[String], open: &[String], persona: &[String]) -> Vec<Reache
                 ReachedBy::Allowed
             },
         })
+        .collect()
+}
+
+/// **How many sites only chat `session`'s browser reaches** in the project at `root` (#2364):
+/// what its Network view lists, counted for its tab's sandbox mark.
+pub fn browser_sites_here(root: &Path, chat_sites: &[(u32, Site)], session: u32) -> usize {
+    let locks = sandbox::policy::Locks::of(root);
+    browser_sites_of(
+        &chat_sites_in_force(chat_sites, &locks),
+        session,
+        &sandbox::local::browser_sites_in_force(root, &locks),
+    )
+    .len()
+}
+
+/// `chat_sites`, less each one policy holds at its chat's scope (#2364).
+fn chat_sites_in_force(
+    chat_sites: &[(u32, Site)],
+    locks: &sandbox::policy::Locks,
+) -> Vec<(u32, Site)> {
+    chat_sites
+        .iter()
+        .filter(|(_, site)| {
+            sandbox::local::browser_site_held_at(site, grant::Level::Chat, locks).is_none()
+        })
+        .cloned()
         .collect()
 }
 

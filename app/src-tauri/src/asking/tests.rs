@@ -1502,9 +1502,8 @@ fn a_browser_site_and_a_host_for_the_chats_commands_are_two_rows_each_its_own_al
     assert!(host.says.contains("api.example.com"), "{}", host.says);
     assert_eq!(
         sites.says,
-        "Its browser wants to reach news.example.org:443 and api.example.com:443, new to this \
-         project. An Allow is for its browser alone and reaches them at its next step; nothing \
-         restarts."
+        "Its browser wants to reach news.example.org:443 and api.example.com:443. An Allow is \
+         its browser's alone, from its next act; nothing restarts."
     );
     assert_eq!(ids(sites), ["chat", "you", KEEP]);
     assert_eq!(
@@ -1540,8 +1539,8 @@ fn one_browser_site_is_named_as_one_site_its_browser_reaches_from_its_next_step(
         .unwrap();
     assert_eq!(
         sites.says,
-        "Its browser wants to reach news.example.org:443, new to this project. An Allow is for \
-         its browser alone and reaches it at its next step; nothing restarts."
+        "Its browser wants to reach news.example.org:443. An Allow is its browser's alone, from \
+         its next act; nothing restarts."
     );
 }
 
@@ -1582,10 +1581,9 @@ fn a_browser_sites_ask_answers_only_the_sites_its_line_names_whole() {
     }
     assert!(!sites.says.contains('…'), "{}", sites.says);
     assert!(
-        sites.says.contains(&format!(
-            "and {} more after",
-            written.len() - answered.len()
-        )),
+        sites
+            .says
+            .contains(&format!("and {} more.", written.len() - answered.len())),
         "{}",
         sites.says
     );

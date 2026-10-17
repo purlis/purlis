@@ -711,7 +711,7 @@ A person's yes to one site, a host and port, for a chat's browser alone, at *thi
 project on this machine*: the browser may open it, send to it and type on it. The chat's own
 commands never reach a browser site; they still need an **Allowed host** for it. Asked by the
 browser's **judge**, and listed apart from allowed hosts in the Granted list and in the chat's
-Network view. An Allow reaches the browser from its next step; nothing restarts.
+Network view. An Allow reaches the browser from its next act; nothing restarts.
 _Avoid_: host grant, browser host, allowed host (that is the commands' own)
 
 **Judge** (of a browser):

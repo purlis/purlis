@@ -2833,8 +2833,8 @@ export type ChatNetwork = {
 	/**
 	 *  **The sites only its browser reaches** (#2364): its browser sites, those allowed for this
 	 *  chat alone first, then those kept for every chat of this project on this machine that
-	 *  policy leaves in force, each once as `host:port`. Its commands reach none of them, so
-	 *  the view lists them apart from `reach`.
+	 *  policy leaves in force, each once as `host:port`. Each was allowed for the browser
+	 *  alone, so the view lists them apart from `reach`.
 	 */
 	browser_sites: string[],
 	/**  What it was refused, newest first. */
@@ -5634,6 +5634,12 @@ export type OpenChat = {
 	 *  its tab's sandbox mark says beside `none`. `null` for any other chat.
 	 */
 	sandbox_why?: string | null,
+	/**
+	 *  **How many sites only its browser reaches** (#2364): its browser sites, for this chat
+	 *  alone and for every chat here on this machine, that policy leaves in force. Its tab's
+	 *  sandbox mark says the count; its Network view lists them. `null` where there is none.
+	 */
+	browser_sites?: number | null,
 	/**
 	 *  Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
 	 *  window keys what it keeps of a chat beyond this launch by, such as the Chats list's

@@ -366,7 +366,8 @@ describe("a chat's Network view", () => {
         .getAllByRole("listitem")
         .map((one) => one.textContent),
     ).toEqual(["news.example.org:443", "docs.example.com:443"]);
-    expect(browser).toHaveTextContent(/its commands do not reach them/i);
+    expect(browser).toHaveTextContent(/for its browser alone/);
+    expect(browser).toHaveTextContent(/only where it is allowed for them as well/);
     const reach = screen.getByRole("region", { name: "Can reach now" });
     expect(reach).toHaveTextContent("extra.example:443");
     expect(reach).not.toHaveTextContent("news.example.org");
