@@ -791,12 +791,15 @@ fn serve() -> ExitCode {
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone(&place, |place| {
             purlis_core::browsers::given_to(
-                purlis_host::Hosting::keeping_its_switch_in(
+                purlis_host::Hosting::kept(
                     &place.credentials,
                     Composes(purlis_core::hoststart::Kit::found(
                         std::env::current_exe().ok(),
                         None,
                     )),
+                    purlis_host::Terminals,
+                    purlis_host::HearsNothing,
+                    Confines,
                 )
                 // `purlis stop --all` is heard with no window there (#2190).
                 .heeding(purlis_core::halt::OnDisk(config.clone())),
@@ -834,6 +837,52 @@ impl purlis_host::Compose for Composes {
                 |entry| beside.record(entry),
             ),
         )
+    }
+}
+
+/// **How `purlis serve` starts a chat's confinement** (#2217): the core's start of the plan it
+/// is handed ([`purlis_core::sandbox::hosted::start`]), as the window's own host starts one, so
+/// a chat on a runner is confined by the runner's own proxy.
+#[cfg(unix)]
+struct Confines;
+
+#[cfg(unix)]
+impl purlis_host::Confine for Confines {
+    fn confine(
+        &self,
+        confining: &purlis_host::ToConfine<'_>,
+        tell: purlis_host::Tell,
+        askable: purlis_host::Askable,
+    ) -> Result<Box<dyn purlis_host::Confining>, String> {
+        purlis_core::sandbox::hosted::start(
+            confining.project_path,
+            confining.confine,
+            tell,
+            askable,
+        )
+        .map(|hosted| Box::new(HeldByServe(hosted)) as Box<dyn purlis_host::Confining>)
+    }
+}
+
+/// A confinement `purlis serve` holds: its proxy and folders end as this is dropped.
+#[cfg(unix)]
+struct HeldByServe(purlis_core::sandbox::hosted::Hosted);
+
+#[cfg(unix)]
+impl purlis_host::Confining for HeldByServe {
+    fn confined(&self) -> purlis_host::protocol::session::Confined {
+        self.0.confined()
+    }
+
+    fn change(
+        &self,
+        change: &purlis_host::protocol::session::ReachChange,
+    ) -> Result<Vec<String>, String> {
+        self.0.change(change)
+    }
+
+    fn now(&self) -> purlis_host::protocol::session::ReachNow {
+        self.0.now()
     }
 }
 
@@ -3865,8 +3914,11 @@ fn plugin(verb: &PluginCommand) -> ExitCode {
 
 fn main() -> ExitCode {
     // purlis's own wrap of a chat on Linux (#1040), before anything else of the command runs:
-    // the hidden `purlis _sandbox`, never in help and not a public command line.
-    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+    // the hidden `purlis _sandbox`, never in help and not a public command line. Each call its
+    // supervisor refuses is told to the app as the chat's sandbox block (#2344).
+    if let Some(code) =
+        purlis_linux_sandbox::serve_if_asked_telling(purlis_core::sandboxblock::supervised::teller)
+    {
         std::process::exit(code);
     }
     // FIRST, before anything that could panic, argv and clap included: a guard that crashed

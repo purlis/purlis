@@ -18,6 +18,7 @@ import {
   launchSteps,
   noMeasurement,
   processTreeUse,
+  withoutMainsBuild,
 } from "./coldstart-gate.mjs";
 
 const gate = { limit: 2000, ceiling: 2500 };
@@ -209,6 +210,71 @@ test("against main, a confirmed regression is an error annotation", () => {
     againstMain: { passes, ...coldStartAgainstMain({ passes }) },
   });
   assert.match(line, /^::error title=Cold start%2C i3::against main in this job: .*: REGRESSED/);
+});
+
+// A pull request whose main did not build in the job has nothing to hold it to (#2388). The
+// absolute limit is reported there, not gated: the runners missed it in 39 of 1,572 cases on
+// unchanged launch code. The annotation is a warning either way, so the run says it went ungated.
+test("with no main to measure against on a pull request, the limit is reported and nothing is gated", () => {
+  const why = "main's app did not build in this job";
+  const missed = coldStartAnnotation({
+    name: "i3",
+    ...gate,
+    launches: [2100, 2600, 2700, 1900, 2010].map((ms) => ({ ms })),
+    noBaseline: why,
+  });
+  assert.match(
+    missed,
+    /^::warning title=Cold start%2C i3::no baseline: main's app did not build in this job, so nothing is gated%0A/,
+  );
+  assert.match(missed, /median 2100 ms against a 2000 ms limit.*: missed, reported, not gated/);
+  assert.doesNotMatch(missed, /MISSED/);
+  const met = coldStartAnnotation({
+    name: "bare",
+    ...gate,
+    launches: [1300, 1400, 1500].map((ms) => ({ ms })),
+    noBaseline: why,
+  });
+  assert.match(met, /^::warning title=Cold start%2C bare::no baseline: .*: met, reported, not gated/);
+});
+
+// main's build failing in a pull request's job is no baseline only when main's own job failed on
+// that commit too (#2388). main is built in the change's environment, so a change can break main's
+// build there alone (a toolchain bump, a dropped package, a build script that writes the job's
+// environment) and would otherwise ungate itself.
+const mainSha = "0123456789abcdef0123456789abcdef01234567";
+
+test("main green on main but not built in this job fails the run, naming both", () => {
+  const out = withoutMainsBuild({
+    sha: mainSha,
+    runs: [{ status: "completed", conclusion: "success", html_url: "https://example.test/run/1" }],
+  });
+  assert.equal(out.fails, true);
+  assert.equal(out.noBaseline, undefined);
+  assert.match(
+    out.annotation,
+    /^::error title=Cold start%3A main's app did not build in this job::main's app built on main \(0123456789ab: app builds \(ubuntu-24\.04\) passed, https:\/\/example\.test\/run\/1\) but not in this job/,
+  );
+  assert.match(out.annotation, /this change broke main's build here/);
+});
+
+test("main not green on main either is no baseline, said with main's state", () => {
+  const failed = withoutMainsBuild({ sha: mainSha, runs: [{ status: "completed", conclusion: "failure" }] });
+  assert.equal(failed.fails, false);
+  assert.equal(failed.noBaseline, "main's app did not build in this job, nor on main (0123456789ab: failure)");
+  assert.match(failed.annotation, /^::warning title=Cold start%3A no baseline::main's app did not build in this job, nor on main/);
+  const running = withoutMainsBuild({ sha: mainSha, runs: [{ status: "in_progress", conclusion: null }] });
+  assert.equal(running.fails, false);
+  assert.match(running.noBaseline, /\(0123456789ab: in_progress\)$/);
+  const none = withoutMainsBuild({ sha: mainSha, runs: [] });
+  assert.equal(none.fails, false);
+  assert.match(none.noBaseline, /\(0123456789ab: no app builds \(ubuntu-24\.04\) check\)$/);
+});
+
+test("main's check that could not be read fails the run: nothing says main is broken", () => {
+  const out = withoutMainsBuild({ sha: mainSha, error: "HTTP 403: Resource not accessible" });
+  assert.equal(out.fails, true);
+  assert.match(out.annotation, /^::error title=Cold start%3A main's app did not build in this job::.*could not be read: HTTP 403/);
 });
 
 // A characterization of the record, not of a change: one of the two red runs of the relative

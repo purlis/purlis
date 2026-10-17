@@ -73,6 +73,8 @@ export const LANES = {
       "allowRefusedVault",
       // Always for a persona's browser is kept in this machine's answers (#2241).
       "allowChatBrowser",
+      // A browser site for every chat here is kept in this machine's answers (#2018).
+      "allowBrowserSites",
     ],
   },
   /**

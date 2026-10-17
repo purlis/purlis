@@ -149,6 +149,20 @@ const NEEDS_YOU: Shown = {
   answer: { via: "take-over", program: "P1" },
 };
 
+const BROWSER_SITES: Shown = {
+  session: 8,
+  ask: "browser-sites:8",
+  says: "Its browser wants to open, send or type on a site new to this project: news.example.org:443. An Allow is for its browser alone",
+  options: [
+    { id: "chat", label: "Allow for this chat", allows: true },
+    { id: "you", label: "Always allow in this project, on this machine", allows: true },
+    { id: "keep", label: "Keep blocked", allows: false },
+  ],
+  source: "browser-site",
+  chain: ["steward 8"],
+  answer: { via: "browser-sites", sites: ["news.example.org:443"] },
+};
+
 const QUESTION: Shown = {
   session: 6,
   ask: "question:6",
@@ -369,6 +383,19 @@ describe("answering through the path an ask names", () => {
       window.removeEventListener(OPEN_BROWSER_ASK, heard);
     }
     expect(opened).toEqual([]);
+  });
+
+  it("allows a browser's sites, the ones the ask showed, for the chat or always here, or keeps them blocked with the reason (#2018)", async () => {
+    const calls = sent({ allow_browser_sites: null, keep_browser_sites_blocked: null });
+    await answerThrough(PLANE, BROWSER_SITES, "chat");
+    await answerThrough(PLANE, BROWSER_SITES, "you");
+    await answerTaken(PLANE, BROWSER_SITES, "keep", "  not this one ");
+    const sites = ["news.example.org:443"];
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "chat" }],
+      ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "you" }],
+      ["keep_browser_sites_blocked", { plane: PLANE, session: 8, sites, reason: "not this one" }],
+    ]);
   });
 
   it("says the source's own sentence when the source refuses", async () => {

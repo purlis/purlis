@@ -5350,14 +5350,25 @@ export const PlaneView = memo(function PlaneView({
     return chats.store.subscribe(drive);
   }, [owedRestarts, chats, plane, restartOwed]);
   /**
+   * The state of each chat owed a restart, by session (#1888): the pane's words follow the
+   * chat's state as well as the owed list, so a chat owed a restart before it said it was
+   * mid-turn says that the restart waits for its turn. The same states answer the same record,
+   * so a move of any other chat redraws nothing.
+   */
+  const owedStates = useChatsSelect(
+    chats,
+    (states): OwedStates =>
+      Object.fromEntries(owedRestarts.map((session) => [session, stateOf(states, session)])),
+    sameStates,
+  );
+  /**
    * What each chat's pane says of its restart ({@link RestartSaid}): under way, not yet, owed by
    * hand, or why it failed.
    */
   const restartsSaid = useMemo(() => {
-    const states = chats.store.statesFor(chats.plane);
     const out: Record<number, RestartSaid> = {};
     for (const session of owedRestarts) {
-      const state = stateOf(states, session);
+      const state = owedStates[session] ?? "unknown";
       // Mid-turn it waits for the turn to end, and its pane says so, with Restart now (qw351).
       out[session] = { owed: true, byHand: state === "unknown", midTurn: state === "running" };
     }
@@ -5368,7 +5379,7 @@ export const PlaneView = memo(function PlaneView({
     for (const [session, trouble] of Object.entries(restartTrouble))
       out[Number(session)] = { trouble };
     return out;
-  }, [owedRestarts, restartsRunning, restartNotYet, restartTrouble, chats]);
+  }, [owedRestarts, owedStates, restartsRunning, restartNotYet, restartTrouble]);
   /** What a row of the Chats list says of its chat's restart (#1462): why it was refused, or
    *  why it waits. */
   const restartsOnRows = useMemo(() => {
@@ -9314,6 +9325,16 @@ function forTheWindow(a: WorkspaceState, b: WorkspaceState): boolean {
     forTheWindowsFields(a, b) &&
     (a.panels?.contributed === b.panels?.contributed ||
       tabsSaid(a.panels?.contributed) === tabsSaid(b.panels?.contributed))
+  );
+}
+/** The state of each chat owed a restart, by session (#1888). */
+type OwedStates = Readonly<Record<number, State>>;
+/** Whether two readings name the same chats in the same states. */
+function sameStates(a: OwedStates, b: OwedStates): boolean {
+  const sessions = Object.keys(a);
+  return (
+    sessions.length === Object.keys(b).length &&
+    sessions.every((session) => a[Number(session)] === b[Number(session)])
   );
 }
 /** What the contributed panels' tabs say, which is all this view reads of them. */

@@ -6,8 +6,11 @@
 
 fn main() {
     // Started as purlis's own wrap of a chat on Linux (#1040), the hidden `_sandbox`: become it
-    // before anything of the app starts, so the program that starts a chat can wrap it.
-    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+    // before anything of the app starts, so the program that starts a chat can wrap it. Each
+    // call its supervisor refuses is told to the app as the chat's sandbox block (#2344).
+    if let Some(code) =
+        purlis_linux_sandbox::serve_if_asked_telling(purlis_core::sandboxblock::supervised::teller)
+    {
         std::process::exit(code);
     }
     // Started again by the session host as a browser engine's keeper (#2012): keep its process

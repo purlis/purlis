@@ -8,11 +8,11 @@
 //! the host (#2000), 1.4's chat confinement in the host (#1999), 1.5's kill switch in the host
 //! (#2001), 1.6's browsers (#2012), 1.7's saving in the host (#2002), 1.8's event log written in
 //! the host (#2003), 1.10's board kept in the host (#2194), 1.11's browsers for chats
-//! (#2013), 1.13's window coming back to a host that outlived it (#2006), and 1.14's taking a
-//! browser over (#2014). Each must read back as it was recorded, by this build and so by every
-//! later one, which is what lets a client and a host one version apart talk. A frame kind added
-//! without
-//! being recorded fails here, so the promise grows on purpose. The UI RPC is not in it: it is
+//! (#2013), 1.13's window coming back to a host that outlived it (#2006), 1.14's taking a
+//! browser over (#2014), and 1.15's reach Asks (#2018). Each must read back as it was
+//! recorded, by this build and so by every later one, which is what lets a client and a host
+//! one version apart talk. A frame kind added without being recorded fails here, so the promise
+//! grows on purpose. The UI RPC is not in it: it is
 //! private to one build of the app, and excluded from this promise (V7).
 //!
 //! And a host reads a later minor's frames the way the promise says: a field it does not know

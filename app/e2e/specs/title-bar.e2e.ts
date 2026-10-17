@@ -121,9 +121,9 @@ describe("the title bar", () => {
       const tabs = document.querySelector(strip);
       const end = bar?.querySelector(".title-bar-doing");
       if (!bar || !tabs || !end) return { gap: -1, least: 0, pressed: "(nothing to measure)" };
-      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-      const least =
-        Number.parseFloat(getComputedStyle(bar).getPropertyValue("--title-bar-drag")) * rem;
+      // The stretch is the strip's end margin (`--title-bar-drag`, a multiple of a control's
+      // height), so the computed margin is it in px.
+      const least = Number.parseFloat(getComputedStyle(tabs).marginInlineEnd);
       const from = tabs.getBoundingClientRect();
       const to = end.getBoundingClientRect();
       const hit = document.elementFromPoint((from.right + to.left) / 2, from.top + from.height / 2);

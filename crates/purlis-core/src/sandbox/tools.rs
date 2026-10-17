@@ -1267,9 +1267,11 @@ pub fn path_outside(path: &str, root: &Path, writable: &[PathBuf]) -> String {
 }
 
 /// Variables of a chat's environment that make a program load or run code it names: the
-/// dynamic loader's, and an interpreter's or runtime's start-up options. A brokered run from a
-/// chat starts without them (D-PE-ruling-2), so the chat cannot have a declared tool, or an
-/// approved server's exact line, run its own code beside the credential.
+/// dynamic loader's, the C library's and the GLib and GTK libraries' module paths, and an
+/// interpreter's or runtime's start-up options. A brokered run from a chat starts without them
+/// (D-PE-ruling-2), so the chat cannot have a declared tool, or an approved server's exact line,
+/// run its own code beside the credential; nor can it have purlis's own program, which applies
+/// the run's sandbox on Linux and links those libraries (#2342).
 const LOADS_CODE: &[&str] = &[
     "BASH_ENV",
     "ENV",
@@ -1286,6 +1288,16 @@ const LOADS_CODE: &[&str] = &[
     "JAVA_TOOL_OPTIONS",
     "_JAVA_OPTIONS",
     "JDK_JAVA_OPTIONS",
+    "GCONV_PATH",
+    "LOCPATH",
+    "GIO_EXTRA_MODULES",
+    "GIO_MODULE_DIR",
+    "GTK_MODULES",
+    "GTK3_MODULES",
+    "GTK_PATH",
+    "GTK_EXE_PREFIX",
+    "GST_PLUGIN_PATH",
+    "GST_PLUGIN_SYSTEM_PATH",
 ];
 
 /// Prefixes of [`LOADS_CODE`]'s kind: the dynamic loaders' own.

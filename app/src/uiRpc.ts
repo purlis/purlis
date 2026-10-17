@@ -390,6 +390,8 @@ export const commands = {
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
+	allowBrowserSites: __WINDOW_ONLY_RESULT,
+	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
@@ -2064,6 +2066,11 @@ export type AnswerPath =
  *  Ask ends on their Done (`hand_back_browser`), or with the browser.
  */
 { via: "take-over"; program: string } | 
+/**
+ *  `allow_browser_sites` at the level an option names, and `keep_browser_sites_blocked` for
+ *  Keep blocked with the person's reason, each for `sites`, the sites the ask showed (#2018).
+ */
+{ via: "browser-sites"; sites: string[] } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2208,7 +2215,12 @@ export type AskSource =
  *  A chat's browser whose page needs the person (#2015): the chat asked them to take it
  *  over, through `ask_operator` pointed at it.
  */
-"browser-needs-you";
+"browser-needs-you" | 
+/**
+ *  Sites new to the project a chat's browser held back what it would open, send or type
+ *  on (#2018): an Allow is a browser site grant, for the browser alone.
+ */
+"browser-site";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4531,7 +4543,13 @@ export type GrantWhat =
  *  browser reach in this project on this machine. Allowed from a chat's browser Ask
  *  (`allow_chat_browser`), never from a block's Allow.
  */
-"browser";
+"browser" | 
+/**
+ *  A browser site (#2018, ruled 2026-10-17): a site a chat's browser may open, send and type
+ *  on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
+ *  sites Ask (`allow_browser_sites`), never from a block's Allow.
+ */
+"browser-site";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -6788,7 +6806,7 @@ export type ProposedWhole = {
 	 */
 	before: string,
 	after: string,
-	/**  The one hunk that is the whole of each side, as the merge view takes it. */
+	/**  git's hunks between the two sides, as drawn: the lines the merge view marks (#2121). */
 	hunks: GitHunk[],
 	/**  Whether Apply is offered: shown whole, and it still applies. */
 	applies: boolean,

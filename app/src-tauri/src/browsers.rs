@@ -231,6 +231,7 @@ mod hosted {
             program: &str,
             call_id: &str,
             act: Act,
+            reach: BrowserReach,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
             let link = self.link().map_err(Refused::Said)?;
@@ -238,6 +239,7 @@ mod hosted {
                 program: program.to_owned(),
                 call_id: call_id.to_owned(),
                 act,
+                reach: Some(reach),
             };
             match link.call_refused_within(command, AN_ACT_TAKES_AT_MOST) {
                 Ok(Answer::Browsed(browsed)) => Ok(*browsed),
@@ -277,7 +279,12 @@ mod hosted {
     pub(crate) struct WindowBrowsers {
         connection: Arc<Connection>,
         projects: Mutex<HashMap<PathBuf, Held>>,
+        ended: Ended,
     }
+
+    /// Told the program of each browser the window started whose engine ended (#2385), on the
+    /// link's own thread: whoever is told does its work elsewhere.
+    pub(crate) type Ended = Arc<dyn Fn(String) + Send + Sync + 'static>;
 
     /// A project the window holds for its browsers: its id, and the browsers started in it.
     struct Held {
@@ -290,7 +297,15 @@ mod hosted {
             WindowBrowsers {
                 connection,
                 projects: Mutex::new(HashMap::new()),
+                ended: Arc::new(|_| {}),
             }
+        }
+
+        /// **`ended` is told each browser this window starts whose engine ends** (#2385): a
+        /// crash, the host stopping it, the host itself ending. The host's word of a program's
+        /// end tells it, so nothing waits for the browser's next act.
+        pub(crate) fn telling_ended(self, ended: Ended) -> Self {
+            WindowBrowsers { ended, ..self }
         }
 
         pub(crate) fn link(&self) -> Result<Arc<HostLink>, String> {
@@ -339,6 +354,9 @@ mod hosted {
                 ..StartProgram::of(project, ProgramKind::Browser)
             })))? {
                 Answer::ProgramStarted { program, .. } => {
+                    let ended = Arc::clone(&self.ended);
+                    let named = program.clone();
+                    link.when_it_ends(&program, Box::new(move |_| ended(named)));
                     if let Some(held) = self.projects().get_mut(root) {
                         held.browsers.push(program.clone());
                     }

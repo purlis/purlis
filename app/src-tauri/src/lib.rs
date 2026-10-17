@@ -508,12 +508,17 @@ static STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 /// can report anything. This is the thread to pull: each step, with the time it was
 /// reached. Silent unless the variable is set, which nothing but a person debugging does.
 fn reached(step: &str) {
-    if purlis_core::envvar::var_os("PURLIS_LAUNCH_LOG").is_some() {
+    if launch_log_on() {
         tracing::info!(
             "charter-launch {:>5} ms  {step}",
             STARTED.elapsed().as_millis()
         );
     }
+}
+
+/// Whether the launch log ([`reached`]) is on: `PURLIS_LAUNCH_LOG` is set.
+fn launch_log_on() -> bool {
+    purlis_core::envvar::var_os("PURLIS_LAUNCH_LOG").is_some()
 }
 
 /// How many CSS pixels of the leading edge macOS's window controls occupy.
@@ -3137,6 +3142,14 @@ pub fn run() {
         std::process::exit(2);
     }
     reached("run() entered");
+    // The launch log's first line waits for the log's redaction rules, which `applog::install`
+    // builds on a thread beside the launch: about 220 ms in CI's debug build. Said as a step of
+    // its own, so the wait is not read as the next step's (#2389). Without the launch log
+    // nothing waits here; only a line the app says before the rules are built waits for them.
+    if launch_log_on() {
+        purlis_core::applog::redaction_ready();
+        reached("the log's redaction rules are ready");
+    }
     reached(&raised.to_string());
     match &left {
         Ok(left) => reached(&format!("the controlling terminal: {left:?}")),
@@ -3151,7 +3164,7 @@ pub fn run() {
     // costs GTK 25 s and WebKitGTK 5 more (charter-app#24). Asked here for 300 ms; when it is
     // silent this does not return — the launch starts again in place without the bus.
     #[cfg(target_os = "linux")]
-    portal::start_clear_of_a_silent_portal();
+    portal::start_clear_of_a_silent_portal(reached);
     reached("the desktop portal is asked");
     // The app under its old name, still running beside this one (RN-9): the two identifiers
     // are two single-instance names, so this launch would not be handed to it.
@@ -3364,9 +3377,22 @@ pub fn run() {
                 }
                 host.start();
                 // The person's browsers run in it too (#2012).
-                app.manage(std::sync::Arc::new(browsers::WindowBrowsers::new(
-                    host.connection(),
-                )));
+                // A browser whose engine ends by itself leaves its chat at once, with any Ask
+                // about it (#2385).
+                let window = app.handle().clone();
+                app.manage(std::sync::Arc::new(
+                    browsers::WindowBrowsers::new(host.connection()).telling_ended(
+                        std::sync::Arc::new(move |program: String| {
+                            let window = window.clone();
+                            // The link's thread tells it: what follows is done off it.
+                            tauri::async_runtime::spawn_blocking(move || {
+                                if let Some(planes) = window.try_state::<planes::Planes>() {
+                                    chatbrowsers::engine_ended(&planes.every_held(), &program);
+                                }
+                            });
+                        }),
+                    ),
+                ));
                 app.manage(host);
             }
             // No session host to fail where none runs.

@@ -2449,8 +2449,8 @@ impl Recorder {
     }
 
     /// Ends every sub-agent of `chat` still live: its run ended in `state` for `cause`, and
-    /// theirs with it, each with a `run.ended` (ADR 0076 §6). This is how a Codex chat's child
-    /// runs end at all, since charter does not arm Codex's `SubagentStop`.
+    /// theirs with it, each with a `run.ended` (ADR 0076 §6): a child whose own `SubagentStop`
+    /// was not heard before its parent ended.
     ///
     /// Every one is forgotten whether or not its line is written, and every line is tried:
     /// the first refusal is the answer.

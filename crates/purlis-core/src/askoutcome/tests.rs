@@ -45,6 +45,12 @@ fn every_kind() -> Vec<(About, &'static str)> {
         ),
         (About::Browser { open_web: None }, "using a browser"),
         (
+            About::BrowserSite {
+                site: "news.example.org:443".into(),
+            },
+            "its browser going to and sending to `news.example.org:443`",
+        ),
+        (
             About::Browser {
                 open_web: Some(false),
             },

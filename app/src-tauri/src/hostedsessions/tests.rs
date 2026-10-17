@@ -44,6 +44,15 @@ async fn a_link_to<H: session::Host>(
     hosting: H,
     closed: impl FnOnce() + Send + 'static,
 ) -> Result<HostLink, String> {
+    let client = a_bare_link_to(hosting, closed).await?;
+    HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
+}
+
+/// The link [`a_link_to`] speaks over, bare: for a test that speaks the protocol itself.
+async fn a_bare_link_to<H: session::Host>(
+    hosting: H,
+    closed: impl FnOnce() + Send + 'static,
+) -> Result<Link, String> {
     use purlis_session_protocol::auth::{Credentials, Scope};
     use purlis_session_protocol::link;
 
@@ -65,8 +74,7 @@ async fn a_link_to<H: session::Host>(
         let _ = session::serve(served, hosting, None).await;
         closed();
     });
-    let client = client.map_err(|why| why.to_string())?;
-    HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
+    client.map_err(|why| why.to_string())
 }
 
 const SIZE: Size = Size {
@@ -134,6 +142,7 @@ fn a_shell(script: &str) -> Opening {
         git_hooks: None,
         handed: Default::default(),
         confinement: None,
+        run: None,
     }
 }
 
@@ -306,6 +315,59 @@ fn a_start_hands_the_host_what_the_window_composed_and_the_host_composes_it_as_t
         None,
         "holding the project wrote no id into it (#2004)"
     );
+}
+
+#[test]
+fn a_start_carries_the_run_it_begins_and_the_host_lists_it_and_names_it_as_it_ends() {
+    // #2172: the run the window minted for this start (ADR 0066) is the host's too, so a
+    // window that comes back finds each chat by the run it is in (#2006).
+    let runtime = a_runtime();
+    let runs = StandIns::default();
+    let hosting = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    );
+    let (connection, _window) = in_memory(hosting.clone(), &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    let (watcher, mut told) = runtime.block_on(async {
+        let link = a_bare_link_to(hosting, || {}).await.expect("a second link");
+        let (client, _views, events) = Client::new(link);
+        client
+            .subscribe(session::Since::new())
+            .await
+            .expect("it subscribes");
+        (client, events)
+    });
+    let run = "01JA2172RVN00000000000000A".to_owned();
+
+    sessions
+        .open(
+            None,
+            &Opening {
+                run: Some(run.clone()),
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .expect("it starts");
+
+    let listed = runtime.block_on(watcher.list()).expect("the host lists");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].run.as_deref(), Some(run.as_str()));
+    runs.last().ends(Exit::Code(0));
+    let ended = runtime.block_on(async {
+        loop {
+            match tokio::time::timeout(PATIENCE, told.recv()).await {
+                Ok(Some(Told::Pushed(Pushed::Ended { run, .. }))) => break run,
+                Ok(Some(_)) => {}
+                other => panic!("the end was never told: {other:?}"),
+            }
+        }
+    });
+    assert_eq!(ended.as_deref(), Some(run.as_str()));
+    drop(sessions);
+    drop(runtime);
 }
 
 #[test]
@@ -1174,7 +1236,7 @@ fn a_project_the_host_saved_is_saved_by_the_host_that_replaces_it() {
     assert_eq!(next.savers.started()[0].1, host.root);
 }
 
-fn a_runtime() -> tokio::runtime::Runtime {
+pub(crate) fn a_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

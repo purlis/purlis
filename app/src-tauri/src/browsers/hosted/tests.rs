@@ -102,6 +102,29 @@ fn two_clones_of_one_project_each_open_a_browser() {
 }
 
 #[test]
+fn an_engine_that_ends_by_itself_is_told_at_once_by_its_program() {
+    // #2385: nobody calls the browser; the host's word of its end is what tells.
+    let told: Arc<Mutex<Vec<String>>> = Arc::default();
+    let telling = Arc::clone(&told);
+    let window = window();
+    let browsers = WindowBrowsers::new(Arc::clone(&window.browsers.connection)).telling_ended(
+        Arc::new(move |program| telling.lock().unwrap().push(program)),
+    );
+    let program = browsers.open(&window.root).unwrap();
+    let other = browsers.open(&window.root).unwrap();
+
+    window.started.started()[0].ends(purlis_session_protocol::session::Exit::Signal(
+        "SIGSEGV".into(),
+    ));
+
+    until("the window hears the engine ended", || {
+        !told.lock().unwrap().is_empty()
+    });
+    assert_eq!(*told.lock().unwrap(), vec![program]);
+    assert_ne!(other, told.lock().unwrap()[0], "the other runs on");
+}
+
+#[test]
 fn stop_all_stops_every_browser_the_host_runs() {
     let window = window();
     window.browsers.open(&window.root).unwrap();
@@ -167,7 +190,7 @@ fn a_key(aim: &str) -> BrowserInput {
 #[test]
 fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_the_page() {
     use crate::chatbrowsers::{Driver, Refused};
-    use purlis_session_protocol::browsing::Act;
+    use purlis_session_protocol::browsing::{Act, BrowserReach};
 
     let window = window();
     let program = window.browsers.open(&window.root).unwrap();
@@ -199,7 +222,13 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
     );
 
     window.browsers.take_over(&program).unwrap();
-    let refused = Driver::act(&window.browsers, &program, "c-1", Act::Pages);
+    let refused = Driver::act(
+        &window.browsers,
+        &program,
+        "c-1",
+        Act::Pages,
+        BrowserReach::default(),
+    );
     assert!(
         matches!(&refused, Err(Refused::Said(why)) if why.contains("the person has taken this browser over")),
         "{refused:?}"
@@ -216,7 +245,16 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
     );
 
     window.browsers.hand_back(&program).unwrap();
-    assert!(Driver::act(&window.browsers, &program, "c-2", Act::Pages).is_ok());
+    assert!(
+        Driver::act(
+            &window.browsers,
+            &program,
+            "c-2",
+            Act::Pages,
+            BrowserReach::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -279,6 +317,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
                 &window.root,
                 &browse,
                 &BrowserReach::default,
+                true,
                 &AsPersona::default,
                 1000,
             )

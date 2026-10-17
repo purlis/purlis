@@ -14,6 +14,7 @@ import {
   inForce,
   onDrawn,
   THEME_ALIASES,
+  CLASSIC,
   type Theme,
 } from "./theme/theme";
 import { forgetProjectThemes } from "./projectTheme";
@@ -623,6 +624,9 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       ["purlis-light", "purlis-light"],
       ...Object.entries(THEME_ALIASES),
       ["purlis-dark", "purlis-dark"],
+      // Purlis Classic by its own id draws its first appearance, as the engine answers.
+      [CLASSIC, "purlis-dark"],
+      ["purlis-light", "purlis-light"],
     ]) {
       // No `await`: the switch has drawn by the time it returns, so no frame shows the last one.
       void drawThemeFor(new Set(["solarized"]), pick);

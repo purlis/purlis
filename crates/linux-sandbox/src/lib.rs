@@ -19,11 +19,14 @@
 //!   makes the connection and hands the chat the descriptor. It never lets the kernel go on with
 //!   a call it judged, since the chat could change the call's memory in between. It is held by
 //!   Landlock too, to what the profile could ever let a chat write and reach.
+//!   A call it refuses is told ([`refusal`], #2344), so the window raises the same block
+//!   Notice as for a refusal of macOS's Seatbelt; what is told never changes an answer.
 //!
 //! The entry point is the hidden `purlis _sandbox` command ([`entry`]); it is not a public
 //! command line.
 
 pub mod profile;
+pub mod refusal;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -69,6 +72,14 @@ pub const MOST_PIECE: usize = 96 * 1024;
 /// of the program it is: the status to exit with, or `None` for every other start. The `purlis`
 /// command and the app call it first, so whichever purlis program starts a chat can wrap it.
 pub fn serve_if_asked() -> Option<i32> {
+    serve_if_asked_telling(|| None)
+}
+
+/// [`serve_if_asked`], where each call the supervisor refuses is told to the [`refusal::Tell`]
+/// `tell` makes (#2344). `tell` is asked once, by the supervisor only, before the wrap holds
+/// itself to the profile, so what it reads to say a refusal is read while nothing holds it.
+/// `None` tells nothing; a refusal is a refusal whether or not it is told.
+pub fn serve_if_asked_telling(tell: impl FnOnce() -> Option<refusal::Tell>) -> Option<i32> {
     let mut words = std::env::args_os().skip(1);
     if words.next()? != COMMAND {
         return None;
@@ -83,10 +94,10 @@ pub fn serve_if_asked() -> Option<i32> {
         return Some(126);
     };
     #[cfg(target_os = "linux")]
-    return Some(linux::entry(&words));
+    return Some(linux::entry(&words, tell));
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = words;
+        let _ = (words, tell);
         eprintln!("purlis: this sandbox is purlis's own on Linux, so nothing was started.");
         Some(126)
     }

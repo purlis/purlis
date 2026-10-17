@@ -26,6 +26,17 @@
 //!   chat's reach while it runs, its browsers end ([`ChatBrowsers::narrowed`]); the next call
 //!   opens one on what the chat reaches then, and says why.
 //! - **Keep off** refuses every call of the chat's, in words that say not to retry.
+//! - **A site new to the project asks** (#2018). Where the browser's judge held something back
+//!   (an address the agent wrote for a site new to the project, a form or a body sent there, or
+//!   typing on a page of it), the act's answer names the site, the chat is told it was asked
+//!   about, and the chat's sites wait as one Ask in the registry, with Allow for this chat,
+//!   Allow always on this machine, and Keep blocked. **An Allow is a browser site grant, for the
+//!   browser alone** (ruled 2026-10-17): the chat's own commands still need their own Allow for
+//!   that host. It is listed apart in the Granted list. Each act tells the browser what it
+//!   reaches now ([`Driver::act`]): the chat's reach and its browser sites, so an Allow since it
+//!   started reaches it at its next act. A chat started without the sandbox is asked nothing:
+//!   until its reach is listed for its browser (#2242), its browser reaches only what it was
+//!   given, and the chat is told so.
 //!
 //! **In memory only**, like the other Asks a chat raises: a relaunch starts with none, and the
 //! chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
@@ -38,7 +49,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
+use purlis_core::sandbox::browser_reach::Site;
 use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
+use purlis_session_protocol::session::{Layer, Listed};
 
 /// The most browsers the chats of one project hold at once (spec #2008, Limits), until the
 /// limits are settings (#2023).
@@ -58,8 +71,15 @@ pub enum Refused {
 pub trait Driver: Send + Sync + 'static {
     /// Starts a browser in the project at `root` reaching `reach`, and answers its program.
     fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, String>;
-    /// Carries `act` out on browser `program` under its own id `call_id`.
-    fn act(&self, program: &str, call_id: &str, act: Act) -> Result<Browsed, Refused>;
+    /// Carries `act` out on browser `program` under its own id `call_id`, the browser reaching
+    /// `reach` from then on (#2018).
+    fn act(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: Act,
+        reach: BrowserReach,
+    ) -> Result<Browsed, Refused>;
     /// Ends browser `program`, and forgets it.
     fn close(&self, program: &str) -> Result<(), String>;
     /// Ends browser `program` by its id, with its reach proxy: what is tried when a close did
@@ -124,6 +144,9 @@ struct Chat {
     browsers: Vec<(String, String)>,
     /// The one a call that names none uses.
     current: Option<String>,
+    /// The programs of its browsers whose engine ended by itself (#2385): no longer listed, and
+    /// its next call on one says it has gone.
+    ended: Vec<String>,
     /// The number the next browser is named by.
     next: u32,
     /// Its browsers were ended because the person narrowed its reach, and it is not told yet.
@@ -133,6 +156,12 @@ struct Chat {
     /// The persona whose Always it was allowed on (#2241), where it was: what removing or
     /// changing that Always follows.
     rests_on: Option<String>,
+    /// The sites its browser asked about that wait on the person, oldest first, with when the
+    /// first began to wait (#2018).
+    sites_asked: Vec<Site>,
+    sites_since: u64,
+    /// The browser sites allowed for this chat alone, while the app holds it (#2018).
+    sites: Vec<Site>,
 }
 
 impl Default for Chat {
@@ -142,10 +171,14 @@ impl Default for Chat {
             since: 0,
             browsers: Vec::new(),
             current: None,
+            ended: Vec::new(),
             next: 1,
             narrowed: false,
             as_persona: AsPersona::default(),
             rests_on: None,
+            sites_asked: Vec::new(),
+            sites_since: 0,
+            sites: Vec::new(),
         }
     }
 }
@@ -158,7 +191,18 @@ impl Chat {
             .map(|(_, program)| program.clone())
     }
 
+    /// How many of its browsers run: one whose engine ended counts no more.
+    fn running(&self) -> usize {
+        self.browsers
+            .iter()
+            .filter(|(_, program)| !self.ended.contains(program))
+            .count()
+    }
+
     fn drop_browser(&mut self, name: &str) {
+        if let Some(program) = self.program(name) {
+            self.ended.retain(|one| *one != program);
+        }
         self.browsers.retain(|(one, _)| one != name);
         if self.current.as_deref() == Some(name) {
             self.current = self.browsers.last().map(|(one, _)| one.clone());
@@ -205,10 +249,65 @@ fn end(driver: &dyn Driver, program: &str) -> bool {
     }
 }
 
+/// What a chat is told of its browser `name`, which has ended.
+pub fn gone_said(name: &str) -> String {
+    format!(
+        "browser {name} has ended (stopped, or its engine closed), and what it held is gone: the \
+         next browser call opens a new one"
+    )
+}
+
 /// What a chat is told while the person has not answered its Ask.
 pub const ASKED: &str = "purlis asked the person what this chat's browser may reach, and opened \
                          nothing. You will be told their answer on your next turn: don't retry \
                          a browser tool until then, and go on with what needs no browser.";
+
+/// The sites `sites` names, as a chat is told them.
+fn sites_said(sites: &[Site]) -> String {
+    match sites {
+        [one] => format!("{one} is a site"),
+        many => format!(
+            "{} are sites",
+            many.iter()
+                .map(Site::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// What a chat is told of the sites its browser asked the person about (#2018).
+fn asked_about(sites: &[Site]) -> String {
+    format!(
+        "{} new to this project, so purlis held back what this browser would have opened, sent \
+         or typed there, and asked the person whether it may: you will be told their answer on \
+         your next turn. Don't retry it until then; go on with what needs no new site",
+        sites_said(sites)
+    )
+}
+
+/// What a chat started without the sandbox is told of the sites its browser held back for
+/// (#2018): nobody is asked, since its browser reaches only what it was given until #2242.
+fn not_asked_about(sites: &[Site]) -> String {
+    format!(
+        "{} new to this project, so purlis held back what this browser would have opened, sent \
+         or typed there. This chat started without the sandbox, so its browser reaches only the \
+         sites it was given, and the person was not asked: go on with what needs no new site",
+        sites_said(sites)
+    )
+}
+
+/// The most sites one chat's browser waits on the person for at once (#2018).
+const MOST_SITES_ASKED: usize = 64;
+
+/// One chat whose browser's sites wait on the person (#2018): the chat, when the first began to
+/// wait, and each site, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SitesWait {
+    pub session: u32,
+    pub since: u64,
+    pub sites: Vec<Site>,
+}
 
 /// What a chat whose browser the person kept off is told.
 pub const KEPT_OFF: &str = "The person kept this chat's browser off: don't retry or work around \
@@ -236,12 +335,15 @@ impl ChatBrowsers {
             .lock()
             .iter()
             .flat_map(|(session, chat)| {
-                chat.browsers.iter().map(|(name, program)| ChatBrowser {
-                    session: *session,
-                    name: name.clone(),
-                    program: program.clone(),
-                    unended: false,
-                })
+                chat.browsers
+                    .iter()
+                    .filter(|(_, program)| !chat.ended.contains(program))
+                    .map(|(name, program)| ChatBrowser {
+                        session: *session,
+                        name: name.clone(),
+                        program: program.clone(),
+                        unended: false,
+                    })
             })
             .collect();
         // And those not ended yet, after the ones its chat uses (D-2013-16).
@@ -303,11 +405,38 @@ impl ChatBrowsers {
         Some((name, program))
     }
 
-    /// Whether chat `session` still has browser `program` (#2015).
+    /// Whether chat `session` still has browser `program` (#2015), its engine running.
     pub fn holds(&self, session: u32, program: &str) -> bool {
-        self.lock()
-            .get(&session)
-            .is_some_and(|chat| chat.browsers.iter().any(|(_, one)| one == program))
+        self.lock().get(&session).is_some_and(|chat| {
+            !chat.ended.iter().any(|one| one == program)
+                && chat.browsers.iter().any(|(_, one)| one == program)
+        })
+    }
+
+    /// Chat `session` lets go of its browser `name`, which has ended: the next call opens a new
+    /// one.
+    pub fn let_go_of_ended(&self, session: u32, name: &str) {
+        if let Some(chat) = self.lock().get_mut(&session) {
+            chat.drop_browser(name);
+            self.relisted();
+        }
+    }
+
+    /// **Browser `program`'s engine ended by itself** (#2385), as the session host said: a
+    /// crash, or the host stopping it. It leaves its chat's rows at once, and the chat's next
+    /// call on it says it has gone. Whether it was a chat's.
+    pub fn engine_ended(&self, program: &str) -> bool {
+        let mut chats = self.lock();
+        let Some(chat) = chats.values_mut().find(|chat| {
+            chat.browsers.iter().any(|(_, one)| one == program)
+                && !chat.ended.iter().any(|one| one == program)
+        }) else {
+            return false;
+        };
+        chat.ended.push(program.to_owned());
+        drop(chats);
+        self.relisted();
+        true
     }
 
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
@@ -437,6 +566,106 @@ impl ChatBrowsers {
         }
     }
 
+    /// Keeps `sites` waiting on the person for chat `session`'s browser (#2018), each once.
+    fn asked_about(&self, session: u32, sites: &[Site], now: u64) {
+        let mut chats = self.lock();
+        let chat = chats.entry(session).or_default();
+        if chat.sites_asked.is_empty() {
+            chat.sites_since = now;
+        }
+        for site in sites {
+            if !chat.sites_asked.contains(site) && chat.sites_asked.len() < MOST_SITES_ASKED {
+                chat.sites_asked.push(site.clone());
+            }
+        }
+    }
+
+    /// **Every chat whose browser's sites wait on the person** (#2018), longest waiting first.
+    pub fn sites_waiting(&self) -> Vec<SitesWait> {
+        let mut waits: Vec<SitesWait> = self
+            .lock()
+            .iter()
+            .filter(|(_, chat)| !chat.sites_asked.is_empty())
+            .map(|(session, chat)| SitesWait {
+                session: *session,
+                since: chat.sites_since,
+                sites: chat.sites_asked.clone(),
+            })
+            .collect();
+        waits.sort_by_key(|one| (one.since, one.session));
+        waits
+    }
+
+    /// **The person answered chat `session`'s sites `shown`** (#2018): they wait no more, and
+    /// with `for_this_chat` its browser reaches them from its next act. Refused whole unless
+    /// every one of them waits now: an answer is to what the person was shown.
+    pub fn sites_answered(
+        &self,
+        session: u32,
+        shown: &[Site],
+        for_this_chat: bool,
+    ) -> Result<(), String> {
+        let mut chats = self.lock();
+        let Some(chat) = chats.get_mut(&session) else {
+            return Err(SITES_WAIT_NO_MORE.to_owned());
+        };
+        if shown.is_empty() || !shown.iter().all(|site| chat.sites_asked.contains(site)) {
+            return Err(SITES_WAIT_NO_MORE.to_owned());
+        }
+        chat.sites_asked.retain(|site| !shown.contains(site));
+        if for_this_chat {
+            for site in shown {
+                if !chat.sites.contains(site) {
+                    chat.sites.push(site.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The browser sites allowed for one chat alone (#2018), each with its chat: what the
+    /// Granted list shows of them.
+    pub fn chat_sites(&self) -> Vec<(u32, Site)> {
+        let mut out: Vec<(u32, Site)> = self
+            .lock()
+            .iter()
+            .flat_map(|(session, chat)| chat.sites.iter().map(|site| (*session, site.clone())))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// **Removes `site` from what chat `session`'s browser was allowed** (#2018): its browsers
+    /// end, as a narrowing ends them. Answers whether it was allowed.
+    pub fn chat_site_removed(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        session: u32,
+        site: &Site,
+    ) -> Option<Ended> {
+        let was = self.lock().get_mut(&session).is_some_and(|chat| {
+            let before = chat.sites.len();
+            chat.sites.retain(|one| one != site);
+            chat.sites.len() != before
+        });
+        was.then(|| self.narrowed(driver, session))
+    }
+
+    /// **A browser site allowed for every chat here was removed** (#2018): every chat's
+    /// browsers end, as a narrowing ends them. Answers each chat whose browsers that ended.
+    pub fn sites_removed(&self, driver: Option<&Arc<dyn Driver>>) -> Vec<(u32, Ended)> {
+        let browsing: Vec<u32> = self
+            .lock()
+            .iter()
+            .filter(|(_, chat)| !chat.browsers.is_empty())
+            .map(|(session, _)| *session)
+            .collect();
+        browsing
+            .into_iter()
+            .map(|session| (session, self.narrowed(driver, session)))
+            .collect()
+    }
+
     /// The browsers that were to end and are not ended yet.
     #[cfg(test)]
     pub fn unended(&self) -> Vec<String> {
@@ -499,6 +728,7 @@ impl ChatBrowsers {
                 .iter_mut()
                 .flat_map(|(session, chat)| {
                     chat.current = None;
+                    chat.ended.clear();
                     chat.browsers
                         .drain(..)
                         .map(|(name, program)| ChatBrowser {
@@ -549,6 +779,7 @@ impl ChatBrowsers {
                 })
                 .collect();
             chat.current = None;
+            chat.ended.clear();
             chat.narrowed |= !programs.is_empty();
             programs
         };
@@ -581,17 +812,23 @@ impl ChatBrowsers {
         self.end_all(driver, programs);
     }
 
-    /// **Answers one browser call of a chat's**, and whether it raised the chat's Ask.
+    /// **Answers one browser call of a chat's**, and whether it raised the chat's browser Ask
+    /// (what it may reach). The sites its browser held back are kept waiting on the person
+    /// ([`Self::sites_waiting`]) where the chat is `confined`.
     ///
-    /// `reach` is what the chat's browser may reach, read only as one starts; `now` is in
+    /// `reach` is what the chat's browser may reach, its chat's reach and the browser sites
+    /// allowed here, read as a browser starts and at each act; `confined` whether the chat has a
+    /// sandbox's record of its reach, without which nobody is asked about a site; `now` is in
     /// seconds since 1970. The chat is the one whose token the line carried. With no `driver`
     /// there is no session host, and so no browser.
+    #[allow(clippy::too_many_arguments)]
     pub fn answer(
         &self,
         driver: Option<&Arc<dyn Driver>>,
         root: &Path,
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
+        confined: bool,
         as_persona: &dyn Fn() -> AsPersona,
         now: u64,
     ) -> (Answer, bool) {
@@ -600,6 +837,22 @@ impl ChatBrowsers {
         let persona = as_persona();
         self.follow_always(driver, browse.chat, &persona);
         let (mut answer, raised) = self.answer_now(driver, root, browse, reach, persona, now);
+        // What the browser held back for the person says so first (#2018).
+        if let Answer::Browsed { browsed, .. } = &mut answer
+            && !browsed.asked.is_empty()
+        {
+            let sites = sites_of(&browsed.asked);
+            let said = if confined {
+                self.asked_about(browse.chat, &sites, now);
+                asked_about(&sites)
+            } else {
+                not_asked_about(&sites)
+            };
+            browsed.note = Some(match browsed.note.take() {
+                Some(note) => format!("{said}. {note}"),
+                None => said,
+            });
+        }
         // The first answer after its browsers were ended for a narrowed reach says why.
         if let Answer::Browsed { browsed, .. } = &mut answer
             && let Some(chat) = self.lock().get_mut(&browse.chat)
@@ -635,7 +888,7 @@ impl ChatBrowsers {
             + chats
                 .iter()
                 .filter(|(session, _)| **session != browse.chat)
-                .map(|(_, chat)| chat.browsers.len())
+                .map(|(_, chat)| chat.running())
                 .sum::<usize>();
         let chat = chats.entry(browse.chat).or_default();
         // Always for this persona answers the Ask, raised or not (#2241).
@@ -660,8 +913,9 @@ impl ChatBrowsers {
             return (no(NO_HOST), false);
         };
         let named = browse.browser.clone().or_else(|| chat.current.clone());
+        let chat_sites = chat.sites.clone();
         let start = |chat: &mut Chat| -> Result<String, String> {
-            if elsewhere + chat.browsers.len() >= AT_MOST_PER_PROJECT {
+            if elsewhere + chat.running() >= AT_MOST_PER_PROJECT {
                 return Err(format!(
                     "this project's chats have {AT_MOST_PER_PROJECT} browsers open, the most \
                      it may: close one of this chat's with browser_close first, or go on \
@@ -669,13 +923,7 @@ impl ChatBrowsers {
                 ));
             }
             let program = driver
-                .start(
-                    root,
-                    BrowserReach {
-                        open_web,
-                        ..reach()
-                    },
-                )
+                .start(root, with_sites(reach(), open_web, &chat.sites))
                 .map_err(|why| {
                     format!(
                         "the browser did not start: {why}. Try once more; if it fails again, \
@@ -769,9 +1017,17 @@ impl ChatBrowsers {
                 Err(why) => return (no(&why), false),
             },
         };
+        // One whose engine ended is gone, as the host would say (#2385).
+        let ended = chat.ended.contains(&program);
         // The act may wait on its page a while: never under the lock.
         drop(chats);
-        match driver.act(&program, &browse.call_id, act) {
+        let reach_now = with_sites(reach(), open_web, &chat_sites);
+        let acted = if ended {
+            Err(Refused::Gone)
+        } else {
+            driver.act(&program, &browse.call_id, act, reach_now)
+        };
+        match acted {
             Ok(browsed) => (
                 Answer::Browsed {
                     browser: name,
@@ -781,17 +1037,8 @@ impl ChatBrowsers {
             ),
             Err(Refused::Said(why)) => (no(&why), false),
             Err(Refused::Gone) => {
-                if let Some(chat) = self.lock().get_mut(&browse.chat) {
-                    chat.drop_browser(&name);
-                    self.relisted();
-                }
-                (
-                    no(&format!(
-                        "browser {name} has ended (stopped, or its engine closed), and what it \
-                         held is gone: the next browser call opens a new one"
-                    )),
-                    false,
-                )
+                self.let_go_of_ended(browse.chat, &name);
+                (no(&gone_said(&name)), false)
             }
         }
     }
@@ -837,6 +1084,19 @@ pub struct BrowsersListed {
 /// Told each project whose chats' browsers were added to or taken from.
 pub type ListedTeller = Arc<dyn Fn(crate::planes::PlaneId) + Send + Sync + 'static>;
 
+/// **Browser `program`'s engine ended by itself** (#2385), in whichever project its chat is:
+/// it leaves its chat's rows, and an Ask about it ends with an Update
+/// (`crate::browserneedsyou::settled`), at once, before the chat calls again.
+pub fn engine_ended(projects: &[Arc<crate::planes::Held>], program: &str) {
+    for held in projects {
+        let listing = held.browsers().listing();
+        if held.browsers().engine_ended(program) {
+            held.browsers_listed_since(listing);
+            crate::browserneedsyou::settled(held);
+        }
+    }
+}
+
 /// **The person narrowed chat `session`'s reach while it runs, in project `held`**: its
 /// browsers end ([`ChatBrowsers::narrowed`]), and where any did, `told` hears it for its tab.
 pub fn narrowed(
@@ -865,8 +1125,9 @@ pub fn narrowed(
 }
 
 /// **Chat `browse.chat`'s browser call, in project `held`** (#2013): answered by
-/// [`ChatBrowsers::answer`], with the chat's reach read from the app's record of its sandbox as
-/// one of its browsers starts. Raising its Ask tells the registry.
+/// [`ChatBrowsers::answer`], with what its browser reaches read at each act from the app's
+/// record of its sandbox and the browser sites allowed here ([`reach_of`]). Raising its browser
+/// Ask, or keeping sites waiting on the person, tells the registry.
 pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     if !held
         .chats()
@@ -892,7 +1153,8 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         }
         return answer;
     }
-    let reach = || reach_of(held.chats(), browse.chat);
+    let reach = || reach_of(held, browse.chat);
+    let confined = held.chats().confines_now(browse.chat).is_some();
     let as_persona = || as_persona_of(held, browse.chat);
     let listing = held.browsers().listing();
     let (answer, raised) = held.browsers().answer(
@@ -900,10 +1162,18 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         held.root(),
         browse,
         &reach,
+        confined,
         &as_persona,
         now,
     );
     held.browsers_listed_since(listing);
+    // The sites the browser held back wait in the registry (#2018).
+    if confined
+        && let Answer::Browsed { browsed, .. } = &answer
+        && !browsed.asked.is_empty()
+    {
+        held.chats().asks_may_have_moved();
+    }
     if raised {
         tracing::info!(
             "purlis: chat {} asked for a browser; the person is asked what it may reach",
@@ -950,15 +1220,29 @@ fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
 
 /// **What chat `session`'s browser reaches**: what its sandbox lists, as it was compiled at its
 /// start with the hosts allowed it live since, never its floor (a browser takes only what is
-/// listed, D-2011-10). A chat started without the sandbox has no such record, so its browser
-/// starts with nothing listed, and reaches a public site only where the person let it reach
-/// the open web.
-fn reach_of(chats: &crate::chats::Chats, session: u32) -> BrowserReach {
-    chats
-        .confines_now(session)
-        .map_or_else(BrowserReach::default, |confines| {
-            purlis_core::browsertools::browser_reach(&confines.decides(), false)
-        })
+/// listed, D-2011-10), and the browser sites you allowed for every chat here (#2018) that
+/// policy leaves in force. A host allowed for the chat's commands is a site its browser
+/// reaches (D-2018-7); a browser site is never one its commands reach. A chat started without
+/// the sandbox has no such record, so its browser starts with nothing listed, and reaches a
+/// public site only where the person let it reach the open web. Its own sites, for this chat
+/// alone, are added by [`ChatBrowsers::answer`].
+fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
+    use purlis_core::sandbox;
+    let Some(confines) = held.chats().confines_now(session) else {
+        return BrowserReach::default();
+    };
+    let mut reach = purlis_core::browsertools::browser_reach(&confines.decides(), false);
+    let root = held.root();
+    let locks = sandbox::policy::Locks::of(root);
+    reach.listed.extend(
+        sandbox::local::browser_sites_in_force(root, &locks)
+            .iter()
+            .map(|site| Listed {
+                host: site.to_string(),
+                layer: Layer::You,
+            }),
+    );
+    reach
 }
 
 /// What closing a chat's browser from the window is refused with: it ends with its chat.
@@ -1235,10 +1519,202 @@ pub fn kept_off(
     Ok(())
 }
 
+/// **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
+/// browser sites at `level`, this chat or every chat of this project on this machine. A grant
+/// for the browser alone (ruled 2026-10-17): the chat's own commands still need their own Allow
+/// for each host. Its browser reaches them from its next act; the chat is told on its next turn.
+#[tauri::command]
+#[specta::specta]
+pub async fn allow_browser_sites(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    sites: Vec<String>,
+    level: crate::sandboxing::GrantLevel,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    let network = planes.network().cloned();
+    crate::off_the_window("allowing a browser's sites", move || {
+        sites_allowed(
+            &held,
+            session,
+            &sites,
+            level.into(),
+            &held.audit_then_record(network.as_ref()),
+            crate::sandboxing::now_secs(),
+        )
+    })
+    .await
+}
+
+/// The sites the window sent, each read as a site; one that is not refuses them all.
+fn sites_sent(sites: &[String]) -> Result<Vec<Site>, String> {
+    sites.iter().map(|written| Site::parse(written)).collect()
+}
+
+/// [`allow_browser_sites`]'s work: judged, then audited, then kept, then answered. Refused
+/// whole where a site is no site, the level is not one a browser site is kept at, policy
+/// removes that scope or never allows a site's host, or the sites wait no more.
+pub fn sites_allowed(
+    held: &crate::planes::Held,
+    session: u32,
+    sites: &[String],
+    level: purlis_core::sandbox::grant::Level,
+    audit: crate::sandboxing::Audit<'_>,
+    at: u64,
+) -> Result<(), String> {
+    use purlis_core::sandbox::{self, grant::Level};
+    let sites = sites_sent(sites)?;
+    if !matches!(level, Level::Chat | Level::You) {
+        return Err(
+            "purlis allows a browser site for this chat, or for every chat of this project on \
+             this machine. A browser site for everyone in the project is coming, in #2443."
+                .to_owned(),
+        );
+    }
+    let root = held.root();
+    let locks = sandbox::policy::Locks::of(root);
+    if let Some(why) = locks.scope_removed(level) {
+        return Err(why);
+    }
+    for site in &sites {
+        let host = sandbox::hosts::Host::parse(&site.to_string())?;
+        if let Some(why) = locks.refuses_grant(&sandbox::grant::What::Host(host), level) {
+            return Err(why);
+        }
+    }
+    let waiting = held
+        .browsers()
+        .sites_waiting()
+        .into_iter()
+        .find(|one| one.session == session);
+    if !waiting.is_some_and(|one| sites.iter().all(|site| one.sites.contains(site))) {
+        return Err(SITES_WAIT_NO_MORE.to_owned());
+    }
+    for site in &sites {
+        audit(
+            Some(session),
+            &sandbox::grant::Audited {
+                granted: true,
+                what: sandbox::local::BROWSER_SITE,
+                target: &site.to_string(),
+                level,
+            },
+        )?;
+    }
+    if level == Level::You {
+        for site in &sites {
+            sandbox::local::grant_browser_site(root, site).map_err(|why| {
+                format!("purlis could not keep {site}, so nothing was allowed: {why}")
+            })?;
+            if let Err(why) = sandbox::local::record_made(
+                root,
+                sandbox::local::Made {
+                    what: sandbox::local::BROWSER_SITE.to_owned(),
+                    target: site.to_string(),
+                    level: level.word().to_owned(),
+                    at,
+                    chat: held.chats().recorded_chat(session).map(|chat| chat.name),
+                },
+            ) {
+                // The Allow stands, and is audited; only the Granted list's "when" is lost.
+                tracing::warn!("purlis: a browser site was kept without when ({why})");
+            }
+        }
+    }
+    held.browsers()
+        .sites_answered(session, &sites, level == Level::Chat)?;
+    for site in &sites {
+        held.chats().tell_outcome(
+            session,
+            purlis_core::askoutcome::Outcome {
+                about: purlis_core::askoutcome::About::BrowserSite {
+                    site: site.to_string(),
+                },
+                answer: purlis_core::askoutcome::Answer::Allowed {
+                    scope: purlis_core::askoutcome::Scope::of(level),
+                },
+            },
+        );
+    }
+    held.chats().asks_may_have_moved();
+    Ok(())
+}
+
+/// **Keep blocked on chat `session`'s browser sites** (#2018): nothing is allowed, they wait no
+/// more, and the chat is told on its next turn not to retry, with the reason the person typed.
+#[tauri::command]
+#[specta::specta]
+pub async fn keep_browser_sites_blocked(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    sites: Vec<String>,
+    reason: Option<String>,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("keeping a browser's sites blocked", move || {
+        sites_kept_blocked(&held, session, &sites, reason.as_deref())
+    })
+    .await
+}
+
+/// [`keep_browser_sites_blocked`]'s work.
+pub fn sites_kept_blocked(
+    held: &crate::planes::Held,
+    session: u32,
+    sites: &[String],
+    reason: Option<&str>,
+) -> Result<(), String> {
+    let sites = sites_sent(sites)?;
+    held.browsers().sites_answered(session, &sites, false)?;
+    for site in &sites {
+        held.chats().tell_outcome(
+            session,
+            crate::askoutcome::kept(
+                purlis_core::askoutcome::About::BrowserSite {
+                    site: site.to_string(),
+                },
+                reason,
+            ),
+        );
+    }
+    held.chats().asks_may_have_moved();
+    Ok(())
+}
+
+/// What an answer to sites that wait no more is refused with (#2018).
+const SITES_WAIT_NO_MORE: &str = "Those sites do not wait on you for that chat any more.";
+
+/// `reach`, reaching the open web too with `open_web`, and listing `sites`, the browser sites
+/// allowed for its chat alone (#2018).
+fn with_sites(reach: BrowserReach, open_web: bool, sites: &[Site]) -> BrowserReach {
+    let mut reach = BrowserReach { open_web, ..reach };
+    reach.listed.extend(sites.iter().map(|site| Listed {
+        host: site.to_string(),
+        layer: Layer::Chat,
+    }));
+    reach
+}
+
+/// The sites a browser said it asked about (#2018), each as the session host wrote it. One that
+/// does not read as a site is a fault of the host's, said in the log and asked about as nothing.
+fn sites_of(asked: &[String]) -> Vec<Site> {
+    asked
+        .iter()
+        .filter_map(|written| match Site::parse(written) {
+            Ok(site) => Some(site),
+            Err(why) => {
+                tracing::warn!("purlis: a browser asked about what is no site: {why}");
+                None
+            }
+        })
+        .collect()
+}
+
 fn no_such(name: &str) -> String {
     format!("this chat has no browser {name}: leave `browser` out to use the one it used last")
 }
 
 #[cfg(test)]
-#[path = "chatbrowsers_tests.rs"]
 mod tests;

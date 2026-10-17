@@ -2010,7 +2010,7 @@ fn a_codex_shell_result_is_read_for_the_networks_refusals() {
     );
     // The host the proxy refused is the proxy's to tell, so one refusal is one Notice.
     assert_eq!(
-        the_hooks_own(found, Some("codex")),
+        the_hooks_own(found, Some("codex"), crate::sandbox::Os::MacOs),
         vec![
             (
                 block(Operation::Lookup, Kind::Host, false),

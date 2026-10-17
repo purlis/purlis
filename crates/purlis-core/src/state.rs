@@ -1643,7 +1643,7 @@ impl Board {
     }
 
     /// A tool hook of child agent `agent` of chat `number` was heard: a Codex child's first
-    /// hook is one, since charter arms Codex with no `SubagentStop`. Answers whether anything a
+    /// hook is one. Answers whether anything a
     /// reader can see changed: nothing does for a chat the board does not have.
     ///
     /// **Not checked against the chat's conversation** as a report is, because a tool call
@@ -4134,8 +4134,7 @@ mod tests {
 
     #[test]
     fn a_codex_child_shows_under_its_chat_from_its_first_tool_call() {
-        // Codex is armed with no `SubagentStop`, and its child's first hook charter hears is a
-        // tool call carrying `agent_id`.
+        // A Codex child's first hook charter hears is a tool call carrying `agent_id`.
         let mut board = Board::new();
         board.opened(3, Some(Harness::Codex), None);
         board.reported(&unsigned(3, Event::UserPromptSubmit, Some(A)));
@@ -4148,6 +4147,27 @@ mod tests {
             [("thread-2".to_owned(), State::Running)]
         );
         assert_eq!(board.state(3), State::Running);
+    }
+
+    #[test]
+    fn a_codex_child_completes_at_its_subagent_stop() {
+        // #1086: Codex runs `SubagentStop` with the child's `agent_id` at the end of its turn
+        // (`plugin::CODEX`), so its child reads done rather than working until the chat ends.
+        let mut board = Board::new();
+        board.opened(3, Some(Harness::Codex), None);
+        board.reported(&unsigned(3, Event::UserPromptSubmit, Some(A)));
+        board.child_heard(3, "thread-2");
+
+        assert!(board.reported(&crate::hookwire::Report {
+            agent: Some("thread-2".to_owned()),
+            ..unsigned(3, Event::SubagentStop, Some(A))
+        }));
+
+        assert_eq!(
+            children_of(&board, 3),
+            [("thread-2".to_owned(), State::Done)]
+        );
+        assert_eq!(board.state(3), State::Running, "the parent's turn goes on");
     }
 
     #[test]

@@ -38,8 +38,10 @@ export const GEOMETRY = {
     "--space-7",
     "--space-8",
   ],
-  /** The 6-step type scale: 11, 12, 13, 14 (the window's text), 16 and 20px. */
+  /** The 7-step type scale: 10 (a tight secondary label only), 11, 12, 13, 14 (the window's
+   *  text), 16 and 20px. */
   type: [
+    "--font-size-2xs",
     "--font-size-xs",
     "--font-size-sm",
     "--font-size-md",

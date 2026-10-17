@@ -25,7 +25,8 @@
 //! - **Apply allows nothing** (PC-5) and there is **no "always apply"** (PC-13); policy's
 //!   `sandbox.proposed-changes = "off"` holds none (PC-14).
 //! - **Shown whole, or not applied here** (PC-7): a change too long for a row says so and
-//!   offers Dismiss; its comparison tab with Apply is follow-up work.
+//!   offers Open, its own comparison tab with Apply, where the lines that changed are marked
+//!   and the rest folded (#2121), and Dismiss.
 //!
 //! In memory only: a relaunch starts with none, and the chat's next edit proposes again.
 
@@ -303,7 +304,7 @@ pub struct ProposedWhole {
     /// it is not shown ([`Self::why`]).
     pub before: String,
     pub after: String,
-    /// The one hunk that is the whole of each side, as the merge view takes it.
+    /// git's hunks between the two sides, as drawn: the lines the merge view marks (#2121).
     pub hunks: Vec<crate::piecefiles::GitHunk>,
     /// Whether Apply is offered: shown whole, and it still applies.
     pub applies: bool,
@@ -346,12 +347,15 @@ pub fn whole_of(one: &Proposal, now: &Now) -> ProposedWhole {
             let shown = crate::askwrites::proposed(&one.path, before, after);
             let whole = matches!(shown, crate::askwrites::WritesShown::Whole { .. });
             if whole || crate::askwrites::proposed_too_long(before, after) {
+                let before = purlis_core::harness::asked::edit::drawn(before);
+                let after = purlis_core::harness::asked::edit::drawn(after);
+                let hunks = lines_changed(&before, &after);
                 ProposedWhole {
                     path: one.path.clone(),
                     session: one.session,
-                    before: purlis_core::harness::asked::edit::drawn(before),
-                    after: purlis_core::harness::asked::edit::drawn(after),
-                    hunks: vec![crate::askwrites::whole(before, after)],
+                    before,
+                    after,
+                    hunks,
                     applies: true,
                     why: None,
                 }
@@ -363,6 +367,16 @@ pub fn whole_of(one: &Proposal, now: &Now) -> ProposedWhole {
             }
         }
     }
+}
+
+/// The lines that changed between `before` and `after` as the tab draws them: git's hunks, by
+/// the one line diff every comparison uses (#2121), so the merge view marks those lines and
+/// folds the unchanged stretches between them.
+fn lines_changed(before: &str, after: &str) -> Vec<crate::piecefiles::GitHunk> {
+    purlis_core::files::line_hunks(before, after)
+        .into_iter()
+        .map(crate::piecefiles::GitHunk::from)
+        .collect()
 }
 
 /// Why an answer found nothing to answer: answered elsewhere, or its chat closed.
@@ -567,5 +581,4 @@ pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
 }
 
 #[cfg(test)]
-#[path = "proposals_tests.rs"]
 mod tests;
