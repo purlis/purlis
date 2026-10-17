@@ -633,3 +633,6 @@ pub fn confirmed_only(listed: Vec<Host>, confirmed: &[String]) -> Vec<Host> {
         .filter(|host| confirmed.contains(&host.to_string()))
         .collect()
 }
+
+#[cfg(test)]
+mod tests;
