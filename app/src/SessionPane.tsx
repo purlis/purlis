@@ -18,7 +18,7 @@ import * as bench from "./bench";
 import { commands, type PlaneId } from "./bindings";
 import { FindBar } from "./FindBar";
 import { paneDrawn } from "./paneKeyboard";
-import { useReconnecting } from "./reconnecting";
+import { RECONNECTING_SAID, useReconnecting } from "./reconnecting";
 import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
@@ -66,8 +66,9 @@ import { useProjectShown } from "./projectShown";
  * The menu key opens the menu under the cursor whichever it is, and Shift+F10 does while no
  * program has the mouse.
  *
- * **A chat on a runner whose link is down says "Reconnecting" over its last screen** (#2496),
- * quietly, until the core says the link is back and the screen draws again from its snapshot.
+ * **A chat on a runner whose link is down says "Reconnecting…" over its last screen** (#2496),
+ * quietly, until the core says it is reconnected: the link is back, or it drew again from a new
+ * snapshot.
  */
 export function SessionPane({
   plane,
@@ -442,13 +443,15 @@ export function SessionPane({
           ref={holder}
         />
       </TerminalMenu>
-      {reconnecting && (
-        <div className="pane-reconnecting">
-          <span className="pane-reconnecting-said" role="status">
-            Reconnecting
-          </span>
-        </div>
-      )}
+      {/* Always there, so a screen reader hears the word as it comes and goes. */}
+      <div className="pane-reconnecting">
+        <span
+          className={reconnecting ? "pane-reconnecting-said ui-text-secondary" : undefined}
+          role="status"
+        >
+          {reconnecting ? RECONNECTING_SAID : ""}
+        </span>
+      </div>
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
     </>
   );

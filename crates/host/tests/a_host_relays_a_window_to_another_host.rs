@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use purlis_host::standin::StandIns;
+use purlis_host::standin::{Lines, StandIns};
 use purlis_host::{Compose, Dial, Hosting, Relay, ToCompose};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
@@ -493,18 +493,12 @@ async fn a_window_that_ends_while_host_a_dials_sends_host_b_nothing_and_its_link
     );
 }
 
-/// Host B reached as by [`as_its_window`], over a line the test cuts with `lines`.
-fn cuttable(b: Hosting, lines: Arc<std::sync::Mutex<Vec<tokio::task::AbortHandle>>>) -> Dial {
+/// Host B reached as by [`as_its_window`], over a line `lines` cuts.
+fn cuttable(b: Hosting, lines: Lines) -> Dial {
     Arc::new(move || {
-        let (b, lines) = (b.clone(), Arc::clone(&lines));
+        let (b, lines) = (b.clone(), lines.clone());
         Box::pin(async move {
-            let (a_end, a_line) = duplex(256 * 1024);
-            let (b_line, b_end) = duplex(256 * 1024);
-            let line = tokio::spawn(async move {
-                let (mut a_line, mut b_line) = (a_line, b_line);
-                let _ = tokio::io::copy_bidirectional(&mut a_line, &mut b_line).await;
-            });
-            lines.lock().unwrap().push(line.abort_handle());
+            let (a_end, b_end) = lines.line();
             let (client, served) = tokio::join!(
                 link::connect(
                     a_end,
@@ -522,17 +516,15 @@ fn cuttable(b: Hosting, lines: Arc<std::sync::Mutex<Vec<tokio::task::AbortHandle
 
 #[tokio::test]
 async fn a_dialed_link_that_ends_is_told_to_the_window_and_so_is_the_next_one_up() {
-    let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let mut window = a_window(|b| cuttable(b, Arc::clone(&lines))).await;
+    let lines = Lines::default();
+    let mut window = a_window(|b| cuttable(b, lines.clone())).await;
     window
         .client
         .subscribe(session::Since::new())
         .await
         .unwrap();
 
-    for line in lines.lock().unwrap().drain(..) {
-        line.abort();
-    }
+    lines.cut();
     let told = timeout(PATIENCE, window.events.recv())
         .await
         .expect("the window is told")

@@ -73,6 +73,7 @@ use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 
 use crate::hooks::Relayed;
 use crate::host::{Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching};
+use crate::reconnecting::Reconnection;
 use crate::sessions::{ENDED, STOPPED, Utf8Stream};
 
 /// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
@@ -430,13 +431,24 @@ struct Shared {
     /// Who says which chats are mid-turn in a workspace of a project the host saves, by the
     /// project's id: its plane's board (#2002).
     turns: Mutex<HashMap<String, Turns>>,
-    /// Who is told that the link the host relays this one over is down, `true`, or back,
-    /// `false` (#2496).
-    relinks: Mutex<Vec<Relinks>>,
+    /// Who is told what this link hears of the runner its host relays it to (#2496).
+    reconnects: Mutex<Vec<Reconnects>>,
 }
 
-/// Told that the link a host relays a window's link over is down, `true`, or back, `false`.
-type Relinks = Arc<dyn Fn(bool) + Send + Sync>;
+/// What a link hears of the runner its host relays it to (#2496).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reconnect {
+    /// The host says the link to the runner is down.
+    Started,
+    /// The host says it is back; or the window cannot tell any more, because it fell behind and
+    /// subscribed again from now, or its link to the host ended.
+    Over,
+    /// The view the host numbers so drew again from a new snapshot.
+    Redrawn(u32),
+}
+
+/// Told what a link hears of the runner its host relays it to.
+type Reconnects = Arc<dyn Fn(Reconnect) + Send + Sync>;
 
 /// The most a reply to a hook line may be on the link, its frame's envelope aside: a larger
 /// answer is refused with a sentence rather than sent.
@@ -497,6 +509,7 @@ impl HostLink {
         let hearing = runtime
             .spawn(async move {
                 hearing.await;
+                reconnect(&lost, Reconnect::Over);
                 // Off the runtime: each end told reads and moves the window's board.
                 let _ =
                     tokio::task::spawn_blocking(move || everything_ended_with_the_host(&lost, id))
@@ -680,18 +693,17 @@ impl HostLink {
         lock(&self.shared.hearing).insert(project.to_owned(), relayed);
     }
 
-    /// Tell `tell` each time the host says the link it relays this one over is down or back.
-    fn when_relinking(&self, tell: Relinks) {
-        lock(&self.shared.relinks).push(tell);
+    /// Tell `tell` what this link hears of the runner its host relays it to, from now on.
+    fn when_reconnecting(&self, tell: Reconnects) {
+        lock(&self.shared.reconnects).push(tell);
     }
 }
 
-/// The host this link reaches relays it to another, and says the link there is down, `true`,
-/// or back, `false` (#2496): whoever asked is told.
-fn relinking(shared: &Shared, down: bool) {
-    let tell: Vec<Relinks> = lock(&shared.relinks).clone();
+/// Whoever asked is told what the link heard of the runner its host relays it to (#2496).
+fn reconnect(shared: &Shared, heard: Reconnect) {
+    let tell: Vec<Reconnects> = lock(&shared.reconnects).clone();
     for tell in tell {
-        tell(down);
+        tell(heard);
     }
 }
 
@@ -829,7 +841,7 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     if let Some(sink) = frames {
         return draw_frames_from(reader, &shared, &sink).await;
     }
-    let again = reader.epoch().0 > 1;
+    let mut again = reader.epoch().0 > 1;
     let mut text = Utf8Stream::default();
     if again {
         give(&shared, view, RESET.to_owned());
@@ -839,6 +851,11 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
             Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
         };
         give(&shared, view, text.push(&bytes));
+        // It draws again from a new snapshot: whatever was said of its runner's link, it is
+        // reconnected (#2496).
+        if std::mem::take(&mut again) {
+            reconnect(&shared, Reconnect::Redrawn(view));
+        }
         if reader.ack(bytes.len()).await.is_err() {
             break;
         }
@@ -998,8 +1015,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     hears.told(told);
                 }
             }
-            Told::Pushed(Pushed::LinkDown { .. }) => relinking(&shared, true),
-            Told::Pushed(Pushed::LinkBack {}) => relinking(&shared, false),
+            Told::Pushed(Pushed::LinkDown { .. }) => reconnect(&shared, Reconnect::Started),
+            Told::Pushed(Pushed::LinkBack {}) => reconnect(&shared, Reconnect::Over),
             Told::Pushed(Pushed::ViewEnded { view, .. }) => {
                 let drained = lock(&shared.views)
                     .drawing
@@ -1015,6 +1032,9 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
             // The window keeps no events of the host's log yet: only the notices matter, so a
             // reader that fell behind subscribes again from now.
             Told::FellBehind { .. } => {
+                // Whether the runner's link came back meanwhile is not known: nothing is left
+                // dimmed on a word that may have been missed (#2496).
+                reconnect(&shared, Reconnect::Over);
                 let _ = client.subscribe(session::Since::new()).await;
             }
             Told::Pushed(_) => {}
@@ -1057,9 +1077,17 @@ pub struct HostedSessions {
     /// Why the board the host kept could not be taken as the window held the project, where it
     /// could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
-    /// Who is told which chats are reconnecting, while the link to the runner they run on is
-    /// down (#2496).
-    reconnecting: Arc<Mutex<Option<Reconnecting>>>,
+    /// Which chats are reconnecting, while the link to the runner they run on is down, and who
+    /// is told (#2496).
+    reconnecting: Arc<Mutex<Dimmed>>,
+}
+
+/// The chats the window was told are reconnecting, until each is reconnected, and who is told
+/// (#2496).
+#[derive(Default)]
+struct Dimmed {
+    chats: std::collections::BTreeSet<u32>,
+    tell: Option<Reconnecting>,
 }
 
 /// A project held on a link: its stable id, and which link.
@@ -1112,25 +1140,43 @@ impl HostedSessions {
             left: Arc::clone(&self.left),
             untaken: Arc::clone(&self.untaken),
             root: self.root.clone(),
-            relinks: self.relinks(),
+            reconnects: self.reconnects(),
         }
     }
 
-    /// What tells whoever asked that every chat of this project is reconnecting while the link
-    /// the host relays its link over is down, and drawn again once it is back (#2496): its
-    /// chats all run where that link goes.
-    fn relinks(&self) -> Relinks {
-        let (running, reconnecting) = (Arc::clone(&self.running), Arc::clone(&self.reconnecting));
-        Arc::new(move |down| {
-            let Some(tell) = lock(&reconnecting).clone() else {
-                return;
+    /// What tells whoever asked which of this project's chats are reconnecting (#2496). While
+    /// the link the host relays the project's link over is down every chat is, because they
+    /// all run where that link goes; each chat dimmed is reconnected once the link is back or
+    /// the window cannot tell, or alone once its view draws again from a new snapshot.
+    fn reconnects(&self) -> Reconnects {
+        let (running, dimmed) = (Arc::clone(&self.running), Arc::clone(&self.reconnecting));
+        Arc::new(move |heard| {
+            let (chats, reconnection) = match heard {
+                Reconnect::Started => {
+                    let chats: Vec<u32> = lock(&running).keys().copied().collect();
+                    lock(&dimmed).chats.extend(chats.iter().copied());
+                    (chats, Reconnection::Reconnecting)
+                }
+                Reconnect::Over => {
+                    let chats = std::mem::take(&mut lock(&dimmed).chats);
+                    (chats.into_iter().collect(), Reconnection::Reconnected)
+                }
+                Reconnect::Redrawn(view) => {
+                    let chat = lock(&running)
+                        .iter()
+                        .find_map(|(id, program)| program.views.contains(&view).then_some(*id));
+                    let Some(chat) = chat.filter(|chat| lock(&dimmed).chats.remove(chat)) else {
+                        return;
+                    };
+                    (vec![chat], Reconnection::Reconnected)
+                }
             };
-            let mut chats: Vec<u32> = lock(&running).keys().copied().collect();
-            if chats.is_empty() {
-                return;
-            }
+            let mut chats = chats;
             chats.sort_unstable();
-            tell(chats, down);
+            let tell = lock(&dimmed).tell.clone();
+            if let (false, Some(tell)) = (chats.is_empty(), tell) {
+                tell(chats, reconnection);
+            }
         })
     }
 
@@ -1227,7 +1273,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         left,
         untaken,
         root,
-        relinks,
+        reconnects,
     } = holding;
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
@@ -1242,7 +1288,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     if let Some(relayed) = lock(relayed).clone() {
         link.hear_project(&project, relayed);
     }
-    link.when_relinking(Arc::clone(relinks));
+    link.when_reconnecting(Arc::clone(reconnects));
     link.call(Command::HoldProject {
         project: project.clone(),
         project_path: root.display().to_string(),
@@ -1328,8 +1374,8 @@ struct Holding {
     /// Why the board the host kept could not be taken, where it could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
     root: PathBuf,
-    /// Told that the link the host relays the project's link over is down or back (#2496).
-    relinks: Relinks,
+    /// Told what the project's link hears of the runner its host relays it to (#2496).
+    reconnects: Reconnects,
 }
 
 /// A project the session host saves for the window (#2002): asked for once the link is ready,
@@ -1806,6 +1852,18 @@ impl SessionHost for HostedSessions {
         }
         let program = lock(&self.running).remove(&id).ok_or_else(|| gone(id))?;
         lock(&self.lost).remove(&id);
+        // A chat put back under its number starts reconnected (#2496).
+        let dimmed = {
+            let mut dimmed = lock(&self.reconnecting);
+            dimmed
+                .chats
+                .remove(&id)
+                .then(|| dimmed.tell.clone())
+                .flatten()
+        };
+        if let Some(tell) = dimmed {
+            tell(vec![id], Reconnection::Reconnected);
+        }
         if let Ok(link) = self.own_link(Duration::ZERO) {
             for view in &program.views {
                 link.undraw(*view);
@@ -1845,7 +1903,11 @@ impl SessionHost for HostedSessions {
     }
 
     fn when_reconnecting(&self, tell: Reconnecting) {
-        *lock(&self.reconnecting) = Some(tell);
+        lock(&self.reconnecting).tell = Some(tell);
+    }
+
+    fn reconnecting(&self) -> Vec<u32> {
+        lock(&self.reconnecting).chats.iter().copied().collect()
     }
 
     fn lost_with_its_host(&self, id: u32) -> bool {

@@ -149,9 +149,9 @@ pub type Sink = Box<dyn FnMut(String) + Send>;
 /// can hold it for as long as its program runs.
 pub type Ends = Arc<dyn Fn(u32, Exit) + Send + Sync>;
 
-/// Told which sessions are reconnecting, `true`, while the link to the session host they run
-/// on is down, and which are drawn again, `false`, once it is back (#2496).
-pub type Reconnecting = Arc<dyn Fn(Vec<u32>, bool) + Send + Sync>;
+/// Told which sessions are reconnecting while the link to the session host they run on is
+/// down, and which are reconnected (#2496).
+pub type Reconnecting = Arc<dyn Fn(Vec<u32>, crate::reconnecting::Reconnection) + Send + Sync>;
 
 /// A view the UI has open, and the size the screen it opened on was drawn for.
 #[derive(Debug, Clone, Copy)]
@@ -284,6 +284,12 @@ pub trait SessionHost: Send + Sync {
     /// chats run in the window's own process.
     fn when_reconnecting(&self, tell: Reconnecting) {
         let _ = tell;
+    }
+
+    /// The sessions that are reconnecting now (#2496), in order. None, where chats run in the
+    /// window's own process.
+    fn reconnecting(&self) -> Vec<u32> {
+        Vec::new()
     }
 
     /// Whether session `id`'s program ended with the session host it ran in, which ended

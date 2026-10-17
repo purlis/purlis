@@ -28,10 +28,12 @@
 //! command is refused in words saying so, and is not kept. **The client is told the link is
 //! down**, pushed `link_down` once each time no link is up, and `link_back` once one is up again
 //! and carries what its link stands on (#2496): a link renewed ahead of its limit is neither, and
-//! a relay made with [`Relay::new`] tells its client both as a kept one does. A view the other
-//! host will not attach again has ended for good, and the client is told so. What the other host
-//! named to the link that ended, a chat's confinement among them, is not named again by this:
-//! the other host names a link only what that link made or took back (#2511).
+//! a relay made with [`Relay::new`] tells its client both as a kept one does. Both are this
+//! host's own words: the other host's are never handed on, and neither waits on a client that
+//! has stopped reading. A view the other host will not attach again has ended for good, and the
+//! client is told so. What the other host named to the link that ended, a chat's confinement
+//! among them, is not named again by this: the other host names a link only what that link made
+//! or took back (#2511).
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
@@ -343,7 +345,7 @@ async fn keep(
                                 // answered: the kept link is told the relay has moved then.
                                 retiring = up.replace(Arc::clone(&upstream));
                                 tell.send_replace(Standing::Up(upstream));
-                                told.back(&client).await;
+                                told.back(&client);
                                 if retiring.is_none() {
                                     links.moved();
                                 }
@@ -357,7 +359,7 @@ async fn keep(
                                 None => {
                                     let why = "the link to it ended as it came up";
                                     tell.send_replace(Standing::Down(why.into()));
-                                    told.down(&client, why).await;
+                                    told.down(&client, why);
                                 }
                             },
                         }
@@ -365,7 +367,7 @@ async fn keep(
                     Some(Linked::Down(why)) => {
                         up = None;
                         retiring = None;
-                        told.down(&client, &why).await;
+                        told.down(&client, &why);
                         tell.send_replace(Standing::Down(why));
                     }
                     None => no_more = true,
@@ -378,7 +380,7 @@ async fn keep(
                     up = None;
                     let why = "the link to it ended";
                     tell.send_replace(Standing::Down(why.into()));
-                    told.down(&client, why).await;
+                    told.down(&client, why);
                 }
             }
         }
@@ -388,26 +390,29 @@ async fn keep(
     }
 }
 
-/// What the client was last told of the link to the other host (#2496): that it is down, or
-/// nothing since it was last up.
-#[derive(Default)]
-struct LinkTold {
-    down: bool,
+/// What the client was last told of the link to the other host (#2496).
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum LinkTold {
+    /// Nothing since the link was last up: it is up, as far as the client knows.
+    #[default]
+    Up,
+    /// That no link is up.
+    Down,
 }
 
 impl LinkTold {
     /// No link is up, for `why`: the client is told, unless it was told already.
-    async fn down(&mut self, client: &ClientLink, why: &str) {
-        if !std::mem::replace(&mut self.down, true) {
-            client.tell(Pushed::LinkDown { why: why.into() }).await;
+    fn down(&mut self, client: &ClientLink, why: &str) {
+        if std::mem::replace(self, LinkTold::Down) == LinkTold::Up {
+            client.tell_now(Pushed::LinkDown { why: why.into() });
         }
     }
 
     /// A link is up and carries what the client's link stands on: a client told it was down is
     /// told it is back.
-    async fn back(&mut self, client: &ClientLink) {
-        if std::mem::take(&mut self.down) {
-            client.tell(Pushed::LinkBack {}).await;
+    fn back(&mut self, client: &ClientLink) {
+        if std::mem::replace(self, LinkTold::Up) == LinkTold::Down {
+            client.tell_now(Pushed::LinkBack {});
         }
     }
 }
@@ -492,6 +497,18 @@ impl ClientLink {
             return;
         };
         if target.send(pushed).await.is_err() {
+            self.kept().subscriber = None;
+        }
+    }
+
+    /// Hand `pushed` to the client's subscription, while it has one, without waiting for room:
+    /// a client that has stopped reading never holds up linking again, and is not told what
+    /// does not fit. It learns its views are back as each draws again (#2496).
+    fn tell_now(&self, pushed: Pushed) {
+        let Some(target) = self.kept().subscriber.clone() else {
+            return;
+        };
+        if let Err(mpsc::error::TrySendError::Closed(_)) = target.try_send(pushed) {
             self.kept().subscriber = None;
         }
     }
@@ -863,6 +880,9 @@ async fn push_on(
                 };
                 client.view_ended(ours, why).await;
             }
+            // Whether the link to the other host is up is this host's to say, never the other
+            // host's (#2496).
+            Pushed::LinkDown { .. } | Pushed::LinkBack {} => {}
             pushed => client.tell(pushed).await,
         }
     }

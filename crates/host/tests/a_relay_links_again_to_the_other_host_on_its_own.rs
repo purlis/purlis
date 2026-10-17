@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
-use purlis_host::standin::{StandIn, StandInConfines, StandIns};
+use purlis_host::standin::{Lines, StandIn, StandInConfines, StandIns};
 use purlis_host::{Compose, Hosting, Keep, Relay, ToCompose};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::hostlink::{
@@ -36,7 +36,6 @@ use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use purlis_terminal::session::Spec;
 use tokio::io::{DuplexStream, duplex};
 use tokio::sync::mpsc;
-use tokio::task::AbortHandle;
 use tokio::time::timeout;
 
 const PROJECT: &str = "01J9PRJCT00000000000000000";
@@ -76,7 +75,7 @@ struct Cable<B> {
     b_key: LinkKey,
     a_key: LinkKey,
     reach: Arc<Mutex<Reach>>,
-    lines: Arc<Mutex<Vec<AbortHandle>>>,
+    lines: Lines,
     dials: Arc<Mutex<usize>>,
 }
 
@@ -87,9 +86,7 @@ impl<B> Cable<B> {
 
     /// Cut every connection made so far: both ends read their end.
     fn cut(&self) {
-        for line in self.lines.lock().unwrap().drain(..) {
-            line.abort();
-        }
+        self.lines.cut();
     }
 
     fn dials(&self) -> usize {
@@ -123,13 +120,7 @@ impl<B: session::Host + Clone> Connector for Cable<B> {
             device: HOST_A.into(),
             key: self.a_key.public(),
         };
-        let (a_end, a_line) = duplex(256 * 1024);
-        let (b_line, b_end) = duplex(256 * 1024);
-        let line = tokio::spawn(async move {
-            let (mut a_line, mut b_line) = (a_line, b_line);
-            let _ = tokio::io::copy_bidirectional(&mut a_line, &mut b_line).await;
-        });
-        self.lines.lock().unwrap().push(line.abort_handle());
+        let (a_end, b_end) = self.lines.line();
         tokio::spawn(async move {
             let ours = Identity {
                 device: HOST_B.into(),
@@ -185,7 +176,7 @@ async fn a_window_on<B: session::Host + Clone>(
         b_key: b_key.clone(),
         a_key: a_key.clone(),
         reach: Arc::new(Mutex::new(Reach::HostB)),
-        lines: Arc::default(),
+        lines: Lines::default(),
         dials: Arc::default(),
     };
     let keep: Keep = {
@@ -702,6 +693,58 @@ async fn an_event_handed_to_the_window_over_one_link_is_not_handed_again_over_th
 
 /// A command in flight on a link as it is renewed is answered on that link: the link it is on
 /// ends only once the relay has moved to the next and nothing sent on it waits for an answer.
+/// A host B that says, as a relaying host would, that its own link is down and back, and then
+/// pushes one event.
+#[derive(Clone, Default)]
+struct SaysItsLink;
+
+impl session::Host for SaysItsLink {
+    async fn call(
+        &self,
+        _command: Command,
+        _peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        Ok(Answer::Chats(Vec::new()))
+    }
+
+    async fn subscribe(
+        &self,
+        _since: session::Since,
+        _peer: &session::Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, session::Refusal> {
+        let (tell, told) = mpsc::channel(16);
+        for pushed in [
+            Pushed::LinkDown {
+                why: "host B's own link".into(),
+            },
+            Pushed::LinkBack {},
+            Pushed::Event(event(1)),
+        ] {
+            tell.send(pushed).await.unwrap();
+        }
+        tokio::spawn(async move { tell.closed().await });
+        Ok(told)
+    }
+}
+
+#[tokio::test]
+async fn whether_the_link_is_up_is_host_as_word_and_never_host_bs() {
+    let mut window = a_window_on(SaysItsLink, StandIns::default(), never_renewed()).await;
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+
+    assert_eq!(window.pushed().await, Pushed::Event(event(1)));
+    assert!(
+        timeout(Duration::from_millis(300), window.events.recv())
+            .await
+            .is_err(),
+        "host B's word on its own link was handed to the window"
+    );
+}
+
 #[tokio::test]
 async fn a_command_in_flight_as_its_link_is_renewed_is_answered_on_it() {
     let (runs, confines) = (StandIns::default(), StandInConfines::default());

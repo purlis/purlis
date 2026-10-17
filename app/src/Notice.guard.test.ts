@@ -410,7 +410,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       "a runner's chat reconnecting while the runner's link is down (#2496): one quiet state " +
       "over its last screen, as ruled 2026-10-17, never a Notice. It asks nothing and offers " +
-      "nothing: purlis links again on its own, and it goes when the link is back.",
+      "nothing: purlis links again on its own, and it empties once the chat is reconnected. " +
+      "It stays mounted, so its word is heard as it comes.",
   },
   "StartChat.tsx": {
     count: 3,

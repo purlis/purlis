@@ -1764,24 +1764,18 @@ fn a_chat_started_by_its_names_with_a_hearing_that_asks_nobody_names_nothing_to_
     assert!(!confines.seen()[0].confine.asks);
 }
 
-/// Every line cut so far, each its own task: aborting one cuts it.
-type Lines = Arc<Mutex<Vec<tokio::task::AbortHandle>>>;
-
 /// A `local-ui` link to `hosting` over a line `lines` can cut.
-async fn a_cuttable_link_to<H: session::Host>(hosting: H, lines: Lines) -> Result<Link, String> {
+async fn a_cuttable_link_to<H: session::Host>(
+    hosting: H,
+    lines: purlis_host::standin::Lines,
+) -> Result<Link, String> {
     use purlis_session_protocol::auth::{Credentials, Scope};
     use purlis_session_protocol::link;
 
     static HELD: std::sync::LazyLock<Credentials> =
         std::sync::LazyLock::new(|| Credentials::mint().expect("credentials"));
 
-    let (ours, line_a) = tokio::io::duplex(1 << 20);
-    let (line_b, theirs) = tokio::io::duplex(1 << 20);
-    let line = tokio::spawn(async move {
-        let (mut line_a, mut line_b) = (line_a, line_b);
-        let _ = tokio::io::copy_bidirectional(&mut line_a, &mut line_b).await;
-    });
-    lines.lock().unwrap().push(line.abort_handle());
+    let (ours, theirs) = lines.line();
     let (client, served) = tokio::join!(
         link::connect(
             ours,
@@ -1796,23 +1790,106 @@ async fn a_cuttable_link_to<H: session::Host>(hosting: H, lines: Lines) -> Resul
     client.map_err(|why| why.to_string())
 }
 
-/// A project's chats on a runner whose programs are stand-ins, reached through this machine's
-/// host, which relays to it (#2042): each link the relay dials runs over a line the test cuts.
-fn on_a_runner() -> (Hosted, Lines) {
-    let runtime = a_runtime();
-    let runs = StandIns::default();
+/// A host between the window and `inner`, which says what `inner` pushes, and what the test
+/// pushes through `pushes`, and leaves out a `link_back` where it is told to: a window that
+/// missed one. It keeps which of its subscriptions, numbered from 0 as they were made, the
+/// window let go of.
+#[derive(Clone)]
+struct Between<H> {
+    inner: H,
+    drops_link_back: bool,
+    pushes: tokio::sync::broadcast::Sender<session::Pushed>,
+    subscriptions: Arc<Mutex<(usize, std::collections::BTreeSet<usize>)>>,
+}
+
+impl<H> Between<H> {
+    fn new(inner: H, drops_link_back: bool) -> Self {
+        Between {
+            inner,
+            drops_link_back,
+            pushes: tokio::sync::broadcast::channel(4096).0,
+            subscriptions: Arc::default(),
+        }
+    }
+
+    /// Whether the window let go of subscription `number`.
+    fn let_go(&self, number: usize) -> bool {
+        self.subscriptions.lock().unwrap().1.contains(&number)
+    }
+}
+
+impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for Between<H> {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        self.inner.call(command, peer).await
+    }
+
+    async fn elicits_a_secret(&self, chat: &str, ask: &str) -> bool {
+        self.inner.elicits_a_secret(chat, ask).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        let mut from = self.inner.subscribe(since, peer).await?;
+        let mut pushed_here = self.pushes.subscribe();
+        let drops_link_back = self.drops_link_back;
+        let subscriptions = Arc::clone(&self.subscriptions);
+        let number = {
+            let mut subscriptions = subscriptions.lock().unwrap();
+            subscriptions.0 += 1;
+            subscriptions.0 - 1
+        };
+        let (tell, told) = tokio::sync::mpsc::channel(8192);
+        tokio::spawn(async move {
+            loop {
+                let pushed = tokio::select! {
+                    () = tell.closed() => break,
+                    pushed = from.recv() => pushed,
+                    pushed = pushed_here.recv() => pushed.ok(),
+                };
+                let Some(pushed) = pushed else { return };
+                if drops_link_back && pushed == (session::Pushed::LinkBack {}) {
+                    continue;
+                }
+                if tell.send(pushed).await.is_err() {
+                    break;
+                }
+            }
+            subscriptions.lock().unwrap().1.insert(number);
+        });
+        Ok(told)
+    }
+}
+
+/// A runner whose programs are stand-ins, `runs`, reached through this machine's host, which
+/// relays to it (#2042): each link the relay dials runs over a line `lines` cuts.
+fn a_relay_to_a_runner(runs: &StandIns, lines: &purlis_host::standin::Lines) -> purlis_host::Relay {
     let runner = Hosting::running_with(
         crate::sessionhost::Composes::as_the_tests_ship(),
         runs.clone(),
     );
-    let lines: Lines = Arc::default();
-    let relay = purlis_host::Relay::new({
-        let lines = Arc::clone(&lines);
-        Arc::new(move || Box::pin(a_cuttable_link_to(runner.clone(), Arc::clone(&lines))))
-    });
-    let (connection, link) = in_memory(relay, &runtime);
+    let lines = lines.clone();
+    purlis_host::Relay::new(Arc::new(move || {
+        Box::pin(a_cuttable_link_to(runner.clone(), lines.clone()))
+    }))
+}
+
+/// A project's chats in `host`, whose programs are `runs`, over in-memory links.
+fn hosted_in<H: session::Host + Clone>(host: H, runs: StandIns) -> Hosted {
+    let runtime = a_runtime();
+    let (connection, link) = in_memory(host, &runtime);
     let (dir, root) = a_project();
-    let hosted = Hosted {
+    Hosted {
         sessions: HostedSessions::new(connection, &root),
         link,
         runs,
@@ -1820,21 +1897,33 @@ fn on_a_runner() -> (Hosted, Lines) {
         root,
         _dir: dir,
         _runtime: runtime,
-    };
-    (hosted, lines)
+    }
 }
 
-/// Which chats the window was told are reconnecting, `true`, or drawn again, `false`.
-type Reconnects = (Vec<u32>, bool);
+/// Which chats the window was told are reconnecting or reconnected, in the order it was told.
+type Reconnects = Arc<Mutex<Vec<(Vec<u32>, Reconnection)>>>;
 
-#[test]
-fn a_runners_chats_are_reconnecting_while_its_link_is_down_and_drawn_again_once_it_is_back() {
-    let (hosted, lines) = on_a_runner();
-    let told: Arc<Mutex<Vec<Reconnects>>> = Arc::default();
+fn told_of_reconnecting(hosted: &Hosted) -> Reconnects {
+    let told: Reconnects = Arc::default();
     hosted.sessions.when_reconnecting({
         let told = Arc::clone(&told);
-        Arc::new(move |chats, reconnecting| told.lock().unwrap().push((chats, reconnecting)))
+        Arc::new(move |chats, reconnection| told.lock().unwrap().push((chats, reconnection)))
     });
+    told
+}
+
+/// Every chat the window was told is reconnected, whichever word said it.
+fn reconnected(told: &Reconnects) -> std::collections::BTreeSet<u32> {
+    told.lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, reconnection)| *reconnection == Reconnection::Reconnected)
+        .flat_map(|(chats, _)| chats.iter().copied())
+        .collect()
+}
+
+/// A chat whose pane is drawn, its program having written `ready> `.
+fn a_drawn_chat(hosted: &Hosted) -> (u32, Arc<Mutex<String>>) {
     let id = hosted
         .sessions
         .open(None, &a_shell("true"), &|_| {})
@@ -1845,26 +1934,115 @@ fn a_runners_chats_are_reconnecting_while_its_link_is_down_and_drawn_again_once_
     until("the screen is drawn", || {
         seen.lock().unwrap().contains("ready> ")
     });
+    (id, seen)
+}
 
-    for line in lines.lock().unwrap().drain(..) {
-        line.abort();
-    }
-    until("the chat is said to be reconnecting", || {
-        *told.lock().unwrap() == [(vec![id], true)]
-    });
+#[test]
+fn every_chat_on_a_runner_is_reconnecting_while_its_link_is_down_and_each_is_reconnected_after() {
+    let (runs, lines) = (StandIns::default(), purlis_host::standin::Lines::default());
+    let hosted = hosted_in(a_relay_to_a_runner(&runs, &lines), runs);
+    let told = told_of_reconnecting(&hosted);
+    let (typed_in, seen) = a_drawn_chat(&hosted);
+    let ends = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    let ending = hosted.runs.last();
+
+    lines.cut();
+    until(
+        "every chat of the project is said to be reconnecting",
+        || *told.lock().unwrap() == [(vec![typed_in, ends], Reconnection::Reconnecting)],
+    );
+    // A pane drawn now starts dimmed.
+    assert_eq!(hosted.sessions.reconnecting(), [typed_in, ends]);
+    // One chat's program ends while the link is down.
+    ending.ends(Exit::Code(0));
 
     // What the window sends next links again, and the chat draws again from its snapshot.
     until("the runner is linked again", || {
-        hosted.sessions.input(id, b"typed").is_ok()
+        hosted.sessions.input(typed_in, b"typed").is_ok()
     });
-    until("the chat is said to be drawn again", || {
-        *told.lock().unwrap() == [(vec![id], true), (vec![id], false)]
+    until("each chat is said to be reconnected", || {
+        reconnected(&told) == [typed_in, ends].into()
     });
+    assert!(hosted.sessions.reconnecting().is_empty());
     until("the screen is drawn again", || {
         seen.lock().unwrap().ends_with("ready> typed")
     });
-    assert!(
-        !seen.lock().unwrap().contains(ENDED),
-        "a pane whose runner's link dropped was told its program ended"
+}
+
+#[test]
+fn a_chat_whose_link_back_went_missing_is_reconnected_once_it_draws_again() {
+    let (runs, lines) = (StandIns::default(), purlis_host::standin::Lines::default());
+    let hosted = hosted_in(Between::new(a_relay_to_a_runner(&runs, &lines), true), runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    lines.cut();
+    until("the chat is said to be reconnecting", || {
+        *told.lock().unwrap() == [(vec![id], Reconnection::Reconnecting)]
+    });
+    until("the runner is linked again", || {
+        hosted.sessions.input(id, b"typed").is_ok()
+    });
+
+    until(
+        "the chat is said to be reconnected as it draws again",
+        || reconnected(&told) == [id].into(),
     );
+    assert!(hosted.sessions.reconnecting().is_empty());
+}
+
+#[test]
+fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let (pushes, between) = (host.pushes.clone(), host.clone());
+    let hosted = hosted_in(host, runs);
+    // The window takes its time over being told the link is down: meanwhile its host pushes
+    // more than it holds, so it falls behind and subscribes again from now.
+    let (go_on, held) = std::sync::mpsc::channel::<()>();
+    let held = Mutex::new(held);
+    let told: Reconnects = Arc::default();
+    hosted.sessions.when_reconnecting({
+        let told = Arc::clone(&told);
+        Arc::new(move |chats, reconnection| {
+            if reconnection == Reconnection::Reconnecting {
+                // Off the worker it holds, so the link goes on reading meanwhile.
+                tokio::task::block_in_place(|| {
+                    let _ = held.lock().unwrap().recv_timeout(PATIENCE);
+                });
+            }
+            told.lock().unwrap().push((chats, reconnection));
+        })
+    });
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the link to it ended".into(),
+        })
+        .unwrap();
+    for seq in 1..=3000 {
+        let _ = pushes.send(session::Pushed::Missed {
+            device: "01J9ZZDEVICE0000000000000".into(),
+            after: seq,
+            resumes_at: seq + 1,
+        });
+    }
+    // The project's link, the window's second, has let go of its subscription: it fell behind.
+    until("the window falls behind", || between.let_go(1));
+    go_on.send(()).unwrap();
+
+    until("the chat is said to be reconnected", || {
+        reconnected(&told) == [id].into()
+    });
+    assert!(hosted.sessions.reconnecting().is_empty());
 }

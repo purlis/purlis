@@ -4025,11 +4025,11 @@ impl Planes {
             let plane = id.clone();
             chats
                 .sessions()
-                .when_reconnecting(Arc::new(move |sessions, reconnecting| {
+                .when_reconnecting(Arc::new(move |sessions, reconnection| {
                     tell(crate::reconnecting::ChatsReconnecting {
                         plane: plane.clone(),
                         sessions,
-                        reconnecting,
+                        reconnection,
                     });
                 }));
         }

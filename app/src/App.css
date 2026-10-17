@@ -1302,10 +1302,9 @@ button.show-more:focus-visible {
   pointer-events: none;
 }
 
+/* Its words wear the secondary text role (`ui-text-secondary`); this draws only the pill. */
 .pane-reconnecting-said {
   padding: var(--space-1) var(--space-3);
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
   background: var(--surface-overlay);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);

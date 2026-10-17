@@ -2,28 +2,53 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A runner's chats are reconnecting while its link is down** (#2496, ADR 0078 as amended
-//! 2026-10-17).
+//! 2026-10-18).
 //!
 //! This machine's session host relays the window's chats on a runner over a link it keeps, and
 //! links again on its own when it drops. It tells the window when that link is down and when it
-//! is back, and the window says so on each of that runner's chats, quietly: "Reconnecting" over
-//! the chat's last screen, cleared once the link is back and the chat draws again from its
-//! snapshot. One state, never a notice for each chat.
+//! is back, and the window says so on each of that runner's chats, quietly: "Reconnecting…" over
+//! the chat's last screen, one state and never a notice for each chat. A chat is reconnected
+//! once the link is back, once its view draws again from a new snapshot, or once the window can
+//! no longer tell (it fell behind its host and subscribed again, or its link to its host ended):
+//! a chat is never left dimmed on a word that did not come. The window keeps which chats it
+//! dimmed, so each of them is cleared, one that ended meanwhile among them, and a pane drawn
+//! during an outage asks ([`chats_reconnecting`]) and starts dimmed.
 
-use crate::planes::PlaneId;
+use crate::planes::{PlaneId, Planes};
 
 /// The event the window is sent when a runner's chats start or stop reconnecting.
 pub const EVENT: &str = "chats-reconnecting";
 
-/// A plane's chats that are reconnecting, or drawn again, as their panes show it.
+/// Where a chat's view stands while the link to the runner it runs on comes and goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Reconnection {
+    /// The link is down: its last screen stays, dimmed, until it is back.
+    Reconnecting,
+    /// The link is back, or its view drew again, or the window cannot tell any more: it is
+    /// drawn as it comes.
+    Reconnected,
+}
+
+/// A plane's chats that are reconnecting, or reconnected, as their panes show it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ChatsReconnecting {
     pub plane: PlaneId,
     /// The chats, by their number in the plane.
     pub sessions: Vec<u32>,
-    /// While the link to the runner they run on is down; `false` once it is back.
-    pub reconnecting: bool,
+    pub reconnection: Reconnection,
 }
 
 /// Told each time a plane's chats start or stop reconnecting.
 pub type Teller = std::sync::Arc<dyn Fn(ChatsReconnecting) + Send + Sync + 'static>;
+
+/// The chats of `plane` that are reconnecting now: what a pane drawn during an outage starts
+/// from.
+#[tauri::command]
+#[specta::specta]
+pub fn chats_reconnecting(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<u32>, String> {
+    Ok(planes.held(&plane)?.chats().sessions().reconnecting())
+}
