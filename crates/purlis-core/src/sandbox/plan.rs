@@ -49,6 +49,16 @@ pub enum Beside {
     ProxyOnly { routes: PathBuf },
 }
 
+/// **What a plan made on another machine is held to here** (#2445): this machine's own folder
+/// for the project's ssh routes, the services on this machine its sandbox for the project gives,
+/// and this machine's interface addresses.
+#[derive(Debug, Clone, Copy)]
+pub struct Here<'a> {
+    pub routes: &'a std::path::Path,
+    pub given: &'a [u16],
+    pub own: &'a [std::net::IpAddr],
+}
+
 /// Who hears what a chat's proxy does: what it refused, what it carried, and its board of live
 /// asks (#1663, #1664, #1666). Nobody, by default.
 #[derive(Default)]
@@ -167,6 +177,38 @@ impl Plan {
         })
     }
 
+    /// **Whether this plan, made on another machine, fits this one** (#2445), or why not.
+    pub fn fits(&self, here: &Here<'_>) -> Result<(), String> {
+        if let Beside::ProxyOnly { routes } = &self.beside
+            && routes != here.routes
+        {
+            return Err(format!(
+                "it puts the chat's ssh route in {}, which is not this machine's folder for it \
+                 ({})",
+                routes.display(),
+                here.routes.display()
+            ));
+        }
+        if let Some(port) = self.given.iter().find(|port| !here.given.contains(port)) {
+            return Err(format!(
+                "it gives the chat the service on port {port} of this machine, which this \
+                 machine's sandbox for the project does not give"
+            ));
+        }
+        if let Some((entry, _)) = self
+            .reach
+            .listed
+            .iter()
+            .find(|(entry, _)| !lists_only_what_is_given(entry, here))
+        {
+            return Err(format!(
+                "it lets the chat reach {entry}, an address of this machine that this machine's \
+                 sandbox for the project does not give"
+            ));
+        }
+        Ok(())
+    }
+
     /// What the proxy serves: this plan, told to `telling`.
     pub fn serving(&self, reach: Reach, telling: Telling) -> egress::Serving {
         egress::Serving {
@@ -197,6 +239,22 @@ impl Plan {
             Beside::ProxyOnly { routes } => Confinement::proxy_only_routed(serving, routes),
         }
     }
+}
+
+/// Whether listed `entry` reaches this machine only where `here` gives it (#2445): an address
+/// of this machine ([`super::hosts::refused_address`]) is listed only as its loopback, `127.0.0.1`
+/// or `::1`, on a port this machine's sandbox for the project gives. A name is never one: the
+/// proxy holds every address a name resolves to to the same rule.
+fn lists_only_what_is_given(entry: &str, here: &Here<'_>) -> bool {
+    let (name, port) = egress::entry_parts(entry);
+    let Ok(ip) = name.parse::<std::net::IpAddr>() else {
+        return true;
+    };
+    if !super::hosts::refused_address(ip, here.own) {
+        return true;
+    }
+    let loopback = ip == std::net::Ipv4Addr::LOCALHOST || ip == std::net::Ipv6Addr::LOCALHOST;
+    loopback && port.is_some_and(|port| here.given.contains(&port))
 }
 
 /// The plan's routes folder for a Claude Code chat of the plane at `root`.

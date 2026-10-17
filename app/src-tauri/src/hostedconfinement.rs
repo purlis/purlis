@@ -50,6 +50,10 @@ pub fn plan_of(wired: &ConfinePlan) -> Result<Plan, String> {
 pub struct ConfinesHere;
 
 impl purlis_host::Confine for ConfinesHere {
+    fn fits(&self, confining: &purlis_host::ToConfine<'_>) -> Result<(), String> {
+        purlis_core::sandbox::hosted::fits_here(confining.project_path, &confining.confine.plan)
+    }
+
     fn confine(
         &self,
         confining: &purlis_host::ToConfine<'_>,

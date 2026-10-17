@@ -152,3 +152,149 @@ fn a_board_here_answers_as_a_board() {
     assert!(board.allowed_live().is_empty());
     assert!(!board.asks_about(&host));
 }
+
+/// **A plan another machine made, held to this one** (#2445): the folders it names are this
+/// machine's own for the project, and every service of this machine it gives is one this
+/// machine's sandbox for the project gives.
+mod made_elsewhere {
+    use std::net::IpAddr;
+    use std::path::Path;
+
+    use super::super::plan::{Beside, Here, Plan};
+    use super::super::reach::{By, Reach};
+    use super::plan;
+
+    const ROUTES: &str = "/plane/.charter/app/ssh";
+
+    fn here<'a>(given: &'a [u16], own: &'a [IpAddr]) -> Here<'a> {
+        Here {
+            routes: Path::new(ROUTES),
+            given,
+            own,
+        }
+    }
+
+    fn listing(entries: &[&str], given: Vec<u16>) -> Plan {
+        Plan {
+            reach: Reach::of(
+                entries
+                    .iter()
+                    .map(|entry| ((*entry).to_owned(), By::You))
+                    .collect(),
+            )
+            .written(),
+            ..plan(given)
+        }
+    }
+
+    #[test]
+    fn a_plan_whose_ssh_route_is_in_another_folder_does_not_fit() {
+        let elsewhere = Plan {
+            beside: Beside::ProxyOnly {
+                routes: "/tmp".into(),
+            },
+            ..plan(Vec::new())
+        };
+
+        let refused = elsewhere.fits(&here(&[], &[])).expect_err("refused");
+
+        assert!(refused.contains("/tmp"), "{refused}");
+    }
+
+    #[test]
+    fn a_plan_whose_ssh_route_is_in_this_machines_folder_fits() {
+        assert_eq!(plan(Vec::new()).fits(&here(&[], &[])), Ok(()));
+    }
+
+    #[test]
+    fn a_plan_giving_a_service_this_machine_does_not_give_does_not_fit() {
+        let refused = plan(vec![5432])
+            .fits(&here(&[6379], &[]))
+            .expect_err("refused");
+
+        assert!(refused.contains("5432"), "{refused}");
+    }
+
+    #[test]
+    fn a_plan_giving_only_services_this_machine_gives_fits() {
+        let fits = listing(
+            &["127.0.0.1:5432", "[::1]:5432", "localhost:5432"],
+            vec![5432],
+        )
+        .fits(&here(&[5432, 6379], &[]));
+
+        assert_eq!(fits, Ok(()));
+    }
+
+    #[test]
+    fn a_plan_listing_a_port_of_this_machine_it_does_not_give_does_not_fit() {
+        for entry in ["127.0.0.1:22", "[::1]:22", "[::ffff:127.0.0.1]:22"] {
+            let refused = listing(&[entry], Vec::new())
+                .fits(&here(&[], &[]))
+                .expect_err(entry);
+
+            assert!(refused.contains(entry), "{refused}");
+        }
+    }
+
+    #[test]
+    fn a_plan_listing_another_address_of_this_machine_does_not_fit() {
+        let own: [IpAddr; 1] = ["10.1.2.3".parse().expect("an address")];
+        for entry in [
+            "10.1.2.3:5432",
+            "169.254.169.254:80",
+            "0.0.0.0:5432",
+            "[fe80::1]:22",
+        ] {
+            let refused = listing(&[entry], vec![5432])
+                .fits(&here(&[5432], &own))
+                .expect_err(entry);
+
+            assert!(refused.contains(entry), "{refused}");
+        }
+    }
+
+    #[test]
+    fn a_plan_listing_hosts_elsewhere_fits() {
+        let fits = listing(
+            &["api.anthropic.com", "203.0.113.7:443", "localhost:22"],
+            Vec::new(),
+        )
+        .fits(&here(&[], &[]));
+
+        assert_eq!(fits, Ok(()));
+    }
+
+    /// What a session host holds a relayed plan to: the project's own folder for ssh routes on
+    /// this machine, and the services on this machine you let every chat of it reach.
+    #[test]
+    fn a_relayed_plan_fits_the_project_on_this_machine_only_as_its_own_sandbox_gives() {
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path();
+        super::super::local::grant_port(root, 50861).expect("granted");
+        let wired = |given: Vec<u16>| {
+            Plan {
+                beside: Beside::ProxyOnly {
+                    routes: super::super::tunnel::routes_folder(root),
+                },
+                ..plan(given)
+            }
+            .wired()
+        };
+
+        assert_eq!(
+            super::super::hosted::fits_here(root, &wired(vec![50861])),
+            Ok(())
+        );
+        let refused =
+            super::super::hosted::fits_here(root, &wired(vec![50862])).expect_err("refused");
+        assert!(refused.contains("50862"), "{refused}");
+        let elsewhere = Plan {
+            beside: Beside::ProxyOnly {
+                routes: "/plane/.charter/app/ssh".into(),
+            },
+            ..plan(Vec::new())
+        };
+        assert!(super::super::hosted::fits_here(root, &elsewhere.wired()).is_err());
+    }
+}

@@ -1877,19 +1877,29 @@ impl Hosting {
         };
         let (tell, askable) = self.heard_as(&id);
         let hosting = self.clone();
+        // A plan from any link but this machine's window was made on another machine: it is
+        // held to this one's own folders and services before anything starts (#2445).
+        let made_elsewhere = peer.scope() != Scope::LocalUi;
         let confining = tokio::task::spawn_blocking(move || {
-            hosting.inner.confine.confine(
-                &ToConfine {
-                    project_path: &path,
-                    confine: &confine,
-                },
-                tell,
-                askable,
-            )
+            let confining = ToConfine {
+                project_path: &path,
+                confine: &confine,
+            };
+            if made_elsewhere {
+                hosting
+                    .inner
+                    .confine
+                    .fits(&confining)
+                    .map_err(not_fitting)?;
+            }
+            hosting
+                .inner
+                .confine
+                .confine(&confining, tell, askable)
+                .map_err(not_started)
         })
         .await
-        .map_err(|why| not_started(why.to_string()))?
-        .map_err(not_started)?;
+        .map_err(|why| not_started(why.to_string()))??;
         let confining: Arc<dyn Confining> = Arc::from(confining);
         let mut confined = confining.confined();
         confined.confinement = id.clone();
@@ -2595,6 +2605,15 @@ fn no_such_confinement(id: &str) -> Refusal {
     Refusal {
         code: session::NO_SUCH_CHAT.into(),
         why: format!("this session host holds no confinement {id}"),
+    }
+}
+
+/// A plan made on another machine that does not fit this one (#2445): what it asks is not
+/// this machine's to give.
+fn not_fitting(why: String) -> Refusal {
+    Refusal {
+        code: session::NOT_ALLOWED.into(),
+        why,
     }
 }
 

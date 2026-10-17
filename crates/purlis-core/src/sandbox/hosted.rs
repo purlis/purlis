@@ -5,6 +5,9 @@
 //! read back exactly and started here with the code the window's own path runs, its proxy
 //! telling the host what it does, and its board of live asks answered from the window.
 //!
+//! A plan made on another machine, as a runner is sent one through the link between hosts, is
+//! started only where it fits this one ([`fits_here`], #2445).
+//!
 //! Both binaries' hosts start a confinement with this: the window's own binary on a desktop,
 //! and `purlis serve` on a runner, so a chat's proxy carries, refuses and asks about the same
 //! hosts wherever it runs. Each binary hands it to its host through the host crate's `Confine`
@@ -21,7 +24,7 @@ use super::Confinement;
 use super::asks::{Asks, Heard};
 use super::egress;
 use super::hosts::Host;
-use super::plan::{Asking, Plan, Telling};
+use super::plan::{Asking, Here, Plan, Telling};
 use super::reach::{By, by_of, layer_of};
 
 /// Who hears what a confinement's proxy does: the host, which pushes it to the window.
@@ -105,6 +108,36 @@ pub fn start(
     };
     let confinement = plan.start(telling).map_err(|why| why.to_string())?;
     Ok(Hosted { confinement, board })
+}
+
+/// **Whether `wired`, a plan another machine made, fits the project at `project_path` on this
+/// machine** (#2445), or why not, in a sentence: its ssh route goes in this machine's own folder
+/// for the project ([`super::tunnel::routes_folder`]), and every service on this machine it
+/// gives the chat is one this machine's sandbox for the project gives a chat started here,
+/// with no grant of another machine's.
+pub fn fits_here(project_path: &Path, wired: &session::ConfinePlan) -> Result<(), String> {
+    let plan = Plan::from_wire(wired)?;
+    let given = given_here(project_path);
+    let own = super::hosts::own_addresses();
+    plan.fits(&Here {
+        routes: &super::tunnel::routes_folder(project_path),
+        given: &given,
+        own: &own,
+    })
+    .map_err(|why| format!("this machine does not start the chat's confinement as planned: {why}"))
+}
+
+/// The services on this machine every chat of the project at `root` is given here: yours for
+/// the project on this machine, at the scope policy leaves open, as a start compiles them
+/// ([`super::Widened::and_ports`]).
+fn given_here(root: &Path) -> Vec<u16> {
+    let locks = super::policy::Locks::of(root);
+    let yours = if locks.keeps_scope(super::grant::Level::You) {
+        super::local::granted_ports(root)
+    } else {
+        Vec::new()
+    };
+    super::Widened::default().and_ports(&yours, &locks).ports
 }
 
 impl Hosted {

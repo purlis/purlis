@@ -869,3 +869,63 @@ async fn a_chat_whose_peer_s_link_ends_while_the_runner_composes_it_has_its_give
     .await;
     assert!(!hosts.confines.ended(NAMED), "it keeps its network");
 }
+
+
+/// A plan the window made on the desktop is held to the runner's own folders and services for
+/// the project before anything starts (#2445).
+const NOT_ITS_OWN: &str = "it gives the chat the service on port 5432 of this machine";
+
+#[tokio::test]
+async fn a_plan_from_the_desktop_that_does_not_fit_the_runner_is_refused_and_nothing_starts() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+    hosts.confines.refuse_to_fit(NOT_ITS_OWN);
+
+    let refused = confine(&window).await.unwrap_err();
+
+    assert_eq!(refused.code, session::NOT_ALLOWED);
+    assert!(refused.why.contains(NOT_ITS_OWN), "{}", refused.why);
+    assert!(hosts.confines.seen().is_empty(), "nothing started");
+    let started = window
+        .start_program(a_launch(None, Some(CONFINEMENT)))
+        .await;
+    assert!(started.is_err(), "no chat runs in a confinement never made");
+    assert!(hosts.runs.ran().is_empty());
+}
+
+#[tokio::test]
+async fn a_plan_from_the_desktop_that_fits_the_runner_starts_as_it_is() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+
+    confine(&window).await.expect("confined on host B");
+
+    assert_eq!(
+        hosts.confines.fitted(),
+        [(
+            hosts._project.path().canonicalize().unwrap(),
+            planned().plan
+        )],
+        "held to the project as host B holds it"
+    );
+    assert_eq!(hosts.confines.seen()[0].confine, planned());
+}
+
+#[tokio::test]
+async fn a_confinement_the_runner_plans_itself_is_not_held_to_a_plan_made_elsewhere() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+    let (runners, _runners_events) = the_runners_own_window(&hosts).await;
+    hosts.confines.refuse_to_fit(NOT_ITS_OWN);
+
+    window
+        .start_program(StartProgram::of(PROJECT, ProgramKind::Harness))
+        .await
+        .expect("composed on host B by its names, in its own confinement");
+    confine(&runners)
+        .await
+        .expect("the runner's own window plans on this machine");
+
+    assert_eq!(hosts.confines.seen().len(), 2);
+    assert!(hosts.confines.fitted().is_empty());
+}

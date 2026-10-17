@@ -10,6 +10,14 @@
 //! proxy is the binary's ([`Confine`]), built on the core with the same code the window's own
 //! path runs, so a chat's proxy decides alike wherever it runs and this crate links no core.
 //!
+//! **A plan made on another machine fits this one, or nothing starts** (#2445). A plan the
+//! desktop's window sends a runner through the link between hosts is held to the runner's own
+//! project before it is started ([`Confine::fits`]): the folders it names are the runner's own
+//! for the project, and the services of the runner it gives the chat are ones the runner's own
+//! sandbox for the project gives. One that does not fit is refused `not_allowed`. The window's
+//! plan on its own host, and a confinement the host plans itself for a chat it composes, are
+//! started as planned.
+//!
 //! **It lives as long as the program in it.** A confinement nothing runs in yet belongs to the
 //! link that made it and ends with it; once a start names it, it belongs to that program and
 //! ends when the program is closed, let go of, or the host ends. So a chat keeps its network
@@ -28,7 +36,7 @@ use std::sync::Arc;
 use purlis_session_protocol::session::{self, Confined, ReachChange, ReachNow, SandboxTold};
 
 /// A confinement to start, as the host hands it to its [`Confine`]: the plan the window sent,
-/// and where its project is on this machine.
+/// and where its project is on this machine, as the host holds it.
 pub struct ToConfine<'a> {
     pub project_path: &'a Path,
     pub confine: &'a session::Confine,
@@ -42,6 +50,13 @@ pub type Askable = Arc<dyn Fn() -> bool + Send + Sync + 'static>;
 
 /// Starts a confinement from a plan: the binary's, built on the core (#1999).
 pub trait Confine: Send + Sync + 'static {
+    /// Whether the plan `confining` names, made on another machine, fits this one (#2445): every
+    /// folder it names is this machine's own for its project, and every service of this machine
+    /// it gives the chat is one this machine's own sandbox for the project gives. Or why not, in
+    /// a sentence. Asked before [`Self::confine`] of every plan a link other than this
+    /// machine's window sends; nothing starts from one that does not fit.
+    fn fits(&self, confining: &ToConfine<'_>) -> Result<(), String>;
+
     /// The confinement `confining` plans, telling `tell` what its proxy does and holding a
     /// connection while the person is asked only while `askable` says so; or why it cannot be
     /// started, in a sentence.
@@ -69,6 +84,10 @@ pub trait Confining: Send + Sync + 'static {
 pub struct ConfinesNothing;
 
 impl Confine for ConfinesNothing {
+    fn fits(&self, _confining: &ToConfine<'_>) -> Result<(), String> {
+        Err("this session host was given no way to start a chat's confinement".into())
+    }
+
     fn confine(
         &self,
         _confining: &ToConfine<'_>,

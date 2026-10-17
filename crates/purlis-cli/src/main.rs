@@ -854,6 +854,10 @@ struct Confines;
 
 #[cfg(unix)]
 impl purlis_host::Confine for Confines {
+    fn fits(&self, confining: &purlis_host::ToConfine<'_>) -> Result<(), String> {
+        purlis_core::sandbox::hosted::fits_here(confining.project_path, &confining.confine.plan)
+    }
+
     fn confine(
         &self,
         confining: &purlis_host::ToConfine<'_>,

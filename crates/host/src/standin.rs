@@ -318,6 +318,13 @@ struct Held {
     holding: bool,
     waiting: usize,
     refusing_changes: Option<String>,
+    /// Why a plan made on another machine does not fit, where it says none does (#2445).
+    not_fitting: Option<String>,
+    /// Each plan made on another machine it was asked to fit, with the project's path here.
+    fitted: Vec<(
+        std::path::PathBuf,
+        purlis_session_protocol::session::ConfinePlan,
+    )>,
     /// How long each takes to end, as a proxy waits on its listeners.
     ending_takes: std::time::Duration,
 }
@@ -381,6 +388,21 @@ impl StandInConfines {
         self.2.held.lock().unwrap().ending_takes = long;
     }
 
+    /// No plan made on another machine fits from now on, for `why` (#2445).
+    pub fn refuse_to_fit(&self, why: &str) {
+        self.2.held.lock().unwrap().not_fitting = Some(why.to_owned());
+    }
+
+    /// Each plan made on another machine it was asked to fit, with where its project is here.
+    pub fn fitted(
+        &self,
+    ) -> Vec<(
+        std::path::PathBuf,
+        purlis_session_protocol::session::ConfinePlan,
+    )> {
+        self.2.held.lock().unwrap().fitted.clone()
+    }
+
     /// It refuses every change the window makes from now on, saying `why`.
     pub fn refuse_changes(&self, why: &str) {
         self.2.held.lock().unwrap().refusing_changes = Some(why.to_owned());
@@ -393,6 +415,15 @@ struct StandInConfining {
 }
 
 impl crate::confining::Confine for StandInConfines {
+    fn fits(&self, confining: &crate::confining::ToConfine<'_>) -> Result<(), String> {
+        let mut held = self.2.held.lock().unwrap();
+        held.fitted.push((
+            confining.project_path.to_path_buf(),
+            confining.confine.plan.clone(),
+        ));
+        held.not_fitting.clone().map_or(Ok(()), Err)
+    }
+
     fn confine(
         &self,
         confining: &crate::confining::ToConfine<'_>,
