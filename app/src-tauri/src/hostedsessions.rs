@@ -119,6 +119,11 @@ pub const NOT_HANDED_IN_THE_HOST: &str = "this chat's profile signs it in with c
      the session host, so nothing was started. Start purlis with PURLIS_CHATS_IN_THE_HOST=0 to \
      run it in the window.";
 
+/// Why the window's own launch of a harness is not sent to a runner (#2446): a runner composes
+/// its harness chats, with the sandbox it compiles for itself (ADR 0068, amended for #2217).
+pub const COMPOSED_ON_THE_RUNNER: &str = "a chat's harness on a runner is started by what the \
+     chat is named, and the runner composes it; the window's own launch of it was not sent";
+
 /// How long a start waits for the host's link to be ready, before it says why there is none.
 const LINK_WITHIN: Duration = Duration::from_secs(30);
 
@@ -1024,6 +1029,10 @@ pub struct HostedSessions {
     /// Why the board the host kept could not be taken as the window held the project, where it
     /// could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
+    /// Whether the host runs this project's chats on a runner, through the link its host relays
+    /// the window's link over (#2446): it composes each harness chat, and its proxies listen on
+    /// the runner's ports.
+    on_a_runner: bool,
 }
 
 /// A project held on a link: its stable id, and which link.
@@ -1048,6 +1057,37 @@ impl HostedSessions {
             lost: Arc::default(),
             left: Arc::default(),
             untaken: Arc::default(),
+            on_a_runner: false,
+        }
+    }
+
+    /// [`Self::new`], for a host that runs the project's chats on a runner (#2446): each harness
+    /// chat is started there by its names, and each confinement is held as the runner's.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the window links to its first runner with a pool (#2044) or a move (#2048)"
+        )
+    )]
+    pub fn on_a_runner(connection: Arc<Connection>, root: &Path) -> Self {
+        HostedSessions {
+            on_a_runner: true,
+            ..Self::new(connection, root)
+        }
+    }
+
+    /// The confinement the host placed at `placed`, held through `held`: on the window's machine,
+    /// or on the runner's, whose ports are not this machine's (#2446).
+    fn held(
+        &self,
+        placed: purlis_core::sandbox::Placed,
+        held: crate::hostedconfinement::HeldInTheHost,
+    ) -> std::io::Result<purlis_core::sandbox::Confinement> {
+        if self.on_a_runner {
+            purlis_core::sandbox::Confinement::held_on_another_machine(placed, Box::new(held))
+        } else {
+            purlis_core::sandbox::Confinement::held_elsewhere(placed, Box::new(held))
         }
     }
 
@@ -1592,6 +1632,9 @@ impl SessionHost for HostedSessions {
         if !opening.handed.is_empty() {
             return Err(NOT_HANDED_IN_THE_HOST.to_owned());
         }
+        if self.on_a_runner && opening.harness.is_some() {
+            return Err(COMPOSED_ON_THE_RUNNER.to_owned());
+        }
         let (link, project) = self.link()?;
         let program = opening
             .program
@@ -1636,8 +1679,8 @@ impl SessionHost for HostedSessions {
             number: Some(id),
             cols: Some(named.size.columns),
             rows: Some(named.size.rows),
-            program: Some(purlis_core::reopen::mint()),
-            run: Some(purlis_core::reopen::mint()),
+            program: Some(named.chat.clone().unwrap_or_else(purlis_core::reopen::mint)),
+            run: Some(named.run.clone().unwrap_or_else(purlis_core::reopen::mint)),
             persona: named.persona.clone(),
             profile: named.profile.clone(),
             workspace: named.workspace.clone(),
@@ -1666,10 +1709,7 @@ impl SessionHost for HostedSessions {
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
         // One the window cannot hold is let go of, and the chat that runs in it is closed with
         // it: a chat is never left running behind a start that says it did not start.
-        let confinement = match purlis_core::sandbox::Confinement::held_elsewhere(
-            placed(&confined),
-            Box::new(held),
-        ) {
+        let confinement = match self.held(placed(&confined), held) {
             Ok(confinement) => confinement,
             Err(why) => {
                 let _ = self.close(id);
@@ -1890,9 +1930,14 @@ impl SessionHost for HostedSessions {
         };
         // Held from here: dropping it, on any path, lets the host end it.
         let held = HeldInTheHost::new(id, Arc::clone(&link), asks);
-        purlis_core::sandbox::Confinement::held_elsewhere(placed(&confined), Box::new(held))
+        self.held(placed(&confined), held)
             .map_err(|why| why.to_string())
     }
+
+    fn composes_its_harness_chats(&self) -> bool {
+        self.on_a_runner
+    }
+
     fn state_not_reattached(&self) -> Option<String> {
         lock(&self.untaken).clone()
     }
@@ -1935,7 +1980,7 @@ impl SessionHost for HostedSessions {
         link.hear(&id, Hears::of(hearing));
         let held = HeldInTheHost::new(id, Arc::clone(&link), asks);
         Some(
-            purlis_core::sandbox::Confinement::held_elsewhere(placed(&confined), Box::new(held))
+            self.held(placed(&confined), held)
                 .map_err(|why| why.to_string()),
         )
     }

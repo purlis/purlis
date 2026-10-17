@@ -3617,6 +3617,7 @@ pub(crate) fn told_first(
         ));
     };
     ready.args.extend(first);
+    ready.first_message = Some(message.to_owned());
     Ok(ready)
 }
 
