@@ -1505,7 +1505,7 @@ fn a_browser_site_and_a_host_for_the_chats_commands_are_two_rows_each_its_own_al
         "Its browser wants to reach news.example.org:443 and api.example.com:443. An Allow is \
          its browser's alone, from its next act; nothing restarts."
     );
-    assert_eq!(ids(sites), ["chat", "you", KEEP]);
+    assert_eq!(ids(sites), ["chat", "you", "project", KEEP]);
     assert_eq!(
         sites.answer,
         AnswerPath::BrowserSites {

@@ -299,6 +299,7 @@ export const commands = {
 	sandboxState: (plane: PlaneId) => typedError<SandboxState, string>(__TAURI_INVOKE("sandbox_state", { plane })),
 	answerSandboxOffer: __WINDOW_ONLY_RESULT,
 	acknowledgeProjectHosts: __WINDOW_ONLY_RESULT,
+	acknowledgeProjectBrowserSites: __WINDOW_ONLY_RESULT,
 	acknowledgeProjectPresets: __WINDOW_ONLY_RESULT,
 	allowPersonaHosts: __WINDOW_ONLY_RESULT,
 	allowProjectExpects: __WINDOW_ONLY_RESULT,
@@ -2550,6 +2551,16 @@ export type BrowserFrame = {
  *  Meta 4, Shift 8).
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+
+/**
+ *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
+ *  spelled as the sandbox writes a host.
+ */
+export type BrowserSitesChanged = {
+	/**  Listed and never shown here: what the Notice sends back once it is read. */
+	added: string[],
+	removed: string[],
+};
 
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";
@@ -7519,6 +7530,12 @@ export type SandboxState = {
 	 *  the one-time Notice each teammate sees. `null` when nothing did.
 	 */
 	hosts_changed: HostsChanged | null,
+	/**
+	 *  How the project's browser sites for everyone in it changed since this machine last
+	 *  showed them (#2443): one each reaches no browser here until it was shown. `null` when
+	 *  nothing did.
+	 */
+	browser_sites_changed?: BrowserSitesChanged | null,
 	/**
 	 *  How the project's Internet access presets changed since this machine last told the
 	 *  person (#1385): the one-time Notice each teammate sees, so a preset that widens never

@@ -1126,3 +1126,17 @@ fn an_allow_takes_only_the_sites_their_ask_names_whole() {
         std::slice::from_ref(&long)
     ));
 }
+
+#[test]
+fn the_projects_browser_sites_are_listed_for_its_browser_at_the_projects_layer() {
+    use purlis_session_protocol::session::{Layer, Listed};
+    let site = purlis_core::sandbox::hosts::Host::parse("news.example.org:443").unwrap();
+    let reach = super::with_project_sites(BrowserReach::default(), &[site]);
+    assert_eq!(
+        reach.listed,
+        [Listed {
+            host: "news.example.org:443".into(),
+            layer: Layer::Project,
+        }]
+    );
+}
