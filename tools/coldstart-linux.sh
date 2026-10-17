@@ -27,7 +27,10 @@
 # directories. It fails when the median of the five is past the 2 s limit, or two or more of them
 # are past a 2.5 s ceiling; one launch past it is reported, not gated (V39, ADR 0086 as amended;
 # `tools/coldstart-gate.mjs`). With `EVIDENCE_ONLY=1` a miss is a warning and the case passes:
-# the pull request already held the same code to main. Not "every one under 2 s": this is a debug build on a
+# the pull request already held the same code to main. With `NO_BASELINE` (a pull request whose
+# main did not build, saying why) the same holds and the warning says nothing was gated: the
+# runners missed the limit in a few percent of cases on unchanged launch code (#2388). The
+# limit's shape is not "every one under 2 s": this is a debug build on a
 # shared runner, where one launch in five went 63 ms over (main, run 36789430687) while the
 # others sat near 1.35 s. A release build would be the one users run, but it costs a full
 # `lto = true`, `codegen-units = 1` build — 6.5 min on this runner — where the debug build CI
@@ -86,7 +89,7 @@ no_measurement() {
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '### %s\n\n%s\n\n' "$title" "$cause" >>"$GITHUB_STEP_SUMMARY"
   fi
-  if [[ "${EVIDENCE_ONLY:-}" == 1 ]]; then
+  if [[ "${EVIDENCE_ONLY:-}" == 1 || (-z "${BASELINE_APP:-}" && -n "${NO_BASELINE:-}") ]]; then
     annotate warning "$title" \
       "$cause; reported, and the run does not fail for it (evidence only)${detail:+$'\n'$detail}"
     exit 0
@@ -116,6 +119,11 @@ if [[ -n "$baseline" ]]; then
   bench+=(--baseline-app "$baseline" --cold-starts 7)
 else
   bench+=(--cold-starts 5)
+  # A pull request whose main did not build (#2388): why, for the bench to report the limit
+  # and gate nothing. A baseline, where there is one, is held to whatever this says.
+  if [[ -n "${NO_BASELINE:-}" ]]; then
+    bench+=(--no-baseline "$NO_BASELINE")
+  fi
 fi
 if [[ "${EVIDENCE_ONLY:-}" == 1 ]]; then
   bench+=(--evidence)

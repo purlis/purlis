@@ -63,8 +63,8 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
  * none: every colour and background a rule sets is one token, so each is read below (the
  * explorer's change marks name their state's colour in each rule, #2318). Reading is not
  * pairing: a rule that sets a colour and no background draws no pair of its own, so the change
- * marks' colours are held on their backgrounds by hand, in the engine's `PAIRS` (the diff
- * tokens' pairs are #2392).
+ * marks' colours are held on their backgrounds by hand, in the engine's `PAIRS`, and the test
+ * below fails when one is not.
  */
 const READ_BY_HAND: readonly string[] = [];
 
@@ -193,6 +193,25 @@ describe("every pair a stylesheet draws", () => {
     expect(derivedBy.get("text.primary on tab.active")).toContain(
       ".ui-menu-item:hover:not([data-disabled]) over .ui-menu-item",
     );
+  });
+
+  it("holds each change mark's colour on every row the explorer draws it on", () => {
+    // A change mark (FM-4), its letter and the file's name, sets its colour and no background:
+    // it is drawn on the row it is on, which is the window, the row under the pointer or the
+    // selected row (#2392). A name rule is read as well as the letter's, so one split out with a
+    // colour of its own is held too.
+    const markRule =
+      /^\.explorer (?:\.change-mark|\[data-mark(?:="[^"]*")?\] > \.file-node > \.spot-name)/;
+    const marks = [...colours]
+      .filter(([selector]) => markRule.test(selector))
+      .flatMap(([, sets]) => [...sets.fronts]);
+    expect(marks).toEqual(expect.arrayContaining(["state.success", "danger.base"]));
+    const loose = [...new Set(marks)].flatMap((mark) =>
+      ["surface.base", "surface.hover", "list.selected"]
+        .map((ground) => `${mark} on ${ground}`)
+        .filter((pair) => !held.has(pair)),
+    );
+    expect(loose).toEqual([]);
   });
 
   it("is in the engine's list, so it is held to a floor in every theme and tint", () => {

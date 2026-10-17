@@ -273,8 +273,13 @@ pub fn blocks(
         },
         ended,
     );
-    // A chat purlis wraps has its refused hosts told by purlis's own proxy, by name (#1663).
-    purlis_core::sandboxblock::the_hooks_own(found, harness.as_deref())
+    // A chat purlis wraps has its refused hosts told by purlis's own proxy, by name (#1663),
+    // and on Linux its files, sockets and services by its wrap's supervisor (#2344).
+    purlis_core::sandboxblock::the_hooks_own(
+        found,
+        harness.as_deref(),
+        purlis_core::sandbox::Os::this(),
+    )
 }
 
 /// The decision an answer gave: a denial is one; a line said is whatever permission it names,

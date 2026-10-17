@@ -107,6 +107,8 @@ struct World {
     browsers: Vec<crate::chatbrowsers::Waits>,
     /// The browsers whose chat asked the person to take them over (#2015).
     needs_you: Vec<crate::browserneedsyou::Waiting>,
+    /// What the project's committed file declares it expects (ADR 0093).
+    declared: purlis_core::sandbox::services::Declared,
 }
 
 impl World {
@@ -129,6 +131,7 @@ impl World {
             sandbox_only: None,
             browsers: Vec::new(),
             needs_you: Vec::new(),
+            declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
 
@@ -165,6 +168,7 @@ impl World {
             blocks: self.blocks.clone(),
             removals: self.removals.clone(),
             locks: &self.locks,
+            declared: &self.declared,
             name_of: &name_of,
             asker_of: &asker_of,
             only_updates: &|session| self.only_updates.contains(&session),
@@ -400,8 +404,13 @@ fn a_dispatch_from_a_chat_on_no_persona_offers_no_never_and_a_locked_one_offers_
 
 #[test]
 fn a_refused_host_offers_allow_at_every_level_and_keep_blocked_bound_to_the_block_shown() {
-    let shown = sandbox_block(5, &a_host_block("api.example.com"), &Locks::none())
-        .expect("a host is an ask");
+    let shown = sandbox_block(
+        5,
+        &a_host_block("api.example.com"),
+        &Locks::none(),
+        &Default::default(),
+    )
+    .expect("a host is an ask");
 
     assert_eq!(shown.source, AskSource::SandboxHost);
     assert_eq!(shown.says, "The sandbox refused api.example.com");
@@ -439,7 +448,13 @@ fn a_refused_host_is_offered_only_at_the_levels_policy_leaves_open() {
         Path::new("/etc/purlis/policy.json"),
     );
 
-    let shown = sandbox_block(5, &a_host_block("api.example.com"), &locks).expect("an ask");
+    let shown = sandbox_block(
+        5,
+        &a_host_block("api.example.com"),
+        &locks,
+        &Default::default(),
+    )
+    .expect("an ask");
 
     assert_eq!(ids(&shown), ["project", KEEP]);
 }
@@ -450,6 +465,7 @@ fn a_host_the_block_did_not_name_is_answered_in_its_chat() {
         5,
         &HeldBlock::unnamed_host("connect", "host"),
         &Locks::none(),
+        &Default::default(),
     )
     .expect("still an ask");
     // Answered in its chat, where the host is typed; its Notice draws the registry's words for
@@ -483,7 +499,13 @@ fn a_write_block(folder: &str) -> HeldBlock {
 fn a_refused_folder_write_offers_its_notice_s_allow_and_keep_blocked_bound_to_the_block_shown() {
     // D-1700-1: a folder's block offers Allow and Keep blocked on its Notice, so it is an ask,
     // answered by the same commands; a folder is never offered for everyone in the project.
-    let shown = sandbox_block(5, &a_write_block("/w/out"), &Locks::none()).expect("an ask");
+    let shown = sandbox_block(
+        5,
+        &a_write_block("/w/out"),
+        &Locks::none(),
+        &Default::default(),
+    )
+    .expect("an ask");
 
     // A source word of its own (#1700): a folder is no host.
     assert_eq!(shown.source, AskSource::SandboxWrite);
@@ -539,7 +561,7 @@ fn a_socket_or_a_service_is_asked_with_once_first_and_never_for_the_project() {
         a_local_block(GrantWhat::Socket, "local-socket", "/var/run/docker.sock"),
         a_local_block(GrantWhat::Service, "system-service", "com.example.helper"),
     ] {
-        let shown = sandbox_block(5, &other, &Locks::none()).expect("an ask");
+        let shown = sandbox_block(5, &other, &Locks::none(), &Default::default()).expect("an ask");
         assert_eq!(shown.source, AskSource::SandboxLocal);
         assert_eq!(
             ids(&shown),
@@ -559,9 +581,49 @@ fn a_socket_or_a_service_is_asked_with_once_first_and_never_for_the_project() {
         5,
         &a_local_block(GrantWhat::Service, "system-service", "com.example.helper"),
         &locks,
+        &Default::default(),
     )
     .expect("an ask");
     assert_eq!(ids(&narrowed), ["chat", KEEP]);
+}
+
+/// ADR 0093 (D-sock-4): the Inbox's ask about a socket or a service the project declares says
+/// "This project expects it", as the block's own Notice does (#1888); one it does not declare
+/// says only what allowing it means.
+#[test]
+fn the_inbox_says_this_project_expects_a_socket_or_a_service_it_declares() {
+    let mut world = World::new();
+    world.declared = purlis_core::sandbox::services::Declared {
+        sockets: vec!["/var/run/docker.sock".into()],
+        services: vec!["com.example.helper".to_owned()],
+    };
+    world.blocks = vec![
+        (
+            5,
+            a_local_block(GrantWhat::Socket, "local-socket", "/var/run/docker.sock"),
+        ),
+        (
+            6,
+            a_local_block(GrantWhat::Service, "system-service", "com.example.helper"),
+        ),
+        (
+            7,
+            a_local_block(GrantWhat::Service, "system-service", "com.example.other"),
+        ),
+    ];
+    let says: Vec<String> = world.asks().into_iter().map(|one| one.says).collect();
+    assert_eq!(
+        says,
+        [
+            "The sandbox refused the local socket /var/run/docker.sock. This project expects \
+             it. Allowing it lets this chat control containers, which can reach your whole \
+             machine: about the same as no sandbox.",
+            "The sandbox refused the system service com.example.helper. This project expects \
+             it. It is a service on this machine; purlis can't tell what it does.",
+            "The sandbox refused the system service com.example.other. It is a service on this \
+             machine; purlis can't tell what it does.",
+        ]
+    );
 }
 
 #[test]
@@ -570,7 +632,7 @@ fn what_an_ask_names_is_said_with_every_character_that_draws_as_nothing_written_
     // that turns the text around or hides part of it reads as something else, so each such
     // character is written out as its escape and the rest is said as it is.
     let sly = a_write_block("/w/gpj.\u{202e}exe\u{200b}");
-    let shown = sandbox_block(5, &sly, &Locks::none()).expect("an ask");
+    let shown = sandbox_block(5, &sly, &Locks::none(), &Default::default()).expect("an ask");
     assert_eq!(
         shown.says,
         "The sandbox refused a write in /w/gpj.\\u202eexe\\u200b"
@@ -588,7 +650,8 @@ fn a_folder_write_is_offered_only_at_the_levels_policy_leaves_open() {
         Path::new("/etc/purlis/policy.json"),
     );
 
-    let shown = sandbox_block(5, &a_write_block("/w/out"), &locks).expect("an ask");
+    let shown =
+        sandbox_block(5, &a_write_block("/w/out"), &locks, &Default::default()).expect("an ask");
 
     assert_eq!(ids(&shown), ["you", KEEP]);
 }
@@ -996,7 +1059,8 @@ fn a_refused_port_on_this_mac_offers_this_chat_and_this_project_here_bound_to_th
         what: GrantWhat::Port,
         target: target.to_owned(),
     };
-    let shown = sandbox_block(5, &block("50795"), &Locks::none()).expect("an ask");
+    let shown =
+        sandbox_block(5, &block("50795"), &Locks::none(), &Default::default()).expect("an ask");
     assert_eq!(shown.source, AskSource::SandboxLocal);
     assert!(
         shown
@@ -1026,7 +1090,7 @@ fn a_refused_port_on_this_mac_offers_this_chat_and_this_project_here_bound_to_th
             }
         }
     );
-    let typed = sandbox_block(5, &block(""), &Locks::none()).expect("an ask");
+    let typed = sandbox_block(5, &block(""), &Locks::none(), &Default::default()).expect("an ask");
     assert_eq!(typed.answer, AnswerPath::InItsPane);
 }
 

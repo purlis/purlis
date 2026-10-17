@@ -3301,9 +3301,9 @@ button.show-more:focus-visible {
 }
 
 /* What a branch changed (FM-4): a letter on a file, a count on a folder, and its name tinted
-   the same. Added and deleted take the light editor's diff tokens (`diff-inserted-text`,
-   `diff-deleted-text`); changed takes `state-waiting` and renamed `accent-base`, which the
-   theme has no diff token for. */
+   the same. Added takes `state-success` and deleted `danger-base`, the editor's diff gutters'
+   marks; changed takes `state-waiting` and renamed `accent-base`. Each is held on the window,
+   the row under the pointer and the selected row in the engine's contrast pairs (#2392). */
 .explorer .change-mark {
   margin-inline-start: auto;
   padding-inline: var(--space-2);
@@ -3319,12 +3319,12 @@ button.show-more:focus-visible {
 
 .explorer .change-mark[data-mark="added"],
 .explorer [data-mark="added"] > .file-node > .spot-name {
-  color: var(--diff-inserted-text);
+  color: var(--state-success);
 }
 
 .explorer .change-mark[data-mark="deleted"],
 .explorer [data-mark="deleted"] > .file-node > .spot-name {
-  color: var(--diff-deleted-text);
+  color: var(--danger-base);
 }
 
 .explorer .change-mark[data-mark="renamed"],

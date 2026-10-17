@@ -6,6 +6,7 @@
 //! a line that only reads or prints handed back, nor in a background command's output read back.
 
 use super::*;
+use crate::sandbox::Os;
 use serde_json::json;
 
 const ROOT: &str = "/Users/dev/plane";
@@ -426,11 +427,58 @@ fn a_chat_behind_purlis_proxy_leaves_its_hosts_to_the_proxy() {
     let found = detect_with_targets(&mixed, &place());
     assert_eq!(found.len(), 2);
     assert_eq!(
-        the_hooks_own(found.clone(), Some("opencode")),
+        the_hooks_own(found.clone(), Some("opencode"), Os::MacOs),
         vec![lookup(Some("api.example.com"))],
         "the proxy tells the host"
     );
-    assert_eq!(the_hooks_own(found.clone(), Some("claude")), found);
+    assert_eq!(
+        the_hooks_own(found.clone(), Some("claude"), Os::MacOs),
+        found
+    );
+}
+
+/// On Linux a chat purlis wraps has every file, socket and service its sandbox refused told by
+/// the wrap's supervisor, by its exact name (#2344): its hook leaves those to it too, so one
+/// refusal is one Notice. A lookup past the proxy, which no supervisor sees, it still reads.
+#[test]
+fn a_chat_purlis_wraps_on_linux_leaves_its_files_sockets_and_services_to_the_supervisor() {
+    let file = |operation| {
+        (
+            Block {
+                operation,
+                kind: Kind::Home,
+                ours: false,
+            },
+            None,
+        )
+    };
+    let found = vec![
+        lookup(Some("api.example.com")),
+        (
+            Block {
+                operation: Operation::Connect,
+                kind: Kind::LocalSocket,
+                ours: false,
+            },
+            None,
+        ),
+        local_service(Some("5432")),
+        file(Operation::Write),
+        file(Operation::Read),
+        file(Operation::File),
+    ];
+    for harness in ["codex", "opencode"] {
+        assert_eq!(
+            the_hooks_own(found.clone(), Some(harness), Os::Linux),
+            vec![lookup(Some("api.example.com"))],
+            "{harness}"
+        );
+    }
+    // Claude Code runs its own sandbox on Linux, which no supervisor of purlis's tells.
+    assert_eq!(
+        the_hooks_own(found.clone(), Some("claude"), Os::Linux),
+        found
+    );
 }
 
 /// A service on this Mac refused (qw384): a connection to one loopback port.
