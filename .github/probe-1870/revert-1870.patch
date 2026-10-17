@@ -1,0 +1,39 @@
+diff --git a/crates/purlis-core/src/hookwire.rs b/crates/purlis-core/src/hookwire.rs
+index 77dec7a..813e73f 100644
+--- a/crates/purlis-core/src/hookwire.rs
++++ b/crates/purlis-core/src/hookwire.rs
+@@ -3598,17 +3598,17 @@ fn serve(
+             // connection's end, within a hook's budget, and the log's first event in a process
+             // pays for building its redaction. A refusal's sender never waits on the log.
+             Admission::NoToken => {
+-                refuse(
+-                    &mut writer,
+-                    format!("this line does not carry chat {chat}'s token, so nothing was done"),
+-                );
+-                let _ = writer.shutdown(std::net::Shutdown::Both);
+                 if let Some(also) = TOKEN_REFUSALS.say() {
+                     tracing::warn!(
+                         "purlis: a line on the hook channel for chat {chat} did not carry that \
+                          chat's token, so it was dropped{also}"
+                     );
+                 }
++                refuse(
++                    &mut writer,
++                    format!("this line does not carry chat {chat}'s token, so nothing was done"),
++                );
++                let _ = writer.shutdown(std::net::Shutdown::Both);
+                 return;
+             }
+             // The chat's own token from outside it, or for a chat whose program was never
+diff --git a/crates/purlis-core/tests/every_store_the_plane_format_names_has_a_tier.rs b/crates/purlis-core/tests/every_store_the_plane_format_names_has_a_tier.rs
+index cc24958..33780f8 100644
+--- a/crates/purlis-core/tests/every_store_the_plane_format_names_has_a_tier.rs
++++ b/crates/purlis-core/tests/every_store_the_plane_format_names_has_a_tier.rs
+@@ -509,7 +509,6 @@ fn the_path_a_chat_touched_is_in_no_store_the_plane_format_names() {
+         // this stand-in starts its channel at once, so it waits for the same readiness (#1870).
+         // Without it the refused touch's warning was the process's first event and paid the
+         // whole build, which on a loaded runner outlasted the sender's wait.
+-        purlis_core::applog::redaction_ready();
+         a_chat_touches_a_file(Path::new(&run));
+         return;
+     }

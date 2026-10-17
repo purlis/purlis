@@ -1,0 +1,61 @@
+# TEMPORARY probe for #1870: removed before the pull request is ready.
+name: probe 1870
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/probe-1870.yml
+      - .github/probe-1870/**
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  loop:
+    name: probe 1870 (${{ matrix.arm }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [main, without-the-fix]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - name: Undo #1877's fix (the red arm)
+        if: matrix.arm == 'without-the-fix'
+        run: git apply .github/probe-1870/revert-1870.patch && git diff --stat
+      - name: Build the test and the load
+        run: |
+          cargo test -p purlis-core --locked --test every_store_the_plane_format_names_has_a_tier --no-run
+          cargo test -p purlis-core --locked --lib --no-run
+      - name: Loop the test 60 times under load
+        run: |
+          bin=$(ls -t target/debug/deps/every_store_the_plane_format_names_has_a_tier-* | grep -v '\.d$' | head -1)
+          lib=$(ls -t target/debug/deps/purlis_core-* | grep -v '\.d$\|\.rlib$\|\.rmeta$' | head -1)
+          echo "nproc $(nproc)"
+          # The load: purlis-core's own unit tests on every core, over and over, as a CI
+          # partition runs them, and twice as many spinning shells besides.
+          ( while :; do "$lib" --test-threads="$(nproc)" >/dev/null 2>&1; done ) &
+          for _ in $(seq $(( $(nproc) * 2 ))); do ( while :; do :; done ) & done
+          sleep 20
+          failed=0
+          for i in $(seq 60); do
+            start=$(date +%s%N)
+            if "$bin" --exact the_path_a_chat_touched_is_in_no_store_the_plane_format_names --test-threads=1 > "out-$i.txt" 2>&1; then
+              echo "run $i: ok in $(( ($(date +%s%N) - start) / 1000000 )) ms, load $(cut -d' ' -f1 /proc/loadavg)"
+            else
+              failed=$((failed + 1))
+              echo "run $i: FAILED in $(( ($(date +%s%N) - start) / 1000000 )) ms, load $(cut -d' ' -f1 /proc/loadavg)"
+              grep -m3 "did not take the line\|panicked\|failed:" "out-$i.txt" || true
+            fi
+          done
+          echo "::notice title=probe 1870 (${{ matrix.arm }})::$failed of 60 runs failed"
+          test "$failed" -eq 0
