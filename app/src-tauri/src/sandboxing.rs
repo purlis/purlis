@@ -1833,23 +1833,22 @@ pub(crate) fn kept_for(
     if let Some(reserved) = reserved.filter(|reserved| !reserved.already())
         && let Err(why) = chats.commit_grant(reserved)
     {
-        return Err(
-            match audit(
-                session,
-                &grant::Audited {
-                    granted: false,
-                    what: what.word(),
-                    target: &target,
-                    level,
-                },
-            ) {
-                Ok(()) => why,
-                Err(unsaid) => format!(
-                    "{why}. The audit records it allowed, and could not record that it was not kept \
-                 ({unsaid}): nothing was allowed."
-                ),
+        let ended = audit(
+            session,
+            &grant::Audited {
+                granted: false,
+                what: what.word(),
+                target: &target,
+                level,
             },
         );
+        return Err(match ended {
+            Ok(()) => why,
+            Err(unsaid) => format!(
+                "{why}. The audit records it allowed, and could not record that it was not \
+                 kept ({unsaid}): nothing was allowed."
+            ),
+        });
     }
     let told = grant::told(what, level);
     // A Claude Code chat reaches a service on this Mac by name alone (qw384b): told which.
