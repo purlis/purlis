@@ -191,3 +191,27 @@ fn where_policy_removes_everyone_in_the_project_no_browser_site_is_told_or_in_fo
     assert_eq!(changed(project.path(), &locks), None);
     assert_eq!(in_force(project.path(), &locks), Vec::<Host>::new());
 }
+
+#[test]
+fn a_site_removed_here_and_put_back_waits_to_be_shown_again() {
+    let project = a_project("schema = 1\n[sandbox]\nmode = \"on\"\n");
+    let site = Host::parse("news.example.org:443").expect("a host");
+    grant(project.path(), &site).expect("written");
+    assert_eq!(
+        written(&in_force(project.path(), &none())),
+        ["news.example.org:443"]
+    );
+
+    assert!(revoke(project.path(), &site).expect("removed"));
+    std::fs::write(
+        project.path().join(crate::plane::MANIFEST),
+        "schema = 1\n[sandbox]\nmode = \"on\"\nbrowser-sites = [\"news.example.org:443\"]\n",
+    )
+    .expect("put back");
+
+    assert_eq!(in_force(project.path(), &none()), Vec::<Host>::new());
+    assert_eq!(
+        changed(project.path(), &none()).expect("told").added,
+        ["news.example.org:443"]
+    );
+}

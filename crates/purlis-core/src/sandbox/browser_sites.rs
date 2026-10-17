@@ -10,8 +10,9 @@
 //! - **Shown once on each machine before it applies there.** A site a teammate's change adds
 //!   reaches no browser on a machine until the person there was shown it, site by site, in the
 //!   Notice of the project's browser sites; this machine records each one shown
-//!   (`browser_sites_seen` in its sandbox-grants file). A site taken out of the file is told as
-//!   taken out and forgotten, so putting it back is told again.
+//!   (`browser_sites_seen` in its sandbox-grants file). A site removed here is forgotten at
+//!   once; one a teammate's change takes out is forgotten once the Notice telling of its removal
+//!   is read. Either way, putting it back after that is told again.
 //! - **Held to an administrator's policy.** Where policy leaves out *everyone in the project*,
 //!   or never allows a site's host, it is neither told nor in force.
 //! - **Your own Allow is no news to you.** A site this machine's window writes is recorded as
@@ -151,15 +152,25 @@ pub fn grant(root: &Path, site: &Host) -> Result<(), String> {
 }
 
 /// **Takes `site` out of the committed file**: every entry naming it, and the key with its
-/// last. Answers whether one was there.
+/// last. It is forgotten as seen here, so a change that puts it back is shown again before it
+/// applies. Answers whether one was there.
 pub fn revoke(root: &Path, site: &Host) -> Result<bool, String> {
-    crate::settings::browser_sites::edit(root, |list| {
+    let was = crate::settings::browser_sites::edit(root, |list| {
         let before = list.len();
         list.retain(|one| {
             one.as_str().and_then(|one| Host::parse(one).ok()).as_ref() != Some(site)
         });
         list.len() != before
-    })
+    })?;
+    let written = site.to_string();
+    let mut seen = super::local::browser_sites_seen(root);
+    if seen.contains(&written) {
+        seen.retain(|one| *one != written);
+        super::local::keep_browser_sites_seen(root, seen).map_err(|why| {
+            format!("{site} was removed, and could not be forgotten as seen here: {why}")
+        })?;
+    }
+    Ok(was)
 }
 
 #[cfg(test)]

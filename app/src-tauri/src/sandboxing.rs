@@ -2907,8 +2907,9 @@ fn revoke_browser_site(
 }
 
 /// **Removes a browser site for everyone in the project** (#2443): checked to be listed,
-/// audited, then taken out of the committed file, and every chat's browsers here end, their
-/// tabs told so.
+/// audited, then taken out of the committed file and forgotten as seen here, and every chat's
+/// browsers here end, their tabs told so. Where the file is not written, the audit says the site
+/// stands again.
 fn revoke_project_site(
     held: &crate::planes::Held,
     plane: &PlaneId,
@@ -2923,17 +2924,28 @@ fn revoke_project_site(
     if !listed {
         return Err("purlis did not remove it: it is no longer there.".to_owned());
     }
-    audit(
-        None,
-        &sandbox::grant::Audited {
-            granted: false,
-            what: sandbox::local::BROWSER_SITE,
-            target: &host.to_string(),
-            level: sandbox::grant::Level::Project,
-        },
-    )?;
-    sandbox::browser_sites::revoke(root, host)
-        .map_err(|why| format!("purlis could not remove {host}: {why}"))?;
+    let audited = |granted: bool| {
+        audit(
+            None,
+            &sandbox::grant::Audited {
+                granted,
+                what: sandbox::local::BROWSER_SITE,
+                target: &host.to_string(),
+                level: sandbox::grant::Level::Project,
+            },
+        )
+    };
+    audited(false)?;
+    if let Err(why) = sandbox::browser_sites::revoke(root, host) {
+        // Nothing was removed: the audit says it stands again, as the file still says.
+        if !sandbox::Plane::read(root)
+            .browser_sites()
+            .is_ok_and(|listed| !listed.hosts.contains(host))
+        {
+            let _ = audited(true);
+        }
+        return Err(format!("purlis could not remove {host}: {why}"));
+    }
     browsers_ended_told(
         plane,
         held.browsers().sites_removed(held.browser_driver()),
