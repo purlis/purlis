@@ -10438,7 +10438,7 @@ export type WindowTheme = {
 export type WindowTyped = {
 	flags: { [key in string]: boolean },
 	choices: { [key in string]: string },
-	numbers: { [key in string]: number },
+	numbers: { [key in string]: number | null },
 };
 
 /**  A person's opt-out, as the picker sends it. */

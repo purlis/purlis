@@ -251,9 +251,9 @@ pub const PAIRS: &[Pair] = &[
     // - A vault's eye under the pointer: a muted mark on the control's hover.
     p("text.muted", "control.hover", 3.0),
     // #2327: the tokens that are not the window's chrome.
-    // - The editor's code (`editor/look.ts`): each syntax role on the editor's ground and on the
-    //   line the caret is on. Held as the ANSI colours they were drawn in before are held: a mark
-    //   that has to be told apart, at 3:1.
+    // - The editor's code (`editor/look.ts`): each syntax role on the editor's ground. Held as
+    //   the ANSI colours they were drawn in before are held: a mark that has to be told apart, at
+    //   3:1.
     p("syntax.keyword", "terminal.background", 3.0),
     p("syntax.string", "terminal.background", 3.0),
     p("syntax.number", "terminal.background", 3.0),
@@ -269,21 +269,6 @@ pub const PAIRS: &[Pair] = &[
     p("syntax.variable", "terminal.background", 3.0),
     p("syntax.operator", "terminal.background", 3.0),
     p("syntax.punctuation", "terminal.background", 3.0),
-    p("syntax.keyword", "surface.hover", 3.0),
-    p("syntax.string", "surface.hover", 3.0),
-    p("syntax.number", "surface.hover", 3.0),
-    p("syntax.constant", "surface.hover", 3.0),
-    p("syntax.comment", "surface.hover", 3.0),
-    p("syntax.function", "surface.hover", 3.0),
-    p("syntax.type", "surface.hover", 3.0),
-    p("syntax.property", "surface.hover", 3.0),
-    p("syntax.attribute", "surface.hover", 3.0),
-    p("syntax.tag", "surface.hover", 3.0),
-    p("syntax.heading", "surface.hover", 3.0),
-    p("syntax.invalid", "surface.hover", 3.0),
-    p("syntax.variable", "surface.hover", 3.0),
-    p("syntax.operator", "surface.hover", 3.0),
-    p("syntax.punctuation", "surface.hover", 3.0),
     // - A markdown render's link, code, quote and heading (`.release-notes`), words on the
     //   window, a pane and a dialog.
     p("markdown.link", "surface.base", TEXT),
@@ -321,8 +306,12 @@ pub const PAIRS: &[Pair] = &[
     // - The terminal's selected text, focused and not, on the selection laid over the
     //   terminal; clear, it keeps the cells' own colour, measured as the terminal's words.
     p("terminal.selection-foreground", "terminal.selection", TEXT).over("terminal.background"),
-    p("terminal.selection-foreground", "terminal.selection-inactive", TEXT)
-        .over("terminal.background"),
+    p(
+        "terminal.selection-foreground",
+        "terminal.selection-inactive",
+        TEXT,
+    )
+    .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
     // - The window's own words are drawn on the window's background.

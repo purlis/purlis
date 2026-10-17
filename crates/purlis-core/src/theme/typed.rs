@@ -52,10 +52,7 @@ impl Typed {
 
 /// Every typed token, in the order a theme file is easiest to read in.
 pub fn all() -> impl Iterator<Item = &'static str> {
-    FLAGS
-        .iter()
-        .copied()
-        .chain([CURSOR_STYLE, LINE_HEIGHT])
+    FLAGS.iter().copied().chain([CURSOR_STYLE, LINE_HEIGHT])
 }
 
 /// Whether `token` is a typed token.

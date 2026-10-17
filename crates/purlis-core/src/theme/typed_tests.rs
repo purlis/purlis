@@ -67,7 +67,11 @@ fn purlis_classic_draws_its_code_in_the_colours_the_editor_borrowed_from_the_ter
         for (role, borrowed, italic, bold) in LOOK_BEFORE {
             let token = format!("syntax.{role}");
             assert_eq!(theme.value(&token), theme.value(borrowed), "{token}");
-            assert_eq!(theme.typed.flag(&format!("{token}.italic")), *italic, "{token}");
+            assert_eq!(
+                theme.typed.flag(&format!("{token}.italic")),
+                *italic,
+                "{token}"
+            );
             assert_eq!(theme.typed.flag(&format!("{token}.bold")), *bold, "{token}");
         }
         let roles = TOKENS.iter().filter(|it| it.starts_with("syntax.")).count();
@@ -92,7 +96,10 @@ fn purlis_classic_draws_markdown_charts_and_the_window_as_it_did() {
         // A chart's one series was drawn in the accent.
         assert_eq!(theme.value("chart.1"), theme.value("accent.base"));
         // The window was painted in the window's surface.
-        assert_eq!(theme.value("window.background"), theme.value("surface.base"));
+        assert_eq!(
+            theme.value("window.background"),
+            theme.value("surface.base")
+        );
     }
 }
 
@@ -233,7 +240,9 @@ fn a_format_1_file_names_a_typed_token_and_is_told_it_belongs_in_a_theme_folder(
     assert!(!loaded.refused);
     assert_eq!(
         said(&loaded),
-        ["terminal.cursor-blink is set in a theme folder's theme.json (format 2), so it is left out"]
+        [
+            "terminal.cursor-blink is set in a theme folder's theme.json (format 2), so it is left out"
+        ]
     );
     let drawn = loaded.theme.first();
     assert_eq!(drawn.value("syntax.keyword"), "#ff00ff");

@@ -44,6 +44,8 @@ person's own, a project's, a workspace's or an extension's.
   CSS;
 - a geometry value is a number inside the range core documents for that token;
 - motion keeps its closed grammar;
+- a flag is `true` or `false`, and a choice is one of the names core lists for that token (the
+  syntax roles' italic and bold, the terminal cursor's shape, #2327);
 - a font is a woff2 file inside the theme folder, under a size cap, served by purlis, never a URL;
 - an icon keeps today's path grammar and is drawn as elements, never as SVG text.
 

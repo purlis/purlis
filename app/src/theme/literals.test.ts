@@ -464,9 +464,10 @@ describe("the stylesheet and the vocabulary agree", () => {
       (token) => !terminal(token) && !further.includes(token) && !used.has(property(token)),
     );
     expect(unread).toEqual([]);
-    expect(further.filter((token) => used.has(property(token))), "drawn now: not exempt").toEqual(
-      [],
-    );
+    expect(
+      further.filter((token) => used.has(property(token))),
+      "drawn now: not exempt",
+    ).toEqual([]);
   });
 
   it("every motion token the window has is moved with", () => {
