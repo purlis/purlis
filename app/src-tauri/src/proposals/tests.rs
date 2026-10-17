@@ -417,6 +417,49 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
     assert_eq!(stale.why.as_deref(), Some(STALE_SAID));
 }
 
+/// #2121: a long change's tab marks the lines that changed, git's hunks between the two sides,
+/// not the whole file as one hunk, so the merge view folds every unchanged stretch.
+#[test]
+fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
+    let one = Proposal {
+        id: 7,
+        session: 3,
+        path: "personas/devops/persona.md".to_owned(),
+        base: None,
+        change: mode_pr(),
+        since: 1,
+        stale: false,
+    };
+    let lines = |changed: &str| {
+        (1..=2000)
+            .map(|at| {
+                if at == 1000 {
+                    format!("{changed}\n")
+                } else {
+                    format!("line {at}\n")
+                }
+            })
+            .collect::<String>()
+    };
+    let whole = whole_of(
+        &one,
+        &Now::Made {
+            before: lines("line 1000"),
+            after: lines("the one line that changed"),
+        },
+    );
+    assert!(whole.applies);
+    assert_eq!(
+        whole.hunks,
+        [crate::piecefiles::GitHunk {
+            old_start: 1000,
+            old_lines: 1,
+            new_start: 1000,
+            new_lines: 1,
+        }]
+    );
+}
+
 /// PC-7: a change too long for a row is applied only from its own tab, where it is shown whole;
 /// one not shown for anything else (a credential's shape) is refused from anywhere.
 #[test]

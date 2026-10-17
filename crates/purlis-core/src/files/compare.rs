@@ -1990,6 +1990,13 @@ fn line_diff(old: &[u8], new: &[u8]) -> (Vec<Hunk>, u64, u64) {
     line_diff_as(old, new, Whitespace::Shown)
 }
 
+/// **git's hunks between two texts**, in `-U0`'s numbers: the same line diff every comparison
+/// draws ([`line_diff_as`], whitespace shown), for a change no branch holds yet, such as a
+/// proposed change on its own tab (#2121), so the lines it marks are found as a branch's are.
+pub fn line_hunks(old: &str, new: &str) -> Vec<Hunk> {
+    line_diff_as(old.as_bytes(), new.as_bytes(), Whitespace::Shown).0
+}
+
 /// [`line_diff`], comparing whitespace as `whitespace` says.
 ///
 /// With [`Whitespace::Hidden`], git's `-w` on the same engine: each line is interned without

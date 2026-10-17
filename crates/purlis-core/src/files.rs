@@ -57,7 +57,7 @@ mod compare;
 pub use compare::{
     COUNTED, Compared, Comparison, FileChange, FileDiff, Head, Hunk, Lines, MemberCompared, Shown,
     Sides, WhatChanged, Whitespace, compare, compare_change, compare_file, compare_file_with,
-    compare_with, what_changed,
+    compare_with, line_hunks, what_changed,
 };
 // A request's head, fetched under `refs/purlis/review/` for its review (RC-2's kind (f)).
 pub mod review_fetch;
