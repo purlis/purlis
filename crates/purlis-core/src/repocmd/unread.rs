@@ -22,6 +22,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::counts::counted;
 use crate::worktree::git;
 
 /// The filters a `.gitattributes` text turns on (`filter=<name>`), each once, in the order
@@ -100,9 +101,9 @@ pub fn filter_notes(top: &Path, name: &str, at: &str) -> Vec<String> {
         .collect();
     if more > 0 {
         said.push(format!(
-            "{name}'s .gitattributes names {more} more filter{}, which git run by the app for a \
+            "{name}'s .gitattributes names {}, which git run by the app for a \
              chat does not run either.",
-            if more == 1 { "" } else { "s" }
+            counted(more, "more filter", "more filters")
         ));
     }
     said
