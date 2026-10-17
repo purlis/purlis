@@ -1,13 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
-import { commands, type BrowserSitesChanged, type PlaneId } from "./bindings";
-import { useChatStarts } from "./chatStarts";
+import { commands, type BrowserSitesChanged, type PlaneId, type SandboxState } from "./bindings";
 import { Notice } from "./Notice";
-import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { sandboxCommandReturned } from "./sandboxAsked";
-import { useWindowFocused } from "./windowFocused";
 
 /**
  * **The project's browser sites changed** (#2443, ruled 2026-10-17): the one-time Notice each
@@ -18,45 +14,30 @@ import { useWindowFocused } from "./windowFocused";
  * from its next act. A site is the browsers' alone: chats' commands still ask for that host.
  * "Review the browser sites" opens the Sandbox group, where Granted lists each one. A site this
  * window's own Allow wrote is recorded as seen there, so it is never told back to its writer.
+ *
+ * It is read with the project's hosts, in one read of the project's sandbox state
+ * (`ProjectHostsNotice`), so a project switch asks the core nothing more for it.
  */
 export function ProjectBrowserSitesNotice({
   plane,
+  changed,
+  onRead,
   onReview,
 }: {
   plane: PlaneId;
+  /** How the project's browser sites changed, as the project's sandbox state says it. */
+  changed: BrowserSitesChanged;
+  /** The project's sandbox state once the Notice was read. */
+  onRead: (state: SandboxState) => void;
   /** Opens Settings at the project's Sandbox group. */
   onReview: () => void;
 }) {
-  const [changed, setChanged] = useState<BrowserSitesChanged>();
-
-  // Read again when the project's settings change on disk (a pull, a branch switched), when
-  // the window comes back into focus, and when a chat starts, as the hosts' Notice is.
-  const onDisk = usePlaneChanged([plane], SETTINGS);
-  const focused = useWindowFocused();
-  const started = useChatStarts();
-
-  useEffect(() => {
-    let live = true;
-    void commands
-      .sandboxState(plane)
-      .then((said) => {
-        if (live && said.status === "ok") setChanged(said.data?.browser_sites_changed ?? undefined);
-      })
-      // A project whose state cannot be read says nothing here, and no site reaches a browser.
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [plane, onDisk, focused, started]);
-
-  if (changed === undefined) return null;
-
   const read = () =>
     void commands
       .acknowledgeProjectBrowserSites(plane, changed.added)
       .then((said) => {
         if (said.status !== "ok") return;
-        setChanged(said.data.browser_sites_changed ?? undefined);
+        onRead(said.data);
         // What reads a chat's reach (its tab's mark, Granted) reads it again.
         sandboxCommandReturned();
       })

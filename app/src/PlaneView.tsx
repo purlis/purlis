@@ -364,7 +364,6 @@ import {
   type OpenAskPersona,
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
-import { ProjectBrowserSitesNotice } from "./ProjectBrowserSitesNotice";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
@@ -8029,14 +8028,9 @@ export const PlaneView = memo(function PlaneView({
         settle={settleNotices}
         onRestart={restartThem}
       />
-      {/* **The project's own hosts changed** (#1341): told once to each teammate. */}
+      {/* **The project's own hosts changed** (#1341): told once to each teammate. With them,
+          the project's browser sites (#2443), each told before it reaches their browsers. */}
       <ProjectHostsNotice
-        plane={plane}
-        onReview={() => openSettingsAt({ group: "project.sandbox" })}
-      />
-      {/* **The project's browser sites changed** (#2443): each told once to each teammate,
-          before it reaches their browsers. */}
-      <ProjectBrowserSitesNotice
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
       />

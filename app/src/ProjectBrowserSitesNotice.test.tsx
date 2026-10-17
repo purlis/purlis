@@ -5,13 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { ProjectBrowserSitesNotice } from "./ProjectBrowserSitesNotice";
+import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import type { SandboxState } from "./bindings";
 
 /**
  * The one-time Notice of the project's browser sites (#2443): a site a teammate committed is
  * shown once, before it reaches this machine's browsers, and Got it sends back exactly the
- * sites it named.
+ * sites it named. It is read with the project's hosts, in the hosts' Notice's one read.
  */
 
 afterEach(() => {
@@ -53,7 +53,7 @@ function core(state: SandboxState) {
 describe("the project's browser sites Notice", () => {
   it("says a teammate's site reaches this machine's browsers only once it was read, and nothing for commands", async () => {
     core(ADDED);
-    render(<ProjectBrowserSitesNotice plane={PLANE} onReview={() => {}} />);
+    render(<ProjectHostsNotice plane={PLANE} onReview={() => {}} />);
     const notice = await screen.findByText(/news\.example\.org:443/);
     expect(notice).toHaveTextContent(/Your browsers reach it once you press Got it/);
     expect(notice).toHaveTextContent(/chats' commands still ask/);
@@ -62,7 +62,7 @@ describe("the project's browser sites Notice", () => {
 
   it("sends back exactly the sites it named as added, then goes", async () => {
     const asked = core(ADDED);
-    render(<ProjectBrowserSitesNotice plane={PLANE} onReview={() => {}} />);
+    render(<ProjectHostsNotice plane={PLANE} onReview={() => {}} />);
     await userEvent.click(await screen.findByRole("button", { name: "Got it" }));
     await waitFor(() => expect(screen.queryByText(/news\.example\.org/)).toBeNull());
     expect(asked.filter((one) => one.cmd === "acknowledge_project_browser_sites")).toEqual([
@@ -75,7 +75,7 @@ describe("the project's browser sites Notice", () => {
 
   it("draws nothing when no browser site changed", async () => {
     const asked = core(QUIET);
-    const { container } = render(<ProjectBrowserSitesNotice plane={PLANE} onReview={() => {}} />);
+    const { container } = render(<ProjectHostsNotice plane={PLANE} onReview={() => {}} />);
     await waitFor(() => expect(asked.some((one) => one.cmd === "sandbox_state")).toBe(true));
     expect(container).toBeEmptyDOMElement();
   });
