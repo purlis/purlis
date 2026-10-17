@@ -64,6 +64,7 @@ import {
   firstFrame,
   launchSteps,
   noMeasurement,
+  processTreeUse,
 } from "./coldstart-gate.mjs";
 import { latencyGate } from "./latency-gate.mjs";
 import { RESTORE_SIZES, restoreIsWhole, restoreMarks, restoreTable, restoreVerdict } from "./restore-case.mjs";
@@ -284,6 +285,33 @@ function freshProfile() {
   return dirs;
 }
 
+/** The kernel's clock, for `/proc/<pid>/stat`'s CPU times: Linux only, read once. */
+const TICKS_PER_SECOND =
+  platform() === "linux" ? Number(spawnSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).stdout) || 100 : 0;
+
+/**
+ * What the launched process and every process below it have used (`processTreeUse`), read after
+ * the first frame's time is taken, so the reading is not in it. Linux only; elsewhere, or when
+ * `/proc` cannot be read, `undefined`.
+ */
+function treeUse(pid) {
+  if (!TICKS_PER_SECOND) return undefined;
+  try {
+    const stats = [];
+    for (const name of readdirSync("/proc")) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        stats.push(readFileSync(`/proc/${name}/stat`, "utf8"));
+      } catch {
+        // A process that ended between the listing and the read.
+      }
+    }
+    return processTreeUse(stats, pid, TICKS_PER_SECOND);
+  } catch {
+    return undefined;
+  }
+}
+
 /** One launch of the app in `cwd`, to its first frame, with `profile` on top of the env. */
 async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_START_APP, ofMain = false } = {}) {
   // The runner's one-minute load as the launch begins: a busy runner, not a slow app.
@@ -329,6 +357,7 @@ async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_STA
     })
     .finally(() => clearInterval(activating));
   clearInterval(activating);
+  const use = treeUse(app.pid);
   // Only the process this started.
   app.removeAllListeners("exit");
   const ended = new Promise((done) => app.once("exit", done));
@@ -336,7 +365,7 @@ async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_STA
   await ended;
   await sleep(500);
   if (profile) await removeProfile(profile.HOME);
-  return { ms: own.at - from, appMs: own.appMs, load, steps: launchSteps(said) };
+  return { ms: own.at - from, appMs: own.appMs, load, use, steps: launchSteps(said) };
 }
 
 /** The empty plane's launches, whole, as `coldStart` made them (`--launch-steps`). */
@@ -356,7 +385,8 @@ async function againstMainPass(cwd, profile, baseline, rounds) {
     const first = round % 2 ? await ofHead() : await ofMain();
     const second = round % 2 ? await ofMain() : await ofHead();
     const [head, base] = round % 2 ? [first, second] : [second, first];
-    pass.push({ base: base.ms, head: head.ms });
+    // Both launches whole too, for the annotation to say where each build's time went (#1866).
+    pass.push({ base: base.ms, head: head.ms, baseLaunch: base, headLaunch: head });
     launches.push(head);
   }
   return { pass, launches };
@@ -397,7 +427,10 @@ async function coldStart(chats = 0) {
     firstRunIsColdestOnDisk: warmUp ? undefined : samples[0]?.ms,
     ...(warmUp && { coldDiskWarmUp: { ms: warmUp.ms, appMs: warmUp.appMs } }),
     freshProfileEachLaunch: options["fresh-profile"],
-    ...(againstMain && { againstMain }),
+    // The rounds' times only: each launch whole is for the annotation, not the record.
+    ...(againstMain && {
+      againstMain: { ...againstMain, passes: againstMain.passes.map((pass) => pass.map(({ base, head }) => ({ base, head }))) },
+    }),
   };
 }
 
@@ -976,7 +1009,7 @@ if (options.limit && results.coldStart) {
         traced: coldStartLaunches.traced,
         limit,
         ceiling,
-        againstMain,
+        againstMain: coldStartLaunches.againstMain ?? againstMain,
         evidence: options.evidence,
       }),
     );

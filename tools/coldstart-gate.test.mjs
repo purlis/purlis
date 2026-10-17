@@ -17,6 +17,7 @@ import {
   firstFrame,
   launchSteps,
   noMeasurement,
+  processTreeUse,
 } from "./coldstart-gate.mjs";
 
 const gate = { limit: 2000, ceiling: 2500 };
@@ -208,6 +209,58 @@ test("against main, a confirmed regression is an error annotation", () => {
     againstMain: { passes, ...coldStartAgainstMain({ passes }) },
   });
   assert.match(line, /^::error title=Cold start%2C i3::against main in this job: .*: REGRESSED/);
+});
+
+// The two red runs of the relative gate on unchanged launch code, out of 524 pull request runs
+// from 2026-10-14 to 2026-10-17 (#1866): one build steadily slower than the other through a
+// whole job, both passes. Run 38704550907 (a test-only commit; the commits either side of it
+// were at 1.00), its i3 case: the gap was steady, not a slow launch now and then.
+const steadyGap = {
+  base: [1784, 1775, 1744, 1773, 1808, 1759, 1783],
+  head: [2125, 2127, 2104, 2118, 2114, 2173, 2115],
+};
+
+test("a steady gap through a whole job is what the gate reads as a regression", () => {
+  const pass = steadyGap.base.map((base, n) => ({ base, head: steadyGap.head[n] }));
+  assert.equal(coldStartAgainstMain({ passes: [pass, pass] }).verdict, "regressed");
+});
+
+test("against main, each round says where both builds' time went", () => {
+  // What tells the cause of a steady gap apart: both builds' split, CPU time and major faults
+  // (a binary read off the disk on every launch, against code that runs slower, against a
+  // runner that is busy), not only the change's.
+  const launch = (ms, appMs, cpuMs, majorFaults) => ({ ms, appMs, use: { cpuMs, majorFaults, processes: 3 } });
+  const round = { base: 1784, head: 2125, baseLaunch: launch(1784, 1404, 1910, 2), headLaunch: launch(2125, 1745, 2330, 4100) };
+  const passes = [[round]];
+  const line = coldStartAnnotation({
+    name: "i3",
+    limit: 2000,
+    ceiling: 2500,
+    launches: [round.headLaunch],
+    againstMain: { passes, ...coldStartAgainstMain({ passes }) },
+  });
+  assert.match(
+    line,
+    /%0Around 1: main 1784 ms \(380 ms before the app's clock \+ 1404 ms in the app; CPU 1910 ms in 3 processes, 2 major faults\), this change 2125 ms \(380 ms before the app's clock \+ 1745 ms in the app; CPU 2330 ms in 3 processes, 4100 major faults\)%0A/,
+  );
+});
+
+test("a process tree's CPU time and major faults are summed from the launched process down", () => {
+  // `/proc/<pid>/stat`: pid (comm) state ppid ... majflt is field 12, utime 14, stime 15.
+  const stat = (pid, comm, ppid, majflt, utime, stime) =>
+    `${pid} (${comm}) S ${ppid} ${pid} ${pid} 0 -1 4194560 100 0 ${majflt} 0 ${utime} ${stime} 0 0 20 0 1 0 1 0 0`;
+  const stats = [
+    stat(1, "systemd", 0, 900, 5000, 5000),
+    stat(40, "charter-app", 1, 10, 80, 20),
+    // A name with a space and a parenthesis in it.
+    stat(41, "WebKit (Web) x", 40, 5, 60, 10),
+    stat(42, "charter-app", 40, 1, 3, 2),
+    stat(43, "WebKitNetworkP", 41, 0, 1, 1),
+    stat(50, "node", 1, 7, 70, 7),
+  ];
+  assert.deepEqual(processTreeUse(stats, 40, 100), { cpuMs: 1770, majorFaults: 16, processes: 4 });
+  // A tree that is gone by the time it is read says nothing, rather than a zero.
+  assert.equal(processTreeUse(stats, 99, 100), undefined);
 });
 
 // A launched app, as much of one as `firstFrame` reads.
