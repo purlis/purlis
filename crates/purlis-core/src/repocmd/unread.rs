@@ -405,5 +405,4 @@ pub fn network_note(entries: &[(String, String)], url: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "unread_tests.rs"]
 mod tests;
