@@ -12,5 +12,4 @@
 
 - **Codex and opencode chats on Linux run at the floor**, as on macOS, in a project that has not
   turned the full sandbox on. So a Codex chat there starts only on a profile for sandboxed chats,
-  a chat at the floor does not run over ACP, and `purlis secret get` and `purlis secret exec`
-  from such a chat are refused until #2342 (#1040).
+  and a chat at the floor does not run over ACP (#1040).

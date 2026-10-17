@@ -1174,6 +1174,39 @@ fn at_the_floor_on_linux_the_wrap_s_own_program_is_never_written_by_the_chat() {
     );
 }
 
+/// #2342: on Linux every sandboxed chat's start records purlis's own program, checked and held
+/// as the wrap's is, for a brokered `secret exec` to run its command in: a Claude Code chat's
+/// too, whose own sandbox is its harness's. At the floor it is held unwritten.
+#[cfg(target_os = "linux")]
+#[test]
+fn on_linux_a_claude_code_chat_s_start_holds_purlis_s_own_program_for_its_brokered_runs() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let outside = stand_in::NoChatWrites::new();
+    let claude = stand_in::program(
+        outside.path(),
+        "claude",
+        "#!/bin/sh\necho '2.1.288 (Claude Code)'\n",
+    );
+    plane.profile("claude", &claude, "");
+    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    let applied = ready.sandbox.expect("at the floor");
+    let this = std::env::current_exe()
+        .expect("this program")
+        .canonicalize()
+        .expect("its real path");
+    assert_eq!(applied.confines().wrap.as_deref(), Some(this.as_path()));
+    assert!(
+        applied
+            .confines()
+            .held
+            .iter()
+            .any(|held| this.starts_with(held)),
+        "{:?}",
+        applied.confines().held
+    );
+}
+
 /// A profile's command, made in a plane.
 type Command<'a> = dyn Fn(&Plane) -> Vec<String> + 'a;
 

@@ -618,6 +618,10 @@ fn the_loaders_and_runtimes_start_up_variables_load_code_and_others_do_not() {
         "RUBYOPT",
         "BASH_ENV",
         "JAVA_TOOL_OPTIONS",
+        "GCONV_PATH",
+        "LOCPATH",
+        "GIO_EXTRA_MODULES",
+        "GTK_MODULES",
     ] {
         assert!(loads_code(var), "{var}");
     }
