@@ -304,12 +304,12 @@ impl Gated {
         let length = u32::try_from(snapshot.len()).map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "a snapshot over 4 GiB")
         })?;
-        let mut header = Vec::with_capacity(13);
-        header.push(VIEW);
-        header.extend_from_slice(&view.0.to_be_bytes());
-        header.extend_from_slice(&epoch.0.to_be_bytes());
-        header.extend_from_slice(&length.to_be_bytes());
-        self.out.write_all(&header).await?;
+        let header = Header {
+            view,
+            epoch,
+            snapshot: length,
+        };
+        self.out.write_all(&header.to_bytes()).await?;
         self.send(snapshot).await?;
         loop {
             let next = {
@@ -427,23 +427,58 @@ impl Reader {
 /// Take a view the host opened: read its header.
 async fn accept(stream: Stream) -> Result<Reader, LinkError> {
     let (mut input, acks) = tokio::io::split(stream);
-    let kind = input.read_u8().await?;
-    if kind != VIEW {
-        return Err(LinkError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("a stream that opens with {kind:#04x} is not a view"),
-        )));
-    }
-    let view = ViewId(input.read_u32().await?);
-    let epoch = Epoch(input.read_u32().await?);
-    let snapshot_left = input.read_u32().await? as usize;
+    let header = Header::read_from(&mut input).await?;
     Ok(Reader {
-        view,
-        epoch,
-        snapshot_left,
+        view: header.view,
+        epoch: header.epoch,
+        snapshot_left: header.snapshot as usize,
         input,
         acks,
     })
+}
+
+/// What a view's stream opens with ([`VIEW`], then the view's number, its epoch and its
+/// snapshot's length, each a big-endian `u32`): what a host writes, and what a host that joins
+/// a view's stream from another host to a stream of its own reads and writes again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Header {
+    pub view: ViewId,
+    pub epoch: Epoch,
+    /// How many bytes of the stream, after the header, are the snapshot.
+    pub snapshot: u32,
+}
+
+impl Header {
+    /// How long a header is on the wire.
+    pub const LEN: usize = 13;
+
+    /// The header as it is written.
+    pub fn to_bytes(&self) -> [u8; Header::LEN] {
+        let mut bytes = [0u8; Header::LEN];
+        bytes[0] = VIEW;
+        bytes[1..5].copy_from_slice(&self.view.0.to_be_bytes());
+        bytes[5..9].copy_from_slice(&self.epoch.0.to_be_bytes());
+        bytes[9..13].copy_from_slice(&self.snapshot.to_be_bytes());
+        bytes
+    }
+
+    /// Read a header from the start of a view's stream: refused when the stream is not a view.
+    pub async fn read_from<R: tokio::io::AsyncRead + Unpin>(
+        input: &mut R,
+    ) -> Result<Header, LinkError> {
+        let kind = input.read_u8().await?;
+        if kind != VIEW {
+            return Err(LinkError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("a stream that opens with {kind:#04x} is not a view"),
+            )));
+        }
+        Ok(Header {
+            view: ViewId(input.read_u32().await?),
+            epoch: Epoch(input.read_u32().await?),
+            snapshot: input.read_u32().await?,
+        })
+    }
 }
 
 /// A view's number on a link: which terminal it shows. The layer above says which chat that is.

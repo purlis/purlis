@@ -189,6 +189,8 @@ pub fn serve_b(
 pub struct ToB {
     pub b: mpsc::UnboundedSender<DuplexStream>,
     pub switch: Arc<Mutex<watch::Sender<Cable>>>,
+    /// The switches of the cables before the one in use: each carries on until its link ends.
+    pub earlier: Arc<Mutex<Vec<watch::Sender<Cable>>>>,
     pub dials: Arc<Mutex<usize>>,
 }
 
@@ -197,6 +199,7 @@ impl ToB {
         ToB {
             b,
             switch: Arc::new(Mutex::new(watch::channel(Cable::Carrying).0)),
+            earlier: Arc::default(),
             dials: Arc::default(),
         }
     }
@@ -217,7 +220,8 @@ impl Connector for ToB {
     fn connect(&self) -> futures::future::BoxFuture<'static, std::io::Result<DuplexStream>> {
         let (switch, _) = watch::channel(Cable::Carrying);
         let state = switch.subscribe();
-        *self.switch.lock().unwrap() = switch;
+        let earlier = std::mem::replace(&mut *self.switch.lock().unwrap(), switch);
+        self.earlier.lock().unwrap().push(earlier);
         *self.dials.lock().unwrap() += 1;
         let (a, b) = cable(state);
         let sent = self.b.send(b);

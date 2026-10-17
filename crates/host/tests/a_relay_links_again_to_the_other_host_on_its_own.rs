@@ -5,10 +5,13 @@
 //! link is kept through `hostlink::keep_linked`, so a link that is cut comes back on its own and
 //! one renewed ahead of its limit is replaced by the next. Over each new link host A holds the
 //! window's projects again, subscribes again from the window's cursor and attaches the window's
-//! views again, each with a snapshot, under the numbers the window already knows them by. While
+//! views again, each with a snapshot, under the numbers the window already knows them by, and
+//! hands no event twice. A command in flight as its link is renewed is answered on it. While
 //! no link is up, every command is refused in words and none is sent on later; a host at the
-//! far end whose key is not the one pinned is never linked. Host B's programs are stand-ins and
-//! its link runs over an in-memory cable the test cuts, so none of this needs a terminal.
+//! far end whose key is not the one pinned is never linked; and what host B named to a link
+//! that ended, a chat's confinement, is not the next link's (#2511). Host B's programs are
+//! stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs a
+//! terminal.
 
 #![cfg(unix)]
 
@@ -16,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
-use purlis_host::standin::{StandIn, StandIns};
+use purlis_host::standin::{StandIn, StandInConfines, StandIns};
 use purlis_host::{Compose, Hosting, Keep, Relay, ToCompose};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::hostlink::{
@@ -24,11 +27,13 @@ use purlis_session_protocol::hostlink::{
 };
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
-    self, Client, Events, Exit, ProgramKind, Pushed, StartProgram, Told, ViewKind,
+    self, Answer, Beside, Client, Command, Confine, ConfinePlan, Event, Events, Exit, Launch,
+    Layer, Listed, ProgramKind, Pushed, StartProgram, Told, ViewKind,
 };
 use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use purlis_terminal::session::Spec;
 use tokio::io::{DuplexStream, duplex};
+use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 use tokio::time::timeout;
 
@@ -63,8 +68,8 @@ enum Reach {
 /// Host A's connector to host B: each connection is a cable the test can cut, to host B or
 /// wherever [`Reach`] says.
 #[derive(Clone)]
-struct Cable {
-    b: Hosting,
+struct Cable<B> {
+    b: B,
     another: Hosting,
     b_key: LinkKey,
     a_key: LinkKey,
@@ -73,7 +78,7 @@ struct Cable {
     dials: Arc<Mutex<usize>>,
 }
 
-impl Cable {
+impl<B> Cable<B> {
     fn reach(&self, reach: Reach) {
         *self.reach.lock().unwrap() = reach;
     }
@@ -90,13 +95,13 @@ impl Cable {
     }
 }
 
-impl Connector for Cable {
+impl<B: session::Host + Clone> Connector for Cable<B> {
     type Io = DuplexStream;
 
     fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
         *self.dials.lock().unwrap() += 1;
         let reach = *self.reach.lock().unwrap();
-        let (host, key) = match reach {
+        let (b, another, key) = match reach {
             Reach::Nothing => {
                 return Box::pin(async {
                     Err(std::io::Error::new(
@@ -105,8 +110,12 @@ impl Connector for Cable {
                     ))
                 });
             }
-            Reach::HostB => (self.b.clone(), self.b_key.clone()),
-            Reach::AnotherHost => (self.another.clone(), LinkKey::generate().unwrap()),
+            Reach::HostB => (Some(self.b.clone()), None, self.b_key.clone()),
+            Reach::AnotherHost => (
+                None,
+                Some(self.another.clone()),
+                LinkKey::generate().unwrap(),
+            ),
         };
         let desktop = Pinned {
             device: HOST_A.into(),
@@ -133,29 +142,43 @@ impl Connector for Cable {
             )
             .await
             {
-                let _ = session::serve(answered.link, host, None).await;
+                match (b, another) {
+                    (Some(b), _) => drop(session::serve(answered.link, b, None).await),
+                    (_, Some(another)) => drop(session::serve(answered.link, another, None).await),
+                    _ => {}
+                }
             }
         });
         Box::pin(async move { Ok(a_end) })
     }
 }
 
-struct Window {
+struct Window<B = Hosting> {
     client: Client,
     views: Acceptor,
     events: Events,
     runs: StandIns,
     another: StandIns,
-    cable: Cable,
+    cable: Cable<B>,
     _project: tempfile::TempDir,
 }
 
 /// A window on host A, which keeps a link to host B through `liveness` for each window link.
 async fn a_window(liveness: Liveness) -> Window {
-    let (runs, another) = (StandIns::default(), StandIns::default());
+    let runs = StandIns::default();
+    a_window_on(Hosting::running_with(Echo, runs.clone()), runs, liveness).await
+}
+
+/// [`a_window`], to `b`, whose programs are `runs`.
+async fn a_window_on<B: session::Host + Clone>(
+    b: B,
+    runs: StandIns,
+    liveness: Liveness,
+) -> Window<B> {
+    let another = StandIns::default();
     let (a_key, b_key) = (LinkKey::generate().unwrap(), LinkKey::generate().unwrap());
     let cable = Cable {
-        b: Hosting::running_with(Echo, runs.clone()),
+        b,
         another: Hosting::running_with(Echo, another.clone()),
         b_key: b_key.clone(),
         a_key: a_key.clone(),
@@ -213,7 +236,7 @@ fn never_renewed() -> Liveness {
     }
 }
 
-impl Window {
+impl<B> Window<B> {
     /// Hold the project, subscribe, start a program and attach a terminal view of it.
     async fn watching(&mut self) -> (String, StandIn, Viewer, Reader) {
         self.client
@@ -437,21 +460,267 @@ async fn a_link_renewed_ahead_of_its_limit_carries_the_subscription_and_views_ov
     let (program, running, mut viewer, mut first) = window.watching().await;
     assert_eq!(snapshot(&mut first).await, b"ready> ");
 
-    tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+    // The window types through the renewal: every keystroke is answered, none refused.
+    tokio::time::sleep(Duration::from_secs(60 * 60 - 10)).await;
+    let mut typed = Vec::new();
+    for _ in 0..40 {
+        window
+            .client
+            .write(&program, b"k")
+            .await
+            .expect("a keystroke sent during the renewal is answered");
+        typed.push(b'k');
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert_eq!(
+        running.seen().typed,
+        typed,
+        "every keystroke reached it once"
+    );
     let mut again = window.next_view(&mut viewer).await;
 
     assert_eq!(window.cable.dials(), 2, "renewed once");
     assert_eq!(again.view(), first.view());
-    assert_eq!(snapshot(&mut again).await, b"ready> ");
+    // The stand-in echoes what is typed, and its screen is all it wrote: the new view's
+    // snapshot is that screen as the view came back, and the rest follows it live.
+    let written = running.seen().written.clone();
+    let drawn = snapshot(&mut again).await;
+    assert!(
+        written.starts_with(&drawn),
+        "{drawn:?} is not what it wrote"
+    );
+    assert!(drawn.starts_with(b"ready> "));
+    live_until(&mut again, &written[drawn.len()..]).await;
     running.writes(b"live");
     live_until(&mut again, b"live").await;
     window.client.write(&program, b"typed").await.unwrap();
-    assert_eq!(running.seen().typed, b"typed");
+    typed.extend_from_slice(b"typed");
+    assert_eq!(running.seen().typed, typed);
     running.ends(Exit::Code(0));
     loop {
         if let Pushed::Ended { program: ended, .. } = window.pushed().await {
             assert_eq!(ended, program);
             break;
         }
+    }
+}
+
+const CONFINEMENT: &str = "01J9CNFNMNT0000000000000000";
+
+fn planned() -> Confine {
+    Confine {
+        confinement: CONFINEMENT.into(),
+        project: PROJECT.into(),
+        plan: ConfinePlan {
+            listed: vec![Listed {
+                host: "api.anthropic.com".into(),
+                layer: Layer::Open,
+            }],
+            never: Vec::new(),
+            withdrawn: Vec::new(),
+            anything: false,
+            tunnel_ports: vec![443],
+            plain_ports: vec![80],
+            any_port: false,
+            beside: Beside::Wrapped,
+            given: Vec::new(),
+        },
+        asks: true,
+    }
+}
+
+/// A chat the window started in a confinement it made on host B. What host B named to the link
+/// that made it ends with that link, and a link after it is named nothing again: until the
+/// window takes its runner chats' confinements back (#2511), that confinement is not the next
+/// link's to act on, and host B refuses it as one it does not hold.
+#[tokio::test]
+async fn after_a_re_link_a_runner_chats_confinement_is_not_the_new_links_to_act_on() {
+    let runs = StandIns::default();
+    let b = Hosting::confining(Echo, StandInConfines::default(), runs.clone());
+    let window = a_window_on(b, runs, never_renewed()).await;
+    window
+        .client
+        .hold_project(PROJECT, window._project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    window
+        .client
+        .call(Command::Confine(Box::new(planned())))
+        .await
+        .expect("confined on host B");
+    window
+        .client
+        .start_program(StartProgram {
+            launch: Some(Launch {
+                program: "/bin/echo".into(),
+                args: Vec::new(),
+                cwd: None,
+                set: Vec::new(),
+                strip: Vec::new(),
+                pass: Vec::new(),
+                declared: Vec::new(),
+                harness: None,
+                git_hooks: None,
+                reporting: None,
+                confinement: Some(CONFINEMENT.into()),
+            }),
+            ..StartProgram::of(PROJECT, ProgramKind::Harness)
+        })
+        .await
+        .expect("it runs in the confinement on host B");
+    let reach = || Command::ReachOf {
+        confinement: CONFINEMENT.into(),
+    };
+    window
+        .client
+        .call(reach())
+        .await
+        .expect("the link that made it acts on it");
+
+    window.cable.cut();
+    window.linked_again().await;
+
+    let refused = window.client.call(reach()).await.unwrap_err();
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::NO_SUCH_CHAT),
+        "{refused}"
+    );
+}
+
+/// A host B that pushes the same events again to every link that subscribes, one more each
+/// time, whatever cursor it is given: what a renewed link's first events can overlap with the
+/// last of the link before it.
+#[derive(Clone, Default)]
+struct Repeats(Arc<Mutex<u64>>);
+
+fn event(seq: u64) -> Event {
+    Event {
+        v: 1,
+        device_id: HOST_B.into(),
+        seq,
+        ulid: format!("01J9ZZEVENT{seq:015}"),
+        chat: None,
+        run: None,
+        parent_run: None,
+        kind: "hook.stop".into(),
+        body: serde_json::Value::Null,
+    }
+}
+
+impl session::Host for Repeats {
+    async fn call(
+        &self,
+        _command: Command,
+        _peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        Ok(Answer::Chats(Vec::new()))
+    }
+
+    async fn subscribe(
+        &self,
+        _since: session::Since,
+        _peer: &session::Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, session::Refusal> {
+        let most = {
+            let mut subscribed = self.0.lock().unwrap();
+            *subscribed += 1;
+            *subscribed + 2
+        };
+        let (tell, told) = mpsc::channel(16);
+        for seq in 1..=most {
+            tell.send(Pushed::Event(event(seq))).await.unwrap();
+        }
+        tokio::spawn(async move { tell.closed().await });
+        Ok(told)
+    }
+}
+
+#[tokio::test]
+async fn an_event_handed_to_the_window_over_one_link_is_not_handed_again_over_the_next() {
+    let mut window = a_window_on(Repeats::default(), StandIns::default(), never_renewed()).await;
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+    for seq in 1..=3 {
+        assert_eq!(window.pushed().await, Pushed::Event(event(seq)));
+    }
+
+    window.cable.cut();
+
+    // Host B pushes 1 to 4 again over the next link: only 4 is new to the window.
+    assert_eq!(window.pushed().await, Pushed::Event(event(4)));
+    assert!(
+        timeout(Duration::from_millis(300), window.events.recv())
+            .await
+            .is_err(),
+        "the window was handed an event twice"
+    );
+}
+
+/// A command in flight on a link as it is renewed is answered on that link: the link it is on
+/// ends only once the relay has moved to the next and nothing sent on it waits for an answer.
+#[tokio::test]
+async fn a_command_in_flight_as_its_link_is_renewed_is_answered_on_it() {
+    let (runs, confines) = (StandIns::default(), StandInConfines::default());
+    let b = Hosting::confining(Echo, confines.clone(), runs.clone());
+    let liveness = Liveness {
+        renew_after: Some(Duration::from_millis(300)),
+        ..Liveness::default()
+    };
+    let window = Arc::new(a_window_on(b, runs, liveness).await);
+    window
+        .client
+        .hold_project(PROJECT, window._project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    confines.hold_starts();
+    // Whatever happens, the start held on its blocking thread is let go, so the test ends.
+    let _let_go = LetGo(confines.clone());
+    let confining = tokio::spawn({
+        let window = Arc::clone(&window);
+        async move {
+            window
+                .client
+                .call(Command::Confine(Box::new(planned())))
+                .await
+        }
+    });
+    timeout(PATIENCE, async {
+        while confines.waiting() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the confinement's start waits on host B");
+
+    // The link it was sent on is renewed while it waits, and the window's commands go on.
+    timeout(PATIENCE, async {
+        while window.cable.dials() < 2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the link is renewed");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(window.client.list().await.is_ok());
+    confines.let_starts_go();
+
+    let answered = timeout(PATIENCE, confining).await.unwrap().unwrap();
+    assert!(
+        matches!(answered, Ok(Answer::Confined(_))),
+        "a command in flight at a renewal was not answered: {answered:?}"
+    );
+    assert!(window.client.list().await.is_ok());
+}
+
+/// Lets every held start go when dropped.
+struct LetGo(StandInConfines);
+
+impl Drop for LetGo {
+    fn drop(&mut self) {
+        self.0.let_starts_go();
     }
 }
