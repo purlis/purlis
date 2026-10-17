@@ -985,9 +985,15 @@ Three guards beside `designSet.guard.test.ts` keep the window from drifting agai
 third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
 - **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**,
-  **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), in any
-  stylesheet but `theme/geometry.css`, in a component's inline `style` (`{{ … }}` or
-  `{ … } as CSSProperties`), in a `.style.setProperty(…)` call, or as a Tailwind class, read
+  **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), a
+  **scroll margin or padding** (`scroll-margin*`, `scroll-padding*`, read as a margin or a
+  padding) and the grid's names for a gap (`grid-gap`, `grid-row-gap`, `grid-column-gap`), in
+  any stylesheet but `theme/geometry.css`; in a component's or a script's style: an inline
+  `style` (`{{ … }}` or `{ … } as CSSProperties`), a style object held in a variable
+  (`const held = { … }; style={held}`, or one typed or cast as `CSSProperties`),
+  `Object.assign(el.style, { … })`, an assignment (`el.style.padding = "7px"`), `el.style.cssText`
+  or a `style` attribute set as text, and a `setProperty(…)` call (`el.style?.setProperty(…)`
+  too); or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
   past its variants (`md:`, `data-[open]:`, `[&>*]:`): off the core scale (`p-5`, `start-5`,
   `text-2xl`, `rounded-2xl`), with a value of its own (`p-[7px]`, `text-[13px]`,
   `rounded-[5px]`) or as an arbitrary property (`[padding:7px]`). A custom property that holds
@@ -996,9 +1002,15 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   font size or offset reads, or that nothing reads, counts, so `--pad: 7px` is no way round,
   set in a stylesheet, inline or by `setProperty`. Not literals: `0`, a `1px` hairline, `1em`,
   `1lh` or `1ch` (as big as the element's own text), a share (`%`, `vh`, `vw`), and a token, or
-  a token's whole multiple or whole share (`* 3`, `* -1`, `/ 2`). The guard reads the
+  a token's whole multiple or whole share (`* 3`, `* -1`, `/ 2`). A length is read in every
+  unit there is: the absolute ones and those of the text, the element's own (`em`, `ex`, `ch`,
+  `ic`, `cap`, `lh`) and the root's (`rem`, `rex`, `rch`, `ric`, `rcap`, `rlh`), so `2rlh` or
+  `1.5cap` is a literal as `7px` is, and a number with an exponent is read for the value it
+  gives (`7e0px` is `7px`; `1e0px` is a hairline). A property is read past its vendor's prefix
+  (`-webkit-border-radius`, `WebkitBorderRadius`), and a value a ternary picks, branch by branch
+  (`padding: on ? "7px" : 0`). The guard reads the
   arithmetic of every CSS math function (`calc()`, `min()`, `max()`, `clamp()`, `round()`,
-  `mod()`, `rem()`, `abs()`, `sign()` and the rest): a number in it that is not whole is a
+  `mod()`, `rem()`, `abs()`, `sign()` and the rest, `-webkit-calc()` too): a number in it that is not whole is a
   literal however it is spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`). A product's
   factors fold into one net factor, which is whole or a whole share (`* 7 / 2` is a literal,
   `/ 2` is not). A term that holds a written length takes a whole share and no multiple
@@ -1170,7 +1182,10 @@ window differ, the window was kept and the difference is recorded here for the m
 `app/src/type.guard.test.ts` refuses a `font-size`, `font-weight`, `line-height`,
 `font-family` or text `color` that is not its token (or `inherit`, or `currentColor` for a
 colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
-`theme/geometry.css`, in a component's inline `style`, in a `setProperty` call in any script, and as a Tailwind
+`theme/geometry.css`, in a component's or a script's style as the geometry guard reads it (an
+inline `style`, a style object held in a variable, an assignment such as
+`el.style.fontSize = "13px"`, CSS text, `Object.assign`, a `setProperty` call, each branch of
+a ternary, a vendor's prefix read past), and as a Tailwind
 utility, read past its variants as the declarations it writes: a weight by name
 (`font-semibold`), a family of Tailwind's own (`font-mono`), a line height other than
 `leading-none` (and a size's `/7` or `/[1.3]`, as in `text-sm/7`), a value of its own
