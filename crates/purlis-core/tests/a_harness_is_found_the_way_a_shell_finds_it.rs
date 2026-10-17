@@ -221,19 +221,42 @@ fn a_sandboxed_start_runs_the_real_file_its_check_asked() {
     // ADR 0067, V87g: a sandboxed start resolves the program once, checks the real file
     // links lead to, and runs that same real path, so the file checked is the file run. A
     // start that ran the path as written would leave a link between the check and the launch.
-    // The real path of a temp folder here is `/private/var/…`.
+    //
+    // Both halves are pinned, through a link a chat could have swapped (#2515): the profile
+    // names a link, beside the plane, to the stand-in. The link differs from its target in its
+    // own name and, as a temp folder does here, in its folder's (`/var/…` is `/private/var/…`).
+    // The stand-in answers `--version` as Claude Code only when it was run as the target itself,
+    // so a check that asked the link refuses the start; and the start must run the target.
     let plane = Plane::new();
-    // Beside the plane, answering `--version` as Claude Code does: a start asks (#2071).
-    let bin = stand_in::claude_code(beside(), "claude-stand-in", "#!/bin/sh\n");
-    plane.running(&bin.display().to_string());
+    let real = beside()
+        .canonicalize()
+        .expect("the stand-ins' real folder")
+        .join("claude-stand-in-target");
+    // `$0` is the path the program was run as: a `#!` script is handed the path `execve` was
+    // given, never the file a link leads to.
+    let target = stand_in::program(
+        beside(),
+        "claude-stand-in-target",
+        &format!(
+            "#!/bin/sh\n\
+             [ \"$0\" = '{real}' ] || {{ echo \"run as $0\"; exit 0; }}\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo '{version}'; exit 0; }}; done\n",
+            real = real.display(),
+            version = stand_in::CLAUDE_CODE_VERSION,
+        ),
+    );
+    let link = beside().join("claude-stand-in-link");
+    let _ = fs::remove_file(&link);
+    std::os::unix::fs::symlink(&target, &link).expect("a link to the stand-in");
+    plane.running(&link.display().to_string());
 
-    let ready = start::ready(&plane.start(), plane.root()).expect("it starts");
+    let ready = start::ready(&plane.start(), plane.root())
+        .expect("it starts, the check having asked the file the link leads to");
 
     assert!(
         ready.sandbox.is_some(),
         "the premise: this start is sandboxed"
     );
-    let real = bin.canonicalize().expect("the stand-in's real path");
     assert_eq!(ready.program, real.display().to_string());
 }
 
