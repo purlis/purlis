@@ -153,6 +153,21 @@ test("a check's line in the job log says what it saw, with a line that looks lik
   );
 });
 
+test("a token in colour is redacted too: the colour code's `m` would hide its start from the shapes", () => {
+  const line = checkLine("the app starts the chat", false, `\u001b[31m${aToken()}\u001b[39m`);
+  assert.ok(!line.includes(aToken()), line);
+  assert.equal(
+    line,
+    "FAIL the app starts the chat — [redacted: a line that looks like it holds a GitHub token]",
+  );
+});
+
+test("an annotation redacts a token in colour the same way", () => {
+  const [line] = annotations([aFailure({ detail: `\u001b[31m${aToken()}\u001b[39m`, steps: "" })]);
+  assert.ok(!line.includes(aToken()), line);
+  assert.ok(line.endsWith("::[redacted: a line that looks like it holds a GitHub token]"), line);
+});
+
 test("a check that passed, or saw nothing, is one plain line", () => {
   assert.equal(
     checkLine("start fresh clears the record", true),

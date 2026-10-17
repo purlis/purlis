@@ -62,21 +62,28 @@ export function stepTimer(now = Date.now) {
   };
 }
 
-/** `text` with each line that looks like it holds a secret replaced, as the annotations do. */
-const printable = (text) => String(text).split("\n").map(redacted).join("\n");
-
 /**
- * A check's line in the job log, and what it saw. The log is read by more people than the run's
- * author, so it keeps the annotations' rule (#2382): a line that looks like a secret is not
- * written out. Uncut, unlike an annotation, since the log has the room.
+ * `text` without colour codes, each line that looks like it holds a secret replaced. What the
+ * annotations and the job log both write out of what a check saw (#2382), so the two cannot
+ * drift. The colour codes go first: the shapes start at a word boundary, and the `m` that ends a
+ * code joins a token's head to it, so a token in colour would slip past.
  */
-export function checkLine(what, ok, detail = "") {
-  return printable(`${ok ? "ok  " : "FAIL"} ${what}${detail ? ` — ${detail}` : ""}`);
+export function redactedLines(text) {
+  return String(text).replace(ANSI, "").split("\n").map(redacted).join("\n");
 }
 
-/** What a run that threw prints to stderr: its stack, or what it threw, redacted as `checkLine`. */
+/**
+ * A check's line in the job log: its words, then what it saw, redacted. Uncut, unlike an
+ * annotation, since the log has the room. The words are this script's own, so a secret on the
+ * first line of what it saw replaces that, and the line still says which check failed.
+ */
+export function checkLine(what, ok, detail = "") {
+  return `${ok ? "ok  " : "FAIL"} ${what}${detail ? ` — ${redactedLines(detail)}` : ""}`;
+}
+
+/** What a run that threw prints to stderr: its stack, or what it threw, redacted. */
 export function stopLine(error) {
-  return printable(error?.stack ?? error);
+  return redactedLines(error?.stack ?? error);
 }
 
 /** `detail` cut to DETAIL_CHARS around an ellipsis, its head and its end kept. */
@@ -99,13 +106,7 @@ export function annotations(failures) {
     const title = ["relaunch", launch, what].filter(Boolean).join(" › ");
     // Redacted before it is cut: a secret the cut went through would be a fragment too short for
     // the shapes to know.
-    const saw = cut(
-      String(detail ?? "")
-        .replace(ANSI, "")
-        .split("\n")
-        .map(redacted)
-        .join("\n"),
-    );
+    const saw = cut(redactedLines(detail ?? ""));
     const message = [saw, steps ? `steps: ${steps}` : ""].filter(Boolean).join("\n\n");
     return `::error title=${escapeProperty(title)}::${escapeData(message || "failed")}`;
   });
