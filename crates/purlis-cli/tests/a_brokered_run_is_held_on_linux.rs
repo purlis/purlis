@@ -192,3 +192,121 @@ fn a_declared_tool_s_run_is_held_by_the_chat_s_own_profile_on_linux() {
         let _ = fs::remove_file(outside.join("x"));
     }
 }
+
+/// A tool declared under a name its program's file does not have (#1977) runs, inside the
+/// wrap, under that name: `unxz`, a link to xz, unpacks where `xz -c` would pack again.
+#[test]
+fn a_tool_declared_under_another_name_runs_under_it_inside_the_wrap() {
+    purlis_core::unsteered!();
+    assert!(
+        purlis_linux_sandbox::abi() >= purlis_linux_sandbox::MIN_ABI,
+        "this kernel's Landlock is version {}, and purlis's Linux sandbox needs {}",
+        purlis_linux_sandbox::abi(),
+        purlis_linux_sandbox::MIN_ABI
+    );
+    let Some(xz) = ["/usr/bin/xz", "/bin/xz"]
+        .iter()
+        .map(Path::new)
+        .find(|path| path.is_file())
+        .and_then(|path| path.canonicalize().ok())
+    else {
+        panic!("no xz on this machine");
+    };
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    let bin = out.join("bin");
+    for dir in [&home, &bin] {
+        fs::create_dir_all(dir).expect("a folder");
+    }
+    let machine = Machine {
+        env: Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home),
+        os: Os::Linux,
+    };
+    let (_, _, manifest) = LEVELS[0];
+    let root = out.join("project");
+    lay_out(&root, manifest);
+    let packed = {
+        let mut child = support::command(&xz)
+            .arg("-c")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("xz runs");
+        child
+            .stdin
+            .take()
+            .expect("a stdin")
+            .write_all(b"unpacked\n")
+            .expect("written");
+        child.wait_with_output().expect("xz ends").stdout
+    };
+    let file = root.join("work/packed.xz");
+    fs::write(&file, packed).expect("the packed file");
+    let decided = sandbox::decide(Harness::Codex, &root, &machine, &|_| true, None, None)
+        .expect("decided")
+        .expect("a sandbox in force");
+    let Decided::Sandboxed(mut applied) = decided else {
+        panic!("not sandboxed: {decided:?}");
+    };
+    applied.wrap_with(
+        Path::new(support::PURLIS)
+            .canonicalize()
+            .expect("purlis's real path"),
+    );
+    let mut confines = applied.confines().clone();
+    confines.tools.push(Ready {
+        tool: Tool::one("unxz", "team", "T", Handed::Env, "KUBECONFIG"),
+        program: xz.clone(),
+    });
+    let asker = Asker {
+        root: root.clone(),
+        env: Env::of(&[("PATH", "/usr/bin:/bin")]),
+        chat: 7,
+        persona: Some("devops".into()),
+        folder: Some(root.join("work")),
+        confines: Some(confines),
+        harness: Some(Harness::Codex),
+    };
+    let wanted = Wanted {
+        vault: "team".into(),
+        env: vec!["T=KUBECONFIG".into()],
+        command: vec![
+            xz.display().to_string(),
+            "-c".into(),
+            file.display().to_string(),
+        ],
+        cwd: Some(root.join("work")),
+        environment: vec![("PATH".into(), "/usr/bin:/bin".into())],
+        ..Wanted::default()
+    };
+    let (ours, _theirs) = std::os::unix::net::UnixStream::pair().expect("a connection");
+    let wire = Wire::default();
+    brokered::serve(
+        &asker,
+        wanted,
+        Box::new(std::io::BufReader::new(ours)),
+        Box::new(wire.clone()),
+        Arc::new(|_| {}),
+    );
+    let text = String::from_utf8(wire.0.lock().expect("the wire").clone()).expect("text");
+    let frames: Vec<Frame> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a frame"))
+        .collect();
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "unpacked\n", "{frames:?}");
+    // The run's named link went with it.
+    let exec = purlis_core::secrets::Ctx::new(&root, Env::of(&[]))
+        .vaults_dir()
+        .join(brokered::EXEC_DIR);
+    let left: Vec<_> = fs::read_dir(&exec)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("as-"))
+        .map(|entry| entry.path())
+        .collect();
+    assert!(left.is_empty(), "left behind: {left:?}");
+}

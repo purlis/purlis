@@ -1153,3 +1153,82 @@ fn every_link_on_the_way_to_a_tool_s_program_is_where_no_chat_writes() {
     );
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// `unxz`, declared as a tool, found as a link to xz: what it runs is xz, by its own path.
+fn unxz_at(xz: &Path) -> Ready {
+    Ready {
+        tool: Tool::one("unxz", "devops", "T", Handed::Env, "TOKEN"),
+        program: xz.to_path_buf(),
+    }
+}
+
+#[test]
+fn a_tool_whose_program_has_another_name_hands_secret_exec_the_declared_one() {
+    let text = shim(
+        Path::new("/Applications/Purlis.app/Contents/MacOS/purlis"),
+        "devops",
+        &unxz_at(Path::new("/opt/homebrew/Cellar/xz/5.8.4/bin/xz")),
+    );
+    assert!(
+        text.ends_with(
+            "exec '/Applications/Purlis.app/Contents/MacOS/purlis' 'secret' 'exec' 'devops' \
+             '--env' 'T=TOKEN' '--argv0' 'unxz' '--' '/opt/homebrew/Cellar/xz/5.8.4/bin/xz' \
+             \"$@\"\n"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_tool_named_as_its_program_is_handed_no_other_name() {
+    let text = shim(
+        Path::new("/purlis"),
+        "devops",
+        &Ready {
+            tool: Tool::one("kubectl", "devops", "T", Handed::Env, "TOKEN"),
+            program: PathBuf::from("/opt/homebrew/bin/kubectl"),
+        },
+    );
+    assert!(!text.contains("argv0"), "{text}");
+    assert!(!text.contains("exec -a"), "{text}");
+}
+
+/// The shim with no app to ask, run as a chat runs it (through its own `#!/bin/sh`), runs the
+/// program itself: under the declared name where that shell has `exec -a` (macOS's `sh` is
+/// bash), and by its own path where it has not (dash, Debian's and Ubuntu's `sh`), which still
+/// runs and fails nothing.
+#[test]
+fn a_shim_with_no_app_names_its_program_where_its_own_shell_can_and_runs_it_where_it_cannot() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(xz) = crate::testmulticall::xz() else {
+        let _ =
+            std::io::Write::write_all(&mut std::io::stderr(), b"skipped: no xz on this machine\n");
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let file = crate::testmulticall::packed(&xz, tmp.path(), "unpacked\n");
+    let script = tmp.path().join("unxz");
+    std::fs::write(&script, shim(Path::new("/purlis"), "devops", &unxz_at(&xz))).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let out = crate::forklock::output(
+        std::process::Command::new(&script)
+            .arg("-c")
+            .arg(&file)
+            .env_remove("PURLIS_HOOK_SOCKET")
+            .env_remove("CHARTER_HOOK_SOCKET"),
+    )
+    .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let names = crate::forklock::status(
+        std::process::Command::new("/bin/sh").args(["-c", "(exec -a probe true) 2>/dev/null"]),
+    )
+    .unwrap()
+    .success();
+    if names {
+        // Started as `unxz`: unpacked. `xz -c` would pack it again.
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "unpacked\n");
+    } else {
+        // Started by its own name: xz packed the file again, as `xz -c` does.
+        assert!(out.stdout.starts_with(b"\xfd7zXZ\0"), "{out:?}");
+    }
+}

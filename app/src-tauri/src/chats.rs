@@ -3080,6 +3080,8 @@ impl Chats {
                 // back keeps the key its workspace pointer and session lock are under; a
                 // chat the operator just started has none yet (charter-app#90).
                 chat.number,
+                // Every field spelled out on purpose, with no `..Opening::default()`: a new
+                // field is decided here, where a start's real value comes from (#2453).
                 &Opening {
                     program: Some(program),
                     args: all,

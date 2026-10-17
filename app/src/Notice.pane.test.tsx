@@ -329,7 +329,9 @@ describe("the pane Notice's rules", () => {
     new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
   it("keeps the corner inside the pane", () => {
-    expect(rule("\\.pane-corner\\.at-start")).toMatch(/max-width:\s*calc\(100% - 16px\)/);
+    expect(rule("\\.pane-corner\\.at-start")).toMatch(
+      /max-width:\s*calc\(100% - var\(--space-4\) \* 2\)/,
+    );
     // And nothing a pane draws is drawn outside it, by a box that cannot be scrolled.
     expect(rule("\\.pane-frame")).toMatch(/overflow:\s*clip/);
   });
