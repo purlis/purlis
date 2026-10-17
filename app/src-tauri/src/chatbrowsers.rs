@@ -164,7 +164,10 @@ impl Chat {
 
     /// How many of its browsers run: one whose engine ended counts no more.
     fn running(&self) -> usize {
-        self.browsers.len() - self.ended.len()
+        self.browsers
+            .iter()
+            .filter(|(_, program)| !self.ended.contains(program))
+            .count()
     }
 
     fn drop_browser(&mut self, name: &str) {
@@ -215,6 +218,14 @@ fn end(driver: &dyn Driver, program: &str) -> bool {
             false
         }
     }
+}
+
+/// What a chat is told of its browser `name`, which has ended.
+pub fn gone_said(name: &str) -> String {
+    format!(
+        "browser {name} has ended (stopped, or its engine closed), and what it held is gone: the \
+         next browser call opens a new one"
+    )
 }
 
 /// What a chat is told while the person has not answered its Ask.
@@ -324,6 +335,15 @@ impl ChatBrowsers {
             !chat.ended.iter().any(|one| one == program)
                 && chat.browsers.iter().any(|(_, one)| one == program)
         })
+    }
+
+    /// Chat `session` lets go of its browser `name`, which has ended: the next call opens a new
+    /// one.
+    pub fn let_go_of_ended(&self, session: u32, name: &str) {
+        if let Some(chat) = self.lock().get_mut(&session) {
+            chat.drop_browser(name);
+            self.relisted();
+        }
     }
 
     /// **Browser `program`'s engine ended by itself** (#2385), as the session host said: a
@@ -823,17 +843,8 @@ impl ChatBrowsers {
             ),
             Err(Refused::Said(why)) => (no(&why), false),
             Err(Refused::Gone) => {
-                if let Some(chat) = self.lock().get_mut(&browse.chat) {
-                    chat.drop_browser(&name);
-                    self.relisted();
-                }
-                (
-                    no(&format!(
-                        "browser {name} has ended (stopped, or its engine closed), and what it \
-                         held is gone: the next browser call opens a new one"
-                    )),
-                    false,
-                )
+                self.let_go_of_ended(browse.chat, &name);
+                (no(&gone_said(&name)), false)
             }
         }
     }

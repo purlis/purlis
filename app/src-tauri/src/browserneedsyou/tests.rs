@@ -326,6 +326,60 @@ fn after_its_engine_ended_the_chats_next_call_says_the_browser_has_gone() {
     );
 }
 
+const GONE: &str = "browser b1 has ended (stopped, or its engine closed), and what it held is \
+                    gone: the next browser call opens a new one";
+
+#[test]
+fn a_browser_whose_engine_ended_raises_no_ask_and_the_chat_is_told_it_has_gone() {
+    // The engine ends first; the chat asks after.
+    let project = Project::new();
+    project.browsers.engine_ended("program-1");
+    project.needs.settle(&project.browsers, 1002);
+
+    let why = refusal(project.call(&browse(CHAT, Some("b1"), needs_you())));
+
+    assert_eq!(why, GONE);
+    assert!(project.needs.waiting().is_empty(), "nothing waits");
+    assert!(
+        project.ended.lock().unwrap().is_empty(),
+        "no Ask, so no Update"
+    );
+    // It is let go of: the next call opens a new one.
+    let next = project.call(&browse(CHAT, None, open_captcha()));
+    assert!(
+        matches!(&next, Answer::Browsed { browser, .. } if browser == "b2"),
+        "{next:?}"
+    );
+}
+
+#[test]
+fn an_ask_raised_as_its_engine_ends_ends_at_once_with_an_update() {
+    // The race: the chat's question found b1 running, then its engine's end was settled
+    // before the Ask was raised. What the raise does after catches it.
+    let project = Project::new();
+    project.browsers.engine_ended("program-1");
+    project.needs.settle(&project.browsers, 1002);
+
+    let raised = project.needs.raise_on(
+        &project.browsers,
+        Waiting {
+            session: CHAT,
+            browser: "b1".into(),
+            program: "program-1".into(),
+            question: "letters".into(),
+            since: 1003,
+            taken: false,
+        },
+        1003,
+    );
+
+    assert_eq!(raised, super::Raised::Gone);
+    assert!(project.needs.waiting().is_empty());
+    let ended = project.ended.lock().unwrap().clone();
+    assert_eq!(ended.len(), 1);
+    assert_eq!((ended[0].browser.as_str(), ended[0].at), ("b1", 1003));
+}
+
 #[test]
 fn the_end_of_a_program_no_chat_uses_ends_nothing() {
     let project = Project::new();
