@@ -706,7 +706,8 @@ mod the_server_says_it {
 
     fn host_that(hears: Hears) -> Host {
         let dir = tempfile::tempdir().expect("a directory");
-        let socket = dir.path().join("hooks.sock");
+        // Where the app binds it, so a report the server spools is kept (V63).
+        let socket = support::hooks_socket(dir.path());
         let listener = Listener::bind(dir.path(), &socket).expect("a socket");
         let token = listener
             .tokens()
