@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792262332731,
+  "lastUpdate": 1792263681008,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15708,6 +15708,48 @@ window.BENCHMARK_DATA = {
             "value": 104.14510849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.552, 104.073, 104.145, 104.904, 106.574 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "84019028a05783af3278bea962e501d2882046fa",
+          "message": "ci: run the nightly macos-tests in three parts and save its cache when red (#2458) (#2468)\n\n* ci: run the nightly macos-tests in three parts, and save its cache when red\n\nThe job ran out of its 45 minutes on 2026-10-13, -14, -16 and -17. The build\ntook 9 to 22 minutes every night because rust-cache saves only after a green\njob and this one had never been green, and the tests are some 6,000 s of test\ntime on a runner that runs about three at once. It now runs as three parts\n(nextest --partition count:k/3, as `rust` runs in two), saves its build even\non a red night (cache-on-failure), and annotates each part's slowest tests.\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* ci: no-orphans does not count the agents launchd starts for the runner's user on macOS\n\nEvery part of the nightly macos-tests run on #2468 failed its orphan check on\ndozens of macOS's own agents (nbagent, mdworker_shared, CoreSimulator's\nservices, intelligenceplatformd...) that launchd started for the runner user\nwhile the suite ran, and --reap killed them. On macOS a new process whose\nparent is launchd and whose program is on the system volume, in /usr/libexec,\n/usr/sbin or Apple's private developer frameworks is now left out. A process\nthe suite leaves behind is reparented to launchd too, so the program's folder\nis what tells them apart; /bin, /usr/bin and anything a build put there still\ncount, and Linux counts every process as before.\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* ci: give each nightly macOS part 60 minutes and leave the slow behaviour tests to #2464\n\nMeasured on #2468 with no cache: builds of 9, 17 and 22 minutes, one part's\ntests in 17 minutes, two parts cancelled at 45 minutes, 21 and 26 minutes\ninto their tests. The app's behaviour tests take some 160 s each on macOS\n(under 10 on Linux, where `rust` runs them on every pull request), about\n1,000 s a part; they are left out of this job until #2464, and each part\nhas 60 minutes.\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* ci: say what the three macOS parts took with 60 minutes and no behaviour tests\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* ci: no-orphans reads an agent's executable path, and /usr/sbin's programs still count\n\nReview on #2468: the macOS exception matched `ps -o command`, which a process\nwrites itself, and took in /usr/sbin, where purlis runs lsof and sysctl, so a\nleaked one would have passed unseen. The exception now reads the kernel's path\nof each process's executable (`ps -o comm`), and covers only /System,\n/usr/libexec and CoreSimulator's framework, the folders seen on a runner. The\nstand-in test adds a launchd-parented /usr/sbin/lsof and a process whose\narguments alone claim /System; both still count. The ci.yml comment points at\n#2468 for the measured times.\n\nRefs #2458\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T22:54:47+04:00",
+          "tree_id": "7da5188dceaa8b70a6a0e33167bf76daf25a8a3b",
+          "url": "https://github.com/purlis/purlis/commit/84019028a05783af3278bea962e501d2882046fa"
+        },
+        "date": 1792263679244,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.543937,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.513, 0.519, 0.544, 0.545, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.940797500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.552, 16.864, 16.941, 17.182, 17.425 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.8097895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.779, 105.487, 105.810, 105.829, 107.707 ms"
           }
         ]
       }
