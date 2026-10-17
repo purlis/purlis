@@ -110,7 +110,7 @@ impl Kept {
             let held: Vec<&str> = other
                 .texts
                 .iter()
-                .filter(|kept| kept.source == Source::Field && kept.from.as_ref() == Some(*from))
+                .filter(|kept| kept.source == Source::Field && kept.from.as_ref() == Some(from))
                 .map(|kept| kept.text.as_str())
                 .collect();
             self.read(from, &held);
