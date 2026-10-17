@@ -562,6 +562,32 @@ fn a_credential_file_left_behind_is_swept_when_the_project_opens() {
 }
 
 #[test]
+fn a_named_link_left_behind_is_swept_and_what_it_points_at_is_kept() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let dir = private_dir(&ctx.vaults_dir()).unwrap();
+    // What a run's link points at, and a folder a link of the same shape points at.
+    let program = project.path().join("work/xz");
+    std::fs::write(&program, "the program").unwrap();
+    let elsewhere = project.path().join("work/elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("kept"), "kept").unwrap();
+    // A crash mid-run leaves its folder and its link.
+    let (left, link) = named_link(&dir, "unxz", &program).unwrap();
+    let left = left.keep();
+    std::os::unix::fs::symlink(&elsewhere, dir.join("as-a-link")).unwrap();
+    sweep(&ctx);
+    assert!(!left.exists(), "the run's folder is swept");
+    assert!(std::fs::symlink_metadata(&link).is_err());
+    assert_eq!(std::fs::read_to_string(&program).unwrap(), "the program");
+    assert!(
+        std::fs::symlink_metadata(dir.join("as-a-link")).is_ok(),
+        "a link is not a folder a run makes"
+    );
+    assert!(elsewhere.join("kept").exists(), "nothing behind a link");
+}
+
+#[test]
 fn a_file_credential_is_kept_where_chats_are_denied_and_removed_after() {
     let project = project();
     let mut want = wanted(
@@ -3950,13 +3976,13 @@ fn armed_as(mut asker: Asker, name: &str, vault: &str, program: &Path) -> Asker 
 
 #[test]
 fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
-    let Some(xz) = crate::secrets::exec::tests::xz() else {
+    let Some(xz) = crate::testmulticall::xz() else {
         let _ = writeln!(std::io::stderr(), "skipped: no xz on this machine");
         return;
     };
     let project = project();
     let root = project.path().canonicalize().unwrap();
-    let file = crate::secrets::exec::tests::packed(&xz, &root.join("work"), "unpacked\n");
+    let file = crate::testmulticall::packed(&xz, &root.join("work"), "unpacked\n");
     // `unxz` is a link to xz: the chat runs the program the link resolves to, by its path.
     let asker = armed_as(asker(&root, Some("devops")), "unxz", "team", &xz);
     let mut want = wanted(

@@ -2206,6 +2206,9 @@ fn cmd_said_note(ctx: &Ctx, v: &registry::Vault, writer: &mut dyn Write) -> std:
 /// The folder under the vaults directory a brokered run keeps its credential files in.
 pub const EXEC_DIR: &str = "exec";
 
+/// How the folder of a run's [`named_link`] is named in the exec folder: `as-<random>`.
+const NAMED_PREFIX: &str = "as-";
+
 /// **A link named `name` to `program`**, in a folder of its own made in `within`, the app's
 /// private folder no chat reads or writes (#1977): the folder, removed when it is dropped, and
 /// the link. A name that is not one file's name is refused.
@@ -2219,7 +2222,9 @@ fn named_link(
             "{name} is not a file's name"
         )));
     }
-    let dir = tempfile::Builder::new().prefix("as-").tempdir_in(within)?;
+    let dir = tempfile::Builder::new()
+        .prefix(NAMED_PREFIX)
+        .tempdir_in(within)?;
     let link = dir.path().join(name);
     #[cfg(unix)]
     std::os::unix::fs::symlink(program, &link)?;
@@ -2260,9 +2265,11 @@ fn private_dir(vaults: &Path) -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
-/// Removes every credential file a brokered run left in the project at `root`: one the app was
+/// Removes every credential file a brokered run left in the project at `root`, and every
+/// folder of a link it ran a tool under its declared name by ([`named_link`]): one the app was
 /// stopped before it could remove (a crash, a kill). Run when a project opens, when no run of
-/// its can be live. Only the files [`super::exec`] names, and nothing behind a link.
+/// its can be live. Only the files [`super::exec`] names and the folders [`named_link`] makes,
+/// and nothing behind a link: a folder's links are removed, never followed.
 pub fn sweep(ctx: &Ctx) {
     let dir = ctx.vaults_dir().join(EXEC_DIR);
     let ours = std::fs::symlink_metadata(ctx.vaults_dir()).is_ok_and(|m| m.is_dir())
@@ -2271,13 +2278,16 @@ pub fn sweep(ctx: &Ctx) {
         return;
     }
     for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-        let left = entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with("charter-secret-")
-            && entry.file_type().is_ok_and(|t| t.is_file());
-        if left {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if name.starts_with("charter-secret-") && kind.is_file() {
             let _ = std::fs::remove_file(entry.path());
+        } else if name.starts_with(NAMED_PREFIX) && kind.is_dir() {
+            // `remove_dir_all` removes the links inside and follows none of them.
+            let _ = std::fs::remove_dir_all(entry.path());
         }
     }
 }

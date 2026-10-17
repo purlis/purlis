@@ -256,9 +256,13 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   `git-*` link) does what the declared name says (#1977). In the run's sandbox the app makes a
   link of that name, for that run alone, beside the credential files no chat reads, to the
   resolved program, and runs the link, so the program sees a path that ends in the declared
-  name. The script itself, run where no app answers, can only name the program when its shell
-  has `exec -a` (bash and zsh do, dash does not); otherwise the program sees its own name. An
-  administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
+  name. A program that finds its own files from that path without resolving links (a script
+  whose `#!` line names its interpreter and that reads `$(dirname "$0")/../lib`) looks beside
+  the link and not beside itself; declare such a tool under its program's own file name. The
+  script itself, run where no app answers, can only name the program when its shell has
+  `exec -a` (bash and zsh do, dash does not); otherwise the program sees its own name. The
+  name is handed to `secret exec` as `--argv0`, an internal flag of the scripts that does
+  nothing off macOS and Linux. An administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
   gets the scripts, and a save that adds one is refused.
 - **A browser login: a persona's tool that logs a browser in to one page** (D-PE-browser-1,
   approved by the operator on 2026-10-12). A sandboxed chat runs only declared tools, and a
