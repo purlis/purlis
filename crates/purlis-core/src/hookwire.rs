@@ -870,6 +870,10 @@ fn worth_another_try(why: &std::io::Error) -> bool {
 /// writes, costs no reading at all. Every purlis sender stays until the app has let its
 /// connection go, so it is still running when it is read; a process given a sender's number
 /// since is told apart by when it started, since it is below no chat's program.
+///
+/// **A sender the channel cannot name is refused**, failing closed: on macOS that includes one
+/// that closed its connection before the app could name it (`LOCAL_PEERPID` answers only while
+/// the connection is open), even if it is still running (operator ruling 2026-10-17, #2465).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seen {
     pub pid: u32,
@@ -8406,13 +8410,21 @@ mod tests {
             // A sender that does not wait for the app: its line written, its connection
             // closed, and it stays a moment longer only as any process would on its way out.
             use std::io::Write;
+            let closed = crate::envvar::var_os("PURLIS_TEST_HOOK_CLOSED");
             if let Ok(mut socket) = std::os::unix::net::UnixStream::connect(&path)
                 && let Ok(line) = line_with(Some(&token), &notice)
             {
-                let _ = socket.write_all(&line);
+                let written = socket.write_all(&line);
+                // Asked to say it has closed, it must have sent its line first: else a refusal
+                // would be a line never sent.
+                if closed.is_some() {
+                    written.expect("the line, written");
+                }
+            } else {
+                assert!(closed.is_none(), "the line, sent");
             }
             // Asked to, it says so once its connection is closed, and stays until it is ended.
-            if let Some(closed) = crate::envvar::var_os("PURLIS_TEST_HOOK_CLOSED") {
+            if let Some(closed) = closed {
                 std::fs::write(closed, b"").expect("said");
                 std::thread::sleep(std::time::Duration::from_secs(30));
             }
