@@ -344,7 +344,7 @@ fn stringify(value: &Value) -> String {
 /// (`"150ms"`) is not one, on purpose: a number has nothing in it to escape.
 fn duration(value: &Value) -> Option<u32> {
     let number = value.as_f64()?;
-    (number.fract() == 0.0 && (0.0..=f64::from(LONGEST)).contains(&number)).then(|| number as u32)
+    (number.fract() == 0.0 && (0.0..=f64::from(LONGEST)).contains(&number)).then_some(number as u32)
 }
 
 /// An easing a theme may hold: four finite numbers, the two `x` in 0..1 (CSS's own rule; a

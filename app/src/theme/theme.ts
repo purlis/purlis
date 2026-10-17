@@ -239,8 +239,7 @@ export const AT_CREATION = "__CHARTER_AT_CREATION__";
  *  not purlis's window. */
 function handedBuiltIns(): Theme[] {
   const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
-    | { built_in?: unknown }
-    | undefined;
+    { built_in?: unknown } | undefined;
   const themes = given?.built_in;
   if (!Array.isArray(themes) || themes.length === 0)
     throw new Error("purlis's window was opened without the themes its core hands it");

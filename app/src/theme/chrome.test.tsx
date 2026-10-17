@@ -476,7 +476,8 @@ function dialogCore() {
           remote: "origin",
           mode: "push",
         };
-      case "extension_themes":
+      case "theme_in_force":
+        return { theme: null, complaints: [], follows_system: false };
       case "extension_views":
       case "extension_panels":
         return [];

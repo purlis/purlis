@@ -23,7 +23,13 @@ const PATH = "/home/op/.config/charter/theme.json";
 /** A colour that is a value, taken from a theme so that no colour is written here. */
 const RAISED = DEFAULT_THEME.values["surface.raised"];
 const NONE: Reading = { path: "", found: false, document: null, trouble: null };
-const NO_THEME: TheirReading = { path: "", found: false, trouble: null, theme: null, complaints: [] };
+const NO_THEME: TheirReading = {
+  path: "",
+  found: false,
+  trouble: null,
+  theme: null,
+  complaints: [],
+};
 /** The person's theme as the core resolves it: complete, and named theirs. */
 const MINE = { ...DEFAULT_THEME, name: "Mine", values: { ...DEFAULT_THEME.values } };
 MINE.values["surface.base"] = RAISED;

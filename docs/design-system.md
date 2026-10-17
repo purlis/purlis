@@ -203,9 +203,10 @@ to change that changes one value rather than hunting for the second one.
 ## The brand: Verdigris
 
 purlis ships two themes, `purlis-dark` and `purlis-light`
-(`crates/purlis-core/src/theme/built-in/purlis-dark.json`, `purlis-light.json`), and both are drawn in **Verdigris** (#1838, the operator's D1 and D4 on
-#1832): a slightly desaturated teal accent on warm-grey neutrals. It is calm and technical,
-easy on the eyes in a long session, and not the blue most developer tools use.
+(`crates/purlis-core/src/theme/built-in/purlis-dark.json`, `purlis-light.json`), and both are
+drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
+accent on warm-grey neutrals. It is calm and technical, easy on the eyes in a long session, and
+not the blue most developer tools use.
 
 | | dark | light |
 |---|---|---|

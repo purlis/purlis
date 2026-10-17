@@ -27,7 +27,9 @@ const HELD: ReadonlySet<string> = (() => {
   const source = readFileSync(CHECK, "utf8");
   const list = /pub const PAIRS: &\[Pair\] = &\[([\s\S]*?)\n\];/.exec(source)?.[1] ?? "";
   return new Set(
-    [...list.matchAll(/\bp\(\s*"([^"]+)",\s*"([^"]+)"/g)].map(([, front, back]) => `${front} on ${back}`),
+    [...list.matchAll(/\bp\(\s*"([^"]+)",\s*"([^"]+)"/g)].map(
+      ([, front, back]) => `${front} on ${back}`,
+    ),
   );
 })();
 
@@ -200,4 +202,3 @@ describe("every pair a stylesheet draws", () => {
     expect(loose).toEqual([]);
   });
 });
-

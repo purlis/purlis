@@ -30,7 +30,9 @@ import {
  */
 const CORE = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "built-in");
 const file = (name: string) =>
-  JSON.parse(readFileSync(join(CORE, `${name}.json`), "utf8")) as { tokens: Record<string, string> };
+  JSON.parse(readFileSync(join(CORE, `${name}.json`), "utf8")) as {
+    tokens: Record<string, string>;
+  };
 const dark = file("purlis-dark");
 const light = file("purlis-light");
 

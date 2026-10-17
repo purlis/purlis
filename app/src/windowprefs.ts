@@ -50,7 +50,13 @@ export type TheirReading = {
 export type AtCreation = { layout: Reading; theme: TheirReading };
 
 const NOTHING: Reading = { path: "", found: false, document: null, trouble: null };
-const NO_THEME: TheirReading = { path: "", found: false, trouble: null, theme: null, complaints: [] };
+const NO_THEME: TheirReading = {
+  path: "",
+  found: false,
+  trouble: null,
+  theme: null,
+  complaints: [],
+};
 
 /**
  * What the window was handed, or two empty readings when it was handed nothing — a page opened

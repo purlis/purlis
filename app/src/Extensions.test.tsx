@@ -7,14 +7,7 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { drawThemeFor, Extensions, troubleSaid } from "./Extensions";
-import {
-  BUILT_IN,
-  DEFAULT_THEME,
-  drawIn,
-  inForce,
-  onDrawn,
-  type Theme,
-} from "./theme/theme";
+import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 
@@ -617,7 +610,10 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
   });
 
   it("draws what the core answered, and keeps the window when it answers no theme", async () => {
-    let answer: InForce = { ...KEEPS, theme: resolved("Solarized Dark", { "surface.base": OTHER }) };
+    let answer: InForce = {
+      ...KEEPS,
+      theme: resolved("Solarized Dark", { "surface.base": OTHER }),
+    };
     core({ inForce: () => answer });
     await drawThemeFor(new Set(["solarized"]));
     expect(inForce().name).toBe("Solarized Dark");
