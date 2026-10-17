@@ -430,6 +430,11 @@ jobs:
             expect: "24.04"
             evidence: false
     runs-on: ${{ matrix.os }}
+    # `checks: read`: when main's app does not build here, the step reads main's own result for
+    # this job on that commit before it lets the cold start go without a baseline (#2388).
+    permissions:
+      contents: read
+      checks: read
     steps: &app-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -492,14 +497,18 @@ jobs:
       # main's app, built in this job, for the cold start below to be held to (#1866, ADR 0086 as
       # amended): the merge commit's first parent, main as it is now, built into the same target
       # directory so it reuses this build's dependencies. The change's binary is put aside and back
-      # around it. When main's app cannot be built there is no baseline: the step says why, and the
-      # cold start reports the 2 s limit with a warning that nothing was gated (#2388, ADR 0086 as
-      # amended 2026-10-17). The runner's speed alone missed that limit in 39 of 1,572 cases on
-      # unchanged launch code, and a main that does not build is red in its own jobs already.
+      # around it. When main's app cannot be built here, main's own run of this job on that commit
+      # decides (#2388, ADR 0086 as amended 2026-10-17, `tools/coldstart-no-baseline.mjs`). Not
+      # green there either: no baseline, and the cold start reports the 2 s limit with a warning
+      # that nothing was gated, because the runner's speed alone missed it in 39 of 1,572 cases on
+      # unchanged launch code. Green there: this change broke main's build in its own job (main is
+      # built in the environment the change set up), and the step fails rather than ungate it.
       - name: main's app, for the cold start to be measured against
         id: main-app
         if: runner.os == 'Linux' && github.event_name == 'pull_request'
         timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           kept="$RUNNER_TEMP/coldstart"
           mkdir -p "$kept"
@@ -514,8 +523,7 @@ jobs:
             # launched from two kinds of folder are not measured alike.
             echo "change=$kept/change" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::main's app did not build, so the cold start is reported, not gated: no baseline"
-            echo "no-baseline=main's app did not build in this job" >> "$GITHUB_OUTPUT"
+            node tools/coldstart-no-baseline.mjs "$(git rev-parse HEAD^1)"
           fi
           cp "$kept/change" target/debug/charter-app
       # Cold start on Linux (charter-app#24, program map FR-8). This runner IS the issue's machine:

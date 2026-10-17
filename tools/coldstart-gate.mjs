@@ -111,7 +111,9 @@ export function coldStartAnnotation({
   });
   const { median, worst, ignored } = absolute;
   const relative = againstMain && againstMain.verdict !== "no baseline";
-  const reported = relative || Boolean(noBaseline);
+  // No main to hold the change to on a pull request: said first, and nothing is gated.
+  const ungated = Boolean(noBaseline) && !relative;
+  const reported = relative || ungated;
   const met = relative ? againstMain.verdict !== "regressed" : absolute.met;
   const ms = (value) => `${Math.round(value)} ms`;
   const split = (launch) => `${ms(launch.ms - launch.appMs)} before the app's clock + ${ms(launch.appMs)} in the app`;
@@ -152,15 +154,60 @@ export function coldStartAnnotation({
       ]
     : [];
   const lines = [
-    ...(noBaseline && !relative ? [`no baseline: ${noBaseline}, so nothing is gated`] : []),
+    ...(ungated ? [`no baseline: ${noBaseline}, so nothing is gated`] : []),
     ...mainLines,
     limitLine,
     ...(warmUp ? [`warm-up, cold disk, not gated: ${one(warmUp)}`] : []),
     ...launches.map((launch, n) => `launch ${n + 1}: ${one(launch)}`),
     ...(traced ? [`with the launch log, not gated: ${one(traced)}`] : []),
   ];
-  const level = noBaseline && !relative ? "warning" : met ? "notice" : evidence ? "warning" : "error";
+  const level = ungated ? "warning" : met ? "notice" : evidence ? "warning" : "error";
   return annotation(level, `Cold start, ${name}`, lines.join("\n"));
+}
+
+/** The check whose result on main's commit says whether main's app builds there. */
+export const MAINS_BUILD_CHECK = "app builds (ubuntu-24.04)";
+
+// **What a pull request does when main's app did not build in its job** (#2388, ADR 0086 as
+// amended 2026-10-17). main is built in the change's own job, in the environment the change set
+// up, so the change can break main's build there alone: a toolchain bump, a dropped package, a
+// build script that writes the job's environment or the shared target directory. Going ungated on
+// that would let a change switch its own gate off. So it is no baseline only when main's own
+// `MAINS_BUILD_CHECK` on that commit is not green either: failed, cancelled, still running or
+// absent. main green there fails the run, and so does a check that could not be read, since then
+// nothing says main is broken.
+//
+// `runs` are the GitHub check runs of that name on main's commit `sha` (`status`, `conclusion`,
+// `html_url`), `error` what reading them said when it failed. The result's `noBaseline` is the
+// reason the cold start is told (`coldStartAnnotation`), `annotation` the step's own line.
+export function withoutMainsBuild({ sha, runs = [], error }) {
+  const at = sha.slice(0, 12);
+  const failing = (text) => ({
+    fails: true,
+    annotation: annotation("error", "Cold start: main's app did not build in this job", text),
+  });
+  if (error !== undefined)
+    return failing(
+      `main's app did not build in this job, and main's own ${MAINS_BUILD_CHECK} on ${at} could not be read: ${error}`,
+    );
+  const green = runs.find((run) => run.status === "completed" && run.conclusion === "success");
+  if (green)
+    return failing(
+      `main's app built on main (${at}: ${MAINS_BUILD_CHECK} passed, ${green.html_url}) but not in this job, ` +
+        "so this change broke main's build here; with no baseline the cold start would go ungated, so the run fails",
+    );
+  const state =
+    runs.length === 0 ? `no ${MAINS_BUILD_CHECK} check` : runs.map((run) => run.conclusion ?? run.status).join(", ");
+  const noBaseline = `main's app did not build in this job, nor on main (${at}: ${state})`;
+  return {
+    fails: false,
+    noBaseline,
+    annotation: annotation(
+      "warning",
+      "Cold start: no baseline",
+      `${noBaseline}, so the cold start is reported, not gated`,
+    ),
+  };
 }
 
 // **What a launch's processes used by its first frame** (#1866): the CPU time and the major page
