@@ -826,11 +826,15 @@ impl Tokens {
     /// These values over `theme`, one appearance drawn: what compact draws follows the
     /// geometry, as it does for an appearance's own.
     pub(super) fn onto(&self, theme: &mut ResolvedTheme) {
-        theme
-            .values
-            .extend(self.colours.iter().map(|(token, hex)| (*token, hex.clone())));
+        theme.values.extend(
+            self.colours
+                .iter()
+                .map(|(token, hex)| (*token, hex.clone())),
+        );
         if !self.geometry.is_empty() {
-            theme.geometry.extend(self.geometry.iter().map(|(token, n)| (*token, *n)));
+            theme
+                .geometry
+                .extend(self.geometry.iter().map(|(token, n)| (*token, *n)));
             theme.compact = geometry::compact_of(&theme.geometry, &theme.tuned);
         }
     }

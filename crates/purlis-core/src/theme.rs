@@ -66,8 +66,8 @@ mod fonts;
 mod format;
 pub mod geometry;
 mod icons;
-mod person;
 mod options;
+mod person;
 mod resolve;
 mod schema;
 mod tint;
@@ -82,10 +82,10 @@ pub use fonts::{
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
-pub use person::{Density, Layer, Person};
 pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
 };
+pub use person::{Density, Layer, Person};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};

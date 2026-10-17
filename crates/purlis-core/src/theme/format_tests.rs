@@ -474,9 +474,7 @@ fn tint_stays_refused_for_now() {
     assert!(loaded.refused);
     assert_eq!(
         said(&loaded),
-        [
-            "tint is not read yet (#2329), so the theme cannot be drawn as written",
-        ]
+        ["tint is not read yet (#2329), so the theme cannot be drawn as written",]
     );
 }
 
