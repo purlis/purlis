@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792218755197,
+  "lastUpdate": 1792220907260,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14994,6 +14994,48 @@ window.BENCHMARK_DATA = {
             "value": 101.492238,
             "unit": "ms",
             "extra": "median of 5 runs: 101.175, 101.379, 101.492, 101.607, 102.743 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da5da23507dedccc2c24723c92a9eded8ae2c777",
+          "message": "The session host path becomes the default, with nothing lost (#2309)\n\n* Chats run in the session host by default, with nothing lost (#2004)\n\nThe start-time switch flips: a launch runs its chats in the session host\nunless PURLIS_CHATS_IN_THE_HOST is 0, the way back until #2005 deletes the\nwindow's own path. An upgrade test runs chats on two declared profiles in the\nwindow's process, quits to update, and reopens them in the host: each comes\nback on its own conversation, profile and folder, with its branch and the\nsession record as they were. The relaunch check does the same with the real\nbinary.\n\nFixed first, as the default needs them: a config home named apart has a\nsession host of its own (#2114), and the host hears `purlis stop --all` with\nno window there (#2190).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Holding a project in the session host writes nothing into it (#2004)\n\nWith every opened project now held by the host, minting `[project] id` at the\nhold gave each project a committed change on its first open, and wrote into\nprojects this purlis opens read-only. A project with no id is held by one\nderived from its resolved path, the same at every launch. The upgrade test\nsays what the window draws when a chat does not come back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The upgrade test's first launch records what was open, as a launch does (#2004)\n\nA launch reads its reopen record before it records anything, so the launch\nbefore the upgrade does too. Tests that named the host's project by a minted\nid name it the way the window now holds it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Move halt.rs's tests to halt/tests.rs, unchanged\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The way back is safe after a crash, and the stop is heard each time (#2004)\n\nWith chats in the window's own process, a window that finds a session host\na crashed window left ends it as a quit, with the chats it kept, before it\nputs any chat back, so a conversation never runs twice. The host hears each\nstop written elsewhere as a stop of its own, and one config home spelled two\nways has one host. Holding a project writes nothing (ruled 2026-10-16): the\nunused mint is removed. The upgrade test moves under the module's tests, and\n#2114 gets a fragment of its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Tests: the way-back gate puts no chat back unless it knows no other host serves (#2004)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The way back puts chats back only when no other host may run them (#2004)\n\nA window whose chats run in its own process now puts chats back once its\nown host serves, or once it knows no other host serves its config home;\notherwise it puts none back. Reaching a host it found is bounded. A config\nhome not made yet names the socket it will once it is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T11:03:22+04:00",
+          "tree_id": "139199ad7b23cf7627e025210662b6098e7330d4",
+          "url": "https://github.com/purlis/purlis/commit/da5da23507dedccc2c24723c92a9eded8ae2c777"
+        },
+        "date": 1792220905733,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.533054,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.510, 0.514, 0.533, 0.533, 0.575 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.9909935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.371, 16.864, 16.991, 17.019, 17.319 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.72937199999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.394, 104.163, 104.729, 106.782, 107.816 ms"
           }
         ]
       }
