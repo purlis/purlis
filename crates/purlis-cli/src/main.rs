@@ -51,6 +51,7 @@ mod session;
 mod shellguard;
 mod statusline;
 mod theme;
+mod themepreview;
 mod voice;
 mod whereworking;
 

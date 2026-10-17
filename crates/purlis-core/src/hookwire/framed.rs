@@ -249,6 +249,7 @@ pub fn on_a_line(answer: Answer) -> Answer {
             None => left_out.to_owned(),
         });
     }
+    // A theme specimen's picture has no line form at all (#2330): a line carries none.
     answer
 }
 
@@ -264,6 +265,18 @@ impl From<Answer> for Reply {
                 media_type: "image/png".to_owned(),
                 bytes: png,
             });
+        }
+        // Each theme specimen's picture, in the order drawn (#2330).
+        if let Answer::Previewed { painted } = &mut answer {
+            for one in painted {
+                let png = std::mem::take(&mut one.png);
+                if !png.is_empty() {
+                    attached.push(Attached {
+                        media_type: "image/png".to_owned(),
+                        bytes: png,
+                    });
+                }
+            }
         }
         Self { answer, attached }
     }

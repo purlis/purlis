@@ -226,6 +226,7 @@ mod testmulticall;
 #[doc(hidden)]
 pub mod testrun;
 pub mod theme;
+pub mod themepreview;
 pub mod toolgate;
 pub mod toolhooks;
 pub mod touching;

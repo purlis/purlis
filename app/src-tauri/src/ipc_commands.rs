@@ -356,6 +356,7 @@ macro_rules! app_commands {
                 extensions::theme_in_force,
                 extensions::theme_font,
                 extensions::theme_person,
+                specimen::theme_specimen,
                 extensions::extension_icon_themes,
                 extensions::extension_panels,
                 vaults::vault_list,

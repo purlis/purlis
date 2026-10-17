@@ -1,0 +1,76 @@
+/* Copyright 2026 Purlis
+   SPDX-License-Identifier: Apache-2.0 */
+
+/* **The theme specimen's layout** (#2330): the page's own size, handed to it by the app
+   (`--specimen-width`, `--specimen-height`, set by `main.tsx`), in two columns. Every colour
+   and length here is a token: the specimen shows a theme, and draws nothing of its own. */
+
+@layer charter {
+  html,
+  body {
+    margin: 0;
+    background-color: var(--surface-base);
+    color: var(--text-primary);
+  }
+
+  .specimen {
+    box-sizing: border-box;
+    inline-size: var(--specimen-width);
+    block-size: var(--specimen-height);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    grid-template-areas:
+      "chat settings"
+      "shell settings"
+      "file dialog"
+      "file notice";
+    gap: var(--space-5);
+    padding: var(--space-5);
+    background-color: var(--surface-base);
+  }
+
+  .specimen > section {
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+  }
+
+  .specimen-chat {
+    grid-area: chat;
+  }
+
+  .specimen-shell {
+    grid-area: shell;
+  }
+
+  .specimen-file {
+    grid-area: file;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .specimen-settings {
+    grid-area: settings;
+  }
+
+  .specimen-dialog {
+    grid-area: dialog;
+  }
+
+  .specimen-notice {
+    grid-area: notice;
+  }
+
+  .specimen-terminal {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    background-color: var(--terminal-background);
+  }
+
+  .specimen-editor {
+    block-size: 100%;
+  }
+}
