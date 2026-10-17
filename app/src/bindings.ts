@@ -2380,16 +2380,23 @@ export const commands = {
 	setExtensionOn: (id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("set_extension_on", { id, on })),
 	openExtensionRecord: (editor: YourEditor) => typedError<null, string>(__TAURI_INVOKE("open_extension_record", { editor })),
 	/**
-	 *  Every theme in force: the ones approved extensions contribute, and nothing else.
+	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it
+	 *  ([`purlis_core::theme::resolve`]) and the window only applies what comes back.
 	 * 
-	 *  An extension that is new, changed or unreadable contributes nothing here. That is the
-	 *  registry doing its one job — [`extension::Surveyed::themes_in_force`] is what answers, and
-	 *  this command only shapes it.
+	 *  `pick` is what the project or workspace in front picked (`project_theme_drawn`), `on` the
+	 *  extensions it has on (`extensions_on`), `None` with no project in front, when every approved
+	 *  extension's theme may be drawn. `light` is the operating system's appearance, which a
+	 *  `system` pick follows; the window asks again when it changes.
+	 * 
+	 *  The themes approved extensions contribute come from a survey, which reads and fingerprints
+	 *  every extension's files, so it is taken only when the answer needs one and kept until
+	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
+	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 	 */
-	extensionThemes: () => typedError<ExtensionTheme[], string>(__TAURI_INVOKE("extension_themes")),
+	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread })),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
-	 *  [`extension_themes`]'s terms and in its shape. The text is parsed by `theme/icons.ts`
+	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
 	 *  against its closed vocabulary — path data and `icon.*` tokens — and never by this crate.
 	 */
 	extensionIconThemes: () => typedError<ExtensionTheme[], string>(__TAURI_INVOKE("extension_icon_themes")),
@@ -2401,7 +2408,7 @@ export const commands = {
 	 *  cost of fingerprinting code — and folding that into `workspace_panels` would put it on the
 	 *  path that has 100 ms to draw, once per click on the workspace strip.
 	 * 
-	 *  It is the same shape as [`extension_themes`] one row down, and for the same reason: an
+	 *  It is the same shape as [`extension_icon_themes`] one row up, and for the same reason: an
 	 *  extension that is new, changed or unreadable contributes nothing here. That is the registry
 	 *  doing its one job, and a contributed panel rests on it entirely.
 	 */
@@ -5288,14 +5295,9 @@ export type ExtensionTheme = {
 	/**  What to call it, as the manifest does. */
 	name: string,
 	/**
-	 *  The file's **text**, unparsed.
-	 * 
-	 *  **The vocabulary is `theme.ts`'s and the parser is `theme.ts`'s**, and this crate
-	 *  deliberately does not grow a second one. `TOKENS` is the closed vocabulary charter owns
-	 *  (ADR 0041 property 1) and `load` is the parse-and-re-emit that keeps a theme's bytes out
-	 *  of a stylesheet (property 4); both are already written and already tested. A Rust parser
-	 *  here would be a second vocabulary, and two vocabularies drift — which is property 1
-	 *  turning into a lie by accident rather than by decision.
+	 *  The file's **text**, unparsed: an icon theme's, which `theme/icons.ts` parses against its
+	 *  closed vocabulary (path data and `icon.*` tokens). A colour theme never reaches the window
+	 *  as text: the core's theme engine resolves it ([`theme_in_force`]).
 	 * 
 	 *  It is the text the fingerprint was taken over, handed on rather than fetched again.
 	 */
@@ -9873,6 +9875,19 @@ export type TheirAgentsMd = {
 	piece: string | null,
 };
 
+/**  What [`theme_in_force`] answers. */
+export type ThemeInForce = {
+	/**
+	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
+	 *  JSON at all, which nothing picked).
+	 */
+	theme: WindowTheme | null,
+	/**  What resolving it had to put right. */
+	complaints: string[],
+	/**  Whether it follows the operating system's appearance. */
+	follows_system: boolean,
+};
+
 /**  One theme a project may pick, as the Theme select lists it. */
 export type ThemeOption = {
 	/**  What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`. */
@@ -10347,6 +10362,12 @@ export type WhatChanged = {
 	diff: FileDiff,
 };
 
+/**  A resolved theme's motion: milliseconds, and the four numbers of each cubic Bézier. */
+export type WindowMotion = {
+	durations: { [key in string]: number },
+	easings: { [key in string]: [(number | null), (number | null), (number | null), (number | null)] },
+};
+
 /**
  *  What a window is holding, as it says so itself.
  * 
@@ -10362,6 +10383,18 @@ export type WindowTabs = {
 	 *  operator is not looking at, or holding none at all.
 	 */
 	active: number | null,
+};
+
+/**
+ *  A resolved theme as the window applies it: the window's `Theme`, every token and every
+ *  motion value present.
+ */
+export type WindowTheme = {
+	name: string,
+	/**  `dark` or `light`. */
+	appearance: string,
+	values: { [key in string]: string },
+	motion: WindowMotion,
 };
 
 /**  A person's opt-out, as the picker sends it. */

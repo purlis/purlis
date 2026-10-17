@@ -21,8 +21,9 @@ import { hueOf, PALETTE, tintHex } from "./tint";
 
 /**
  * **A workspace's colour** (charter-app#281): a hue that tints the accent and the tab shades of
- * the theme in force, and nothing else. `contrast.test.ts` holds every palette hue on both
- * built-ins to the same floors as the themes themselves; this file holds what the tint touches.
+ * the theme in force, and nothing else. The core's theme engine holds every palette hue on any
+ * theme to the same floors as the theme itself (`purlis_core::theme::check`), with its own copy
+ * of this arithmetic; this file holds what the tint touches, and that the two copies agree.
  */
 
 /** WCAG relative luminance of `#rrggbb`. */
@@ -64,6 +65,29 @@ describe("the palette", () => {
     expect(hueOf(tintHex("#6a9fb5", PALETTE.purple))).toBeCloseTo(PALETTE.purple, 0);
     for (const none of [null, undefined, "", "mauve", "#fff", "#12345", "#808080"])
       expect(hueOf(none), String(none)).toBeUndefined();
+  });
+});
+
+describe("the core's copy of the tint", () => {
+  it("turns every case of the shared fixture to the same colour", () => {
+    // `crates/purlis-core/src/theme/tint-cases.json`: inputs and answers both suites read, so
+    // the tint the engine checks is the tint the window draws.
+    const cases = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "tint-cases.json"),
+        "utf8",
+      ),
+    ) as {
+      hues: { colour: string; hue: number | null }[];
+      tints: { hex: string; colour: string; tinted: string }[];
+    };
+    expect(cases.tints.length).toBeGreaterThan(100);
+    for (const { colour, hue } of cases.hues) {
+      if (hue === null) expect(hueOf(colour), colour).toBeUndefined();
+      else expect(hueOf(colour), colour).toBeCloseTo(hue, 9);
+    }
+    for (const { hex, colour, tinted: want } of cases.tints)
+      expect(tintHex(hex, hueOf(colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(want);
   });
 });
 

@@ -473,6 +473,9 @@ describe("deleting a workspace", () => {
       // folder, and the watch that says when it moves.
       "plane_tree",
       "files_watch",
+      // The workspace in front changed, so the theme it draws is asked of the core's theme
+      // engine again (#2320): a read, from the survey the core keeps.
+      "theme_in_force",
     ];
     const during = asked.slice(before).map((one) => one.cmd);
     expect(during.filter((cmd) => !READS.includes(cmd))).toEqual(["workspace_remove"]);

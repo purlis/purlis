@@ -11,8 +11,9 @@
  * - `geometry.css` gives every core token a value, the values are the scale the ADR records,
  *   and no other stylesheet gives one a value of its own;
  * - nothing in a theme's vocabulary is a geometry property: no colour token, no motion token;
- * - nothing a theme writes onto the document is one, for the built-ins, every tint of them, and
- *   a theme file that tries every spelling of one, which is also told why it was ignored;
+ * - nothing a theme writes onto the document is one, for the built-ins and every tint of them
+ *   (a theme file that tries every spelling of one is refused key by key, and told why, by the
+ *   core's theme engine: `purlis_core::theme`'s tests);
  * - `docs/design-system.md` lists every core token.
  *
  * Each stylesheet is read off disk, not through `?raw`: vitest does not process CSS and would
@@ -23,20 +24,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { GEOMETRY, GEOMETRY_PROPERTIES, isGeometry, namesGeometry } from "./geometry";
+import { GEOMETRY, GEOMETRY_PROPERTIES, isGeometry } from "./geometry";
 import { motionProperty, motionVariables } from "./motion";
-import dark from "./purlis-dark.json";
-import light from "./purlis-light.json";
-import {
-  apply,
-  BUILT_IN,
-  cssVariables,
-  load,
-  property,
-  tinted,
-  tintVariables,
-  TOKENS,
-} from "./theme";
+import { BUILT_IN, cssVariables, property, tinted, tintVariables, TOKENS } from "./theme";
 import { PALETTE } from "./tint";
 
 const SRC = join(process.cwd(), "src");
@@ -138,18 +128,10 @@ describe("the core geometry", () => {
 describe("a theme cannot set the geometry", () => {
   it("has no geometry in its vocabulary", () => {
     expect(TOKENS.map(property).filter(isGeometry)).toEqual([]);
-    expect(TOKENS.filter(namesGeometry)).toEqual([]);
     const motion = Object.keys(motionVariables(BUILT_IN["purlis-dark"].motion, false));
     expect(motion.length).toBeGreaterThan(0);
     expect(motion.filter(isGeometry)).toEqual([]);
     expect(motionProperty("duration.quick")).toBe("--motion-duration-quick");
-  });
-
-  it("ships none: each built-in is a name, an appearance, colours and motion", () => {
-    for (const file of [dark, light] as Record<string, unknown>[]) {
-      expect(Object.keys(file).sort()).toEqual(["appearance", "motion", "name", "tokens"]);
-      expect(Object.keys(file.tokens as object).filter(namesGeometry)).toEqual([]);
-    }
   });
 
   it.each(Object.keys(BUILT_IN))("writes none from %s, or from any tint of it", (name) => {
@@ -164,50 +146,6 @@ describe("a theme cannot set the geometry", () => {
       ]),
     ];
     expect(written.filter(isGeometry)).toEqual([]);
-  });
-
-  describe("a theme file that tries", () => {
-    // Every spelling: the property itself, the token's dotted form, and whole groups.
-    const tokens: Record<string, string> = {};
-    for (const name of GEOMETRY_PROPERTIES) {
-      tokens[name] = "#ffffff";
-      tokens[name.slice(2).replace("-", ".")] = "#ffffff";
-    }
-    const raw = {
-      name: "tries",
-      appearance: "dark",
-      tokens,
-      geometry: { "space.4": "100px" },
-      radius: { md: "20px" },
-      sizes: { control: "60px" },
-      motion: { "duration.quick": 100 },
-    };
-
-    it("is drawn without one of them", () => {
-      const { theme } = load(raw);
-      const into = document.createElement("div");
-      apply(theme, into, false);
-      const set = Array.from({ length: into.style.length }, (_, i) => into.style.item(i));
-      expect(set.length).toBeGreaterThan(0);
-      expect(set.filter(isGeometry)).toEqual([]);
-    });
-
-    it("keeps its colours and its motion", () => {
-      const { theme } = load({ ...raw, tokens: { ...tokens, "accent.base": "#123456" } });
-      expect(theme.values["accent.base"]).toBe("#123456");
-      expect(theme.motion.durations["duration.quick"]).toBe(100);
-    });
-
-    it("is told each one is core, not the theme's", () => {
-      const { complaints } = load(raw);
-      const said = complaints.map((complaint) => complaint.said);
-      for (const key of [...Object.keys(tokens), "geometry", "radius", "sizes"]) {
-        expect(
-          said.some((line) => line.startsWith(`${key} is geometry`)),
-          `nothing said about ${key}`,
-        ).toBe(true);
-      }
-    });
   });
 });
 

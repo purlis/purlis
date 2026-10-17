@@ -350,7 +350,7 @@ macro_rules! app_commands {
                 extensions::forget_extension,
                 extensions::set_extension_on,
                 extensions::open_extension_record,
-                extensions::extension_themes,
+                extensions::theme_in_force,
                 extensions::extension_icon_themes,
                 extensions::extension_panels,
                 vaults::vault_list,

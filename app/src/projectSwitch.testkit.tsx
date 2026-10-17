@@ -9,6 +9,7 @@ import type { OpenChat } from "./bindings";
 import { panes } from "./countedPane.testkit";
 import { counts } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
+import { themeInForce } from "./theme/inForce.testkit";
 
 /**
  * **What a project switch costs the window, measured in the real `App`**.
@@ -137,6 +138,7 @@ function core(shape: Shape): Asked[] {
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
+    if (cmd === "theme_in_force") return themeInForce(args);
     if (cmd === "project_theme_drawn") return null;
     // One chat in five waits on the person: a populated Inbox, and counts on the project tabs.
     if (cmd === "asks_waiting")
