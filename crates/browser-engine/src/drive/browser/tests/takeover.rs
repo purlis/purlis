@@ -15,11 +15,11 @@ use crate::drive::{
 };
 
 /// What the browser's first page shows now, as a frame of it would say.
-fn aim_now(browser: &super::Browser) -> Aim {
+pub(super) fn aim_now(browser: &super::Browser) -> Aim {
     browser.aim().expect("the browser has a current page")
 }
 
-fn key(aim: &Aim, key: &str, down: bool) -> PersonInput {
+pub(super) fn key(aim: &Aim, key: &str, down: bool) -> PersonInput {
     let code = if key.chars().count() == 1 {
         format!("Key{}", key.to_ascii_uppercase())
     } else {

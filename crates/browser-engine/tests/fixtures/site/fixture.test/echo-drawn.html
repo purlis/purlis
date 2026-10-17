@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>What you typed, drawn</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  input { display: block; margin: 8px; color: black; }
+  canvas, img { display: block; margin: 8px; }
+</style></head>
+<body>
+  <input id="said" aria-label="Say something">
+  <canvas id="drawn" width="300" height="60" aria-hidden="true"></canvas>
+  <img id="copied" width="300" height="60" alt="">
+  <script>
+    // The page draws what is typed into a canvas, and copies the canvas into an image.
+    const canvas = document.getElementById('drawn');
+    const draw = (text) => {
+      const pen = canvas.getContext('2d');
+      pen.fillStyle = 'rgb(255, 0, 0)';
+      pen.fillRect(0, 0, 300, 60);
+      pen.fillStyle = 'white';
+      pen.font = '32px sans-serif';
+      pen.fillText(text, 10, 42);
+      document.getElementById('copied').src = canvas.toDataURL();
+    };
+    draw('waiting');
+    document.getElementById('said').addEventListener('input', (e) => draw(e.target.value));
+  </script>
+</body></html>
