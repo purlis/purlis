@@ -515,6 +515,7 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
         git_hooks: None,
         handed: Default::default(),
         confinement: None,
+        run: None,
     }
 }
 

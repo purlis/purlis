@@ -25,7 +25,7 @@
 use super::{ResolvedTheme, tint, vocabulary::TOKENS};
 
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
-/// a `back` that is a wash with alpha.
+/// a `back` that is a wash with alpha. A `front` with alpha is measured laid over the `back`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Pair {
     pub front: &'static str,
@@ -204,6 +204,15 @@ pub const PAIRS: &[Pair] = &[
     p("list.selected-edge", "surface.base", 3.0),
     // The keyboard's ring on the selected row it is on.
     p("focus.ring", "list.selected", 3.0),
+    // A branch's change marks in the explorer (FM-4, #2392): a letter on a file and its name in
+    // the change's colour, on the window, the row under the pointer and the selected row.
+    // Added is `state.success` and deleted `danger.base`, the editor's diff gutters' marks; the
+    // `diff.*-text` tokens are washes under words, not colours to draw words in. Changed
+    // (`state.waiting`) and renamed (`accent.base`) are held on these rows above.
+    p("state.success", "surface.hover", 3.0),
+    p("state.success", "list.selected", 3.0),
+    p("danger.base", "surface.hover", 3.0),
+    p("danger.base", "list.selected", 3.0),
     // A tree's guides: a hairline, quieter than a border and still there.
     p("tree.guide", "surface.base", 1.3),
     p("tree.guide", "surface.raised", 1.2),
@@ -316,7 +325,9 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
             Some(under) => onto(back, theme.value(under)),
             None => back.to_owned(),
         };
-        let ratio = two_places(contrast(theme.value(pair.front), &drawn));
+        // A see-through front is drawn laid over its ground, and measured as drawn.
+        let front = onto(theme.value(pair.front), &drawn);
+        let ratio = two_places(contrast(&front, &drawn));
         if ratio < pair.floor {
             findings.push(Finding::Contrast {
                 tint,
@@ -384,7 +395,8 @@ fn luminance(hex: &str) -> f64 {
 }
 
 /// WCAG contrast ratio, 1 (identical) to 21 (black on white). Alpha is ignored: a pair whose
-/// background is a wash names what the wash is laid over, and [`onto`] lays it.
+/// background is a wash names what the wash is laid over, a see-through front is laid over its
+/// background, and [`onto`] lays each.
 pub(super) fn contrast(a: &str, b: &str) -> f64 {
     let (x, y) = (luminance(a), luminance(b));
     let (light, dark) = if x >= y { (x, y) } else { (y, x) };

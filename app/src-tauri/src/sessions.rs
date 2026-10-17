@@ -546,6 +546,7 @@ mod tests {
             git_hooks: None,
             handed: Default::default(),
             confinement: None,
+            run: None,
         }
     }
 

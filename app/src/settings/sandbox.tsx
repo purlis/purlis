@@ -28,6 +28,7 @@ import {
   asDrawn,
   ExpectedLines,
   mayAnswerExpects,
+  useProjectExpects,
 } from "../ProjectExpectsNotice";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
@@ -517,7 +518,9 @@ export function personaHostsRows(plane: PlaneId, sandbox: SandboxState | undefin
 export const EXPECTS_HERE = "project.sandbox.expects-here";
 
 /** **Allow on this machine**, or what stands: the window-only call the project's Notice makes
- *  too, kept in this machine's own file. Offered after a "Not now" as before it. */
+ *  too, kept in this machine's own file. Offered after a "Not now" as before it. What waits is
+ *  read again whenever a sandbox command of the window's returns (#1888), so an Allow made on
+ *  the project's Notice is not offered here again. */
 function ExpectsHere({
   plane,
   expects,
@@ -527,9 +530,13 @@ function ExpectsHere({
   expects: NonNullable<SandboxState["expects"]>;
   ids: RowIds;
 }) {
-  const [left, setLeft] = useState(expects);
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Asked again after an Allow that was refused: what waits may stand otherwise by now. */
+  const [again, setAgain] = useState(0);
+  const [now, setNow] = useProjectExpects(plane, expects, again);
+  // Nothing waits any more: what is left is the lock, as it was drawn.
+  const left = now ?? { ...expects, items: [] };
   const offered = left.locked === null && left.items.some(allowable) && mayAnswerExpects() && !busy;
   const allow = () => {
     setBusy(true);
@@ -540,16 +547,10 @@ function ExpectsHere({
         if (answer.status !== "ok") {
           setSaid(answer.error);
           // Refused: the list is read again, so what is drawn is what stands now.
-          void commands
-            .sandboxState(plane)
-            .then((state) => {
-              if (state.status === "ok" && state.data?.expects) setLeft(state.data.expects);
-            })
-            .catch(() => {});
+          setAgain((n) => n + 1);
           return;
         }
-        const now = answer.data.expects ?? null;
-        setLeft(now ?? { ...left, items: [] });
+        setNow(answer.data.expects ?? null);
         setSaid(
           "Allowed on this machine: every chat of this project has it from its next start, and a chat already running takes it when it restarts. Remove it under Network, in the Allowed list.",
         );
@@ -568,6 +569,7 @@ function ExpectsHere({
       aria-describedby={ids.describedBy}
     >
       <ExpectedLines items={left.items} />
+      {left.items.length === 0 && said === undefined && <p>This machine allows all of it now.</p>}
       {left.locked !== null && <p>{left.locked}</p>}
       {said !== undefined && <p>{said}</p>}
       {offered && (

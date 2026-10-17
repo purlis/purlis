@@ -6805,7 +6805,7 @@ export type ProposedWhole = {
 	 */
 	before: string,
 	after: string,
-	/**  The one hunk that is the whole of each side, as the merge view takes it. */
+	/**  git's hunks between the two sides, as drawn: the lines the merge view marks (#2121). */
 	hunks: GitHunk[],
 	/**  Whether Apply is offered: shown whole, and it still applies. */
 	applies: boolean,

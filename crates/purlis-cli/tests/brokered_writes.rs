@@ -1167,6 +1167,13 @@ fn the_workspace_md_tools_in_a_chat_whose_harness_gave_it_no_connection_write_no
     ] {
         let result = tool_over_mcp(&tmp, &codex, tool, arguments);
         assert_eq!(result["isError"], true, "{result}");
+        // The way round is one the chat can take wherever it runs (#1598): a chat in a clone is
+        // refused a write to workspace.md by its sandbox, so a direct edit is not the only one.
+        let text = result["content"][0]["text"].as_str().unwrap_or_default();
+        match tool {
+            "workspace_vision" => assert!(text.contains("purlis workspace vision"), "{result}"),
+            _ => assert!(text.contains("ask the person"), "{result}"),
+        }
     }
     assert!(!root(&tmp).join("workspaces/alpha/workspace.md").exists());
 }
