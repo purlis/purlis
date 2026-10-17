@@ -571,15 +571,17 @@ pub fn sandbox_write(
 }
 
 /// **The sandbox block adapter**: a block chat `session` is held on, as a host ask
-/// ([`sandbox_host`]) or a folder-write ask ([`sandbox_write`]).
+/// ([`sandbox_host`]) or a folder-write ask ([`sandbox_write`]). `declared` is what the
+/// project's committed file says it expects, which a socket's or a service's ask names.
 pub fn sandbox_block(
     session: u32,
     block: &crate::taskblocks::HeldBlock,
     locks: &purlis_core::sandbox::policy::Locks,
+    declared: &purlis_core::sandbox::services::Declared,
 ) -> Option<Shown> {
     sandbox_host(session, block, locks)
         .or_else(|| sandbox_write(session, block, locks))
-        .or_else(|| sandbox_local(session, block, locks))
+        .or_else(|| sandbox_local(session, block, locks, declared))
         .or_else(|| sandbox_port(session, block, locks))
 }
 
@@ -648,12 +650,15 @@ pub fn sandbox_port(
 /// **The socket and service adapter** (D-sock-1): a local socket or a system service chat
 /// `session`'s sandbox refused, held now, is an ask as a host is. Allow is offered once, for
 /// this chat and for the person (never everyone's: it is this machine's), at each level `locks`
-/// leaves open; then Keep blocked. What it says names it whole and what allowing it means. The
-/// certificate check is never asked about here: it is no grant (R1, 2026-10-13).
+/// leaves open; then Keep blocked. What it says names it whole and what allowing it means, led
+/// by "This project expects it" where `declared` names it, as the block's own Notice says
+/// (ADR 0093, #1888). The certificate check is never asked about here: it is no grant (R1,
+/// 2026-10-13).
 pub fn sandbox_local(
     session: u32,
     block: &crate::taskblocks::HeldBlock,
     locks: &purlis_core::sandbox::policy::Locks,
+    declared: &purlis_core::sandbox::services::Declared,
 ) -> Option<Shown> {
     use crate::sandboxing::{GrantLevel, GrantWhat};
     use purlis_core::sandbox::grant::What;
@@ -687,7 +692,7 @@ pub fn sandbox_local(
     let says = format!(
         "The sandbox refused {named} {}. {}",
         block.target,
-        services::said_of(&what, &services::Declared::default())
+        services::said_of(&what, declared)
     );
     Some(Shown {
         session,
@@ -1217,6 +1222,9 @@ pub struct Waiting<'a> {
     pub needs_you: Vec<crate::browserneedsyou::Waiting>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
+    /// What the project's committed file declares it expects (ADR 0093): a socket's or a
+    /// service's ask says so. It grants nothing.
+    pub declared: &'a purlis_core::sandbox::services::Declared,
     /// The name a chat is shown under, where it is open.
     pub name_of: &'a dyn Fn(u32) -> Option<String>,
     /// The chat that asked for a chat as a task, by the app's own record.
@@ -1286,7 +1294,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             }),
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
-        let mut ask = sandbox_block(*session, block, waiting.locks)?;
+        let mut ask = sandbox_block(*session, block, waiting.locks, waiting.declared)?;
         let since = (waiting.since)(&ask.ask);
         // A live ask (#1709): the same ask, under the same key, saying its connection waits,
         // and until when.
@@ -1444,6 +1452,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &needs_you {
         since.insert(needs_you_key(&one.program), one.since);
     }
+    let declared = purlis_core::sandbox::services::declared(root);
     let waiting = Waiting {
         browsers,
         needs_you,
@@ -1463,6 +1472,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             .map(|(session, block, _)| (session, block))
             .collect(),
         locks: &locks,
+        declared: &declared,
         name_of: &|session| chats.shown_name(session),
         asker_of: &|session| asker_in(chats, session),
         only_updates: &|session| {
@@ -1531,5 +1541,4 @@ pub fn forget_sandbox_block(
 }
 
 #[cfg(test)]
-#[path = "asking_tests.rs"]
 mod tests;

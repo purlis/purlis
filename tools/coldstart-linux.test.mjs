@@ -82,7 +82,7 @@ exec sleep 30`,
   const app = program(dir, "app", "exit 0");
   const summary = join(dir, "summary.md");
   const withEnv = { ...process.env, APP: app, ...env };
-  for (const name of ["DISPLAY", "EVIDENCE_ONLY", "BASELINE_APP", "GITHUB_STEP_SUMMARY"])
+  for (const name of ["DISPLAY", "EVIDENCE_ONLY", "BASELINE_APP", "NO_BASELINE", "GITHUB_STEP_SUMMARY"])
     if (!(name in env)) delete withEnv[name];
   if (display) withEnv.DISPLAY = display;
   const done = spawnSync("bash", [SCRIPT, ...args], {
@@ -186,6 +186,26 @@ test("a build that is not where the job put it fails, report-only or not", () =>
   assert.match(main.out, /main's app is not at/);
 });
 
+// A pull request whose main did not build in the job (#2388): the step says why in `NO_BASELINE`,
+// and the case is measured against the limit, reported, gated by nothing.
+const noMain = "main's app did not build in this job";
+
+test("with no main build on a pull request, the bench is told why and nothing is gated", () => {
+  const run = script(["bare"], { env: { NO_BASELINE: noMain } });
+  assert.equal(run.status, 0, run.err);
+  assert.match(run.benchArgs, /--cold-starts 5 .*--no-baseline main's app did not build in this job/);
+  // A baseline there is held to, whatever else the step said.
+  const held = script(["bare"], { env: { NO_BASELINE: noMain, BASELINE_APP: "/bin/sh" } });
+  assert.match(held.benchArgs, /--baseline-app /);
+  assert.doesNotMatch(held.benchArgs, /--no-baseline/);
+});
+
+test("with no main build on a pull request, a case that could not be measured is a warning", () => {
+  const run = script(["i3"], { env: { NO_BASELINE: noMain, STUB_I3: "leaves" } });
+  assert.equal(run.status, 0, run.err);
+  assert.match(run.out, /^::warning title=Cold start%2C i3%3A no measurement::i3 did not come up/m);
+});
+
 test("an unknown case fails, report-only or not", () => {
   const run = script(["gnome"], { env: { EVIDENCE_ONLY: "1" } });
   assert.equal(run.status, 2);
@@ -257,6 +277,27 @@ test("this change's build leaving before its first frame fails, report-only or n
   assert.equal(run.status, 1);
   assert.match(run.out, /^::error title=Cold start%2C i3%3A no measurement::this change's build exited \(3\) before its first frame/m);
   assert.doesNotMatch(run.out, /evidence only/);
+});
+
+test("with no main build, a missed limit is a warning that says nothing was gated, and passes", bench, () => {
+  const run = benchRun({ change: "draws" }, ["--launch-steps", "--no-baseline", noMain, "--limit", "1", "--ceiling", "1"]);
+  assert.equal(run.status, 0, run.err);
+  assert.match(
+    run.out,
+    /^::warning title=Cold start%2C i3 \(build of unknown profile\)::no baseline: main's app did not build in this job, so nothing is gated%0A.*: missed, reported, not gated/m,
+  );
+});
+
+test("with no main build, a met limit still says it went ungated", bench, () => {
+  const run = benchRun({ change: "draws" }, ["--launch-steps", "--no-baseline", noMain]);
+  assert.equal(run.status, 0, run.err);
+  assert.match(run.out, /^::warning title=Cold start%2C i3 [^:]*::no baseline: .*: met, reported, not gated/m);
+});
+
+test("no baseline and a baseline together are refused", bench, () => {
+  const run = benchRun({ change: "draws", main: "draws" }, ["--no-baseline", noMain]);
+  assert.notEqual(run.status, 0);
+  assert.match(run.err, /--no-baseline and --baseline-app contradict each other/);
 });
 
 test("a run that draws is measured as before", bench, () => {

@@ -417,6 +417,86 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
     assert_eq!(stale.why.as_deref(), Some(STALE_SAID));
 }
 
+/// #2121: a long change's tab marks the lines that changed, git's hunks between the two sides,
+/// not the whole file as one hunk, so the merge view folds every unchanged stretch.
+#[test]
+fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
+    let one = Proposal {
+        id: 7,
+        session: 3,
+        path: "personas/devops/persona.md".to_owned(),
+        base: None,
+        change: mode_pr(),
+        since: 1,
+        stale: false,
+    };
+    let lines = |changed: &str| {
+        (1..=2000)
+            .map(|at| {
+                if at == 1000 {
+                    format!("{changed}\n")
+                } else {
+                    format!("line {at}\n")
+                }
+            })
+            .collect::<String>()
+    };
+    let whole = whole_of(
+        &one,
+        &Now::Made {
+            before: lines("line 1000"),
+            after: lines("the one line that changed"),
+        },
+    );
+    assert!(whole.applies);
+    assert_eq!(
+        whole.hunks,
+        [crate::piecefiles::GitHunk {
+            old_start: 1000,
+            old_lines: 1,
+            new_start: 1000,
+            new_lines: 1,
+        }]
+    );
+}
+
+/// The hunks the tab is sent for a change from `before` to `after`, as `(old_start, old_lines,
+/// new_start, new_lines)`.
+fn tab_hunks(before: &str, after: &str) -> Vec<(u32, u32, u32, u32)> {
+    let one = Proposal {
+        id: 7,
+        session: 3,
+        path: "personas/devops/persona.md".to_owned(),
+        base: None,
+        change: mode_pr(),
+        since: 1,
+        stale: false,
+    };
+    let now = Now::Made {
+        before: before.to_owned(),
+        after: after.to_owned(),
+    };
+    let whole = whole_of(&one, &now);
+    assert!(whole.applies, "{:?}", whole.why);
+    whole
+        .hunks
+        .iter()
+        .map(|h| (h.old_start, h.old_lines, h.new_start, h.new_lines))
+        .collect()
+}
+
+/// #2121: lines that only turn from CRLF to LF are changed lines on the tab, as git shows them.
+#[test]
+fn a_change_from_crlf_to_lf_marks_each_line_it_turns() {
+    assert_eq!(tab_hunks("a\r\nb\r\nc\n", "a\nb\nc\n"), [(1, 2, 1, 2)]);
+}
+
+/// #2121: a last line that loses its line end is a changed line on the tab, as git shows it.
+#[test]
+fn a_last_line_that_loses_its_line_end_is_marked() {
+    assert_eq!(tab_hunks("a\nb\n", "a\nb"), [(2, 1, 2, 1)]);
+}
+
 /// PC-7: a change too long for a row is applied only from its own tab, where it is shown whole;
 /// one not shown for anything else (a credential's shape) is refused from anywhere.
 #[test]

@@ -32,6 +32,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::active::Place;
+use crate::counts::counted;
 
 pub mod relay;
 
@@ -882,11 +883,10 @@ pub fn pointer(plane: &Path, records: &[Listed]) -> String {
     let Some(newest) = records.first() else {
         return none_yet(plane);
     };
-    let count = records.len();
     format!(
-        "{count} session record{} — the latest is [{}]({DIR}/{}) ({}); all of them, newest \
+        "{} — the latest is [{}]({DIR}/{}) ({}); all of them, newest \
          first, in [{DIR}/{INDEX}]({DIR}/{INDEX}).",
-        if count == 1 { "" } else { "s" },
+        counted(records.len(), "session record", "session records"),
         link_text(&newest.title),
         newest.file,
         newest.when
