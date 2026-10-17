@@ -322,7 +322,7 @@ pub fn profile(
 
     // What the chat may write.
     let mut allow = vec![
-        format!("(subpath {})", quote(cwd.parent().unwrap_or(cwd))?), // RED CHECK, reverted next
+        format!("(subpath {})", quote(cwd)?),
         format!("(subpath {})", quote(tmp)?),
     ];
     allow.extend(own.allow.iter().cloned());
