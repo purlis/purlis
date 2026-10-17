@@ -61,34 +61,21 @@ pub const CHECKED_ONCE_APPROVED: &str = "purlis checks this profile's program be
                                          starts sandboxed, once the profile may start: approved, \
                                          and declared in a file git does not carry.";
 
-/// [`SandboxAhead`] for a chat on `profile` in the project at `root`, on this machine: every
-/// refusal the start would give, shown before anything starts — a harness charter holds back
-/// (Codex, ruling V87f), and a program the sandbox will not bind (ruling V87g), which is asked
-/// of the profile's own resolved words.
+/// [`SandboxAhead`] for a chat on each of `profiles` in the project at `root`, in their order,
+/// on `machine` with `has` saying what is installed: every refusal the start would give, shown
+/// before anything starts — a harness charter holds back (Codex, ruling V87f), and a program
+/// the sandbox will not bind (ruling V87g), which is asked of the profile's own resolved words.
+///
+/// **Each harness's sandbox is compiled once** for the whole list
+/// ([`purlis_core::start::AheadOnce`], #2179): the picker asks for every profile it lists each
+/// time a New tab opens, and a compile per row made every open pay one per profile. Each
+/// profile's program is still checked for itself.
 ///
 /// **Only a profile the start would run has its program run.** The V87g check asks the
 /// program its `--version`, which runs it, outside any sandbox. So it is asked only past the
 /// start's own gate ([`purlis_core::start::may_check_program`], which is
 /// `wiring::refusal`): a startable kind, a `charter.local.toml` git would not carry, an
 /// approved command. Any other row says the program is checked once the profile may start.
-pub fn ahead_here(
-    profile: &purlis_core::profiles::Profile,
-    root: &std::path::Path,
-) -> Option<SandboxAhead> {
-    ahead_of_each(
-        std::slice::from_ref(profile),
-        root,
-        &sandbox::Machine::this(),
-        &backend::installed,
-    )
-    .pop()
-    .flatten()
-}
-
-/// [`ahead_here`] for every profile of one picker, in their order, on `machine` with `has`
-/// saying what is installed: **each harness's sandbox compiled once** for the whole list
-/// ([`purlis_core::start::AheadOnce`], #2179), where a compile per row made every New tab pay
-/// one per profile it lists. Each profile's program is still checked for itself.
 pub fn ahead_of_each(
     profiles: &[purlis_core::profiles::Profile],
     root: &std::path::Path,
@@ -110,9 +97,10 @@ pub fn ahead_of_each(
         .collect()
 }
 
-/// [`ahead_here`], told whether the start's gate lets the program be checked: the start's own
-/// check ([`purlis_core::start::sandbox_ahead`]), asked through `asked`, which asks the same
-/// gate itself and runs the program only past it. `approved` only phrases the row.
+/// One row of [`ahead_of_each`], told whether the start's gate lets the program be checked:
+/// the start's own check ([`purlis_core::start::sandbox_ahead`]), asked through `asked`, which
+/// asks the same gate itself and runs the program only past it. `approved` only phrases the
+/// row.
 fn ahead_with(
     asked: &purlis_core::start::AheadOnce<'_>,
     profile: &purlis_core::profiles::Profile,
