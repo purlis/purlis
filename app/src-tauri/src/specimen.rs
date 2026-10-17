@@ -216,10 +216,14 @@ static MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
 impl Painter for InTheApp {
     fn paint(&self, theme: &WindowTheme) -> Result<Picture, String> {
         use tauri::{WebviewUrl, WebviewWindowBuilder};
-        let _one = self
-            .one_at_a_time
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // One at a time, and no queue: an ask that finds a specimen being drawn is answered at
+        // once, so asks cannot pile up behind one another and none is drawn for a caller that
+        // has already stopped waiting.
+        let _one = match self.one_at_a_time.try_lock() {
+            Ok(one) => one,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return Err(BUSY.to_owned()),
+        };
         let started = Instant::now();
         let left = || themepreview::BUDGET.saturating_sub(started.elapsed());
         let n = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -246,24 +250,37 @@ impl Painter for InTheApp {
             })
             .build()
             .map_err(|e| format!("purlis could not open the theme specimen's window: {e}"))?;
-        let taken = (|| {
-            match is_drawn.recv_timeout(left()) {
-                Ok(Ok(())) => {}
-                Ok(Err(why)) => return Err(format!("the theme specimen could not draw: {why}")),
-                Err(_) => return Err(over_budget()),
-            }
-            let (pictured, picture) = mpsc::channel::<Result<Picture, String>>();
-            window
-                .with_webview(move |webview| photograph::take(webview, pictured))
-                .map_err(|e| format!("purlis could not reach the specimen's webview: {e}"))?;
-            picture
-                .recv_timeout(left())
-                .unwrap_or_else(|_| Err(over_budget()))
-        })();
-        let _ = window.destroy();
-        taken
+        // Destroyed however this ends: an answer, a refusal, or a panic.
+        let window = Hidden(window);
+        match is_drawn.recv_timeout(left()) {
+            Ok(Ok(())) => {}
+            Ok(Err(why)) => return Err(format!("the theme specimen could not draw: {why}")),
+            Err(_) => return Err(over_budget()),
+        }
+        let (pictured, picture) = mpsc::channel::<Result<Picture, String>>();
+        window
+            .0
+            .with_webview(move |webview| photograph::take(webview, pictured))
+            .map_err(|e| format!("purlis could not reach the specimen's webview: {e}"))?;
+        picture
+            .recv_timeout(left())
+            .unwrap_or_else(|_| Err(over_budget()))
     }
 }
+
+/// A specimen's hidden window, destroyed when this is dropped. The destroy is queued on the
+/// window's event loop after the photograph it was asked for.
+struct Hidden(tauri::WebviewWindow);
+
+impl Drop for Hidden {
+    fn drop(&mut self) {
+        let _ = self.0.destroy();
+    }
+}
+
+/// What an ask is told while another specimen is being drawn.
+pub const BUSY: &str = "purlis is drawing another theme specimen, and draws one at a time: ask \
+                        again in a moment";
 
 fn over_budget() -> String {
     format!(
@@ -303,22 +320,34 @@ mod photograph {
     ) {
         use objc2::rc::Retained;
         use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
-        use objc2_foundation::{NSDictionary, NSError};
+        use objc2_foundation::{NSDictionary, NSError, NSNumber};
         use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
 
-        // SAFETY: on macOS Tauri's platform webview is wry's `WKWebView`, a valid object for as
-        // long as its window, which is destroyed only after the snapshot answers; it is only
-        // borrowed here. Every call is made on the main thread (`main`), as WebKit and AppKit
-        // require. The configuration is made here and the block is copied by WebKit. The block's
-        // two pointers are WebKit's: each is null or a valid object for the call, and each is
-        // retained before it is read. `representationUsingType:properties:` is handed an empty
-        // dictionary of the key type it reads.
+        // SAFETY:
+        // - `webview` is Tauri's platform webview, which on macOS is wry's `WKWebView`. The
+        //   `&WKWebView` made from it is used only here, synchronously, inside the
+        //   `with_webview` closure Tauri runs on the main thread (`main`), and is not kept: the
+        //   window's destroy is queued after this closure on the same event loop, so the view
+        //   is alive for every call made through the borrow.
+        // - Every WebKit and AppKit call here is made on the main thread, as they require.
+        // - The completion block captures only `done`, a `Sender`. WebKit copies the block. If
+        //   WebKit calls it late, after the window is gone, or never, it only sends into a
+        //   receiver that has been dropped, and that send's failure is ignored.
+        // - The block's two pointers are WebKit's: each is null or a valid object for the call,
+        //   and each is retained before it is read.
+        // - `representationUsingType:properties:` is handed an empty dictionary of the key type
+        //   it reads.
         unsafe {
             let view: &WKWebView = &*webview.inner().cast::<WKWebView>();
             let configuration = WKSnapshotConfiguration::new(main);
             // The page has said it is drawn; a hidden window has no screen update to wait for,
             // and WebKit paints the snapshot in the web process from the page as it is.
             configuration.setAfterScreenUpdates(false);
+            // The picture's width, pinned in points: the page's own, whatever the hidden window
+            // was given.
+            configuration.setSnapshotWidth(Some(&NSNumber::new_f64(f64::from(
+                purlis_core::themepreview::WIDTH,
+            ))));
             let handler = block2::RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
                 let picture = match Retained::retain(image) {
                     None => Err(Retained::retain(error).map_or_else(
