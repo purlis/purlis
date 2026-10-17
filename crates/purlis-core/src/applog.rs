@@ -22,7 +22,8 @@
 //!
 //! **No secrets.** Every event is held whole and checked before it is written, to the file
 //! and to standard error alike (`what_it_holds`: `secretshape::found`, `secretshape::leaks` a
-//! line at a time, and a field named for a token or a secret). An event that looks like it
+//! line at a time, a field named for a token or a secret, a forge token the process holds and a
+//! vault value it read or stored, `secrets::seen`). An event that looks like it
 //! holds a credential or personal data is replaced by a line naming the kind. Callers still say a chat's number and
 //! never its token: this is the net under that rule, not a licence to break it.
 //!
@@ -297,6 +298,11 @@ fn what_it_holds(event: &str) -> Option<&'static str> {
     if holds_a_value_kept_out(event) {
         return Some("a forge token purlis holds");
     }
+    // A vault value this process read or stored, whatever its shape (#1872). Fails closed as
+    // the memory of them does: where one could not be remembered, every event is redacted.
+    if crate::secrets::seen::holds(event) {
+        return Some("a vault value purlis read");
+    }
     if let Some((_, kind)) = crate::secretshape::found_as_read(None, event) {
         return Some(kind);
     }
@@ -342,6 +348,18 @@ pub fn keep_out(value: &secrecy::SecretString) {
     {
         kept.push(value.clone());
     }
+}
+
+/// How many values [`keep_out`] was given, and the length in bytes of the longest (#1872): what
+/// a caller that keeps a masked text keys it by, and how much of a cut text's end it masks.
+/// Values are only ever added, so the count changes whenever what is kept out does.
+pub fn kept_out_extent() -> (usize, Option<usize>) {
+    use secrecy::ExposeSecret;
+    let kept = KEPT_OUT.lock().unwrap_or_else(|e| e.into_inner());
+    (
+        kept.len(),
+        kept.iter().map(|value| value.expose_secret().len()).max(),
+    )
 }
 
 /// Whether `text` holds a value [`keep_out`] was given: what an error path checks before it
@@ -396,6 +414,19 @@ mod tests {
         assert_eq!(
             without_values_kept_out(&event),
             "purlis: the forge answered [a token purlis holds] today\n"
+        );
+    }
+
+    #[test]
+    fn an_event_holding_a_vault_value_of_any_shape_is_redacted() {
+        // #1872: plain words, built from parts, that only purlis's memory of the value finds.
+        let value = format!("{}-{}-{}", "plain", "words from the vault", "e51c");
+        let event = format!("purlis: the server said {value} back\n");
+        assert_eq!(redacted(&event), event, "nothing is known of it yet");
+        crate::secrets::seen::remember(&value);
+        assert_eq!(
+            redacted(&event),
+            "[redacted: an event that looks like it holds a vault value purlis read]\n"
         );
     }
 
