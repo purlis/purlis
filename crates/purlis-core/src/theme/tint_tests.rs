@@ -547,3 +547,28 @@ fn a_colour_no_amount_of_chroma_keeps_apart_from_danger_is_drawn_untinted() {
     assert_eq!(apart_chroma(&theme, 25.0), None);
     assert_eq!(tinted(&theme, "red"), theme);
 }
+
+#[test]
+fn the_consent_floors_are_held_under_the_theme_s_own_recipe() {
+    // A theme that tints the controls: at some hues a channel's rounding takes a hundredth off
+    // the danger colour on a control, under its 4.5. The floors measure the theme's own tints:
+    // the control is drawn untinted, so the floor holds at every hue; with its tint off, the
+    // theme is drawn as written.
+    let controls = |on: bool| {
+        drawn(&json!({
+            "name": "Controls",
+            "tint": { "on": on, "tokens": ["control.base", "accent.base"] },
+            "appearances": [{ "id": "dark", "appearance": "dark" }]
+        }))
+    };
+    let on = draw(&controls(true));
+    assert!(on.held.is_some());
+    let shown = on.theme.expect("a theme is always drawn");
+    let danger_fails = check(&shown).findings.into_iter().any(
+        |one| matches!(one, Finding::Contrast { pair, .. } if pair.front.starts_with("danger.")),
+    );
+    assert!(!danger_fails);
+    assert!(!shown.tint.tabs().contains(&"control.base"));
+    assert!(shown.tint.tabs().contains(&"accent.base"));
+    assert_eq!(draw(&controls(false)).held, None);
+}

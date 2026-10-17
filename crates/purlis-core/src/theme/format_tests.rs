@@ -474,9 +474,7 @@ fn options_stay_refused_for_now() {
     assert!(loaded.refused);
     assert_eq!(
         said(&loaded),
-        [
-            "options is not read yet (#2325), so the theme cannot be drawn as written",
-        ]
+        ["options is not read yet (#2325), so the theme cannot be drawn as written",]
     );
 }
 

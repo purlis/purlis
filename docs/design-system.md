@@ -193,7 +193,9 @@ rounding; the contrast check runs every hue of the theme's recipe, and holds two
 adds — the mark (`accent.base`) and a tab's primary text on `layer.workspace`. **A tinted accent
 is held apart from the danger colour** (OKLab 0.1, the consent floor that danger is
 distinguishable from primary): at a hue that would bring it nearer, the tint keeps the hue and
-gives less colour, in steps of 0.005 chroma, so a red workspace stays red. Purlis Classic's light
+gives less colour, in steps of 0.005 chroma, so a red workspace stays red. The consent floors
+are measured under every tint of the theme's own recipe, and a token whose tint breaks one is
+drawn untinted. Purlis Classic's light
 appearance does this at `red`, `orange` and `pink`. A neutral grey is given a small fixed chroma,
 felt rather than noticed, as the strips are meant to be; white stays white. No colour is written
 for this anywhere but `app/src/theme/`: a component asks `tabTint` and sets what it answers.

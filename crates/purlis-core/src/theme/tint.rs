@@ -38,8 +38,8 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use super::vocabulary::{TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
 use super::floors::DANGER_APART;
+use super::vocabulary::{TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
 use super::{Complaint, ResolvedTheme, stringify};
 
 /// The palette a workspace names its colour from, as OKLCH hues in degrees, in
@@ -165,6 +165,11 @@ impl Tint {
             .copied()
             .filter(|token| !TAB_ONLY.contains(token))
             .collect()
+    }
+
+    /// The recipe without `tokens`: a workspace's colour leaves them as the theme draws them.
+    pub(super) fn leave(&mut self, tokens: &[&str]) {
+        self.tokens.retain(|token| !tokens.contains(token));
     }
 
     /// The hue a workspace's colour gives in this theme: a [`PALETTE`] name's hue here, or the

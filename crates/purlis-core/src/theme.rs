@@ -85,8 +85,8 @@ pub use person::{Density, Layer, Person};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{
-    APART, APART_FROM, Hue, PALETTE, Tint, apart_chroma, apart_chroma_of, hue_of,
-    tint_hex, tint_hex_within, tinted,
+    APART, APART_FROM, Hue, PALETTE, Tint, apart_chroma, apart_chroma_of, hue_of, tint_hex,
+    tint_hex_within, tinted,
 };
 use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
 

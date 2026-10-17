@@ -22,12 +22,13 @@
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
-//! colour a workspace can name, as [`super::check`] measures.
+//! colour a workspace can name, by the theme's own tint recipe, as [`super::check`] measures.
 //!
 //! **A theme that breaks one is drawn with purlis's own values for those tokens**: Purlis
 //! Classic's of the same appearance, for the consent and state tokens of each pair that fails.
 //! When Classic's colour still fails on the ground the theme draws it on, the ground is drawn as
-//! Classic's too. The rest of the theme draws as written, and [`Held`] says which floors and
+//! Classic's too, and a token whose workspace tint still breaks the floor is drawn untinted
+//! ([`super::Tint`]). The rest of the theme draws as written, and [`Held`] says which floors and
 //! which tokens, for one Notice per theme.
 
 use std::collections::BTreeSet;
@@ -212,9 +213,19 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             // Purlis's own consent colour first; the ground too only once that is not enough.
             take.extend(if consent.is_empty() { open } else { consent });
         }
-        // Every token a failing floor names is purlis's already: there is nothing more to draw.
+        // Every token a failing floor names is purlis's already, and a workspace's tint still
+        // breaks it: the tint leaves those tokens as they are drawn.
         if take.is_empty() {
-            break;
+            let tinted: Vec<&'static str> = failing
+                .iter()
+                .flat_map(|failure| failure.tokens.iter().copied())
+                .filter(|token| drawn.tint.tabs().contains(token))
+                .collect();
+            if tinted.is_empty() {
+                break;
+            }
+            drawn.tint.leave(&tinted);
+            continue;
         }
         for token in take {
             drawn.values.insert(token, ours.value(token).to_owned());
