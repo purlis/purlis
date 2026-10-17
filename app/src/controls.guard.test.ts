@@ -450,9 +450,21 @@ const STRIP =
 /** Named like a strip and not one: a chart's bar and the two columns down a side. */
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
-/** The rows of controls drawn as part of a strip or a pane's top line, as tall as it is: the
- *  ways to end a pane's task (#1488) and the chip a tab wears for its tasks (#1487). */
-const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks"]);
+/** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
+ *  a handed-off chat came from and its work item. Each is as tall as the line, the chrome
+ *  height, so the line is one height with the ways to end a task beside them. */
+export const PANE_LINE_CHIPS = [
+  "pane-crumbs",
+  "pane-brief",
+  "chat-gauge",
+  "pane-harness",
+  "pane-from",
+  "pane-work-item",
+];
+
+/** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
+ *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the top line's chips. */
+const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks", ...PANE_LINE_CHIPS]);
 
 /** The classes that make a control the small one, drawn at the chrome height. */
 const SMALL_CONTROLS = new Set(["ui-button-sm", "ui-segmented-sm"]);
@@ -582,8 +594,9 @@ function ancestorsOf(selector: string): string[] {
 }
 
 /** What a plain selector's subject is, for this guard: a control (small, when it is the small
- *  class or sits inside a strip), a strip, or neither. A subject whose own class is a control's
- *  is a control, whatever its other classes are named. */
+ *  class or sits inside a strip), a strip, or neither. A strip's part (`STRIP_PARTS`) is a strip,
+ *  whatever else it is. Otherwise a subject whose own class is a control's is a control, however
+ *  its other classes are named. */
 export function subjectKind(
   selector: string,
   controls: ReadonlySet<string>,
@@ -591,6 +604,9 @@ export function subjectKind(
   const subject = selector.trim().slice(subjectStart(selector.trim()));
   if (subject.includes("::")) return undefined;
   const { element, classes, toggle } = partsOf(subject);
+  // A part of a strip by name is the strip's height, even a button (a top-line chip); only a
+  // class that is a strip by its pattern (`-head`, `-bar`) gives way to a control class.
+  if (classes.some((name) => STRIP_PARTS.has(name))) return "a strip";
   const controlClass = classes.some(
     (name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name),
   );
@@ -731,6 +747,103 @@ function heightsByFile(): Map<string, string[]> {
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
+/** The top line's chips (`PANE_LINE_CHIPS`) that no rule in `css` sets `height:
+ *  var(--size-chrome)` on, as a chip of the line: a strip's part, or a control inside a strip. */
+export function chipsNotChromeTall(css: string, controls: ReadonlySet<string>): string[] {
+  const tall = new Set<string>();
+  for (const { context, property, value } of declarations(css)) {
+    if (property !== "height" || value !== "var(--size-chrome)") continue;
+    for (const selector of nestedSelectors(context).flatMap(opened)) {
+      const kind = subjectKind(selector, controls);
+      if (kind !== "a strip" && kind !== "a small control") continue;
+      const subject = selector.trim().slice(subjectStart(selector.trim()));
+      for (const name of partsOf(subject).classes) tall.add(name);
+    }
+  }
+  return PANE_LINE_CHIPS.filter((chip) => !tall.has(chip));
+}
+
+/** The components the pane's top line draws a chip with, and the chip each draws. */
+const LINE_CHIP_COMPONENTS: Record<string, string> = {
+  PaneCrumbs: "pane-crumbs",
+  BriefButton: "pane-brief",
+  ChatGauge: "chat-gauge",
+  HarnessChip: "pane-harness",
+};
+
+/** A component that draws its one child as itself (`asChild`): the line reads through it. */
+const LINE_WRAPPERS = new Set(["Menued"]);
+
+/** What each `<div className="pane-chips">` in a component's source holds: each element drawn
+ *  straight in it (through `LINE_WRAPPERS` and fragments), as a chip of `PANE_LINE_CHIPS` or,
+ *  for one that is not, as `<Name className>`. A tag written inside another's props
+ *  (`state={<StateShown />}`) is not a child. */
+export function lineChildren(source: string): { chips: string[]; unlisted: string[] } {
+  const text = withoutComments(source, "ts");
+  const opens = openingTags(text, /./);
+  const closes = [...text.matchAll(/<\/([A-Za-z][\w.]*)\s*>/g)].map((hit) => ({
+    index: hit.index,
+    name: hit[1],
+  }));
+  const chips: string[] = [];
+  const unlisted: string[] = [];
+  for (const line of opens.filter((tag) =>
+    classWords(classNameOf(tag.text)).includes("pane-chips"),
+  )) {
+    type Event = { index: number; close?: string; tag?: (typeof opens)[number] };
+    const after = line.index + line.text.length;
+    let reach = after;
+    const events: Event[] = [];
+    for (const tag of opens) {
+      if (tag.index < after || tag.index < reach) continue;
+      events.push({ index: tag.index, tag });
+      reach = tag.index + tag.text.length;
+    }
+    const inProps = (index: number) =>
+      events.some(({ tag }) => tag && index > tag.index && index < tag.index + tag.text.length);
+    for (const close of closes)
+      if (close.index >= after && !inProps(close.index))
+        events.push({ index: close.index, close: close.name });
+    events.sort((a, b) => a.index - b.index);
+    let depth = 0;
+    const wrapped: number[] = [];
+    for (const event of events) {
+      if (event.close !== undefined) {
+        if (LINE_WRAPPERS.has(event.close) && wrapped.at(-1) === depth) {
+          wrapped.pop();
+          continue;
+        }
+        if (--depth < 0) break;
+        continue;
+      }
+      const tag = event.tag;
+      if (tag === undefined) continue;
+      const closed = /\/\s*>$/.test(tag.text);
+      if (depth === 0 && LINE_WRAPPERS.has(tag.name)) {
+        if (!closed) wrapped.push(depth);
+        continue;
+      }
+      if (depth === 0) {
+        const own = classWords(classNameOf(tag.text));
+        const chip =
+          LINE_CHIP_COMPONENTS[tag.name] ?? own.find((word) => PANE_LINE_CHIPS.includes(word));
+        if (chip !== undefined && PANE_LINE_CHIPS.includes(chip)) chips.push(chip);
+        else unlisted.push(`<${tag.name} ${own.join(" ")}>`.replace(" >", ">"));
+      }
+      if (!closed) depth++;
+    }
+  }
+  return { chips, unlisted };
+}
+
+/** Whether some component draws an element whose `className` hands the DOM `chip`, written as
+ *  a string, in `cn(…)` or beside other classes. */
+function drawn(chip: string, sources: readonly string[]): boolean {
+  return sources.some((source) =>
+    openingTags(source, /./).some((tag) => classWords(classNameOf(tag.text)).includes(chip)),
+  );
+}
+
 /** What differs between the heights found and the named exceptions (`ratchet`). */
 export function offTheHeights(
   found: ReadonlyMap<string, readonly string[]>,
@@ -775,7 +888,7 @@ describe("the control and chrome heights (#2449)", () => {
   });
 
   it("knows a control and a strip by the rule's subject", () => {
-    const controls = new Set(["task-end", "closer"]);
+    const controls = new Set(["task-end", "closer", "pane-harness"]);
     const kinds = [
       "button",
       ".bar button:hover:not(:disabled)",
@@ -804,7 +917,9 @@ describe("the control and chrome heights (#2449)", () => {
       ".bar .x + button",
       ".bar > .x ~ button",
       ".ui-button.toolbar-head",
+      ".task-end.panel-head",
       ".tab-tasks.task-end",
+      ".pane-harness",
     ].map((selector) => subjectKind(selector, controls));
     expect(kinds).toEqual([
       "a control",
@@ -835,6 +950,8 @@ describe("the control and chrome heights (#2449)", () => {
       "a small control",
       "a control",
       "a control",
+      "a strip",
+      "a strip",
     ]);
   });
 
@@ -925,6 +1042,63 @@ describe("the control and chrome heights (#2449)", () => {
       <select className={cn("ui-select", wide && "wide")} />
     `;
     expect(controlClasses(tsx)).toEqual(["ui-button", "task-end", "ui-select", "wide"]);
+  });
+
+  it("holds every chip on a pane's top line at the chrome height (#2484)", () => {
+    const css = readFileSync(join(SRC, "App.css"), "utf8");
+    const controls = new Set(
+      sourceFiles(isView).flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
+    );
+    expect(chipsNotChromeTall(css, controls)).toEqual([]);
+    // Each chip is one a component draws, so the list does not outlive the line.
+    const views = sourceFiles(isView).map((file) => readFileSync(join(SRC, file), "utf8"));
+    for (const chip of PANE_LINE_CHIPS) expect(drawn(chip, views), chip).toBe(true);
+    // And each component named for a chip draws it.
+    for (const [name, chip] of Object.entries(LINE_CHIP_COMPONENTS)) {
+      const own = views.find((text) => new RegExp(`function ${name}\\b`).test(text));
+      expect(own !== undefined && drawn(chip, [own]), `${name} draws .${chip}`).toBe(true);
+    }
+  });
+
+  it("reads every child of the pane's top line, and fails one that is not a listed chip", () => {
+    const source = readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8");
+    const { chips, unlisted } = lineChildren(source);
+    expect(unlisted).toEqual([]);
+    expect(new Set(chips)).toEqual(new Set(PANE_LINE_CHIPS));
+    const planted = `
+      <div className="pane-chips">
+        {a && (<Menued on={x}><PaneCrumbs crumbs={c} state={<StateShown shown={s} />} /></Menued>)}
+        <BriefButton of={b} />
+        {from && <span className={cn("pane-from", quiet && "quiet")}>{from}</span>}
+        <span className="pane-seventh">new</span>
+        <NewChip />
+      </div>
+      <div className="other"><Ignored /></div>
+    `;
+    expect(lineChildren(planted)).toEqual({
+      chips: ["pane-crumbs", "pane-brief", "pane-from"],
+      unlisted: ["<span pane-seventh>", "<NewChip>"],
+    });
+  });
+
+  it("fails a top-line chip with no chrome height, and one held off it", () => {
+    const controls = new Set(["pane-harness", "pane-brief"]);
+    expect(
+      chipsNotChromeTall(".pane-chips > .chat-gauge { height: var(--size-chrome); }", controls),
+    ).toEqual(PANE_LINE_CHIPS.filter((chip) => chip !== "chat-gauge"));
+    // A chip off the chrome height fails, a button chip as any other.
+    expect(cssHeights(".pane-from { min-height: 1.25rem; }", controls)).toEqual([
+      ".pane-from | min-height: 1.25rem (a strip)",
+    ]);
+    expect(
+      cssHeights(
+        ".pane-chips > .pane-harness { height: var(--size-control); } .pane-brief { min-height: var(--size-control); }",
+        controls,
+      ),
+    ).toEqual([
+      ".pane-chips > .pane-harness | height: var(--size-control) (a strip)",
+      ".pane-brief | min-height: var(--size-control) (a strip)",
+    ]);
   });
 
   it("covers the window, so a reader that found nothing fails", () => {
