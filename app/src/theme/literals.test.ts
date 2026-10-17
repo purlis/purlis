@@ -53,9 +53,11 @@ const SOURCES: Record<string, string> = Object.fromEntries(
     "",
   ]),
 );
-// The page itself, which is not under `src` and is exactly where somebody fixing a flash of
-// white at launch would reach for a colour. Named by hand because there is one of it.
+// The pages themselves, which are not under `src` and are exactly where somebody fixing a
+// flash of white at launch would reach for a colour: the window's, and the theme specimen's
+// (#2330). Named by hand because there are two of them.
 SOURCES["index.html"] = "";
+SOURCES["specimen.html"] = "";
 for (const path of Object.keys(SOURCES)) {
   SOURCES[path] = readFileSync(join(process.cwd(), path), "utf8");
 }
@@ -299,17 +301,27 @@ describe("no motion is written outside a theme file", () => {
  * to the literal guard above, which reads only charter's own sources. So the rule is structural:
  * the window has ONE stylesheet entry, `styles.css`, imported once from `App.tsx`, and every
  * `@import` in it names a layer. A library's stylesheet goes there, in `vendor`.
+ *
+ * The theme specimen (#2330) is a second page of the same build, drawn in a window of its own:
+ * its entry, `specimen/main.tsx`, imports the same `styles.css` and its own layout,
+ * `specimen.css`, whose every rule is in the `charter` layer.
  */
 describe("every stylesheet is in a layer", () => {
   /** A stylesheet pulled in from script: `import "x.css"`, `import a from "x.css?inline"`, or
    *  `import("x.css")`. */
+  /** Each page's stylesheets, from its entry: the window's, and the theme specimen's. */
+  const ENTRIES = [
+    "src/App.tsx: ./styles.css",
+    "src/specimen/main.tsx: ../styles.css",
+    "src/specimen/main.tsx: ./specimen.css",
+  ];
   const IMPORTED =
     /\bimport\s*(?:\(\s*|[\w{}*\s,]+\s+from\s+)?["'`]([^"'`]+\.css(?:\?[^"'`]*)?)["'`]/g;
 
   it.each(sources(".ts", ".tsx"))("%s imports no stylesheet but the window's own", (path, raw) => {
     const text = withoutComments(raw, "ts");
     const complaints = [...text.matchAll(IMPORTED)]
-      .filter((hit) => !(path === "src/App.tsx" && hit[1] === "./styles.css"))
+      .filter((hit) => !ENTRIES.includes(`${path}: ${hit[1]}`))
       .map((hit) => `${at(path, text, hit.index)} imports ${hit[1]}`);
     expect(
       complaints,
@@ -321,7 +333,20 @@ describe("every stylesheet is in a layer", () => {
     const imports = sources(".ts", ".tsx").flatMap(([path, raw]) =>
       [...withoutComments(raw, "ts").matchAll(IMPORTED)].map((hit) => `${path}: ${hit[1]}`),
     );
-    expect(imports).toEqual(["src/App.tsx: ./styles.css"]);
+    expect(imports).toEqual(ENTRIES);
+  });
+
+  it("holds the specimen's own layout wholly in a layer", () => {
+    const text = withoutComments(SOURCES["src/specimen/specimen.css"], "css").trim();
+    expect(text.startsWith("@layer charter {")).toBe(true);
+    // One block: the layer's own brace closes at the file's end, and nothing follows it.
+    let depth = 0;
+    const closes = [...text].flatMap((char, n) => {
+      if (char === "{") depth++;
+      if (char === "}" && --depth === 0) return [n];
+      return [];
+    });
+    expect(closes).toEqual([text.length - 1]);
   });
 
   it.each(sources(".css"))("%s gives every @import a layer", (path, raw) => {
