@@ -389,18 +389,8 @@ export const commands = {
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
-	 *  browser sites at `level`, this chat or every chat of this project on this machine. A grant
-	 *  for the browser alone (ruled 2026-10-17): the chat's own commands still need their own Allow
-	 *  for each host. Its browser reaches them from its next act; the chat is told on its next turn.
-	 */
-	allowBrowserSites: (plane: PlaneId, session: number, sites: string[], level: GrantLevel) => typedError<null, string>(__TAURI_INVOKE("allow_browser_sites", { plane, session, sites, level })),
-	/**
-	 *  **Keep blocked on chat `session`'s browser sites** (#2018): nothing is allowed, they wait no
-	 *  more, and the chat is told on its next turn not to retry, with the reason the person typed.
-	 */
-	keepBrowserSitesBlocked: (plane: PlaneId, session: number, sites: string[], reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_browser_sites_blocked", { plane, session, sites, reason })),
+	allowBrowserSites: __WINDOW_ONLY_RESULT,
+	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
