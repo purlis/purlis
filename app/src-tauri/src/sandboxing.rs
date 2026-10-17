@@ -148,6 +148,11 @@ pub struct SandboxState {
     /// How the project's own hosts changed since this machine last told the person (#1341):
     /// the one-time Notice each teammate sees. `null` when nothing did.
     pub hosts_changed: Option<HostsChanged>,
+    /// How the project's browser sites for everyone in it changed since this machine last
+    /// showed them (#2443): one each reaches no browser here until it was shown. `null` when
+    /// nothing did.
+    #[specta(optional)]
+    pub browser_sites_changed: Option<BrowserSitesChanged>,
     /// How the project's Internet access presets changed since this machine last told the
     /// person (#1385): the one-time Notice each teammate sees, so a preset that widens never
     /// widens unseen. `null` when nothing did.
@@ -558,6 +563,15 @@ pub struct HostsChanged {
     pub now: Vec<String>,
 }
 
+/// The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
+/// spelled as the sandbox writes a host.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct BrowserSitesChanged {
+    /// Listed and never shown here: what the Notice sends back once it is read.
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+}
+
 /// The project's presets as they changed (`sandbox::local::PresetsChange`): each named as the
 /// window names it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -592,6 +606,12 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
             added: change.added,
             removed: change.removed,
             now: change.now,
+        }),
+        browser_sites_changed: sandbox::browser_sites::changed(root, &locks).map(|change| {
+            BrowserSitesChanged {
+                added: change.added,
+                removed: change.removed,
+            }
         }),
         presets_changed: sandbox::local::presets_changed(root).map(|change| PresetsChanged {
             added: change.added,
@@ -868,6 +888,31 @@ pub async fn acknowledge_project_hosts(
 ) -> Result<SandboxState, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window(ANSWERING_SANDBOX, move || acknowledge(&root, &shown)).await
+}
+
+/// **The person read the Notice of the project's browser sites** as it showed them, `shown`, the
+/// sites it named as added (#2443): each still listed reaches every chat's browser here from its
+/// next act. The window's alone (`WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn acknowledge_project_browser_sites(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: Vec<String>,
+) -> Result<SandboxState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(ANSWERING_SANDBOX, move || {
+        acknowledge_browser_sites(&root, &shown)
+    })
+    .await
+}
+
+fn acknowledge_browser_sites(
+    root: &std::path::Path,
+    shown: &[String],
+) -> Result<SandboxState, String> {
+    sandbox::browser_sites::acknowledge(root, shown).map_err(|err| err.to_string())?;
+    Ok(state_of(root))
 }
 
 /// The person read the Notice of the project's Internet access presets as it showed them,
@@ -2374,6 +2419,28 @@ fn grants_of(
             ..row(GrantWhat::BrowserSite, target, Level::You, None)
         });
     }
+    // The project's browser sites for everyone in it (#2443): committed, the browsers' alone,
+    // each waiting on this machine until the person here was shown it.
+    let seen = sandbox::local::browser_sites_seen(root);
+    let committed_sites: Vec<String> = sandbox::browser_sites::committed(root, &locks)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    for (target, committed) in committed_sites
+        .iter()
+        .zip(committed_by(root, &committed_sites))
+    {
+        out.push(SandboxGrant {
+            by: committed.as_ref().map(|one| one.by.clone()),
+            waiting: (!seen.contains(target)).then(|| BROWSER_SITE_UNSEEN.to_owned()),
+            ..row(
+                GrantWhat::BrowserSite,
+                target.clone(),
+                Level::Project,
+                committed.and_then(|one| u32::try_from(one.at).ok()),
+            )
+        });
+    }
     // What is kept and policy now drops is said, never listed as granted (#1423): a host at
     // the level it is kept at, every folder where policy forbids write grants, and anything
     // kept at a scope policy's `allow-scopes` leaves out (#1927), by the judgement a start
@@ -2708,6 +2775,10 @@ pub async fn revoke_sandbox_grant(
     .await
 }
 
+/// Why a project's browser site reaches no browser here yet (#2443).
+const BROWSER_SITE_UNSEEN: &str = "It reaches no browser here until you read the Notice of the \
+                                   project's browser sites.";
+
 /// A browser site's grant, as its id in the Granted list names it ([`grants_of`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SiteGranted {
@@ -2715,6 +2786,8 @@ enum SiteGranted {
     Chat(u32, sandbox::browser_reach::Site),
     /// For every chat's browser here, on this machine.
     You(sandbox::browser_reach::Site),
+    /// For every chat's browser of everyone in the project, committed (#2443).
+    Project(sandbox::hosts::Host),
 }
 
 /// The browser site the grant called `id` is, where it is one: None for any other grant, or
@@ -2726,6 +2799,9 @@ fn browser_site_of(id: &str) -> Option<SiteGranted> {
             Some(SiteGranted::Chat(session.parse().ok()?, site(written)?))
         }
         ["you", sandbox::local::BROWSER_SITE, written] => Some(SiteGranted::You(site(written)?)),
+        ["project", sandbox::local::BROWSER_SITE, written] => Some(SiteGranted::Project(
+            sandbox::hosts::Host::parse(written).ok()?,
+        )),
         _ => None,
     }
 }
@@ -2745,6 +2821,7 @@ fn revoke_browser_site(
     let (session, site, level) = match granted {
         SiteGranted::Chat(session, site) => (Some(*session), site, Level::Chat),
         SiteGranted::You(site) => (None, site, Level::You),
+        SiteGranted::Project(host) => return revoke_project_site(held, plane, host, audit, told),
     };
     let there = match session {
         Some(session) => held
@@ -2792,6 +2869,76 @@ fn revoke_browser_site(
         });
     }
     Ok(())
+}
+
+/// **Removes a browser site for everyone in the project** (#2443): checked to be listed,
+/// audited, then taken out of the committed file and forgotten as seen here, and every chat's
+/// browsers here end, their tabs told so. Where the file is not written, the audit says the site
+/// stands again.
+fn revoke_project_site(
+    held: &crate::planes::Held,
+    plane: &PlaneId,
+    host: &sandbox::hosts::Host,
+    audit: Audit<'_>,
+    told: &dyn Fn(crate::chatbrowsers::BrowsersEnded),
+) -> Result<(), String> {
+    let root = held.root();
+    let listed = sandbox::Plane::read(root)
+        .browser_sites()
+        .is_ok_and(|listed| listed.hosts.contains(host));
+    if !listed {
+        return Err("purlis did not remove it: it is no longer there.".to_owned());
+    }
+    let audited = |granted: bool| {
+        audit(
+            None,
+            &sandbox::grant::Audited {
+                granted,
+                what: sandbox::local::BROWSER_SITE,
+                target: &host.to_string(),
+                level: sandbox::grant::Level::Project,
+            },
+        )
+    };
+    audited(false)?;
+    if let Err(why) = sandbox::browser_sites::revoke(root, host) {
+        // Nothing was removed: the audit says it stands again, as the file still says.
+        if !sandbox::Plane::read(root)
+            .browser_sites()
+            .is_ok_and(|listed| !listed.hosts.contains(host))
+        {
+            let _ = audited(true);
+        }
+        return Err(format!("purlis could not remove {host}: {why}"));
+    }
+    browsers_ended_told(
+        plane,
+        held.browsers().sites_removed(held.browser_driver()),
+        told,
+    );
+    Ok(())
+}
+
+/// Tells each tab of `ended` that its chat's browsers ended, or could not be ended yet.
+fn browsers_ended_told(
+    plane: &PlaneId,
+    ended: Vec<(u32, crate::chatbrowsers::Ended)>,
+    told: &dyn Fn(crate::chatbrowsers::BrowsersEnded),
+) {
+    for (session, crate::chatbrowsers::Ended { ended, unended }) in ended {
+        let note = if unended > 0 {
+            crate::chatbrowsers::NOT_ENDED_ON_ITS_TAB
+        } else if ended > 0 {
+            crate::chatbrowsers::ENDED_ON_ITS_TAB
+        } else {
+            continue;
+        };
+        told(crate::chatbrowsers::BrowsersEnded {
+            plane: plane.clone(),
+            session,
+            note: note.to_owned(),
+        });
+    }
 }
 
 /// The commands of Settings' Granted list that ask git, which answer off the window's thread

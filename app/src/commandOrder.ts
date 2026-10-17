@@ -51,6 +51,7 @@ export const LANES = {
       "saveProjectSettings",
       "moveProjectSettings",
       "acknowledgeProjectHosts",
+      "acknowledgeProjectBrowserSites",
       "acknowledgeProjectPresets",
       "allowProjectExpects",
       "declineProjectExpects",
