@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use super::vocabulary;
 use super::*;
 use crate::extension::project::theme::Pick;
 
@@ -62,17 +63,17 @@ fn the_built_in_themes_clear_every_consent_floor_and_are_drawn_unchanged() {
 
 #[test]
 fn every_ask_pair_is_one_the_check_measures() {
-    let asked: Vec<(&str, &str)> = floors::pairs()
+    let asked: std::collections::BTreeSet<(&str, &str)> = floors::pairs()
         .filter(|(floor, _)| *floor == Floor::Ask)
         .map(|(_, pair)| (pair.front, pair.back))
         .collect();
     assert_eq!(
-        asked,
+        asked.into_iter().collect::<Vec<_>>(),
         [
-            ("text.primary", "surface.overlay"),
-            ("text.primary", "control.base"),
             ("needs-you.text", "needs-you.base"),
+            ("text.primary", "control.base"),
             ("text.primary", "danger.wash"),
+            ("text.primary", "surface.overlay"),
         ]
     );
 }
@@ -86,14 +87,12 @@ fn danger_words_that_vanish_into_the_danger_surface_are_drawn_as_purlis_s_and_th
             "danger.text": "#301010",
             "danger.surface": "#301010",
             "text.primary": "#eeeeee",
-            "accent.base": "#4fa3e0",
         }),
     );
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(drawn.value("danger.text"), ours("danger.text"));
     assert_eq!(drawn.value("danger.surface"), ours("danger.surface"));
     assert_eq!(drawn.value("text.primary"), "#eeeeee");
-    assert_eq!(drawn.value("accent.base"), "#4fa3e0");
     let held = held.expect("the floor was held");
     assert_eq!(held.theme, "Ember");
     assert_eq!(held.floors, [Floor::Danger]);
@@ -180,7 +179,7 @@ fn the_notice_names_the_theme_and_each_floor_it_breaks_once() {
 fn a_theme_that_clears_the_floors_is_drawn_exactly_as_written() {
     let mine = theme(
         "Calm",
-        json!({ "accent.base": "#4fa3e0", "danger.base": "#e88080", "state.running": "#58a6ff" }),
+        json!({ "danger.text": "#ffb3b3", "text.secondary": "#c8c8c0", "state.running": "#58a6ff" }),
     );
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(held, None);
@@ -250,4 +249,89 @@ fn a_theme_folder_s_appearances_are_each_held_against_purlis_s_of_their_own_tag(
         assert_eq!(held.tokens, ["state.failed"]);
         assert!(held.theme.starts_with("Duo ("), "{}", held.theme);
     }
+}
+
+#[test]
+fn an_accent_that_only_meets_danger_under_a_workspace_s_tint_is_drawn_as_purlis_s() {
+    // As far from purlis's danger as can be as written, and its own colour once a workspace's
+    // tint turns it to danger's hue: the same lightness and colourfulness, another hue.
+    let danger = ours("danger.base");
+    let accent = tint_hex(danger, 200.0);
+    let mine = theme("Shift", json!({ "accent.base": accent }));
+    assert!(floors::apart(mine.first()) >= DANGER_APART);
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
+    assert_eq!(drawn.value("danger.base"), danger);
+    let held = held.expect("the floor was held");
+    assert_eq!(held.floors, [Floor::DangerApart]);
+    assert_eq!(held.tokens, ["accent.base"]);
+    assert_eq!(draw(&drawn).held, None, "what is drawn clears every floor");
+}
+
+#[test]
+fn a_theme_of_one_colour_everywhere_is_drawn_clearing_every_consent_floor() {
+    for (appearance, grey) in [
+        ("dark", "#808080"),
+        ("light", "#808080"),
+        ("dark", "#000000"),
+    ] {
+        let tokens: serde_json::Map<String, Value> = vocabulary::TOKENS
+            .iter()
+            .map(|token| ((*token).to_owned(), json!(grey)))
+            .collect();
+        let resolved = load(&json!({ "name": "Grey", "appearance": appearance, "tokens": tokens }));
+        assert!(!resolved.refused, "{:?}", resolved.complaints);
+        let drawn = draw(resolved.theme.first());
+        let held = drawn.held.expect("a one-colour theme breaks the floors");
+        assert_eq!(
+            held.floors,
+            [
+                Floor::Ask,
+                Floor::Danger,
+                Floor::DangerApart,
+                Floor::StateMarks
+            ]
+        );
+        let drawn = drawn.theme.expect("drawn");
+        assert_eq!(consent_failures(&drawn), [], "{appearance} {grey}");
+        assert_eq!(draw(&drawn).held, None, "{appearance} {grey}");
+    }
+}
+
+#[test]
+fn a_source_s_floors_notice_is_gone_once_what_it_draws_clears_them() {
+    let drawn_from = |mine: &Theme| {
+        resolve(
+            &Inputs {
+                pick: None,
+                theirs: Some(mine),
+                on: On::Every,
+                system: Appearance::Dark,
+            },
+            || unreachable!("no survey when the person has a theme"),
+        )
+    };
+    let broken = theme("Mine", json!({ "state.failed": "#191917" }));
+    assert!(drawn_from(&broken).held.is_some());
+    let mended = theme("Mine", json!({ "state.failed": "#ff6b6b" }));
+    let it = drawn_from(&mended);
+    assert_eq!(it.held, None);
+    assert_eq!(it.theme.expect("drawn").value("state.failed"), "#ff6b6b");
+}
+
+#[test]
+fn faded_words_are_measured_at_the_opacity_they_are_drawn() {
+    // Words that clear the floor solid and not at four-fifths opacity are held.
+    let mine = theme("Faint", json!({ "text.primary": "#9a9a95" }));
+    let faded = PAIRS
+        .iter()
+        .find(|pair| pair.fade.is_some())
+        .expect("a faded pair");
+    assert_eq!(
+        (faded.front, faded.back),
+        ("text.primary", "surface.overlay")
+    );
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("text.primary"), ours("text.primary"));
+    assert_eq!(held.expect("held").floors, [Floor::Ask]);
 }

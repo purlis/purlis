@@ -355,17 +355,20 @@ can be read. Its interface:
 gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds four
 floors for any theme from any source:
 
-- **an ask contrasts with its surface**: `text.primary` on `surface.overlay`, on `control.base`
-  and on `danger.wash`, and `needs-you.text` on `needs-you.base`;
+- **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
+  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and on `danger.wash`
+  over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
-  in OKLab, five times the least difference a person can see;
+  in OKLab, five times the least difference a person can see, as the theme is and with the accent
+  turned to each palette hue and every whole degree a workspace's colour can turn it to; at each
+  hue the floor is 0.1 or Purlis Classic's own distance there, whichever is less;
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`.
 
 Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
-workspace colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
+workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
 appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
 for the pair's other token when Classic's colour still fails on it. The rest of the theme draws
 as written, and one Notice in the Inbox names the theme and the floors it breaks.

@@ -15,14 +15,15 @@
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
 //!   window draws it on;
 //! - **danger is distinguishable from primary** ([`Floor::DangerApart`]): the danger colour and
-//!   the accent are at least [`DANGER_APART`] apart as OKLab draws colour;
+//!   the accent are at least [`DANGER_APART`] apart as OKLab draws colour, or as far apart as
+//!   Purlis Classic's are when that is less, as the theme is and with the accent turned to every
+//!   hue a workspace's colour can turn it to;
 //! - **the state marks meet the mark floor** ([`Floor::StateMarks`]): every state's colour and
 //!   the needs-you mark on each ground they are drawn on.
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
-//! colour a workspace can name, as [`super::check`] measures. Danger apart from primary is
-//! measured in the theme's own colours.
+//! colour a workspace can name, as [`super::check`] measures.
 //!
 //! **A theme that breaks one is drawn with purlis's own values for those tokens**: Purlis
 //! Classic's of the same appearance, for the consent and state tokens of each pair that fails.
@@ -31,6 +32,7 @@
 //! which tokens, for one Notice per theme.
 
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
 
 use super::check::{PAIRS, Pair, ratio};
 use super::{Appearance, ResolvedTheme, built_in_for, tint};
@@ -64,7 +66,8 @@ impl Floor {
 /// **How far apart danger and primary are, at least**: the distance between `danger.base` and
 /// `accent.base` in OKLab (Björn Ottosson's), where 1 is the distance from black to white and a
 /// difference of about 0.02 is the least a person can see. 0.1 is five times that: two colours
-/// told apart at a glance, not on a second look.
+/// told apart at a glance, not on a second look. At each hue a workspace's tint turns the accent
+/// to, a theme is held to this or to Purlis Classic's own distance at that hue, whichever is less.
 pub const DANGER_APART: f64 = 0.1;
 
 /// The ask's pairs, by `front` on `back`: its words on the dialog it is asked in, its answers'
@@ -130,14 +133,15 @@ impl Held {
     }
 }
 
-/// One failure: the floor, and the tokens it is between.
+/// One failure: the floor, and the tokens it is between, a wash's ground included.
 struct Failure {
     floor: Floor,
-    tokens: [&'static str; 2],
+    tokens: Vec<&'static str>,
 }
 
 /// Every consent floor `theme` breaks: the contrast floors as it is and tinted by every
-/// workspace colour, and danger apart from primary in the theme's own colours.
+/// workspace colour, and danger apart from primary as it is and at every hue the tint turns the
+/// accent to.
 fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
     let mut found = Vec::new();
     let tints = tint::PALETTE
@@ -148,34 +152,86 @@ fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
             if ratio(&drawn, pair) < pair.floor {
                 found.push(Failure {
                     floor,
-                    tokens: [pair.front, pair.back],
+                    tokens: [Some(pair.front), Some(pair.back), pair.under]
+                        .into_iter()
+                        .flatten()
+                        .collect(),
                 });
             }
         }
     }
-    if apart(theme) < DANGER_APART {
+    if !apart_enough(theme) {
         found.push(Failure {
             floor: Floor::DangerApart,
-            tokens: ["danger.base", "accent.base"],
+            tokens: vec!["danger.base", "accent.base"],
         });
     }
     found
 }
 
-/// How far `danger.base` is from `accent.base` in OKLab.
-pub(super) fn apart(theme: &ResolvedTheme) -> f64 {
-    let (Some(danger), Some(accent)) = (
-        tint::oklab_of(theme.value("danger.base")),
-        tint::oklab_of(theme.value("accent.base")),
-    ) else {
+/// **Every hue a workspace's colour turns the accent to**, as far as the floor is measured: each
+/// palette colour's, and every whole degree, which a `#rrggbb` workspace colour names between.
+fn hues() -> &'static [f64] {
+    static HUES: OnceLock<Vec<f64>> = OnceLock::new();
+    HUES.get_or_init(|| {
+        tint::PALETTE
+            .iter()
+            .map(|(_, hue)| *hue)
+            .chain((0..360).map(f64::from))
+            .collect()
+    })
+}
+
+/// How far `danger.base` is from `accent.base` in OKLab, as the theme is and at each of
+/// [`hues`], in that order.
+fn apart_everywhere(theme: &ResolvedTheme) -> Vec<f64> {
+    let danger = theme.value("danger.base");
+    let accent = theme.value("accent.base");
+    std::iter::once(apart_of(danger, accent))
+        .chain(
+            hues()
+                .iter()
+                .map(|hue| apart_of(danger, &tint::tint_hex(accent, *hue))),
+        )
+        .collect()
+}
+
+/// Purlis Classic's [`apart_everywhere`] in `appearance`, measured once.
+fn ours_apart(appearance: Appearance) -> &'static [f64] {
+    static DARK: OnceLock<Vec<f64>> = OnceLock::new();
+    static LIGHT: OnceLock<Vec<f64>> = OnceLock::new();
+    let kept = match appearance {
+        Appearance::Dark => &DARK,
+        Appearance::Light => &LIGHT,
+    };
+    kept.get_or_init(|| apart_everywhere(built_in_for(appearance)))
+}
+
+/// Whether danger is apart from primary everywhere it is drawn: at least [`DANGER_APART`], or
+/// Purlis Classic's own distance at that hue when that is less.
+fn apart_enough(theme: &ResolvedTheme) -> bool {
+    apart_everywhere(theme)
+        .iter()
+        .zip(ours_apart(theme.appearance))
+        .all(|(theirs, ours)| *theirs >= DANGER_APART.min(*ours))
+}
+
+/// How far two colours are in OKLab; none at all for a value that is not a colour.
+fn apart_of(one: &str, other: &str) -> f64 {
+    let (Some(one), Some(other)) = (tint::oklab_of(one), tint::oklab_of(other)) else {
         return 0.0;
     };
-    danger
-        .iter()
-        .zip(accent)
+    one.iter()
+        .zip(other)
         .map(|(a, b)| (a - b).powi(2))
         .sum::<f64>()
         .sqrt()
+}
+
+/// How far `danger.base` is from `accent.base` in OKLab, as the theme is.
+#[cfg(test)]
+pub(super) fn apart(theme: &ResolvedTheme) -> f64 {
+    apart_of(theme.value("danger.base"), theme.value("accent.base"))
 }
 
 /// **`theme` with the consent floors held**: as it is when it clears them; otherwise with
@@ -198,7 +254,8 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             floors.insert(failure.floor);
             let open: Vec<&'static str> = failure
                 .tokens
-                .into_iter()
+                .iter()
+                .copied()
                 .filter(|token| !taken.contains(token))
                 .collect();
             let consent: Vec<&'static str> = open
