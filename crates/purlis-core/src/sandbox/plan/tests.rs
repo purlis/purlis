@@ -115,7 +115,6 @@ fn a_proxy_held_on_another_machine_takes_none_of_this_machine_s_ports() {
         Box::new(Holding(Arc::default())),
     );
 
-    let confinement = confinement.expect("held");
     assert_eq!(confinement.proxy_ports(), [50861, 50862]);
     assert!(!localport::is_own(50861) && !localport::is_own(50862));
     // A listener of purlis's here may take the other one while it is held.

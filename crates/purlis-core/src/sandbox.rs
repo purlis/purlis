@@ -3928,11 +3928,8 @@ impl Confinement {
     /// runner's. Its proxy listens on that machine's ports, so none of them is judged against,
     /// or taken as, a port of this machine ([`localport`]); otherwise it is held as
     /// [`Self::held_elsewhere`] holds one.
-    pub fn held_on_another_machine(
-        placed: Placed,
-        held: Box<dyn HeldElsewhere>,
-    ) -> std::io::Result<Self> {
-        Ok(Self::held_at(placed, held, false))
+    pub fn held_on_another_machine(placed: Placed, held: Box<dyn HeldElsewhere>) -> Self {
+        Self::held_at(placed, held, false)
     }
 
     fn held_at(placed: Placed, held: Box<dyn HeldElsewhere>, on_this_machine: bool) -> Self {

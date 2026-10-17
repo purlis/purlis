@@ -3236,7 +3236,7 @@ impl Chats {
             if let Some(starting) = lock(&self.starting).as_ref() {
                 starting(session, harness, conversation.clone());
             }
-            // A run on a runner is written there, where it runs.
+            // A run on a runner is written there, where it runs, never here.
             if let Some(beginning) = lock(&self.beginning).as_ref().filter(|_| !on_the_runner)
                 && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
             {

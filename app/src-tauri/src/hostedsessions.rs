@@ -125,6 +125,12 @@ pub const NOT_HANDED_IN_THE_HOST: &str = "this chat's profile signs it in with c
 pub const COMPOSED_ON_THE_RUNNER: &str = "a chat's harness on a runner is started by what the \
      chat is named, and the runner composes it; the window's own launch of it was not sent";
 
+/// Why a person's opt-out of the sandbox is not sent to a runner (#2446): a runner starts its
+/// chats in their sandbox, and takes an opt-out from no link but its own window's.
+pub const SANDBOXED_ON_A_RUNNER: &str = "a chat on a runner starts in its sandbox, so this one \
+     was not started without it; start it sandboxed there, or on this machine to run it without \
+     the sandbox";
+
 /// How long a start waits for the host's link to be ready, before it says why there is none.
 const LINK_WITHIN: Duration = Duration::from_secs(30);
 
@@ -1152,7 +1158,10 @@ impl HostedSessions {
         held: crate::hostedconfinement::HeldInTheHost,
     ) -> std::io::Result<purlis_core::sandbox::Confinement> {
         if self.on_a_runner {
-            purlis_core::sandbox::Confinement::held_on_another_machine(placed, Box::new(held))
+            Ok(purlis_core::sandbox::Confinement::held_on_another_machine(
+                placed,
+                Box::new(held),
+            ))
         } else {
             purlis_core::sandbox::Confinement::held_elsewhere(placed, Box::new(held))
         }
@@ -1772,6 +1781,9 @@ impl SessionHost for HostedSessions {
         use crate::hostedconfinement::{Hears, HeldInTheHost, placed};
         if self.kill_switch.is_stopped() {
             return Err(STOPPED.to_owned());
+        }
+        if self.on_a_runner && named.without_sandbox {
+            return Err(SANDBOXED_ON_A_RUNNER.to_owned());
         }
         let (link, project) = self.link()?;
         let id = self.number_for(wanted)?;

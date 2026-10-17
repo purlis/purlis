@@ -2182,6 +2182,12 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     sessions.close(id).expect("it closes");
     until("the runner ends it", || confines.ended(&held));
 
+    let opted_out = Named {
+        without_sandbox: true,
+        ..by_its_names()
+    };
+    let refused = sessions.open_named(None, &opted_out, Default::default(), &|_| {});
+    assert_eq!(refused.err().as_deref(), Some(SANDBOXED_ON_A_RUNNER));
     let mut harness = a_shell("true");
     harness.harness = Some(purlis_core::harness::Harness::ClaudeCode);
     let refused = sessions.open(None, &harness, &|_| {});

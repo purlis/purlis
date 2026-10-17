@@ -292,6 +292,35 @@ async fn host_a_refuses_a_start_without_the_sandbox_from_any_client_but_its_wind
     assert!(runs.ran().is_empty());
 }
 
+/// **Only the window's start keeps the ids it names on host B** (#2446): host B keeps the ids
+/// its peer sends on, so a start from any other client of host A is sent on without them, and
+/// host B gives it ids of its own.
+#[tokio::test]
+async fn a_start_from_a_client_that_is_not_the_window_is_sent_on_without_its_ids() {
+    let runs = StandIns::default();
+    let b = Hosting::running_with(Echo, runs.clone());
+    let relay = Relay::new(over_the_link(b));
+    let window = Client::new(local_ui(relay.clone()).await).0;
+    let project = tempfile::tempdir().unwrap();
+    window
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("host B holds the project");
+    let (terminal, _views, _events) = Client::new(as_scope(Scope::Terminal, relay).await);
+    let named = || StartProgram {
+        program: Some("01J9CHAT000000000000000000".into()),
+        run: Some("01J9RUN0000000000000000000".into()),
+        ..StartProgram::of(PROJECT, ProgramKind::Shell)
+    };
+
+    let theirs = terminal.start_program(named()).await.expect("started");
+    let the_windows = window.start_program(named()).await.expect("started");
+
+    assert_ne!(theirs, "01J9CHAT000000000000000000");
+    assert_eq!(the_windows, "01J9CHAT000000000000000000");
+    assert_eq!(runs.ran().len(), 2);
+}
+
 /// A client of host A whose scope may hold a project and reply to hook lines there, as a link
 /// between hosts may, but is not its window.
 async fn another_host_on(relay: Relay) -> Client {
