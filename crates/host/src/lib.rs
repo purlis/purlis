@@ -90,7 +90,7 @@ pub use purlis_session_protocol as protocol;
 #[cfg(unix)]
 pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
-pub use relay::{Dial, Relay};
+pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
 pub use serving::{HostError, LOCK, Place, Window, serve};
 
