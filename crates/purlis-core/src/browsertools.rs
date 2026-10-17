@@ -177,6 +177,33 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
     })
 }
 
+/// **Whether an `ask_operator` call is pointed at one of the chat's browsers** (#2015): it
+/// names one in `browser`. Such a call asks the app to hand that browser to the person, never
+/// the harness's own prompt ([`needs_you`]).
+pub fn points_at_a_browser(args: &Map<String, Value>) -> bool {
+    !matches!(args.get("browser"), None | Some(Value::Null))
+}
+
+/// **What an `ask_operator` call pointed at a browser asks** (#2015), or why it is refused: the
+/// browser, by the name the app gave it, and the question, trimmed. The app answers at once:
+/// the person sees it under Needs you, takes the browser over and hands it back with Done.
+pub fn needs_you(args: &Map<String, Value>) -> Result<Asked, String> {
+    let question = crate::chattools::question(args)?;
+    let browser = optional(args, "browser")?
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            "give `browser` the name of the browser the person is to take over, as the browser \
+             tools name it (b1)"
+                .to_owned()
+        })?;
+    Ok(Asked {
+        browser: Some(browser),
+        call_id: None,
+        asked: Browsing::NeedsYou { question },
+    })
+}
+
 /// **What a browser answered, in lines the model reads**: the browser and its page, whether it
 /// settled, the pages it opened, any note, then the page's lines.
 pub fn said(browser: &str, browsed: &Browsed) -> String {

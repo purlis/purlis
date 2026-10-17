@@ -63,6 +63,8 @@ use crate::harness::Harness;
 /// What an opencode chat is wrapped in, before the place it opens is known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wrap {
+    /// The system it is applied on, whose mechanism applies it ([`super::wrapper`]).
+    pub os: Os,
     /// How much it holds ([`super::Level`]): at the floor every folder is written and the
     /// network is open, but what [`Self::denied`] and [`Self::held`] name.
     pub level: super::Level,
@@ -98,16 +100,20 @@ pub const CREDENTIALS: [&str; 2] = ["auth.json", "mcp-auth.json"];
 
 /// `compiled`, for opencode, or why it cannot be wrapped on this system.
 pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
-    if compiled.os != Os::MacOs {
+    // macOS (Seatbelt) and Linux (purlis's own wrap, #1040) apply the same profile.
+    if !matches!(compiled.os, Os::MacOs | Os::Linux) {
         return Err(Uncompilable {
             harness: Harness::Opencode,
             unheld: Unheld::Wrap(compiled.os),
         });
     }
     let mut denied = compiled.denied.paths.clone();
-    denied.extend(seatbelt::keychains(compiled.homes.home.as_deref()));
+    if compiled.os == Os::MacOs {
+        denied.extend(seatbelt::keychains(compiled.homes.home.as_deref()));
+    }
     let own = |dir: &Option<PathBuf>| dir.as_ref().map(|dir| dir.join("opencode"));
     Ok(Wrap {
+        os: compiled.os,
         level: compiled.level,
         held: compiled.held.clone(),
         denied,

@@ -263,6 +263,8 @@ pub struct Held {
     activity: crate::activity::Teller,
     /// Told each task's quiet Notice as it comes or goes (#1981).
     quiet: crate::silence::Teller,
+    /// The Asks that wait on the person to take a chat's browser over (#2015).
+    needs_you: crate::browserneedsyou::NeedsYou,
     /// How many brokered writes each chat has made lately (#1333).
     brokered: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
@@ -524,6 +526,11 @@ impl Held {
     /// The vaults each chat was refused for its persona, for the Notice on its tab (#1430).
     pub fn vault_refusals(&self) -> &crate::vaultroute::Refusals {
         &self.vault_refusals
+    }
+
+    /// The Asks that wait on the person to take a chat's browser over (#2015).
+    pub fn needs_you(&self) -> &crate::browserneedsyou::NeedsYou {
+        &self.needs_you
     }
 
     /// The workspaces each chat asked the person to remove, for the question on its tab
@@ -1008,6 +1015,15 @@ impl Held {
         // Before it is off the board, while its conversation is still known: a dispatch it
         // was working on ends with it (#1452), unless a chat started in its place carries it.
         crate::dispatches::ended(self, session);
+        // What it asked the person to do in its browsers ends with them, each with an Update
+        // (#2015).
+        if self
+            .needs_you
+            .chat_closed(session, crate::sandboxing::now_secs())
+            > 0
+        {
+            self.chats.asks_may_have_moved();
+        }
         // What it asked for that still waited on the person is recorded as gone with it
         // (#1464), while the app still knows the chat, so its rows go just below with the rest.
         self.dispatch_grants.asker_closing(session);
@@ -1972,6 +1988,8 @@ pub struct Planes {
     project_settings: crate::projectsettings::Teller,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
+    /// Told each Ask about a chat's browser that ended with the browser (#2015).
+    browser_asks_ended: crate::browserneedsyou::Teller,
     /// Told each persona MCP server a chat could not start (qw381).
     mcp_failed: crate::mcpfailed::Teller,
     /// Told each chat whose browsers ended because the person narrowed its reach (#2013).
@@ -2235,6 +2253,7 @@ impl Planes {
             refused_more: Arc::new(|_| {}),
             project_settings: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
+            browser_asks_ended: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
             browsers_ended: Arc::new(|_| {}),
             browsers_listed: Arc::new(|_| {}),
@@ -2460,6 +2479,13 @@ impl Planes {
     /// holds, so the window can show the ways forward on the chat's tab (#1430).
     pub fn telling_vault_refusals(mut self, refused: crate::vaultroute::Teller) -> Self {
         self.vault_refused = refused;
+        self
+    }
+
+    /// Tells `ended` each Ask about a chat's browser that ended with the browser, so the Inbox
+    /// keeps it as an Update (#2015).
+    pub fn telling_browser_asks_ended(mut self, ended: crate::browserneedsyou::Teller) -> Self {
+        self.browser_asks_ended = ended;
         self
     }
 
@@ -3957,6 +3983,13 @@ impl Planes {
                 .ok()
         });
 
+        // The Asks about its chats' browsers, each that ends with its browser told to the
+        // window for the Inbox (#2015).
+        let needs_you = crate::browserneedsyou::NeedsYou::new({
+            let told = Arc::clone(&self.browser_asks_ended);
+            let plane = id.clone();
+            Arc::new(move |ended| told(crate::browserneedsyou::AskEnded::of(&plane, ended)))
+        });
         // What the chats of a dispatch said, expired once a day while the project is open
         // (#1556): the open and a timeline's read expire only what they read.
         let talk_sweep = crate::activity::Daily::start(root.clone(), Arc::clone(&me));
@@ -3987,6 +4020,7 @@ impl Planes {
             changes: Arc::clone(&self.changes),
             activity: Arc::clone(&self.activity),
             quiet: Arc::clone(&self.quiet),
+            needs_you,
             brokered: purlis_core::brokered::Rate::default(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),

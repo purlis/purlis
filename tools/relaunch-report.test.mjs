@@ -7,7 +7,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DETAIL_CHARS, annotations, linesWritten, stepTimer } from "./relaunch-report.mjs";
+import {
+  DETAIL_CHARS,
+  annotations,
+  checkLine,
+  linesWritten,
+  stepTimer,
+  stopLine,
+} from "./relaunch-report.mjs";
 
 test("a line the stand-in harness is still writing is not a start yet (#2183)", () => {
   // Its arguments run to some 190 KB, written in more than one piece: a read between two pieces
@@ -127,4 +134,56 @@ test("a stopped timer's last step ends when it was stopped, however late it is r
   // An answer still trying in the background, after the launch was ended, adds nothing.
   steps.step("waiting for the launch's question");
   assert.equal(steps.summary(), "ending the app 3.0 s");
+});
+
+/** A token-shaped value, put together here so the repository's own secret scan does not take it
+ *  for one. */
+const aToken = () => ["ghp", "_", "abcdefghijklmnopqrstuvwxyz0123"].join("");
+
+test("a check's line in the job log says what it saw, with a line that looks like a secret not written out (#2382)", () => {
+  const line = checkLine(
+    "the app starts the chat",
+    false,
+    `the app said:\nrunning on ${aToken()}\nthen it quit`,
+  );
+  assert.equal(
+    line,
+    "FAIL the app starts the chat — the app said:\n" +
+      "[redacted: a line that looks like it holds a GitHub token]\nthen it quit",
+  );
+});
+
+test("a token in colour is redacted too: the colour code's `m` would hide its start from the shapes", () => {
+  const line = checkLine("the app starts the chat", false, `\u001b[31m${aToken()}\u001b[39m`);
+  assert.ok(!line.includes(aToken()), line);
+  assert.equal(
+    line,
+    "FAIL the app starts the chat — [redacted: a line that looks like it holds a GitHub token]",
+  );
+});
+
+test("an annotation redacts a token in colour the same way", () => {
+  const [line] = annotations([aFailure({ detail: `\u001b[31m${aToken()}\u001b[39m`, steps: "" })]);
+  assert.ok(!line.includes(aToken()), line);
+  assert.ok(line.endsWith("::[redacted: a line that looks like it holds a GitHub token]"), line);
+});
+
+test("a check that passed, or saw nothing, is one plain line", () => {
+  assert.equal(
+    checkLine("start fresh clears the record", true),
+    "ok   start fresh clears the record",
+  );
+  assert.equal(checkLine("and starts no chat", false, ""), "FAIL and starts no chat");
+});
+
+test("a run that stopped prints its stack, with a line that looks like a secret not written out (#2382)", () => {
+  const error = new Error(`POST /session: refused for ${aToken()}`);
+  const printed = stopLine(error);
+  assert.ok(!printed.includes(aToken()), printed);
+  assert.ok(printed.includes("[redacted: "), printed);
+  assert.ok(printed.includes("relaunch-report.test.mjs"), printed);
+});
+
+test("a run that stopped on something that is not an Error says what it was", () => {
+  assert.equal(stopLine("the record is not JSON"), "the record is not JSON");
 });

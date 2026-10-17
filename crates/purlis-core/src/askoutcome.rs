@@ -48,6 +48,9 @@ pub enum About {
     /// A browser for the chat (#2013): the first browser tool it called asked the person what
     /// its browser may reach. `open_web` is what an Allow let it reach (none for Keep off).
     Browser { open_web: Option<bool> },
+    /// The chat's ask that the person take over its browser `browser` (#2015), by the name the
+    /// chat knows it by: a page that needs a person, a CAPTCHA, a second factor.
+    TakeOver { browser: String },
 }
 
 impl About {
@@ -98,6 +101,12 @@ impl About {
             } => "using a browser that reaches this project's sites, its dev servers and the \
                   open web"
                 .to_owned(),
+            Self::TakeOver { browser } => {
+                format!(
+                    "your ask that the person take over browser {}",
+                    code(browser)
+                )
+            }
         }
     }
 }
@@ -168,6 +177,9 @@ pub enum Answer {
     Allowed { scope: Scope },
     /// Kept blocked, with the reason they gave, if any ([`reason`]): the chat may not retry.
     KeptBlocked { reason: Option<String> },
+    /// The person finished in the browser they were asked to take over, and handed it back
+    /// (#2015). Nothing of what they did there is told.
+    Finished,
 }
 
 /// One Ask's answer, as the chat it was the Ask of is told it.
@@ -204,6 +216,9 @@ impl Outcome {
                 "Kept blocked by the person — don't retry or work around it; no reason given."
                     .to_owned()
             }
+            Answer::Finished => "They finished and handed it back — take a fresh snapshot \
+                                 before you act: references from before are void."
+                .to_owned(),
         };
         format!("⬢ purlis: {} — {answered}", self.about.named())
     }

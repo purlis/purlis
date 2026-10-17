@@ -6890,8 +6890,12 @@ fn a_chat_started_fresh_runs_on_the_new_instructions_and_the_old_one_is_ended_he
 /// A plane whose record is the app's to write, as it is once a launch has put it back —
 /// and nothing else in it.
 fn a_plane_writing_its_record(dir: &Path) -> (Planes, PathBuf, Arc<Held>) {
+    a_plane_writing_its_record_with(dir, planes())
+}
+
+/// [`a_plane_writing_its_record`], held by `planes`.
+fn a_plane_writing_its_record_with(dir: &Path, planes: Planes) -> (Planes, PathBuf, Arc<Held>) {
     let root = a_plane(&dir.join("plane"));
-    let planes = planes();
     let plane = planes.open(&root);
     let held = planes.held(&plane).expect("it is held");
     held.reopen(STARTING, Ok(reopen::Record::default()), Choice::ReopenAll);
@@ -7028,7 +7032,10 @@ fn a_codex_chat_s_conversation_reported_by_its_hook_is_recorded_and_resumed_at_r
     // Q10: codex names its id only through a hook, inside its first turn, and nothing wrote
     // it back — so every codex chat came back fresh (`NoConversationRecorded`).
     let dir = tempfile::tempdir().expect("a directory");
-    let (planes, root, held) = a_plane_writing_its_record(dir.path());
+    let planes = crate::sandboxing::keeping_events_for_tests(planes(), &dir.path().join("events"));
+    let (planes, root, held) = a_plane_writing_its_record_with(dir.path(), planes);
+    // Codex runs wrapped on macOS and Linux (#1040); this is about its conversation's record.
+    crate::sandboxing::no_sandbox_here_for_tests(&root);
     let session = a_chat_on_a_stand_in(&held, dir.path(), "codex");
     assert_eq!(recorded_resume(&root), None, "codex chooses its own id");
 
@@ -7058,7 +7065,10 @@ fn a_codex_chat_s_conversation_reported_by_its_hook_is_recorded_and_resumed_at_r
 #[test]
 fn an_opencode_chat_s_conversation_reported_by_its_plugin_is_recorded_and_resumed_at_relaunch() {
     let dir = tempfile::tempdir().expect("a directory");
-    let (planes, root, held) = a_plane_writing_its_record(dir.path());
+    let planes = crate::sandboxing::keeping_events_for_tests(planes(), &dir.path().join("events"));
+    let (planes, root, held) = a_plane_writing_its_record_with(dir.path(), planes);
+    // opencode runs wrapped on macOS and Linux (#1040); this is about its conversation's record.
+    crate::sandboxing::no_sandbox_here_for_tests(&root);
     let session = a_chat_on_a_stand_in(&held, dir.path(), "opencode");
 
     let id = "ses_3a1b2c3d4e5fGhIjKlMnOp";

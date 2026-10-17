@@ -514,6 +514,7 @@ fn a_claude_code_chat_through_the_proxy_does_not_open_without_its_ports() {
                 hook_socket: None,
                 confinement: None,
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect_err("refused");
@@ -559,6 +560,7 @@ fn a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_eac
                 hook_socket: None,
                 confinement: Some(&confinement),
                 no_opt_out: false,
+                purlis: None,
             },
         )
         .expect("a line");

@@ -233,3 +233,17 @@ fn a_blanked_field_at_the_edge_of_a_scrolling_page_is_painted_over_whole() {
         "{found:?}"
     );
 }
+
+#[test]
+fn a_captcha_page_shows_the_agent_a_field_and_never_the_letters_it_asks_for() {
+    // #2015: the page the agent asks the person to take over for. Its letters are drawn in a
+    // picture, so no answer of the agent's tools reads them.
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "captcha.html");
+    let seen = snapshot(&browser);
+    assert!(seen.contains("Prove you are a person"), "{seen}");
+    assert!(seen.contains("Letters"), "{seen}");
+    assert!(!seen.contains("Q7XK"), "{seen}");
+}

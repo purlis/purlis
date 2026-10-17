@@ -241,3 +241,42 @@ fn a_port_withdrawn_from_the_chat_is_withdrawn_from_the_browser_it_is_given() {
 
     assert_eq!(given.withdrawn, [5173]);
 }
+
+#[test]
+fn ask_operator_pointed_at_a_browser_asks_the_app_to_hand_that_browser_to_the_person() {
+    // #2015: the existing ask tool, pointed at one of the chat's browsers by its name.
+    let asked = super::needs_you(&args(json!({
+        "question": "  The page wants a code sent to your phone  ",
+        "browser": "b1",
+    })))
+    .expect("a question about a browser");
+    assert_eq!(
+        asked,
+        Asked {
+            browser: Some("b1".into()),
+            call_id: None,
+            asked: Browsing::NeedsYou {
+                question: "The page wants a code sent to your phone".into(),
+            },
+        }
+    );
+    assert!(super::points_at_a_browser(&args(
+        json!({ "question": "q", "browser": "b1" })
+    )));
+    assert!(!super::points_at_a_browser(&args(
+        json!({ "question": "q" })
+    )));
+    assert!(!super::points_at_a_browser(&args(
+        json!({ "question": "q", "browser": null })
+    )));
+}
+
+#[test]
+fn a_browser_question_needs_words_and_a_browser_by_name() {
+    let no_words = super::needs_you(&args(json!({ "question": " ", "browser": "b1" })));
+    assert!(no_words.unwrap_err().contains("words"));
+    let no_name = super::needs_you(&args(json!({ "question": "Solve it", "browser": " " })));
+    assert!(no_name.unwrap_err().contains("b1"));
+    let not_a_name = super::needs_you(&args(json!({ "question": "Solve it", "browser": 1 })));
+    assert!(not_a_name.is_err());
+}

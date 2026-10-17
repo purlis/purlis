@@ -615,6 +615,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
   browser: "Asks what its browser may reach",
+  "browser-needs-you": "Needs you in its browser",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };

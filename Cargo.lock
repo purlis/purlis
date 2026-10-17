@@ -4230,6 +4230,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "landlock"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cca98e95f35b29d469dade6724c6f96cec9236640f745a0e99b0334ec320ab1"
+dependencies = [
+ "enumflags2",
+ "libc",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5542,6 +5553,7 @@ dependencies = [
  "notify",
  "purlis-core",
  "purlis-host",
+ "purlis-linux-sandbox",
  "purlis-session-protocol",
  "rfd",
  "rustix",
@@ -5602,6 +5614,7 @@ dependencies = [
  "flate2",
  "purlis-core",
  "purlis-host",
+ "purlis-linux-sandbox",
  "regex",
  "rmcp",
  "serde_json",
@@ -5647,6 +5660,7 @@ dependencies = [
  "purlis-browser-engine",
  "purlis-core",
  "purlis-host",
+ "purlis-linux-sandbox",
  "purlis-same-user",
  "purlis-session-protocol",
  "purlis-terminal",
@@ -5698,6 +5712,18 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "ulid",
+]
+
+[[package]]
+name = "purlis-linux-sandbox"
+version = "0.4.2"
+dependencies = [
+ "landlock",
+ "libc",
+ "nix 0.31.3",
+ "regex",
+ "seccompiler",
+ "tempfile",
 ]
 
 [[package]]
@@ -6344,6 +6370,15 @@ dependencies = [
  "pkcs8",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "seccompiler"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

@@ -792,7 +792,7 @@ impl Planted {
 /// have code run outside its sandbox the next time a person, an editor or another chat opens
 /// the directory. The project's manifests are held only where they could change a chat's
 /// sandbox ([`MANIFESTS`]).
-pub const PLANTED: [Planted; 64] = [
+pub const PLANTED: [Planted; 77] = [
     // A `.git` moved into place brings its own config and hooks.
     Planted::itself(".git"),
     Planted::and_below(".git/config"),
@@ -875,6 +875,21 @@ pub const PLANTED: [Planted; 64] = [
     Planted::and_below("Library/Application Support/JetBrains"),
     Planted::and_below(".cursor"),
     Planted::and_below(".config/zed"),
+    // What a Linux session starts or loads at login, and each editor's user settings there
+    // (#1040): the same classes as macOS's above.
+    Planted::and_below(".config/systemd/user"),
+    Planted::and_below(".local/share/systemd/user"),
+    Planted::and_below(".config/autostart"),
+    Planted::and_below(".config/environment.d"),
+    Planted::and_below(".config/plasma-workspace/env"),
+    Planted::and_below(".local/share/applications"),
+    Planted::and_below(".pam_environment"),
+    Planted::and_below(".xprofile"),
+    Planted::and_below(".xsessionrc"),
+    Planted::and_below(".xinitrc"),
+    Planted::and_below(".config/Code/User"),
+    Planted::and_below(".config/Cursor/User"),
+    Planted::and_below(".config/JetBrains"),
 ];
 
 /// The project's manifests, under both names (RN-2a): `purlis.toml`, which turns the sandbox
@@ -1075,14 +1090,22 @@ impl Os {
     }
 
     /// The word a run's `sandbox` attribute names this system's backend by (ADR 0066, #868):
-    /// Seatbelt on macOS and bubblewrap on Linux, the mechanisms [`backend::missing`] asks for.
-    /// `None` where purlis has none, or does not know which.
-    pub fn backend_word(self) -> Option<&'static str> {
+    /// Seatbelt on macOS; on Linux, Claude Code's own bubblewrap, or `landlock` for purlis's own
+    /// wrap of a harness it holds whole (Codex, opencode; #1040). `None` where purlis has none,
+    /// or does not know which.
+    pub fn backend_word(self, harness: Option<Harness>) -> Option<&'static str> {
         match self {
             Self::MacOs => Some("seatbelt"),
+            Self::Linux if harness.is_some_and(|it| self.purlis_wraps(it)) => Some("landlock"),
             Self::Linux => Some("bubblewrap"),
             Self::Windows | Self::Other => None,
         }
+    }
+
+    /// Whether a chat of `harness` here starts inside purlis's own Linux wrap (#1040): a harness
+    /// purlis holds whole (Codex, opencode), on Linux.
+    pub fn purlis_wraps(self, harness: Harness) -> bool {
+        self == Self::Linux && harness.adapter().sandbox_holds_what_it_starts()
     }
 
     /// This machine's.
@@ -2788,11 +2811,16 @@ impl Compiled {
     /// confirmation (`secrets::keyring::OsStore`), whatever the chat's sandbox lets it
     /// reach. Charter's own wrap denies the service as well (V90b, [`seatbelt`]). Elsewhere the
     /// store keeps no rule of its own (the Secret Service answers any process of the session),
-    /// and no harness's sandbox has been measured keeping a chat off it, so the chat is refused
-    /// with the ways out (V90c).
+    /// so a chat is refused with the ways out (V90c) unless purlis's own wrap holds it: on Linux
+    /// the wrap reaches no socket of the session bus (#1040). Claude Code's own sandbox has
+    /// not been measured keeping a chat off it, so a Claude Code chat there is still refused.
     fn holds_every_service(&self, harness: Harness) -> Result<(), Uncompilable> {
+        // purlis's own wrap on Linux (#1040) reaches no unix socket but the chat's hook socket
+        // and what a person allowed it, so never the session bus the Secret Service answers on,
+        // and none of the kernel's key store.
+        let wrapped_on_linux = self.os.purlis_wraps(harness);
         let unheld = self.denied.services.iter().find(|service| match service {
-            Service::CredentialStore => self.os != Os::MacOs,
+            Service::CredentialStore => self.os != Os::MacOs && !wrapped_on_linux,
         });
         match unheld {
             Some(service) => Err(Uncompilable {
@@ -3011,6 +3039,9 @@ pub struct Applied {
     older: Option<(String, ClaudeCodeVersion)>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
+    /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
+    /// ([`program::checked_wrap`], #1040); none until then, and the line is refused.
+    wrap: Option<PathBuf>,
 }
 
 /// The first Claude Code whose sandbox takes a proxy's ports from `--settings` (#1665):
@@ -3105,6 +3136,24 @@ impl Applied {
     /// How much it holds ([`Level`]).
     pub fn level(&self) -> Level {
         self.level
+    }
+
+    /// The checked program the wrap starts this chat under ([`Self::wrap_with`]).
+    pub fn wrap_program(&self) -> Option<&Path> {
+        self.wrap.as_deref()
+    }
+
+    /// Starts this chat's wrap with `program`, as [`program::checked_wrap`] checked it, held at
+    /// the floor as the harness's program is.
+    pub fn wrap_with(&mut self, program: PathBuf) {
+        self.hold_programs(&[program.display().to_string()]);
+        self.wrap = Some(program);
+    }
+
+    /// Whether this chat's line starts with purlis's own program: a harness purlis holds
+    /// whole, on Linux (#1040).
+    pub fn wrapped_by_purlis_here(&self) -> bool {
+        Os::this().purlis_wraps(self.harness())
     }
 
     /// **At the floor, the programs `words` start, never written by the chat** (#2071, the
@@ -3516,6 +3565,8 @@ pub struct At<'a> {
     /// (#1423). [`Applied::line`] sets it from the policy in force, and ends every refusal with
     /// the policy and who set it; a caller leaves it `false`.
     pub no_opt_out: bool,
+    /// purlis's own program, which a wrapped chat's line starts with on Linux (#1040).
+    pub purlis: Option<&'a Path>,
 }
 
 /// A chat's line under its sandbox: the program that runs, its arguments, and what its
@@ -3964,7 +4015,7 @@ fn never_with(compile: Option<Compiler>, held_back: Option<u32>, os: Os) -> Opti
         Err(Uncompilable {
             unheld: Unheld::Wrap(_),
             ..
-        }) => Some("purlis can wrap it on macOS only, so far".to_owned()),
+        }) => Some("purlis can wrap it on macOS and Linux only, so far".to_owned()),
         _ => None,
     }
 }
@@ -4398,6 +4449,9 @@ pub enum NotStarted {
     /// The profile's program, as written or as the kernel names it, lives where the chat can
     /// write, so a sandboxed chat could have changed it (ruling V87g).
     ProgramWritable(PathBuf),
+    /// purlis's own program, which wraps a chat on Linux, was replaced on disk while it ran
+    /// (#1040): the running one is no longer the one a new chat would start.
+    WrapReplaced,
     /// The profile's program is a relative path, which would be found against a folder the
     /// chat can write.
     ProgramRelative,
@@ -4513,6 +4567,10 @@ impl NotStarted {
                 article(harness.title()),
                 harness.title(),
                 sandboxed_harnesses_but(Some(*harness))
+            ),
+            Self::WrapReplaced => format!(
+                "{lead}, and purlis's own program was replaced while it ran, so it cannot \
+                 start this chat sandboxed. Restart purlis, then start the chat again."
             ),
             Self::ProgramWritable(path) => format!(
                 "{lead}, and the program lives where this chat can write: {}, so it was not \
@@ -4646,16 +4704,21 @@ impl NotStarted {
                     Os::MacOs | Os::Linux | Os::Other => "this system",
                 }
             ),
+            Self::NoBackend(missing @ backend::Missing::Landlock) => format!(
+                "{lead}, and this machine cannot apply the sandbox: {missing}. Nothing was \
+                 started. {}",
+                backend::landlock_way_on(opt_out)
+            ),
             Self::NoBackend(missing) => format!(
                 "{lead}, and this machine cannot apply the sandbox: {missing}. Nothing was \
                  started."
             ),
             Self::Uncompilable(it) => match it.unheld {
-                // The Linux wrap is #1040; the window's sentence names no issue (#1422).
+                // The window's sentence names no issue (#1422).
                 Unheld::Wrap(os) => format!(
                     "{lead}, and purlis runs {} inside a sandbox of its own, which it can apply \
-                     on macOS but not yet on {}, so it was not started. Start this chat on a {} \
-                     profile.",
+                     on macOS and Linux but not yet on {}, so it was not started. Start this \
+                     chat on a {} profile.",
                     it.harness.title(),
                     match os {
                         Os::Linux => "Linux",
@@ -4877,7 +4940,7 @@ fn for_start_at(
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing(machine.os, has) {
+    if let Some(missing) = backend::missing_for(machine.os, machine.os.purlis_wraps(harness), has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::granted(&policy, &plane, root, machine, persona, chat);
@@ -4926,7 +4989,7 @@ fn floor_for_start(
     if let Some(issue) = harness.adapter().sandbox_held_back() {
         return Err(NotStarted::HeldBack(harness, issue));
     }
-    if let Some(missing) = backend::missing(machine.os, has) {
+    if let Some(missing) = backend::missing_for(machine.os, machine.os.purlis_wraps(harness), has) {
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::floor(root, machine, chat);
@@ -5022,6 +5085,7 @@ pub(crate) fn applied_of(
         through_proxy: harness != Harness::ClaudeCode,
         older: None,
         tools: None,
+        wrap: None,
     })
 }
 
@@ -5320,6 +5384,9 @@ pub fn floorless_said(why: &NotStarted) -> String {
         .unwrap_or(&said);
     let reason = reason
         .split_once(", so ")
+        .map_or(reason, |(reason, _)| reason);
+    let reason = reason
+        .split_once(". Nothing was started")
         .map_or(reason, |(reason, _)| reason)
         .trim_end_matches('.');
     format!(
@@ -5716,6 +5783,7 @@ pub fn ahead_decided(
             NotStarted::NoCompiler(_)
             | NotStarted::HeldBack(..)
             | NotStarted::ProgramWritable(_)
+            | NotStarted::WrapReplaced
             | NotStarted::ProgramRelative
             | NotStarted::WordWritable(_)
             | NotStarted::WordTooLong
@@ -5803,6 +5871,7 @@ pub mod signin;
 pub mod team;
 pub mod tools;
 pub mod tunnel;
+pub mod wrapper;
 
 #[cfg(test)]
 mod asks_tests;

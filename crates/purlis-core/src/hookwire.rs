@@ -1354,6 +1354,10 @@ pub enum Browsing {
     New,
     /// End the browser named, or the one it used last.
     Close,
+    /// **The browser named needs the person** (#2015): `ask_operator` pointed at it. The app
+    /// raises an Ask under Needs you whose source is the browser and answers at once; the chat
+    /// is told when the person hands the browser back, and never what they did in it.
+    NeedsYou { question: String },
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path

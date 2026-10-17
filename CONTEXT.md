@@ -644,6 +644,14 @@ The person's act of becoming a browser's driver: a click or a key in its view. *
 it: Done, or one fixed chord, and nothing else.
 _Avoid_: control, grab, interrupt
 
+**The browser needs you**:
+An **Ask** whose source is a chat's browser: the agent, through `ask_operator` pointed at that
+browser, asks the person to do what a page needs of a human (a CAPTCHA, a second factor, a
+consent page). Its one answer, Take over, opens the browser's view already taken over; the
+person's **hand back** ends it and wakes the chat with "the person finished", never what they
+did. It ends with its browser too, leaving an **Update** (#2015).
+_Avoid_: help request, intervention
+
 **Aim** (of the person's input):
 What a **browser view**'s frame showed the person: the page, and the documents in it, as a number
 that changes each time the page or any frame inside it loads another document. Each click or key
@@ -980,7 +988,8 @@ elsewhere". An agent never answers one (ADR 0080 §5). A part of **Chat**.
 
 Everything that blocks until the person decides is an ask, whatever its source: a permission
 prompt of a chat or a task, a dispatch grant, a host a chat's sandbox refused, a prompt waiting
-in a harness's own terminal, a chat waiting on the person's reply. Each is derived from the
+in a harness's own terminal, a chat waiting on the person's reply, a chat's browser that needs
+the person (**The browser needs you**). Each is derived from the
 source that waits, keeps no record of its own, and is gone the moment its source stops waiting.
 Each names its chain (the session first, the chat that asked last) and the path that answers it,
 which is its source's own, and its answers in their one set of words (#1700). The Inbox lists
@@ -1001,7 +1010,8 @@ _Avoid_: queue, alerts, notifications
 **Update**:
 Something the person may want to know that waits on nothing: a task finished or failed, a doctor
 finding, a chat that resumed, a sandbox change, a dispatch refused while nobody was there, a
-Smart close that stopped, a report with nowhere to go, a commit refused (#1694). Listed in the
+Smart close that stopped, a report with nowhere to go, a commit refused (#1694), an Ask about a
+chat's browser that ended with the browser (#2015). Listed in the
 **Inbox** after the asks, newest first, and kept a day per
 machine in purlis's data home, never in a project, so it survives a relaunch (#1693). Read and
 dismissed one at a time or all at once (Mark all read, Dismiss all), and never counted on the ✋.
