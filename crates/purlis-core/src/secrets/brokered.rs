@@ -2407,24 +2407,28 @@ pub(crate) fn profile_on(
     // grants.
     let mut own = seatbelt::Own::default();
     seatbelt::widen(&mut own, &confines.widened)?;
+    // The floor (#2071): every folder written and the network open, but what the chat's own
+    // sandbox denies and holds.
+    let mut profile = if confines.level == crate::sandbox::Level::Floor {
+        seatbelt::floor_profile(denied, &confines.held, &own, ports, None)?
+    } else {
+        seatbelt::profile(denied, &own, folder, tmp, ports, None)?
+    };
+    // Last of all, after the vaults every profile denies wherever they are (#2071): the run's
+    // own credential files and folders, which purlis made in the vaults folder for it alone.
     for file in files {
-        own.after.push(format!(
-            "(allow file-read* (literal {}))",
+        profile.push_str(&format!(
+            "(allow file-read* (literal {}))\n",
             seatbelt::quote(file)?
         ));
     }
     for dir in dirs {
-        own.after.push(format!(
-            "(allow file-read* file-write* (subpath {}))",
+        profile.push_str(&format!(
+            "(allow file-read* file-write* (subpath {}))\n",
             seatbelt::quote(dir)?
         ));
     }
-    // The floor (#2071): every folder written and the network open, but what the chat's own
-    // sandbox denies and holds.
-    if confines.level == crate::sandbox::Level::Floor {
-        return seatbelt::floor_profile(denied, &confines.held, &own, ports, None);
-    }
-    seatbelt::profile(denied, &own, folder, tmp, ports, None)
+    Ok(profile)
 }
 
 /// What [`run`] hears from the child's pipes and the asker.

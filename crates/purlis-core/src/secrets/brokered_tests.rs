@@ -1047,6 +1047,53 @@ fn a_run_at_the_floor_wrapped_by_a_purlis_program_its_start_did_not_hold_runs_no
     assert!(!marker.exists(), "nothing ran");
 }
 
+/// The credential file and a login's folder are given back after every denial of the profile,
+/// the vaults of every project among them (#2071), at both levels: read as the last matching
+/// rule decides, by the same reading purlis's Linux wrap judges by. Nothing else of the vaults
+/// class is.
+#[test]
+fn a_runs_own_credential_file_is_given_back_after_every_denial_and_nothing_else_is() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let vaults = Ctx::new(&root, Env::of(&[])).vaults_dir();
+    let file = vaults.join("exec/charter-secret-given");
+    let other = vaults.join("exec/charter-secret-another");
+    let login = vaults.join("exec/login-given");
+    for level in [crate::sandbox::Level::Full, crate::sandbox::Level::Floor] {
+        let confines = Confines {
+            level,
+            ..compiled(&root)
+        };
+        let profile = profile_on(
+            &confines,
+            std::slice::from_ref(&file),
+            std::slice::from_ref(&login),
+            &root.join("work"),
+            &root.join("tmp"),
+            &[4242],
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("it reads");
+        let may = |what: FileOp, path: &Path| {
+            read.allows(&Op::File {
+                what,
+                path,
+                kind: Kind::Regular,
+            })
+        };
+        assert!(may(FileOp::ReadData, &file), "{level:?}: {profile}");
+        assert!(!may(FileOp::WriteData, &file), "{level:?}");
+        assert!(may(FileOp::WriteData, &login.join("state")), "{level:?}");
+        assert!(!may(FileOp::ReadData, &other), "{level:?}");
+        assert!(!may(FileOp::ReadData, &root.join("team.json")), "{level:?}");
+        assert!(
+            !may(FileOp::ReadData, &vaults.join("team.json")),
+            "{level:?}"
+        );
+    }
+}
+
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
 /// the environment of chat 7 inside it: sandboxed, with its socket and its token.
 fn an_app(
@@ -2183,7 +2230,7 @@ fn a_sandboxed_chat_is_refused_reading_a_value_with_the_route_that_works() {
     let project = project();
     let root = project.path();
     let chat = Ctx::new(root, Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]));
-    let route = if cfg!(target_os = "macos") {
+    let route = if cfg!(any(target_os = "macos", target_os = "linux")) {
         "purlis secret exec team --env NAME=key -- <tool>"
     } else {
         "terminal outside the chat"
