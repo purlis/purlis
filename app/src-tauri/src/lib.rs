@@ -1359,7 +1359,23 @@ async fn harness_cards(
 
 /// What [`start_options`] answers for the project at `root`.
 fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
+    start_options_on(
+        root,
+        &purlis_core::sandbox::Machine::this(),
+        &purlis_core::sandbox::backend::installed,
+    )
+}
+
+/// [`start_options_in`] on `machine`, with `has` saying what is installed.
+fn start_options_on(
+    root: &std::path::Path,
+    machine: &purlis_core::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> Result<StartOptions, String> {
     let (set, check) = purlis_core::profiles::for_launch(root);
+    // The sandbox each row starts under, compiled once per harness for every row (#2179): a
+    // New tab no longer pays a compile per profile.
+    let sandboxes = sandboxing::ahead_of_each(set.profiles(), root, machine, has);
     // What each row is billed to is read from this machine's records and what the project
     // passes its chats, once for every row (#2036).
     let machine = purlis_core::profilestore::listed_here();
@@ -1394,7 +1410,8 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
         profiles: set
             .profiles()
             .iter()
-            .map(|p| ProfileRow {
+            .zip(sandboxes)
+            .map(|(p, sandbox)| ProfileRow {
                 name: p.name.clone(),
                 kind: p.kind.clone(),
                 shown: purlis_core::profiletrust::shown(root, p),
@@ -1409,7 +1426,7 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
                     .iter()
                     .find(|card| card.name == p.kind)
                     .map(HarnessGlance::from),
-                sandbox: sandboxing::ahead_here(p, root),
+                sandbox,
                 model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
                 billed_to: purlis_core::profilesignin::billed(p, &machine, &passed),
             })
@@ -4166,6 +4183,74 @@ mod tests {
             format!("claude {filler} the-last-word (kind claude)")
         );
         assert_eq!(work.approval.as_deref(), Some("new"));
+    }
+
+    /// #2179: **one picker compiles each harness's sandbox once**, however many profiles it
+    /// lists of that harness. Every New tab asks for the picker, and a compile per row made
+    /// each open pay one per profile (about 200 ms a compile on the macOS runner). A compile
+    /// asks whether the sandbox's backend is installed, which is what is counted here.
+    #[test]
+    fn one_picker_compiles_each_harness_once_however_many_profiles_share_it() {
+        let compiles_with = |more_claude_profiles: usize| {
+            let plane = tempfile::tempdir().expect("a plane");
+            std::fs::write(
+                plane.path().join(purlis_core::plane::MANIFEST),
+                "[sandbox]\nmode = \"on\"\n",
+            )
+            .expect("written");
+            // Declared and approved by nobody, so the picker runs none of their programs.
+            let declared: String = (0..more_claude_profiles)
+                .map(|n| {
+                    format!("[harness.work{n}]\nkind = \"claude\"\ncommand = [\"claude{n}\"]\n")
+                })
+                .collect();
+            std::fs::write(
+                plane.path().join(purlis_core::profiles::LOCAL_FILE),
+                declared,
+            )
+            .expect("written");
+            let asked = std::sync::atomic::AtomicUsize::new(0);
+            let machine = purlis_core::sandbox::Machine {
+                env: purlis_core::secrets::Env::of(&[]),
+                home: None,
+                // Where every harness has a sandbox charter compiles.
+                os: purlis_core::sandbox::Os::MacOs,
+            };
+            let options = start_options_on(plane.path(), &machine, &|_| {
+                asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                true
+            })
+            .expect("read");
+            assert_eq!(
+                options
+                    .profiles
+                    .iter()
+                    .filter(|row| row.kind == "claude")
+                    .count(),
+                1 + more_claude_profiles,
+                "{:?}",
+                options.refused
+            );
+            // Each row is still told its sandbox. Not which: the built-in row checks this
+            // machine's own Claude Code, whatever it answers here.
+            assert!(
+                options.profiles.iter().all(|row| row.sandbox.is_some()),
+                "{:?}",
+                options
+                    .profiles
+                    .iter()
+                    .map(|row| (&row.name, &row.sandbox))
+                    .collect::<Vec<_>>()
+            );
+            asked.into_inner()
+        };
+        let one = compiles_with(0);
+        assert!(one > 0, "the picker compiles the sandbox it shows");
+        assert_eq!(
+            compiles_with(4),
+            one,
+            "five Claude Code profiles cost what one does"
+        );
     }
 
     /// A store that remembers the plane at `root` with `pins`, in that order.

@@ -752,43 +752,118 @@ pub fn sandbox_ahead(
     os_release: &str,
     probe: Option<&crate::sandbox::program::Probe<'_>>,
 ) -> Option<crate::sandbox::Ahead> {
-    let harness = Harness::of_kind(&profile.kind)?;
-    let gated_in = may_check_program(profile, root);
-    let check = |applied: &crate::sandbox::Applied| -> Result<(), crate::sandbox::NotStarted> {
-        if !gated_in {
-            return Ok(());
-        }
-        let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
-        // A program that is not there is the start's own refusal, not the sandbox's.
-        let Ok(words) = crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-        else {
-            return Ok(());
-        };
-        let env = environment(profile, root, None, false, &Standing::of(root, root));
-        let mut writable = applied.writable();
-        // At the floor a program outside the project is held unwritten instead (#2071, Q4).
-        if applied.level() == crate::sandbox::Level::Full {
-            writable.extend(crate::sandbox::program::temp_roots(&env));
-        }
-        crate::sandbox::program::checked(
-            harness,
-            &words,
-            applied.root(),
-            crate::sandbox::program::Chat {
-                cwd: root,
-                writable: &writable,
-                env: &env,
-            },
+    AheadOnce::new(root, machine, has, os_release, probe).of(profile)
+}
+
+/// [`sandbox_ahead`] for every row of one picker (#2179): **each harness's sandbox is compiled
+/// once**, however many profiles of it the picker lists.
+///
+/// The picker asks for every profile it lists each time a New tab opens, and a compile cost
+/// about 200 ms on the macOS runner, so a compile per row made every open pay one per profile.
+/// The compile ([`crate::sandbox::decide`]) reads the harness, the project, the machine and
+/// what is installed, and nothing of the profile, so every row of one harness is given the one
+/// answer.
+///
+/// **Each profile's program is still checked for itself.** The check runs the program with the
+/// profile's own environment, which names the profile (`PURLIS_HARNESS_PROFILE`), so no two
+/// rows ask it the same thing.
+///
+/// Held for one ask only: the files a compile reads are edited by hand and by chats, and an
+/// answer kept past the ask would be one nothing invalidates.
+pub struct AheadOnce<'a> {
+    root: &'a Path,
+    machine: &'a crate::sandbox::Machine,
+    has: &'a dyn Fn(&str) -> bool,
+    os_release: &'a str,
+    probe: Option<&'a crate::sandbox::program::Probe<'a>>,
+    compiled: std::cell::RefCell<Vec<(Harness, Compiled)>>,
+}
+
+/// What [`crate::sandbox::decide`] answered for one harness, as [`AheadOnce`] keeps it.
+type Compiled = Result<Option<crate::sandbox::Decided>, crate::sandbox::NotStarted>;
+
+impl<'a> AheadOnce<'a> {
+    /// One picker's ask for the project at `root` on `machine`, `has` saying what is installed,
+    /// `os_release` the text of `/etc/os-release` and `probe` answering `--version` in place of
+    /// running a program (`None` runs it).
+    pub fn new(
+        root: &'a Path,
+        machine: &'a crate::sandbox::Machine,
+        has: &'a dyn Fn(&str) -> bool,
+        os_release: &'a str,
+        probe: Option<&'a crate::sandbox::program::Probe<'a>>,
+    ) -> Self {
+        Self {
+            root,
+            machine,
+            has,
+            os_release,
             probe,
-        )
-        .map(|_| ())
-    };
-    // A sandboxed Codex chat on a profile for every chat is refused at its start, which leaves
-    // the Ask that makes a sandbox-only one (#2037): nothing is offered here that would start it
-    // without the sandbox instead.
-    Some(crate::sandbox::ahead(
-        harness, root, machine, has, os_release, &check,
-    ))
+            compiled: std::cell::RefCell::default(),
+        }
+    }
+
+    /// [`sandbox_ahead`] for `profile`.
+    pub fn of(&self, profile: &Profile) -> Option<crate::sandbox::Ahead> {
+        let harness = Harness::of_kind(&profile.kind)?;
+        let root = self.root;
+        let gated_in = may_check_program(profile, root);
+        let check = |applied: &crate::sandbox::Applied| -> Result<(), crate::sandbox::NotStarted> {
+            if !gated_in {
+                return Ok(());
+            }
+            let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
+            // A program that is not there is the start's own refusal, not the sandbox's.
+            let Ok(words) =
+                crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
+            else {
+                return Ok(());
+            };
+            let env = environment(profile, root, None, false, &Standing::of(root, root));
+            let mut writable = applied.writable();
+            // At the floor a program outside the project is held unwritten instead (#2071, Q4).
+            if applied.level() == crate::sandbox::Level::Full {
+                writable.extend(crate::sandbox::program::temp_roots(&env));
+            }
+            crate::sandbox::program::checked(
+                harness,
+                &words,
+                applied.root(),
+                crate::sandbox::program::Chat {
+                    cwd: root,
+                    writable: &writable,
+                    env: &env,
+                },
+                self.probe,
+            )
+            .map(|_| ())
+        };
+        // A sandboxed Codex chat on a profile for every chat is refused at its start, which
+        // leaves the Ask that makes a sandbox-only one (#2037): nothing is offered here that
+        // would start it without the sandbox instead.
+        Some(crate::sandbox::ahead_decided(
+            self.compiled(harness),
+            root,
+            self.os_release,
+            &check,
+        ))
+    }
+
+    /// What the compile answers for `harness`, compiled on the first ask.
+    fn compiled(&self, harness: Harness) -> Compiled {
+        if let Some((_, decided)) = self
+            .compiled
+            .borrow()
+            .iter()
+            .find(|(one, _)| *one == harness)
+        {
+            return decided.clone();
+        }
+        let decided =
+            crate::sandbox::decide(harness, self.root, self.machine, self.has, None, None);
+        self.compiled.borrow_mut().push((harness, decided.clone()));
+        decided
+    }
 }
 
 /// Where a chat starts, as the plane has it — and so what the chat is told about its
