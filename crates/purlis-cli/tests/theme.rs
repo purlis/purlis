@@ -234,7 +234,7 @@ fn a_built_in_checks_clean_and_exits_zero() {
         "purlis-light — built-in, light\n\
          errors: none\n\
          warnings: none\n\
-         hard floors: not checked by this purlis yet (#2332)\n"
+         hard floors: not checked by this purlis yet\n"
     );
 }
 

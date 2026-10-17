@@ -44,8 +44,10 @@ errors (1):
 warnings (2):
   text.muted on surface.base: 2.38, under 4.5; in every workspace tint too, down to 2.38
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
-hard floors: not checked by this purlis yet (#2332)
 ```
+
+A last `hard floors:` line follows. Until purlis keeps hard floors (#2332), it says they are
+not checked by this purlis yet.
 
 - **Errors** are values purlis had to put right: a token that is not one, a value that is not
   hex, a duration out of range. Each is drawn as the built-in of the theme's appearance, and the
