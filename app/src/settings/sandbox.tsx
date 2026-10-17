@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   commands,
   type PersonaHosts,
@@ -28,8 +28,9 @@ import {
   asDrawn,
   ExpectedLines,
   mayAnswerExpects,
+  useProjectExpects,
 } from "../ProjectExpectsNotice";
-import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
+import { sandboxCommandReturned } from "../sandboxAsked";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
 import type { Collection, LiveSetting } from "./groups";
@@ -529,26 +530,13 @@ function ExpectsHere({
   expects: NonNullable<SandboxState["expects"]>;
   ids: RowIds;
 }) {
-  const [left, setLeft] = useState(expects);
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const moved = useSandboxCommands();
-  /** The count when the row was drawn: what it was drawn from is read already. */
-  const drawnAt = useRef(moved);
-  useEffect(() => {
-    if (moved === drawnAt.current) return;
-    let live = true;
-    void commands
-      .sandboxState(plane)
-      .then((state) => {
-        if (live && state.status === "ok" && state.data !== null)
-          setLeft((was) => state.data?.expects ?? { ...was, items: [] });
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [plane, moved]);
+  /** Asked again after an Allow that was refused: what waits may stand otherwise by now. */
+  const [again, setAgain] = useState(0);
+  const [now, setNow] = useProjectExpects(plane, expects, again);
+  // Nothing waits any more: what is left is the lock, as it was drawn.
+  const left = now ?? { ...expects, items: [] };
   const offered = left.locked === null && left.items.some(allowable) && mayAnswerExpects() && !busy;
   const allow = () => {
     setBusy(true);
@@ -559,16 +547,10 @@ function ExpectsHere({
         if (answer.status !== "ok") {
           setSaid(answer.error);
           // Refused: the list is read again, so what is drawn is what stands now.
-          void commands
-            .sandboxState(plane)
-            .then((state) => {
-              if (state.status === "ok" && state.data?.expects) setLeft(state.data.expects);
-            })
-            .catch(() => {});
+          setAgain((n) => n + 1);
           return;
         }
-        const now = answer.data.expects ?? null;
-        setLeft(now ?? { ...left, items: [] });
+        setNow(answer.data.expects ?? null);
         setSaid(
           "Allowed on this machine: every chat of this project has it from its next start, and a chat already running takes it when it restarts. Remove it under Network, in the Allowed list.",
         );
