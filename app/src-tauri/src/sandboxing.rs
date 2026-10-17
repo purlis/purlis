@@ -61,43 +61,53 @@ pub const CHECKED_ONCE_APPROVED: &str = "purlis checks this profile's program be
                                          starts sandboxed, once the profile may start: approved, \
                                          and declared in a file git does not carry.";
 
-/// [`SandboxAhead`] for a chat on `profile` in the project at `root`, on this machine: every
-/// refusal the start would give, shown before anything starts — a harness charter holds back
-/// (Codex, ruling V87f), and a program the sandbox will not bind (ruling V87g), which is asked
-/// of the profile's own resolved words.
+/// [`SandboxAhead`] for a chat on each of `profiles` in the project at `root`, in their order,
+/// on `machine` with `has` saying what is installed: every refusal the start would give, shown
+/// before anything starts — a harness charter holds back (Codex, ruling V87f), and a program
+/// the sandbox will not bind (ruling V87g), which is asked of the profile's own resolved words.
+///
+/// **Each harness's sandbox is compiled once** for the whole list
+/// ([`purlis_core::start::AheadOnce`], #2179): the picker asks for every profile it lists each
+/// time a New tab opens, and a compile per row made every open pay one per profile. Each
+/// profile's program is still checked for itself.
 ///
 /// **Only a profile the start would run has its program run.** The V87g check asks the
 /// program its `--version`, which runs it, outside any sandbox. So it is asked only past the
 /// start's own gate ([`purlis_core::start::may_check_program`], which is
 /// `wiring::refusal`): a startable kind, a `charter.local.toml` git would not carry, an
 /// approved command. Any other row says the program is checked once the profile may start.
-pub fn ahead_here(
-    profile: &purlis_core::profiles::Profile,
+pub fn ahead_of_each(
+    profiles: &[purlis_core::profiles::Profile],
     root: &std::path::Path,
-) -> Option<SandboxAhead> {
-    ahead_with(
-        profile,
-        root,
-        purlis_core::start::may_check_program(profile, root),
-    )
+    machine: &sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> Vec<Option<SandboxAhead>> {
+    let os_release = os_release();
+    let asked = purlis_core::start::AheadOnce::new(root, machine, has, &os_release, None);
+    profiles
+        .iter()
+        .map(|profile| {
+            ahead_with(
+                &asked,
+                profile,
+                root,
+                purlis_core::start::may_check_program(profile, root),
+            )
+        })
+        .collect()
 }
 
-/// [`ahead_here`], told whether the start's gate lets the program be checked: the start's own
-/// check ([`purlis_core::start::sandbox_ahead`]), which asks the same gate itself and runs
-/// the program only past it. `approved` only phrases the row.
+/// One row of [`ahead_of_each`], told whether the start's gate lets the program be checked:
+/// the start's own check ([`purlis_core::start::sandbox_ahead`]), asked through `asked`, which
+/// asks the same gate itself and runs the program only past it. `approved` only phrases the
+/// row.
 fn ahead_with(
+    asked: &purlis_core::start::AheadOnce<'_>,
     profile: &purlis_core::profiles::Profile,
     root: &std::path::Path,
     approved: bool,
 ) -> Option<SandboxAhead> {
-    let row = SandboxAhead::of(purlis_core::start::sandbox_ahead(
-        profile,
-        root,
-        &sandbox::Machine::this(),
-        &backend::installed,
-        &os_release(),
-        None,
-    )?)?;
+    let row = SandboxAhead::of(asked.of(profile)?)?;
     let row = SandboxAhead {
         // Policy's lock first; a profile for sandboxed chats only is never started without it
         // either (#2037).
