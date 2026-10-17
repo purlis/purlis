@@ -23,6 +23,9 @@
 //! `system` pick a theme draws its first appearance, as Purlis Classic draws its dark. With no
 //! pick, the first extension theme in force that is not refused is drawn.
 //!
+//! **The consent floors hold for every source** (ADR 0097 §6): whatever is drawn is drawn by
+//! [`draw`], so a pick, the person's own theme, an extension's and a built-in all clear them.
+//!
 //! **One rule for every source**: a theme that is not one — text that is not JSON, a document
 //! that is not an object, a value outside its type or bound — is refused whole, and Purlis is
 //! drawn in its place with the complaints that say why (ADR 0097 §2).
@@ -30,7 +33,7 @@
 use std::sync::Arc;
 
 use super::{
-    Appearance, Complaint, Resolved, ResolvedTheme, Theme, built_in, classic, default_theme,
+    Appearance, Complaint, Held, Resolved, ResolvedTheme, Theme, built_in, classic, default_theme,
 };
 use crate::extension::project::theme::Pick;
 
@@ -111,15 +114,21 @@ pub struct Drawn {
     /// What to tell the person about what they chose: that following the system stays in the
     /// one appearance a theme has.
     pub note: Option<String>,
+    /// The consent floors the theme breaks and the tokens drawn as purlis's own for them, for
+    /// the one Notice that names them; `None` for a theme that clears them.
+    pub held: Option<Held>,
 }
 
 impl Drawn {
+    /// `theme` as it is drawn: with the consent floors held ([`super::floors`]).
     fn of(theme: &ResolvedTheme) -> Self {
+        let (theme, held) = super::floors::hold(theme);
         Self {
-            theme: Some(theme.clone()),
+            theme: Some(theme),
             complaints: Vec::new(),
             follows_system: false,
             note: None,
+            held,
         }
     }
 
@@ -148,6 +157,13 @@ impl Drawn {
             })
         }
     }
+}
+
+/// **One appearance as the window draws it**: the consent floors held, and what holding them
+/// put right in [`Drawn::held`]. What the window is handed as it is created is drawn by this, as
+/// every answer of [`resolve`] is.
+pub fn draw(theme: &ResolvedTheme) -> Drawn {
+    Drawn::of(theme)
 }
 
 /// **`theme` following the operating system**, whose appearance is `system` now: the theme's

@@ -1113,3 +1113,16 @@ fn removing_a_chats_browser_site_ends_its_browsers() {
     assert_eq!(ended.ended, 1);
     assert!(browsers.chat_sites().is_empty());
 }
+
+#[test]
+fn an_allow_takes_only_the_sites_their_ask_names_whole() {
+    let long = site(&format!("{}.example.org:443", "a".repeat(150)));
+    let short = site("news.example.org:443");
+    let waiting = [short.clone(), long.clone()];
+    assert!(super::named_whole(&waiting, std::slice::from_ref(&short)));
+    assert!(!super::named_whole(&waiting, &[short, long.clone()]));
+    assert!(!super::named_whole(
+        std::slice::from_ref(&long),
+        std::slice::from_ref(&long)
+    ));
+}

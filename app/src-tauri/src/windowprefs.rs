@@ -50,21 +50,29 @@ struct TheirTheme {
     trouble: Option<String>,
     theme: Option<WindowTheme>,
     complaints: Vec<Complaint>,
+    /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
+    /// drawn has purlis's own values for those tokens.
+    floors: Option<String>,
 }
 
 impl From<Theirs> for TheirTheme {
     fn from(theirs: Theirs) -> Self {
+        // What the first frame draws: the theme's first appearance, which the engine draws with
+        // no pick (`purlis_core::theme::resolve`), the consent floors held.
+        let drawn = theirs
+            .theme
+            .as_ref()
+            .map(|theme| theme::draw(theme.first()));
         Self {
             path: theirs.path,
             found: theirs.found,
             trouble: theirs.trouble,
-            // What the first frame draws: the theme's first appearance, which the engine draws
-            // with no pick (`purlis_core::theme::resolve`).
-            theme: theirs
-                .theme
+            theme: drawn
                 .as_ref()
-                .map(|theme| WindowTheme::from(theme.first())),
+                .and_then(|drawn| drawn.theme.as_ref())
+                .map(WindowTheme::from),
             complaints: theirs.complaints,
+            floors: drawn.and_then(|drawn| drawn.held).map(|held| held.said()),
         }
     }
 }
@@ -330,6 +338,35 @@ mod tests {
             .filter_map(|one| one["name"].as_str())
             .collect();
         assert_eq!(built, purlis_core::extension::BUILT_IN_THEMES);
+    }
+
+    #[test]
+    fn the_person_s_theme_is_handed_with_the_consent_floors_held_and_the_notice_for_them() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        let lost = theme::default_theme().value("surface.base");
+        std::fs::write(
+            dir.join(windowprefs::THEME),
+            format!(r#"{{"name":"Mine","tokens":{{"state.failed":"{lost}"}}}}"#),
+        )
+        .unwrap();
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
+        assert_eq!(
+            at["theme"]["theme"]["values"]["state.failed"],
+            theme::default_theme().value("state.failed")
+        );
+        let floors = at["theme"]["floors"]
+            .as_str()
+            .expect("the floors are named");
+        assert!(
+            floors.starts_with("Mine breaks the consent floors"),
+            "{floors}"
+        );
+
+        std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"Mine"}"#).unwrap();
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
+        assert_eq!(at["theme"]["floors"], serde_json::Value::Null);
     }
 
     #[test]

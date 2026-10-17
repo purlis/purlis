@@ -1502,8 +1502,8 @@ fn a_browser_site_and_a_host_for_the_chats_commands_are_two_rows_each_its_own_al
     assert!(host.says.contains("api.example.com"), "{}", host.says);
     assert_eq!(
         sites.says,
-        "Its browser wants to open, send or type on sites new to this project: \
-         news.example.org:443, api.example.com:443. An Allow is for its browser alone"
+        "Its browser wants to reach news.example.org:443 and api.example.com:443. An Allow is \
+         its browser's alone, from its next act; nothing restarts."
     );
     assert_eq!(ids(sites), ["chat", "you", KEEP]);
     assert_eq!(
@@ -1519,4 +1519,97 @@ fn a_browser_site_and_a_host_for_the_chats_commands_are_two_rows_each_its_own_al
         host.answer, sites.answer,
         "each is answered by its own Allow"
     );
+}
+
+#[test]
+fn one_browser_site_is_named_as_one_site_its_browser_reaches_from_its_next_step() {
+    use purlis_core::sandbox::browser_reach::Site;
+    let mut world = World::new();
+    world.browser_sites = vec![crate::chatbrowsers::SitesWait {
+        session: 5,
+        since: 1_700_000_000,
+        sites: vec![Site::parse("news.example.org:443").unwrap()],
+    }];
+
+    let asks = world.asks();
+
+    let sites = asks
+        .iter()
+        .find(|one| one.source == AskSource::BrowserSite)
+        .unwrap();
+    assert_eq!(
+        sites.says,
+        "Its browser wants to reach news.example.org:443. An Allow is its browser's alone, from \
+         its next act; nothing restarts."
+    );
+}
+
+/// #2364: an ask names whole every site it answers. Where they do not all fit its line, it
+/// names the oldest that do and answers those; the others wait for the next ask.
+#[test]
+fn a_browser_sites_ask_answers_only_the_sites_its_line_names_whole() {
+    use purlis_core::sandbox::browser_reach::Site;
+    let written: Vec<String> = (1..=8)
+        .map(|n| format!("site-number-{n}.example.org:443"))
+        .collect();
+    let mut world = World::new();
+    world.browser_sites = vec![crate::chatbrowsers::SitesWait {
+        session: 5,
+        since: 1_700_000_000,
+        sites: written
+            .iter()
+            .map(|one| Site::parse(one).unwrap())
+            .collect(),
+    }];
+
+    let asks = world.asks();
+
+    let sites = asks
+        .iter()
+        .find(|one| one.source == AskSource::BrowserSite)
+        .unwrap();
+    let AnswerPath::BrowserSites { sites: answered } = &sites.answer else {
+        panic!("{:?}", sites.answer);
+    };
+    assert!(
+        !answered.is_empty() && answered.len() < written.len(),
+        "{answered:?}"
+    );
+    assert_eq!(answered[..], written[..answered.len()], "the oldest first");
+    for site in answered {
+        assert!(sites.says.contains(site.as_str()), "{}", sites.says);
+    }
+    assert!(!sites.says.contains('…'), "{}", sites.says);
+    assert!(
+        sites
+            .says
+            .contains(&format!("and {} more.", written.len() - answered.len())),
+        "{}",
+        sites.says
+    );
+    assert_eq!(ids(sites), ["chat", "you", KEEP]);
+}
+
+/// #2364: a site too long for the line to name whole is never offered an Allow.
+#[test]
+fn a_browser_site_too_long_to_name_whole_is_only_kept_blocked() {
+    use purlis_core::sandbox::browser_reach::Site;
+    let long = format!(
+        "{}.example.org:443",
+        ["a".repeat(60), "b".repeat(60)].join(".")
+    );
+    let mut world = World::new();
+    world.browser_sites = vec![crate::chatbrowsers::SitesWait {
+        session: 5,
+        since: 1_700_000_000,
+        sites: vec![Site::parse(&long).unwrap()],
+    }];
+
+    let asks = world.asks();
+
+    let sites = asks
+        .iter()
+        .find(|one| one.source == AskSource::BrowserSite)
+        .unwrap();
+    assert_eq!(ids(sites), [KEEP]);
 }

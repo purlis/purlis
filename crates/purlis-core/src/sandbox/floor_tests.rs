@@ -401,32 +401,57 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
         "a job handed to launchd"
     );
     // The control: the same submit, under the same profile less that one rule, goes through,
-    // so the refusal above is the rule's.
+    // so the refusal above is the rule's. The copy must submit outside any sandbox, or the
+    // refusal proves nothing. Some machines take no job from a sandboxed process at all, even
+    // under a profile that allows everything (#2489, a macOS 26.6 runner); there nothing can
+    // show the rule is what refuses it, and only there is the control skipped.
     assert!(profile.contains("(deny job-creation)\n"), "{profile}");
-    let without = profile.replace("(deny job-creation)\n", "");
-    let submitted = crate::forklock::output(
-        std::process::Command::new(backend::SANDBOX_EXEC)
-            .args(["-p", &without, "/bin/sh", "-c"])
-            .arg(tried(&format!(
-                "{} submit -l purlis.floor.control -- /usr/bin/true",
-                copied.display()
-            )))
-            .current_dir(&root),
-    )
-    .expect("it runs");
-    let _ = crate::forklock::status(
-        std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.control"]),
+    let submits = |wrap: Option<&str>, label: &str| -> bool {
+        let script = tried(&format!(
+            "{} submit -l {label} -- /usr/bin/true",
+            copied.display()
+        ));
+        let mut command = match wrap {
+            Some(profile) => {
+                let mut command = std::process::Command::new(backend::SANDBOX_EXEC);
+                command.args(["-p", profile, "/bin/sh", "-c", &script]);
+                command
+            }
+            None => {
+                let mut command = std::process::Command::new("/bin/sh");
+                command.args(["-c", &script]);
+                command
+            }
+        };
+        let out = crate::forklock::output(command.current_dir(&root)).expect("it runs");
+        let _ = crate::forklock::status(
+            std::process::Command::new("/bin/launchctl").args(["remove", label]),
+        );
+        String::from_utf8_lossy(&out.stdout).trim() == "yes"
+    };
+    assert!(
+        submits(None, "purlis.floor.unsandboxed"),
+        "the copy of launchctl submits a job outside any sandbox"
     );
-    assert_eq!(
-        String::from_utf8_lossy(&submitted.stdout).trim(),
-        "yes",
-        "the same submit without the rule"
-    );
+    if submits(Some("(version 1)(allow default)"), "purlis.floor.anything") {
+        let without = profile.replace("(deny job-creation)\n", "");
+        assert!(
+            submits(Some(&without), "purlis.floor.control"),
+            "the same submit without the rule"
+        );
+    } else {
+        let _ = writeln!(
+            std::io::stderr(),
+            "control skipped: launchd here takes no job from a sandboxed process"
+        );
+    }
     let _ = crate::forklock::status(
         std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.test"]),
     );
-    // A later-code name spelled another way is refused too.
-    let home = real(sockets.path()).join("home");
+    // A later-code name spelled another way is refused too. In a home of its own: the hook
+    // socket's folder is held unwritten whatever is in it, so a home there proves nothing.
+    let homes = tempfile::tempdir().expect("a folder for a home");
+    let home = real(homes.path()).join("home");
     assert_eq!(
         run(&tried(&format!(
             "mkdir -p {0}/library/launchagents && touch {0}/library/launchagents/x.plist",
@@ -444,14 +469,16 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
     );
     // The hook socket and the proxy's port, and no other socket or port of this machine.
     let nc = |target: &str| tried(&format!("/usr/bin/nc -z -w 2 {target}"));
-    assert_eq!(
-        run(&tried(&format!("/usr/bin/nc -U -z {}", hook.display()))),
-        "yes"
-    );
-    assert_eq!(
-        run(&tried(&format!("/usr/bin/nc -U -z {}", other.display()))),
-        "no"
-    );
+    // A socket is connected to by zsh's own module: macOS 26.6's `nc -U -z` fails on a socket
+    // that is listening, with no sandbox at all (#2489).
+    let connect = |socket: &Path| {
+        tried(&format!(
+            "/bin/zsh -c 'zmodload zsh/net/socket && zsocket {}'",
+            socket.display()
+        ))
+    };
+    assert_eq!(run(&connect(hook.as_path())), "yes");
+    assert_eq!(run(&connect(other.as_path())), "no");
     assert_eq!(run(&nc(&format!("127.0.0.1 {proxy_port}"))), "yes");
     assert_eq!(run(&nc(&format!("127.0.0.1 {service_port}"))), "no");
 }
