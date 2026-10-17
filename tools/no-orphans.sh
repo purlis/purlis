@@ -49,6 +49,16 @@ done
 
 me=$(id -u)
 here=$$
+# On macOS, launchd starts this user's own agents while COMMAND runs (nbagent, mdworker_shared,
+# CoreSimulator's services and dozens more on a runner), each with launchd (pid 1) as its parent
+# and its program in the system's own folders. They are the system's, not COMMAND's (#2458). A
+# process COMMAND left behind is reparented to launchd too, so it is the program's folder that
+# tells them apart, read as the kernel's path of its executable (`ps -o comm`), never its
+# arguments, which a process writes itself: the sealed system volume (`/System`),
+# `/usr/libexec` and CoreSimulator's framework, the ones seen on a runner. Never `/bin`,
+# `/usr/bin` or `/usr/sbin`, whose `lsof` and `sysctl` purlis runs itself, nor anything a build
+# put there. Elsewhere every process counts, as before.
+os=$(uname -s 2>/dev/null || echo unknown)
 
 # Fails closed: a snapshot that could not be taken, or came back empty, is not "nothing new",
 # so the check stops with status 3 rather than pass a suite it could not see.
@@ -69,7 +79,8 @@ table() {
 }
 
 before=$(mktemp) || exit 3
-trap 'rm -f "$before"' EXIT
+programs=$(mktemp) || exit 3
+trap 'rm -f "$before" "$programs"' EXIT
 first=$(table) || exit 3
 awk -F'|' '{print $1 "|" $4}' <<<"$first" >"$before"
 
@@ -79,9 +90,16 @@ status=$?
 sleep "$grace"
 
 now=$(table) || exit 3
+# Each process's executable, as the kernel names it, on macOS only: "pid|path". A list that
+# could not be read leaves every process counted.
+if [ "$os" = Darwin ]; then
+  LC_ALL=C ps -A -o pid=,comm= 2>/dev/null |
+    awk '{ p=$1; sub(/^[ \t]*[0-9]+[ \t]+/, ""); print p "|" $0 }' >"$programs" || true
+fi
 left=$(
-  awk -F'|' -v me="$me" -v here="$here" '
+  awk -F'|' -v me="$me" -v here="$here" -v os="$os" -v programs="$programs" '
     FNR == NR { seen[$0] = 1; next }
+    FILENAME == programs { exe[$1] = $2; next }
     { pid[++rows]=$1; ppid[$1]=$2; uid[$1]=$3; key[$1]=$1 "|" $4; cmd[$1]=$5 }
     END {
       q = here
@@ -89,6 +107,8 @@ left=$(
       for (r = 1; r <= rows; r++) {
         p = pid[r]
         if (uid[p] != me || (key[p] in seen)) continue
+        if (os == "Darwin" && ppid[p] == 1 && (p in exe) &&
+            exe[p] ~ /^\/(System|usr\/libexec|Library\/Developer\/PrivateFrameworks\/CoreSimulator\.framework)\//) continue
         # One of this script'"'"'s own (the ps and awk reading the table right now), or one
         # of the processes this script itself runs under.
         q = p; ours = 0
@@ -98,7 +118,7 @@ left=$(
         }
         if (!ours && !(p in above)) print p "|" cmd[p]
       }
-    }' "$before" - <<<"$now"
+    }' "$before" "$programs" - <<<"$now"
 )
 
 if [ -z "$left" ]; then

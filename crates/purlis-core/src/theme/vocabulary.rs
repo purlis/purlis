@@ -188,6 +188,13 @@ const GEOMETRY_GROUPS: &[&str] = &[
     "weight",
 ];
 
+/// **The views a theme's icon set may draw** (#2337): each view's tab on the rails, by the
+/// window's own id (`OwnViewId` in `app/src/sideViews.ts`, in `VIEW_MARKS`' order).
+pub const RAIL_VIEWS: &[&str] = &[
+    "chats", "explorer", "search", "changes", "repos", "inbox", "todos", "memory", "personas",
+    "sessions", "vaults",
+];
+
 /// Whether `token` is one of [`TOKENS`].
 pub fn is_token(token: &str) -> bool {
     TOKENS.contains(&token)

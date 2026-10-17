@@ -761,30 +761,42 @@ impl SessionHost {
     /// so a host a crashed window left has ended its chats first. Its own host serving holds the
     /// place's lock, so no other host runs them. Short of that, it puts chats back only when it
     /// knows no other host serves there: none holds the place's lock, and none it found was left
-    /// serving. Otherwise it refuses, with why.
+    /// serving. A lock held while its own host is not serving may be that host's, started again
+    /// after a start that failed, so it waits on its own host again, up to `within` in all,
+    /// before it refuses, with why.
     pub fn before_chats_are_put_back(&self, within: Duration) -> crate::planes::Gate {
         let (connection, supervision) =
             (Arc::clone(&self.connection), Arc::clone(&self.supervision));
         Arc::new(move || {
-            if connection.wait(within).is_ok() {
-                return Ok(());
+            let deadline = Instant::now() + within;
+            loop {
+                if connection
+                    .wait(deadline.saturating_duration_since(Instant::now()))
+                    .is_ok()
+                {
+                    return Ok(());
+                }
+                let left_serving = supervision
+                    .left_serving
+                    .load(std::sync::atomic::Ordering::SeqCst);
+                let place = supervision
+                    .place
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone();
+                if !left_serving && !place.is_some_and(|place| another_holds(&place.lock)) {
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    return Err(
+                        "another session host may still run these chats; quit purlis and start \
+                         it again"
+                            .to_owned(),
+                    );
+                }
+                // A connection that is gone answers at once: look again in a moment.
+                std::thread::sleep(LOOK_EVERY);
             }
-            let left_serving = supervision
-                .left_serving
-                .load(std::sync::atomic::Ordering::SeqCst);
-            let place = supervision
-                .place
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            if left_serving || place.is_some_and(|place| another_holds(&place.lock)) {
-                return Err(
-                    "another session host may still run these chats; quit purlis and start it \
-                     again"
-                        .to_owned(),
-                );
-            }
-            Ok(())
         })
     }
 

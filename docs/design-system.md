@@ -276,9 +276,20 @@ rewrites the file; the next pick made in Settings writes the new id.
   with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
   follows with Purlis Classic until Settings › Theme can say that following would stay in it
   (#2331). A theme has at most 64.
+- **`icons`** names the theme's icon set (#2337): the path of a JSON file inside the theme's
+  folder (`"icons": "icons/icons.json"`), read as `theme.json` is: no link on the way, a plain
+  file, under the same cap. The file draws each view's tab on the rails, by the window's own
+  view ids, as path data:
+  `{ "views": { "chats": { "paths": ["M22 17a2 2 0 0 1-2 2H6.8…"] } } }`. Each path is the icon
+  theme's path grammar on a 24 grid, at most 16 to an icon, and the window strokes it 2 wide with
+  round caps and joins in the rail's own colour for the tab's state; none of that is the set's to
+  say. A view the set does not draw is its parent's, and a view no theme draws is the window's
+  own mark, so Purlis Classic, which names no set, keeps today's icons. A view name purlis does
+  not have is said and left out. Purlis's own set is Lucide's icons, converted
+  (`app/src/theme/railIcons.vendor.ts`, with Lucide's licence in the folder).
 - **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
-  draws Purlis and says what is wrong. Geometry and fonts (#2326), icons (#2337), options
-  (#2325) and tint (#2329) are not read yet, so naming one refuses the theme.
+  draws Purlis and says what is wrong. Geometry and fonts (#2326), options (#2325) and tint
+  (#2329) are not read yet, so naming one refuses the theme.
 
 **Format 1**, a single file with one appearance, keeps loading as a theme with that one
 appearance:
@@ -866,7 +877,26 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
   (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
-  (`ui-menu`, `ui-menu-item`).
+  (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
+  `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
+  or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
+  `.ui-button-sm` or `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
+  field of several lines is a whole number of controls. A control is what the rule's subject
+  names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
+  `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a
+  primitive control class, or a class some component gives a control (a list's row and a
+  segment are their list's). A strip or a pane header is a class named for one (`-bar`,
+  `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
+  a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
+  as part of itself (`.pane-task-ends`, `.tab-tasks`). A height that is its content's or its
+  container's (`auto`, `100%`) passes. Heights are held where a rule declares one: a control
+  with no declared height (one its padding makes tall) is not checked, and a custom property is
+  held by its value, not by the scope it is declared in. The exceptions are named with their
+  reason in the guard (`HEIGHT_EXCEPTIONS`): the title bar is the system's height, the
+  workspaces' row, the main navigation row, keeps control-height tabs (the operator,
+  2026-10-17), an activity tab is
+  the square of its column, and two icon or confirm buttons outside a strip are drawn at the
+  small control height.
 
 Each started with **an allowance list of the offenders the window had when it landed**,
 grouped by file and one entry per line. The geometry and type lists reached zero with #2319

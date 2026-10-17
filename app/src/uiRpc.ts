@@ -8976,6 +8976,11 @@ export type WhatChanged = {
 	diff: FileDiff,
 };
 
+/**  One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes. */
+export type WindowIcon = {
+	paths: string[],
+};
+
 /**  A resolved theme's motion: milliseconds, and the four numbers of each cubic Bézier. */
 export type WindowMotion = {
 	durations: { [key in string]: number },
@@ -9009,6 +9014,8 @@ export type WindowTheme = {
 	appearance: string,
 	values: { [key in string]: string },
 	motion: WindowMotion,
+	/**  The theme's icon set, by view id: empty when the rails draw the window's own marks. */
+	icons: { [key in string]: WindowIcon },
 };
 
 /**  A person's opt-out, as the picker sends it. */

@@ -31,15 +31,20 @@
 //! **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): it draws
 //! Purlis, and every complaint says what is wrong. A token or motion name purlis does not have is
 //! said and left out instead: a name reaches nothing, and a teammate's purlis may know a token
-//! this one does not yet. Geometry and fonts (#2326), icons (#2337), options (#2325) and tint
-//! (#2329) are not read yet, so naming one refuses the theme rather than drawing something other
-//! than what it says.
+//! this one does not yet. Geometry and fonts (#2326), options (#2325) and tint (#2329) are not
+//! read yet, so naming one refuses the theme rather than drawing something other than what it
+//! says.
+//!
+//! - **`icons`** names the theme's icon set (#2337): a file inside the theme's folder, read under
+//!   the same containment and cap as `theme.json` ([`super::icons`]). A view the set does not
+//!   draw is its parent's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{Map, Value};
 
+use super::icons::{self, Icons};
 use super::vocabulary::{TOKENS, is_colour, names_geometry};
 use super::{
     Appearance, CLASSIC, Complaint, GEOMETRY_IS_CORE, Resolved, ResolvedTheme, Theme, built_in_for,
@@ -61,16 +66,21 @@ const MOST_COLOURS: usize = 256;
 const MOST_BYTES: u64 = crate::windowprefs::MAX_BYTES;
 
 /// The keys of a format 2 `theme.json` this purlis reads.
-const KEYS: &[&str] = &["$schema", "name", "extends", "palette", "appearances"];
+const KEYS: &[&str] = &[
+    "$schema",
+    "name",
+    "extends",
+    "palette",
+    "appearances",
+    "icons",
+];
 
 /// The keys the spec gives format 2 that this purlis does not read yet, each with the ticket
-/// that reads it: fonts #2326, icons #2337, options #2325, tint #2329.
-const NOT_YET: &[(&str, &str)] = &[
-    ("fonts", "#2326"),
-    ("icons", "#2337"),
-    ("options", "#2325"),
-    ("tint", "#2329"),
-];
+/// that reads it: fonts #2326, options #2325, tint #2329.
+const NOT_YET: &[(&str, &str)] = &[("fonts", "#2326"), ("options", "#2325"), ("tint", "#2329")];
+
+/// The longest path to an icon set purlis follows, in bytes.
+pub(super) const MOST_ICONS_PATH: usize = 256;
 
 /// The keys of an appearance.
 const APPEARANCE_KEYS: &[&str] = &["id", "appearance", "high-contrast", "tokens", "motion"];
@@ -91,8 +101,27 @@ pub(super) fn is_name(name: &str) -> bool {
 /// their ids (a folder's name). Purlis Classic's ids are its own: no folder takes them.
 #[derive(Debug, Clone, Default)]
 pub struct Library {
-    /// Each folder's `theme.json`, or why it could not be read.
-    folders: BTreeMap<String, Result<Value, String>>,
+    /// Each folder's `theme.json` and the files beside it, or why it could not be read.
+    folders: BTreeMap<String, Result<Held, String>>,
+}
+
+/// A theme the library holds: its `theme.json`, and what was read beside it.
+#[derive(Debug, Clone)]
+struct Held {
+    document: Value,
+    beside: Beside,
+}
+
+/// What a theme has beside its `theme.json`.
+#[derive(Debug, Clone)]
+enum Beside {
+    /// Nothing: the theme is one document, not a folder.
+    Nothing,
+    /// A folder, and the icon set its `theme.json` names, parsed, or why not; `None` when it
+    /// names none.
+    Folder {
+        icons: Option<Result<Value, String>>,
+    },
 }
 
 /// A theme read: the theme, and the names it gave that purlis left out.
@@ -132,7 +161,13 @@ impl Library {
     /// The library with `document` as the theme `id`.
     #[must_use]
     pub fn with(mut self, id: impl Into<String>, document: Value) -> Self {
-        self.folders.insert(id.into(), Ok(document));
+        self.folders.insert(
+            id.into(),
+            Ok(Held {
+                document,
+                beside: Beside::Nothing,
+            }),
+        );
         self
     }
 
@@ -149,6 +184,11 @@ impl Library {
     /// **Reads one theme document**, `id` the theme's own id when it has one (a folder's name),
     /// and always answers with a complete theme.
     pub fn load(&self, id: Option<&str>, document: &Value) -> Resolved {
+        self.load_beside(id, document, &Beside::Nothing)
+    }
+
+    /// [`Self::load`] of a theme with what was read beside it.
+    fn load_beside(&self, id: Option<&str>, document: &Value, beside: &Beside) -> Resolved {
         let Some(from) = document.as_object() else {
             return Resolved::refusal(vec![Complaint::said("a theme is a JSON object")]);
         };
@@ -156,7 +196,7 @@ impl Library {
             return load_format_1(from);
         }
         let mut path: Vec<String> = id.into_iter().map(str::to_owned).collect();
-        match self.format_2(from, &mut path) {
+        match self.format_2(from, beside, &mut path) {
             Ok((theme, notes)) => Resolved {
                 theme,
                 complaints: notes,
@@ -169,7 +209,7 @@ impl Library {
     /// [`Self::load`] of the theme the library holds as `id`.
     pub fn load_id(&self, id: &str) -> Resolved {
         match self.folders.get(id) {
-            Some(Ok(document)) => self.load(Some(id), document),
+            Some(Ok(held)) => self.load_beside(Some(id), &held.document, &held.beside),
             Some(Err(why)) => Resolved::refusal(vec![Complaint::said(why.clone())]),
             None => Resolved::refusal(vec![Complaint::said(format!(
                 "\"{id}\" is not a theme purlis has"
@@ -180,17 +220,23 @@ impl Library {
     /// **Reads the theme folder `name` inside `themes`**, a level's `themes/` folder: its
     /// `theme.json`, which may sit alone or beside `fonts/`, `icons/`, a preview and a licence.
     /// Its id is `name`. A folder that is a link, a name that is not one plain folder name, and
-    /// a `theme.json` that is a link, not a plain file, or larger than the cap are refused.
+    /// a `theme.json` that is a link, not a plain file, or larger than the cap are refused; so
+    /// is an icon set that is any of those, or outside the folder.
     pub fn load_folder(&self, themes: &Path, name: &str) -> Resolved {
         match read_folder(themes, name) {
-            Ok(document) => self.load(Some(name), &document),
+            Ok(held) => self.load_beside(Some(name), &held.document, &held.beside),
             Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
         }
     }
 
     /// A format 2 theme, or why not. `path` is the ids of the themes being read, the one that
     /// extends first, so a circle is seen when it closes.
-    fn format_2(&self, from: &Map<String, Value>, path: &mut Vec<String>) -> Result<Read, Refused> {
+    fn format_2(
+        &self,
+        from: &Map<String, Value>,
+        beside: &Beside,
+        path: &mut Vec<String>,
+    ) -> Result<Read, Refused> {
         let mut complaints = Vec::new();
         let mut notes = Vec::new();
         for key in from.keys() {
@@ -261,6 +307,12 @@ impl Library {
             return Err(Refused::because(complaints));
         }
         let inherited = appearances.len();
+        // Every appearance of a theme carries its one set, so the parent's first has it.
+        let parents_icons = appearances
+            .first()
+            .map(|one| one.icons.clone())
+            .unwrap_or_default();
+        let own_icons = icon_set(from.get("icons"), beside, &mut complaints, &mut notes);
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
@@ -306,8 +358,10 @@ impl Library {
         if !complaints.is_empty() {
             return Err(Refused::because(complaints));
         }
+        let icons = own_icons.over(&parents_icons);
         for one in &mut appearances {
             one.name.clone_from(&name);
+            one.icons.clone_from(&icons);
         }
         Ok((Theme { name, appearances }, notes))
     }
@@ -329,7 +383,7 @@ impl Library {
         if is_classic(parent) {
             return Ok((classic().clone(), Vec::new()));
         }
-        let document = match self.folders.get(parent) {
+        let held = match self.folders.get(parent) {
             None => {
                 return Err(Refused {
                     complaints: Vec::new(),
@@ -337,9 +391,9 @@ impl Library {
                 });
             }
             Some(Err(why)) => return Err(Refused::because(vec![Complaint::said(why.clone())])),
-            Some(Ok(document)) => document,
+            Some(Ok(held)) => held,
         };
-        let Some(from) = document.as_object() else {
+        let Some(from) = held.document.as_object() else {
             return Err(Refused::because(vec![Complaint::said(
                 "a theme is a JSON object",
             )]));
@@ -353,7 +407,7 @@ impl Library {
             };
         }
         path.push(parent.to_owned());
-        let read = self.format_2(from, path);
+        let read = self.format_2(from, &held.beside, path);
         path.pop();
         read
     }
@@ -367,12 +421,11 @@ fn is_classic(id: &str) -> bool {
             .any(|name| name.recognises(id) || name.write == id)
 }
 
-/// The theme folder `name` inside `themes`'s `theme.json`, parsed, or why not. `themes` is the
-/// containment root: `name` is one plain folder name, nothing on the way from `themes` to the
-/// file is a link, the file is a plain file under the cap, and the read itself stops at the cap.
-/// A theme folder may be anybody's.
-fn read_folder(themes: &Path, name: &str) -> Result<Value, String> {
-    use std::io::Read;
+/// The theme folder `name` inside `themes`: its `theme.json`, parsed, and the icon set it names,
+/// or why not. `themes` is the containment root: `name` is one plain folder name, nothing on the
+/// way from `themes` to either file is a link, each file is a plain file under the cap, and each
+/// read itself stops at the cap. A theme folder may be anybody's.
+fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
     let plain = !name.is_empty()
         && name != "."
         && name != ".."
@@ -386,12 +439,59 @@ fn read_folder(themes: &Path, name: &str) -> Result<Value, String> {
     }
     let folder = themes.join(name);
     let file = folder.join(THEME_JSON);
+    let text = read_capped(themes, &file, || {
+        format!("{} has no {THEME_JSON}", folder.display())
+    })?;
+    let document = match super::load_text_document(&text) {
+        Ok(document) => document,
+        Err(why) => return Err(format!("{}: {why}", file.display())),
+    };
+    let icons = match document.get("icons") {
+        Some(Value::String(named)) => Some(read_icons(themes, &folder, named)),
+        _ => None,
+    };
+    Ok(Held {
+        document,
+        beside: Beside::Folder { icons },
+    })
+}
+
+/// The icon set `named` inside the theme folder `folder`, parsed, or why not: `named` is a
+/// relative path of plain names, so it stays inside the folder, and the file is read as
+/// `theme.json` is, from the same containment root.
+fn read_icons(themes: &Path, folder: &Path, named: &str) -> Result<Value, String> {
+    let inside = !named.is_empty()
+        && named.len() <= MOST_ICONS_PATH
+        && !named.contains(['\\', ':'])
+        && Path::new(named)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)));
+    if !inside {
+        return Err(format!(
+            "icons is {}, which is not a path inside the theme's folder",
+            stringify(&Value::String(named.to_owned()))
+        ));
+    }
+    let file = folder.join(named);
+    let text = read_capped(themes, &file, || {
+        format!("{} has no {named}", folder.display())
+    })?;
+    serde_json::from_str::<Value>(&text)
+        .map_err(|why| format!("{}: an icon set is JSON: {why}", file.display()))
+}
+
+/// The text of `file`, read under the containment root `themes` and the cap, or why not;
+/// `missing` says the file is not there.
+fn read_capped(
+    themes: &Path,
+    file: &Path,
+    missing: impl FnOnce() -> String,
+) -> Result<String, String> {
+    use std::io::Read;
     let shown = file.display();
-    let mut open = match crate::contain::open_no_link(themes, &file) {
+    let mut open = match crate::contain::open_no_link(themes, file) {
         Ok(open) => open,
-        Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => {
-            return Err(format!("{} has no {THEME_JSON}", folder.display()));
-        }
+        Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => return Err(missing()),
         Err(why) => return Err(format!("purlis could not read {shown}: {why}")),
     };
     let found = open
@@ -401,7 +501,7 @@ fn read_folder(themes: &Path, name: &str) -> Result<Value, String> {
         return Err(format!("{shown} is not a plain file"));
     }
     let too_big = |bytes: u64| {
-        format!("{shown} is {bytes} bytes, and a theme is never larger than {MOST_BYTES}")
+        format!("{shown} is {bytes} bytes, and a theme's file is never larger than {MOST_BYTES}")
     };
     if found.len() > MOST_BYTES {
         return Err(too_big(found.len()));
@@ -415,10 +515,45 @@ fn read_folder(themes: &Path, name: &str) -> Result<Value, String> {
     if text.len() as u64 > MOST_BYTES {
         return Err(too_big(text.len() as u64));
     }
-    match super::load_text_document(&text) {
-        Ok(document) => Ok(document),
-        Err(why) => Err(format!("{shown}: {why}")),
+    Ok(text)
+}
+
+/// The icon set a theme names in `raw`, read from what is `beside` it, saying what is wrong with
+/// it in `complaints` and the views it left out in `notes`. Empty when it names none.
+fn icon_set(
+    raw: Option<&Value>,
+    beside: &Beside,
+    complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
+) -> Icons {
+    let named = match raw {
+        None => return Icons::default(),
+        Some(Value::String(named)) => named,
+        Some(_) => {
+            complaints.push(Complaint::said(
+                "icons is the path of an icon set inside the theme's folder",
+            ));
+            return Icons::default();
+        }
+    };
+    match beside {
+        Beside::Nothing => complaints.push(Complaint::said(format!(
+            "icons names {}, and an icon set is read only from a theme folder",
+            stringify(&Value::String(named.clone()))
+        ))),
+        Beside::Folder {
+            icons: Some(Ok(set)),
+        } => return icons::read(named, set, complaints, notes),
+        Beside::Folder {
+            icons: Some(Err(why)),
+        } => complaints.push(Complaint::said(why.clone())),
+        // A folder whose `theme.json` names a set always has it read, or why not.
+        Beside::Folder { icons: None } => complaints.push(Complaint::said(format!(
+            "purlis could not read the icon set {}",
+            stringify(&Value::String(named.clone()))
+        ))),
     }
+    Icons::default()
 }
 
 /// `complaints` said about the theme `id`, each saying so: a parent's complaints reach its child
@@ -606,6 +741,7 @@ fn appearance(
         high_contrast,
         values,
         motion,
+        icons: Icons::default(),
     })
 }
 

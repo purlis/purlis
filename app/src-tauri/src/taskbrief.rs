@@ -126,14 +126,16 @@ fn record_of(
 /// `record`'s brief as the window is handed it.
 fn shown(record: &Record) -> TaskBrief {
     let sent = dispatchrecord::brief_sent(record);
-    let inert = purlis_core::dispatchgrant::holds_what_draws_as_nothing(&sent.text)
-        .then(|| purlis_core::dispatchgrant::inert(&sent.text));
+    // Drawn masked (#1872): a secret in the brief is not shown back.
+    let text = dispatchrecord::masked_brief(&sent);
+    let inert = purlis_core::dispatchgrant::holds_what_draws_as_nothing(&text)
+        .then(|| purlis_core::dispatchgrant::inert(&text));
     TaskBrief {
         name: record
             .task
             .clone()
             .unwrap_or_else(|| record.worker.chat.name.clone()),
-        brief: sent.text,
+        brief: text,
         kept: sent.kept.into(),
         inert,
         asker: record.asker.chat.name.clone(),
@@ -475,5 +477,19 @@ mod tests {
 
         let refused = read_for(&root, &BriefOf::Dispatch(opened.id), open_here).unwrap_err();
         assert!(refused.contains("will not show"), "{refused}");
+    }
+
+    #[test]
+    fn a_secret_in_a_brief_is_masked_where_the_brief_is_read() {
+        // #1872: a token built here from its parts, so no line of this file holds one.
+        let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+        let (_d, root) = project();
+        let brief = format!("Deploy with {token} today.");
+        dispatchrecord::open(&root, a_task(&brief), at("2026-10-07T12:00:00Z")).unwrap();
+
+        let read = read_for(&root, &BriefOf::Chat(7), open_here).expect("its brief");
+
+        assert!(!read.brief.contains(&token), "{}", read.brief);
+        assert_eq!(read.brief, "Deploy with *** today.");
     }
 }

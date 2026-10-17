@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
   "title": "A purlis theme folder's theme.json (format 2)",
-  "description": "A theme: a name, optionally the theme it extends, a palette of named colours, and its appearances, each tagged dark or light and optionally high contrast. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+  "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, and its appearances, each tagged dark or light and optionally high contrast. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -52,6 +52,12 @@
         "$ref": "#/$defs/appearance"
       },
       "maxItems": 64
+    },
+    "icons": {
+      "description": "The theme's icon set: the path of a JSON file inside this theme's folder, such as icons/icons.json, that draws each view's tab on the rails. A view it does not draw is the parent's.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
     }
   },
   "$defs": {

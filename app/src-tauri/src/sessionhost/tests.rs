@@ -611,3 +611,102 @@ fn a_host_found_serving_that_never_answers_keeps_every_chat_from_being_put_back(
     until("the host is tried again", || starts_in(&started) >= 2);
     host.end();
 }
+
+/// The way back asks the place's lock whether a host serves there: a lock a host holds is held.
+#[test]
+fn the_lock_check_finds_a_lock_a_host_holds_held() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    let _held = a_host_holds_the_lock_of(&place);
+
+    assert!(another_holds(&place.lock));
+}
+
+/// A lock no host holds is free, and asking it leaves it free for a host to take.
+#[test]
+fn the_lock_check_finds_a_lock_no_host_holds_free() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    drop(a_host_holds_the_lock_of(&place));
+
+    assert!(!another_holds(&place.lock));
+    drop(a_host_holds_the_lock_of(&place));
+}
+
+/// A lock file that is not there is free: no host has served at the place, and the check
+/// makes none.
+#[test]
+fn the_lock_check_finds_a_lock_that_is_not_there_free() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+
+    assert!(!another_holds(&place.lock));
+    assert!(!place.lock.exists(), "the check made the lock");
+}
+
+/// The window's own host never says it is ready within the gate's wait: no chat is put back
+/// while another host holds the place's lock.
+#[test]
+fn a_window_running_its_chats_puts_none_back_when_its_wait_runs_out_beside_another_host() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    let _held = a_host_holds_the_lock_of(&place);
+    let host = SessionHost::default();
+    host.ending_a_host_it_finds();
+
+    host.start_at(place, || {
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("exec sleep 30")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Ok(command)
+    });
+    let gate = host.before_chats_are_put_back(Duration::from_secs(1));
+
+    assert!(
+        gate().is_err(),
+        "chats were put back beside another host once the wait ran out"
+    );
+    host.end();
+}
+
+/// The window's own first start failed, and its next serves, holding the place's lock: the
+/// gate waits on that host rather than taking its lock for another's, and the chats are put
+/// back.
+#[test]
+fn a_window_running_its_chats_puts_them_back_once_its_own_host_serves_after_a_failed_start() {
+    let home = tempfile::tempdir().unwrap();
+    let place = a_place(home.path());
+    let host = SessionHost::default();
+    host.ending_a_host_it_finds();
+    *host.supervision.place.lock().unwrap() = Some(place.clone());
+    // The first start failed; the next is the window's own, and holds the lock as it serves.
+    host.connection
+        .gone("the session host ended before it was ready");
+    let _its_own = a_host_holds_the_lock_of(&place);
+    let gate = host.before_chats_are_put_back(Duration::from_secs(10));
+    let asked = std::thread::spawn(move || gate());
+
+    // Time for the gate to find the window's own host holding the lock before it serves. On a
+    // slow machine the gate only finds it later, which the test asks the same of.
+    std::thread::sleep(Duration::from_millis(300));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let hosting = purlis_host::Hosting::running_with(
+        Composes::as_the_tests_ship(),
+        purlis_host::standin::StandIns::default(),
+    );
+    let (_serving, link) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
+    host.connection.ready(
+        link,
+        Arc::new(|_| Err("one link is enough here".to_owned())),
+    );
+
+    assert_eq!(asked.join().unwrap(), Ok(()));
+}

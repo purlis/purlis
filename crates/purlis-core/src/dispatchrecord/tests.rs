@@ -2776,3 +2776,65 @@ fn a_chat_that_ended_with_no_window_there_and_worked_no_dispatch_settles_nothing
     );
     assert!(read(&root, &running.id).unwrap().running());
 }
+
+// ----- drawn masked (#1872) ------------------------------------------------------------------
+
+#[test]
+fn a_vault_value_the_store_cut_through_is_masked_in_the_part_it_kept() {
+    // A value with no shape, which only purlis's memory of it finds, standing across the cap:
+    // the store keeps only its start, which no whole match finds.
+    let value = format!("{}-{}-{}", "straddling", "vault words", "a83f");
+    crate::secrets::seen::remember(&value);
+    let start = &value[..12];
+    let before = "x".repeat(MOST_BRIEF_BYTES - start.len());
+    let brief = format!("{before}{value} and words after it{}", "y".repeat(400));
+    let (_d, root) = project();
+    let opened = open(
+        &root,
+        Opening {
+            brief,
+            ..a_handoff()
+        },
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+    let record = read(&root, &opened.id).expect("it reads");
+    assert!(record.brief.contains(start), "the store kept its start");
+
+    let drawn = masked(&record.brief);
+    assert!(!drawn.contains(start), "its start is not drawn");
+    assert!(drawn.ends_with(&format!(" [cut at {MOST_BRIEF_BYTES} bytes]")));
+    assert!(drawn.starts_with("xxxx"), "what stands before it is drawn");
+
+    let sent = brief_sent(&record);
+    assert_eq!(sent.kept, BriefKept::Cut);
+    assert!(!masked_brief(&sent).contains(start));
+}
+
+#[test]
+fn a_report_s_changed_words_are_masked_and_absent_ones_stay_absent() {
+    let token = format!("{}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+    let mut report = done("Healthy.");
+    report.changed.said = None;
+    assert_eq!(report.changed_said_masked(), None);
+    report.changed.said = Some(format!("Rotated {token} in values.yaml"));
+    assert_eq!(
+        report.changed_said_masked().as_deref(),
+        Some("Rotated *** in values.yaml")
+    );
+}
+
+#[test]
+fn a_long_brief_drawn_again_is_drawn_the_same() {
+    // Kept once masked: on a release build with three values known, about 30 ms the first
+    // time and about 11 µs again (#1872). No time is asserted: another test can remember a
+    // value between the two, and that rightly masks it again.
+    for n in 0..3 {
+        crate::secrets::seen::remember(&format!("drawn again value {n} {}", "z".repeat(10 * n)));
+    }
+    // Characters no test remembers as a value, so nothing in it is masked.
+    let brief = "ǂ ".repeat(MOST_BRIEF_BYTES / 4);
+    let drawn = masked(&brief);
+    assert_eq!(drawn, brief, "nothing in it is a secret");
+    assert_eq!(masked(&brief), drawn);
+}

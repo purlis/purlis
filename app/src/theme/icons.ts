@@ -106,6 +106,13 @@ export const MOST_VIEW_BOX = 64;
 
 /** SVG path data, and nothing that is not: command letters, numbers, signs, separators. */
 const PATH = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\-\s]*$/;
+
+/** Whether `d` is path data in the grammar and under {@link MOST_PATH}: what a file icon's
+ *  outline is held to here, and a theme's rail icon is held to again where it is drawn
+ *  (`RailIcon`), after the core's theme engine checked it. */
+export function isPath(d: unknown): d is string {
+  return typeof d === "string" && d.length <= MOST_PATH && PATH.test(d);
+}
 /** One number of a view box. */
 const NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -142,8 +149,7 @@ function symbolOf(name: string, raw: unknown): IconSymbol | string {
   for (const path of raw.paths as unknown[]) {
     if (!isObject(path)) return `a path of ${name} is not an object`;
     const { d, tone } = path;
-    if (typeof d !== "string" || d.length > MOST_PATH || !PATH.test(d))
-      return `a path of ${name} is not path data`;
+    if (!isPath(d)) return `a path of ${name} is not path data`;
     if (typeof tone !== "string" || !tones.has(tone))
       return `a path of ${name} is coloured ${JSON.stringify(tone)}, which is not one of ${ICON_TOKENS.join(", ")}`;
     shapes.push({ d, tone: tone as Token, evenOdd: path.evenOdd === true });

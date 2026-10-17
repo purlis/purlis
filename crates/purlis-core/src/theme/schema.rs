@@ -14,7 +14,7 @@
 
 use serde_json::{Map, Value, json};
 
-use super::format::{MOST_APPEARANCES, THEME_JSON};
+use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
@@ -69,7 +69,7 @@ pub fn schema() -> Value {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": SCHEMA_URL,
         "title": format!("A purlis theme folder's {THEME_JSON} (format 2)"),
-        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, and its appearances, each tagged dark or light and optionally high contrast. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, and its appearances, each tagged dark or light and optionally high contrast. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
         "type": "object",
         "additionalProperties": false,
         "required": ["name"],
@@ -98,6 +98,12 @@ pub fn schema() -> Value {
                 "type": "array",
                 "items": { "$ref": "#/$defs/appearance" },
                 "maxItems": MOST_APPEARANCES
+            },
+            "icons": {
+                "description": "The theme's icon set: the path of a JSON file inside this theme's folder, such as icons/icons.json, that draws each view's tab on the rails. A view it does not draw is the parent's.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MOST_ICONS_PATH
             }
         },
         "$defs": {
