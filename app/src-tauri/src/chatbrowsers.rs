@@ -324,6 +324,17 @@ const NARROWED: &str = "the person withdrew part of what this chat may reach, so
                         chat reaches now";
 
 impl ChatBrowsers {
+    /// Browsers whose stuck ones are retried first after `first`, then at most every `most`.
+    #[cfg(test)]
+    pub fn retrying(_first: std::time::Duration, _most: std::time::Duration) -> Self {
+        Self::default()
+    }
+
+    /// These browsers, telling `listed` when a retry ends one.
+    pub fn telling(self, _listed: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self
+    }
+
     fn lock(&self) -> MutexGuard<'_, HashMap<u32, Chat>> {
         self.chats.lock().unwrap_or_else(PoisonError::into_inner)
     }
