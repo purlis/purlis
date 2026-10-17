@@ -10,7 +10,9 @@ import { keepTheirOrder } from "./commandOrder";
 import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
-import { DEFAULT_THEME, drawIn } from "./theme/theme";
+import { DEFAULT_THEME, drawIn, fetchFacesWith, personInForce } from "./theme/theme";
+import { sayAppearance } from "./appearance";
+import { fetchFace } from "./theme/faces";
 import { theirThemeOnce } from "./windowprefs";
 
 // The window's colours, before anything is rendered and therefore before anything is painted:
@@ -18,7 +20,13 @@ import { theirThemeOnce } from "./windowprefs";
 // core's theme engine before the window existed and handed to it with the window
 // (`windowprefs.ts`), the built-ins compiled into the core, so nothing is read or asked on the
 // way to the first frame — the only arrangement ADR 0026's 2 s cold start can afford.
+// A theme's fonts are asked for by digest after the frame (`theme/faces.ts`, #2326): the first
+// frame is drawn in each family list's fallback, and nothing waits for a face.
+fetchFacesWith(fetchFace);
 drawIn(theirThemeOnce() ?? DEFAULT_THEME);
+// The person's density and fonts were drawn with it, as the engine read them from the layout
+// file (`appearance.ts`); what it had to put right is said.
+sayAppearance(personInForce().complaints);
 
 // The window's text size, for the same reason and from the same place: the layout file the
 // window was handed (`textSize.ts`, charter-app#283). The root's font size is what every `rem`

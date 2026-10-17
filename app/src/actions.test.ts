@@ -641,6 +641,7 @@ describe("the one list of actions", () => {
       alone.filter((one) => one.id.startsWith("settings.group:")).map((one) => one.title),
     ).toEqual([
       "Your settings: Text",
+      "Your settings: Density and fonts",
       "Your settings: Editor",
       "Your settings: Chats list",
       "Your settings: Notifications",
@@ -2392,7 +2393,8 @@ describe("the palette at fifty chats", () => {
     // 909 since #1989: Your settings: Notifications.
     // 910 since #2034: Your settings: Profiles.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(910);
+    // 911 since #2326: Your settings: Density and fonts.
+    expect(offers).toHaveLength(911);
   });
 
   /**

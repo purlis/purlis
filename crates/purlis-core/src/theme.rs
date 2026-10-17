@@ -22,8 +22,8 @@
 //!   **One rule for both, and for every source**: a token the theme does not name is Purlis
 //!   Classic's of the same appearance, silently; a token or motion name purlis does not have,
 //!   and a key format 1 does not have, is said and left out; a value that is there and outside
-//!   its type or bound, a key format 2 does not have, geometry, or a document that is not a
-//!   theme **refuses the theme whole**
+//!   its type or bound, a key format 2 does not have, geometry in format 1, or a document that
+//!   is not a theme **refuses the theme whole**
 //!   (ADR 0097 §2). A refused theme draws Purlis, and the complaints name each value.
 //!   **It never fails**: ADR 0026 holds cold start at 2 s, and the window has to come up
 //!   whatever a file says.
@@ -38,8 +38,10 @@
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
 //!   vocabulary (`docs/schema/theme.schema.json`, held to it by a test).
 //!
-//! The spec's later steps (theme options, the choice levels, geometry and fonts, import and
-//! export) grow these same entries: `resolve` takes more inputs, `check` covers more
+//! **Geometry and fonts** (#2326, [`geometry`], [`Fonts`]) are read from a theme folder within
+//! their bounds, and [`Person`] reads the person's density and font override, whose [`Layer`]
+//! the window draws over every theme. The spec's later steps (theme options, the choice levels,
+//! import and export) grow these same entries: `resolve` takes more inputs, `check` covers more
 //! combinations, and a resolved theme carries more than colour and motion.
 //!
 //! # Values are closed grammars
@@ -56,16 +58,25 @@ use std::sync::OnceLock;
 use serde_json::Value;
 
 mod check;
+mod fonts;
 mod format;
+pub mod geometry;
 mod icons;
+mod person;
 mod resolve;
 mod schema;
 mod tint;
 pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
+pub use fonts::{
+    CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
+    Style, served,
+};
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
+pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
+pub use person::{Density, Layer, Person};
 pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
@@ -73,6 +84,8 @@ use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names
 
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod geometry_tests;
 #[cfg(test)]
 mod icons_tests;
 #[cfg(test)]
@@ -98,8 +111,8 @@ pub struct Motion {
 /// **One appearance of a theme, complete**: what the window draws. Every token in [`TOKENS`] has
 /// a value, and so does every motion token.
 ///
-/// **It will grow** (spec #2313): typed values beyond colour, motion and icons (geometry and
-/// fonts #2326) and the option values it was drawn with (#2325). Its users are the window's wire types
+/// It carries the icon set (#2337), the geometry for both densities and the fonts (#2326); it
+/// will grow the option values it was drawn with (#2325). Its users are the window's wire types
 /// and the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ResolvedTheme {
@@ -122,6 +135,16 @@ pub struct ResolvedTheme {
     /// draw the window's own marks, as Purlis Classic's do.
     #[serde(skip_serializing_if = "Icons::is_empty")]
     pub icons: Icons,
+    /// Each geometry token's value, comfortable ([`geometry::STEPS`]).
+    pub geometry: Geometry,
+    /// Each geometry token's value when the person chose compact.
+    pub compact: Geometry,
+    /// What the theme's `compact` layer tunes, with its parent's: what a theme that extends
+    /// this one tunes over.
+    #[serde(skip)]
+    pub(crate) tuned: Geometry,
+    /// The UI, mono and terminal fonts.
+    pub fonts: Fonts,
 }
 
 impl ResolvedTheme {
@@ -293,6 +316,11 @@ fn built_in_of(text: &str) -> Theme {
                 values,
                 motion,
                 icons: Icons::default(),
+                // Core's geometry and fonts are Purlis Classic's: its folder names none.
+                geometry: geometry::classic(),
+                compact: geometry::classic_compact(),
+                tuned: Geometry::new(),
+                fonts: Fonts::classic(),
             }
         })
         .collect();
@@ -341,10 +369,10 @@ pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
     built_ins().iter().find(|theme| theme.name == id)
 }
 
-/// Why a theme that names geometry is refused, after the key that named it (ADR 0097 §7: geometry
-/// stays core's until a theme may set it, #2326).
+/// Why a format 1 theme that names geometry is refused, after the key that named it: geometry
+/// is set in a theme folder's `theme.json` (format 2), within its bounds (#2326).
 const GEOMETRY_IS_CORE: &str =
-    "is geometry, which this purlis does not read from a theme yet (#2326)";
+    "is geometry, which a theme sets in a theme folder's theme.json (format 2), not here";
 
 /// The keys of a format 1 theme file.
 const FORMAT_1_KEYS: &[&str] = &["name", "appearance", "tokens", "motion"];
@@ -494,6 +522,10 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             values,
             motion,
             icons: Icons::default(),
+            geometry: base.geometry.clone(),
+            compact: base.compact.clone(),
+            tuned: base.tuned.clone(),
+            fonts: base.fonts.clone(),
         }),
         complaints: notes,
         refused: false,
@@ -503,8 +535,17 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
 /// [`load`] of a theme's text. Text that is not JSON is refused like any other theme that is
 /// not one: Purlis is drawn, and the complaint says why.
 pub fn load_text(text: &str) -> Resolved {
+    load_text_in(text, None)
+}
+
+/// [`load_text`] of a `theme.json` read from `folder`, the theme's folder, whose `fonts/` its
+/// fonts are read from.
+pub fn load_text_in(text: &str, folder: Option<&std::path::Path>) -> Resolved {
     match load_text_document(text) {
-        Ok(document) => load(&document),
+        Ok(document) => match folder {
+            Some(folder) => Library::new().load_in(None, &document, folder),
+            None => Library::new().load(None, &document),
+        },
         Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
     }
 }
@@ -635,7 +676,9 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
             ..Theirs::default()
         };
     };
-    let resolved = load_text(&text);
+    // The person's `theme.json` sits in their config folder, which is its theme folder: its
+    // fonts are that folder's `fonts/`.
+    let resolved = load_text_in(&text, Some(&crate::machine::dir(root)));
     // A refused theme is not in force: the window draws Purlis and says why. What refused it is
     // kept as it was found, beside the sentence.
     if resolved.refused {

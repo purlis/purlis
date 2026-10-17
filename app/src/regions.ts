@@ -15,6 +15,7 @@ import { commands } from "./bindings";
 import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textSize";
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
+import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { EXPLORER_SECTIONS, type SectionId } from "./explorerSections";
 import { SCREEN_READER } from "./screenReader";
@@ -519,6 +520,7 @@ const RETIRED_SIDE = "bottom";
  */
 const LAYOUT_PREFS = [
   YOUR_EDITOR,
+  APPEARANCE,
   CHATS_LIST,
   EXPLORER_SECTIONS,
   SCREEN_READER,
@@ -549,6 +551,9 @@ type Document = {
   text: TextSizes;
   /** Your editor (`yourEditor.ts`, RC-20), when one is chosen. */
   editor?: YourEditor;
+  /** Your density and font override (`appearance.ts`, #2326), when either is set. The core
+   *  reads it too (`purlis_core::theme::Person`). */
+  appearance?: Appearance;
   /** How the Chats list is drawn (`chatsListPrefs.ts`, #1499), when it is not the default. */
   chats?: ChatsListPrefs;
   /** Explorer's folded sections (`explorerSections.ts`, #1677), when any is. */
