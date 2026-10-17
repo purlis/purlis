@@ -67,6 +67,8 @@ pub enum FileOp {
     Unlink,
     /// `file-write-mode`: its permissions changed.
     Mode,
+    /// `file-write-times`: its access or modification time changed.
+    Times,
 }
 
 impl FileOp {
@@ -78,6 +80,7 @@ impl FileOp {
             Self::Create => "file-write-create",
             Self::Unlink => "file-write-unlink",
             Self::Mode => "file-write-mode",
+            Self::Times => "file-write-times",
         }
     }
 }
@@ -173,8 +176,7 @@ const JUDGED: [&str; 11] = [
     "network-outbound",
 ];
 
-/// Operations purlis writes rules for that Linux has no counterpart of, or that are held there
-/// another way (signals and processes by Landlock's scopes; a program's start by the kernel).
+/// Operations purlis writes rules for that this module does not judge.
 const SET_ASIDE: [&str; 18] = [
     "process-exec",
     "process-fork",
@@ -574,5 +576,4 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-#[path = "profile_tests.rs"]
 mod tests;

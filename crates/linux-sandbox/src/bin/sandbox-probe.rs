@@ -146,6 +146,42 @@ mod probe {
                 let again = format!("/proc/self/fd/{}", std::os::fd::AsRawFd::as_raw_fd(&held));
                 io(std::fs::read(again))
             }
+            "path-wait-read" => {
+                use std::os::unix::fs::OpenOptionsExt;
+                let held = std::fs::OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_PATH)
+                    .open(word(1))
+                    .map_err(|why| name(&why))?;
+                while std::fs::symlink_metadata(word(2)).is_err() {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                let again = format!("/proc/self/fd/{}", std::os::fd::AsRawFd::as_raw_fd(&held));
+                io(std::fs::read(again))
+            }
+            "read-at" => {
+                use nix::fcntl::{OFlag, open, openat};
+                use nix::sys::stat::Mode;
+                let folder = open(word(1), OFlag::O_PATH | OFlag::O_DIRECTORY, Mode::empty())
+                    .map_err(|why| format!("{why:?}"))?;
+                nix(openat(&folder, word(2), OFlag::O_RDONLY, Mode::empty()))
+            }
+            "touch" => {
+                use nix::sys::stat::{UtimensatFlags, utimensat};
+                use nix::sys::time::TimeSpec;
+                nix(utimensat(
+                    nix::fcntl::AT_FDCWD,
+                    word(1),
+                    &TimeSpec::new(1, 0),
+                    &TimeSpec::new(1, 0),
+                    UtimensatFlags::FollowSymlink,
+                ))
+            }
+            "chown" => nix(nix::unistd::chown(
+                word(1),
+                Some(nix::unistd::getuid()),
+                Some(nix::unistd::getgid()),
+            )),
             "exit" => std::process::exit(word(1).parse().unwrap_or(0)),
             other => Err(format!("no probe {other}")),
         }

@@ -92,7 +92,8 @@ impl Project {
              (allow network-outbound (remote unix-socket (path-literal \"{}\")))\n\
              (allow file-write*\n  (subpath \"{cwd}\")\n  (subpath \"{tmp}\")\n  (literal \"/dev/null\"))\n\
              (deny file-read* file-write* (subpath \"{}\"))\n\
-             (deny file-write* (literal \"{cwd}\"))\n(deny file-write* (literal \"{tmp}\"))\n",
+             (deny file-write* (literal \"{cwd}\"))\n(deny file-write* (literal \"{tmp}\"))\n\
+             (deny file-read* file-write* (literal \"{cwd}/held.key\"))\n",
             self.hook.display(),
             vaults.display()
         );
@@ -226,6 +227,12 @@ fn the_chat_writes_its_own_folder_and_temp_folder_and_nothing_else() {
     );
     assert_eq!(p.run(&["mkdir", &p.s(&p.outside.join("d"))]), "EACCES");
     assert_eq!(
+        p.run(&["touch", &p.s(&p.outside.join("notes.txt"))]),
+        "EACCES"
+    );
+    assert_eq!(p.run(&["touch", "made.txt"]), "ok");
+    assert_eq!(p.run(&["chown", "made.txt"]), "EPERM");
+    assert_eq!(
         std::fs::read_to_string(p.outside.join("notes.txt")).expect("still there"),
         "outside"
     );
@@ -303,6 +310,7 @@ fn what_a_later_program_loads_is_never_written_at_any_depth() {
     assert_eq!(p.run(&["write", "repo/.git/hooks/pre-commit"]), "EACCES");
     assert_eq!(p.run(&["append", "repo/.git/config"]), "EACCES");
     assert_eq!(p.run(&["truncate", "repo/.git/config"]), "EACCES");
+    assert_eq!(p.run(&["touch", "repo/.git/config"]), "EACCES");
     assert_eq!(p.run(&["unlink", "repo/.git/config"]), "EACCES");
     assert_eq!(p.run(&["write", ".envrc"]), "EACCES");
     assert_eq!(p.run(&["mkdir", "a"]), "ok");
@@ -466,7 +474,9 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
     // The wrap's own process: the probe's parent.
     let script = format!(
         "{PROBE} read /proc/$PPID/environ; {PROBE} read /proc/1/environ; {PROBE} read /proc/$$/status; \
-         {PROBE} read /proc/$PPID/stat; {PROBE} read /proc/$PPID/cwd/x; {PROBE} read /proc/$PPID/task/$PPID/environ"
+         {PROBE} read /proc/$PPID/stat; {PROBE} read /proc/$PPID/cwd/x; {PROBE} read /proc/$PPID/task/$PPID/environ; \
+         {PROBE} read /proc/$PPID/cmdline; {PROBE} read /proc/$PPID/status; {PROBE} read-at /proc/$PPID cmdline; \
+         {PROBE} read-at /proc/$PPID stat"
     );
     let out = Command::new(PROBE)
         .args(purlis_linux_sandbox::line(
@@ -482,13 +492,40 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
         .expect("the wrap ran");
     let said = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = said.lines().collect();
-    // What any process reads of another, `ps` as it were, is read; what needs the right to
-    // trace it is not.
+    // Of a process outside the sandbox, its `stat` alone, from the top of `/proc` or from its
+    // own folder held already.
     assert_eq!(
         lines,
-        vec!["EACCES", "EACCES", "ok", "ok", "EACCES", "EACCES"],
+        vec![
+            "EACCES", "EACCES", "ok", "ok", "EACCES", "EACCES", "EACCES", "EACCES", "EACCES", "ok"
+        ],
         "{said}"
     );
+}
+
+#[test]
+fn a_file_held_by_name_stays_held_once_it_is_no_longer_linked() {
+    let mut p = project();
+    let key = p.cwd.join("held.key");
+    std::fs::write(&key, "held").expect("a key");
+    assert_eq!(p.run(&["read", "held.key"]), "EACCES");
+    let port = p.proxy_port();
+    let go = p.tmp.join("go");
+    let reader = std::process::Command::new(PROBE)
+        .args(purlis_linux_sandbox::line(
+            &p.profile(port),
+            PROBE.to_owned(),
+            vec!["path-wait-read".to_owned(), p.s(&key), p.s(&go)],
+        ))
+        .current_dir(&p.cwd)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("the wrap ran");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::fs::remove_file(&key).expect("unlinked");
+    std::fs::write(&go, "").expect("go");
+    let out = reader.wait_with_output().expect("it ends");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "EACCES");
 }
 
 #[test]

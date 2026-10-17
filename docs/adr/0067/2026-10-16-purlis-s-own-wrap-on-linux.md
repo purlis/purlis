@@ -24,7 +24,8 @@ as a local one (spec #2041).
   no port, signals no process outside the sandbox and reaches no abstract socket made outside
   it; it may run programs. The supervisor is held to what the profile could ever let a chat
   write and reach.
-- **The filter refuses what would go round the supervisor**: datagram, raw and packet sockets;
+- **The filter refuses what would go round the supervisor**: the calls of another ABI; a change
+  of a file's owner or extended attributes; datagram, raw and packet sockets;
   TCP Fast Open; io_uring and `openat2`; the kernel's key store; opening a file by handle; and a
   seccomp listener of the chat's own. A process the chat starts inherits all of it.
 - **Every class of section 5 holds**, the later-code names at any depth of every folder a chat
@@ -32,9 +33,15 @@ as a local one (spec #2041).
   machine and its hook socket, and to nothing else. The credential store (class 1) is held on
   Linux for these harnesses: the wrap reaches no socket of the session bus. A Claude Code chat
   on Linux keeps Claude Code's own sandbox, as before.
-- **Fail closed.** The wrap needs Landlock ABI 6 (Linux 6.12) or later. A kernel without it
-  starts no wrapped chat, and the refusal names the version needed; the person may start that
-  chat without the sandbox from the new-chat picker, where policy allows.
+- **The floor too.** A project that has not turned the full sandbox on starts Codex and opencode
+  chats at the floor inside the same wrap, as on macOS, with the later-code names of a Linux
+  session held as macOS's are. So a Codex chat there starts only on a profile for sandboxed
+  chats (#2037), and a chat at the floor does not run over ACP.
+- **Fail closed.** The wrap needs Landlock ABI 6 (Linux 6.12) or later. In a project with
+  `mode = "on"`, a kernel without it starts no wrapped chat, and the refusal names the version
+  and the ways on: a newer kernel, a Claude Code profile, or, where policy allows, starting the
+  chat without the sandbox from the new-chat picker. At the floor such a chat starts without it,
+  and its tab says why.
 - **The entry point** is the hidden `purlis _sandbox` command, which a wrapped chat's line
   starts with. It is not shown in help and is not a public command line.
 - **The seccomp notification calls** are the workspace's third audited `unsafe` block

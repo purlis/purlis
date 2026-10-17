@@ -200,6 +200,8 @@ impl Chat<'_> {
             let mut name = OsString::from_vec(name);
             if self.world.is_proc_root(&at) {
                 name = self.proc_name(name, &mut names)?;
+            } else if in_proc(&at) {
+                self.inside_a_process_folder(&at, &name, &names)?;
             }
             let last = last && names.is_empty();
             let next = match openat(
@@ -283,6 +285,42 @@ impl Chat<'_> {
         })
     }
 
+    /// A walk inside `/proc` below its top, from a descriptor the chat already held there
+    /// (`at`): the same rule as from the top, for the process folder `at` is in.
+    fn inside_a_process_folder(
+        &self,
+        at: &OwnedFd,
+        name: &OsStr,
+        names: &VecDeque<Vec<u8>>,
+    ) -> Result<(), Errno> {
+        let here = named(at)?;
+        let Ok(below) = here.strip_prefix("/proc") else {
+            return Err(Errno::EACCES);
+        };
+        let mut parts = below.components();
+        let Some(first) = parts.next() else {
+            return Ok(());
+        };
+        let Ok(pid) = first.as_os_str().to_string_lossy().parse::<i32>() else {
+            // Not a process's folder: `/proc/net`, `/proc/sys` and the rest.
+            return Ok(());
+        };
+        if self.world.inside(pid) {
+            return Ok(());
+        }
+        // From the process's own folder, its `stat` alone.
+        let mut rest: VecDeque<Vec<u8>> = parts
+            .map(|part| part.as_os_str().as_bytes().to_vec())
+            .collect();
+        rest.push_back(name.as_bytes().to_vec());
+        rest.extend(names.iter().cloned());
+        if public(&rest) {
+            Ok(())
+        } else {
+            Err(Errno::EACCES)
+        }
+    }
+
     /// `name` in `/proc` as the chat means it: `self` and `thread-self` are its own, and a
     /// process folder is reached only for a process inside the sandbox.
     fn proc_name(&self, name: OsString, names: &mut VecDeque<Vec<u8>>) -> Result<OsString, Errno> {
@@ -305,23 +343,16 @@ impl Chat<'_> {
     }
 }
 
-/// What any process may read of a process outside the sandbox, as the kernel lets any process
-/// of the same user read it with no right to trace it: its folder's names, and its `stat`,
-/// `status`, `statm`, `comm` and `cmdline`, and the same of each of its threads. Everything
-/// else (its environment, memory, open files, working folder) needs that right, which a
-/// process inside the sandbox never has over one outside it.
+/// What a process inside the sandbox reads of one outside it: its `stat` alone, which its
+/// parents are climbed by.
 fn public(rest: &VecDeque<Vec<u8>>) -> bool {
-    const READ: [&[u8]; 5] = [b"stat", b"status", b"statm", b"comm", b"cmdline"];
-    let rest: Vec<&[u8]> = rest.iter().map(Vec::as_slice).collect();
-    match rest.as_slice() {
-        [] => true,
-        [file] => READ.contains(file) || *file == b"task",
-        [task, tid] => *task == b"task" && tid.iter().all(u8::is_ascii_digit),
-        [task, tid, file] => {
-            *task == b"task" && tid.iter().all(u8::is_ascii_digit) && READ.contains(file)
-        }
-        _ => false,
-    }
+    matches!(
+        rest.iter()
+            .map(Vec::as_slice)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [b"stat"]
+    )
 }
 
 fn in_proc(fd: impl AsFd) -> bool {

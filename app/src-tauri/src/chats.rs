@@ -1270,6 +1270,19 @@ impl Chats {
             }
             // At the floor, the program it starts is never written by the chat (#2071, Q4).
             applied.hold_programs(&checked);
+            // And on Linux, purlis's own program the wrap starts it under, the same (#1040).
+            if applied.wrapped_by_purlis_here() {
+                let wrap = purlis_core::sandbox::program::checked_wrap(
+                    applied.root(),
+                    purlis_core::sandbox::program::Chat {
+                        cwd: &cwd,
+                        writable: &writable,
+                        env: &[],
+                    },
+                )
+                .map_err(|refused| refused.to_string())?;
+                applied.hold_programs(&[wrap.display().to_string()]);
+            }
             return Ok((Some((applied, checked[0].clone())), None, None));
         }
         Ok((None, lifted, floorless))

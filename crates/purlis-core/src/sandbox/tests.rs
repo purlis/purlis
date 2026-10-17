@@ -1911,7 +1911,11 @@ fn a_mistyped_mode_does_not_start_a_chat_unsandboxed() {
         &|_| true,
     );
     assert!(
-        matches!(started, Ok(Some(ref applied)) if applied.harness() == Harness::Opencode),
+        matches!(
+            started,
+            Ok(Some(ref applied))
+                if applied.harness() == Harness::Opencode && applied.level() == Level::Full
+        ),
         "{started:?}"
     );
 }

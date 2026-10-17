@@ -136,9 +136,7 @@ pub(super) fn chat() -> Result<(), String> {
         .map_err(|why| why.to_string())?
         .create()
         .map_err(|why| why.to_string())?
-        // Starting a program opens it to read and run; so does the kernel's loading of its
-        // interpreter. Every open the chat asks for itself is the supervisor's (`filter`), so
-        // these rights are reached only by a program's start.
+        // What starting a program needs.
         .add_rule(PathBeneath::new(
             open("/")?,
             AccessFs::Execute | AccessFs::ReadFile,

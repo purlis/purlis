@@ -212,7 +212,7 @@ fn a_chat_at_the_floor_does_not_run_over_acp_and_starts_in_its_terminal() {
 
 /// The message every refusal in a sandboxed project gives: it starts in its terminal, and it
 /// never offers running unconfined as the way to get ACP.
-const SANDBOXED: &str = "this project turns the sandbox on, and purlis cannot sandbox a chat over ACP yet, so it starts in its terminal, where its sandbox is shown for as long as it runs";
+const SANDBOXED: &str = "this chat runs sandboxed, and purlis cannot sandbox a chat over ACP yet, so it starts in its terminal, where its sandbox is shown for as long as it runs";
 
 /// D-87h: a level-3 start goes through the same sandbox decision as a terminal start, and a
 /// sandboxed project refuses level 3 until charter can wrap a level-3 agent. opencode is wrapped

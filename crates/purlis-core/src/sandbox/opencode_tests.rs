@@ -153,7 +153,10 @@ fn on_linux_a_wrapped_chat_with_no_purlis_program_to_start_it_with_is_refused() 
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let refused = line_in(&applied, plane.path(), None, &confinement).expect_err("refused");
     assert!(refused.contains(super::wrapper::NO_PURLIS), "{refused}");
-    assert!(refused.contains("nothing was started"), "{refused}");
+    assert!(
+        refused.ends_with("nothing was started. Restart purlis, then start the chat again."),
+        "{refused}"
+    );
 }
 
 #[test]
@@ -171,8 +174,11 @@ fn on_a_linux_kernel_without_landlock_6_an_opencode_chat_is_refused_with_the_ver
         refused.to_string(),
         "this project runs every chat sandboxed, and this machine cannot apply the sandbox: \
          purlis's sandbox needs Landlock version 6 (Linux 6.12 or later), and this kernel does \
-         not have it. Nothing was started."
+         not have it. Nothing was started. Update to Linux 6.12 or later, start this chat on a \
+         Claude Code profile, or start it without the sandbox from the new-chat picker."
     );
+    // Where policy forbids starting a chat without the sandbox, no way on names it.
+    assert!(!backend::landlock_way_on(false).contains("picker"));
     // Neither bubblewrap nor socat is asked for: the wrap needs no program.
     assert!(
         for_start(

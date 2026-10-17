@@ -226,11 +226,13 @@ impl HarnessAdapter for Codex {
         // D-88q, as amended 2026-10-15 (#2037): the folder of a profile for sandboxed chats
         // only, never the operator's own Codex home.
         let Some(home) = &wrap.home else {
-            return Err(format!(
-                "{lead} a sandboxed Codex chat runs in the folder of a profile for sandboxed \
-                 chats only, and this chat is on no such profile, so nothing was started. Make \
-                 or choose a sandbox-only Codex profile in Settings › You › Profiles."
-            ));
+            return Err(
+                "this chat runs sandboxed, and a sandboxed Codex chat runs in the folder of \
+                        a profile for sandboxed chats only, and this chat is on no such \
+                        profile, so nothing was started. Make or choose a sandbox-only Codex \
+                        profile in Settings › You › Profiles."
+                    .to_owned(),
+            );
         };
         let profile = crate::sandbox::codex::profile(
             wrap,

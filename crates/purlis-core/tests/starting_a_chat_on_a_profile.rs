@@ -1147,6 +1147,33 @@ fn an_opencode_chat_in_a_sandboxed_plane()
     (plane, outside, started)
 }
 
+/// #1040: at the floor on Linux, purlis's own program, which the wrap starts the harness
+/// under, is held unwritten as the harness's own program is.
+#[cfg(target_os = "linux")]
+#[test]
+fn at_the_floor_on_linux_the_wrap_s_own_program_is_never_written_by_the_chat() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let outside = stand_in::NoChatWrites::new();
+    let bin = harness_outside(&plane, &outside, "opencode");
+    plane.profile("opencode", &bin, "");
+    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    let applied = ready.sandbox.expect("at the floor");
+    let this = std::env::current_exe()
+        .expect("this program")
+        .canonicalize()
+        .expect("its real path");
+    assert!(
+        applied
+            .confines()
+            .held
+            .iter()
+            .any(|held| this.starts_with(held)),
+        "{:?}",
+        applied.confines().held
+    );
+}
+
 /// A profile's command, made in a plane.
 type Command<'a> = dyn Fn(&Plane) -> Vec<String> + 'a;
 

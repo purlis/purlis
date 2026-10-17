@@ -629,9 +629,9 @@ fn a_codex_chat_on_no_profile_for_sandboxed_chats_is_refused_with_the_way_out() 
     let refused = line_in(&applied, &cwd, "", &confinement).expect_err("refused");
     assert_eq!(
         refused,
-        "this project runs every chat sandboxed, and a sandboxed Codex chat runs in the folder \
-         of a profile for sandboxed chats only, and this chat is on no such profile, so nothing \
-         was started. Make or choose a sandbox-only Codex profile in Settings › You › Profiles."
+        "this chat runs sandboxed, and a sandboxed Codex chat runs in the folder of a profile \
+         for sandboxed chats only, and this chat is on no such profile, so nothing was started. \
+         Make or choose a sandbox-only Codex profile in Settings › You › Profiles."
     );
 }
 

@@ -27,7 +27,10 @@ use nix::sys::socket::{
     AddressFamily, SockFlag, SockType, SockaddrIn, SockaddrIn6, UnixAddr, connect, setsockopt,
     socket, sockopt,
 };
-use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmodat, mkdirat, mknodat};
+use nix::sys::stat::{
+    FchmodatFlags, Mode, SFlag, UtimensatFlags, fchmodat, mkdirat, mknodat, utimensat,
+};
+use nix::sys::time::TimeSpec;
 use nix::sys::uio::{RemoteIoVec, process_vm_readv};
 use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 
@@ -183,13 +186,21 @@ impl Supervisor {
                 }
                 super::filter::SYS_FCHMODAT2 => {
                     let flags = int(3);
-                    if flags & libc::AT_EMPTY_PATH != 0
-                        && read_path(tid, a[1]).is_ok_and(|p| p.is_empty())
-                    {
+                    let path = at(1)?;
+                    if flags & libc::AT_EMPTY_PATH != 0 && path.is_empty() {
                         return self.fchmod(&chat, id, int(0), a[2] as u32);
                     }
-                    let path = at(1)?;
                     self.chmod(&chat, id, int(0), &path, a[2] as u32, flags)
+                }
+                libc::SYS_utimensat => {
+                    // No path is the descriptor itself, as `futimens` asks.
+                    let path = if a[1] == 0 { None } else { Some(at(1)?) };
+                    let times = if a[2] == 0 {
+                        None
+                    } else {
+                        Some(read_bytes(tid, a[2], 32)?)
+                    };
+                    self.times(&chat, id, int(0), path.as_deref(), times.as_deref(), int(3))
                 }
                 libc::SYS_connect => self.connect(&chat, id, int(0), a[1], a[2] as usize),
                 #[cfg(target_arch = "x86_64")]
@@ -256,7 +267,17 @@ impl Supervisor {
     }
 
     fn allows(&self, chat: &Chat<'_>, what: FileOp, path: &Path, kind: Kind) -> bool {
-        self.profile.allows(&Op::File { what, path, kind }) || linux_own(chat, what, path, kind)
+        let one = |path: &Path| {
+            self.profile.allows(&Op::File { what, path, kind }) || linux_own(chat, what, path, kind)
+        };
+        // A file no longer linked is named with " (deleted)" after its last name: judged by
+        // both, so a rule on that name still holds it.
+        let last = path
+            .as_os_str()
+            .as_bytes()
+            .strip_suffix(b" (deleted)")
+            .map(|it| Path::new(OsStr::from_bytes(it)));
+        one(path) && last.is_none_or(one)
     }
 
     fn judge(&self, chat: &Chat<'_>, ops: &[(FileOp, &Path, Kind)]) -> Result<(), Errno> {
@@ -636,6 +657,77 @@ impl Supervisor {
             return Err(Errno::EOPNOTSUPP);
         }
         self.mode_of(chat, &fd, kind, mode)
+    }
+
+    /// `utimensat`: the times of the file `path` names from `dirfd`, or of `dirfd` itself where
+    /// there is no path (or an empty one, with `AT_EMPTY_PATH`); `times` the two `timespec`s,
+    /// or now for both.
+    fn times(
+        &self,
+        chat: &Chat<'_>,
+        id: u64,
+        dirfd: i32,
+        path: Option<&[u8]>,
+        times: Option<&[u8]>,
+        flags: i32,
+    ) -> Result<Answer, Errno> {
+        let (atime, mtime) = match times {
+            None => (TimeSpec::UTIME_NOW, TimeSpec::UTIME_NOW),
+            Some(bytes) => {
+                let field =
+                    |at: usize| i64::from_ne_bytes(bytes[at..at + 8].try_into().unwrap_or([0; 8]));
+                (
+                    TimeSpec::new(field(0), field(8)),
+                    TimeSpec::new(field(16), field(24)),
+                )
+            }
+        };
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let _held = self.changing.lock();
+        let itself = path.is_none_or(|path| path.is_empty() && flags & libc::AT_EMPTY_PATH != 0);
+        let (fd, kind, at, entry) = if itself {
+            let fd = chat.descriptor(dirfd)?;
+            let kind = walk::kind_of(&fd)?;
+            let at = named(&fd)?;
+            (fd, kind, at, None)
+        } else {
+            let follow = flags & libc::AT_SYMLINK_NOFOLLOW == 0;
+            match chat.walk(dirfd, path.unwrap_or_default(), follow)? {
+                Found::There { fd, kind, entry } => {
+                    let at = match (&entry, kind) {
+                        (Some((folder, name)), Kind::Symlink) => named_in(folder, name)?,
+                        _ => named(&fd)?,
+                    };
+                    (fd, kind, at, entry)
+                }
+                Found::Missing { .. } => return Err(Errno::ENOENT),
+            }
+        };
+        // A pipe or a socket has no name to judge, as for a mode.
+        if at.is_absolute() {
+            self.judge(chat, &[(FileOp::Times, &at, kind)])?;
+        }
+        match (kind, &entry) {
+            // A link's own times, in the folder the walk holds.
+            (Kind::Symlink, Some((folder, name))) => utimensat(
+                folder,
+                name.as_os_str(),
+                &atime,
+                &mtime,
+                UtimensatFlags::NoFollowSymlink,
+            )?,
+            (Kind::Symlink, None) => return Err(Errno::EOPNOTSUPP),
+            _ => utimensat(
+                AT_FDCWD,
+                format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str(),
+                &atime,
+                &mtime,
+                UtimensatFlags::FollowSymlink,
+            )?,
+        }
+        Ok(Answer::Value(0))
     }
 
     fn fchmod(&self, chat: &Chat<'_>, id: u64, fd: i32, mode: u32) -> Result<Answer, Errno> {

@@ -434,7 +434,7 @@ fn listener_is(socket: &impl AsFd, pid: u32) -> io::Result<bool> {
 
 /// The process a pidfd's `/proc/self/fdinfo` text names: `-1` once it has ended.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-pub fn pidfd_pid(info: &str) -> Option<i64> {
+fn pidfd_pid(info: &str) -> Option<i64> {
     info.lines()
         .find_map(|line| line.strip_prefix("Pid:"))
         .and_then(|it| it.trim().parse().ok())
@@ -664,6 +664,36 @@ mod tests {
         );
         assert_eq!(pidfd_pid("pos:\t0\nPid:\t-1\nNSpid:\t-1\n"), Some(-1));
         assert_eq!(pidfd_pid("pos:\t0\n"), None);
+    }
+
+    /// A listener that has ended is no listener: the pidfd of the far end names it while it
+    /// runs, and nobody once it has gone.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_listener_that_has_ended_is_told_as_gone() {
+        use std::io::BufRead;
+        let dir = tempfile::tempdir().expect("a folder");
+        let path = dir.path().join("s");
+        let mut listener = Command::new("python3")
+            .args([
+                "-c",
+                "import socket,sys,time\n\
+                 s=socket.socket(socket.AF_UNIX)\ns.bind(sys.argv[1])\ns.listen()\n\
+                 print('up',flush=True)\ntime.sleep(30)",
+            ])
+            .arg(&path)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("python3 listens");
+        let mut up = String::new();
+        std::io::BufReader::new(listener.stdout.take().expect("its output"))
+            .read_line(&mut up)
+            .expect("it says it is up");
+        let socket = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+        assert!(listener_is(&socket, listener.id()).expect("read"));
+        listener.kill().expect("ended");
+        listener.wait().expect("reaped");
+        assert!(!listener_is(&socket, listener.id()).expect("read"));
     }
 
     /// The listener of a socket this process connected to is told by its pidfd: this test's

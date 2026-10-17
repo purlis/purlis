@@ -865,3 +865,42 @@ fn the_persons_own_claude_code_settings_are_never_written_at_either_level() {
         }
     }
 }
+
+/// #1040: at the floor on Linux, what a session starts or loads at login, in the person's
+/// home, is held like macOS's launch agents; a file nothing names is written.
+#[test]
+fn at_the_floor_on_linux_nothing_a_session_starts_at_login_is_written() {
+    let (_dir, root) = project();
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine_with(Path::new("/opt/none"))
+    };
+    let applied = floor_of(decided(Harness::Opencode, &root, &linux));
+    let Form::Opencode(wrap) = applied.form() else {
+        panic!("compiled for opencode: {:?}", applied.form());
+    };
+    let profile = opencode::floor_profile(wrap, &[4040], None).expect("a profile");
+    let read = purlis_linux_sandbox::profile::Profile::parse(&profile).expect("read whole");
+    let made = |path: &str, kind| {
+        read.allows(&purlis_linux_sandbox::profile::Op::File {
+            what: purlis_linux_sandbox::profile::FileOp::Create,
+            path: Path::new(path),
+            kind,
+        })
+    };
+    use purlis_linux_sandbox::profile::Kind;
+    for held in [
+        "/home/op/.config/systemd/user/x.service",
+        "/home/op/.config/systemd/user",
+        "/home/op/.local/share/systemd/user/x.timer",
+        "/home/op/.config/autostart/x.desktop",
+        "/home/op/.config/environment.d/x.conf",
+        "/home/op/.local/share/applications/x.desktop",
+        "/home/op/.pam_environment",
+        "/home/op/.xprofile",
+        "/home/op/.config/Code/User/tasks.json",
+    ] {
+        assert!(!made(held, Kind::Regular), "{held}");
+    }
+    assert!(made("/home/op/notes.txt", Kind::Regular));
+}

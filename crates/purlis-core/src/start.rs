@@ -561,6 +561,19 @@ fn ready_given(
         program = checked[0].clone();
         // At the floor, the program it starts is never written by the chat (#2071, Q4).
         applied.hold_programs(&checked);
+        // And on Linux, purlis's own program the wrap starts it under, the same (#1040).
+        if applied.wrapped_by_purlis_here() {
+            let wrap = crate::sandbox::program::checked_wrap(
+                applied.root(),
+                crate::sandbox::program::Chat {
+                    cwd: &here,
+                    writable: &writable,
+                    env: &env,
+                },
+            )
+            .map_err(|refused| refused.to_string())?;
+            applied.hold_programs(&[wrap.display().to_string()]);
+        }
         // Claude Code goes through purlis's proxy from the version that takes its ports, and an
         // older one says once, on its tab, that it keeps its own (#1665).
         if let Some(said) = said {

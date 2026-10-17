@@ -186,6 +186,40 @@ pub fn checked_answering(
 /// Whether `path` lies in one of `places`, each given as written and as its real path. The one
 /// test of "where a chat can write", for a harness here and for a provider's program
 /// ([`crate::secrets::program`]).
+/// **purlis's own program, which a wrapped chat's line starts with on Linux** (#1040): this
+/// running program, held as the harness's is — never started from where the chat may write
+/// ([`NotStarted::ProgramWritable`]), and never one replaced while it ran
+/// ([`NotStarted::WrapReplaced`]).
+pub fn checked_wrap(root: &Path, chat: Chat<'_>) -> Result<PathBuf, NotStarted> {
+    let this = std::env::current_exe().map_err(|_| NotStarted::WrapReplaced)?;
+    checked_wrap_at(&this, root, chat)
+}
+
+/// [`checked_wrap`] for the program at `this`.
+pub fn checked_wrap_at(this: &Path, root: &Path, chat: Chat<'_>) -> Result<PathBuf, NotStarted> {
+    use std::os::unix::ffi::OsStrExt;
+    if this.as_os_str().as_bytes().ends_with(b" (deleted)") {
+        return Err(NotStarted::WrapReplaced);
+    }
+    let real = this.canonicalize().map_err(|_| NotStarted::WrapReplaced)?;
+    let mut places = vec![root.to_path_buf(), chat.cwd.to_path_buf()];
+    places.extend(chat.writable.iter().cloned());
+    let places: Vec<(PathBuf, PathBuf)> = places
+        .into_iter()
+        .map(|dir| {
+            let real_dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            (dir, real_dir)
+        })
+        .collect();
+    if let Some(path) = [this, real.as_path()]
+        .into_iter()
+        .find(|path| writable(path, &places))
+    {
+        return Err(NotStarted::ProgramWritable(path.to_path_buf()));
+    }
+    Ok(real)
+}
+
 pub(crate) fn writable(path: &Path, places: &[(PathBuf, PathBuf)]) -> bool {
     places
         .iter()
@@ -626,6 +660,41 @@ fn exited(child: &mut std::process::Child) -> bool {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    /// #1040: purlis's own program, which wraps a chat on Linux, is refused where the chat may
+    /// write it, and once it was replaced while it ran; elsewhere it is its real path.
+    #[test]
+    fn purlis_s_own_program_is_held_as_the_harness_s_is() {
+        let f = Fixture::new();
+        let cwd = f.cwd();
+        let chat = Chat {
+            cwd: &cwd,
+            writable: &[],
+            env: &[],
+        };
+        let inside = f.plane.path().join("purlis");
+        std::fs::write(&inside, "").expect("a program");
+        assert!(matches!(
+            checked_wrap_at(&inside, f.plane.path(), chat),
+            Err(NotStarted::ProgramWritable(_))
+        ));
+        let replaced = f.outside.path().join("purlis (deleted)");
+        assert_eq!(
+            checked_wrap_at(&replaced, f.plane.path(), chat),
+            Err(NotStarted::WrapReplaced)
+        );
+        let outside = f.outside.path().join("purlis");
+        std::fs::write(&outside, "").expect("a program");
+        assert_eq!(
+            checked_wrap_at(&outside, f.plane.path(), chat),
+            Ok(outside.canonicalize().expect("real"))
+        );
+        assert!(
+            NotStarted::WrapReplaced
+                .to_string()
+                .contains("Restart purlis, then start the chat again.")
+        );
+    }
 
     /// A plane, a chat folder in it, and a place outside both that the test counts as not
     /// writable by the chat (the temp roots are the caller's to add, and left out here).

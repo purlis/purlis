@@ -37,8 +37,7 @@ use crate::profile::Profile;
 /// The word that starts the chat's side, after [`crate::COMMAND`].
 const CHAT: &str = "--chat";
 
-/// How many calls the supervisor serves at once: a call that waits (a pipe opened for reading
-/// before anything writes it) holds one, never the rest.
+/// How many calls the supervisor serves at once.
 const SERVERS: usize = 16;
 
 /// The status a wrap ends with when it could not start the chat.
@@ -140,6 +139,9 @@ fn supervise(profile: &str, program: &[String]) -> Result<i32, String> {
                 return Err(why.to_string());
             }
         }
+    } else {
+        // No listener: nothing would serve the chat's calls, so it does not run.
+        let _ = kill(pid, Signal::SIGKILL);
     }
     // Every process of the chat whose parent ended is the supervisor's to reap; the chat's
     // own ending is its status.

@@ -16,7 +16,7 @@
 //!    sandbox's supervisor makes (the operator's ruling of 2026-10-16, #1040: one more small,
 //!    isolated, audited `unsafe` module, with no new C dependency).
 //!
-//! `deny` can be allowed anywhere, so this is what stops a third allow from arriving unnoticed:
+//! `deny` can be allowed anywhere, so this is what stops a fourth allow from arriving unnoticed:
 //! it reads every Rust file in the workspace and fails on any `unsafe` block, function, impl,
 //! trait or extern, and any mention of the lint, outside those three functions. A fourth block
 //! is a new ruling, not an edit to [`AUDITED`].

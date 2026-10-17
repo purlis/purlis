@@ -4,10 +4,10 @@
 //! The seccomp filters a wrapped chat applies to itself before its program starts.
 //!
 //! - **Handed to the supervisor** ([`supervised`]): every call a path or an address decides
-//!   (opening, making, moving, linking, removing and changing the mode of a file, and
+//!   (opening, making, moving, linking, removing a file, changing its mode or times, and
 //!   connecting a socket), which the supervisor judges and performs itself.
-//! - **Refused** ([`refused`]), each with the error a program can take in its stride:
-//!   datagram, raw and packet sockets, and a stream socket of any family but unix, IPv4, IPv6
+//! - **Refused** ([`refused`]), each with the error a program can take in its stride: every
+//!   call of the x32 ABI; a change of a file's owner or extended attributes; datagram, raw and packet sockets, and a stream socket of any family but unix, IPv4, IPv6
 //!   and the kernel's own routing table; TCP Fast Open, which connects without `connect`;
 //!   io_uring and `openat2`, whose arguments a filter cannot read; the kernel's key store;
 //!   opening a file by handle; and a seccomp listener of the chat's own, which would take the
@@ -30,6 +30,10 @@ const MARK: u32 = 0x1040;
 /// each of them.
 pub(super) const SYS_FCHMODAT2: i64 = 452;
 
+/// `setxattrat` and `removexattrat` (Linux 6.13), the same numbers on every architecture.
+const SYS_SETXATTRAT: i64 = 463;
+const SYS_REMOVEXATTRAT: i64 = 466;
+
 /// `SOCK_PACKET`, the old packet socket type, by its number: `libc` marks the name deprecated.
 const SOCK_PACKET: i32 = 10;
 
@@ -47,6 +51,7 @@ pub(super) fn supervised_calls() -> Vec<i64> {
         libc::SYS_fchmod,
         libc::SYS_fchmodat,
         SYS_FCHMODAT2,
+        libc::SYS_utimensat,
         libc::SYS_connect,
     ];
     #[cfg(target_arch = "x86_64")]
@@ -96,11 +101,8 @@ fn when(conditions: Vec<(u8, Cmp, u64)>) -> Result<SeccompRule, String> {
 
 /// The filter that hands each supervised call to the supervisor, as `libc`'s filter type.
 ///
-/// **But a path-only open.** `O_PATH` gives a descriptor that reads, writes and runs nothing,
-/// as `stat` does; what is done through it later (opening it again by `/proc/self/fd`, linking
-/// it) is a supervised call of its own. The kernel opens it directly, under the chat's own
-/// Landlock layer, since a path-only descriptor is one the kernel will not hand over to another
-/// process.
+/// A path-only open (`O_PATH`) is the kernel's, under the chat's own Landlock layer; what is
+/// done through its descriptor later is supervised.
 pub(super) fn supervised() -> Result<Vec<libc::sock_filter>, String> {
     let path_only = u64::try_from(libc::O_PATH).unwrap_or(u64::MAX);
     let not_path_only = |flags: u8| when(vec![(flags, Cmp::MaskedEq(path_only), 0)]);
@@ -139,11 +141,78 @@ const RET_K: u16 = 0x06;
 
 const SOCK_TYPE: u64 = 0xf;
 
+/// `__X32_SYSCALL_BIT`: a call numbered at or above it is one of the x32 ABI's.
+#[cfg(target_arch = "x86_64")]
+pub(super) const X32_BIT: u32 = 0x4000_0000;
+
+/// The filter that refuses every x32 call with `ENOSYS`: the other filters name x86-64's
+/// numbers, so a call of the other ABI is never one they hand over or refuse.
+#[cfg(target_arch = "x86_64")]
+pub(super) fn x32_refused() -> BpfProgram {
+    use seccompiler::sock_filter;
+    const LD_W_ABS: u16 = 0x20;
+    const JEQ_K: u16 = 0x15;
+    const JGE_K: u16 = 0x35;
+    const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+    let at = |code, k, jt, jf| sock_filter { code, jt, jf, k };
+    vec![
+        // The architecture, at offset 4 of `seccomp_data`: any other is killed, as the other
+        // filters do.
+        at(LD_W_ABS, 4, 0, 0),
+        at(JEQ_K, AUDIT_ARCH_X86_64, 1, 0),
+        at(RET_K, libc::SECCOMP_RET_KILL_PROCESS, 0, 0),
+        // The call's number, at offset 0.
+        at(LD_W_ABS, 0, 0, 0),
+        at(JGE_K, X32_BIT, 0, 1),
+        at(
+            RET_K,
+            libc::SECCOMP_RET_ERRNO | u32::try_from(libc::ENOSYS).unwrap_or(38),
+            0,
+            0,
+        ),
+        at(RET_K, libc::SECCOMP_RET_ALLOW, 0, 0),
+    ]
+}
+
 /// The refusing filters, each with its error, to apply in turn.
 pub(super) fn refused() -> Result<Vec<BpfProgram>, String> {
     let af = |family: i32| u64::try_from(family).unwrap_or(u64::MAX);
     let ty = |kind: i32| u64::try_from(kind).unwrap_or(u64::MAX);
     let mut out = Vec::new();
+    #[cfg(target_arch = "x86_64")]
+    out.push(x32_refused());
+
+    // A file's owner and its extended attributes: no harness sets either, and an attribute can
+    // carry a file's permissions.
+    let mut not_supported = BTreeMap::new();
+    for call in [
+        libc::SYS_setxattr,
+        libc::SYS_lsetxattr,
+        libc::SYS_fsetxattr,
+        libc::SYS_removexattr,
+        libc::SYS_lremovexattr,
+        libc::SYS_fremovexattr,
+        SYS_SETXATTRAT,
+        SYS_REMOVEXATTRAT,
+    ] {
+        not_supported.insert(call, Vec::new());
+    }
+    out.push(compiled(
+        not_supported,
+        SeccompAction::Errno(u32::try_from(libc::EOPNOTSUPP).unwrap_or(95)),
+    )?);
+    let mut owner = BTreeMap::new();
+    #[cfg(target_arch = "x86_64")]
+    for call in [libc::SYS_chown, libc::SYS_lchown] {
+        owner.insert(call, Vec::new());
+    }
+    for call in [libc::SYS_fchown, libc::SYS_fchownat] {
+        owner.insert(call, Vec::new());
+    }
+    out.push(compiled(
+        owner,
+        SeccompAction::Errno(u32::try_from(libc::EPERM).unwrap_or(1)),
+    )?);
 
     // Sockets: unix and internet streams, and the kernel's routing table, only.
     let mut socket = vec![when(vec![
@@ -208,6 +277,10 @@ pub(super) fn refused() -> Result<Vec<BpfProgram>, String> {
     // Calls whose arguments live in memory a filter cannot read, so none is supervised:
     // programs fall back to the calls that are.
     let mut nosys = BTreeMap::new();
+    #[cfg(target_arch = "x86_64")]
+    for call in [libc::SYS_utime, libc::SYS_utimes, libc::SYS_futimesat] {
+        nosys.insert(call, Vec::new());
+    }
     for call in [
         libc::SYS_openat2,
         libc::SYS_io_uring_setup,
@@ -260,3 +333,6 @@ pub(super) fn refused() -> Result<Vec<BpfProgram>, String> {
     out.push(compiled(dumpable, SeccompAction::Errno(0))?);
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;
