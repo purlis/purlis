@@ -2313,7 +2313,7 @@ fn a_port_added_in_settings_is_audited_kept_and_listed_as_allowed() {
         "Allowed for me on this machine. A chat that is running reaches it from its next start."
     );
     assert_eq!(sandbox::local::granted_ports(root), [50795]);
-    let listed: Vec<_> = grants_of(root, &chats)
+    let listed: Vec<_> = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
         .into_iter()
         .filter(|one| one.what == GrantWhat::Port)
         .map(|one| (one.target, one.level, one.at))
