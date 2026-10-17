@@ -115,24 +115,36 @@ async function tabsOpen(): Promise<number> {
 }
 
 /**
- * The fifty-sessions test's opening, while it runs: what `stopOpening` stops and waits for.
- * `null` when nothing is opening.
+ * One run of the fifty-sessions opening: the loop itself, and the flag that stops it. Each
+ * {@link openUntilFifty} call gets its own, so a retry starts with a flag nothing has set.
  */
-let opening: Promise<void> | null = null;
+interface Opening {
+  /** Set once the test is over: the loop stops before its next press. */
+  stopped: boolean;
+  /** The loop, settled once it has stopped or fifty sessions run. */
+  done: Promise<void>;
+}
 
-/** Set once a test is over: the opening loop stops before its next press. */
-let stopped = false;
+/** The opening the fifty-sessions test started, while it may still run: `null` when none. */
+let opening: Opening | null = null;
 
 /**
  * **Opens tabs until fifty sessions run.** Each session is waited for on its own (#2157): every
  * tab opened must bring its own harness up within `OPEN_CEILING_MS`, and one that does not says
  * which open it was. Each open's time is written down (`logs/fifty-opens.jsonl`), so a slow run
- * shows where. It checks `stopped` before every press, so a test that ran out of time opens no
- * chat after it (#2367).
+ * shows where. It checks its run's `stopped` before every press, so a test that ran out of
+ * time opens no chat after it (#2367).
  */
-async function openUntilFifty(): Promise<void> {
+function openUntilFifty(): Opening {
+  const run: Opening = { stopped: false, done: Promise.resolve() };
+  run.done = openFor(run);
+  return run;
+}
+
+/** The loop of one {@link Opening}, stopped by that run's flag alone. */
+async function openFor(run: Opening): Promise<void> {
   for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
-    if (stopped)
+    if (run.stopped)
       throw new Error(
         `opening stopped after ${opened - 1} opens: the fifty-sessions test had already ` +
           "run out of time or failed (#2367)",
@@ -167,9 +179,15 @@ async function openUntilFifty(): Promise<void> {
  */
 async function stopOpening(): Promise<void> {
   if (opening === null) return;
-  stopped = true;
-  await opening.catch(() => undefined);
+  const run = opening;
   opening = null;
+  run.stopped = true;
+  // The test has already been failed or passed; a loop that failed after it is said here, so
+  // it is not lost.
+  await run.done.catch((trouble: unknown) => {
+    const said = trouble instanceof Error ? trouble.message : String(trouble);
+    console.warn(`the fifty-sessions opening ended with: ${said}`);
+  });
 }
 
 describe("the window", function () {
@@ -193,8 +211,8 @@ describe("the window", function () {
   afterEach(async () => {
     await stopOpening();
   });
+  // `afterEach` has stopped the opening by now: it runs after every test, the last one too.
   after(async () => {
-    await stopOpening();
     await endTheChatsStartedSince(wereOpen);
   });
 
@@ -240,7 +258,7 @@ describe("the window", function () {
 
   it("keeps fifty sessions running at once, and stays usable", async () => {
     opening = openUntilFifty();
-    await opening;
+    await opening.done;
 
     expect(harnessesRunning()).toBe(FIFTY);
     const [pane] = await panes();
