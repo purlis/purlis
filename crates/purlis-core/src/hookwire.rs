@@ -2539,15 +2539,15 @@ pub fn listening(path: &std::path::Path) -> bool {
     std::os::unix::net::UnixStream::connect(path).is_ok()
 }
 
-/// Sends one report to the socket at `path`. Answers whether the app took it.
+/// Sends one report to the socket at `path`. Answers whether it was written: what the app made
+/// of it, taken or refused, is not read.
 ///
 /// One connection is one report, written, and then **held until the app lets it go**
 /// (D-1407-10), as [`tell`] and [`deliver`] hold theirs: the app judges a line by the process
 /// that sent it, read once the line has arrived. On macOS the kernel names that process
 /// (`LOCAL_PEERPID`) only while the connection is still open, so a sender that closed the
-/// moment it wrote was refused unread whenever the app accepted after the close (#2458). Its
-/// answer is not read: the app has the line or refused it, and the wait is bounded by
-/// [`A_REPORT_TAKES_AT_MOST`] for an app that has stopped reading.
+/// moment it wrote was refused unread whenever the app accepted after the close (#2458). The
+/// wait is bounded by [`A_REPORT_TAKES_AT_MOST`] for an app that has stopped reading.
 #[cfg(unix)]
 pub fn send(path: &std::path::Path, token: Option<&ChatToken>, report: &Report) -> io::Result<()> {
     use std::io::{Read, Write};
@@ -7134,7 +7134,7 @@ mod tests {
         // closed at once may be gone before the app can name it (#2458).
         let _ = socket.shutdown(std::net::Shutdown::Write);
         socket
-            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .set_read_timeout(Some(A_REPORT_TAKES_AT_MOST))
             .expect("a deadline");
         let _ = std::io::Read::read_to_end(&mut socket, &mut Vec::new());
 

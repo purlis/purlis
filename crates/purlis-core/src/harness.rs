@@ -1602,9 +1602,21 @@ mod tests {
             .position(|rule| *rule == serde_json::json!(format!("Edit(/{folder})")))
             .unwrap_or_else(|| panic!("the folder is denied: {deny:?}"));
         assert_eq!(
-            deny[at + 1],
-            serde_json::json!(format!("Edit(/{folder}/**)"))
+            deny.get(at + 1),
+            Some(&serde_json::json!(format!("Edit(/{folder}/**)"))),
+            "the folder's own rule is followed by its contents': {deny:?}"
         );
+        // On macOS the folder is under `/private/var`, a firmlink, so its twin on the data
+        // volume is denied as well.
+        #[cfg(target_os = "macos")]
+        {
+            let twin = format!("/System/Volumes/Data{folder}");
+            assert!(
+                deny.contains(&serde_json::json!(format!("Edit(/{twin})")))
+                    && deny.contains(&serde_json::json!(format!("Edit(/{twin}/**)"))),
+                "the folder's firmlink twin is denied too: {deny:?}"
+            );
+        }
         let name = sockets
             .path()
             .file_name()
