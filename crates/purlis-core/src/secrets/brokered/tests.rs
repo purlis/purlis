@@ -1129,6 +1129,75 @@ fn a_runs_own_credential_file_is_given_back_after_every_denial_and_nothing_else_
     }
 }
 
+/// On macOS the kernel may name a file under a firmlinked folder by the data volume's spelling
+/// (`/System/Volumes/Data/private/var/…` for `/private/var/…`), and the vaults are denied under
+/// every spelling. So the run's own credential file and login folder are given back under both
+/// their names, and still nothing else of the vaults class is (#2489).
+#[cfg(target_os = "macos")]
+#[test]
+fn a_runs_own_credential_file_is_given_back_under_both_names_the_kernel_gives_it() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let vaults = Ctx::new(&root, Env::of(&[])).vaults_dir();
+    let file = vaults.join("exec/charter-secret-given");
+    let other = vaults.join("exec/charter-secret-another");
+    let login = vaults.join("exec/login-given");
+    let on_the_data_volume =
+        |path: &Path| Path::new("/System/Volumes/Data").join(path.strip_prefix("/").unwrap());
+    assert!(
+        root.starts_with("/private") || root.starts_with("/Users"),
+        "a firmlinked temp folder: {}",
+        root.display()
+    );
+    for level in [crate::sandbox::Level::Full, crate::sandbox::Level::Floor] {
+        let confines = Confines {
+            level,
+            ..compiled(&root)
+        };
+        let profile = profile_on(
+            &confines,
+            std::slice::from_ref(&file),
+            std::slice::from_ref(&login),
+            &root.join("work"),
+            &root.join("tmp"),
+            &[4242],
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("it reads");
+        let may = |what: FileOp, path: &Path| {
+            read.allows(&Op::File {
+                what,
+                path,
+                kind: Kind::Regular,
+            })
+        };
+        for name in [file.clone(), on_the_data_volume(&file)] {
+            assert!(
+                may(FileOp::ReadData, &name),
+                "{level:?} {name:?}: {profile}"
+            );
+            assert!(!may(FileOp::WriteData, &name), "{level:?} {name:?}");
+        }
+        for name in [login.clone(), on_the_data_volume(&login)] {
+            assert!(
+                may(FileOp::WriteData, &name.join("state")),
+                "{level:?} {name:?}"
+            );
+        }
+        for name in [other.clone(), on_the_data_volume(&other)] {
+            assert!(!may(FileOp::ReadData, &name), "{level:?} {name:?}");
+        }
+        assert!(
+            !may(
+                FileOp::ReadData,
+                &on_the_data_volume(&vaults.join("team.json"))
+            ),
+            "{level:?}"
+        );
+    }
+}
+
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
 /// the environment of chat 7 inside it: sandboxed, with its socket and its token.
 fn an_app(
