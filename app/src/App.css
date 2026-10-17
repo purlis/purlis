@@ -6,12 +6,9 @@
    A literal in this file is a second theme that no theme file can reach, which is how the
    terminal ended up with a palette of its own. `src/theme/literals.test.ts` refuses one. */
 :root {
-  font-family: ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif;
-  /* The default window text size (charter-app#283, `textSize.DEFAULT_TEXT`). What is in force
-     is set on the element itself before the first frame (`main.tsx`), and every size below is
-     in rem or em, so the whole window scales from this one number. */
-  font-size: 14px;
-  line-height: 1.4;
+  /* The window's family and its default text size are the core's (`theme/geometry.css`): every
+     size below is in rem or em, so the whole window scales from that one number. */
+  line-height: var(--line-height-body);
   color: var(--text-primary);
   background: var(--surface-base);
 
@@ -276,9 +273,9 @@ body {
 .read-only-line {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: var(--space-3);
   margin: 0;
-  padding: 0.375rem 0.75rem;
+  padding: var(--space-3) var(--space-5);
   color: var(--text-secondary);
   background: var(--layer-project);
   border-bottom: 1px solid var(--layer-divider);
@@ -289,7 +286,7 @@ body {
   flex: none;
   width: 1rem;
   height: 1rem;
-  margin-top: 0.125rem;
+  margin-top: var(--space-1);
   color: var(--state-waiting);
 }
 
@@ -1062,7 +1059,7 @@ button.show-more:focus-visible {
 
 .trouble {
   margin: 0;
-  padding: 0.35rem 0.6rem;
+  padding: var(--space-2) var(--space-4);
   color: var(--danger-text);
   background: var(--danger-surface);
   border-bottom: 1px solid var(--border-subtle);
@@ -1082,7 +1079,7 @@ button.show-more:focus-visible {
 }
 
 .empty {
-  padding: 1rem;
+  padding: var(--space-5);
   opacity: 0.6;
 }
 
@@ -1157,7 +1154,7 @@ button.show-more:focus-visible {
   z-index: 2;
   display: flex;
   align-items: flex-start;
-  gap: 0.3rem;
+  gap: var(--space-2);
 }
 
 /* **The start corner: the chat at a glance, on one row.** It held the pane's Notices under that
@@ -1182,7 +1179,7 @@ button.show-more:focus-visible {
   display: flex;
   flex: none;
   align-items: flex-start;
-  gap: 0.3rem;
+  gap: var(--space-2);
   max-width: 100%;
 }
 
@@ -1199,10 +1196,10 @@ button.show-more:focus-visible {
   display: flex;
   flex: 0 1 auto;
   align-items: stretch;
-  gap: 0.3rem;
+  gap: var(--space-2);
   min-height: 0;
   max-height: 60%;
-  padding: 3px 8px;
+  padding: var(--space-1) var(--space-4);
   background: var(--surface-base);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -1225,7 +1222,7 @@ button.show-more:focus-visible {
   flex-direction: column;
   flex: 0 1 auto;
   align-items: flex-start;
-  gap: 0.3rem;
+  gap: var(--space-2);
   min-width: 0;
   max-width: min(100%, 40rem);
   min-height: 0;
@@ -1261,13 +1258,13 @@ button.show-more:focus-visible {
   z-index: 3;
   display: flex;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.2rem;
-  font-size: 0.8rem;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   background: var(--surface-overlay);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   box-shadow: var(--elevation-raised);
 }
 
@@ -1280,7 +1277,7 @@ button.show-more:focus-visible {
    changes under the operator's pointer. */
 .pane-find-count {
   min-width: 5.5rem;
-  padding: 0 0.2rem;
+  padding: 0 var(--space-1);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1292,9 +1289,9 @@ button.show-more:focus-visible {
   align-items: center;
   justify-content: center;
   min-width: 1.5rem;
-  padding: 0.15rem;
+  padding: var(--space-1);
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-muted);
   font: inherit;
@@ -1327,15 +1324,15 @@ button.show-more:focus-visible {
    unchanged — in particular it is always drawn, and never takes the controls' hover rule. */
 .chat-gauge {
   display: flex;
-  gap: 0.5rem;
-  padding: 0 0.35rem;
-  font-size: 0.72rem;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--text-secondary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   opacity: 0.92;
 }
 
@@ -1350,14 +1347,14 @@ button.show-more:focus-visible {
 .pane-from {
   max-width: 24rem;
   overflow: hidden;
-  padding: 0 0.35rem;
-  font-size: 0.72rem;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-muted);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   opacity: 0.92;
 }
 
@@ -1366,14 +1363,14 @@ button.show-more:focus-visible {
 .pane-harness {
   max-width: 16rem;
   overflow: hidden;
-  padding: 0 0.35rem;
-  font-size: 0.72rem;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-muted);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   opacity: 0.92;
   cursor: pointer;
 }
@@ -1390,14 +1387,14 @@ button.show-more:focus-visible {
 .pane-work-item {
   max-width: 24rem;
   overflow: hidden;
-  padding: 0 0.35rem;
-  font-size: 0.72rem;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text-muted);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   opacity: 0.92;
 }
 
@@ -1418,8 +1415,8 @@ button.show-more:focus-visible {
    frame before they have said theirs. Kept whether the controls are drawn or not, so the line
    does not move when the pointer comes over. */
 .pane-chips:has(.pane-crumbs) {
-  max-width: calc(100% - var(--pane-controls, 5.5rem) - 0.5rem);
-  margin-right: calc(var(--pane-controls, 5.5rem) + 0.5rem);
+  max-width: calc(100% - var(--pane-controls, calc(var(--size-control) * 2.75)) - var(--space-3));
+  margin-right: calc(var(--pane-controls, calc(var(--size-control) * 2.75)) + var(--space-3));
   overflow: hidden;
 }
 
@@ -1477,13 +1474,13 @@ button.show-more:focus-visible {
      takes the room the line has, and its names shrink by the rule above. */
   min-width: 0;
   align-items: center;
-  padding: 0 0.35rem;
-  font-size: 0.72rem;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
   white-space: nowrap;
   color: var(--text-secondary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   opacity: 0.92;
 }
 
@@ -1499,7 +1496,7 @@ button.show-more:focus-visible {
   position: relative;
   display: flex;
   flex: none;
-  gap: 0 0.25rem;
+  gap: 0 var(--space-2);
   align-items: center;
   height: 1.25rem;
   overflow: hidden;
@@ -1517,14 +1514,14 @@ button.show-more:focus-visible {
 .task-end-confirm button {
   flex: none;
   height: 1.25rem;
-  padding: 0 0.35rem;
+  padding: 0 var(--space-2);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--font-size-xs);
   line-height: 1;
   color: var(--text-secondary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
@@ -1589,9 +1586,9 @@ button.show-more:focus-visible {
 .task-end-confirm {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
-  font-size: 0.72rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
@@ -1673,7 +1670,7 @@ button.show-more:focus-visible {
   color: inherit;
   background: none;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .pane-crumbs .crumb.between {
@@ -1741,13 +1738,13 @@ button.show-more:focus-visible {
   align-items: center;
   align-self: stretch;
   justify-content: center;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-2);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   opacity: 0.92;
   cursor: pointer;
 }
@@ -1782,7 +1779,7 @@ button.show-more:focus-visible {
    `NoticeOf`): the first words of its sentence, in the sentence's own colour and its weight
    up, so it is read before what the Notice asks. */
 .notice-whose {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* **A pane whose tab shows a task that is not there to be drawn** (#1486, `TaskAway.tsx`): in
@@ -1792,24 +1789,24 @@ button.show-more:focus-visible {
 .task-away {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--space-4);
   align-items: flex-start;
   height: 100%;
-  padding: 2.4rem 1rem 1rem;
+  padding: var(--space-8) var(--space-5) var(--space-5);
   overflow: auto;
   color: var(--text-primary);
   background: var(--terminal-background);
 }
 
 .task-away p {
-  margin: 0 0 0.3rem;
+  margin: 0 0 var(--space-2);
   max-width: 40rem;
 }
 
 .task-away-ways {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-3);
 }
 
 .task-away-report {
@@ -2248,7 +2245,7 @@ button.show-more:focus-visible {
 
 /* The persona the line names: the sentence's first word (`Notice`). */
 .notice-pane > .notice-says > .persona-mark {
-  margin-right: 0.35rem;
+  margin-right: var(--space-2);
   vertical-align: middle;
 }
 
@@ -2268,7 +2265,7 @@ button.show-more:focus-visible {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
-  padding: 0 0.45rem 0.35rem;
+  padding: 0 var(--space-3) var(--space-2);
 }
 
 .notice-under-pane > * {
@@ -2307,12 +2304,12 @@ button.show-more:focus-visible {
 
 .notice-under-pane pre {
   max-width: 100%;
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
   overflow: auto;
 }
 
 .notice-under-pane p {
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
 }
 
 /* A sandbox block's Report (#1338), opened under its Notice in the pane's corner: the draft
@@ -2320,23 +2317,23 @@ button.show-more:focus-visible {
    (`.ui-inline-surface`, #1855); this places and pads it. */
 .block-report {
   max-width: 36rem;
-  margin-top: 0.25rem;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.78rem;
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-size-xs);
 }
 
 .block-report-draft {
   max-height: 14rem;
   overflow: auto;
   white-space: pre-wrap;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 /* A chat's brief (`DispatchGrantNotice`): about eight lines, and the rest by scrolling its box,
    so the Allow buttons above it and the pane under it both stay in view. */
 .block-report-brief {
   max-height: 11.5em;
-  line-height: 1.4;
+  line-height: var(--line-height-body);
 }
 
 /* What a dispatch's answer covers besides the asked pair (`DispatchGrantNotice`, #1502): a box
@@ -2349,7 +2346,7 @@ button.show-more:focus-visible {
 }
 
 .dispatch-also .ui-choice-option {
-  padding: 0.1rem 0;
+  padding: var(--space-1) 0;
 }
 
 .dispatch-also .ui-choice-option label,
@@ -2405,10 +2402,10 @@ button.show-more:focus-visible {
    needs. */
 .pane-doing {
   display: flex;
-  gap: 0.15rem;
-  padding: 0.1rem;
+  gap: var(--space-1);
+  padding: var(--space-1);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--surface-raised);
   visibility: hidden;
 }
@@ -2429,9 +2426,9 @@ button.show-more:focus-visible {
   align-items: center;
   justify-content: center;
   min-width: 1.6rem;
-  padding: 0.15rem;
+  padding: var(--space-1);
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-muted);
   font: inherit;
@@ -2498,7 +2495,7 @@ button.show-more:focus-visible {
 
 .xterm {
   height: 100%;
-  padding: 2px 4px;
+  padding: var(--space-1) var(--space-2);
 }
 
 /* **The strip under the last row is the terminal's colour, not xterm's black** (charter-app#193,
@@ -2724,7 +2721,7 @@ button.show-more:focus-visible {
   color: var(--text-primary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  line-height: 1rem;
+  line-height: var(--line-height-tight);
   font-variant-numeric: tabular-nums;
   /* Repos' count is two numbers (#1739): one line, never wrapped under the icon. */
   white-space: nowrap;
@@ -4117,8 +4114,8 @@ h2.sidebar-title .node-icon {
 /* What a chat that was put back says about itself: resumed, or new and why. */
 .came-back {
   margin: 0;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.85rem;
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--font-size-sm);
   background: var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -4153,7 +4150,7 @@ h2.sidebar-title .node-icon {
 }
 
 .notice-inbox p {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-2);
 }
 
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
@@ -4201,8 +4198,8 @@ h2.sidebar-title .node-icon {
 }
 
 .warning h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-base);
 }
 
 /* **Ask {persona}** (`AskPersona.tsx`, #1481): the tallest of the dialogs, opened over narrow
@@ -4245,28 +4242,28 @@ h2.sidebar-title .node-icon {
 }
 
 .brief-panel .brief-facts {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-5);
 }
 
 .brief-panel .honest {
-  margin: 0 0 0.6rem;
+  margin: 0 0 var(--space-4);
 }
 
 .brief-panel .brief-whose {
-  margin: 0 0 0.3rem;
-  font-size: 0.8rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
 .brief-panel .brief-text {
   flex: 1 1 auto;
   min-height: 4rem;
-  margin: 0 0 0.9rem;
-  padding: 0.5rem 0.6rem;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
   overflow: auto;
-  font-family: ui-monospace, monospace;
-  font-size: 0.8rem;
-  line-height: 1.45;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   /* Each line takes its direction from its own first letter, and none from the line before. */
@@ -4274,7 +4271,7 @@ h2.sidebar-title .node-icon {
   color: var(--text-primary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .brief-panel .brief-text:focus-visible {
@@ -4290,7 +4287,7 @@ h2.sidebar-title .node-icon {
 /* What Copy did, said at the row's start: the buttons do not move when it is said. */
 .brief-panel .brief-copied {
   margin-right: auto;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
@@ -4298,22 +4295,22 @@ h2.sidebar-title .node-icon {
   position: sticky;
   bottom: 0;
   margin: 0;
-  padding: 0.75rem 0 1.25rem;
+  padding: var(--space-5) 0 var(--space-6);
   background: var(--surface-overlay);
   border-top: 1px solid var(--border-subtle);
 }
 
 .ending {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-5);
   padding: 0;
   list-style: none;
 }
 
 .ending li {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: baseline;
-  padding: 0.2rem 0;
+  padding: var(--space-1) 0;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -4323,7 +4320,7 @@ h2.sidebar-title .node-icon {
 }
 
 .ending .where {
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   opacity: 0.55;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4339,14 +4336,14 @@ h2.sidebar-title .node-icon {
 
 /* The sentence that says what charter does not know. It is not a warning to be styled away. */
 .honest {
-  margin: 0 0 1rem;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-sm);
   opacity: 0.8;
 }
 
 .answer {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-3);
   justify-content: flex-end;
 }
 
@@ -4358,8 +4355,8 @@ h2.sidebar-title .node-icon {
   color: var(--text-primary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
   font: inherit;
   cursor: pointer;
 }
@@ -4395,7 +4392,7 @@ h2.sidebar-title .node-icon {
   display: inline-block;
   width: 0.6rem;
   height: 0.6rem;
-  margin-inline-start: 0.4rem;
+  margin-inline-start: var(--space-3);
   border-radius: 50%;
   vertical-align: middle;
   flex: none;
@@ -4428,7 +4425,7 @@ h2.sidebar-title .node-icon {
 }
 .state-failed {
   background: var(--state-failed);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* **A chat's state on a row: its mark, then its word** (#1484). Each state has a shape of its
@@ -4439,7 +4436,7 @@ h2.sidebar-title .node-icon {
 .shown-state {
   display: inline-flex;
   flex: none;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
   white-space: nowrap;
 }
@@ -4455,7 +4452,7 @@ h2.sidebar-title .node-icon {
 
 .shown-state .word {
   color: var(--text-secondary);
-  font-size: 0.9em;
+  font-size: var(--font-size-sm);
 }
 
 /* "reported": the ring, filled. An outline this small is no mark. */
@@ -4579,7 +4576,7 @@ h2.sidebar-title .node-icon {
 }
 
 .mid-turn {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* A refusal, and the command a profile has never run: the two things in a dialog that have to
@@ -4588,9 +4585,9 @@ h2.sidebar-title .node-icon {
    operator just did. */
 .warning .honest.mid-turn,
 .warning .honest.approve {
-  padding: 0.4rem 0.6rem;
+  padding: var(--space-3) var(--space-4);
   border-inline-start: 2px solid var(--danger-base);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: var(--danger-wash);
   opacity: 1;
 }
@@ -4604,8 +4601,8 @@ h2.sidebar-title .node-icon {
 
 /* The profiles charter will not use. Closed by default, and a summary that looks pressable. */
 .refused {
-  margin: 0 0 1rem;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-sm);
   opacity: 0.8;
 }
 
@@ -4614,8 +4611,8 @@ h2.sidebar-title .node-icon {
 }
 
 .refused ul {
-  margin: 0.35rem 0 0;
-  padding-inline-start: 1.1rem;
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-6);
 }
 
 /* The right region (ADR 0038): the workspace's todos, the plane's personas and whatever an
@@ -4694,13 +4691,13 @@ h2.sidebar-title .node-icon {
   max-width: none;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-3);
 }
 
 /* The box is labelled, and the label is read rather than only implied by a placeholder — a
    placeholder disappears the moment somebody types. */
 .palette-ask {
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   opacity: 0.7;
 }
 
@@ -4719,10 +4716,10 @@ h2.sidebar-title .node-icon {
 
 .palette-row {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-5);
   align-items: baseline;
-  padding: 0.35rem 0.6rem;
-  border-radius: 4px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   cursor: default;
 }
 
@@ -4749,23 +4746,23 @@ h2.sidebar-title .node-icon {
 .palette-matched {
   color: inherit;
   background: none;
-  font-weight: 700;
+  font-weight: var(--font-weight-strong);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .palette-why {
   margin-left: auto;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   opacity: 0.7;
   text-align: right;
 }
 
 .palette .refusal {
   margin: 0;
-  padding: 0.5rem 0.6rem;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--danger-base);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--state-failed);
 }
 
@@ -4781,7 +4778,7 @@ h2.sidebar-title .node-icon {
    meaning to SEND F2 has to be told, and it is on screen before they type anything. */
 .palette-through {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   opacity: 0.7;
 }
 
@@ -4790,14 +4787,14 @@ h2.sidebar-title .node-icon {
 .palette-files {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-2);
 }
 
 .palette-scope {
   display: flex;
-  margin: 0.25rem 0 0;
-  font-size: 0.8rem;
-  font-weight: 600;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
 }
 
 /* **The window's own lines** (D-LB-1, `App.tsx`): one list. With a project in front it is
@@ -4818,9 +4815,9 @@ h2.sidebar-title .node-icon {
   box-sizing: border-box;
   width: calc(100% - 3rem);
   max-width: 37rem;
-  margin: 1.5rem auto 0;
+  margin: var(--space-7) auto 0;
   border-width: 1px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 /* **The welcome** (#1812, `Welcome.tsx`): what a window with no project draws, and the pages
@@ -4832,20 +4829,20 @@ h2.sidebar-title .node-icon {
   width: 100%;
   max-width: 46rem;
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 2rem;
+  padding: var(--space-8) var(--space-7) var(--space-7);
   overflow: auto;
 }
 
 .welcome h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 600;
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
 }
 
 .welcome h2 {
-  margin: 1.75rem 0 0.5rem;
-  font-size: 0.9rem;
-  font-weight: 600;
+  margin: var(--space-7) 0 var(--space-3);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
   color: var(--text-secondary);
 }
 
@@ -4856,17 +4853,17 @@ h2.sidebar-title .node-icon {
 }
 
 .welcome-lede {
-  margin: 0 0 1.5rem;
+  margin: 0 0 var(--space-7);
   max-width: 38rem;
-  line-height: 1.5;
+  line-height: var(--line-height-body);
   color: var(--text-secondary);
 }
 
 .welcome button,
 .onboarding-on button {
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-2) var(--space-5);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -4895,26 +4892,26 @@ h2.sidebar-title .node-icon {
 
 .onboarding .welcome {
   overflow: visible;
-  padding-top: 1rem;
+  padding-top: var(--space-5);
 }
 
 .onboarding-steps {
   box-sizing: border-box;
   max-width: 46rem;
   margin: 0 auto;
-  padding: 1.5rem 1.5rem 0;
-  font-size: 0.8rem;
+  padding: var(--space-7) var(--space-7) 0;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
 .onboarding-count {
-  margin: 0 0 0.35rem;
+  margin: 0 0 var(--space-2);
 }
 
 .onboarding-steps ol {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-2) var(--space-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4930,7 +4927,7 @@ h2.sidebar-title .node-icon {
 
 .onboarding-steps li[aria-current="step"] {
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   box-shadow: inset 0 -2px 0 var(--accent-base);
 }
 
@@ -4939,11 +4936,11 @@ h2.sidebar-title .node-icon {
   box-sizing: border-box;
   max-width: 46rem;
   margin: 0 auto;
-  padding: 0 1.5rem 2rem;
+  padding: 0 var(--space-7) var(--space-7);
 }
 
 .welcome .onboarding-on {
-  padding: 1.5rem 0 0;
+  padding: var(--space-7) 0 0;
 }
 
 /* **The three doors**: one row of equal cards, as many to a row as the width holds, each a
@@ -4953,7 +4950,7 @@ h2.sidebar-title .node-icon {
 .welcome-doors {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4968,9 +4965,9 @@ h2.sidebar-title .node-icon {
   flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
-  padding: 1rem 1rem 1.1rem;
-  border-radius: 8px;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  border-radius: var(--radius-xl);
   background: var(--control-base);
   text-align: left;
   transition:
@@ -4989,18 +4986,18 @@ h2.sidebar-title .node-icon {
 }
 
 .welcome-door-mark {
-  margin-bottom: 0.25rem;
-  font-size: 1.35rem;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-xl);
   color: var(--accent-base);
 }
 
 .welcome-door-title {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .welcome-door-says {
-  font-size: 0.85rem;
-  line-height: 1.4;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
   color: var(--text-secondary);
 }
 
@@ -5009,20 +5006,20 @@ h2.sidebar-title .node-icon {
    page's own act, and still a button, because each does something rather than goes somewhere. */
 .welcome .welcome-link {
   display: inline-flex;
-  gap: 0.35rem;
+  gap: var(--space-2);
   align-items: center;
-  padding: 0.2rem 0.35rem;
+  padding: var(--space-1) var(--space-2);
   border: 0;
   color: var(--accent-base);
 }
 
 .welcome-sign-in {
-  margin: 0.75rem 0 1.25rem;
+  margin: var(--space-5) 0 var(--space-6);
 }
 
 .welcome-elsewhere {
-  margin: 1.5rem 0 0;
-  font-size: 0.85rem;
+  margin: var(--space-7) 0 0;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
@@ -5031,20 +5028,20 @@ h2.sidebar-title .node-icon {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: var(--space-5);
 }
 
 .welcome-page-head .welcome-link {
-  margin-inline-start: -0.35rem;
+  margin-inline-start: calc(var(--space-2) * -1);
 }
 
 .welcome-recents {
-  margin-top: 0.5rem;
+  margin-top: var(--space-3);
 }
 
 .by-path {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: center;
 }
 
@@ -5056,14 +5053,14 @@ h2.sidebar-title .node-icon {
 
 .recents li {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: baseline;
   border-top: 1px solid var(--border-subtle);
 }
 
 .recents li button {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-5);
   align-items: baseline;
   flex: 1;
   border: 0;
@@ -5072,7 +5069,7 @@ h2.sidebar-title .node-icon {
 }
 
 .recents .where {
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   opacity: 0.55;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5087,14 +5084,14 @@ h2.sidebar-title .node-icon {
 }
 
 .first-run-found li {
-  padding: 0.35rem 0;
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--border-subtle);
 }
 
 /* The harness setup tab (FR-29): one row per harness, its installer's command on a line of
    its own so it reads whole before Install runs it. */
 .harness-setup {
-  padding: 1rem;
+  padding: var(--space-5);
   max-width: 48rem;
 }
 
@@ -5105,40 +5102,40 @@ h2.sidebar-title .node-icon {
 }
 
 .harness-setup-rows li {
-  padding: 0.5rem 0;
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--border-subtle);
 }
 
 .harness-installer {
   display: block;
-  margin: 0.35rem 0;
+  margin: var(--space-2) 0;
   overflow-wrap: anywhere;
 }
 
 /* New project's two-directory form, under Advanced (FR-4). Closed by default, and a summary
    that looks pressable, as the refused profiles' is. */
 .advanced {
-  margin-top: 1.25rem;
+  margin-top: var(--space-6);
   border-top: 1px solid var(--border-subtle);
-  padding-top: 0.75rem;
+  padding-top: var(--space-5);
 }
 
 .advanced summary {
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: var(--font-size-md);
 }
 
 /* What opening a project puts in force. Read before it is answered, so it is a list and not
    a paragraph — and every entry is `code`, because these are names and values and not prose. */
 .warning h3 {
-  margin: 1rem 0 0.35rem;
-  font-size: 0.9rem;
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--font-size-md);
 }
 
 .warning h4 {
-  margin: 0.75rem 0 0.25rem;
-  font-size: 0.8rem;
-  font-weight: normal;
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
   opacity: 0.7;
 }
 
@@ -5151,13 +5148,13 @@ h2.sidebar-title .node-icon {
 
 .changes li,
 .contributes li {
-  padding: 0.15rem 0;
+  padding: var(--space-1) 0;
   overflow-wrap: anywhere;
 }
 
 .warning .where {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   opacity: 0.7;
   overflow-wrap: anywhere;
 }
@@ -5355,10 +5352,10 @@ h2.sidebar-title .node-icon {
 .update-notes {
   max-height: 12rem;
   overflow: auto;
-  font-size: 0.8rem;
-  padding: 0.5rem;
+  font-size: var(--font-size-xs);
+  padding: var(--space-3);
   background: var(--surface-sunken);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .status-doctor.doctor-tone-fail .doctor-said {
@@ -5381,8 +5378,8 @@ h2.sidebar-title .node-icon {
 }
 
 .warning.doctor h3 {
-  margin: 0.75rem 0 0.25rem;
-  font-size: 0.85rem;
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
@@ -5398,9 +5395,9 @@ h2.sidebar-title .node-icon {
 .doctor-row {
   display: grid;
   grid-template-columns: 1.1rem minmax(8rem, max-content) 1fr;
-  column-gap: 0.5rem;
-  padding: 0.2rem 0;
-  font-size: 0.85rem;
+  column-gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: var(--font-size-sm);
 }
 
 /* The verdict's mark, drawn heavier than the window's other icons, as the table's glyph was
@@ -5427,7 +5424,7 @@ h2.sidebar-title .node-icon {
 }
 
 .doctor-name {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .doctor-detail {
@@ -5448,12 +5445,12 @@ h2.sidebar-title .node-icon {
 .doctor-fix {
   grid-column: 3;
   justify-self: start;
-  margin-top: 0.2rem;
+  margin-top: var(--space-1);
 }
 
 /* What the last fix changed, or why it was refused, over the rows it changed. */
 .doctor-fixed {
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .doctor-fixed-lines {
@@ -5465,8 +5462,8 @@ h2.sidebar-title .node-icon {
 }
 
 .doctor-unchecked {
-  margin-top: 0.75rem;
-  font-size: 0.85rem;
+  margin-top: var(--space-5);
+  font-size: var(--font-size-sm);
 }
 
 .doctor-unchecked summary {
@@ -5475,8 +5472,8 @@ h2.sidebar-title .node-icon {
 }
 
 .doctor-path {
-  margin: 0.75rem 0 0;
-  font-size: 0.8rem;
+  margin: var(--space-5) 0 0;
+  font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
 }
 
@@ -5552,7 +5549,7 @@ h2.sidebar-title .node-icon {
    surface in this window uses rather than a second look nobody maintains. Only the row shape
    is here. */
 .extension-rows {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-5);
   padding: 0;
   list-style: none;
 }
@@ -5560,15 +5557,15 @@ h2.sidebar-title .node-icon {
 .extension-rows li {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-3);
   align-items: baseline;
-  padding: 0.4rem 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-subtle);
   overflow-wrap: anywhere;
 }
 
 .extension-rows .name {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* A row's standing is the sentence that says whether anything it declares is actually in
@@ -5585,7 +5582,7 @@ h2.sidebar-title .node-icon {
 /* A built-in extension ships inside charter (charter-app#339): said as a quiet tag beside its
    name, since it is where the extension came from and not whether it is in force. */
 .extension-rows .built-in {
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
@@ -5602,8 +5599,8 @@ h2.sidebar-title .node-icon {
    sentence about what it cannot stop an extension doing, and it is drawn as the dialog's
    loudest text rather than as small print under the buttons. */
 .warning .runs-as-you {
-  margin-top: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
   border-left: 2px solid var(--danger-base);
   background: var(--danger-wash);
   color: var(--text-primary);
@@ -5627,7 +5624,7 @@ h2.sidebar-title .node-icon {
    inside the dialog rather than pushing its buttons off the bottom of the window. */
 .repo-picker-head {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: baseline;
 }
 
@@ -5654,7 +5651,7 @@ h2.sidebar-title .node-icon {
    line in a question that is already on screen, and a dialog with a spinner in it reads as a
    dialog that is loading rather than one that is asking. */
 .warning .pending {
-  margin: 0.5rem 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--text-muted);
 }
 
@@ -5662,13 +5659,13 @@ h2.sidebar-title .node-icon {
    `--state-unreadable` is the accent the window already uses for "charter could not read
    this", and every row here is one charter would refuse over. */
 .at-risk {
-  margin: 0.4rem 0 0.75rem;
-  padding-left: 1.1rem;
+  margin: var(--space-3) 0 var(--space-5);
+  padding-left: var(--space-6);
   color: var(--danger-text);
 }
 
 .at-risk li {
-  margin: 0.15rem 0;
+  margin: var(--space-1) 0;
   overflow-wrap: anywhere;
 }
 
@@ -5702,7 +5699,7 @@ h2.sidebar-title .node-icon {
    because the strip measures its own box (`fits.useRoom`) and a margin is outside that box:
    the tabs are fitted to what is left after it, and the arithmetic needs no copy of it. */
 .title-bar {
-  --title-bar-drag: 5rem;
+  --title-bar-drag: calc(var(--size-control) * 2.5);
   display: flex;
   flex: none;
   gap: var(--space-5);
@@ -5824,16 +5821,16 @@ h2.sidebar-title .node-icon {
 /* One version's notes, as the changelog's Markdown draws them (`ReleaseNotes.tsx`): a heading
    per kind of change and a bullet per change. Here and in the update dialog. */
 .release-notes ul {
-  margin: 0.2rem 0 0.5rem;
-  padding-left: 1.1rem;
+  margin: var(--space-1) 0 var(--space-3);
+  padding-left: var(--space-6);
 }
 
 .release-notes li {
-  margin: 0 0 0.35rem;
+  margin: 0 0 var(--space-2);
 }
 
 .release-notes p {
-  margin: 0.2rem 0;
+  margin: var(--space-1) 0;
 }
 
 .release-notes a {
@@ -6072,12 +6069,12 @@ h2.sidebar-title .node-icon {
   margin: 0;
   color: var(--text-primary);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .empty-state-panel .empty-state-headline {
   font-size: var(--font-size-sm);
-  font-weight: normal;
+  font-weight: var(--font-weight-regular);
   color: var(--text-muted);
 }
 
@@ -6129,7 +6126,7 @@ h2.sidebar-title .node-icon {
   min-height: 0;
   background: var(--surface-raised);
   color: var(--text-primary);
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .view-pane {
@@ -6140,13 +6137,14 @@ h2.sidebar-title .node-icon {
 }
 
 /* The heading stays and the body scrolls. Room is left at the end for the pane's own corner
-   (split, close), which sits over the heading's row as it sits over a terminal's first row. */
+   (split, close), which sits over the heading's row as it sits over a terminal's first row: three
+   controls' width, a reserve and not a step of the scale. */
 .view-head {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 6rem 0.5rem 1rem;
+  gap: var(--space-3);
+  padding: var(--space-4) calc(var(--size-control) * 3) var(--space-3) var(--space-5);
   background: var(--surface-sunken);
 }
 
@@ -6154,10 +6152,10 @@ h2.sidebar-title .node-icon {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-3);
   min-width: 0;
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-size-base);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -6167,7 +6165,7 @@ h2.sidebar-title .node-icon {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.75rem 1rem 1rem;
+  padding: var(--space-5) var(--space-5) var(--space-5);
 }
 
 /* The light editor (RC-5): a piece's files beside the file picked, or one file filling its
@@ -6298,19 +6296,19 @@ h2.sidebar-title .node-icon {
 /* A view's sentences: the definition's facts, a count, a producer's note. Read, not scanned —
    so they wrap, which a panel row does not. */
 .view-body .note {
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
   max-width: 60rem;
 }
 
 .view-body .pending,
 .view-body .none {
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
   color: var(--text-muted);
 }
 
 .view-body .trouble {
-  border-radius: 3px;
-  margin: 0.25rem 0;
+  border-radius: var(--radius-sm);
+  margin: var(--space-2) 0;
 }
 
 /* A view's facts: label beside value, the two columns the persona card drew. The label column
@@ -6319,8 +6317,8 @@ h2.sidebar-title .node-icon {
 .facts {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.15rem 0.6rem;
-  margin: 0.4rem 0;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-3) 0;
   max-width: 60rem;
 }
 
@@ -6398,7 +6396,7 @@ h2.sidebar-title .node-icon {
   margin: 0 0 var(--space-2);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -6419,16 +6417,16 @@ h2.sidebar-title .node-icon {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .activity-line {
   display: grid;
   grid-template-columns: 10.5rem 7.5rem minmax(0, 1fr);
-  gap: 0.1rem 0.75rem;
+  gap: var(--space-1) var(--space-5);
   align-items: baseline;
-  padding-block: 0.35rem;
-  padding-inline-end: 0.5rem;
+  padding-block: var(--space-2);
+  padding-inline-end: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -6469,7 +6467,7 @@ h2.sidebar-title .node-icon {
 .activity-more {
   grid-column: 3;
   justify-self: start;
-  padding: 0.1rem 0;
+  padding: var(--space-1) 0;
   border: 0;
   background: none;
   color: var(--accent-base);
@@ -6479,7 +6477,7 @@ h2.sidebar-title .node-icon {
 /* The person's own answer (#1496): "you", in the place a chat's name stands, and not a control. */
 .activity-you {
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 /* Answer, on a question its task is still paused on (#1496), and the form it opens: the
@@ -6497,19 +6495,19 @@ h2.sidebar-title .node-icon {
 
 .answer-question {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-2);
   max-width: 44rem;
-  margin: 0.25rem 0;
-  padding: 0.5rem;
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--surface-raised);
 }
 
 /* The task's own words, as text: line breaks kept, a long word broken. */
 .answer-asked {
   margin: 0;
-  padding-inline-start: 0.5rem;
+  padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--border-subtle);
   color: var(--text-primary);
   white-space: pre-wrap;
@@ -6530,13 +6528,13 @@ h2.sidebar-title .node-icon {
 .answer-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-3);
   align-items: center;
 }
 
 .answer-how {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
 /* A file another task's report also names (V100-68): a warning's mark and the sentence. The
@@ -6545,7 +6543,7 @@ h2.sidebar-title .node-icon {
 .activity-shared {
   display: flex;
   grid-column: 3;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
   margin: 0;
   color: var(--text-primary);
@@ -6738,22 +6736,22 @@ h2.sidebar-title .node-icon {
   justify-content: center;
   width: 1.5em;
   height: 1.5em;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--accent-surface);
   color: var(--accent-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   line-height: 1;
   letter-spacing: 0;
 }
-/* Initials are two letters in a square: smaller than the text beside them, so they fit. */
-.persona-mark[data-mark="initials"] {
-  font-size: 0.7em;
-  width: 2.15em;
-  height: 2.15em;
-}
+/* Initials are two letters in a square: drawn at 70% of the text beside them, so they fit. The
+   letters are scaled rather than given a smaller size, as a state's dot is
+   (`.shown-state [data-shape="dot"]`): the square stays the mark's, its letters a share of it. */
 .persona-mark[data-initials]::before {
   content: attr(data-initials);
+}
+.persona-mark[data-mark="initials"]::before {
+  scale: 0.7;
 }
 .persona-mark canvas {
   width: 100%;
@@ -6768,25 +6766,25 @@ h2.sidebar-title .node-icon {
 .persona-mark-picker {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 .persona-mark-shown {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 1.5em;
+  gap: var(--space-3);
+  font-size: var(--font-size-lg);
 }
 .persona-mark-shown p {
   margin: 0;
-  font-size: 0.6em;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .persona-mark-choices {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-2);
 }
 .persona-mark-choice {
   display: inline-flex;
@@ -6796,11 +6794,11 @@ h2.sidebar-title .node-icon {
   height: 2rem;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
-  font-size: 0.8em;
-  font-weight: 600;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
 }
 .persona-mark-choice:hover {
   color: var(--text-primary);
@@ -6846,9 +6844,9 @@ h2.sidebar-title .node-icon {
 /* How long the producer took, under its answer. Quiet: it is for noticing a view that has
    become slow before it becomes one that times out. */
 .view-took {
-  margin: 0.4rem 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -6872,15 +6870,15 @@ h2.sidebar-title .node-icon {
 .panel-view {
   display: flex;
   flex: 0 0 auto;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
-  padding: 0.05rem 0.4rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--control-base);
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   cursor: default;
 }
 
@@ -6912,18 +6910,18 @@ h2.sidebar-title .node-icon {
 /* ---- The chart ---------------------------------------------------------------------- */
 
 .chart {
-  margin: 0.6rem 0 0.9rem;
+  margin: var(--space-4) 0 var(--space-5);
 }
 
 .chart figcaption {
-  margin-bottom: 0.35rem;
+  margin-bottom: var(--space-2);
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .chart .chart-unit {
   color: var(--text-muted);
-  font-weight: normal;
+  font-weight: var(--font-weight-regular);
 }
 
 .chart-points {
@@ -6948,7 +6946,7 @@ h2.sidebar-title .node-icon {
   display: block;
   position: relative;
   background: var(--surface-sunken);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -6962,9 +6960,9 @@ h2.sidebar-title .node-icon {
 .chart-bars .chart-point {
   display: grid;
   grid-template-columns: minmax(4rem, 9rem) minmax(4rem, 1fr) minmax(3rem, auto);
-  gap: 0.5rem;
+  gap: var(--space-3);
   align-items: center;
-  padding: 0.1rem 0;
+  padding: var(--space-1) 0;
 }
 
 .chart-bars .chart-track {
@@ -6984,7 +6982,7 @@ h2.sidebar-title .node-icon {
 .chart-columns .chart-points {
   display: flex;
   align-items: stretch;
-  gap: 0.25rem;
+  gap: var(--space-2);
   height: 9rem;
 }
 
@@ -6995,10 +6993,10 @@ h2.sidebar-title .node-icon {
   flex: 1 1 0;
   flex-direction: column-reverse;
   align-items: stretch;
-  gap: 0.2rem;
+  gap: var(--space-1);
   min-width: 0;
   text-align: center;
-  font-size: 0.7rem;
+  font-size: var(--font-size-xs);
 }
 
 .chart-columns .chart-track {
@@ -7260,12 +7258,12 @@ h2.sidebar-title .node-icon {
 .saving {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5);
 }
 .saving-stage {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   color: var(--text-primary);
 }
 .saving-blocked {
@@ -7275,13 +7273,13 @@ h2.sidebar-title .node-icon {
    the muted size a setting's help line is drawn at. */
 .saving-note {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .saving-files,
 .saving-journal {
   margin: 0;
-  padding-left: 1.1rem;
+  padding-left: var(--space-6);
   color: var(--text-secondary);
 }
 .saving-said {
@@ -7290,8 +7288,8 @@ h2.sidebar-title .node-icon {
   color: var(--text-secondary);
 }
 .saving-recent {
-  margin: 0.5rem 0 0;
-  font-size: 1em;
+  margin: var(--space-3) 0 0;
+  font-size: inherit;
   color: var(--text-primary);
 }
 /* One row per workspace repo (charter-app#299): the shared table (`.ui-table`, DS-12), so
@@ -7437,26 +7435,26 @@ h2.sidebar-title .node-icon {
    box rather than pushing the button off the tab. */
 .repo-instruction-files {
   list-style: none;
-  margin: 0.75rem 0;
+  margin: var(--space-5) 0;
   padding: 0;
 }
 
 .repo-instruction-text {
   grid-column: 1 / -1;
-  margin: 0.25rem 0 0;
-  padding: 0.5rem 0.75rem;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-5);
   max-height: 16rem;
   overflow: auto;
   white-space: pre-wrap;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 /* An invisible character in a previewed file, drawn as its code point (FR-18a). */
 .repo-instruction-text .invisible-char {
-  padding: 0 0.15rem;
-  border-radius: 2px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
   background: var(--danger-surface);
   color: var(--danger-text);
 }
@@ -7684,7 +7682,7 @@ h2.sidebar-title .node-icon {
 
 .ui-levels-small {
   flex: none;
-  font-size: 0.8em;
+  font-size: var(--font-size-2xs);
 }
 
 .ui-levels-small .ui-level {
@@ -8388,31 +8386,31 @@ textarea.ui-field {
 /* The form a fix that takes input opens under its row (FX-3, the git identity). */
 .doctor-form {
   grid-column: 2 / -1;
-  margin-top: 0.4rem;
+  margin-top: var(--space-3);
 }
 
 /* The same form opened from a Notice (#1250): right under the line, outside its live region
    (`Notice`'s `under`), in the page's own colours. */
 .notice-under-band {
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-2) var(--space-5);
   background: var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .notice-under-band .doctor-form {
   max-width: 36rem;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-3) var(--space-5);
   color: var(--text-primary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 /* The set-up of a 1Password vault's sign-in (#1527): its lines sit apart from the rows. */
 .vault-identity-change,
 .vault-signin-given,
 .vault-signin-passed {
-  margin: 0.4rem 0;
+  margin: var(--space-3) 0;
 }
 
 /* **The project in front's view, and where the window puts it** (`projectShown.ts`). Neither

@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// <reference types="node" />
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { declarations, isView, ratchet, SRC, sourceFiles, withoutComments } from "./guards.testkit";
 import { GEOMETRY } from "./theme/geometry";
 import { property, TOKENS } from "./theme/theme";
-import { TYPE_ALLOWANCE } from "./type.guard.allowance";
 
 /**
  * **No size, weight, line height, family or colour of text is written outside the tokens**
@@ -24,13 +23,14 @@ import { TYPE_ALLOWANCE } from "./type.guard.allowance";
  * | ------------- | ------------------------------------------------------------- |
  * | `font-size`   | `var(--font-size-*)`, one of the core's six                    |
  * | `font-weight` | `var(--font-weight-*)`, one of the core's three                 |
- * | `line-height` | `var(--line-height-tight)` or `var(--line-height-body)`        |
+ * | `line-height` | `var(--line-height-tight)`, `var(--line-height-body)`, or `1`  |
  * | `font-family` | `var(--font-mono)`                                             |
  * | `color`       | `var(--<a theme's colour token>)`, or `currentColor`           |
  * | `font`        | `inherit` only: the shorthand carries a size and a family      |
  *
- * and `inherit` for each. Anything else is a literal: `0.8rem`, `600`, `bold`, `1.4`, a stack
- * of family names, a mixed or transparent colour.
+ * and `inherit` for each. A line height of `1` (or `normal`) is no leading at all, the line as
+ * tall as its own text, as `1em` is no size to the geometry guard. Anything else is a literal:
+ * `0.8rem`, `600`, `bold`, `1.4`, a stack of family names, a mixed or transparent colour.
  *
  * **A token is not yet a role.** `font-size: var(--font-size-sm)` passes here, and is still a
  * surface ranking its own words; the migrations of #1920 replace those with a role, surface by
@@ -40,10 +40,8 @@ import { TYPE_ALLOWANCE } from "./type.guard.allowance";
  * which lets the text's own unit through (`1em`) and reads no weight, family or colour. A
  * migration that gives a word its role deletes its line from both lists.
  *
- * **Today's offenders are allowed, one per line, and the list can only shrink**
- * (`type.guard.allowance.ts`), the same ratchet as the geometry guard: an entry names a
- * declaration by its file, its rule and what it sets, never by line; the list must match the
- * source exactly; and no file's list may grow past its frozen `CEILING`.
+ * **There is no allowance** (#2319). The migrations took every literal the window had onto a
+ * token or a role, and the list they shrank is gone: any literal fails here.
  */
 
 /** The one stylesheet that gives the core tokens their values. */
@@ -64,6 +62,7 @@ const MAY_BE: Readonly<Record<string, ReadonlySet<string>>> = {
 export function isOnTheScale(name: string, value: string): boolean {
   const said = value.replace(/\s*!important$/i, "").trim();
   if (/^inherit$/i.test(said)) return true;
+  if (name === "line-height" && /^(?:1|normal)$/i.test(said)) return true;
   if (name === "color" && /^currentcolor$/i.test(said)) return true;
   const token = /^var\((--[\w-]+)\)$/.exec(said)?.[1];
   return token !== undefined && MAY_BE[name].has(token);
@@ -106,10 +105,11 @@ export function componentLiterals(source: string): string[] {
   return found;
 }
 
+const read = (file: string) => readFileSync(join(SRC, file), "utf8");
+
 /** Every type literal in the window today, by file: its stylesheets (the core aside) and its
  *  components. */
 function literalsByFile(): Map<string, string[]> {
-  const read = (file: string) => readFileSync(join(SRC, file), "utf8");
   const byFile = new Map<string, string[]>();
   for (const file of sourceFiles((name) => name.endsWith(".css"))) {
     if (file !== THE_CORE) byFile.set(file, cssLiterals(read(file)));
@@ -147,7 +147,7 @@ export function roleFor(entry: string): string {
     if (size >= 13.5) return "wear ui-text-heading (14px, strong)";
     if (size >= 12.5) return "wear ui-text-body (13px), with ui-text-strong for the row's one line";
     if (size >= 11.5) return "wear ui-text-secondary (12px)";
-    return "wear ui-text-meta (11px), or ui-text-label over a group: nothing is under 11px";
+    return "wear ui-text-meta (11px), or ui-text-label over a group: nothing is under 11px but --font-size-2xs, a tight secondary label's";
   }
   if (key === "font-weight") {
     if (/^(?:[6-9]00|bold|bolder)$/.test(value)) {
@@ -156,32 +156,19 @@ export function roleFor(entry: string): string {
     if (/^500$/.test(value)) return "use var(--font-weight-medium) (500), a form's label's weight";
     return "wear a role, which is regular (400) unless it is a title, a heading or a label";
   }
-  if (key === "line-height") return "use var(--line-height-body) or var(--line-height-tight)";
+  if (key === "line-height") {
+    return "use var(--line-height-body) or var(--line-height-tight), or 1 for no leading";
+  }
   if (key === "font-family") return "wear ui-text-code, the one monospace family (--font-mono)";
   return "colour follows the role: body is primary, secondary is secondary, meta is muted";
 }
 
-/**
- * How long each file's list was when the guard landed: a list may only get shorter than this.
- * This is a frozen record, not a count to keep current. Lowering a ceiling is never needed;
- * raising one, or naming a new file, is adding a literal the guard exists to refuse.
- */
-export const CEILING: Readonly<Record<string, number>> = {
-  "App.css": 136,
-  "primitives/collections.css": 2,
-  "primitives/controls.css": 2,
-};
-
 const ADDED = "new type literal";
 
-/** What differs between the type literals in the window and the list (`ratchet`), each new
- *  literal with the role to wear instead. */
-export function offTheList(
-  found: ReadonlyMap<string, readonly string[]>,
-  allowed: Readonly<Record<string, readonly string[]>>,
-  ceiling: Readonly<Record<string, number>> = CEILING,
-): string[] {
-  return ratchet(found, allowed, ceiling, { added: ADDED }).map((complaint) => {
+/** Each type literal found, as a complaint with the role to wear instead: with no allowance and
+ *  no ceiling, every one is new (`ratchet`). */
+export function complaints(found: ReadonlyMap<string, readonly string[]>): string[] {
+  return ratchet(found, {}, {}, { added: ADDED }).map((complaint) => {
     const at = complaint.indexOf(`: ${ADDED}: `);
     if (at < 0) return complaint;
     const entry = complaint.slice(at + ADDED.length + 4);
@@ -190,8 +177,8 @@ export function offTheList(
 }
 
 describe("the type guard (#1920)", () => {
-  it("finds every size, weight, line height, family and colour of text on a token, or allowed", () => {
-    expect(offTheList(literalsByFile(), TYPE_ALLOWANCE)).toEqual([]);
+  it("finds every size, weight, line height, family and colour of text on a token", () => {
+    expect(complaints(literalsByFile())).toEqual([]);
   });
 
   it("fails a literal planted in a stylesheet, and says which role to wear", () => {
@@ -204,84 +191,32 @@ describe("the type guard (#1920)", () => {
         `),
       ],
     ]);
-    expect(offTheList(planted, {}, { "App.css": 10 })).toEqual([
-      `App.css: new type literal: .planted | font-size: 0.8rem (wear ui-text-meta (11px), or ui-text-label over a group: nothing is under 11px; ${ROLES_SAID})`,
+    expect(complaints(planted)).toEqual([
+      `App.css: new type literal: .planted | font-size: 0.8rem (wear ui-text-meta (11px), or ui-text-label over a group: nothing is under 11px but --font-size-2xs, a tight secondary label's; ${ROLES_SAID})`,
       `App.css: new type literal: .planted | font-weight: 600 (wear ui-text-strong (600), or a role that is strong: title, heading, label; ${ROLES_SAID})`,
       `App.css: new type literal: .planted | color: transparent (colour follows the role: body is primary, secondary is secondary, meta is muted; ${ROLES_SAID})`,
-      `App.css: new type literal: .planted-more | line-height: 1.3 (use var(--line-height-body) or var(--line-height-tight); ${ROLES_SAID})`,
+      `App.css: new type literal: .planted-more | line-height: 1.3 (use var(--line-height-body) or var(--line-height-tight), or 1 for no leading; ${ROLES_SAID})`,
       `App.css: new type literal: .planted-more | font-family: Menlo, monospace (wear ui-text-code, the one monospace family (--font-mono); ${ROLES_SAID})`,
       `App.css: new type literal: .planted-more | font-size: 15px (wear ui-text-title (16px, strong), or keep it off the scale by ruling; ${ROLES_SAID})`,
     ]);
   });
 
-  it("fails a literal planted in the real stylesheet, on top of what is allowed", () => {
+  it("fails a hand-written font size planted in the window's own stylesheet", () => {
     const found = literalsByFile();
-    const css = [...(found.get("App.css") ?? []), ".planted | font-size: 0.8rem"];
-    const complaints = offTheList(new Map([...found, ["App.css", css]]), TYPE_ALLOWANCE);
-    expect(complaints).toHaveLength(1);
-    expect(complaints[0]).toContain("App.css: new type literal: .planted | font-size: 0.8rem");
-  });
-
-  it("fails when an allowance is removed and its literal is not fixed", () => {
-    const [first, ...rest] = TYPE_ALLOWANCE["App.css"];
-    const complaints = offTheList(literalsByFile(), { ...TYPE_ALLOWANCE, "App.css": rest });
-    expect(complaints).toHaveLength(1);
-    expect(complaints[0]).toContain(`App.css: new type literal: ${first}`);
-  });
-
-  it("fails an entry its declaration no longer bears out", () => {
-    const allowed = { "App.css": [".a | font-size: 0.8rem", ".b | font-weight: 600"] };
-    expect(
-      offTheList(new Map([["App.css", [".a | font-size: 0.8rem"]]]), allowed, { "App.css": 2 }),
-    ).toEqual(["App.css: stale entry, delete it from the allowance: .b | font-weight: 600"]);
-  });
-
-  it("fails a ceiling that was raised, and a file that was given one", () => {
-    // The list and the source agree, and the list is one longer than its ceiling, however far
-    // the migrations have already shortened it.
-    const found = literalsByFile();
-    const past = CEILING["App.css"] - TYPE_ALLOWANCE["App.css"].length + 1;
-    const planted = Array.from({ length: past }, (_, n) => `.planted-${n} | font-size: 0.8rem`);
-    const grown = [...TYPE_ALLOWANCE["App.css"], ...planted];
-    expect(
-      offTheList(new Map([...found, ["App.css", grown]]), { ...TYPE_ALLOWANCE, "App.css": grown }),
-    ).toEqual([`App.css: the allowance grew to ${grown.length}, past ${CEILING["App.css"]}`]);
-    const fresh = [".a | font-size: 0.8rem"];
-    expect(offTheList(new Map([["Fresh.css", fresh]]), { "Fresh.css": fresh }, {})).toEqual([
-      "Fresh.css: the allowance grew to 1, past 0",
-    ]);
-  });
-
-  it("holds each ceiling to its list as it landed: a ceiling can only go down", () => {
-    // What each file's list was when the guard landed (#1920). This is the frozen record the
-    // ceilings are checked against, so raising a ceiling fails here even with the list grown
-    // to match; a ceiling is lowered by deleting lines, and may be lowered here with them.
-    const LANDED: Record<string, number> = {
-      "App.css": 159,
-      "primitives/collections.css": 2,
-      "primitives/controls.css": 2,
-    };
-    expect(Object.keys(CEILING).sort()).toEqual(Object.keys(LANDED).sort());
-    for (const [file, ceiling] of Object.entries(CEILING)) {
-      expect(ceiling, `${file}: its ceiling was raised`).toBeLessThanOrEqual(LANDED[file]);
-      expect(
-        TYPE_ALLOWANCE[file]?.length ?? 0,
-        `${file}: its list is longer than its ceiling`,
-      ).toBeLessThanOrEqual(ceiling);
-    }
-    expect(Object.keys(TYPE_ALLOWANCE).filter((file) => !(file in CEILING))).toEqual([]);
+    const planted = `${read("App.css")}\n.planted { font-size: 13px; }\n`;
+    const result = complaints(new Map([...found, ["App.css", cssLiterals(planted)]]));
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("App.css: new type literal: .planted | font-size: 13px");
   });
 
   it("counts a declaration written twice as two", () => {
     const twice = [".a | font-weight: 600", ".a | font-weight: 600"];
-    expect(
-      offTheList(new Map([["x.css", twice]]), { "x.css": [twice[0]] }, { "x.css": 2 }),
-    ).toHaveLength(1);
+    expect(complaints(new Map([["x.css", twice]]))).toHaveLength(2);
   });
 
   it("reads each type property, and the literals in it, and nothing else", () => {
     const css = `
-      .a { font-size: 0.8rem; font-weight: bold; line-height: 1; font-family: monospace; }
+      .a { font-size: 0.8rem; font-weight: bold; line-height: 1.3; font-family: monospace; }
       .b { color: color-mix(in srgb, currentcolor 85%, transparent); font: 600 12px/1.2 system-ui; }
       .c { font-size: 1em; font-weight: normal; color: transparent; font-size: var(--mine); }
       .d { background-color: var(--surface-base); border-color: red; letter-spacing: 0.06em; }
@@ -290,7 +225,7 @@ describe("the type guard (#1920)", () => {
     expect(cssLiterals(css).map((entry) => entry.split(" | ")[1])).toEqual([
       "font-size: 0.8rem",
       "font-weight: bold",
-      "line-height: 1",
+      "line-height: 1.3",
       "font-family: monospace",
       "color: color-mix(in srgb, currentcolor 85%, transparent)",
       "font: 600 12px/1.2 system-ui",
@@ -307,6 +242,7 @@ describe("the type guard (#1920)", () => {
       .b { line-height: var(--line-height-tight); font-family: var(--font-mono); }
       .c { color: var(--text-muted); font: inherit; font-size: inherit; color: inherit; }
       .d { color: currentColor; color: var(--state-failed) !important; line-height: inherit; }
+      .e { line-height: 1; line-height: normal; }
     `;
     expect(cssLiterals(css)).toEqual([]);
     // A token of another kind is not this property's.
@@ -365,23 +301,10 @@ describe("the type guard (#1920)", () => {
     ]);
   });
 
-  it("lists by file and in order, so a removal is one line in one place", () => {
-    for (const [file, entries] of Object.entries(TYPE_ALLOWANCE)) {
-      expect(entries.length, `${file}: an empty list is deleted, not kept`).toBeGreaterThan(0);
-    }
-    expect(Object.keys(TYPE_ALLOWANCE)).toEqual(Object.keys(TYPE_ALLOWANCE).sort());
-    const source = readFileSync(join(SRC, "type.guard.allowance.ts"), "utf8");
-    const entryLines = source.split("\n").filter((line) => /^\s+"(?:[^"\\]|\\.)*",$/.test(line));
-    const total = Object.values(TYPE_ALLOWANCE).flat().length;
-    expect(entryLines.length, "one entry per line").toBe(total);
-  });
-
   it("holds the role sheet and the other primitives to no literal at all", () => {
     const found = literalsByFile();
     expect(found.get("primitives/text.css")).toBeUndefined();
-    expect(
-      Object.keys(TYPE_ALLOWANCE).filter((file) => file.startsWith("primitives/text")),
-    ).toEqual([]);
+    expect(existsSync(join(SRC, "type.guard.allowance.ts"))).toBe(false);
   });
 
   it("covers the window's stylesheets and components, so a reader that found nothing fails", () => {
