@@ -3102,6 +3102,8 @@ impl Chats {
                         .as_ref()
                         .and_then(purlis_core::sandbox::Confinement::held_as)
                         .map(str::to_owned),
+                    // The run this start begins, which its `run.started` is written under.
+                    run: identity.run.clone(),
                 },
                 &announce,
             ),

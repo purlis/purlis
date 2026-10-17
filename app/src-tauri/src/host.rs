@@ -77,6 +77,10 @@ pub struct Opening {
     /// session host's, by the id [`SessionHost::confine`] gave it. None for a chat without
     /// one, or whose proxy runs in the window.
     pub confinement: Option<String>,
+    /// The run this start begins (ADR 0066), which the window minted and writes its
+    /// `run.started` under. The session host is handed it with the start, so its list and the
+    /// program's end name it (#2172).
+    pub run: Option<String>,
 }
 
 /// **A chat by what it is named, for the session host to compose** (#2171): its profile and
