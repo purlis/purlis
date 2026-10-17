@@ -1531,5 +1531,4 @@ pub fn forget_sandbox_block(
 }
 
 #[cfg(test)]
-#[path = "asking_tests.rs"]
 mod tests;
