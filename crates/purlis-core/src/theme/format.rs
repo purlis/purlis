@@ -31,8 +31,8 @@
 //! **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): it draws
 //! Purlis, and every complaint says what is wrong. A token or motion name purlis does not have is
 //! said and left out instead: a name reaches nothing, and a teammate's purlis may know a token
-//! this one does not yet. Options (#2325) and tint (#2329) are not read yet, so naming one
-//! refuses the theme rather than drawing something other than what it says.
+//! this one does not yet. Tint (#2329) is not read yet, so naming it refuses the theme rather
+//! than drawing something other than what it says.
 //!
 //! - **`icons`** names the theme's icon set (#2337): a file inside the theme's folder, read under
 //!   the same containment and cap as `theme.json` ([`super::icons`]). A view the set does not
@@ -43,6 +43,10 @@
 //!   bound.
 //! - **Fonts** (#2326, [`super::fonts`]): the UI, mono and terminal fonts, from woff2 files in
 //!   the folder's `fonts/`, for every appearance.
+//! - **`options`** are the theme's toggles and choices (#2325, [`super::options`]), each value a
+//!   layer of tokens drawn over every appearance. A child has its parent's, and one of its own
+//!   with a parent's id takes that one's place. A theme past [`super::MOST_COMBINATIONS`]
+//!   appearance × option combinations is refused with its count.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -52,6 +56,7 @@ use serde_json::{Map, Value};
 use super::fonts::Fonts;
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
+use super::options::{self, MOST_COMBINATIONS};
 use super::vocabulary::{TOKENS, is_colour};
 use super::{
     Appearance, CLASSIC, Complaint, Resolved, ResolvedTheme, Theme, built_in_for, classic,
@@ -82,11 +87,12 @@ const KEYS: &[&str] = &[
     "icons",
     "compact",
     "fonts",
+    "options",
 ];
 
 /// The keys the spec gives format 2 that this purlis does not read yet, each with the ticket
-/// that reads it: options #2325, tint #2329.
-const NOT_YET: &[(&str, &str)] = &[("options", "#2325"), ("tint", "#2329")];
+/// that reads it: tint #2329.
+const NOT_YET: &[(&str, &str)] = &[("tint", "#2329")];
 
 /// The longest path to an icon set purlis follows, in bytes.
 pub(super) const MOST_ICONS_PATH: usize = 256;
@@ -300,6 +306,8 @@ impl Library {
             Beside::Folder { folder, .. } => Some(folder.as_path()),
             Beside::Nothing => None,
         };
+        let own_options = options::read(from.get("options"), &palette, &mut complaints, &mut notes);
+        let mut parents_options = Vec::new();
 
         // The parent's appearances, complete: what this theme's layer over.
         let mut appearances: Vec<ResolvedTheme> = match from.get("extends") {
@@ -307,7 +315,8 @@ impl Library {
             Some(Value::String(parent)) => match self.parent(parent, path) {
                 Ok((theme, parents)) => {
                     notes.extend(from_theme(parent, parents));
-                    theme.appearances
+                    parents_options.clone_from(&theme.options);
+                    theme.bases().to_vec()
                 }
                 Err(refused) if refused.why == Why::Circle => return Err(refused),
                 Err(refused) if refused.why == Why::Missing => {
@@ -406,6 +415,19 @@ impl Library {
                 appearances.len()
             )));
         }
+        let options = options::over(&parents_options, own_options);
+        let ids: BTreeSet<&str> = appearances.iter().map(|one| one.id.as_str()).collect();
+        options::hold_appearances(&options, &ids, &mut complaints);
+        // Every combination is checked, so their number is held, with the count said.
+        if complaints.is_empty()
+            && options::combinations(appearances.len(), &options) > MOST_COMBINATIONS
+        {
+            complaints.push(Complaint::said(options::too_many(
+                called,
+                appearances.len(),
+                &options,
+            )));
+        }
         if !complaints.is_empty() {
             return Err(Refused::because(complaints));
         }
@@ -417,7 +439,7 @@ impl Library {
             one.tuned.clone_from(&tuned);
             one.fonts.clone_from(&fonts);
         }
-        Ok((Theme { name, appearances }, notes))
+        Ok((Theme::made(name, appearances, options), notes))
     }
 
     /// The theme `parent` names, read, or why not.
@@ -756,49 +778,17 @@ fn appearance(
         }
     };
     let base = parent.unwrap_or_else(|| built_in_for(appearance));
+    let given = tokens(
+        one.get("tokens"),
+        &format!("appearance {id}"),
+        palette,
+        complaints,
+        notes,
+    );
     let mut values = base.values.clone();
+    values.extend(given.colours);
     let mut sizes = base.geometry.clone();
-    match one.get("tokens") {
-        None => {}
-        Some(Value::Object(tokens)) => {
-            for (token, value) in tokens {
-                if let Some(step) = geometry::step_of(token) {
-                    match geometry::number(step, value, &format!("in appearance {id}")) {
-                        Ok(number) => {
-                            sizes.insert(step.token, number);
-                        }
-                        Err(why) => complaints.push(Complaint::about(token, why)),
-                    }
-                    continue;
-                }
-                let Some(known) = TOKENS.iter().copied().find(|it| *it == token) else {
-                    notes.push(Complaint::about(
-                        token,
-                        format!(
-                            "{token} in appearance {id} is not a purlis token, so it is left out"
-                        ),
-                    ));
-                    continue;
-                };
-                match colour(value, palette) {
-                    Some(hex) => {
-                        values.insert(known, hex);
-                    }
-                    None => complaints.push(Complaint::about(
-                        token,
-                        format!(
-                            "{token} in appearance {id} is {}, which is neither a hex colour \
-                             nor a name in this theme's palette",
-                            stringify(value)
-                        ),
-                    )),
-                }
-            }
-        }
-        Some(_) => complaints.push(Complaint::said(format!(
-            "tokens in appearance {id} is an object of token names to colours"
-        ))),
-    }
+    sizes.extend(given.geometry);
     let mut said = Vec::new();
     let motion = load_motion(one.get("motion"), &base.motion, &mut said, notes);
     complaints.extend(said);
@@ -819,7 +809,86 @@ fn appearance(
         geometry: sizes,
         tuned: base.tuned.clone(),
         fonts: base.fonts.clone(),
+        options: Vec::new(),
     })
+}
+
+/// **Token values a theme gives in one place**: an appearance's `tokens`, or a layer of a theme
+/// option's value (#2325). Each kind of value is typed and bounded as the token it is for: a
+/// colour is hex or a palette name, a geometry token a number inside its bound (#2326).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(super) struct Tokens {
+    pub(super) colours: BTreeMap<&'static str, String>,
+    pub(super) geometry: Geometry,
+}
+
+impl Tokens {
+    /// These values over `theme`, one appearance drawn: what compact draws follows the
+    /// geometry, as it does for an appearance's own.
+    pub(super) fn onto(&self, theme: &mut ResolvedTheme) {
+        theme
+            .values
+            .extend(self.colours.iter().map(|(token, hex)| (*token, hex.clone())));
+        if !self.geometry.is_empty() {
+            theme.geometry.extend(self.geometry.iter().map(|(token, n)| (*token, *n)));
+            theme.compact = geometry::compact_of(&theme.geometry, &theme.tuned);
+        }
+    }
+}
+
+/// **The one reader of token values** a theme gives, `at` saying where (`appearance dark`, `the
+/// on layer of option borders`): what is wrong with a value goes in `complaints` (it refuses the
+/// theme), a token name purlis does not have in `notes` (it is left out).
+pub(super) fn tokens(
+    raw: Option<&Value>,
+    at: &str,
+    palette: &BTreeMap<String, String>,
+    complaints: &mut Vec<Complaint>,
+    notes: &mut Vec<Complaint>,
+) -> Tokens {
+    let mut out = Tokens::default();
+    let given = match raw {
+        None => return out,
+        Some(Value::Object(given)) => given,
+        Some(_) => {
+            complaints.push(Complaint::said(format!(
+                "tokens in {at} is an object of token names to values"
+            )));
+            return out;
+        }
+    };
+    for (token, value) in given {
+        if let Some(step) = geometry::step_of(token) {
+            match geometry::number(step, value, &format!("in {at}")) {
+                Ok(number) => {
+                    out.geometry.insert(step.token, number);
+                }
+                Err(why) => complaints.push(Complaint::about(token, why)),
+            }
+            continue;
+        }
+        let Some(known) = TOKENS.iter().copied().find(|it| *it == token) else {
+            notes.push(Complaint::about(
+                token,
+                format!("{token} in {at} is not a purlis token, so it is left out"),
+            ));
+            continue;
+        };
+        match colour(value, palette) {
+            Some(hex) => {
+                out.colours.insert(known, hex);
+            }
+            None => complaints.push(Complaint::about(
+                token,
+                format!(
+                    "{token} in {at} is {}, which is neither a hex colour nor a name in this \
+                     theme's palette",
+                    stringify(value)
+                ),
+            )),
+        }
+    }
+    out
 }
 
 /// A theme's `compact` layer: geometry tokens and their compact numbers, each in its bound.
@@ -853,7 +922,7 @@ fn compact_layer(raw: Option<&Value>, complaints: &mut Vec<Complaint>) -> Geomet
 }
 
 /// A token's value: hex, or the hex of a name in `palette`. Anything else is not a colour.
-fn colour(value: &Value, palette: &BTreeMap<String, String>) -> Option<String> {
+pub(super) fn colour(value: &Value, palette: &BTreeMap<String, String>) -> Option<String> {
     let given = value.as_str()?;
     if is_colour(given) {
         return Some(given.to_owned());

@@ -67,6 +67,7 @@ mod format;
 pub mod geometry;
 mod icons;
 mod person;
+mod options;
 mod resolve;
 mod schema;
 mod tint;
@@ -82,6 +83,9 @@ pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use person::{Density, Layer, Person};
+pub use options::{
+    Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
+};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
@@ -95,6 +99,8 @@ mod format_tests;
 mod geometry_tests;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod options_tests;
 #[cfg(test)]
 mod tests;
 
@@ -118,8 +124,8 @@ pub struct Motion {
 /// **One appearance of a theme, complete**: what the window draws. Every token in [`TOKENS`] has
 /// a value, and so does every motion token.
 ///
-/// It carries the icon set (#2337), the geometry for both densities and the fonts (#2326); it
-/// will grow the option values it was drawn with (#2325). Its users are the window's wire types
+/// It carries the icon set (#2337), the geometry for both densities and the fonts (#2326); and the
+/// option values it was drawn with (#2325). Its users are the window's wire types
 /// and the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ResolvedTheme {
@@ -152,6 +158,10 @@ pub struct ResolvedTheme {
     pub(crate) tuned: Geometry,
     /// The UI, mono and terminal fonts.
     pub fonts: Fonts,
+    /// Each of the theme's options (#2325), in its order, with the value it was drawn with:
+    /// empty for a theme with none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<OptionDrawn>,
 }
 
 impl ResolvedTheme {
@@ -162,13 +172,21 @@ impl ResolvedTheme {
 }
 
 /// **A theme**: its name and every appearance it has, each complete, in the order it declares
-/// them. Never without an appearance.
+/// them, and its options. Never without an appearance.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Theme {
     /// What to call it, as a person would.
     pub name: String,
-    /// Its appearances, the first one what it draws when nothing chose another.
+    /// Its appearances, the first one what it draws when nothing chose another, each drawn with
+    /// its option values: each option's default, until [`Self::with`] draws others.
     pub appearances: Vec<ResolvedTheme>,
+    /// Its options (#2325), in its order: a theme it extends' first, then its own.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<ThemeOption>,
+    /// Its appearances as it declares them, before any option is drawn over them: what
+    /// [`Self::with`] draws from, and what a theme that extends this one layers over.
+    #[serde(skip)]
+    bases: Vec<ResolvedTheme>,
 }
 
 impl Theme {
@@ -192,10 +210,53 @@ impl Theme {
 
     /// The theme as one appearance: what a format 1 file is.
     fn one(theme: ResolvedTheme) -> Self {
+        Self::made(theme.name.clone(), vec![theme], Vec::new())
+    }
+
+    /// The theme `name` with `bases`, its appearances as it declares them, and `options`: each
+    /// appearance drawn with every option's default.
+    fn made(name: String, bases: Vec<ResolvedTheme>, options: Vec<ThemeOption>) -> Self {
+        let picked = options::pick(&name, &options, &Values::new(), &mut Vec::new());
         Self {
-            name: theme.name.clone(),
-            appearances: vec![theme],
+            appearances: bases
+                .iter()
+                .map(|base| options::draw(base, &options, &picked))
+                .collect(),
+            name,
+            options,
+            bases,
         }
+    }
+
+    /// **The theme drawn with `values`**: each option's value from `values` where it names one
+    /// the option has, else its default. A value or an option the theme does not have is said
+    /// in the complaints, and the default is drawn: a choice made for another version of the
+    /// theme never refuses it.
+    #[must_use]
+    pub fn with(&self, values: &Values) -> (Self, Vec<Complaint>) {
+        let mut complaints = Vec::new();
+        let picked = options::pick(&self.name, &self.options, values, &mut complaints);
+        let theme = Self {
+            appearances: self
+                .bases
+                .iter()
+                .map(|base| options::draw(base, &self.options, &picked))
+                .collect(),
+            ..self.clone()
+        };
+        (theme, complaints)
+    }
+
+    /// How many combinations of appearance and option values the theme has: what the theme
+    /// check covers, at most [`MOST_COMBINATIONS`].
+    pub fn combinations(&self) -> usize {
+        options::combinations(self.bases.len(), &self.options)
+    }
+
+    /// Its appearances as it declares them, before any option is drawn: a parent's, for a theme
+    /// that extends it.
+    pub(crate) fn bases(&self) -> &[ResolvedTheme] {
+        &self.bases
     }
 }
 
@@ -328,10 +389,11 @@ fn built_in_of(text: &str) -> Theme {
                 compact: geometry::classic_compact(),
                 tuned: Geometry::new(),
                 fonts: Fonts::classic(),
+                options: Vec::new(),
             }
         })
         .collect();
-    Theme { name, appearances }
+    Theme::made(name, appearances, Vec::new())
 }
 
 /// A built-in's motion, every token present, or the first token it lacks.
@@ -533,6 +595,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             compact: base.compact.clone(),
             tuned: base.tuned.clone(),
             fonts: base.fonts.clone(),
+            options: Vec::new(),
         }),
         complaints: notes,
         refused: false,
@@ -752,4 +815,41 @@ impl TheirsKept {
 /// appearance with no findings can be read.
 pub fn check(theme: &ResolvedTheme) -> Report {
     check::check(theme)
+}
+
+/// One combination of appearance and option values the theme check covered, and its report.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Checked {
+    /// The appearance's id.
+    pub appearance: String,
+    /// The value of each option it was drawn with: empty for a theme with no options.
+    pub options: Values,
+    pub report: Report,
+}
+
+/// **Checks every combination of a theme's appearances and option values** (#2325): [`check`]
+/// of each appearance drawn with each combination of option values, the appearances in the
+/// theme's order and, within each, the combinations with the first option's values slowest. A
+/// theme has at most [`MOST_COMBINATIONS`]: one with more is refused when it is read.
+pub fn check_every(theme: &Theme) -> Vec<Checked> {
+    let every = options::every(&theme.options);
+    let drawn: Vec<(Values, Theme)> = every
+        .into_iter()
+        .map(|values| {
+            let (drawn, _) = theme.with(&values);
+            (values, drawn)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(theme.combinations());
+    for at in 0..theme.bases.len() {
+        for (values, drawn) in &drawn {
+            let one = &drawn.appearances[at];
+            out.push(Checked {
+                appearance: one.id.clone(),
+                options: values.clone(),
+                report: check::check(one),
+            });
+        }
+    }
+    out
 }

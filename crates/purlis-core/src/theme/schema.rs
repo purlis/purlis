@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 use super::fonts::{MOST_FACES, SLOTS};
 use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::geometry::{STEPS, Step, Unit};
+use super::options::{MOST_COMBINATIONS, MOST_DESCRIPTION, MOST_LABEL, MOST_OPTIONS};
 use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
@@ -109,11 +110,11 @@ pub fn schema() -> Value {
             }),
         );
     }
-    json!({
+    let mut schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": SCHEMA_URL,
         "title": format!("A purlis theme folder's {THEME_JSON} (format 2)"),
-        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, and its fonts. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, and its options. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
         "type": "object",
         "additionalProperties": false,
         "required": ["name"],
@@ -142,6 +143,12 @@ pub fn schema() -> Value {
                 "type": "array",
                 "items": { "$ref": "#/$defs/appearance" },
                 "maxItems": MOST_APPEARANCES
+            },
+            "options": {
+                "description": format!("The theme's options: toggles and choices, each value a layer of token values drawn over every appearance. There are no free-number options. A theme has at most {MOST_COMBINATIONS} combinations of appearance and option values, the appearances times each option's number of values (a toggle has two), and one past that is refused with its count. An option with the id of one in the theme it extends takes its place."),
+                "type": "array",
+                "items": { "$ref": "#/$defs/option" },
+                "maxItems": MOST_OPTIONS
             },
             "icons": {
                 "description": "The theme's icon set: the path of a JSON file inside this theme's folder, such as icons/icons.json, that draws each view's tab on the rails. A view it does not draw is the parent's.",
@@ -228,6 +235,86 @@ pub fn schema() -> Value {
                     "style": { "enum": ["normal", "italic"] }
                 }
             }
+        }
+    });
+    if let (Some(defs), Value::Object(more)) = (schema["$defs"].as_object_mut(), option_defs()) {
+        defs.extend(more);
+    }
+    schema
+}
+
+/// The definitions of a theme option and its parts, added to the schema's `$defs`: one
+/// `json!` of the whole schema is past the macro's recursion limit.
+fn option_defs() -> Value {
+    json!({
+        "label": { "type": "string", "minLength": 1, "maxLength": MOST_LABEL },
+        "layer": {
+            "description": "Token values drawn over every appearance (tokens), and over one appearance by its id (appearances), after the first.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "tokens": { "$ref": "#/$defs/tokens" },
+                "appearances": { "$ref": "#/$defs/per-appearance" }
+            }
+        },
+        "per-appearance": {
+            "type": "object",
+            "propertyNames": { "$ref": "#/$defs/name" },
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": { "tokens": { "$ref": "#/$defs/tokens" } }
+            }
+        },
+        "option": {
+            "oneOf": [
+                {
+                    "description": "A toggle: on or off. Its on layer is drawn when it is on.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "kind", "label", "default", "on"],
+                    "properties": {
+                        "id": { "$ref": "#/$defs/name" },
+                        "kind": { "const": "toggle" },
+                        "label": { "$ref": "#/$defs/label" },
+                        "description": { "type": "string", "maxLength": MOST_DESCRIPTION },
+                        "default": { "type": "boolean" },
+                        "on": { "$ref": "#/$defs/layer" }
+                    }
+                },
+                {
+                    "description": "A choice: one of its named values, each a layer.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "kind", "label", "default", "values"],
+                    "properties": {
+                        "id": { "$ref": "#/$defs/name" },
+                        "kind": { "const": "choice" },
+                        "label": { "$ref": "#/$defs/label" },
+                        "description": { "type": "string", "maxLength": MOST_DESCRIPTION },
+                        "default": {
+                            "description": "The id of the value drawn when nothing chose one.",
+                            "$ref": "#/$defs/name"
+                        },
+                        "values": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": MOST_COMBINATIONS,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["id", "label"],
+                                "properties": {
+                                    "id": { "$ref": "#/$defs/name" },
+                                    "label": { "$ref": "#/$defs/label" },
+                                    "tokens": { "$ref": "#/$defs/tokens" },
+                                    "appearances": { "$ref": "#/$defs/per-appearance" }
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
         }
     })
 }
