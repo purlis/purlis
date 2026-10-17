@@ -9,6 +9,7 @@ import { CONTROLS_ALLOWANCE } from "./controls.guard.allowance";
 import {
   classNameOf,
   classWords,
+  declarations,
   isView,
   openingTags,
   ratchet,
@@ -362,5 +363,367 @@ describe("the control guard (#1837)", () => {
       openingTags(readFileSync(join(SRC, file), "utf8"), /^button$/),
     );
     expect(buttons.length).toBeGreaterThan(200);
+  });
+});
+
+/**
+ * **Every control is a control tall, and every strip a strip tall** (#2449; ADR 0094 D5). The
+ * geometry guard does not read a box's size (#2319), but two sizes are the scale's own: a
+ * control's height is `--size-control` (28px at the default text size) and a strip's or a pane
+ * header's is `--size-chrome` (21px). A stylesheet that sets a `height`, `min-height`,
+ * `block-size` or `min-block-size` on one of them, and a component that sets one on a control
+ * in an inline style or a Tailwind class, takes it from those two.
+ *
+ * **What is a control** is said by the rule's subject, the last part of its selector, where the
+ * box it draws is:
+ * - a `button`, `select` or `textarea` element, or an `input` that is not a checkbox or a radio;
+ * - a class the primitives draw a control with (`CONTROL_PRIMITIVES`);
+ * - a class some component gives a button, a field or a select (`controlClasses`), unless that
+ *   tag is a row of a list (`ui-row`, `ui-tree-row`) or a segment of a segmented control, whose
+ *   height is the list's or the segmented control's.
+ *
+ * A control takes `--size-control`, or `--size-chrome` where it is the small form drawn in a
+ * strip or a pane header (`.ui-button-sm`, `.ui-segmented-sm`); a field of several lines is a
+ * whole number of controls (`calc(var(--size-control) * 3)`). A checkbox, a radio and a switch
+ * are drawn at their own mark's size and are not read.
+ *
+ * **What is a strip or a pane header** is a class named for one (`STRIP`): a bar, a strip, a
+ * head or a row of tabs, the three strips by name, the status line, and the two rows of controls a strip
+ * or a pane's top line draws as part of itself (`STRIP_PARTS`). It takes `--size-chrome`.
+ *
+ * Either may also be as tall as its content or its container (`auto`, `100%`, `0`, `none`), or
+ * read a custom property that holds one of the two tokens. **A named exception** gives its
+ * reason (`HEIGHT_EXCEPTIONS`); the list is exact, as the allowance is, so an exception whose
+ * rule is gone fails until it is deleted.
+ */
+
+/** The classes `primitives/controls.css` draws a control with. */
+const CONTROL_PRIMITIVES = [
+  "ui-button",
+  "ui-button-sm",
+  "ui-input",
+  "ui-select",
+  "ui-segmented",
+  "ui-segmented-sm",
+  "ui-menu-item",
+];
+
+/** A tag wearing one of these is a row of a list or a segment, not a control on its own. */
+const NOT_ON_ITS_OWN = ["ui-row", "ui-tree-row", "ui-segmented-item"];
+
+/** The kinds of control whose classes are held to the control height. */
+const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "select", "menu-item"]);
+
+/** Each class a component gives a control it draws (`HELD_KINDS`), rows and segments aside. */
+export function controlClasses(source: string): string[] {
+  const radix = radixNames(withoutComments(source, "ts"));
+  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap(
+    ({ name, text }) => {
+      const kind = kindOf(name, text, radix);
+      if (!kind || !HELD_KINDS.has(kind)) return [];
+      const className = classNameOf(text) ?? "";
+      const strings = /\sclassName=\{/.test(text)
+        ? [...className.matchAll(/["'`]([^"'`]*)["'`]/g)].map(([, words]) => words)
+        : [className];
+      const words = strings.flatMap((words) => words.split(/\s+/)).filter(Boolean);
+      return words.some((word) => NOT_ON_ITS_OWN.includes(word)) ? [] : words;
+    },
+  );
+}
+
+/** A strip or a pane header, by its class's name: a bar, a strip, a head or a row of tabs, the
+ *  three strips by name (ADR 0036), and the status line. */
+const STRIP = /^(?:bar|tabs|projects|workspaces|status-line|[\w-]+-(?:bar|strip|head|tabs))$/;
+
+/** The rows of controls drawn as part of a strip or a pane's top line, as tall as it is: the
+ *  ways to end a pane's task (#1488) and the chip a tab wears for its tasks (#1487). */
+const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks"]);
+
+const HEIGHT_PROPERTY = /^(?:min-)?(?:height|block-size)$/;
+
+/** A height that is no length of its own: its content's, its container's, or none. */
+const AS_TALL_AS = /^(?:auto|100%|0|none|fit-content|min-content|max-content|inherit|unset)$/;
+
+/** Where the subject's parts start inside a selector: after the last combinator outside
+ *  brackets. `.tabs .tab:has(> .tab-tasks)` is `.tab:has(> .tab-tasks)`. */
+function subjectOf(selector: string): string {
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < selector.length; i++) {
+    const char = selector[i];
+    if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if (depth === 0 && /[\s>+~]/.test(char)) start = i + 1;
+  }
+  return selector.slice(start);
+}
+
+/** What one selector's subject is, for this guard: a control, a strip, or neither. */
+export function subjectKind(
+  selector: string,
+  controls: ReadonlySet<string>,
+): "a control" | "a strip" | undefined {
+  let subject = subjectOf(selector.trim());
+  if (subject.includes("::")) return undefined;
+  const toggle = /\[type=["']?(?:checkbox|radio)["']?\]/.test(subject);
+  for (let was = ""; was !== subject;) {
+    was = subject;
+    subject = subject.replace(/:[\w-]+\([^()]*\)/g, "");
+  }
+  subject = subject.replace(/\[[^\]]*\]/g, "").replace(/:[\w-]+/g, "");
+  const element = /^[a-z]+/.exec(subject)?.[0];
+  const classes = [...subject.matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
+  if (classes.some((name) => STRIP.test(name) || STRIP_PARTS.has(name))) return "a strip";
+  if (element === "input" && !toggle) return "a control";
+  if (element && ["button", "select", "textarea"].includes(element)) return "a control";
+  if (classes.some((name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name)))
+    return "a control";
+  return undefined;
+}
+
+/** The custom properties that hold one of the two heights, directly or through another one. */
+function heightCustoms(sheets: readonly string[]): Set<string> {
+  const all = sheets
+    .flatMap((css) => declarations(css))
+    .filter(({ property }) => property.startsWith("--"));
+  const held = new Set(["--size-control", "--size-chrome"]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const { property, value } of all) {
+      const read = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value)?.[1];
+      if (read && held.has(read) && !held.has(property)) {
+        held.add(property);
+        grew = true;
+      }
+    }
+  }
+  return held;
+}
+
+/** Whether a height is on the tokens for what it is set on. */
+function onTheTokens(kind: "a control" | "a strip", value: string, held: ReadonlySet<string>) {
+  if (AS_TALL_AS.test(value)) return true;
+  const read = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value)?.[1];
+  if (read === "--size-chrome") return true;
+  if (kind === "a strip") return false;
+  if (read === "--size-control") return true;
+  if (read && held.has(read)) return true;
+  return /^calc\(\s*var\(--size-control\)\s*\*\s*\d+\s*\)$/.test(value);
+}
+
+/** Each height off the tokens in a stylesheet, as `<rule> | <property>: <value> (<kind>)`. */
+export function cssHeights(
+  css: string,
+  controls: ReadonlySet<string>,
+  held: ReadonlySet<string> = heightCustoms([css]),
+): string[] {
+  return declarations(css).flatMap(({ context, property, value }) => {
+    if (!HEIGHT_PROPERTY.test(property)) return [];
+    const rule = context.filter((part) => !part.startsWith("@")).at(-1) ?? "";
+    const kinds = new Set(rule.split(",").map((selector) => subjectKind(selector, controls)));
+    const kind = kinds.has("a strip") ? "a strip" : kinds.has("a control") ? "a control" : null;
+    if (!kind || onTheTokens(kind, value, held)) return [];
+    return [`${context.join(" › ")} | ${property}: ${value} (${kind})`];
+  });
+}
+
+/** A Tailwind utility that sets a height (`h-7`, `min-h-8`, `size-6`), not to `auto` or `full`. */
+const HEIGHT_UTILITY = /^(?:min-)?(?:h|size)-(?!auto$|full$)\S+$/;
+const HEIGHT_KEY = /^(?:height|minHeight|blockSize|minBlockSize)$/;
+
+/** Each height a component sets on a control it draws, in an inline style or a Tailwind class.
+ *  The tokens are the primitives' classes; a component writes none of its own. */
+export function componentHeights(source: string): string[] {
+  const radix = radixNames(withoutComments(source, "ts"));
+  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap(
+    ({ name, text }) => {
+      const kind = kindOf(name, text, radix);
+      if (!kind || !HELD_KINDS.has(kind)) return [];
+      const found: string[] = [];
+      for (const word of classWords(classNameOf(text))) {
+        if (HEIGHT_UTILITY.test(word.split(":").pop() ?? word))
+          found.push(`<${name}> class ${word}`);
+      }
+      for (const style of text.matchAll(/\bstyle=\{\{([\s\S]*?)\}\}/g)) {
+        for (const [, key] of style[1].matchAll(/(?<![\w$.])(\w+)\s*:/g)) {
+          if (HEIGHT_KEY.test(key)) found.push(`<${name}> style ${key}`);
+        }
+      }
+      return found;
+    },
+  );
+}
+
+/**
+ * **The heights that are not the tokens, each with its reason.** Exact, as the allowance is: an
+ * entry whose rule is gone fails until it is deleted, and a new one says why here.
+ */
+const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
+  "App.css": {
+    ".title-bar | min-height: 2.1rem (a strip)":
+      "the system's title bar: on macOS the traffic lights are placed at its own title bar's height whatever the page draws, and a shorter bar has them over the workspaces' row (ADR 0054)",
+    ".workspaces | min-height: var(--size-control) (a strip)":
+      "the middle of the three strips (ADR 0036): a control tall, a step above the chats' strip at the chrome height",
+    ".workspaces-strip | min-height: var(--size-control) (a strip)":
+      "the middle of the three strips (ADR 0036), as `.workspaces`",
+    ".activity-tab | height: 2.5rem (a control)":
+      "a side's icon column is 2.5rem wide (ADR 0038), and each of its tabs is a square of that width",
+  },
+};
+
+/** Every height off the tokens in the window today, by file: its stylesheets (the core aside)
+ *  and its components. */
+function heightsByFile(): Map<string, string[]> {
+  const views = sourceFiles(isView);
+  const controls = new Set(
+    views.flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
+  );
+  const sheets = sourceFiles((name) => name.endsWith(".css"))
+    .filter((file) => file !== "theme/geometry.css")
+    .map((file) => [file, readFileSync(join(SRC, file), "utf8")] as const);
+  const held = heightCustoms(sheets.map(([, text]) => text));
+  const byFile = new Map<string, string[]>();
+  for (const [file, text] of sheets) byFile.set(file, cssHeights(text, controls, held));
+  for (const file of views)
+    byFile.set(file, componentHeights(readFileSync(join(SRC, file), "utf8")));
+  return new Map([...byFile].filter(([, found]) => found.length > 0));
+}
+
+/** What differs between the heights found and the named exceptions (`ratchet`). */
+export function offTheHeights(
+  found: ReadonlyMap<string, readonly string[]>,
+  exceptions: Readonly<Record<string, Readonly<Record<string, string>>>> = HEIGHT_EXCEPTIONS,
+): string[] {
+  const allowed = Object.fromEntries(
+    Object.entries(exceptions).map(([file, entries]) => [file, Object.keys(entries)]),
+  );
+  const ceiling = Object.fromEntries(
+    Object.entries(allowed).map(([file, entries]) => [file, entries.length]),
+  );
+  return ratchet(found, allowed, ceiling, {
+    added: "take the height from --size-control or --size-chrome, or name the exception",
+  });
+}
+
+describe("the control and chrome heights (#2449)", () => {
+  it("finds every control a control tall and every strip a strip tall, or a named exception", () => {
+    expect(offTheHeights(heightsByFile())).toEqual([]);
+  });
+
+  it("fails a control's hand-written height planted in the window's own stylesheet", () => {
+    const found = heightsByFile();
+    const css = readFileSync(join(SRC, "App.css"), "utf8");
+    const planted = `${css}\n.planted button { height: 1.9rem; }\n.planted-head { min-height: 1.4rem; }\n`;
+    const controls = new Set(
+      sourceFiles(isView).flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
+    );
+    found.set("App.css", cssHeights(planted, controls));
+    expect(offTheHeights(found)).toEqual([
+      "App.css: take the height from --size-control or --size-chrome, or name the exception: .planted button | height: 1.9rem (a control)",
+      "App.css: take the height from --size-control or --size-chrome, or name the exception: .planted-head | min-height: 1.4rem (a strip)",
+    ]);
+  });
+
+  it("fails an exception whose rule is gone", () => {
+    expect(
+      offTheHeights(new Map(), { "A.css": { ".gone | height: 3px (a control)": "why" } }),
+    ).toEqual([
+      "A.css: stale entry, delete it from the allowance: .gone | height: 3px (a control)",
+    ]);
+  });
+
+  it("knows a control and a strip by the rule's subject", () => {
+    const controls = new Set(["task-end", "closer"]);
+    const kinds = [
+      "button",
+      ".bar button:hover:not(:disabled)",
+      "input[type=text]",
+      "input[type='checkbox']",
+      ".ui-button-row > .ui-button",
+      ".pane-task-ends .task-end",
+      ".tab .closer::before",
+      ".tabs .tab:has(> .tab-tasks)",
+      ".tabs .tab > .tab-tasks",
+      ".half-head",
+      ".status-line",
+      ".panels .panel-head",
+      ".bar",
+      ".activity-tab svg",
+      ".ui-checkbox",
+    ].map((selector) => subjectKind(selector, controls));
+    expect(kinds).toEqual([
+      "a control",
+      "a control",
+      "a control",
+      undefined,
+      "a control",
+      "a control",
+      undefined,
+      undefined,
+      "a strip",
+      "a strip",
+      "a strip",
+      "a strip",
+      "a strip",
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("passes the tokens, a token held in a custom property, a field of lines, and no length", () => {
+    const css = `
+      :root { --row: var(--size-chrome); --lead: var(--row); }
+      .ui-button { block-size: var(--size-control); }
+      .ui-button-sm { block-size: var(--size-chrome); }
+      textarea { min-block-size: calc(var(--size-control) * 3); }
+      .ui-menu-item { min-block-size: var(--lead); }
+      .bar { min-height: var(--size-chrome); }
+      .ui-button-row > .ui-button { block-size: auto; }
+      .pane-head { height: 100%; }
+      .x button { max-height: 3rem; width: 7px; }
+      .not-a-control { height: 1.3rem; }
+    `;
+    expect(cssHeights(css, new Set())).toEqual([]);
+    expect(cssHeights(".bar { min-height: var(--size-control); }", new Set())).toEqual([
+      ".bar | min-height: var(--size-control) (a strip)",
+    ]);
+    expect(cssHeights("button { height: calc(var(--size-control) * 1.5); }", new Set())).toEqual([
+      "button | height: calc(var(--size-control) * 1.5) (a control)",
+    ]);
+  });
+
+  it("reads a control's height in an inline style or a Tailwind class", () => {
+    const tsx = `
+      <button className="ui-button h-7" />
+      <button className="ui-button h-full" style={{ minHeight: 30, width: 9 }} />
+      <input className="ui-input md:min-h-8" />
+      <div className="h-7" style={{ height: 4 }} />
+    `;
+    expect(componentHeights(tsx)).toEqual([
+      "<button> class h-7",
+      "<button> style minHeight",
+      "<input> class md:min-h-8",
+    ]);
+  });
+
+  it("gives every class a control wears, and not a row's or a toggle's", () => {
+    const tsx = `
+      <button className="ui-button task-end" />
+      <button className="chat ui-row" />
+      <input type="checkbox" className="box" />
+      <select className={cn("ui-select", wide && "wide")} />
+    `;
+    expect(controlClasses(tsx)).toEqual(["ui-button", "task-end", "ui-select", "wide"]);
+  });
+
+  it("covers the window, so a reader that found nothing fails", () => {
+    const controls = sourceFiles(isView).flatMap((file) =>
+      controlClasses(readFileSync(join(SRC, file), "utf8")),
+    );
+    expect(new Set(controls).size).toBeGreaterThan(100);
+    const read = declarations(readFileSync(join(SRC, "App.css"), "utf8")).filter(({ property }) =>
+      HEIGHT_PROPERTY.test(property),
+    );
+    expect(read.length).toBeGreaterThan(100);
   });
 });

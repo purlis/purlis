@@ -866,7 +866,19 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
   (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
-  (`ui-menu`, `ui-menu-item`).
+  (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
+  `block-size` or `min-block-size` set on a control is `--size-control`, or `--size-chrome` for
+  the small form a strip or a pane header draws (a field of several lines is a whole number of
+  controls), and one set on a strip or a pane header is `--size-chrome`. A control is what the
+  rule's subject names: a `button`, `select`, `textarea` or non-toggle `input`, a primitive
+  control class, or a class some component gives a control (a list's row and a segment are
+  their list's). A strip or a pane header is a class named for one (`-bar`, `-strip`, `-head`,
+  `-tabs`, the three strips, the status line) and the rows of controls a strip or a pane's top
+  line draws as part of itself (`.pane-task-ends`, `.tab-tasks`). A height that is its
+  content's or its container's (`auto`, `100%`) passes. The exceptions are named with their
+  reason in the guard (`HEIGHT_EXCEPTIONS`): the title bar is the system's height, the
+  workspaces' row is a control tall as the middle of the three strips, and an activity tab is
+  the square of its column.
 
 Each started with **an allowance list of the offenders the window had when it landed**,
 grouped by file and one entry per line. The geometry and type lists reached zero with #2319
