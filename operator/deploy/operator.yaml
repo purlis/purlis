@@ -2,27 +2,51 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # purlis's cluster operator: its namespace, its service account, what it may do, and the one
-# pod that runs it. Applied after upstream agent-sandbox (vendor/agent-sandbox/) and purlis's
-# definitions (crds.yaml); docs/cluster-operator.md says how.
+# pod that runs it. Applied after upstream agent-sandbox (vendor/agent-sandbox/), the policy
+# (policy.yaml) and purlis's definitions (crds.yaml); docs/cluster-operator.md says how.
+#
+# Rendered from the chart, charts/purlis-cluster-operator/, with its default values; never
+# edited by hand. Regenerate with
+#   PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart
+#
+# Its image is a placeholder digest no registry holds: install it with the image set to the
+# operator's digest (docs/cluster-operator.md).
 #
 # What it may do is the ClusterRole below and nothing else. It holds no right to exec or attach
 # to a pod, reads no Secret, and never touches a pod at all: upstream's controller makes the
 # runners' pods. operator/tests/the_install_manifests.rs holds every rule.
+---
+# The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
+# the restricted Pod Security Standard are admitted in it.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: purlis-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
 ---
+# Source: purlis-cluster-operator/templates/serviceaccount.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: purlis-cluster-operator
   namespace: purlis-system
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
 ---
+# Source: purlis-cluster-operator/templates/rbac.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: purlis-cluster-operator
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
 rules:
   # A team's pools and people's claims: read, and a claim's status written. Claims are read
   # from the operator's own watch; a pool is read by name when a claim names it.
@@ -35,6 +59,11 @@ rules:
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
+  # The policy's binding, by name only: the operator acts only on Claims admitted under it.
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingadmissionpolicybindings]
+    resourceNames: [purlis-claims-use-their-pool]
+    verbs: [get, list, watch]
   # Upstream's objects a claim becomes, applied server-side. Deleting them is the cluster's
   # garbage collector's, through their owners: the operator holds no delete.
   - apiGroups: [extensions.agents.x-k8s.io]
@@ -44,10 +73,14 @@ rules:
     resources: [sandboxtemplates, sandboxwarmpools]
     verbs: [create, patch]
 ---
+# Source: purlis-cluster-operator/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: purlis-cluster-operator
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -57,11 +90,17 @@ subjects:
     name: purlis-cluster-operator
     namespace: purlis-system
 ---
+# Source: purlis-cluster-operator/templates/deployment.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: purlis-cluster-operator
   namespace: purlis-system
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
 spec:
   replicas: 1
   # One operator at a time: the old one stops before the new one starts.
@@ -74,20 +113,23 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: purlis-cluster-operator
+        app.kubernetes.io/part-of: purlis
     spec:
       serviceAccountName: purlis-cluster-operator
       enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: operator
-          # A tag, which moves. Install it named by digest: `.github/workflows/operator-image.yml`
-          # records each image's digest, and an operator.yaml naming it (docs/cluster-operator.md).
-          image: ghcr.io/purlis/purlis-cluster-operator:main
+          image: ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
           resources:
+            limits:
+              memory: 256Mi
             requests:
               cpu: 10m
               memory: 32Mi
-            limits:
-              memory: 256Mi
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

@@ -13,15 +13,19 @@
 //! becomes one upstream `SandboxClaim` on the pool's `SandboxWarmPool`. Upstream's controller
 //! writes that claim's status, which is why purlis's Claim is an object of its own.
 //!
+//! It acts only on Claims admitted under its policy, however it was installed ([`admission`]).
+//!
 //! **What it may do** is `deploy/operator.yaml`'s ClusterRole and nothing else: read Pools and
-//! Claims, write a Claim's status, and create and patch the three upstream objects. It holds no
-//! right to `exec` or `attach` to a pod and reads no Secret; this crate's Kubernetes client is
-//! built without the websocket feature those would need.
+//! Claims, write a Claim's status, read the policy's binding, and create and patch the three
+//! upstream objects. It holds no right to `exec` or `attach` to a pod and reads no Secret; this
+//! crate's Kubernetes client is built without the websocket feature those would need.
 
+mod admission;
 pub mod doctor;
 mod reconcile;
 mod resources;
 pub mod upstream;
 
+pub use admission::{Admission, POLICY, SETTLE, admission};
 pub use reconcile::{FIELD_MANAGER, run, settled, status_of, status_of_a_missing_pool};
 pub use resources::{Claim, ClaimSpec, ClaimStatus, Pool, PoolSpec};
