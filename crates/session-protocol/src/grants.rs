@@ -62,6 +62,10 @@
 //!   its own binary's proxy, pushes what that proxy does to its peer, and takes its peer's
 //!   answers and withdrawn ports, which the desktop's relay sends on for its own `local-ui`
 //!   client alone, and it pushes nothing of a sandbox on to any other client.
+//!   **This row says which links may confine; each confinement is the links' it is named to**
+//!   (#2444): a host acts on a confinement, and pushes what its proxy did, only for a link it
+//!   named that confinement to, and every other is one it does not hold (ADR 0068, amended for
+//!   #2444).
 //! - **A launch that names a harness is the window's for its own host alone** (#2217). It is a
 //!   chat the window composed with the sandbox it compiled for its own machine. A runner
 //!   composes every harness chat it runs by its names (#2171), with the sandbox it compiles
