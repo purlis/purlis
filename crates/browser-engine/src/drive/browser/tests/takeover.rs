@@ -787,3 +787,116 @@ fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it_as_
     assert_eq!(super::pixel(&shot, 9, 0), vec![128, 128, 128]);
     assert_eq!(super::pixel(&shot, 1, 8), vec![255, 255, 255]);
 }
+
+/// The page asks for a code in six boxes of one character each (nodes 101 to 106), before its
+/// paragraph.
+fn the_page_asks_for_a_code(engine: &super::Engine) {
+    let mut model = super::super::lock(&engine.model);
+    let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+    for at in 1..=6 {
+        nodes.push(json!({
+            "nodeId": format!("10{at}"),
+            "ignored": false,
+            "role": {"type": "role", "value": "textbox"},
+            "name": {"type": "computedString", "value": format!("Digit {at}")},
+            "value": {"type": "string", "value": ""},
+            "properties": [],
+            "parentId": "3",
+            "childIds": [],
+            "backendDOMNodeId": 100 + at,
+            "frameId": "PAGE-1",
+        }));
+    }
+    let wrapper = nodes.iter_mut().find(|n| n["nodeId"] == "3").unwrap();
+    let children = wrapper["childIds"].as_array_mut().unwrap();
+    let paragraph = children.iter().position(|c| c == "15").unwrap();
+    for at in (1..=6).rev() {
+        children.insert(paragraph, json!(format!("10{at}")));
+    }
+}
+
+/// Box `at` of the code (1 to 6) holds `held`, as its tree reads it.
+fn the_box_shows(engine: &super::Engine, at: usize, held: &str) {
+    let mut model = super::super::lock(&engine.model);
+    let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+    let field = nodes
+        .iter_mut()
+        .find(|n| n["nodeId"] == format!("10{at}"))
+        .unwrap();
+    field["value"]["value"] = json!(held);
+}
+
+/// The page moves on from its boxes: they are gone from its tree.
+fn the_boxes_go(engine: &super::Engine) {
+    let mut model = super::super::lock(&engine.model);
+    let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+    let wrapper = nodes.iter_mut().find(|n| n["nodeId"] == "3").unwrap();
+    wrapper["childIds"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| !c.as_str().unwrap().starts_with("10"));
+}
+
+#[test]
+fn a_code_the_person_types_one_box_at_a_time_stays_out_whole_once_the_boxes_are_gone() {
+    let (browser, engine) = browser();
+    the_page_asks_for_a_code(&engine);
+    browser.take_over();
+    let aim = aim_now(&browser);
+    for (at, digit) in "739214".chars().enumerate() {
+        let at = at + 1;
+        focus_on(&engine, &[("PAGE-1", &format!("10{at}"))]);
+        super::super::lock(&engine.model).value = digit.to_string();
+        browser
+            .person_input(&key(&aim, &digit.to_string(), true))
+            .unwrap();
+        the_box_shows(&engine, at, &digit.to_string());
+        // The person moves to the next box with Tab, which ends what they were typing.
+        browser.person_input(&key(&aim, "Tab", true)).unwrap();
+    }
+    // The page takes the code and moves on the moment the last box is filled.
+    the_boxes_go(&engine);
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", "Your code 739214 is right");
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"PAGE-1","type":"page","title":"Code 739214","url":"http://fixture.test/frames.html?code=739214"}}),
+        None,
+    );
+    std::thread::sleep(Duration::from_millis(30));
+
+    let text = snapshot(&browser, 1);
+    let found = browser
+        .call(
+            &id(2),
+            Call::Find {
+                page: None,
+                text: Some("739214".into()),
+                role: None,
+                within: None,
+            },
+        )
+        .unwrap();
+    let waited = browser
+        .call(
+            &id(3),
+            Call::WaitForText {
+                page: None,
+                text: "739214".into(),
+                gone: false,
+                within: Duration::from_millis(10),
+            },
+        )
+        .unwrap();
+    let listed = browser.call(&id(4), Call::Pages).unwrap();
+
+    assert!(text.contains("\"Your code (blanked) is right\""), "{text}");
+    assert!(
+        matches!(&found.content, crate::drive::Content::Text(t) if t.ends_with("Nothing on the page matches.\n")),
+        "{found:?}"
+    );
+    assert_eq!(waited.content, crate::drive::Content::Seen(false));
+    let page = listed.page.unwrap();
+    assert!(page.address.ends_with("code=(blanked)"), "{page:?}");
+    assert_eq!(page.title, "Code (blanked)", "{page:?}");
+}

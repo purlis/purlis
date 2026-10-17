@@ -315,7 +315,7 @@ impl Browser {
                 let before = field
                     .as_ref()
                     .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
-                    .map(|field| self.field_holds(field));
+                    .map(|(field, _)| self.field_holds(field));
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -327,7 +327,7 @@ impl Browser {
                 if edits {
                     lock(&self.typing).dirty.insert(target.clone());
                 }
-                if let Some(field) = field {
+                if let Some((field, read)) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
                     let after = self.field_holds(&field);
@@ -338,6 +338,11 @@ impl Browser {
                         // ends with what it replaced.
                         let [first, last] = put_in(&before, &after);
                         held.run(&[first, last, after.clone()]);
+                    }
+                    // A box of a group (a code typed one character a box) is kept with the
+                    // rest of its group too, joined, with this key in it.
+                    if let Some((first, joined)) = read.group_with(&field.1, &after) {
+                        held.group(&first, &joined);
                     }
                     held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);

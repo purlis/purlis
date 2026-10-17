@@ -6,7 +6,9 @@
 //! key, and a read drops that field's earlier values that it contains while they are shorter
 //! than [`KEPT_WHOLE_FROM`]: a field keeps its latest value, not every short value it held on
 //! the way. A read of a page's tree drops nothing, and a text read from no element (a run of
-//! the person's keys, or what they pasted) is kept as it is.
+//! the person's keys, or what they pasted) is kept as it is. A code typed across several boxes
+//! (#2144) is kept whole as the boxes' group holds it, and a read of the group is read like a
+//! field's: the group keeps its latest code, not every short part of it on the way.
 
 use super::tree::NodeKey;
 
@@ -24,11 +26,20 @@ enum Source {
     Tree,
 }
 
+/// What a text kept out was read from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Of {
+    /// One element.
+    Element(NodeKey),
+    /// The group of boxes that begins with this element, read together.
+    Group(NodeKey),
+}
+
 /// One text kept out.
 #[derive(Debug, Clone)]
 struct Text {
-    /// The element it was read from, if one.
-    from: Option<NodeKey>,
+    /// What it was read from, if anything.
+    from: Option<Of>,
     source: Source,
     text: String,
 }
@@ -49,6 +60,16 @@ impl Kept {
     /// One read of what `from` holds, from the field itself: every earlier text of `from`
     /// shorter than [`KEPT_WHOLE_FROM`] that one of `texts` contains goes, and `texts` are kept.
     pub(crate) fn field<S: AsRef<str>>(&mut self, from: &NodeKey, texts: &[S]) {
+        self.read(&Of::Element(from.clone()), texts);
+    }
+
+    /// One read of what the group of boxes that begins with `first` holds, joined: read like a
+    /// field ([`Kept::field`]).
+    pub(crate) fn group<S: AsRef<str>>(&mut self, first: &NodeKey, texts: &[S]) {
+        self.read(&Of::Group(first.clone()), texts);
+    }
+
+    fn read<S: AsRef<str>>(&mut self, from: &Of, texts: &[S]) {
         let lower: Vec<String> = texts
             .iter()
             .map(|text| text.as_ref().to_lowercase())
@@ -68,12 +89,12 @@ impl Kept {
 
     /// One read of what `from` holds, from its page's tree: `texts` are kept, and nothing goes.
     pub(crate) fn tree<S: AsRef<str>>(&mut self, from: &NodeKey, texts: &[S]) {
-        self.add(Some(from), Source::Tree, texts);
+        self.add(Some(&Of::Element(from.clone())), Source::Tree, texts);
     }
 
     /// Takes in every text `other` keeps: what each field held, as one read of that field.
     pub(crate) fn take_in(&mut self, other: &Kept) {
-        let mut fields: Vec<&NodeKey> = Vec::new();
+        let mut fields: Vec<&Of> = Vec::new();
         for kept in &other.texts {
             match (&kept.from, kept.source) {
                 (Some(from), Source::Field) => {
@@ -81,7 +102,7 @@ impl Kept {
                         fields.push(from);
                     }
                 }
-                (Some(from), Source::Tree) => self.tree(from, &[&kept.text]),
+                (Some(from), Source::Tree) => self.add(Some(from), Source::Tree, &[&kept.text]),
                 (None, _) => self.run(&[&kept.text]),
             }
         }
@@ -92,7 +113,7 @@ impl Kept {
                 .filter(|kept| kept.source == Source::Field && kept.from.as_ref() == Some(from))
                 .map(|kept| kept.text.as_str())
                 .collect();
-            self.field(from, &held);
+            self.read(from, &held);
         }
     }
 
@@ -106,7 +127,7 @@ impl Kept {
         self.texts.is_empty()
     }
 
-    fn add<S: AsRef<str>>(&mut self, from: Option<&NodeKey>, source: Source, texts: &[S]) {
+    fn add<S: AsRef<str>>(&mut self, from: Option<&Of>, source: Source, texts: &[S]) {
         for text in texts.iter().map(AsRef::as_ref) {
             if text.is_empty() {
                 continue;
@@ -206,5 +227,14 @@ mod tests {
         browser.field(&field(8), &["the"]);
         page.take_in(&browser);
         assert_eq!(page.texts(), vec!["themes", "the"]);
+    }
+
+    #[test]
+    fn a_groups_later_code_drops_its_short_earlier_codes_and_nothing_of_its_boxes() {
+        let mut kept = Kept::default();
+        kept.field(&field(11), &["739"]);
+        kept.group(&field(11), &["7392"]);
+        kept.group(&field(11), &["739214"]);
+        assert_eq!(kept.texts(), vec!["739", "739214"]);
     }
 }

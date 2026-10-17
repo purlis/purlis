@@ -979,7 +979,7 @@ impl Browser {
     /// about its page while the page lasts. The hook a login, and the person's typing, fill.
     pub fn blank(&self, target: &Ref) -> Result<(), Refusal> {
         let (page, key) = live_ref(&lock(&self.inner.state), target)?;
-        self.blank_node(&page, key)
+        self.blank_node(&page, key).map(|_| ())
     }
 
     /// [`Browser::blank`] for the element that has the focus on `page` (the current page when
@@ -989,8 +989,12 @@ impl Browser {
         self.blank_what_has_focus(page).map(|_| ())
     }
 
-    /// [`Browser::blank_focused`], answering the element it blanked and its page's target.
-    fn blank_what_has_focus(&self, page: Option<&PageId>) -> Result<(String, NodeKey), Refusal> {
+    /// [`Browser::blank_focused`], answering the element it blanked and its page's target, and
+    /// the page as it was read once the element was blanked.
+    fn blank_what_has_focus(
+        &self,
+        page: Option<&PageId>,
+    ) -> Result<((String, NodeKey), Snapshot), Refusal> {
         let target = self.target(page)?;
         let snapshot = self.snapshot_of(&target)?;
         let key = match snapshot.focused() {
@@ -998,18 +1002,18 @@ impl Browser {
             [one] => one.clone(),
             _ => return Err(Refusal::FocusUnclear),
         };
-        self.blank_node(&target, key.clone())?;
-        Ok((target, key))
+        let read = self.blank_node(&target, key.clone())?;
+        Ok(((target, key), read))
     }
 
-    fn blank_node(&self, target: &str, key: NodeKey) -> Result<(), Refusal> {
+    fn blank_node(&self, target: &str, key: NodeKey) -> Result<Snapshot, Refusal> {
         {
             let mut state = lock(&self.inner.state);
             state.excluded.insert(key);
             state.kept_on(target);
         }
         // Read the page now, so what the element holds is kept out from this moment.
-        self.snapshot_of(target).map(|_| ())
+        self.snapshot_of(target)
     }
 
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
