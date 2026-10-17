@@ -32,6 +32,11 @@ export function sourceFiles(keep: (name: string) => boolean): string[] {
 export const isView = (name: string) =>
   name.endsWith(".tsx") && !/\.(test|testkit)\.tsx$/.test(name);
 
+/** A source the window runs, components and scripts alike (a script may `setProperty`), not a
+ *  test, a test kit or a declaration file. */
+export const isScript = (name: string) =>
+  /\.tsx?$/.test(name) && !/\.(test|testkit)\.tsx?$/.test(name) && !name.endsWith(".d.ts");
+
 /** `text` with its comments blanked, keeping every newline, so a doc comment that names
  *  `<button>` or `padding: 7px` is not read as one. `https://` in a string is not a comment. */
 export function withoutComments(text: string, kind: "css" | "ts"): string {

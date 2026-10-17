@@ -10,6 +10,7 @@ import {
   classUtilities,
   type Declaration,
   declarations,
+  isScript,
   isView,
   openingTags,
   ratchet,
@@ -47,8 +48,12 @@ import { arithmeticLiteral } from "./cssMath.testkit";
  * the box or the window (`%`, `vh`, `vw`, `fr`); a keyword; and a token, or a token's whole
  * multiple or whole share (`* 3`, `* -1`, `/ 2`). The arithmetic of every CSS math function is
  * read (`cssMath.testkit.ts`): a number in it that is not whole is a literal, however it is
- * spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`), and so is a length written out times
- * anything but ±1 (`calc(1px * 7)`, `calc(1em * 3)`). The two structural reserves sized in
+ * spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`); a product's factors fold into one net
+ * factor, which is whole or a whole share (`* 7 / 2` is a literal, `/ 2` is not); a term that
+ * holds a written length takes a whole share and no multiple (`calc(1px * 7)`,
+ * `calc((var(--space-0) + 1px) * 7)`); a sum writes each length once (`calc(1px + 1px)`); and a
+ * checked custom property that is a bare written length (`--hair: 1px`) is that length where
+ * it is read. The two structural reserves sized in
  * controls (`RESERVES`) pass in the one declaration each is written in. A custom property that
  * holds a length is held to the rule of what reads it, in a stylesheet or in a component (an
  * inline `style`, a utility such as `p-(--pad)` or `[padding:var(--pad)]`): one read by a
@@ -160,12 +165,41 @@ function withoutReserve(context: readonly string[], property: string, value: str
 }
 
 /** Whether a value writes a literal size: a length that is one (`isLiteral`), or arithmetic
- *  that is (`arithmeticLiteral`: a factor that is not whole, or a length written out times
- *  anything but ±1). */
-export function writesALiteral(value: string): boolean {
+ *  that is (`arithmeticLiteral`), the custom properties in `lengths` read as the lengths they
+ *  are. */
+export function writesALiteral(
+  value: string,
+  lengths: ReadonlyMap<string, string> = new Map(),
+): boolean {
   return (
-    [...value.matchAll(LENGTH)].some(([length]) => isLiteral(length)) || arithmeticLiteral(value)
+    [...value.matchAll(LENGTH)].some(([length]) => isLiteral(length)) ||
+    arithmeticLiteral(value, lengths)
   );
+}
+
+/** A value that is one length written out and nothing else: `1px`, `-0.5rem`. */
+const BARE_LENGTH = /^-?(?:\d*\.?\d+)(px|rem|em|ch|ex|lh|pt|pc|cm|mm|in|q)$/i;
+
+/**
+ * The checked custom properties whose value is a bare written length (`--hair: 1px`, or a
+ * component's `"--hair": "1px"`), by name, with its unit: where one is read, the arithmetic reads
+ * it as that length (`calc(var(--hair) * 7)` is `calc(1px * 7)`).
+ */
+export function lengthCustoms(
+  sheets: readonly string[],
+  components: readonly string[],
+  checked: ReadonlySet<string>,
+): Map<string, string> {
+  const lengths = new Map<string, string>();
+  const all = [
+    ...sheets.flatMap((css) => declarations(css)),
+    ...components.flatMap((source) => componentDeclarations(source)),
+  ];
+  for (const { property, value } of all) {
+    const unit = BARE_LENGTH.exec(value.trim())?.[1];
+    if (unit !== undefined && checked.has(property)) lengths.set(property, unit.toLowerCase());
+  }
+  return lengths;
 }
 
 /** Each literal geometry declaration in a stylesheet, as `<rule> | <property>: <value>`, the
@@ -174,6 +208,7 @@ export function writesALiteral(value: string): boolean {
 export function cssLiterals(
   css: string,
   customs: ReadonlySet<string> = checkedCustoms([css]),
+  lengths: ReadonlyMap<string, string> = lengthCustoms([css], [], customs),
 ): string[] {
   return declarations(css)
     .filter(
@@ -181,7 +216,7 @@ export function cssLiterals(
         (GEOMETRY_PROPERTY.test(property) || customs.has(property)) && !/shadow/.test(property),
     )
     .filter(({ context, property, value }) =>
-      writesALiteral(withoutReserve(context, property, value)),
+      writesALiteral(withoutReserve(context, property, value), lengths),
     )
     .map(({ context, property, value }) => `${context.join(" › ")} | ${property}: ${value}`);
 }
@@ -250,13 +285,17 @@ const CORE_RADIUS = new Set(["sm", "md", "lg", "xl", "none", "full"]);
 
 /** Whether one Tailwind class sets geometry off the core, given the custom properties held to
  *  the rule. `md:p-5` is read as `p-5`. */
-export function offTheScale(word: string, customs: ReadonlySet<string> = new Set()): boolean {
+export function offTheScale(
+  word: string,
+  customs: ReadonlySet<string> = new Set(),
+  lengths: ReadonlyMap<string, string> = new Map(),
+): boolean {
   const own = arbitrary(word);
   if (own) {
     const read = CUSTOM.test(own.property)
       ? customs.has(own.property)
       : GEOMETRY_PROPERTY.test(own.property);
-    return read && writesALiteral(own.value);
+    return read && writesALiteral(own.value, lengths);
   }
   const utility = utilityOf(word);
   const spacing = SPACING_UTILITY.exec(utility);
@@ -275,29 +314,27 @@ export function offTheScale(word: string, customs: ReadonlySet<string> = new Set
 export function componentLiterals(
   source: string,
   customs: ReadonlySet<string> = new Set(),
+  lengths: ReadonlyMap<string, string> = new Map(),
 ): string[] {
   const found: string[] = [];
   for (const { label, property, value } of styleEntries(source)) {
     if (!(CUSTOM.test(property) ? customs.has(property) : GEOMETRY_PROPERTY.test(property))) {
       continue;
     }
-    const literal = /^-?\d/.test(value) ? Number(value) !== 0 : writesALiteral(value.slice(1, -1));
+    const literal = /^-?\d/.test(value)
+      ? Number(value) !== 0
+      : writesALiteral(value.slice(1, -1), lengths);
     if (literal) found.push(`${label}: ${value}`);
   }
   for (const tag of openingTags(source, /^[A-Za-z]/)) {
     for (const word of classUtilities(classNameOf(tag.text))) {
-      if (offTheScale(word, customs)) found.push(`class ${word}`);
+      if (offTheScale(word, customs, lengths)) found.push(`class ${word}`);
     }
   }
   return found;
 }
 
 const read = (file: string) => readFileSync(join(SRC, file), "utf8");
-
-/** A source the window runs, components and scripts alike (a script may `setProperty`), not a
- *  test or a test kit. */
-const isScript = (name: string) =>
-  /\.tsx?$/.test(name) && !/\.(test|testkit)\.tsx?$/.test(name) && !name.endsWith(".d.ts");
 
 /** The window's stylesheets, the core aside, by file. */
 function sheets(): Map<string, string> {
@@ -314,8 +351,11 @@ function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<str
   const css = new Map([...sheets().keys()].map((file) => [file, text(file)]));
   const views = new Map(sourceFiles(isScript).map((file) => [file, text(file)]));
   const customs = checkedCustoms([...css.values()], [...views.values()]);
-  for (const [file, sheet] of css) byFile.set(file, cssLiterals(sheet, customs));
-  for (const [file, source] of views) byFile.set(file, componentLiterals(source, customs));
+  const lengths = lengthCustoms([...css.values()], [...views.values()], customs);
+  for (const [file, sheet] of css) byFile.set(file, cssLiterals(sheet, customs, lengths));
+  for (const [file, source] of views) {
+    byFile.set(file, componentLiterals(source, customs, lengths));
+  }
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
@@ -514,16 +554,64 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
     ]);
   });
 
-  it("fails a length written out times anything but one", () => {
+  it("gives a term that holds a written length a whole share and no multiple", () => {
     const css = `
       .a { padding: calc(1px * 7); margin: calc(7 * 1px); gap: calc(1em * 3); }
-      .b { padding: calc(1lh / 2); margin: calc(-1 * 1px); gap: calc(1px * -1); }
+      .b { padding: calc((var(--space-0) + 1px) * 7); margin: calc((1px + var(--space-0)) * 7); }
+      .c { gap: calc(max(1px, var(--space-0)) * 7); padding: calc(1px * 2 / 4 * 3); }
+      .d { padding: calc(1lh / 2); margin: calc(-1 * 1px); gap: calc(1px * -1); }
+      .e { padding-block: calc((var(--size-control) - 1lh) / 2 - 1px); margin: calc(1px * 2 / 4); }
     `;
-    expect(cssLiterals(css)).toEqual([
-      ".a | padding: calc(1px * 7)",
-      ".a | margin: calc(7 * 1px)",
-      ".a | gap: calc(1em * 3)",
-      ".b | padding: calc(1lh / 2)",
+    expect(cssLiterals(css).map((entry) => entry.split(": ")[0])).toEqual([
+      ".a | padding",
+      ".a | margin",
+      ".a | gap",
+      ".b | padding",
+      ".b | margin",
+      ".c | gap",
+      ".c | padding",
+    ]);
+  });
+
+  it("fails a length written in parts: two of one unit and sign in one sum", () => {
+    const css = `
+      .a { padding: calc(1px + 1px + 1px); margin: calc(1em + 1em); gap: calc(1px - -1px); }
+      .b { padding: calc(1px - 1px); margin: calc(1lh / 2 - 1px); gap: calc(1px + 1em); }
+      .c { padding: calc(var(--space-1) + var(--space-1)); margin: calc((1px + 1px) / 2); }
+    `;
+    expect(cssLiterals(css).map((entry) => entry.split(": ")[0])).toEqual([
+      ".a | padding",
+      ".a | margin",
+      ".a | gap",
+      ".c | margin",
+    ]);
+  });
+
+  it("folds a product's factors into one: a whole multiple or a whole share of a token", () => {
+    const css = `
+      .a { padding: calc(var(--space-4) * 7 / 2); margin: calc(7 * var(--space-4) / 2); }
+      .b { gap: calc(var(--space-4) / 2); padding: calc(var(--space-4) * 2 / 4); margin: calc(var(--space-4) * 6 / 2); }
+      .c { gap: calc(var(--space-4) / 3 * 2); }
+    `;
+    expect(cssLiterals(css).map((entry) => entry.split(": ")[0])).toEqual([
+      ".a | padding",
+      ".a | margin",
+      ".c | gap",
+    ]);
+  });
+
+  it("reads a custom property that is a bare written length as that length, where it is read", () => {
+    const css = `${read("App.css")}
+.planted { --planted-hair: 1px; padding: calc(var(--planted-hair) * 7); }
+.planted-sum { margin: calc(var(--planted-hair) + var(--planted-hair)); gap: calc(var(--planted-hair) / 2); }
+`;
+    const tsx = `${read("PlaneView.tsx")}
+export const Planted = () => <div style={{ "--planted-line": "1px", padding: "calc(var(--planted-line) * 3)" }} />;
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "PlaneView.tsx": tsx }))).toEqual([
+      "App.css: new literal, take it from a core token: .planted | padding: calc(var(--planted-hair) * 7)",
+      "App.css: new literal, take it from a core token: .planted-sum | margin: calc(var(--planted-hair) + var(--planted-hair))",
+      'PlaneView.tsx: new literal, take it from a core token: style padding: "calc(var(--planted-line) * 3)"',
     ]);
   });
 
@@ -596,6 +684,7 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
     expect(cssLiterals(css)).toEqual([
       ".a | --pad: 7px",
       ".b | --inner: 5px",
+      ".b | --outer: calc(var(--inner) * 2)",
       ".d | --unread: 9px",
       ".e | --both: 3px",
     ]);

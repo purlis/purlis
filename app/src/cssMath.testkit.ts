@@ -9,25 +9,35 @@
  *
  * The rule it holds, in what the guard reads:
  * - **A number in the arithmetic is whole.** Any other number is a literal.
- * - **A token takes a whole multiple or a whole share** (`var(--space-5) * 3`, `* -1`, `/ 2`):
- *   an evenly stepped series (an indent per level) is a multiple of one step, so the steps stay
- *   even; any other factor of a token is a literal.
- * - **A length written out takes no factor but ±1** (`1px * 7` and `1em * 3` are literals): a
- *   hairline or the text's own unit is not a literal alone, and a multiple of it is a size
- *   written by hand.
- * - A share of the box or the window (`%`, `vh`) takes any whole factor.
+ * - **A product's factors fold into one net factor** (`* 7 / 2` is `* 3.5`), and it is a whole
+ *   number or a whole share (`1/n`): an evenly stepped series (an indent per level) is a whole
+ *   number of one step, so its steps stay even, and a share halves or thirds a step.
+ * - **A term that holds a written length takes no multiple** (`calc(1px * 7)`,
+ *   `calc((var(--space-0) + 1px) * 7)`, `max(1px, var(--space-0)) * 7` are literals), only a
+ *   whole share (`(var(--size-control) - 1lh) / 2`). A hairline or the text's own unit is not a
+ *   literal alone; a multiple of it is a size written by hand.
+ * - **A sum writes each length once**: two written lengths of the same unit and sign
+ *   (`1px + 1px`, `1em + 1em`) are a literal written in parts.
+ * - A custom property whose value is a bare written length (`--hair: 1px`) is that length where
+ *   it is read (`lengths`).
  */
 
-type Kind = "number" | "token" | "length" | "share" | "other";
+/** What a term of the arithmetic is. */
 interface Term {
-  kind: Kind;
-  /** A number's value, when it can be known; `NaN` when it cannot (`sign()`). */
+  /** A plain number; its value, when it can be known (`NaN` when not: `sign()`). */
+  number: boolean;
   value?: number;
+  /** It holds a token (`var(--space-4)`). */
+  token: boolean;
+  /** It holds a length written out (`1px`, `1lh`, or a custom property that is one). */
+  length: boolean;
+  /** It is one written length and nothing else: its sign and unit (`+px`). */
+  dim?: string;
 }
 
 type Token =
   | { t: "num"; v: number }
-  | { t: "dim"; unit: string }
+  | { t: "dim"; unit: string; negative: boolean }
   | { t: "fn"; name: string }
   | { t: "ident"; name: string }
   | { t: "op"; op: string }
@@ -110,7 +120,7 @@ function tokens(value: string): Token[] {
       const unit = UNIT.exec(value);
       if (unit) {
         i += unit[0].length;
-        found.push({ t: "dim", unit: unit[0].toLowerCase() });
+        found.push({ t: "dim", unit: unit[0].toLowerCase(), negative: number[0].startsWith("-") });
       } else found.push({ t: "num", v: Number(number[0]) });
       continue;
     }
@@ -132,24 +142,38 @@ function tokens(value: string): Token[] {
   return found;
 }
 
-/** Whether a value's arithmetic writes a literal (the rule above). */
-export function arithmeticLiteral(value: string): boolean {
+const number = (value: number): Term => ({ number: true, value, token: false, length: false });
+const plain: Term = { number: false, token: false, length: false };
+
+/** Several terms read as one: a number when every one is, and holding what any one holds. */
+function join(terms: readonly Term[]): Term {
+  if (terms.every((term) => term.number)) return number(NaN);
+  return {
+    number: false,
+    token: terms.some((term) => term.token),
+    length: terms.some((term) => term.length),
+  };
+}
+
+const near = (value: number) => Math.abs(value - Math.round(value)) < 1e-9;
+/** A whole number, or a whole share of one (`1/n`). */
+const wholeOrShare = (net: number) => near(net) || (net !== 0 && near(1 / net));
+/** A whole share of one, or ±1. */
+const share = (net: number) => net !== 0 && Math.abs(net) <= 1 && near(1 / net);
+
+/** Whether a value's arithmetic writes a literal (the rule above). `lengths` holds the custom
+ *  properties whose value is a bare written length, by name, with their unit. */
+export function arithmeticLiteral(
+  value: string,
+  lengths: ReadonlyMap<string, string> = new Map(),
+): boolean {
   const list = tokens(value);
   let at = 0;
   let literal = false;
   const peek = () => list[at];
-
-  const join = (terms: Term[]): Term => {
-    if (terms.every((term) => term.kind === "number")) return { kind: "number", value: NaN };
-    for (const kind of ["token", "length", "share"] as const) {
-      if (terms.some((term) => term.kind === kind)) return { kind };
-    }
-    return { kind: "other" };
-  };
-
-  const factor = (of: Term, by: number) => {
-    if (of.kind === "token" && !Number.isInteger(by)) literal = true;
-    if (of.kind === "length" && Math.abs(by) !== 1) literal = true;
+  const isOp = (ops: string) => {
+    const next = peek();
+    return next?.t === "op" && ops.includes(next.op);
   };
 
   /** The arguments of a function whose `(` was just read, up to its `)`. */
@@ -165,80 +189,92 @@ export function arithmeticLiteral(value: string): boolean {
 
   const unary = (): Term => {
     const token = list[at++];
-    if (token === undefined) return { kind: "other" };
+    if (token === undefined) return plain;
     switch (token.t) {
       case "num":
         if (!Number.isInteger(token.v)) literal = true;
-        return { kind: "number", value: token.v };
+        return number(token.v);
       case "dim":
-        if (LENGTH_UNITS.has(token.unit)) return { kind: "length" };
-        return { kind: "share" };
+        if (!LENGTH_UNITS.has(token.unit)) return plain;
+        return { ...plain, length: true, dim: `${token.negative ? "-" : "+"}${token.unit}` };
       case "ident":
         if (token.name === "pi" || token.name === "e") {
           literal = true;
-          return { kind: "number", value: token.name === "pi" ? Math.PI : Math.E };
+          return number(token.name === "pi" ? Math.PI : Math.E);
         }
-        return { kind: "other" };
+        return plain;
       case "(": {
         const inner = sum();
         if (peek()?.t === ")") at++;
         return inner;
       }
       case "fn": {
+        const named = peek();
+        const custom = named?.t === "ident" ? named.name : undefined;
         const inner = args();
-        if (token.name === "var") return { kind: "token" };
-        if (!MATH.has(token.name)) return { kind: "other" };
-        if (NUMERIC.has(token.name)) return { kind: "number", value: NaN };
-        const numbers = inner.every((term) => term.kind === "number");
-        if (numbers && token.name === "calc" && inner.length === 1) return inner[0];
+        if (token.name === "var") {
+          const unit = custom === undefined ? undefined : lengths.get(custom);
+          if (unit !== undefined) return { ...plain, length: true, dim: `+${unit}` };
+          return { ...plain, token: true };
+        }
+        if (!MATH.has(token.name)) return plain;
+        if (NUMERIC.has(token.name)) return number(NaN);
+        const numbers = inner.every((term) => term.number);
+        if (token.name === "calc" && inner.length === 1) return inner[0];
         if (numbers && token.name === "abs" && inner.length === 1) {
-          return { kind: "number", value: Math.abs(inner[0].value ?? NaN) };
+          return number(Math.abs(inner[0].value ?? NaN));
         }
         if (numbers && (token.name === "min" || token.name === "max")) {
-          const values = inner.map((term) => term.value ?? NaN);
-          return { kind: "number", value: Math[token.name](...values) };
+          return number(Math[token.name](...inner.map((term) => term.value ?? NaN)));
         }
         return join(inner);
       }
       default:
-        return { kind: "other" };
+        return plain;
     }
   };
 
+  /** A product, its numbers folded into one net factor of what it multiplies. */
   const product = (): Term => {
-    let left = unary();
-    while (peek()?.t === "op" && "*/".includes((peek() as { op: string }).op)) {
+    const first = unary();
+    const parts: Term[] = first.number ? [] : [first];
+    let net = first.number ? (first.value ?? NaN) : 1;
+    while (isOp("*/")) {
       const op = (list[at++] as { op: string }).op;
       const right = unary();
-      if (left.kind === "number" && right.kind === "number") {
-        const [a, b] = [left.value ?? NaN, right.value ?? NaN];
-        left = { kind: "number", value: op === "*" ? a * b : a / b };
-      } else if (right.kind === "number") {
-        factor(left, right.value ?? NaN);
-      } else if (left.kind === "number" && op === "*") {
-        factor(right, left.value ?? NaN);
-        left = right;
-      } else if (left.kind === "number") {
-        literal = true;
-        left = right;
-      } else {
-        left = join([left, right]);
-      }
+      if (right.number) net = op === "*" ? net * (right.value ?? NaN) : net / (right.value ?? NaN);
+      else if (op === "*") parts.push(right);
+      else literal = true;
     }
-    return left;
+    if (parts.length === 0) return number(net);
+    if (parts.length === 1 && net === 1) return parts[0];
+    const term = join(parts);
+    if (net !== 1 && !(term.length ? share(net) : wholeOrShare(net))) literal = true;
+    return term;
   };
 
   function sum(): Term {
-    let left = product();
-    while (peek()?.t === "op" && "+-".includes((peek() as { op: string }).op)) {
+    const first = product();
+    if (!isOp("+-")) return first;
+    const terms = [first];
+    const written = new Set<string>();
+    const add = (term: Term, minus: boolean) => {
+      if (term.dim === undefined) return;
+      const sign = (term.dim[0] === "-") !== minus ? "-" : "+";
+      const key = sign + term.dim.slice(1);
+      if (written.has(key)) literal = true;
+      written.add(key);
+    };
+    add(first, false);
+    let total = first.value ?? NaN;
+    while (isOp("+-")) {
       const op = (list[at++] as { op: string }).op;
       const right = product();
-      if (left.kind === "number" && right.kind === "number") {
-        const [a, b] = [left.value ?? NaN, right.value ?? NaN];
-        left = { kind: "number", value: op === "+" ? a + b : a - b };
-      } else left = join([left, right]);
+      add(right, op === "-");
+      total = op === "+" ? total + (right.value ?? NaN) : total - (right.value ?? NaN);
+      terms.push(right);
     }
-    return left;
+    return terms.every((term) => term.number) ? number(total) : join(terms);
   }
 
   while (at < list.length) {

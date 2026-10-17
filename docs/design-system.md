@@ -815,8 +815,13 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   a token's whole multiple or whole share (`* 3`, `* -1`, `/ 2`). The guard reads the
   arithmetic of every CSS math function (`calc()`, `min()`, `max()`, `clamp()`, `round()`,
   `mod()`, `rem()`, `abs()`, `sign()` and the rest): a number in it that is not whole is a
-  literal however it is spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`), and so is a
-  length written out times anything but ±1 (`calc(1px * 7)`). The two structural reserves sized
+  literal however it is spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`). A product's
+  factors fold into one net factor, which is whole or a whole share (`* 7 / 2` is a literal,
+  `/ 2` is not). A term that holds a written length takes a whole share and no multiple
+  (`calc(1px * 7)`, `calc((var(--space-0) + 1px) * 7)`; `(var(--size-control) - 1lh) / 2`
+  passes), a sum writes each length once (`calc(1px + 1px)` is a literal), and a checked custom
+  property whose value is a bare written length (`--hair: 1px`) is that length where it is
+  read. The two structural reserves sized
   in controls, below, pass only in the declaration each is written in. A shadow's
   lengths are elevation, which this guard does not read. **A box's size** (a width, a height
   and their min, max, block and inline forms, or a custom property only they read) is not a step
@@ -851,7 +856,8 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
 - **An evenly stepped series takes a multiple of one token** (`calc(var(--space-5) * 3)`), so its
   steps stay even rather than flattening onto the top of the scale. That is why the geometry
   guard passes a token's whole multiple and whole share (an indent per level of a tree or a
-  menu is the level's number of steps), and nothing in between.
+  menu is the level's number of steps), and nothing in between: a product's factors fold into
+  one net factor first, so `* 7 / 2` is the `3.5` it is.
 - **A corner that draws the same is the pill.** A radius at or above half its box's height
   becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
 - **A structural size is outside the snap**: a size that is no step of the scale, such as an
@@ -955,7 +961,7 @@ window differ, the window was kept and the difference is recorded here for the m
 `app/src/type.guard.test.ts` refuses a `font-size`, `font-weight`, `line-height`,
 `font-family` or text `color` that is not its token (or `inherit`, or `currentColor` for a
 colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
-`theme/geometry.css`, in a component's inline `style` or `setProperty` call, and as a Tailwind
+`theme/geometry.css`, in a component's inline `style`, in a `setProperty` call in any script, and as a Tailwind
 utility, read past its variants as the declarations it writes: a weight by name
 (`font-semibold`), a family of Tailwind's own (`font-mono`), a line height other than
 `leading-none` (and a size's `/7` or `/[1.3]`, as in `text-sm/7`), a value of its own

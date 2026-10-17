@@ -9,6 +9,7 @@ import {
   classNameOf,
   classUtilities,
   declarations,
+  isScript,
   isView,
   openingTags,
   ratchet,
@@ -28,11 +29,11 @@ import { property, TOKENS } from "./theme/theme";
  * bare numbers, two monospace stacks, and the section label written five ways. A word now
  * wears a **text role** (`primitives/text.css`: `ui-text-title`, `-heading`, `-body`,
  * `-secondary`, `-meta`, `-label`, `-code`, and `ui-text-strong`), and this guard refuses the
- * other way of ranking it. In a stylesheet, in a component's inline `style` or `setProperty`
- * call, or as a Tailwind utility read past its variants as the declarations it writes
- * (`utilityDeclarations`: `font-semibold` is a weight of `600`, `leading-[1.3]` and the `/7` of
- * `text-sm/7` a line height, `text-[13px]` a size, `font-mono` a family of Tailwind's own,
- * `[font-weight:600]` what it says):
+ * other way of ranking it. In a stylesheet, in a component's inline `style`, in a
+ * `setProperty` call in any script, or as a Tailwind utility read past its variants as the
+ * declarations it writes (`utilityDeclarations`: `font-semibold` is a weight of `600`,
+ * `leading-[1.3]` and the `/7` of `text-sm/7` a line height, `text-[13px]` a size, `font-mono`
+ * a family of Tailwind's own, `[font-weight:600]` what it says):
  *
  * | Property      | May be                                                        |
  * | ------------- | ------------------------------------------------------------- |
@@ -208,7 +209,7 @@ function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<str
   for (const file of sourceFiles((name) => name.endsWith(".css"))) {
     if (file !== THE_CORE) byFile.set(file, cssLiterals(text(file)));
   }
-  for (const file of sourceFiles(isView)) byFile.set(file, componentLiterals(text(file)));
+  for (const file of sourceFiles(isScript)) byFile.set(file, componentLiterals(text(file)));
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
@@ -467,6 +468,18 @@ export function plant(row: HTMLElement) {
       'Inbox.tsx: new type literal: setProperty font-size: "13px"',
     ]);
     expect(result[2]).toContain("ui-text-body");
+  });
+
+  it("reads a type value a script sets, outside every component", () => {
+    const planted = `${read("theme/theme.ts")}
+export function plant(row: HTMLElement) {
+  row.style.setProperty("font-weight", "600");
+}
+`;
+    const result = complaints(literalsByFile({ "theme/theme.ts": planted }));
+    expect(result.map((complaint) => complaint.split(" (")[0])).toEqual([
+      'theme/theme.ts: new type literal: setProperty font-weight: "600"',
+    ]);
   });
 
   it("names the nearest role for each size the window has written", () => {
