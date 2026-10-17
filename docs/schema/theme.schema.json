@@ -303,8 +303,15 @@
           "$ref": "#/$defs/colour"
         },
         "terminal.selection-foreground": {
-          "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-          "$ref": "#/$defs/colour"
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
         },
         "terminal.selection-inactive": {
           "$ref": "#/$defs/colour"
@@ -427,24 +434,59 @@
           "$ref": "#/$defs/colour"
         },
         "selection.background": {
-          "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-          "$ref": "#/$defs/colour"
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
         },
         "selection.text": {
-          "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-          "$ref": "#/$defs/colour"
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
         },
         "caret": {
-          "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-          "$ref": "#/$defs/colour"
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
         },
         "placeholder": {
-          "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-          "$ref": "#/$defs/colour"
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
         },
         "scrollbar.thumb": {
-          "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-          "$ref": "#/$defs/colour"
+          "description": "A colour, or \"platform\" to leave it to what draws it by default.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/colour"
+            },
+            {
+              "const": "platform"
+            }
+          ]
         },
         "scrollbar.track": {
           "$ref": "#/$defs/colour"

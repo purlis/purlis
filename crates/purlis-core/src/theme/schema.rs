@@ -16,8 +16,8 @@ use serde_json::{Map, Value, json};
 
 use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::vocabulary::{
-    CLEAR_IS_UNSET, CURSOR_STYLE, CURSOR_STYLES, DURATIONS, EASINGS, FLAGS, LINE_HEIGHT,
-    LINE_HEIGHTS, LONGEST, TOKENS,
+    CURSOR_STYLE, CURSOR_STYLES, DURATIONS, EASINGS, FLAGS, LINE_HEIGHT, LINE_HEIGHTS, LONGEST,
+    PLATFORM, PLATFORM_DRAWN, TOKENS,
 };
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
@@ -36,10 +36,10 @@ pub fn schema() -> Value {
     let mut tokens: Map<String, Value> = TOKENS
         .iter()
         .map(|token| {
-            let colour = if CLEAR_IS_UNSET.contains(token) {
+            let colour = if PLATFORM_DRAWN.contains(token) {
                 json!({
-                    "description": "A colour; fully clear (#0000 or #00000000) leaves it to what draws it by default.",
-                    "$ref": "#/$defs/colour"
+                    "description": format!("A colour, or \"{PLATFORM}\" to leave it to what draws it by default."),
+                    "anyOf": [{ "$ref": "#/$defs/colour" }, { "const": PLATFORM }]
                 })
             } else {
                 json!({ "$ref": "#/$defs/colour" })

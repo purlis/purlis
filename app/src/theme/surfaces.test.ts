@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BUILT_IN,
-  CLEAR_IS_UNSET,
+  PLATFORM_DRAWN,
   SYNTAX_ROLES,
   TINTED_WINDOW,
   property,
@@ -19,8 +19,9 @@ import {
  * **Each token #2327 adds reaches the surface it says it paints.** `literals.test.ts` proves
  * every token is read somewhere; this says where: the editor's highlighting reads each syntax
  * role, a markdown render each markdown token, the window's selection, caret, placeholder and
- * scrollbar rules the platform tokens, a chart's bar the first chart colour, the window its
- * background, and xterm the terminal's extras.
+ * scrollbar rules the platform tokens, a chart's bar the first chart colour, and xterm the
+ * terminal's extras. `window.background` is the native window's before the first frame, and no
+ * stylesheet reads it.
  */
 
 const read = (file: string) =>
@@ -76,13 +77,14 @@ describe("the window's stylesheet", () => {
 
   it("draws the selection, caret, placeholder and scrollbars only when the theme gives them", () => {
     expect(readers(app, "selection.background")).toEqual([
-      ':root[data-theme-draws~="selection.background"] ::selection | background-color',
+      ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection | background-color',
     ]);
+    // Selected text is coloured only on a selection the theme colours too.
     expect(readers(app, "selection.text")).toEqual([
-      ':root[data-theme-draws~="selection.text"] ::selection | color',
+      ':root[data-theme-draws~="selection.background"][data-theme-draws~="selection.text"] :not(.cm-editor, .cm-editor *)::selection | color',
     ]);
     expect(readers(app, "caret")).toEqual([
-      ':root[data-theme-draws~="caret"] :is(input, textarea, [contenteditable]) | caret-color',
+      ':root[data-theme-draws~="caret"] :is(input, textarea, [contenteditable]):not(.cm-editor *) | caret-color',
     ]);
     expect(readers(app, "placeholder")).toEqual([
       ':root[data-theme-draws~="placeholder"] ::placeholder | color',
@@ -93,7 +95,7 @@ describe("the window's stylesheet", () => {
     // Every gate names a token the window may leave to the platform.
     for (const [selector] of rules(app))
       for (const [, gate] of selector.matchAll(/data-theme-draws~="([^"]+)"/g))
-        expect(CLEAR_IS_UNSET as readonly string[]).toContain(gate);
+        expect(PLATFORM_DRAWN as readonly string[]).toContain(gate);
   });
 
   it("draws a chart's series in the first chart colour, which turns with the accent", () => {
@@ -102,8 +104,14 @@ describe("the window's stylesheet", () => {
     expect(TINTED_WINDOW).toEqual(expect.arrayContaining(["chart.1", "markdown.link"]));
   });
 
-  it("paints the window in the window's background", () => {
-    expect(readers(app, "window.background")).toEqual([":root | background"]);
+  it("keeps the light editor's own selection and caret: no window rule reaches inside it", () => {
+    for (const token of ["selection.background", "selection.text", "caret"] as const)
+      for (const reader of readers(app, token)) expect(reader, token).toMatch(/\.cm-editor \*/);
+  });
+
+  it("paints the window in its surface, and leaves its background to the native window", () => {
+    expect(readers(app, "surface.base")).toContain(":root | background");
+    expect(readers(app, "window.background")).toEqual([]);
   });
 });
 

@@ -71,7 +71,9 @@ pub use resolve::{Drawn, Inputs, Offered, On, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
 pub use typed::Typed;
-use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
+use vocabulary::{
+    DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
+};
 
 #[cfg(test)]
 mod format_tests;
@@ -283,7 +285,7 @@ fn built_in_of(text: &str) -> Theme {
                     let value = tokens
                         .and_then(|tokens| tokens.get(*token))
                         .and_then(Value::as_str)
-                        .filter(|value| is_colour(value))
+                        .filter(|value| is_colour(value) || is_platform(token, value))
                         .unwrap_or_else(|| panic!("the built-in theme {name} has no {token}"));
                     (*token, value.to_owned())
                 })

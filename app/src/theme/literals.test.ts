@@ -460,12 +460,19 @@ describe("the stylesheet and the vocabulary agree", () => {
       "chart.7",
       "chart.8",
     ];
+    /** The native window's colour before the first frame (#2327), which the window is
+     *  created with rather than any stylesheet drawing it (#2328, #2331). */
+    const native: readonly Token[] = ["window.background"];
     const unread = TOKENS.filter(
-      (token) => !terminal(token) && !further.includes(token) && !used.has(property(token)),
+      (token) =>
+        !terminal(token) &&
+        !further.includes(token) &&
+        !native.includes(token) &&
+        !used.has(property(token)),
     );
     expect(unread).toEqual([]);
     expect(
-      further.filter((token) => used.has(property(token))),
+      [...further, ...native].filter((token) => used.has(property(token))),
       "drawn now: not exempt",
     ).toEqual([]);
   });

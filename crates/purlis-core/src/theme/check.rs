@@ -22,12 +22,12 @@
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
-use super::vocabulary::{CLEAR_IS_UNSET, TOKENS, is_clear};
+use super::vocabulary::{TOKENS, is_platform};
 use super::{ResolvedTheme, tint};
 
-/// What a clear token of [`CLEAR_IS_UNSET`] is measured as when it is drawn on something: selected
-/// text the theme leaves alone keeps the words' own colour. A clear token with no stand-in is the
-/// platform's, and a pair with one in it is not measured.
+/// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
+/// when it is drawn on something: selected text the theme leaves alone keeps the words' own
+/// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
 const STANDS_IN: &[(&str, &str)] = &[
     ("selection.text", "text.primary"),
     ("terminal.selection-foreground", "terminal.foreground"),
@@ -286,9 +286,15 @@ pub const PAIRS: &[Pair] = &[
     p("markdown.heading", "surface.base", TEXT),
     p("markdown.heading", "surface.raised", TEXT),
     p("markdown.heading", "surface.overlay", TEXT),
+    // - A release's notes in the Updates dialog sit on a sunken box.
+    p("markdown.link", "surface.sunken", TEXT),
+    p("markdown.code", "surface.sunken", TEXT),
+    p("markdown.code-block", "surface.sunken", TEXT),
+    p("markdown.quote", "surface.sunken", TEXT),
+    p("markdown.heading", "surface.sunken", TEXT),
     // - The window's own text selection, caret and placeholder, on a field's ground. A token
-    //   left clear is the platform's, which is not measured (`CLEAR_IS_UNSET`); clear selected
-    //   text keeps its own colour, measured as the window's words.
+    //   left to the platform is not measured (`PLATFORM_DRAWN`); selected text left to it keeps
+    //   its own colour, measured as the window's words.
     p("selection.text", "selection.background", TEXT).over("surface.base"),
     p("placeholder", "surface.sunken", TEXT),
     p("caret", "surface.sunken", 3.0),
@@ -304,7 +310,8 @@ pub const PAIRS: &[Pair] = &[
     p("chart.7", "surface.sunken", 3.0),
     p("chart.8", "surface.sunken", 3.0),
     // - The terminal's selected text, focused and not, on the selection laid over the
-    //   terminal; clear, it keeps the cells' own colour, measured as the terminal's words.
+    //   terminal; left to the platform, it keeps the cells' own colour, measured as the
+    //   terminal's words.
     p("terminal.selection-foreground", "terminal.selection", TEXT).over("terminal.background"),
     p(
         "terminal.selection-foreground",
@@ -314,8 +321,6 @@ pub const PAIRS: &[Pair] = &[
     .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
-    // - The window's own words are drawn on the window's background.
-    p("text.primary", "window.background", 4.5),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.
@@ -381,12 +386,19 @@ pub enum Finding {
         tint: Option<&'static str>,
         other: &'static str,
     },
+    /// A colour for selected text with the selection left to the platform (#2327): the window
+    /// draws selected text only on a selection the theme colours too, so this one is never drawn.
+    SelectionTextAlone,
 }
 
 /// The check, as [`super::check`] describes it.
 pub(super) fn check(theme: &ResolvedTheme) -> Report {
     let mut findings = Vec::new();
     check_one(theme, None, &mut findings);
+    let platform = |token: &str| is_platform(token, theme.value(token));
+    if platform("selection.background") && !platform("selection.text") {
+        findings.push(Finding::SelectionTextAlone);
+    }
     for (colour, _) in tint::PALETTE {
         check_one(&tint::tinted(theme, colour), Some(colour), &mut findings);
     }
@@ -435,10 +447,11 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
     }
 }
 
-/// The tokens `pair` is measured between in `theme`: its own, a clear front's stand-in, or `None`
-/// when the platform draws one of them ([`CLEAR_IS_UNSET`]).
+/// The tokens `pair` is measured between in `theme`: its own, a platform-drawn front's stand-in,
+/// or `None`
+/// when the platform draws one of them ([`super::vocabulary::PLATFORM_DRAWN`]).
 fn measured(theme: &ResolvedTheme, pair: &Pair) -> Option<(&'static str, &'static str)> {
-    let unset = |token: &str| CLEAR_IS_UNSET.contains(&token) && is_clear(theme.value(token));
+    let unset = |token: &str| is_platform(token, theme.value(token));
     if unset(pair.back) {
         return None;
     }

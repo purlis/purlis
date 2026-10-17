@@ -245,8 +245,9 @@ export const TOKENS = [
 
   // **What the platform draws unless a theme says** (#2327): the window's text selection and
   // the words in it, the caret in a field, a field's placeholder, and the scrollbars' thumb and
-  // track. Fully clear ({@link CLEAR_IS_UNSET}) leaves each to the platform, as Purlis Classic
-  // does; the track is drawn only with a thumb.
+  // track. `"platform"` ({@link PLATFORM}) leaves each but the track to the platform, as Purlis
+  // Classic does; a colour, transparent included, is drawn as given. The track is drawn only with
+  // a thumb, and selected text only on a selection the theme colours too.
   "selection.background",
   "selection.text",
   "caret",
@@ -320,12 +321,12 @@ export const CURSOR_STYLES = ["block", "underline", "bar"] as const;
 export const LINE_HEIGHT = "terminal.line-height";
 
 /**
- * **The colour tokens a fully clear value leaves to what draws them by default** (the engine's
- * `CLEAR_IS_UNSET`): the window writes no rule for one of them while it is clear, so the
- * platform's selection, caret, placeholder and scrollbars, and the terminal's own colour for
- * selected text, are drawn as they were before a theme could say.
+ * **The colour tokens the platform draws unless a theme says** (the engine's `PLATFORM_DRAWN`):
+ * one of them may be {@link PLATFORM} instead of a colour, and the window then writes no rule for
+ * it, so the platform's selection, caret, placeholder and scrollbars, and the terminal's own
+ * colour for selected text, are drawn as they were before a theme could say.
  */
-export const CLEAR_IS_UNSET = [
+export const PLATFORM_DRAWN = [
   "terminal.selection-foreground",
   "selection.background",
   "selection.text",
@@ -337,10 +338,9 @@ export const CLEAR_IS_UNSET = [
 /** The syntax roles of {@link TOKENS}, each drawn with an italic and a bold flag. */
 export const SYNTAX_ROLES = TOKENS.filter((token) => token.startsWith("syntax."));
 
-/** Whether a colour of the engine's grammar is fully clear: `#rgba` or `#rrggbbaa` with no alpha. */
-export function isClear(value: string): boolean {
-  return /^#(?:[0-9a-fA-F]{3}0|[0-9a-fA-F]{6}00)$/.test(value);
-}
+/** The value that leaves a token of {@link PLATFORM_DRAWN} to the platform (the engine's
+ *  `PLATFORM`). */
+export const PLATFORM = "platform";
 
 /** One token's name. */
 export type Token = (typeof TOKENS)[number];
@@ -591,12 +591,13 @@ export function syntaxFaces(theme: Theme): Record<string, string> {
 }
 
 /**
- * The tokens of {@link CLEAR_IS_UNSET} the window draws: those `theme` gives a colour that is not
- * clear, as the space-separated list the stylesheet's `[data-theme-draws~="…"]` rules read.
+ * The tokens of {@link PLATFORM_DRAWN} the window draws: those `theme` gives a colour rather than
+ * {@link PLATFORM}, as the space-separated list the stylesheet's `[data-theme-draws~="…"]` rules
+ * read.
  */
 export function themeDraws(theme: Theme): string {
-  return CLEAR_IS_UNSET.filter(
-    (token) => !token.startsWith("terminal.") && !isClear(theme.values[token]),
+  return PLATFORM_DRAWN.filter(
+    (token) => !token.startsWith("terminal.") && theme.values[token] !== PLATFORM,
   ).join(" ");
 }
 
@@ -639,9 +640,10 @@ const XTERM: [Token, string][] = [
 export function xtermTheme(theme: Theme): Record<string, string> {
   const object: Record<string, string> = {};
   for (const [token, key] of XTERM) object[key] = theme.values[token];
-  // Clear, the selected cells keep their own colours: xterm is not told one (#2327).
+  // Left to the platform, the selected cells keep their own colours: xterm is not told one
+  // (#2327).
   const selected = theme.values["terminal.selection-foreground"];
-  if (!isClear(selected)) object.selectionForeground = selected;
+  if (selected !== PLATFORM) object.selectionForeground = selected;
   return object;
 }
 

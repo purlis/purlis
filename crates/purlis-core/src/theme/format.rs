@@ -48,7 +48,7 @@ use std::path::Path;
 use serde_json::{Map, Value};
 
 use super::icons::{self, Icons};
-use super::vocabulary::{TOKENS, is_colour, names_geometry};
+use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform, names_geometry};
 use super::{
     Appearance, CLASSIC, Complaint, GEOMETRY_IS_CORE, Resolved, ResolvedTheme, Theme, built_in_for,
     classic, is_format_2, load_format_1, load_motion, stringify,
@@ -596,6 +596,13 @@ fn palette(raw: Option<&Value>, complaints: &mut Vec<Complaint>) -> BTreeMap<Str
             )));
             continue;
         }
+        if name == PLATFORM {
+            complaints.push(Complaint::said(format!(
+                "palette name \"{PLATFORM}\" is purlis's own word for what the platform draws, so \
+                 a palette cannot name a colour by it"
+            )));
+            continue;
+        }
         match value.as_str() {
             Some(hex) if is_colour(hex) => {
                 out.insert(name.clone(), hex.to_owned());
@@ -720,6 +727,14 @@ fn appearance(
                     }
                     continue;
                 };
+                // What the platform draws may be left to it by name (#2327).
+                if value
+                    .as_str()
+                    .is_some_and(|given| is_platform(known, given))
+                {
+                    values.insert(known, PLATFORM.to_owned());
+                    continue;
+                }
                 match colour(value, palette) {
                     Some(hex) => {
                         values.insert(known, hex);

@@ -57,7 +57,8 @@ function resolved(from: Appearance, at: number) {
   for (const [token, value] of Object.entries(from.tokens)) {
     if (typeof value === "boolean") typed.flags[token] = value;
     else if (typeof value === "number") typed.numbers[token] = value;
-    else if (value.startsWith("#")) values[token] = value;
+    // A colour, or "platform" for what the platform draws.
+    else if (value.startsWith("#") || value === "platform") values[token] = value;
     else typed.choices[token] = value;
   }
   return {

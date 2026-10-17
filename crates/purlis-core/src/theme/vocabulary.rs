@@ -321,12 +321,13 @@ pub const LINE_HEIGHT: &str = "terminal.line-height";
 /// The least and the most [`LINE_HEIGHT`] may be: xterm draws nothing under 1.
 pub const LINE_HEIGHTS: (f64, f64) = (1.0, 2.0);
 
-/// **The colour tokens a fully clear value leaves to what draws them by default** (#2327): the
-/// platform's text selection, caret, placeholder and scrollbars, and the terminal's own colour
-/// for selected text. `#0000` or `#00000000` here is not "draw nothing" but "draw what purlis
-/// drew before a theme could say", which is how Purlis Classic keeps them. A scrollbar's track
+/// **The colour tokens the platform draws unless a theme says** (#2327): the window's text
+/// selection and the words in it, a field's caret and placeholder, the scrollbars' thumb, and the
+/// terminal's colour for selected text (each cell's own). One of these may be [`PLATFORM`]
+/// instead of a colour: purlis then writes nothing for it, and what draws it draws its default,
+/// as Purlis Classic does. A colour, transparent included, is drawn as given. A scrollbar's track
 /// is drawn only with a thumb, so it is not here.
-pub const CLEAR_IS_UNSET: &[&str] = &[
+pub const PLATFORM_DRAWN: &[&str] = &[
     "terminal.selection-foreground",
     "selection.background",
     "selection.text",
@@ -335,14 +336,11 @@ pub const CLEAR_IS_UNSET: &[&str] = &[
     "scrollbar.thumb",
 ];
 
-/// Whether `value`, a colour of [`is_colour`]'s grammar, is fully clear: its alpha is zero.
-pub fn is_clear(value: &str) -> bool {
-    let Some(digits) = value.strip_prefix('#') else {
-        return false;
-    };
-    match digits.len() {
-        4 => digits.ends_with('0'),
-        8 => digits.ends_with("00"),
-        _ => false,
-    }
+/// The value that leaves a token of [`PLATFORM_DRAWN`] to the platform. A closed word, never CSS;
+/// no palette may take it as a name.
+pub const PLATFORM: &str = "platform";
+
+/// Whether `token` holds [`PLATFORM`]: one of [`PLATFORM_DRAWN`] left to the platform.
+pub fn is_platform(token: &str, value: &str) -> bool {
+    value == PLATFORM && PLATFORM_DRAWN.contains(&token)
 }

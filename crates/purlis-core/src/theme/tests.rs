@@ -55,7 +55,7 @@ fn every_built_in_gives_every_token_and_every_motion_value() {
     for theme in built_ins() {
         for token in TOKENS {
             assert!(
-                is_colour(theme.value(token)),
+                is_colour(theme.value(token)) || vocabulary::is_platform(token, theme.value(token)),
                 "{} has no {token}",
                 theme.name
             );

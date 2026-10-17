@@ -9,7 +9,8 @@ import { VIEW_MARKS } from "../ActivityBar";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { DURATIONS, EASINGS } from "./motion";
 import {
-  CLEAR_IS_UNSET,
+  PLATFORM,
+  PLATFORM_DRAWN,
   CURSOR_STYLE,
   CURSOR_STYLES,
   FLAGS,
@@ -58,8 +59,9 @@ describe("the engine's vocabulary", () => {
     expect(vocabulary).toContain(`pub const LINE_HEIGHT: &str = "${LINE_HEIGHT}";`);
   });
 
-  it("leaves the same tokens to the platform when they are clear (#2327)", () => {
-    expect(list(vocabulary, "CLEAR_IS_UNSET")).toEqual([...CLEAR_IS_UNSET]);
+  it("leaves the same tokens to the platform by the same word (#2327)", () => {
+    expect(list(vocabulary, "PLATFORM_DRAWN")).toEqual([...PLATFORM_DRAWN]);
+    expect(vocabulary).toContain(`pub const PLATFORM: &str = "${PLATFORM}";`);
   });
 
   it("names the window's motion tokens", () => {

@@ -8,7 +8,7 @@
 
 use serde_json::{Value, json};
 
-use super::vocabulary::{CLEAR_IS_UNSET, FLAGS, TOKENS, is_clear};
+use super::vocabulary::{FLAGS, PLATFORM, PLATFORM_DRAWN, TOKENS};
 use super::*;
 
 fn dark() -> &'static ResolvedTheme {
@@ -106,10 +106,11 @@ fn purlis_classic_draws_markdown_charts_and_the_window_as_it_did() {
 #[test]
 fn purlis_classic_leaves_the_selection_caret_placeholder_and_scrollbars_to_the_platform() {
     for theme in [dark(), light()] {
-        for token in CLEAR_IS_UNSET {
-            assert!(is_clear(theme.value(token)), "{token}");
+        for token in PLATFORM_DRAWN {
+            assert_eq!(theme.value(token), PLATFORM, "{token}");
         }
-        assert!(is_clear(theme.value("scrollbar.track")));
+        // The track is drawn only with a thumb, and Classic's is clear.
+        assert_eq!(theme.value("scrollbar.track"), "#00000000");
     }
 }
 
@@ -279,9 +280,10 @@ fn the_check_does_not_measure_what_the_platform_draws() {
     // Classic leaves the selection, caret, placeholder and scrollbars to the platform, and passes.
     assert!(check(dark()).passes(), "{:?}", check(dark()).findings);
     assert!(check(light()).passes(), "{:?}", check(light()).findings);
-    // A clear placeholder on any ground is the platform's, and not measured.
-    let theme = dark_with(json!({ "placeholder": "#0000" })).theme;
-    assert!(check(theme.first()).passes());
+    // A transparent caret is drawn as given, transparent, and the check says it cannot be seen.
+    let theme = dark_with(json!({ "caret": "#0000" })).theme;
+    let found = contrast_findings(&check(theme.first()));
+    assert!(found.contains(&("caret", "surface.sunken")));
 }
 
 #[test]
@@ -301,8 +303,9 @@ fn the_check_measures_a_selection_the_theme_draws() {
 }
 
 #[test]
-fn the_check_measures_the_terminal_s_selected_text_as_the_cells_when_it_is_clear() {
-    // Clear, the selected cells keep the terminal's own foreground, which is measured.
+fn the_check_measures_the_terminal_s_selected_text_as_the_cells_when_the_platform_draws_it() {
+    // Left to the platform, the selected cells keep the terminal's own foreground, which is
+    // measured.
     let theme = dark_with(json!({ "terminal.selection": "#dddcd6ff" })).theme;
     let found = contrast_findings(&check(theme.first()));
     assert!(found.contains(&("terminal.selection-foreground", "terminal.selection")));
@@ -316,13 +319,56 @@ fn the_check_measures_the_terminal_s_selected_text_as_the_cells_when_it_is_clear
 }
 
 #[test]
-fn a_clear_value_is_a_colour_with_no_alpha() {
-    for clear in ["#0000", "#00000000", "#abc0", "#12345600"] {
-        assert!(is_clear(clear), "{clear}");
-    }
-    for drawn in ["#000", "#000000", "#0001", "#00000001", "transparent", ""] {
-        assert!(!is_clear(drawn), "{drawn}");
-    }
+fn only_what_the_platform_draws_may_be_left_to_it() {
+    let loaded = dark_with(json!({ "caret": "platform", "scrollbar.thumb": "#80808080" }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    assert_eq!(loaded.theme.first().value("caret"), "platform");
+    assert_eq!(loaded.theme.first().value("scrollbar.thumb"), "#80808080");
+    let loaded = dark_with(json!({ "accent.base": "platform" }));
+    assert!(loaded.refused);
+    assert_eq!(
+        said(&loaded),
+        [
+            "accent.base in appearance dark is \"platform\", which is neither a hex colour nor a name in this theme's palette"
+        ]
+    );
+}
+
+#[test]
+fn no_palette_may_name_a_colour_platform() {
+    let loaded = load(&json!({
+        "name": "Taken",
+        "extends": "purlis-classic",
+        "palette": { "platform": "#123456" },
+        "appearances": [{ "id": "dark", "tokens": { "caret": "platform" } }]
+    }));
+    assert!(loaded.refused);
+    assert_eq!(
+        said(&loaded),
+        [
+            "palette name \"platform\" is purlis's own word for what the platform draws, so a palette cannot name a colour by it"
+        ]
+    );
+}
+
+#[test]
+fn the_check_says_selected_text_on_the_platform_s_selection_is_never_drawn() {
+    let theme = dark_with(json!({ "selection.text": "#111111" })).theme;
+    assert!(
+        check(theme.first())
+            .findings
+            .contains(&Finding::SelectionTextAlone)
+    );
+    let theme = dark_with(json!({
+        "selection.background": "#dddcd6",
+        "selection.text": "#111111"
+    }))
+    .theme;
+    assert!(
+        !check(theme.first())
+            .findings
+            .contains(&Finding::SelectionTextAlone)
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -343,4 +389,5 @@ fn the_schema_types_each_token_that_is_not_a_colour() {
     assert_eq!(tokens["terminal.line-height"]["minimum"], 1.0);
     assert_eq!(tokens["terminal.line-height"]["maximum"], 2.0);
     assert_eq!(tokens["syntax.keyword"]["$ref"], "#/$defs/colour");
+    assert_eq!(tokens["caret"]["anyOf"][1]["const"], "platform");
 }

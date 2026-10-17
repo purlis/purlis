@@ -10,9 +10,7 @@
      size below is in rem or em, so the whole window scales from that one number. */
   line-height: var(--line-height-body);
   color: var(--text-primary);
-  /* The window's own background (#2327), what the native window is painted in before the
-     first frame too. Purlis Classic's is its window surface. */
-  background: var(--window-background);
+  background: var(--surface-base);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -21,20 +19,23 @@
 }
 
 /* **What the platform draws until a theme says otherwise** (#2327): the text selection and its
-   words, the caret in a field, a field's placeholder, and the scrollbars. A theme that leaves
-   one of these tokens fully clear leaves it to the platform, and `theme.apply` names the ones it
-   sets in `data-theme-draws`, so no rule here is written for the rest: Purlis Classic draws
-   them as the platform always has. `scrollbar-color` is inherited, so it is set once. The light
-   editor and the terminal draw their own selection and caret (`editor/look.ts`, xterm). */
-:root[data-theme-draws~="selection.background"] ::selection {
+   words, the caret in a field, a field's placeholder, and the scrollbars. A theme that gives one
+   of these tokens "platform" leaves it to the platform, and `theme.apply` names the ones it
+   colours in `data-theme-draws`, so no rule here is written for the rest: Purlis Classic draws
+   them as the platform always has. Selected text is coloured only on a selection the theme
+   colours too. `scrollbar-color` is inherited, so it is set once. The light editor draws its
+   own selection and caret (`editor/look.ts`), so these rules stop at its edge; the terminal
+   draws its own in its canvas. */
+:root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection {
   background-color: var(--selection-background);
 }
 
-:root[data-theme-draws~="selection.text"] ::selection {
+:root[data-theme-draws~="selection.background"][data-theme-draws~="selection.text"]
+  :not(.cm-editor, .cm-editor *)::selection {
   color: var(--selection-text);
 }
 
-:root[data-theme-draws~="caret"] :is(input, textarea, [contenteditable]) {
+:root[data-theme-draws~="caret"] :is(input, textarea, [contenteditable]):not(.cm-editor *) {
   caret-color: var(--caret);
 }
 
