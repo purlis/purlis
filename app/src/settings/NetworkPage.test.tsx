@@ -10,6 +10,7 @@ import { ChatNetworkTab } from "../ChatNetworkTab";
 import { networkGroup } from "./GrantedList";
 import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
+import { offeredIn, pickIn } from "../primitives/select.testkit";
 
 /**
  * **Settings › Sandbox › Network and a chat's Network view** (#1662, spec #1661): Open hosts host
@@ -160,13 +161,14 @@ describe("the Network page of a read-only project (#1759)", () => {
       allowed: "per control",
       blocked: "per control",
       folders: "this machine",
+      port: "this machine",
       dispatch: "nothing",
     });
   });
 });
 
 describe("the Network page", () => {
-  it("is Open hosts, Allowed and Blocked lately, in that order, then the folders", () => {
+  it("is Open hosts, Allowed and Blocked lately, in that order, then the folders and a port", () => {
     const group = networkGroup(PLANE, "charter.toml");
     expect(group.label).toBe("Network");
     expect(group.settings.map((one) => one.label)).toEqual([
@@ -174,6 +176,7 @@ describe("the Network page", () => {
       "Allowed",
       "Blocked lately",
       "Folders a block's Allow may name",
+      "A service on this Mac",
       "Who may dispatch to whom",
     ]);
   });
@@ -374,5 +377,107 @@ describe("a chat's Network view", () => {
     chatCore({ open: false, sandboxed: false, reach: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={9} />);
     expect(await screen.findByText("This chat is not open")).toBeVisible();
+  });
+});
+
+describe("Settings › Sandbox adds a service on this Mac by its port (#1970)", () => {
+  const PORT: SandboxGrant = {
+    ...ALLOWED,
+    id: "you\u001fport\u001f50795",
+    what: "port",
+    target: "50795",
+  };
+  const OWN =
+    "That port is one purlis itself listens on, so no chat is allowed it. A service of your own on this Mac listens on a port of its own.";
+
+  /** The core: two chats and a shell open, and an Allow kept until it is refused. */
+  function portCore() {
+    const asked: { cmd: string; args: unknown }[] = [];
+    let kept = false;
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "sandbox_network") return NETWORK;
+      if (cmd === "sandbox_grants") return kept ? [PORT] : [];
+      if (cmd === "opened_chats")
+        return [
+          { session: 3, name: "fix the build", label: null, harness: "codex" },
+          { session: 7, name: "claude 2", label: "cluster", harness: "claude" },
+          { session: 9, name: "zsh", label: null, harness: null },
+        ];
+      if (cmd === "allow_sandbox_port") {
+        const { port } = args as { port: string };
+        if (port === "47823") throw OWN;
+        kept = true;
+        return {
+          said: "Allowed port 50795 for me on this machine. A chat that is running reaches it from its next start.",
+          live: false,
+        };
+      }
+      return null;
+    });
+    return asked;
+  }
+
+  it("allows one port for every chat here, through the core, and the Allowed list shows it", async () => {
+    const asked = portCore();
+    render(
+      <>
+        <Row id="port" />
+        <Row id="allowed" />
+      </>,
+    );
+    expect(await screen.findByText("Nothing is allowed beyond the Open hosts.")).toBeVisible();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox"), "50795");
+    await user.click(screen.getByRole("button", { name: "Allow port" }));
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "allow_sandbox_port",
+        args: { plane: PLANE, port: "50795", chat: null, level: "you" },
+      }),
+    );
+    expect(await screen.findByText(/Allowed port 50795 for me on this machine/)).toBeVisible();
+    const allowed = await screen.findByRole("list", { name: "Allowed" });
+    expect(allowed).toHaveTextContent("Connect to the service on this Mac at port 50795");
+    expect(screen.getByRole("textbox")).toHaveValue("");
+  });
+
+  it("allows a port for one open chat alone, never a shell", async () => {
+    const asked = portCore();
+    render(<Row id="port" />);
+    const user = userEvent.setup();
+    const scope = screen.getByRole("combobox", { name: "Allowed for" });
+    await waitFor(async () =>
+      expect(await offeredIn(scope, user)).toEqual([
+        "every chat of this project on this machine",
+        "only fix the build",
+        "only cluster",
+      ]),
+    );
+    await pickIn(scope, "7", user);
+    await user.type(screen.getByRole("textbox"), "50795");
+    await user.click(screen.getByRole("button", { name: "Allow port" }));
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "allow_sandbox_port",
+        args: { plane: PLANE, port: "50795", chat: 7, level: "chat" },
+      }),
+    );
+  });
+
+  it("says the core's refusal in its words and keeps what was typed", async () => {
+    portCore();
+    render(<Row id="port" />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox"), "47823");
+    await user.click(screen.getByRole("button", { name: "Allow port" }));
+    expect(await screen.findByText(OWN)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("47823");
+  });
+
+  it("offers no Allow until a port is typed", async () => {
+    portCore();
+    render(<Row id="port" />);
+    expect(screen.getByRole("button", { name: "Allow port" })).toBeDisabled();
   });
 });

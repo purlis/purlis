@@ -259,6 +259,11 @@
       "by": ["allowSandboxBlock"]
     },
     {
+      "at": "sandboxing.rs allow_sandbox_port",
+      "writes": "this machine's network record",
+      "by": ["allowSandboxPort"]
+    },
+    {
       "at": "sandboxing.rs answer",
       "writes": "the project's manifest and its local settings",
       "by": ["answerSandboxOffer"]
@@ -285,6 +290,7 @@
         "allowSandboxBlock",
         "allowSandboxBlockForTasks",
         "allowBlockedHost",
+        "allowSandboxPort",
         "allowProjectExpects"
       ]
     },

@@ -2147,3 +2147,161 @@ fn settings_says_no_floor_of_yours_that_policy_keeps_at_the_full_sandbox() {
     set_for_this_test(Locks::none());
     assert_eq!(yours, None);
 }
+
+/// #1970: a port added by hand in Settings › Sandbox is judged by the one function a block's
+/// Allow is judged by, so every value and scope the Notice refuses, the form refuses in the
+/// same words, and nothing is kept or audited for either.
+#[test]
+fn a_port_added_in_settings_is_refused_exactly_where_the_notice_s_allow_is() {
+    use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    let seen = std::sync::Mutex::new(Vec::<String>::new());
+    let audit = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        seen.lock().unwrap().push(audited.target.to_owned());
+        Ok(())
+    };
+    let notice = |target: &str, level| {
+        allow(
+            root,
+            &machine(),
+            &chats,
+            3,
+            (GrantWhat::Port, target, level),
+            &audit,
+            100,
+        )
+        .expect_err("the Notice refuses it")
+        .to_string()
+    };
+    let form = |target: &str, chat, level| {
+        allow_port(root, &machine(), &chats, chat, (target, level), &audit, 100)
+            .expect_err("the form refuses it")
+            .to_string()
+    };
+    let own = purlis_core::forge::registration::REDIRECT_PORTS[0].to_string();
+    let never = [
+        "",
+        " ",
+        "0",
+        "65536",
+        "-1",
+        "1-65535",
+        "50795-50800",
+        "50795,50796",
+        "50795 50796",
+        "*",
+        "any",
+        "localhost",
+        "localhost:50795",
+        "127.0.0.1:50795",
+        "0x1F",
+        own.as_str(),
+    ];
+    for target in never {
+        for level in [GrantLevel::Chat, GrantLevel::You] {
+            let said = notice(target, level);
+            assert_eq!(form(target, Some(3), level), said, "{target:?} {level:?}");
+        }
+        assert_eq!(
+            form(target, None, GrantLevel::You),
+            notice(target, GrantLevel::You),
+            "{target:?}"
+        );
+    }
+    assert_eq!(
+        form(&own, None, GrantLevel::You),
+        purlis_core::sandbox::localport::OWN_SAID
+    );
+    // Never once, every project on this machine, or the committed file.
+    for level in [GrantLevel::Once, GrantLevel::Machine, GrantLevel::Project] {
+        let said = notice("50795", level);
+        assert!(said.contains("for this chat, or for every chat"), "{said}");
+        assert_eq!(form("50795", Some(3), level), said, "{level:?}");
+        assert_eq!(form("50795", None, level), said, "{level:?}");
+    }
+    // Past a policy that forbids it, at either scope.
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    ));
+    for level in [GrantLevel::Chat, GrantLevel::You] {
+        let said = notice("50795", level);
+        assert!(said.contains("Policy forbids"), "{said}");
+        assert_eq!(form("50795", Some(3), level), said);
+    }
+    set_for_this_test(Locks::none());
+    // For this chat names the chat: the form never keeps one for no chat.
+    assert!(form("50795", None, GrantLevel::Chat).contains("Pick the open chat"));
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "nothing refused is audited"
+    );
+    assert!(sandbox::local::granted_ports(root).is_empty());
+    assert!(!chats.holds_for(3, &sandbox::grant::What::Port(50795)));
+}
+
+/// #1970: a port added in Settings for this project on this machine is audited, kept where a
+/// Notice's Allow keeps it, and listed on the Granted list; added again, it is neither kept
+/// nor audited twice.
+#[test]
+fn a_port_added_in_settings_is_audited_kept_and_listed_as_allowed() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        seen.lock().unwrap().push((
+            chat,
+            audited.granted,
+            audited.what.to_owned(),
+            audited.target.to_owned(),
+            audited.level.word(),
+        ));
+        Ok(())
+    };
+    let added = allow_port(
+        root,
+        &machine(),
+        &chats,
+        Some(3),
+        (" 50795 ", GrantLevel::You),
+        &audit,
+        100,
+    )
+    .expect("added");
+    assert!(!added.live);
+    assert_eq!(
+        added.said,
+        "Allowed port 50795 for me on this machine. A chat that is running reaches it from its \
+         next start."
+    );
+    assert_eq!(sandbox::local::granted_ports(root), [50795]);
+    let listed: Vec<_> = grants_of(root, &chats)
+        .into_iter()
+        .filter(|one| one.what == GrantWhat::Port)
+        .map(|one| (one.target, one.level, one.at))
+        .collect();
+    assert_eq!(listed, [("50795".to_owned(), GrantLevel::You, Some(100))]);
+
+    let again = allow_port(
+        root,
+        &machine(),
+        &chats,
+        None,
+        ("50795", GrantLevel::You),
+        &audit,
+        101,
+    )
+    .expect("allowed already");
+    assert_eq!(
+        again.said,
+        "Port 50795 was allowed already, for me on this machine."
+    );
+    assert_eq!(sandbox::local::granted_ports(root), [50795]);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [(None, true, "port".to_owned(), "50795".to_owned(), "you")]
+    );
+}

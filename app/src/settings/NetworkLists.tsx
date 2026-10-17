@@ -6,14 +6,16 @@ import {
   commands,
   type BlockedLately,
   type GrantLevel,
+  type OpenChat,
   type PlaneId,
   type SandboxNetwork,
 } from "../bindings";
 import { ALLOW_SAID } from "../allowLabels";
 import { Notice } from "../Notice";
+import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
-import type { RowIds } from "./components";
+import { Choice, Field, type RowIds } from "./components";
 
 /**
  * **Settings › Sandbox › Network** (#1662, spec #1661): the hosts every sandboxed chat here
@@ -223,6 +225,120 @@ export function BlockedLatelyList({ plane, ids }: { plane: PlaneId; ids: RowIds 
         <RefusedRows plane={plane} rows={network.blocked} label="Blocked lately" />
       )}
       {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
+    </div>
+  );
+}
+
+/** What the port form's scope says for this project on this machine: the Notice's wider Allow. */
+const FOR_YOU = "you";
+
+/** The chats a port can be allowed for alone: each chat open here, never a shell. */
+function chatsHere(open: readonly OpenChat[]): { value: string; label: string }[] {
+  return open
+    .filter((one) => one.harness !== null)
+    .map((one) => ({ value: String(one.session), label: `only ${one.label ?? one.name}` }));
+}
+
+/**
+ * **A service on this Mac, added by its port** (#1970): one port, for every chat of this project
+ * on this machine or for one open chat alone, which the core judges, audits and keeps through
+ * the one function a block's Notice's Allow does (`sandboxing::judged_and_kept`), so whatever
+ * the Notice refuses (a range, every port, purlis's own port, a scope past them, a policy lock)
+ * is refused here in the same words. The Allowed list beside it shows it once kept.
+ */
+export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
+  const [typed, setTyped] = useState("");
+  const [scope, setScope] = useState(FOR_YOU);
+  const [chats, setChats] = useState<{ value: string; label: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string>();
+  const [trouble, setTrouble] = useState<string>();
+  const moved = useSandboxCommands();
+  useEffect(() => {
+    let gone = false;
+    void commands
+      .openedChats(plane)
+      .then((done) => {
+        if (!gone && done.status === "ok") setChats(chatsHere(done.data ?? []));
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [plane, moved]);
+  // A chat that closed is no scope to pick.
+  const picked = scope === FOR_YOU || chats.some((one) => one.value === scope) ? scope : FOR_YOU;
+  const add = () => {
+    const port = typed.trim();
+    const level: GrantLevel = picked === FOR_YOU ? "you" : "chat";
+    setSaid(undefined);
+    setTrouble(undefined);
+    setBusy(true);
+    void commands
+      .allowSandboxPort(plane, port, picked === FOR_YOU ? null : Number(picked), level)
+      .then((done) => {
+        if (done.status === "error") setTrouble(done.error);
+        else {
+          setSaid(done.data.said);
+          setTyped("");
+          allowedOnAList();
+        }
+      })
+      .catch((err: unknown) => setTrouble(`purlis could not allow port ${port}: ${String(err)}`))
+      .finally(() => {
+        setBusy(false);
+        // What chats here reach moved, or did not: whatever reads it asks again.
+        sandboxCommandReturned();
+      });
+  };
+  // The window's alone (`WINDOW_ONLY`): a link's page never widens what a chat reaches.
+  if (!inTheWindow(commands, "allowSandboxPort"))
+    return (
+      <p id={ids.id} className="granted-note" aria-labelledby={ids.labelledBy}>
+        Add one from purlis's own window on this machine.
+      </p>
+    );
+  return (
+    <div aria-labelledby={ids.labelledBy}>
+      <Field
+        kind="text"
+        ids={ids}
+        value={typed}
+        onChange={setTyped}
+        placeholder="50795"
+        inputMode="numeric"
+        size={7}
+        disabled={busy}
+      />{" "}
+      <label>
+        for{" "}
+        <Choice
+          kind="select"
+          ids={{ id: `${ids.id}-for`, label: "Allowed for" }}
+          options={[
+            { value: FOR_YOU, label: "every chat of this project on this machine" },
+            ...chats,
+          ]}
+          value={picked}
+          disabled={busy}
+          onValueChange={setScope}
+        />
+      </label>{" "}
+      <button
+        type="button"
+        className="ui-button"
+        tabIndex={0}
+        disabled={busy || typed.trim() === ""}
+        onClick={add}
+      >
+        Allow port
+      </button>
+      {said !== undefined && (
+        <Notice cause={`port-allowed:${said}`} at="pane" onDismiss={() => setSaid(undefined)}>
+          {said}
+        </Notice>
+      )}
+      {trouble !== undefined && <Trouble said={trouble} onDismiss={() => setTrouble(undefined)} />}
     </div>
   );
 }

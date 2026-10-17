@@ -448,6 +448,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
     "allow_blocked_host",
+    // A service on this Mac added by its port on Settings' Network page (#1970): widens what
+    // every chat here, or one chat, reaches.
+    "allow_sandbox_port",
     // Several of the explorer's rows typed into a chat as the person (#1151): held to the
     // window until typing into a chat has its ruling.
     "references_into_chat",
