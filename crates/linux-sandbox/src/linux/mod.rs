@@ -40,18 +40,23 @@ const CHAT: &str = "--chat";
 /// How many calls the supervisor serves at once.
 const SERVERS: usize = 16;
 
+/// The longest a wrap whose chat has ended waits for its refusals to be told.
+const TOLD_WITHIN: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// The status a wrap ends with when it could not start the chat.
 const NOT_STARTED: i32 = 126;
 
 /// `purlis _sandbox`, given the words after it: the status to exit with.
-pub fn entry(words: &[String]) -> i32 {
+/// Each call the supervisor refuses is told to what `tell` makes, where it makes anything.
+pub fn entry(words: &[String], tell: impl FnOnce() -> Option<crate::refusal::Tell>) -> i32 {
     if words.first().map(String::as_str) == Some(CHAT) {
         return chat_side(&words[1..]);
     }
     let Some((profile, program)) = crate::read_line(words) else {
         return refuse("the sandbox was started without a profile and a program");
     };
-    match supervise(&profile, &program) {
+    let told = tell().map(|tell| Arc::new(crate::refusal::Teller::new(tell)));
+    match supervise(&profile, &program, told) {
         Ok(code) => code,
         Err(why) => refuse(&why),
     }
@@ -62,7 +67,11 @@ fn refuse(why: &str) -> i32 {
     NOT_STARTED
 }
 
-fn supervise(profile: &str, program: &[String]) -> Result<i32, String> {
+fn supervise(
+    profile: &str,
+    program: &[String],
+    told: Option<Arc<crate::refusal::Teller>>,
+) -> Result<i32, String> {
     let profile = Profile::parse(profile).map_err(|why| why.to_string())?;
     let abi = abi();
     if abi < crate::MIN_ABI {
@@ -128,7 +137,7 @@ fn supervise(profile: &str, program: &[String]) -> Result<i32, String> {
     });
 
     if let Some(listener) = received(&ours) {
-        match supervisor::Supervisor::new(listener, profile) {
+        match supervisor::Supervisor::new(listener, profile, told.clone()) {
             Ok(supervisor) => {
                 let supervisor = Arc::new(supervisor);
                 for _ in 0..SERVERS {
@@ -148,16 +157,21 @@ fn supervise(profile: &str, program: &[String]) -> Result<i32, String> {
     // Every process of the chat whose parent ended is the supervisor's to reap; the chat's
     // own ending is its status.
     drop(child);
-    loop {
+    let ended = loop {
         match nix::sys::wait::waitpid(None, None) {
-            Ok(WaitStatus::Exited(at, code)) if at == pid => return Ok(code),
+            Ok(WaitStatus::Exited(at, code)) if at == pid => break Ok(code),
             Ok(WaitStatus::Signaled(at, signal, _)) if at == pid => {
-                return Ok(128 + signal as i32);
+                break Ok(128 + signal as i32);
             }
             Ok(_) | Err(nix::errno::Errno::EINTR) => {}
-            Err(why) => return Err(why.to_string()),
+            Err(why) => break Err(why.to_string()),
         }
+    };
+    // The refusals that ended the chat are told before the wrap goes, for a moment at most.
+    if let Some(told) = &told {
+        told.flush(TOLD_WITHIN);
     }
+    ended
 }
 
 /// The listener the chat's side sends, or `None` where it ended first.

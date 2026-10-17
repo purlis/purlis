@@ -1800,18 +1800,25 @@ pub fn the_proxy_tells_hosts(harness: Option<&str>) -> bool {
     )
 }
 
-/// What a block hook of a chat of `harness` tells the app of `found`: all of it, but for a
-/// refused host where purlis's own proxy tells that itself ([`the_proxy_tells_hosts`]).
+/// What a block hook of a chat of `harness` on `os` tells the app of `found`: all of it, but for
+/// a refused host where purlis's own proxy tells that itself ([`the_proxy_tells_hosts`]), and,
+/// where purlis wraps the chat on Linux, every file, local socket and service its supervisor
+/// tells by name ([`supervised`], #2344). One refusal is one Notice.
 pub fn the_hooks_own(
     found: Vec<(Block, Option<String>)>,
     harness: Option<&str>,
+    os: crate::sandbox::Os,
 ) -> Vec<(Block, Option<String>)> {
     if !the_proxy_tells_hosts(harness) {
         return found;
     }
+    let supervised = harness
+        .and_then(crate::harness::Harness::of_kind)
+        .is_some_and(|harness| os.purlis_wraps(harness));
     found
         .into_iter()
         .filter(|(block, _)| (block.operation, block.kind) != (Operation::Connect, Kind::Host))
+        .filter(|(block, _)| !(supervised && supervised::tells(block)))
         .collect()
 }
 
@@ -2265,6 +2272,9 @@ pub mod denial;
 
 #[path = "sandboxblock_background.rs"]
 pub mod background;
+
+#[path = "sandboxblock_supervised.rs"]
+pub mod supervised;
 
 #[path = "sandboxblock_drivers.rs"]
 pub mod drivers;

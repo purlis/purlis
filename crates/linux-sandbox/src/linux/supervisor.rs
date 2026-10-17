@@ -12,6 +12,12 @@
 //!
 //! Calls that change names (making, moving, linking, removing, a mode) are made one at a time,
 //! so no other call of the chat's moves a folder between one being judged and made.
+//!
+//! **A call the profile refuses is told** (#2344): the operation, where the walk arrived and the
+//! process that asked, to the wrap's [`Teller`], after the refusal is decided and whatever the
+//! teller does. Nothing told changes an answer. A call refused for anything but the profile (a
+//! process outside the sandbox, an abstract socket, a call no profile has a word for) names
+//! nothing a person could allow, and is not told.
 
 use std::ffi::OsStr;
 use std::io::IoSliceMut;
@@ -19,7 +25,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use nix::errno::Errno;
 use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, RenameFlags, openat, renameat2};
@@ -37,6 +43,7 @@ use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 use super::notify;
 use super::walk::{self, Chat, Found, World, named, named_in};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
+use crate::refusal::{Refusal, Teller};
 
 /// What a call is answered with.
 enum Answer {
@@ -64,6 +71,9 @@ impl From<Errno> for Answer {
 /// A refusal: the chat's sandbox does not allow it.
 const REFUSED: Errno = Errno::EACCES;
 
+/// Seatbelt's word for a connection out, which a refused connect is told as.
+const CONNECT: &str = "network-outbound";
+
 /// The longest path a call may name, as the kernel's own limit.
 const PATH_MAX: usize = 4096;
 
@@ -73,16 +83,41 @@ pub(super) struct Supervisor {
     profile: Profile,
     world: World,
     changing: Mutex<()>,
+    told: Option<Arc<Teller>>,
 }
 
 impl Supervisor {
-    pub(super) fn new(listener: OwnedFd, profile: Profile) -> Result<Supervisor, Errno> {
+    pub(super) fn new(
+        listener: OwnedFd,
+        profile: Profile,
+        told: Option<Arc<Teller>>,
+    ) -> Result<Supervisor, Errno> {
         Ok(Supervisor {
             listener,
             profile,
             world: World::new()?,
             changing: Mutex::new(()),
+            told,
         })
+    }
+
+    /// Tells `operation` on `target`, refused chat process `chat` by the profile. A process's
+    /// own files in `/proc` are never told: no person allows those.
+    fn tell(&self, chat: &Chat<'_>, operation: &'static str, target: String) {
+        let Some(told) = &self.told else {
+            return;
+        };
+        if Path::new(&target).starts_with("/proc") {
+            return;
+        }
+        told.refused(
+            Refusal {
+                operation,
+                target,
+                process: process_name(chat.tgid),
+            },
+            std::time::Instant::now(),
+        );
     }
 
     /// Serves calls until the listener ends: when every process of the chat has gone.
@@ -291,13 +326,15 @@ impl Supervisor {
     }
 
     fn judge(&self, chat: &Chat<'_>, ops: &[(FileOp, &Path, Kind)]) -> Result<(), Errno> {
-        if ops
+        match ops
             .iter()
-            .all(|(what, path, kind)| self.allows(chat, *what, path, *kind))
+            .find(|(what, path, kind)| !self.allows(chat, *what, path, *kind))
         {
-            Ok(())
-        } else {
-            Err(REFUSED)
+            None => Ok(()),
+            Some((what, path, _)) => {
+                self.tell(chat, what.name(), path.display().to_string());
+                Err(REFUSED)
+            }
         }
     }
 
@@ -815,6 +852,7 @@ impl Supervisor {
                     .profile
                     .allows(&Op::Connect(Remote::Unix(Some(&absolute))))
                 {
+                    self.tell(chat, CONNECT, absolute.display().to_string());
                     return Err(REFUSED);
                 }
                 let socket = socket(
@@ -835,6 +873,7 @@ impl Supervisor {
                     ip: remote.ip(),
                     port: remote.port(),
                 })) {
+                    self.tell(chat, CONNECT, remote.to_string());
                     return Err(REFUSED);
                 }
                 let (family, address): (AddressFamily, Box<dyn nix::sys::socket::SockaddrLike>) =
@@ -928,6 +967,13 @@ fn outside_process_stat_only(chat: &Chat<'_>, path: &Path) -> bool {
         }
         _ => false,
     }
+}
+
+/// The name the kernel keeps for process `tgid` (its `comm`), where it can be read.
+fn process_name(tgid: i32) -> Option<String> {
+    let name = std::fs::read_to_string(format!("/proc/{tgid}/comm")).ok()?;
+    let name = name.trim_end_matches('\n');
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 /// The process's file mode creation mask.
