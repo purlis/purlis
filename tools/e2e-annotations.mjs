@@ -143,7 +143,7 @@ const SECRET_SHAPES = [
 
 // Colour codes the spec reporter and `expect` put in their messages.
 // eslint-disable-next-line no-control-regex
-const ANSI = /\u001b\[[0-9;]*m/g;
+export const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** The records in a `failures.jsonl`, skipping any line that is not JSON (a write cut short). */
 export function readRecords(text) {

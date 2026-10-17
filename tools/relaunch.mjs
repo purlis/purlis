@@ -76,13 +76,14 @@ if (!existsSync(APP)) {
 
 const failures = [];
 /**
- * The launch the checks are about: its name, and its steps with their times once it has ended.
+ * The launch the checks are about: its name, and the timer of its steps (stopped once it ends).
  * A failed check is annotated with both (#2183), so the checks API says where the run stopped.
  */
-let launch = { name: "before the first launch", steps: "" };
+let launch = { name: "before the first launch", timer: undefined };
+const stepsOf = ({ timer }) => timer?.summary() ?? "";
 function check(what, ok, detail = "") {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}${detail ? ` — ${detail}` : ""}`);
-  if (!ok) failures.push({ launch: launch.name, what, detail, steps: launch.steps });
+  if (!ok) failures.push({ launch: launch.name, what, detail, steps: stepsOf(launch) });
 }
 
 /**
@@ -105,7 +106,7 @@ process.on("uncaughtException", (error) => {
     launch: launch.name,
     what: "the run stopped",
     detail: String(error?.stack ?? error),
-    steps: launch.steps || launch.timer?.summary() || "",
+    steps: stepsOf(launch),
   });
   finish(1);
 });
@@ -235,7 +236,7 @@ function pressing(answer, argvFile, hold = 2_000) {
  */
 async function theAppRuns(name, plane, done, answer) {
   const steps = stepTimer();
-  launch = { name, steps: "", timer: steps };
+  launch = { name, timer: steps };
   steps.step("starting the app");
   const port = await aFreePort();
   // `CHARTER_LAUNCH_LOG` makes the app say how far up it got. A launch that never reaches
@@ -294,7 +295,7 @@ async function theAppRuns(name, plane, done, answer) {
       app.on("exit", gone);
       setTimeout(gone, 3_000);
     });
-    launch.steps = steps.summary();
+    steps.stop();
   }
 }
 

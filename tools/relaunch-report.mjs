@@ -4,7 +4,7 @@
 // What the relaunch test (`tools/relaunch.mjs`) reads and how it reports, apart from the script
 // so that it can be tested: `relaunch.mjs` runs the app the moment it is imported.
 
-import { escapeData, escapeProperty, redacted } from "./e2e-annotations.mjs";
+import { ANSI, escapeData, escapeProperty, redacted } from "./e2e-annotations.mjs";
 
 /** How much of what a check saw one annotation keeps: its head and its end. */
 export const DETAIL_CHARS = 600;
@@ -33,19 +33,25 @@ export function linesWritten(text) {
  */
 export function stepTimer(now = Date.now) {
   const steps = [];
+  let stopped;
   return {
-    /** Begins `name`, which ends the step before it. */
+    /** Begins `name`, which ends the step before it; nothing, once the timer is stopped. */
     step(name) {
+      if (stopped !== undefined) return;
       steps.push({ name, at: now() });
     },
     /** The step begun last, if any. */
     current() {
       return steps.at(-1)?.name;
     },
-    /** Each step and its seconds, the last one's counted to now. */
+    /** Ends the last step: the launch is over, and a summary read later says how long it took. */
+    stop() {
+      stopped ??= now();
+    },
+    /** Each step and its seconds, the last one's counted to when the timer stopped, or to now. */
     summary() {
       if (steps.length === 0) return "no step started";
-      const until = now();
+      const until = stopped ?? now();
       return steps
         .map(({ name, at }, index) => {
           const end = steps[index + 1]?.at ?? until;
@@ -74,7 +80,15 @@ function cut(detail) {
 export function annotations(failures) {
   const lines = failures.slice(0, PER_STEP).map(({ launch, what, detail, steps }) => {
     const title = ["relaunch", launch, what].filter(Boolean).join(" › ");
-    const saw = cut(String(detail ?? "")).split("\n").map(redacted).join("\n");
+    // Redacted before it is cut: a secret the cut went through would be a fragment too short for
+    // the shapes to know.
+    const saw = cut(
+      String(detail ?? "")
+        .replace(ANSI, "")
+        .split("\n")
+        .map(redacted)
+        .join("\n"),
+    );
     const message = [saw, steps ? `steps: ${steps}` : ""].filter(Boolean).join("\n\n");
     return `::error title=${escapeProperty(title)}::${escapeData(message || "failed")}`;
   });

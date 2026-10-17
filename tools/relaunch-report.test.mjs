@@ -102,3 +102,29 @@ test("past ten failures, a notice counts the rest, since GitHub keeps ten errors
 test("no failure, no annotation", () => {
   assert.deepEqual(annotations([]), []);
 });
+
+test("a token across the cut is redacted whole, not left as a fragment the shapes miss", () => {
+  const token = ["ghp", "_", "abcdefghijklmnopqrstuvwxyz0123"].join("");
+  // The head the cut keeps ends a few characters into the token.
+  const head = Math.floor((DETAIL_CHARS - 1) / 2);
+  const detail = `${"a".repeat(head - 8)} ${token} ${"b".repeat(DETAIL_CHARS * 2)}`;
+  const [line] = annotations([aFailure({ detail, steps: "" })]);
+  assert.ok(!line.includes("ghp_"), line.slice(0, head + 20));
+});
+
+test("what it saw is annotated without colour codes", () => {
+  const [line] = annotations([aFailure({ detail: "\u001b[31mExpected\u001b[39m 2", steps: "" })]);
+  assert.ok(line.endsWith("::Expected 2"), line);
+});
+
+test("a stopped timer's last step ends when it was stopped, however late it is read", () => {
+  const clock = aClock();
+  const steps = stepTimer(clock.now);
+  steps.step("ending the app");
+  clock.pass(3_000);
+  steps.stop();
+  clock.pass(60_000);
+  // An answer still trying in the background, after the launch was ended, adds nothing.
+  steps.step("waiting for the launch's question");
+  assert.equal(steps.summary(), "ending the app 3.0 s");
+});
