@@ -612,6 +612,10 @@ pub(crate) struct Inner {
     person_drives: AtomicBool,
     /// Where each held request is sent to be judged, on a thread of its own (#2018).
     judging: Mutex<Option<std::sync::mpsc::Sender<(Paused, Outbound)>>>,
+    /// Where a judged browser's other follow-ups are carried out, in order, on a thread of their
+    /// own (#2018): each waits on the engine, and the event reader must stay free to hear every
+    /// held request, or a page's load waits on a call that waits on the load.
+    following: Mutex<Option<std::sync::mpsc::Sender<FollowUp>>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -712,6 +716,7 @@ impl Browser {
             judge,
             person_drives: AtomicBool::new(false),
             judging: Mutex::new(None),
+            following: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -729,6 +734,20 @@ impl Browser {
                 })
                 .map_err(|e| Refusal::Engine(e.to_string()))?;
             *lock(&inner.judging) = Some(judging);
+            let (following, steps) = std::sync::mpsc::channel::<FollowUp>();
+            let follow_for = Arc::downgrade(&inner);
+            thread::Builder::new()
+                .name("browser-follow-ups".to_owned())
+                .spawn(move || {
+                    for step in steps {
+                        let Some(inner) = follow_for.upgrade() else {
+                            break;
+                        };
+                        inner.follow_up(step);
+                    }
+                })
+                .map_err(|e| Refusal::Engine(e.to_string()))?;
+            *lock(&inner.following) = Some(following);
         }
         let reading = inner.clone();
         thread::Builder::new()
@@ -2496,6 +2515,17 @@ impl Inner {
         }
         self.changed.notify_all();
         for step in follow {
+            let step = match step {
+                // Handed to the judge's own thread at once.
+                judge @ FollowUp::Judge { .. } => judge,
+                other => match &*lock(&self.following) {
+                    Some(following) => match following.send(other) {
+                        Ok(()) => continue,
+                        Err(unsent) => unsent.0,
+                    },
+                    None => other,
+                },
+            };
             self.follow_up(step);
         }
     }

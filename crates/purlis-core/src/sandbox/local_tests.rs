@@ -1142,7 +1142,10 @@ fn a_kept_browser_site_policy_now_refuses_reaches_no_browser() {
     let file = Path::new("/etc/purlis/policy.json");
     let never = Locks::parse(r#"{"sandbox": {"never-hosts": ["*.paste.example"]}}"#, file);
     assert!(browser_site_held(&pasted, &never).is_some());
-    assert_eq!(browser_sites_in_force(root, &never), std::slice::from_ref(&news));
+    assert_eq!(
+        browser_sites_in_force(root, &never),
+        std::slice::from_ref(&news)
+    );
     assert_eq!(browser_sites(root).len(), 2, "held, and still kept");
     let scopes = Locks::parse(r#"{"sandbox": {"allow-scopes": ["chat"]}}"#, file);
     assert!(browser_sites_in_force(root, &scopes).is_empty());
