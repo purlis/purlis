@@ -204,6 +204,7 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
                 { "id": "dark", "appearance": "dark", "high_contrast": false },
                 { "id": "light", "appearance": "light", "high_contrast": false }
             ],
+            "options": [], "combinations": 2,
             "from": { "kind": "built-in" }, "refused": null
         })
     );
@@ -221,6 +222,7 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
         serde_json::json!({
             "id": "nord/Nord", "name": "Nord",
             "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
+            "options": [], "combinations": 1,
             "from": { "kind": "extension", "extension": "nord" }, "refused": null
         })
     );
@@ -430,6 +432,8 @@ fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
         serde_json::json!({
             "id": "dim/Dim", "name": "Dim",
             "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
+            "options": [],
+            "combinations": 1,
             "from": { "kind": "extension", "extension": "dim" }
         })
     );
@@ -516,4 +520,126 @@ fn listing_and_checking_write_nothing_in_the_plane_or_the_config_home() {
     rig.run(&["check", "nord/Nord", "--json"]);
 
     assert_eq!(every_file(rig.dir.path()), before);
+}
+
+/// A theme folder `dusk` with a dark and a light appearance and `options`.
+fn options_folder(rig: &Rig, options: &serde_json::Value) -> PathBuf {
+    let folder = rig.dir.path().join("themes/dusk");
+    std::fs::create_dir_all(&folder).expect("a theme folder");
+    std::fs::write(
+        folder.join("theme.json"),
+        serde_json::json!({
+            "name": "Dusk",
+            "appearances": [
+                { "id": "dark", "appearance": "dark" },
+                { "id": "light", "appearance": "light" }
+            ],
+            "options": options
+        })
+        .to_string(),
+    )
+    .expect("a theme.json");
+    folder
+}
+
+#[test]
+fn the_check_runs_every_appearance_and_option_combination_and_names_the_one_that_fails() {
+    let rig = Rig::new();
+    // Quiet text is drawn in a grey that fails on the dark window, and only when it is on.
+    let folder = options_folder(
+        &rig,
+        &serde_json::json!([
+            {
+                "id": "quiet", "kind": "toggle", "label": "Quiet text", "default": false,
+                "on": { "appearances": { "dark": { "tokens": { "text.muted": "#555555" } } } }
+            },
+            {
+                "id": "accent", "kind": "choice", "label": "Accent", "default": "classic",
+                "values": [
+                    { "id": "classic", "label": "Classic" },
+                    { "id": "same", "label": "Same" }
+                ]
+            }
+        ]),
+    );
+    let at = folder.display().to_string();
+
+    let ran = rig.run(&["check", &at]);
+
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    assert!(
+        ran.out.contains(
+            "options: quiet (a toggle, off by default); accent (one of classic, same; classic \
+             by default) — 8 combinations checked\n"
+        ),
+        "{}",
+        ran.out
+    );
+    // Found in both of the combinations quiet is on in, on the dark window, and in none other.
+    let failing: Vec<&str> = ran
+        .out
+        .lines()
+        .filter(|line| line.contains("text.muted on surface.base:"))
+        .collect();
+    assert_eq!(failing.len(), 2, "{}", ran.out);
+    assert!(
+        failing
+            .iter()
+            .all(|line| line.starts_with("  dark, quiet on, accent ")),
+        "{}",
+        ran.out
+    );
+
+    let json = rig.run(&["check", &at, "--json"]).json();
+    assert_eq!(json["theme"]["combinations"], 8);
+    assert_eq!(json["theme"]["options"][0]["id"], "quiet");
+    assert_eq!(json["theme"]["options"][0]["kind"], "toggle");
+    assert_eq!(json["theme"]["options"][1]["values"][1]["id"], "same");
+    let first = &json["warnings"][0];
+    assert_eq!(first["appearance"], "dark");
+    assert_eq!(first["options"]["quiet"], "on");
+    // In the theme's order of its options, not by name.
+    let named: Vec<&str> = first["options"]
+        .as_object()
+        .expect("the option values")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(named, ["quiet", "accent"]);
+}
+
+#[test]
+fn a_theme_past_64_combinations_is_refused_with_its_count_and_exits_one() {
+    let rig = Rig::new();
+    let choice = |id: &str| {
+        serde_json::json!({
+            "id": id, "kind": "choice", "label": id, "default": "a",
+            "values": [
+                { "id": "a", "label": "A" }, { "id": "b", "label": "B" },
+                { "id": "c", "label": "C" }
+            ]
+        })
+    };
+    // Two appearances × 3 × 3 × 3 × 3 = 162.
+    let folder = options_folder(
+        &rig,
+        &serde_json::json!([
+            choice("one"),
+            choice("two"),
+            choice("three"),
+            choice("four")
+        ]),
+    );
+
+    let ran = rig.run(&["check", &folder.display().to_string()]);
+
+    assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
+    assert!(
+        ran.out.contains(
+            "Dusk has 162 combinations of appearance and option values (2 appearances x 3 x 3 \
+             x 3 x 3), and the theme check covers at most 64"
+        ),
+        "{}",
+        ran.out
+    );
 }

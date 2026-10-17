@@ -47,9 +47,10 @@ pub enum ThemeCommand {
         json: bool,
     },
     /// The theme check of one theme: why it is refused, if it is; what purlis left out of it;
-    /// its contrast warnings in each appearance (each pair with its ratio and its floor, as it
-    /// is and in every workspace tint); and its hard floors. Exits 0 when the theme is drawn,
-    /// 1 when it is refused, 2 when there is no such theme.
+    /// its contrast warnings in every combination of its appearances and option values (each
+    /// pair with its ratio and its floor, as it is and in every workspace tint); and its hard
+    /// floors. A theme with more than 64 combinations is refused with its count. Exits 0 when
+    /// the theme is drawn, 1 when it is refused, 2 when there is no such theme.
     Check {
         /// A theme's id from `purlis theme list`, or the path of a theme file or a theme
         /// folder. An id may hold a space (`solarized/Solarized Dark`): quote it.
@@ -154,6 +155,13 @@ impl Found {
     }
 
     fn summary_json(&self) -> Value {
+        let (options, combinations) = match &self.theme {
+            Some(theme) => (
+                serde_json::to_value(&theme.options).unwrap_or_default(),
+                Value::from(theme.combinations()),
+            ),
+            None => (Value::Null, Value::Null),
+        };
         let (name, appearances) = match &self.theme {
             Some(theme) => (
                 Value::from(theme.name.clone()),
@@ -177,6 +185,8 @@ impl Found {
             "id": self.id,
             "name": name,
             "appearances": appearances,
+            "options": options,
+            "combinations": combinations,
             "from": self.from.json(),
             "refused": self.refused,
         })
@@ -504,19 +514,67 @@ fn appearance(appearance: theme::Appearance) -> &'static str {
 /// What the check says about hard floors until the engine keeps them (#2332): not a pass.
 const FLOORS_NOT_CHECKED: &str = "not checked by this purlis yet";
 
-/// The check of each appearance, by its id, in the theme's order. A refused theme has none.
-fn checks(found: &Found) -> Vec<(String, theme::Report)> {
-    found.theme.as_ref().map_or_else(Vec::new, |theme| {
-        theme
-            .appearances
-            .iter()
-            .map(|one| (one.id.clone(), theme::check(one)))
-            .collect()
+/// The check of every combination of appearance and option values, in the engine's order. A
+/// refused theme has none.
+fn checks(found: &Found) -> Vec<theme::Checked> {
+    found
+        .theme
+        .as_ref()
+        .map_or_else(Vec::new, theme::check_every)
+}
+
+/// The option values a combination was drawn with, in the theme's order of its options.
+fn in_theme_order<'a>(
+    theme: &'a Theme,
+    checked: &'a theme::Checked,
+) -> impl Iterator<Item = (&'a str, &'a str)> {
+    theme.options.iter().filter_map(|option| {
+        checked
+            .options
+            .get(&option.id)
+            .map(|value| (option.id.as_str(), value.as_str()))
     })
 }
 
+/// What a combination is called on a warning's line: its appearance, and each option's value
+/// in the theme's order when the theme has options (`dark, borders on, accent teal`).
+fn combination(theme: &Theme, checked: &theme::Checked) -> String {
+    let mut parts = vec![checked.appearance.clone()];
+    parts.extend(in_theme_order(theme, checked).map(|(option, value)| format!("{option} {value}")));
+    shown::short(&parts.join(", "))
+}
+
+/// The theme's options as the check's header says them: each id, its kind, its values and its
+/// default.
+fn options_line(theme: &Theme) -> Option<String> {
+    if theme.options.is_empty() {
+        return None;
+    }
+    let each: Vec<String> = theme
+        .options
+        .iter()
+        .map(|one| match one.kind {
+            theme::Kind::Toggle => format!("{} (a toggle, {} by default)", one.id, one.default),
+            theme::Kind::Choice => {
+                let values: Vec<&str> = one.values.iter().map(|it| it.id.as_str()).collect();
+                format!(
+                    "{} (one of {}; {} by default)",
+                    one.id,
+                    values.join(", "),
+                    one.default
+                )
+            }
+        })
+        .collect();
+    Some(format!(
+        "options: {} — {} combinations checked\n",
+        shown::readable(&each.join("; "), 480),
+        theme.combinations()
+    ))
+}
+
 /// The check as a person reads it.
-fn checked_text(found: &Found, checked: &[(String, theme::Report)]) -> String {
+fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
     let mut out = String::new();
     let Some(theme) = &found.theme else {
         // The person's own is the one the window would have drawn: it draws Purlis instead.
@@ -540,6 +598,9 @@ fn checked_text(found: &Found, checked: &[(String, theme::Report)]) -> String {
         found.from.said(),
         appearances(theme)
     ));
+    if let Some(line) = options_line(theme) {
+        out.push_str(&line);
+    }
     if found.notes.is_empty() {
         out.push_str("left out: nothing\n");
     } else {
@@ -548,18 +609,21 @@ fn checked_text(found: &Found, checked: &[(String, theme::Report)]) -> String {
             out.push_str(&format!("  {}\n", shown::readable(&note.said, 240)));
         }
     }
-    // An appearance is named on its lines only when there is more than one to tell apart.
+    // A combination is named on its lines only when there is more than one to tell apart.
     let named = checked.len() > 1;
     let said: Vec<String> = checked
         .iter()
-        .flat_map(|(id, report)| {
-            warnings(&report.findings).into_iter().map(move |warning| {
-                if named {
-                    format!("{}: {}", shown::short(id), warning.line())
-                } else {
-                    warning.line()
-                }
-            })
+        .flat_map(|one| {
+            let called = combination(theme, one);
+            warnings(&one.report.findings)
+                .into_iter()
+                .map(move |warning| {
+                    if named {
+                        format!("{called}: {}", warning.line())
+                    } else {
+                        warning.line()
+                    }
+                })
         })
         .collect();
     if said.is_empty() {
@@ -681,22 +745,33 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
     found
 }
 
-/// The check as a chat reads it: the theme and its appearances, why it is refused (or `null`),
-/// what refused it (`errors`), what was left out of it (`notes`), each appearance's warnings as
-/// the engine reports them with the appearance's id added, its hard floors (`null` until the
-/// engine keeps them), and whether it is clean: no error, no note and no warning. `clean` does
-/// not cover hard floors, which are reported on their own.
-fn checked_json(found: &Found, checked: &[(String, theme::Report)]) -> Value {
+/// The check as a chat reads it: the theme, its appearances and options, why it is refused (or
+/// `null`), what refused it (`errors`), what was left out of it (`notes`), each combination's
+/// warnings as the engine reports them with the appearance's id and the option values added, its
+/// hard floors (`null` until the engine keeps them), and whether it is clean: no error, no note
+/// and no warning. `clean` does not cover hard floors, which are reported on their own.
+fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
     let summary = found.summary_json();
     let errors = serde_json::to_value(&found.errors).unwrap_or_default();
     let notes = serde_json::to_value(&found.notes).unwrap_or_default();
     let warnings: Vec<Value> = checked
         .iter()
-        .flat_map(|(id, report)| {
-            report.findings.iter().map(move |finding| {
+        .flat_map(|one| {
+            // The option values in the theme's order of its options.
+            let options: serde_json::Map<String, Value> = found
+                .theme
+                .as_ref()
+                .map(|theme| {
+                    in_theme_order(theme, one)
+                        .map(|(option, value)| (option.to_owned(), Value::from(value)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            one.report.findings.iter().map(move |finding| {
                 let mut said = serde_json::to_value(finding).unwrap_or_default();
                 if let Some(fields) = said.as_object_mut() {
-                    fields.insert("appearance".to_owned(), Value::from(id.clone()));
+                    fields.insert("appearance".to_owned(), Value::from(one.appearance.clone()));
+                    fields.insert("options".to_owned(), Value::Object(options.clone()));
                 }
                 said
             })
@@ -709,6 +784,8 @@ fn checked_json(found: &Found, checked: &[(String, theme::Report)]) -> Value {
             "id": summary["id"],
             "name": summary["name"],
             "appearances": summary["appearances"],
+            "options": summary["options"],
+            "combinations": summary["combinations"],
             "from": summary["from"],
         },
         "refused": summary["refused"],

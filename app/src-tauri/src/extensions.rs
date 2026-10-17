@@ -268,10 +268,70 @@ fn theme_in_force_of(
         offered,
     );
     ThemeInForce {
+        options: drawn
+            .theme
+            .as_ref()
+            .map(|theme| theme.options.iter().map(WindowOption::from).collect())
+            .unwrap_or_default(),
         theme: drawn.theme.as_ref().map(WindowTheme::from),
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
+    }
+}
+
+/// One option of the theme drawn (#2325), as Settings shows it: what it is called, its values,
+/// the value drawn and whether a choice made it (`false`: the theme's default).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowOption {
+    pub id: String,
+    pub label: String,
+    /// One line on what it changes; empty when the theme says none.
+    pub description: String,
+    /// `toggle` or `choice`.
+    pub kind: String,
+    /// Its values in the theme's order, each with what a person calls it: a toggle's are `off`
+    /// and `on`.
+    pub values: Vec<WindowOptionValue>,
+    /// The value drawn.
+    pub value: String,
+    /// The theme's default.
+    pub default: String,
+    /// Whether a choice made the value drawn; `false` when it is the theme's default.
+    pub chosen: bool,
+}
+
+/// One value of a theme option.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowOptionValue {
+    pub id: String,
+    pub label: String,
+}
+
+impl From<&purlis_core::theme::OptionDrawn> for WindowOption {
+    fn from(drawn: &purlis_core::theme::OptionDrawn) -> Self {
+        let option = &drawn.option;
+        Self {
+            id: option.id.clone(),
+            label: option.label.clone(),
+            description: option.description.clone(),
+            kind: match option.kind {
+                purlis_core::theme::Kind::Toggle => "toggle",
+                purlis_core::theme::Kind::Choice => "choice",
+            }
+            .to_owned(),
+            values: option
+                .values
+                .iter()
+                .map(|one| WindowOptionValue {
+                    id: one.id.clone(),
+                    label: one.label.clone(),
+                })
+                .collect(),
+            value: drawn.value.clone(),
+            default: option.default.clone(),
+            chosen: drawn.chosen,
+        }
     }
 }
 
@@ -288,6 +348,9 @@ pub struct ThemeInForce {
     /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
     /// drawn has purlis's own values for those tokens.
     pub floors: Option<String>,
+    /// The options of the theme drawn, each with the value it is drawn with (#2325): empty for
+    /// a theme with none.
+    pub options: Vec<WindowOption>,
 }
 
 /// A resolved theme as the window applies it: the window's `Theme`, every token and every
@@ -1725,6 +1788,45 @@ mod tests {
             (theme.name.as_str(), theme.appearance.as_str()),
             ("Mine", "light")
         );
+    }
+
+    #[test]
+    fn the_window_is_handed_the_drawn_theme_s_options_with_the_value_each_is_drawn_with() {
+        let mine = purlis_core::theme::load_text(
+            r##"{"name":"Mine","appearances":[{"id":"dark","appearance":"dark"}],
+                "options":[{"id":"borders","kind":"toggle","label":"Borders",
+                    "description":"A rule between panes.","default":true,
+                    "on":{"tokens":{"border.subtle":"#777777"}}}]}"##,
+        );
+        assert!(!mine.refused, "{:?}", mine.complaints);
+        let drawn = theme_in_force_of(None, None, Some(&mine.theme), false, || unreachable!());
+        assert_eq!(
+            drawn.options,
+            [WindowOption {
+                id: "borders".to_owned(),
+                label: "Borders".to_owned(),
+                description: "A rule between panes.".to_owned(),
+                kind: "toggle".to_owned(),
+                values: ["off", "on"]
+                    .into_iter()
+                    .zip(["Off", "On"])
+                    .map(|(id, label)| WindowOptionValue {
+                        id: id.to_owned(),
+                        label: label.to_owned(),
+                    })
+                    .collect(),
+                value: "on".to_owned(),
+                default: "on".to_owned(),
+                chosen: false,
+            }]
+        );
+        assert_eq!(
+            drawn.theme.expect("drawn").values["border.subtle"],
+            "#777777"
+        );
+        // Purlis Classic has none.
+        let classic = theme_in_force_of(Some("purlis-dark"), None, None, false, || unreachable!());
+        assert!(classic.options.is_empty());
     }
 
     #[test]
