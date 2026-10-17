@@ -62,7 +62,11 @@ impl Chat {
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let hooks = GitHooks::at(root.join("app").join("git-hooks"));
         hooks.write(Path::new(CHARTER)).unwrap();
-        let socket = root.join("app").join("hooks.sock");
+        // Where the app's is, in the folder a sandboxed chat is denied: the one place a hook
+        // spools a line the app does not take in time (`spool::covered`). Anywhere else that line
+        // is lost, and a loaded runner loses it (#2255).
+        let socket = root.join(".purlis").join("app").join("hooks.sock");
+        std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
         let listener = Listener::bind(&root, &socket).expect("a socket");
         let token = listener.tokens().issue_to_this_process(7).expect("a token");
         let (tx, heard) = mpsc::channel();
@@ -725,11 +729,7 @@ fn a_refusal_the_app_is_too_slow_to_take_is_in_the_spool_when_git_returns() {
         spool::holds_lines(&spool::dir_for(&chat.socket), 7),
         "the hook spooled the line the app did not take in time"
     );
-    // RED probe (#2255): the old live-only wait.
-    let heard = chat
-        .heard
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .unwrap();
+    let heard = chat.refused();
     assert_eq!(heard.chat, 7);
     assert!(heard.commit_refused.contains("deploy.sh:1"), "{heard:?}");
     assert!(!heard.commit_refused.contains(&key()), "{heard:?}");
