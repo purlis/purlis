@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The control loop: each Claim, whenever it, its upstream claim, its Pool or the policy's
-//! binding changes, is brought to what [`crate::upstream`] says it asks for, and its status to
+//! The control loop: each Claim, whenever it, its upstream claim, its pool's template or warm
+//! pool in its namespace, its Pool or the policy's binding changes, is brought to what [`crate::upstream`] says it asks for, and its status to
 //! what upstream says of it. A Claim not admitted under the policy ([`crate::admission`]) is
 //! never acted on: only its status says why.
 //!
@@ -17,7 +17,7 @@ use crate::upstream::{
 };
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
-use kube::api::{Api, ObjectMeta, Patch, PatchParams, PostParams};
+use kube::api::{Api, ApiResource, DynamicObject, ObjectMeta, Patch, PatchParams, PostParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::reflector::ObjectRef;
 use kube::runtime::watcher;
@@ -218,7 +218,7 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
                     status_of_an_object_in_the_way(&kind, &object),
                 )
                 .await?;
-                return Ok(Action::requeue(LOOK_AGAIN));
+                return Ok(Action::await_change());
             }
             put(&templates, template, template_found).await?;
             put(&warm_pools, warm, warm_found).await?;
@@ -293,10 +293,6 @@ async fn write_status(
 /// How long a claim that could not be reconciled waits before it is tried again.
 const RETRY: Duration = Duration::from_secs(10);
 
-/// How often a claim an upstream object is in the way of looks again whether it is gone: the
-/// operator does not watch objects it did not make.
-const LOOK_AGAIN: Duration = Duration::from_secs(15);
-
 /// How long a claim waits before it is tried again after an object changed under it between
 /// reading and writing it: soon, from what the cluster holds now.
 const READ_AGAIN: Duration = Duration::from_secs(1);
@@ -310,6 +306,23 @@ fn error_policy(claim: Arc<Claim>, error: &Error, _: Arc<Context>) -> Action {
     Action::requeue(retry)
 }
 
+/// The Claims to look at again when `object`, a template or warm pool, changes or goes: every
+/// Claim in its namespace on the pool it is named for, whoever made it. A Claim that still needs
+/// it then makes it again, and one it was in the way of goes on once it is gone.
+pub fn claims_woken_by(
+    object: &ObjectMeta,
+    claims: impl IntoIterator<Item = Arc<Claim>>,
+) -> Vec<ObjectRef<Claim>> {
+    let Some(pool) = object.name.as_deref().and_then(upstream::pool_of) else {
+        return Vec::new();
+    };
+    claims
+        .into_iter()
+        .filter(|claim| claim.spec.pool == pool && claim.metadata.namespace == object.namespace)
+        .map(|claim| ObjectRef::from_obj(&*claim))
+        .collect()
+}
+
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
 pub async fn run(client: Client) {
     let controller = Controller::new(
@@ -318,10 +331,43 @@ pub async fn run(client: Client) {
     );
     let claims = controller.store();
     let every_claim = controller.store();
+    let by_template = controller.store();
+    let by_warm_pool = controller.store();
+    // Upstream's objects are watched as they are, whoever made them and whatever they hold: each
+    // wakes the Claims it is named for, so a Claim that still needs one it made makes it again
+    // at once, and one an object was in the way of goes on as soon as it is gone.
+    let upstream_kind = |resource: ApiResource| -> (Api<DynamicObject>, ApiResource) {
+        (Api::all_with(client.clone(), &resource), resource)
+    };
+    let (upstream_claims, upstream_claim) = upstream_kind(ApiResource::erase::<SandboxClaim>(&()));
+    let (templates, template) = upstream_kind(ApiResource::erase::<SandboxTemplate>(&()));
+    let (warm_pools, warm_pool) = upstream_kind(ApiResource::erase::<SandboxWarmPool>(&()));
     controller
-        .owns(
-            Api::<SandboxClaim>::all(client.clone()),
+        // A Claim's upstream claim has its name.
+        .watches_with(
+            upstream_claims,
+            upstream_claim,
             watcher::Config::default(),
+            |upstream: DynamicObject| {
+                upstream
+                    .metadata
+                    .name
+                    .clone()
+                    .zip(upstream.metadata.namespace.clone())
+                    .map(|(name, namespace)| ObjectRef::new(&name).within(&namespace))
+            },
+        )
+        .watches_with(
+            templates,
+            template,
+            watcher::Config::default(),
+            move |object: DynamicObject| claims_woken_by(&object.metadata, by_template.state()),
+        )
+        .watches_with(
+            warm_pools,
+            warm_pool,
+            watcher::Config::default(),
+            move |object: DynamicObject| claims_woken_by(&object.metadata, by_warm_pool.state()),
         )
         .watches(
             Api::<Pool>::all(client.clone()),
