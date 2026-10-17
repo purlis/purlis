@@ -20,7 +20,8 @@
 //!   gated send held to the board's answer, as a vault's Allow is (ADR 0064, amended
 //!   2026-10-16).
 //! - **The Ask ends with its browser**: closed by the chat, ended by a narrowing, by its chat
-//!   closing, or by Stop all. Each leaves an Update in the Inbox ([`Ended`]),
+//!   closing, by Stop all, or by its engine ending on its own, which the session host's word of
+//!   the program's end tells at once (#2385). Each leaves an Update in the Inbox ([`Ended`]),
 //!   and the chat is told nothing more than its next browser call says.
 //!
 //! **In memory only**, like every Ask a chat raises: a relaunch starts with none. Nothing the

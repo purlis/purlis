@@ -285,6 +285,60 @@ fn the_ask_ends_with_its_browser_and_leaves_an_update() {
 }
 
 #[test]
+fn an_engine_that_ends_while_its_ask_waits_ends_the_ask_at_once_with_an_update() {
+    // #2385: the session host says the browser's program ended; the chat calls nothing.
+    let project = Project::new();
+    project.call(&browse(CHAT, Some("b1"), needs_you()));
+
+    assert!(project.browsers.engine_ended("program-1"));
+    project.needs.settle(&project.browsers, 1002);
+
+    assert!(project.needs.waiting().is_empty());
+    let ended = project.ended.lock().unwrap().clone();
+    assert_eq!(ended.len(), 1);
+    assert_eq!((ended[0].session, ended[0].browser.as_str()), (CHAT, "b1"));
+    assert_eq!(ended[0].at, 1002);
+    assert!(
+        project.browsers.listed().is_empty(),
+        "its row leaves the chat"
+    );
+}
+
+#[test]
+fn after_its_engine_ended_the_chats_next_call_says_the_browser_has_gone() {
+    let project = Project::new();
+    project.call(&browse(CHAT, Some("b1"), needs_you()));
+    project.browsers.engine_ended("program-1");
+    project.needs.settle(&project.browsers, 1002);
+
+    let why = refusal(project.call(&browse(CHAT, None, open_captcha())));
+
+    assert_eq!(
+        why,
+        "browser b1 has ended (stopped, or its engine closed), and what it held is gone: the \
+         next browser call opens a new one"
+    );
+    // And the call after opens a new one.
+    let next = project.call(&browse(CHAT, None, open_captcha()));
+    assert!(
+        matches!(&next, Answer::Browsed { browser, .. } if browser == "b2"),
+        "{next:?}"
+    );
+}
+
+#[test]
+fn the_end_of_a_program_no_chat_uses_ends_nothing() {
+    let project = Project::new();
+    project.call(&browse(CHAT, Some("b1"), needs_you()));
+
+    assert!(!project.browsers.engine_ended("program-9"));
+    project.needs.settle(&project.browsers, 1002);
+
+    assert_eq!(project.needs.waiting().len(), 1);
+    assert!(project.ended.lock().unwrap().is_empty());
+}
+
+#[test]
 fn a_chat_that_closes_and_stop_all_each_end_their_asks_with_an_update() {
     let project = Project::new();
     project.call(&browse(CHAT, Some("b1"), needs_you()));
