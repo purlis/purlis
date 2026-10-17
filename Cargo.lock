@@ -5607,6 +5607,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ureq",
+ "zeroize",
  "zip 9.0.3",
 ]
 

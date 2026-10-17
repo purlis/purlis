@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::super::login::{CLEAR_FIELD, NAME_FIELD, PASSWORD_FIELD};
 use super::{Engine, browser_with, id, limits, snapshot};
@@ -216,7 +216,7 @@ fn a_login_that_does_not_go_through_clears_what_it_filled_and_still_keeps_it_out
         engine
             .sent("DOM.resolveNode")
             .iter()
-            .any(|sent| sent.params["backendNodeId"] == Value::from(21))
+            .any(|sent| sent.params["backendNodeId"] == 21)
     );
     assert_eq!(browser.driver(), Driver::Agent);
     let text = snapshot(&browser, 1);
