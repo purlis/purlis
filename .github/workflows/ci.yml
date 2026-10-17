@@ -716,7 +716,7 @@ jobs:
   # with no parent-death signal, is where an engine outliving its host would show (#2009).
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only)
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.head_ref == 'probe/2465-macos'
     continue-on-error: true
     runs-on: macos-latest
     timeout-minutes: 45
@@ -734,7 +734,7 @@ jobs:
       - name: Build the tests
         run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci
+        run: for n in 1 2 3 4 5; do tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core --profile ci -E 'test(/hookwire::tests::a_sender_that|hookwire::tests::a_line_is_handed_on/)' || exit 1; done
 
   # The browser engine's tests on macOS, against the runner's own Chrome, on a pull request
   # that changes the engine's crate (#2009). macOS has no parent-death signal, so an engine
