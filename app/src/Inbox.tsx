@@ -780,8 +780,7 @@ function Ask({
                 className={[
                   "ui-button inbox-answer",
                   option.allows ? "allows" : "",
-                  option.preselected === true ||
-                  (option.allows && ALLOW_OR_KEEP.has(ask.source))
+                  option.preselected === true || (option.allows && ALLOW_OR_KEEP.has(ask.source))
                     ? "ui-button-primary"
                     : "",
                 ]

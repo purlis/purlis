@@ -45,11 +45,7 @@ fn the_built_in_themes_clear_every_consent_floor_and_are_drawn_unchanged() {
         assert_eq!(drawn.held, None, "{}", built.name);
         assert_eq!(drawn.theme.as_ref(), Some(built));
         assert!(floors::apart(built) >= DANGER_APART, "{}", built.name);
-        assert!(
-            floors::allow_apart(built) >= ALLOW_APART,
-            "{}",
-            built.name
-        );
+        assert!(floors::allow_apart(built) >= ALLOW_APART, "{}", built.name);
     }
     for pick in ["purlis-dark", "purlis-light", "system"] {
         let pick = Pick::parse(pick).expect("a pick");
@@ -354,7 +350,10 @@ fn an_allow_edged_in_keep_blocked_s_colour_is_drawn_with_purlis_s_accent() {
     let held = held.expect("the floor was held");
     assert_eq!(held.floors, [Floor::AllowApart]);
     assert_eq!(held.tokens, ["accent.base"]);
-    assert!(held.said().contains("Allow is distinguishable from Keep blocked"));
+    assert!(
+        held.said()
+            .contains("Allow is distinguishable from Keep blocked")
+    );
     assert!(floors::allow_apart(&drawn) >= ALLOW_APART);
     assert_eq!(draw(&drawn).held, None);
 }
@@ -385,9 +384,10 @@ fn the_needs_you_mark_is_held_on_a_hovered_control() {
     for appearance in [Appearance::Dark, Appearance::Light] {
         let classic = built_in_for(appearance);
         assert!(
-            check(classic).findings.iter().all(
-                |one| !matches!(one, Finding::Contrast { pair: found, .. } if found == pair)
-            ),
+            check(classic)
+                .findings
+                .iter()
+                .all(|one| !matches!(one, Finding::Contrast { pair: found, .. } if found == pair)),
             "{appearance:?}"
         );
     }
