@@ -831,7 +831,7 @@ pub(crate) fn row(
         changed: record
             .report
             .as_ref()
-            .and_then(|report| report.changed.said.as_deref().map(dispatchrecord::masked)),
+            .and_then(dispatchrecord::Report::changed_said_masked),
         open_session,
         session_record: record.worker.session_record.clone(),
         // Read from the project by the caller that lists rows ([`worktree_row`]).

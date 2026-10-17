@@ -725,12 +725,97 @@ fn holds_a_secret(text: &str) -> bool {
 ///
 /// Masked as tool output is ([`crate::secrets::mcpstart::masked`]: each vault value this
 /// process read or stored, each credential-shaped stretch), with each forge token the process
-/// holds ([`crate::applog::without_values_kept_out`]). A text that still holds a secret by
-/// the rule a message is left out by ([`holds_a_secret`]) is drawn as `***` alone. **Fails
-/// closed** as [`crate::secrets::seen`] does: where a vault value could not be remembered,
-/// every text that is not empty is drawn as `***`.
+/// holds ([`crate::applog::without_values_kept_out`]). A text the store cut ([`cut`]'s mark at
+/// its end) also has its end before the mark masked, as long as the longest value known less
+/// one byte: the cut can have kept the start of a value, which no whole match finds. A text
+/// that still holds a secret by the rule a message is left out by ([`holds_a_secret`]) is
+/// drawn as `***` alone. **Fails closed** as [`crate::secrets::seen`] does: where a vault value
+/// could not be remembered, every text that is not empty is drawn as `***`.
 pub fn masked(text: &str) -> String {
-    let masked = crate::secrets::mcpstart::masked(&crate::applog::without_values_kept_out(text));
+    match cut_mark(text) {
+        Some(at) => format!("{}{}", masked_kept(&text[..at], true), &text[at..]),
+        None => masked_kept(text, false),
+    }
+}
+
+/// [`masked`], for a brief read back with its cut mark taken off ([`brief_sent`]).
+pub fn masked_brief(sent: &SentBrief) -> String {
+    masked_kept(&sent.text, sent.kept == BriefKept::Cut)
+}
+
+impl Report {
+    /// What the report says changed, [`masked`] as a view draws it (#1872).
+    pub fn changed_said_masked(&self) -> Option<String> {
+        self.changed.said.as_deref().map(masked)
+    }
+}
+
+/// Where [`cut`]'s mark begins in `text`, where `text` ends in one: ` [cut at N bytes]`, with
+/// the cap's worth of bytes, or up to three fewer, before it.
+fn cut_mark(text: &str) -> Option<usize> {
+    let open = text.strip_suffix(" bytes]")?.rfind(" [cut at ")?;
+    let most: usize = text[open + " [cut at ".len()..text.len() - " bytes]".len()]
+        .parse()
+        .ok()?;
+    (most.saturating_sub(3)..=most)
+        .contains(&open)
+        .then_some(open)
+}
+
+/// How many masked texts are kept at most, so a view drawn again does not mask them again.
+const MASKED_KEPT: usize = 512;
+
+/// The masked texts kept, by what they were worked out from: the text's digest, whether the
+/// store cut it, and what was known of secrets then. None of them holds a secret.
+type MaskedKey = ([u8; 32], bool, u64, usize);
+
+/// [`masked_now`], kept until what purlis knows of secrets changes: masking a 16 KiB brief
+/// digests every run of its bytes for each length of value known, under the one lock every
+/// vault read takes.
+fn masked_kept(text: &str, cut: bool) -> String {
+    use sha2::Digest as _;
+    use std::collections::HashMap;
+    use std::sync::{Mutex, PoisonError};
+    static KEPT: Mutex<Option<HashMap<MaskedKey, String>>> = Mutex::new(None);
+    let key: MaskedKey = (
+        sha2::Sha256::digest(text.as_bytes()).into(),
+        cut,
+        crate::secrets::seen::generation(),
+        crate::applog::kept_out_extent().0,
+    );
+    if let Some(found) = KEPT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .and_then(|kept| kept.get(&key))
+    {
+        return found.clone();
+    }
+    let masked = masked_now(text, cut);
+    let mut kept = KEPT.lock().unwrap_or_else(PoisonError::into_inner);
+    let kept = kept.get_or_insert_with(HashMap::new);
+    if kept.len() >= MASKED_KEPT {
+        kept.clear();
+    }
+    kept.insert(key, masked.clone());
+    masked
+}
+
+/// `text` masked ([`masked`]); `cut` where the store cut it, so its end is masked too.
+fn masked_now(text: &str, cut: bool) -> String {
+    let text = crate::applog::without_values_kept_out(text);
+    let end = cut
+        .then(|| crate::secrets::seen::longest().max(crate::applog::kept_out_extent().1))
+        .flatten()
+        .map(|longest| {
+            let mut start = text.len() - longest.saturating_sub(1).min(text.len());
+            while !text.is_char_boundary(start) {
+                start -= 1;
+            }
+            start..text.len()
+        })
+        .filter(|end| !end.is_empty());
+    let masked = crate::secrets::mcpstart::masked_also(&text, end);
     if holds_a_secret(&masked) {
         "***".to_owned()
     } else {

@@ -127,7 +127,7 @@ fn record_of(
 fn shown(record: &Record) -> TaskBrief {
     let sent = dispatchrecord::brief_sent(record);
     // Drawn masked (#1872): a secret in the brief is not shown back.
-    let text = dispatchrecord::masked(&sent.text);
+    let text = dispatchrecord::masked_brief(&sent);
     let inert = purlis_core::dispatchgrant::holds_what_draws_as_nothing(&text)
         .then(|| purlis_core::dispatchgrant::inert(&text));
     TaskBrief {

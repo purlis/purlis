@@ -158,7 +158,7 @@ fn row(record: &Record, asker: u32, how: Finished) -> FinishedTask {
         changed: record
             .report
             .as_ref()
-            .and_then(|report| report.changed.said.as_deref().map(dispatchrecord::masked)),
+            .and_then(dispatchrecord::Report::changed_said_masked),
         ended: record.ended.clone(),
         place: record
             .place

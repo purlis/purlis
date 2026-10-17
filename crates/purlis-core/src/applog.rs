@@ -350,6 +350,18 @@ pub fn keep_out(value: &secrecy::SecretString) {
     }
 }
 
+/// How many values [`keep_out`] was given, and the length in bytes of the longest (#1872): what
+/// a caller that keeps a masked text keys it by, and how much of a cut text's end it masks.
+/// Values are only ever added, so the count changes whenever what is kept out does.
+pub fn kept_out_extent() -> (usize, Option<usize>) {
+    use secrecy::ExposeSecret;
+    let kept = KEPT_OUT.lock().unwrap_or_else(|e| e.into_inner());
+    (
+        kept.len(),
+        kept.iter().map(|value| value.expose_secret().len()).max(),
+    )
+}
+
 /// Whether `text` holds a value [`keep_out`] was given: what an error path checks before it
 /// says anything, as the log does before it writes.
 pub fn holds_a_value_kept_out(text: &str) -> bool {
