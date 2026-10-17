@@ -23,7 +23,7 @@ import { TYPE_ALLOWANCE } from "./type.guard.allowance";
  * | Property      | May be                                                        |
  * | ------------- | ------------------------------------------------------------- |
  * | `font-size`   | `var(--font-size-*)`, one of the core's six                    |
- * | `font-weight` | `var(--font-weight-regular)` or `var(--font-weight-strong)`    |
+ * | `font-weight` | `var(--font-weight-*)`, one of the core's three                 |
  * | `line-height` | `var(--line-height-tight)` or `var(--line-height-body)`        |
  * | `font-family` | `var(--font-mono)`                                             |
  * | `color`       | `var(--<a theme's colour token>)`, or `currentColor`           |
@@ -150,9 +150,11 @@ export function roleFor(entry: string): string {
     return "wear ui-text-meta (11px), or ui-text-label over a group: nothing is under 11px";
   }
   if (key === "font-weight") {
-    return /^(?:[6-9]00|bold|bolder)$/.test(value)
-      ? "wear ui-text-strong (600), or a role that is strong: title, heading, label"
-      : "wear a role, which is regular (400) unless it is a title, a heading or a label";
+    if (/^(?:[6-9]00|bold|bolder)$/.test(value)) {
+      return "wear ui-text-strong (600), or a role that is strong: title, heading, label";
+    }
+    if (/^500$/.test(value)) return "use var(--font-weight-medium) (500), a form's label's weight";
+    return "wear a role, which is regular (400) unless it is a title, a heading or a label";
   }
   if (key === "line-height") return "use var(--line-height-body) or var(--line-height-tight)";
   if (key === "font-family") return "wear ui-text-code, the one monospace family (--font-mono)";
@@ -342,6 +344,7 @@ describe("the type guard (#1920)", () => {
       "style fontFamily: `Menlo`",
     ]);
     expect(roleFor('style fontWeight: "600"')).toContain("ui-text-strong");
+    expect(roleFor(".a | font-weight: 500")).toContain("--font-weight-medium");
     expect(roleFor("style fontSize: 13")).toContain("ui-text-body");
     expect(roleFor(".a | font-size: 0.9em")).toContain("a size in em");
     expect(roleFor(".a | font: 600 12px/1.2 system-ui")).toContain("ui-text-secondary");

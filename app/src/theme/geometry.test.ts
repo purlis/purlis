@@ -101,9 +101,9 @@ describe("the core geometry", () => {
     expect(scale("focus")).toEqual([2, 2, -2]);
   });
 
-  it("names two weights, two line heights and one monospace family (#1920)", () => {
+  it("names three weights, two line heights and one monospace family (#1920)", () => {
     const of = (group: keyof typeof GEOMETRY) => GEOMETRY[group].map((name) => values.get(name));
-    expect(of("weight")).toEqual(["400", "600"]);
+    expect(of("weight")).toEqual(["400", "500", "600"]);
     // The window's own line height (`:root`), and a compact line's: nothing moves.
     expect(of("leading")).toEqual(["1.2", "1.4"]);
     const root = /:root\s*\{([^}]*)\}/.exec(read(join(SRC, "App.css")))?.[1] ?? "";
