@@ -657,6 +657,14 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 *tint,
                 None,
             ),
+            Finding::SelectionTextAlone => (
+                "selection.text is a colour while selection.background is \"platform\", so it \
+                 is never drawn"
+                    .to_owned(),
+                None,
+                None,
+                None,
+            ),
         };
         let at = match found
             .iter()

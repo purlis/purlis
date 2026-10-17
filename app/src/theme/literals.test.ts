@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { LITERALS, dataUrls, mixesNoColourOfItsOwn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
-import { TOKENS, property, type Token } from "./theme";
+import { SYNTAX_FACE_PROPERTIES, TOKENS, property, type Token } from "./theme";
 
 /**
  * Every file the window is built from, as text, keyed by its path from `src`.
@@ -387,6 +387,8 @@ describe("the stylesheet and the vocabulary agree", () => {
     ...TOKENS.map(property),
     ...MOTION_TOKENS.map(motionProperty),
     ...GEOMETRY_PROPERTIES,
+    // Each syntax role's italic and bold, written from the theme's flags (#2327).
+    ...SYNTAX_FACE_PROPERTIES,
   ]);
   /** Custom properties the window's sheets declare for themselves, a primitive's component
    *  tokens (`--ui-*`, ADR 0094 §1) among them. A colour may not be one of these — the tests
@@ -452,8 +454,32 @@ describe("the stylesheet and the vocabulary agree", () => {
   it("every token the window has is drawn with", () => {
     // A token nobody reads is a promise to a theme author that charter does not keep.
     const terminal = (token: Token) => token.startsWith("terminal.");
-    const unread = TOKENS.filter((token) => !terminal(token) && !used.has(property(token)));
+    /** The chart palette past its first colour: a chart draws one series today, in `chart.1`,
+     *  and the rest are for a chart with more than one (#2327), which no view draws yet. */
+    const further: readonly Token[] = [
+      "chart.2",
+      "chart.3",
+      "chart.4",
+      "chart.5",
+      "chart.6",
+      "chart.7",
+      "chart.8",
+    ];
+    /** The native window's colour before the first frame (#2327), which the window is
+     *  created with rather than any stylesheet drawing it (#2328, #2331). */
+    const native: readonly Token[] = ["window.background"];
+    const unread = TOKENS.filter(
+      (token) =>
+        !terminal(token) &&
+        !further.includes(token) &&
+        !native.includes(token) &&
+        !used.has(property(token)),
+    );
     expect(unread).toEqual([]);
+    expect(
+      [...further, ...native].filter((token) => used.has(property(token))),
+      "drawn now: not exempt",
+    ).toEqual([]);
   });
 
   it("every motion token the window has is moved with", () => {

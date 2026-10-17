@@ -17,7 +17,10 @@ use serde_json::{Map, Value, json};
 use super::fonts::{MOST_FACES, SLOTS};
 use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::geometry::{STEPS, Step, Unit};
-use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
+use super::vocabulary::{
+    CURSOR_STYLE, CURSOR_STYLES, DURATIONS, EASINGS, FLAGS, LINE_HEIGHT, LINE_HEIGHTS, LONGEST,
+    PLATFORM, PLATFORM_DRAWN, TOKENS,
+};
 
 /// Where the schema is published: the file in the repository, as GitHub serves it.
 pub const SCHEMA_URL: &str =
@@ -67,8 +70,36 @@ const FACE_FILE: &str = "^fonts/[A-Za-z0-9_-][A-Za-z0-9._-]*\\.woff2$";
 pub fn schema() -> Value {
     let mut tokens: Map<String, Value> = TOKENS
         .iter()
-        .map(|token| ((*token).to_owned(), json!({ "$ref": "#/$defs/colour" })))
+        .map(|token| {
+            let colour = if PLATFORM_DRAWN.contains(token) {
+                json!({
+                    "description": format!("A colour, or \"{PLATFORM}\" to leave it to what draws it by default."),
+                    "anyOf": [{ "$ref": "#/$defs/colour" }, { "const": PLATFORM }]
+                })
+            } else {
+                json!({ "$ref": "#/$defs/colour" })
+            };
+            ((*token).to_owned(), colour)
+        })
         .collect();
+    // The tokens that are not colours (#2327), each of its own type.
+    for flag in FLAGS {
+        tokens.insert((*flag).to_owned(), json!({ "type": "boolean" }));
+    }
+    tokens.insert(
+        CURSOR_STYLE.to_owned(),
+        json!({ "description": "The terminal cursor's shape.", "enum": CURSOR_STYLES }),
+    );
+    let (least, most) = LINE_HEIGHTS;
+    tokens.insert(
+        LINE_HEIGHT.to_owned(),
+        json!({
+            "description": "The terminal's line height, a multiple of its text size.",
+            "type": "number",
+            "minimum": least,
+            "maximum": most
+        }),
+    );
     let sizes: Map<String, Value> = STEPS
         .iter()
         .map(|step| (step.token.to_owned(), geometry(step)))
@@ -185,7 +216,7 @@ pub fn schema() -> Value {
                 }
             },
             "tokens": {
-                "description": "Token values: a colour for a colour token, a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance.",
+                "description": "Token values: a colour for a colour token; for a flag, the terminal cursor's shape or its line height, a value of that type; a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance.",
                 "type": "object",
                 "additionalProperties": false,
                 "properties": tokens
