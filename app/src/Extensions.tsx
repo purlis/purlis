@@ -261,7 +261,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                 {row.themes_in_force.length > 0 && (
                   <span className="in-force">Drawing: {row.themes_in_force.join(", ")}</span>
                 )}
-                {/* What the theme engine put right in each colour theme it draws (#2321). */}
+                {/* Why the theme engine refused each colour theme, or what it left out (#2321). */}
                 {row.theme_trouble.map((trouble) => (
                   <span key={trouble.name} className="came-back theme-trouble" role="status">
                     {themeTroubleSaid(trouble)}

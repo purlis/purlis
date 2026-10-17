@@ -374,6 +374,41 @@ fn a_theme_folder_is_checked_in_each_of_its_appearances() {
 }
 
 #[test]
+fn a_theme_folder_extends_the_folder_beside_it_that_it_names() {
+    let rig = Rig::new();
+    let themes = rig.dir.path().join("themes");
+    for (name, json) in [
+        (
+            "dusk",
+            serde_json::json!({ "name": "Dusk", "extends": "purlis-classic",
+                "appearances": [{ "id": "dark", "appearance": "dark" }] }),
+        ),
+        (
+            "night",
+            serde_json::json!({ "name": "Night", "extends": "dusk",
+                "appearances": [{ "id": "dark", "appearance": "dark" }] }),
+        ),
+    ] {
+        std::fs::create_dir_all(themes.join(name)).expect("a theme folder");
+        std::fs::write(themes.join(name).join("theme.json"), json.to_string())
+            .expect("a theme.json");
+    }
+    // A folder nothing extends, which is not a theme at all: never read, so it refuses nothing.
+    std::fs::create_dir_all(themes.join("stray")).expect("a stray folder");
+    std::fs::write(themes.join("stray/theme.json"), "{ not json").expect("a stray file");
+
+    let ran = rig.run(&[
+        "check",
+        &themes.join("night").display().to_string(),
+        "--json",
+    ]);
+
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    assert_eq!(ran.json()["theme"]["name"], "Night");
+    assert_eq!(ran.json()["refused"], serde_json::Value::Null);
+}
+
+#[test]
 fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
     let rig = Rig::new();
     rig.extension_theme(

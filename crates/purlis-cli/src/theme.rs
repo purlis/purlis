@@ -344,10 +344,11 @@ fn read_file(path: &Path) -> Result<Resolved, String> {
     let mut text = String::new();
     let read = std::fs::File::open(path)
         .and_then(|file| file.take(most + 1).read_to_string(&mut text))
-        .map_err(|why| format!("could not be read: {why}"))?;
+        .map_err(|why| format!("{} could not be read: {why}", path.display()))?;
     if read as u64 > most {
         return Err(format!(
-            "is larger than {} KiB, the most a theme file may be",
+            "{} is larger than {} KiB, the most a theme file may be",
+            path.display(),
             most / 1024
         ));
     }
@@ -355,8 +356,9 @@ fn read_file(path: &Path) -> Result<Resolved, String> {
 }
 
 /// A theme folder named on the command line, read by the engine inside the folder that holds
-/// it, as a level's `themes/` folder is: the folders beside it are the themes it may `extend`.
-/// The engine refuses a folder or a `theme.json` that is a link.
+/// it, as a level's `themes/` folder is. The library is handed only the folders its `extends`
+/// chain names, so nothing else beside it is read. The engine refuses a folder or a
+/// `theme.json` that is a link.
 fn read_folder(path: &Path, shown: String) -> Found {
     let from = From::Folder(shown);
     let (Some(themes), Some(name)) = (path.parent(), path.file_name().and_then(|it| it.to_str()))
@@ -364,7 +366,10 @@ fn read_folder(path: &Path, shown: String) -> Found {
         return Found::of(
             path.display().to_string(),
             from,
-            refusal("is not a theme folder purlis can name".to_owned()),
+            refusal(format!(
+                "{} is not a theme folder purlis can name",
+                path.display()
+            )),
         );
     };
     let themes = if themes.as_os_str().is_empty() {
@@ -373,15 +378,50 @@ fn read_folder(path: &Path, shown: String) -> Found {
         themes
     };
     let mut library = theme::Library::new();
-    for beside in std::fs::read_dir(themes).into_iter().flatten().flatten() {
-        if let Some(other) = beside.file_name().to_str()
-            && other != name
-            && beside.file_type().is_ok_and(|it| it.is_dir())
-        {
-            library = library.with_folder(themes, other);
-        }
+    for parent in extends_chain(themes, name) {
+        library = library.with_folder(themes, &parent);
     }
     Found::of(name.to_owned(), from, library.load_folder(themes, name))
+}
+
+/// The most parents a folder's `extends` chain is followed through: the engine says a circle
+/// or a missing parent itself, so this only bounds the walk.
+const MOST_PARENTS: usize = 16;
+
+/// The folders beside `name` in `themes` that its `extends` chain names, nearest first: only
+/// what the engine needs to resolve it. A parent that is not a plain folder there (Purlis
+/// Classic, a missing one, a link) ends the walk, and the engine says what is wrong with it.
+fn extends_chain(themes: &Path, name: &str) -> Vec<String> {
+    use std::io::Read;
+    let mut chain: Vec<String> = Vec::new();
+    let mut at = name.to_owned();
+    while chain.len() < MOST_PARENTS {
+        let file = themes.join(&at).join(theme::THEME_JSON);
+        let plain = std::fs::symlink_metadata(&file).is_ok_and(|it| it.file_type().is_file());
+        let mut text = String::new();
+        let read = plain
+            && std::fs::File::open(&file)
+                .and_then(|it| {
+                    it.take(purlis_core::windowprefs::MAX_BYTES)
+                        .read_to_string(&mut text)
+                })
+                .is_ok();
+        let parent = read
+            .then(|| serde_json::from_str::<Value>(&text).ok())
+            .flatten()
+            .and_then(|it| it.get("extends").and_then(Value::as_str).map(str::to_owned));
+        let Some(parent) = parent else { break };
+        let folder = std::fs::symlink_metadata(themes.join(&parent));
+        if parent == name
+            || chain.contains(&parent)
+            || !folder.is_ok_and(|it| it.file_type().is_dir())
+        {
+            break;
+        }
+        chain.push(parent.clone());
+        at = parent;
+    }
+    chain
 }
 
 /// A theme's appearances as the table says them: each id, with its tag when the id is not it,
@@ -559,9 +599,9 @@ impl Warning {
         } else {
             let names: Vec<&str> = self.tints.iter().map(|(name, _)| *name).collect();
             format!(
-                "the {} tint{}",
+                "the {} {}",
                 names.join(", "),
-                if names.len() == 1 { "" } else { "s" }
+                purlis_core::counts::plural(names.len(), "tint", "tints")
             )
         };
         let floor = self

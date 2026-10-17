@@ -39,7 +39,8 @@ why (`name` and `appearances` are then `null`).
 
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the
-themes it may `extend`):
+themes it may `extend`). A file path that is a link is followed, since it is the path you typed;
+a theme folder, or its `theme.json`, that is a link is refused:
 
 ```
 Dim — /home/me/dim.json, dark
