@@ -72,7 +72,8 @@ pub enum FileOp {
 }
 
 impl FileOp {
-    fn name(self) -> &'static str {
+    /// Seatbelt's word for it.
+    pub fn name(self) -> &'static str {
         match self {
             Self::ReadData => "file-read-data",
             Self::ReadMetadata => "file-read-metadata",
