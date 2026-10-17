@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792275989828,
+  "lastUpdate": 1792277607043,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16128,6 +16128,48 @@ window.BENCHMARK_DATA = {
             "value": 105.0754195,
             "unit": "ms",
             "extra": "median of 5 runs: 103.788, 103.805, 105.075, 105.196, 105.337 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da762612ed65eb2aad5421bffda232fc751d05e4",
+          "message": "test(sandbox): pin both halves of 'the file checked is the file run' with a linked program (#2547)\n\nThe profile's program is now a link to the stand-in. The stand-in answers\n--version as Claude Code only when it was run as the link's target, so a\ncheck that asked the written path refuses the start, and ready.program must\nbe the target (ADR 0067 V87g).\n\nCloses #2515\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T02:52:20+04:00",
+          "tree_id": "6b018813e3e41534b3209633d0c240def82611ca",
+          "url": "https://github.com/purlis/purlis/commit/da762612ed65eb2aad5421bffda232fc751d05e4"
+        },
+        "date": 1792277606035,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.26882150000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.261, 0.266, 0.269, 0.270, 0.287 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.425084,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.396, 16.422, 16.425, 16.436, 16.508 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1264355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.005, 101.109, 101.126, 101.249, 102.426 ms"
           }
         ]
       }
