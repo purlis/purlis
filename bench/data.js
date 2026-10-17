@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792220907260,
+  "lastUpdate": 1792222179287,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15036,6 +15036,48 @@ window.BENCHMARK_DATA = {
             "value": 104.72937199999998,
             "unit": "ms",
             "extra": "median of 5 runs: 103.394, 104.163, 104.729, 106.782, 107.816 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6276c1bd6eba5f84a153f2d6d00e9e2441b003ed",
+          "message": "view-move spec names its menu rows instead of writing their words (#2398)\n\n* view-move spec names its menu rows instead of writing their words (#2387)\n\nThe view icon's two rows, \"Move to panel\" and \"Move to sidebar\", get their\nwords from `menuWords.ts` (`SAID.toPanel`, `SAID.toSidebar`), and `viewRows`\ndraws them from there. The spec presses them by name through\n`e2e/menus.ts`'s `pressMenuPath(ROW.toPanel)`, matching the row's\naccessible name exactly, so a copy change to a row edits one file and no\nspec.\n\nCloses #2387\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Docs name the view rows by SAID, and menuWords says actions.ts reads it (#2387)\n\nReview of #2398: the doc comments in actions.ts referred to the two rows by\ntheir words, so a rename would leave them stale. They now refer to\n`SAID.toPanel`/`SAID.toSidebar`. menuWords.ts's header now says\nactions.ts's menu-only builders read their words from it as well.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T11:10:38+04:00",
+          "tree_id": "f5146e2bbb62e1384e0ee6a8bbfda671c358a9ff",
+          "url": "https://github.com/purlis/purlis/commit/6276c1bd6eba5f84a153f2d6d00e9e2441b003ed"
+        },
+        "date": 1792222178148,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46949549999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.459, 0.468, 0.469, 0.489, 0.491 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4708405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.262, 16.262, 16.471, 16.614, 17.020 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0983615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.510, 102.008, 102.098, 102.193, 102.485 ms"
           }
         ]
       }
