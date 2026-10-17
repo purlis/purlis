@@ -522,7 +522,10 @@ fn listing_and_checking_write_nothing_in_the_plane_or_the_config_home() {
 fn both_answers_name_the_theme_schema_of_this_purlis() {
     let rig = Rig::new();
 
-    for args in [&["list", "--json"][..], &["check", "purlis-classic", "--json"]] {
+    for args in [
+        &["list", "--json"][..],
+        &["check", "purlis-classic", "--json"],
+    ] {
         let ran = rig.run(args);
 
         assert_eq!(ran.code, 0, "{}", ran.err);

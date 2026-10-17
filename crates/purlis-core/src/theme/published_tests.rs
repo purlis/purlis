@@ -105,7 +105,10 @@ fn a_narrowed_type_is_a_narrowing() {
         found[0].starts_with("/$defs/tokens/properties/") && found[0].contains("/$ref: was"),
         "{found:?}"
     );
-    assert_eq!(found[1], "/properties/name/type: string is no longer accepted");
+    assert_eq!(
+        found[1],
+        "/properties/name/type: string is no longer accepted"
+    );
 }
 
 #[test]
