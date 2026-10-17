@@ -358,6 +358,27 @@ fn each_bus_says_where_it_is_asked() {
     );
 }
 
+/// The step the launch log shows before a restart in place, so the second `run() entered`
+/// it shows next reads as the same launch starting again, and on which bus (#2389).
+#[test]
+fn a_restart_in_place_is_a_launch_step_naming_the_bus_it_starts_on() {
+    assert_eq!(
+        Bus::Without {
+            kept: RUN_USER_BUS.to_owned()
+        }
+        .starting_again(),
+        "the launch starts again in place, without the session bus"
+    );
+    assert_eq!(
+        Bus::At(AUTOLAUNCHED.to_owned()).starting_again(),
+        format!("the launch starts again in place, on the session bus at {AUTOLAUNCHED}")
+    );
+    assert_eq!(
+        Bus::Default.starting_again(),
+        "the launch starts again in place, on the session bus the standard lookup finds"
+    );
+}
+
 #[test]
 fn the_address_is_read_from_what_dbus_launch_prints() {
     let printed = format!(
