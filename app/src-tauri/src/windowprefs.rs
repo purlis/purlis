@@ -55,7 +55,12 @@ impl From<Theirs> for TheirTheme {
             path: theirs.path,
             found: theirs.found,
             trouble: theirs.trouble,
-            theme: theirs.theme.as_ref().map(WindowTheme::from),
+            // What the first frame draws: the theme's first appearance, which the engine draws
+            // with no pick (`purlis_core::theme::resolve`).
+            theme: theirs
+                .theme
+                .as_ref()
+                .map(|theme| WindowTheme::from(theme.first())),
             complaints: theirs.complaints,
         }
     }

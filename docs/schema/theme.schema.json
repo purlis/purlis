@@ -1,0 +1,498 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
+  "title": "A purlis theme folder's theme.json (format 2)",
+  "description": "A theme: a name, optionally the theme it extends, a palette of named colours, and its appearances, each tagged dark or light and optionally high contrast. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "appearances"
+      ]
+    },
+    {
+      "required": [
+        "extends"
+      ]
+    }
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "description": "What to call the theme, as a person would.",
+      "type": "string",
+      "minLength": 1
+    },
+    "extends": {
+      "description": "The id of the theme this one starts from: purlis-classic, or a theme folder's name. This theme holds only what differs.",
+      "type": "string",
+      "minLength": 1
+    },
+    "palette": {
+      "description": "Named colours, hex only. A token names one by its name; the names are this theme's own.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/hex"
+      },
+      "maxProperties": 256
+    },
+    "appearances": {
+      "description": "The theme's appearances, the first what it draws when nothing chose another. One with an id its parent has layers over that one.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/appearance"
+      },
+      "maxItems": 64
+    }
+  },
+  "$defs": {
+    "hex": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "colour": {
+      "description": "A hex colour, or the name of a colour in this theme's palette.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/hex"
+        },
+        {
+          "$ref": "#/$defs/name"
+        }
+      ]
+    },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/name"
+        },
+        "appearance": {
+          "description": "Whether it is drawn on a dark window or a light one. Required unless the theme it extends has an appearance of this id.",
+          "enum": [
+            "dark",
+            "light"
+          ]
+        },
+        "high-contrast": {
+          "type": "boolean"
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokens"
+        },
+        "motion": {
+          "$ref": "#/$defs/motion"
+        }
+      }
+    },
+    "tokens": {
+      "description": "Token values; a token not named is the parent's, or Purlis Classic's of the same appearance.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "surface.base": {
+          "$ref": "#/$defs/colour"
+        },
+        "surface.sunken": {
+          "$ref": "#/$defs/colour"
+        },
+        "surface.deep": {
+          "$ref": "#/$defs/colour"
+        },
+        "surface.raised": {
+          "$ref": "#/$defs/colour"
+        },
+        "surface.overlay": {
+          "$ref": "#/$defs/colour"
+        },
+        "surface.hover": {
+          "$ref": "#/$defs/colour"
+        },
+        "control.base": {
+          "$ref": "#/$defs/colour"
+        },
+        "control.hover": {
+          "$ref": "#/$defs/colour"
+        },
+        "control.aimed": {
+          "$ref": "#/$defs/colour"
+        },
+        "control.count": {
+          "$ref": "#/$defs/colour"
+        },
+        "text.primary": {
+          "$ref": "#/$defs/colour"
+        },
+        "text.secondary": {
+          "$ref": "#/$defs/colour"
+        },
+        "text.muted": {
+          "$ref": "#/$defs/colour"
+        },
+        "border.subtle": {
+          "$ref": "#/$defs/colour"
+        },
+        "border.strong": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.base": {
+          "$ref": "#/$defs/colour"
+        },
+        "accent.surface": {
+          "$ref": "#/$defs/colour"
+        },
+        "focus.ring": {
+          "$ref": "#/$defs/colour"
+        },
+        "tab.active": {
+          "$ref": "#/$defs/colour"
+        },
+        "list.selected": {
+          "$ref": "#/$defs/colour"
+        },
+        "list.selected-edge": {
+          "$ref": "#/$defs/colour"
+        },
+        "tree.guide": {
+          "$ref": "#/$defs/colour"
+        },
+        "layer.project": {
+          "$ref": "#/$defs/colour"
+        },
+        "layer.workspace": {
+          "$ref": "#/$defs/colour"
+        },
+        "layer.chat": {
+          "$ref": "#/$defs/colour"
+        },
+        "layer.selected": {
+          "$ref": "#/$defs/colour"
+        },
+        "layer.divider": {
+          "$ref": "#/$defs/colour"
+        },
+        "needs-you.base": {
+          "$ref": "#/$defs/colour"
+        },
+        "needs-you.text": {
+          "$ref": "#/$defs/colour"
+        },
+        "danger.base": {
+          "$ref": "#/$defs/colour"
+        },
+        "danger.surface": {
+          "$ref": "#/$defs/colour"
+        },
+        "danger.text": {
+          "$ref": "#/$defs/colour"
+        },
+        "danger.wash": {
+          "$ref": "#/$defs/colour"
+        },
+        "diff.deleted": {
+          "$ref": "#/$defs/colour"
+        },
+        "diff.inserted": {
+          "$ref": "#/$defs/colour"
+        },
+        "diff.deleted-text": {
+          "$ref": "#/$defs/colour"
+        },
+        "diff.inserted-text": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.folder": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.motive": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.grey": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.red": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.orange": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.yellow": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.green": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.teal": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.blue": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.purple": {
+          "$ref": "#/$defs/colour"
+        },
+        "icon.pink": {
+          "$ref": "#/$defs/colour"
+        },
+        "state.running": {
+          "$ref": "#/$defs/colour"
+        },
+        "state.waiting": {
+          "$ref": "#/$defs/colour"
+        },
+        "state.waiting-glow": {
+          "$ref": "#/$defs/colour"
+        },
+        "state.failed": {
+          "$ref": "#/$defs/colour"
+        },
+        "state.success": {
+          "$ref": "#/$defs/colour"
+        },
+        "state.unreadable": {
+          "$ref": "#/$defs/colour"
+        },
+        "overlay.scrim": {
+          "$ref": "#/$defs/colour"
+        },
+        "overlay.shadow": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.background": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.foreground": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.cursor": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.cursor-accent": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.selection": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.find-match": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.find-match-active": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.black": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.red": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.green": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.yellow": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.blue": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.magenta": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.cyan": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.white": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-black": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-red": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-green": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-yellow": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-blue": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-magenta": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-cyan": {
+          "$ref": "#/$defs/colour"
+        },
+        "terminal.ansi.bright-white": {
+          "$ref": "#/$defs/colour"
+        }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration.quick": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.enter": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.settle": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.spin": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.breathe": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "easing.standard": {
+          "description": "A cubic Bézier, [x1, y1, x2, y2]: each x from 0 to 1, each y from -1 to 2.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            }
+          ],
+          "items": false,
+          "minItems": 4
+        },
+        "easing.enter": {
+          "description": "A cubic Bézier, [x1, y1, x2, y2]: each x from 0 to 1, each y from -1 to 2.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            }
+          ],
+          "items": false,
+          "minItems": 4
+        },
+        "easing.steady": {
+          "description": "A cubic Bézier, [x1, y1, x2, y2]: each x from 0 to 1, each y from -1 to 2.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            }
+          ],
+          "items": false,
+          "minItems": 4
+        },
+        "easing.breathe": {
+          "description": "A cubic Bézier, [x1, y1, x2, y2]: each x from 0 to 1, each y from -1 to 2.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 2
+            }
+          ],
+          "items": false,
+          "minItems": 4
+        }
+      }
+    }
+  }
+}

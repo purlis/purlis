@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The built-in themes, handed to a test's window as the app's core hands them to the real
- * one** (`purlis_core::theme::built_ins`, `src-tauri/src/windowprefs.rs`).
+ * **The built-in appearances, handed to a test's window as the app's core hands them to the
+ * real one** (`purlis_core::theme::built_ins`, `src-tauri/src/windowprefs.rs`).
  *
  * The real window finds them in the page before its own code runs; a test's window is jsdom,
- * which nothing hands anything. So `test-setup.ts` imports this first, and it puts the core's
- * own built-in files on the same global, as the shape the core resolves them to. The files are
- * read from the core, so there is one copy of each; a built-in is complete (the core's tests
- * prove it), so resolving one is putting its tokens and motion where the window reads them.
+ * which nothing hands anything. So `test-setup.ts` imports this first, and it puts Purlis
+ * Classic's appearances, read from the core's own theme folder, on the same global, in the shape
+ * the core resolves them to: each named by the id a pick names it by, dark first. The folder is
+ * read from the core, so there is one copy; Classic is complete (the core's tests prove it), so
+ * resolving an appearance is putting its tokens and motion where the window reads them.
  */
 
 /// <reference types="node" />
@@ -17,17 +18,28 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Vitest's working directory is `app`. */
-const BUILT_IN = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "built-in");
+const CLASSIC = join(
+  process.cwd(),
+  "..",
+  "crates",
+  "purlis-core",
+  "src",
+  "theme",
+  "built-in",
+  "purlis-classic",
+  "theme.json",
+);
 
-type File = {
-  name: string;
+type Appearance = {
   appearance: string;
   tokens: Record<string, string>;
   motion: Record<string, number | number[]>;
 };
 
-function resolved(file: string) {
-  const from = JSON.parse(readFileSync(join(BUILT_IN, file), "utf8")) as File;
+/** The ids a pick names Classic's appearances by, in its order (`purlis_core::names`). */
+const PICKS = ["purlis-dark", "purlis-light"];
+
+function resolved(from: Appearance, at: number) {
   const durations: Record<string, number> = {};
   const easings: Record<string, number[]> = {};
   for (const [token, value] of Object.entries(from.motion)) {
@@ -35,7 +47,7 @@ function resolved(file: string) {
     else durations[token] = value;
   }
   return {
-    name: from.name,
+    name: PICKS[at],
     appearance: from.appearance,
     values: from.tokens,
     motion: { durations, easings },
@@ -44,4 +56,5 @@ function resolved(file: string) {
 
 const GLOBAL = "__CHARTER_AT_CREATION__";
 const held = globalThis as Record<string, unknown>;
-held[GLOBAL] ??= { built_in: ["purlis-dark.json", "purlis-light.json"].map(resolved) };
+const classic = JSON.parse(readFileSync(CLASSIC, "utf8")) as { appearances: Appearance[] };
+held[GLOBAL] ??= { built_in: classic.appearances.map(resolved) };

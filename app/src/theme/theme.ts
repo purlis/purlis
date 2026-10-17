@@ -270,6 +270,11 @@ export const THEME_ALIASES: Readonly<Record<string, string>> = {
 /** The theme the window comes up in when nothing has said otherwise. */
 export const DEFAULT_THEME: Theme = DARK;
 
+/** Purlis Classic's own id (`purlis_core::theme::CLASSIC`): a pick of it draws its first
+ *  appearance, the dark one, as the engine's `built_in` answers. Not an old id, so not in
+ *  {@link THEME_ALIASES}. */
+export const CLASSIC = "purlis-classic";
+
 /** The pick that follows the operating system's appearance, as a project's `[theme] use` holds it
  *  (charter-app#273; `purlis_core::extension::project::theme::SYSTEM`). */
 export const SYSTEM = "system";
