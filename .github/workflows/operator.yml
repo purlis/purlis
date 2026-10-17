@@ -117,12 +117,14 @@ jobs:
       # Helm, which installs the operator's chart on the kind cluster.
       - uses: ./.github/actions/helm
       # The runner image of this commit, from runner-image/Dockerfile, as `runner-image.yml`
-      # builds it but in a debug build: the operator is under test here, not the binary.
+      # builds it (the binary and purlis's plugin) but in a debug build: the operator is under
+      # test here, not the binary.
       - name: The runner image
         run: |
           cargo build --locked -p purlis-cli
           mkdir -p "$RUNNER_TEMP/runner"
           cp target/debug/purlis "$RUNNER_TEMP/runner/purlis"
+          cp -R app/src-tauri/plugin "$RUNNER_TEMP/runner/plugin"
           docker build -t purlis-runner:e2e -f runner-image/Dockerfile "$RUNNER_TEMP/runner"
       - name: The operator's image
         run: |
