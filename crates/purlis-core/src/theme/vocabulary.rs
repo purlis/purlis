@@ -149,6 +149,7 @@ pub const GEOMETRY: &[&str] = &[
     "--font-size-lg",
     "--font-size-xl",
     "--font-weight-regular",
+    "--font-weight-medium",
     "--font-weight-strong",
     "--line-height-tight",
     "--line-height-body",
