@@ -87,10 +87,13 @@ pub enum Start {
     /// Again, in place, on the bus at this address: the X display's, which GIO would have
     /// used and zbus cannot find.
     OnTheBus(String),
-    /// Again, in place, with the session bus pointed at [`NO_SESSION_BUS`], saying `say` on
-    /// standard error first. `kept` is the bus a chat gets instead ([`SESSION_BUS_KEPT`]):
-    /// empty when there is none to give, or when a chat finds it by the standard lookup.
-    WithoutTheBus { say: String, kept: String },
+    /// Again, in place, with the session bus pointed at [`NO_SESSION_BUS`]. `kept` is the bus
+    /// a chat gets instead ([`SESSION_BUS_KEPT`]): empty when there is none to give, or when a
+    /// chat finds it by the standard lookup. Why is said by the launch it starts
+    /// ([`SessionBus::say`]), not before it: the app's log holds its first line until its
+    /// redaction rules are built, about 300 ms of a debug build, which a launch that skips the
+    /// ask ([`LoginSession`]) would pay instead.
+    WithoutTheBus { kept: String },
 }
 
 /// What a launch without the bus loses, in the words the window and standard error both use.
@@ -119,20 +122,13 @@ pub fn decide(
     match heard {
         Heard::Answer => Start::AsItIs,
         // Found by the standard lookup when nothing named it, which a chat does as well.
-        Heard::Silence => silent(address.unwrap_or_default()),
+        Heard::Silence => without(address.unwrap_or_default()),
         // An address that names a dead bus already fails fast, in GIO too.
         Heard::NoBus if address.is_some() => Start::AsItIs,
         Heard::NoBus => match x_session_bus() {
             Some((bus, Heard::Answer)) => Start::OnTheBus(bus),
-            Some((bus, Heard::Silence)) => silent(&bus),
-            Some((_, Heard::NoBus)) | None => Start::WithoutTheBus {
-                say: format!(
-                    "purlis: there is no session bus to be had (none named, none at \
-                     $XDG_RUNTIME_DIR/bus, and none on the X display), so purlis is starting \
-                     without one. {WHAT_IS_OFF}"
-                ),
-                kept: String::new(),
-            },
+            Some((bus, Heard::Silence)) => without(&bus),
+            Some((_, Heard::NoBus)) | None => without(""),
         },
     }
 }
@@ -212,15 +208,7 @@ pub fn launch(
         return Start::AsItIs;
     }
     if session.was_silent(address) {
-        return Start::WithoutTheBus {
-            say: format!(
-                "purlis: the desktop portal ({PORTAL}) did not answer on the session bus \
-                 earlier in this login session, so purlis is starting without the session bus \
-                 at once; it asks again at the next login, or once the bus answers. \
-                 {WHAT_IS_OFF}"
-            ),
-            kept: address.unwrap_or_default().to_owned(),
-        };
+        return without(address.unwrap_or_default());
     }
     let heard = ask();
     if heard == Heard::Silence {
@@ -229,14 +217,8 @@ pub fn launch(
     decide(address, heard, x_session_bus)
 }
 
-fn silent(kept: &str) -> Start {
+fn without(kept: &str) -> Start {
     Start::WithoutTheBus {
-        say: format!(
-            "purlis: the desktop portal ({PORTAL}) did not answer on the session bus within \
-             {} ms, so purlis is starting without the session bus instead of waiting out \
-             D-Bus's 25 s. {WHAT_IS_OFF}",
-            BUDGET.as_millis()
-        ),
         kept: kept.to_owned(),
     }
 }
@@ -393,10 +375,7 @@ pub fn start_clear_of_a_silent_portal(reached: impl Fn(&str)) {
     ) {
         Start::AsItIs => return,
         Start::OnTheBus(bus) => Bus::At(bus),
-        Start::WithoutTheBus { say, kept } => {
-            tracing::warn!("{say}");
-            Bus::Without { kept }
-        }
+        Start::WithoutTheBus { kept } => Bus::Without { kept },
     };
     reached(&again.starting_again());
     let failed = match this_launch_again(&again) {
@@ -549,7 +528,9 @@ impl SessionBus {
                 BUDGET.as_millis()
             )
         } else {
-            "purlis found no session bus to start on.".to_owned()
+            "purlis found no session bus to start on: none named, none at \
+             $XDG_RUNTIME_DIR/bus, and none on the X display."
+                .to_owned()
         };
         Self {
             says: Some(format!("{why} {WHAT_IS_OFF}")),
@@ -557,6 +538,15 @@ impl SessionBus {
             runtime: runtime.map(std::path::Path::to_path_buf),
             answers: false.into(),
             restart: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Says on standard error and in the app's log why this launch is without the bus, as the
+    /// window does: nothing on a launch with it. The launch before the restart says nothing,
+    /// so this is said once ([`Start::WithoutTheBus`]).
+    pub fn say(&self) {
+        if let Some(says) = &self.says {
+            tracing::warn!("{says}");
         }
     }
 

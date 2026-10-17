@@ -26,6 +26,11 @@ the launch's own address and is never read from the file. Three more rules:
   launch asks again without waiting for a new login. The window still offers the restart, as
   before.
 - With no `$XDG_RUNTIME_DIR`, nothing is remembered and every launch asks, as before.
+- Why the launch is without the bus is now said once, by the launch that starts again, at the
+  same time the window is told. The launch before the restart says nothing. Its line used to go
+  through the app's log, and the log holds its first line until the redaction rules are built.
+  That takes about 300 ms in CI's debug build. Behind the 300 ms ask it cost almost nothing, but
+  a launch that skips the ask would have paid it instead.
 - A silence on the X display's bus, which is found through `dbus-launch` at each launch
   (2026-09-30, charter#746), is not remembered. Remembering it would mean reading the bus that
   chats are given back from a file. That case still pays its budget at every launch.
