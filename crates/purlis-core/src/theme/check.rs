@@ -320,14 +320,7 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {
     for pair in PAIRS {
-        let back = theme.value(pair.back);
-        let drawn = match pair.under {
-            Some(under) => onto(back, theme.value(under)),
-            None => back.to_owned(),
-        };
-        // A see-through front is drawn laid over its ground, and measured as drawn.
-        let front = onto(theme.value(pair.front), &drawn);
-        let ratio = two_places(contrast(&front, &drawn));
+        let ratio = ratio(theme, pair);
         if ratio < pair.floor {
             findings.push(Finding::Contrast {
                 tint,
@@ -355,6 +348,18 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
             findings.push(Finding::SelectedNotApart { tint, other });
         }
     }
+}
+
+/// **The contrast `pair` has in `theme`**, to two places, as it is drawn: `back` laid over
+/// `under` when it names one, and a see-through `front` laid over that.
+pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> f64 {
+    let back = theme.value(pair.back);
+    let drawn = match pair.under {
+        Some(under) => onto(back, theme.value(under)),
+        None => back.to_owned(),
+    };
+    let front = onto(theme.value(pair.front), &drawn);
+    two_places(contrast(&front, &drawn))
 }
 
 /// A ratio to two places, as it is said and compared: 4.495 is under 4.5 only once rounded.

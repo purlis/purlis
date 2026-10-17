@@ -351,6 +351,25 @@ can be read. Its interface:
   selected row's distinctness, as it is and tinted by every workspace colour, and reports each
   finding with its ratio.
 
+**The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
+gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds four
+floors for any theme from any source:
+
+- **an ask contrasts with its surface**: `text.primary` on `surface.overlay`, on `control.base`
+  and on `danger.wash`, and `needs-you.text` on `needs-you.base`;
+- **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
+  is a `danger.*` token;
+- **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
+  in OKLab, five times the least difference a person can see;
+- **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
+  token or `needs-you.base`.
+
+Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
+workspace colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
+appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
+for the pair's other token when Classic's colour still fails on it. The rest of the theme draws
+as written, and one Notice in the Inbox names the theme and the floors it breaks.
+
 **The window only applies.** It is handed a resolved theme, every token's final value and the
 motion, and writes the custom properties and xterm's object from it (`theme.ts`). The first
 frame's theme is resolved before the window exists and handed to it with the window, so nothing

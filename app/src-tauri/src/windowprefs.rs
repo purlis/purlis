@@ -50,21 +50,29 @@ struct TheirTheme {
     trouble: Option<String>,
     theme: Option<WindowTheme>,
     complaints: Vec<Complaint>,
+    /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
+    /// drawn has purlis's own values for those tokens.
+    floors: Option<String>,
 }
 
 impl From<Theirs> for TheirTheme {
     fn from(theirs: Theirs) -> Self {
+        // What the first frame draws: the theme's first appearance, which the engine draws with
+        // no pick (`purlis_core::theme::resolve`), the consent floors held.
+        let drawn = theirs
+            .theme
+            .as_ref()
+            .map(|theme| theme::draw(theme.first()));
         Self {
             path: theirs.path,
             found: theirs.found,
             trouble: theirs.trouble,
-            // What the first frame draws: the theme's first appearance, which the engine draws
-            // with no pick (`purlis_core::theme::resolve`).
-            theme: theirs
-                .theme
+            theme: drawn
                 .as_ref()
-                .map(|theme| WindowTheme::from(theme.first())),
+                .and_then(|drawn| drawn.theme.as_ref())
+                .map(WindowTheme::from),
             complaints: theirs.complaints,
+            floors: drawn.and_then(|drawn| drawn.held).map(|held| held.said()),
         }
     }
 }

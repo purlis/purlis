@@ -8525,6 +8525,11 @@ export type ThemeInForce = {
 	complaints: string[],
 	/**  Whether it follows the operating system's appearance. */
 	follows_system: boolean,
+	/**
+	 *  The Notice that names the consent floors the theme breaks, when it breaks one: what is
+	 *  drawn has purlis's own values for those tokens.
+	 */
+	floors: string | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
