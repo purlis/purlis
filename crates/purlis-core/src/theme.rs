@@ -63,10 +63,13 @@ use serde_json::Value;
 mod check;
 mod floors;
 mod fonts;
+pub mod choices;
+mod folders;
 mod format;
 pub mod geometry;
 mod icons;
 mod person;
+pub mod levels;
 mod resolve;
 mod schema;
 mod tint;
@@ -81,6 +84,7 @@ pub use fonts::{
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
+pub use levels::{Choice, Folders, Level, LevelInputs, Levels, resolve_levels};
 pub use person::{Density, Layer, Person};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{SCHEMA_URL, schema, schema_text};
@@ -95,6 +99,8 @@ mod format_tests;
 mod geometry_tests;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod levels_tests;
 #[cfg(test)]
 mod tests;
 
@@ -394,6 +400,12 @@ pub fn load(document: &Value) -> Resolved {
     Library::new().load(None, document)
 }
 
+/// Whether `name` is a theme folder's name a pick may name it by: lower-case letters, digits and
+/// dashes, starting with a letter, at most 32 long — the grammar of an appearance's id too.
+pub fn is_folder_name(name: &str) -> bool {
+    format::is_name(name)
+}
+
 /// Whether `document` is format 2: it names the schema, a parent, a palette or appearances,
 /// none of which format 1 has.
 fn is_format_2(document: &serde_json::Map<String, Value>) -> bool {
@@ -665,6 +677,9 @@ pub struct Theirs {
     pub theme: Option<Theme>,
     /// What resolving it had to put right.
     pub complaints: Vec<Complaint>,
+    /// Whether it is a format 1 file in force, which purlis offers, once, to move into a theme
+    /// folder ([`levels::move_into_a_folder`]).
+    pub format_1: bool,
 }
 
 /// Reads the person's own theme under `config_root` and resolves it. A machine with no config
@@ -686,6 +701,11 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
     // The person's `theme.json` sits in their config folder, which is its theme folder: its
     // fonts are that folder's `fonts/`.
     let resolved = load_text_in(&text, Some(&crate::machine::dir(root)));
+    let format_1 = serde_json::from_str::<Value>(&text)
+        .ok()
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|document| !is_format_2(document));
     // A refused theme is not in force: the window draws Purlis and says why. What refused it is
     // kept as it was found, beside the sentence.
     if resolved.refused {
@@ -700,6 +720,7 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
             trouble: Some(format!("purlis cannot draw it: {}", why.join("; "))),
             theme: None,
             complaints: resolved.complaints,
+            format_1: false,
         };
     }
     Theirs {
@@ -708,6 +729,7 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
         trouble: None,
         complaints: resolved.complaints,
         theme: Some(resolved.theme),
+        format_1,
     }
 }
 

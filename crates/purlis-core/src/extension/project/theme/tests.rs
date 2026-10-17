@@ -235,8 +235,8 @@ fn a_value_that_is_not_a_pick_is_ignored_and_the_next_file_down_is_used() {
         got.ignored,
         [Ignored {
             source: Source::Local,
-            why: "charter.local.toml sets theme.use to \"purple\", which is not purlis-dark, \
-                  purlis-light, system or <extension>/<theme> — so charter.toml's pick is used"
+            why: "charter.local.toml sets theme.use to \"purple\", which names no theme folder \
+                  this layer reaches — so charter.toml's pick is used"
                 .to_owned(),
         }]
     );
@@ -248,8 +248,8 @@ fn a_value_that_is_not_text_leaves_the_window_its_own_theme_when_nothing_else_pi
     assert_eq!((got.draws, got.source), (None, Source::Default));
     assert_eq!(
         got.ignored[0].why,
-        "charter.toml sets theme.use to 3, which is not purlis-dark, purlis-light, system or \
-         <extension>/<theme> — so the window keeps its own theme"
+        "charter.toml sets theme.use to 3, which is not purlis-dark, purlis-light, system, a theme \
+         folder's name or <extension>/<theme> — so the window keeps its own theme"
     );
 }
 
@@ -266,9 +266,11 @@ fn a_pick_is_read_back_as_it_was_written() {
             Some(value)
         );
     }
+    // A theme folder, by its folder's name (#2323).
+    assert_eq!(Pick::parse("dusk"), Some(Pick::Folder("dusk".to_owned())));
     for value in [
         "",
-        "dark",
+        "Dark",
         "/Solarized",
         "solarized/",
         "../x/y",
@@ -322,7 +324,7 @@ fn in_alpha(
 const ALPHA_LIGHT: &str = r#"{"settings": {"theme": {"use": "purlis-light"}}}"#;
 
 #[test]
-fn a_workspaces_pick_wins_over_shared_and_local_wins_over_the_workspace() {
+fn a_workspaces_pick_wins_over_shared_and_over_the_local_file() {
     let got = in_alpha(&[], None, "[theme]\nuse = \"system\"\n", ALPHA_LIGHT, "");
     assert_eq!(
         (got.draws, got.source),
@@ -336,9 +338,10 @@ fn a_workspaces_pick_wins_over_shared_and_local_wins_over_the_workspace() {
         ALPHA_LIGHT,
         "[theme]\nuse = \"purlis-dark\"\n",
     );
+    // The theme levels' order (#2323): the workspace's pick comes before the local file's.
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("purlis-dark")), Source::Local)
+        (Some(Pick::BuiltIn("purlis-light")), Source::Workspace)
     );
 }
 
@@ -410,9 +413,8 @@ fn a_workspace_value_that_is_not_a_pick_is_named_by_its_path_in_workspace_json()
         got.ignored,
         [Ignored {
             source: Source::Workspace,
-            why: "workspaces/alpha/workspace.json sets settings.theme.use to \"dark\", which is \
-                  not purlis-dark, purlis-light, system or <extension>/<theme> — so \
-                  charter.toml's pick is used"
+            why: "workspaces/alpha/workspace.json sets settings.theme.use to \"dark\", which \
+                  names no theme folder this layer reaches — so charter.toml's pick is used"
                 .to_owned(),
         }]
     );
@@ -465,8 +467,8 @@ fn only_a_workspace_has_a_colour() {
     assert_eq!(
         refusals("[theme]\ncolour = \"teal\"\n", "charter.toml"),
         [
-            "theme.colour in charter.toml is not read — [theme] holds use and icons and \
-          nothing else; a colour is a workspace's"
+            "theme.colour in charter.toml is not read — [theme] holds use, appearance and \
+          icons and nothing else; a colour is a workspace's"
         ]
     );
 }
@@ -474,16 +476,16 @@ fn only_a_workspace_has_a_colour() {
 #[test]
 fn a_workspaces_theme_table_is_refused_in_the_readers_words() {
     let top: toml::Table =
-        toml::from_str("[theme]\nuse = \"dark\"\ncolour = \"mauve\"\nfont = \"x\"\n").unwrap();
+        toml::from_str("[theme]\nuse = \"Dark!\"\ncolour = \"mauve\"\nfont = \"x\"\n").unwrap();
     assert_eq!(
         refusals_in_workspace(&top, "workspaces/alpha/workspace.json"),
         [
-            "settings.theme.use in workspaces/alpha/workspace.json is \"dark\", which is not \
-             purlis-dark, purlis-light, system or <extension>/<theme>",
+            "settings.theme.use in workspaces/alpha/workspace.json is \"Dark!\", which is not \
+             purlis-dark, purlis-light, system, a theme folder's name or <extension>/<theme>",
             "settings.theme.colour in workspaces/alpha/workspace.json is \"mauve\", which is not \
              red, orange, yellow, green, teal, blue, purple, pink or #rrggbb",
             "settings.theme.font in workspaces/alpha/workspace.json is not read — a workspace's \
-             theme holds use, icons and colour and nothing else",
+             theme holds use, appearance, icons and colour and nothing else",
         ]
     );
     let ok: toml::Table =

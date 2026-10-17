@@ -912,18 +912,18 @@ fn a_theme_charter_would_not_read_is_refused_in_either_file() {
         let why = refusals(
             dir.path(),
             which,
-            "[theme]\nuse = \"purple\"\nfont = \"x\"\n",
+            "[theme]\nuse = \"Purple Haze\"\nfont = \"x\"\n",
         );
         assert_eq!(
             why,
             [
                 format!(
-                    "theme.use in {file} is \"purple\", which is not purlis-dark, \
-                     purlis-light, system or <extension>/<theme>"
+                    "theme.use in {file} is \"Purple Haze\", which is not purlis-dark, \
+                     purlis-light, system, a theme folder's name or <extension>/<theme>"
                 ),
                 format!(
-                    "theme.font in {file} is not read — [theme] holds use and icons and nothing \
-                     else"
+                    "theme.font in {file} is not read — [theme] holds use, appearance and icons \
+                     and nothing else"
                 ),
             ],
             "{which:?}"

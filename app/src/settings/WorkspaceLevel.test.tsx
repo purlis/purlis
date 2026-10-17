@@ -437,7 +437,7 @@ describe("every workspace setting there is, at the Workspace level", () => {
     ["Repos", ["Cloned here", "Not cloned here"]],
     ["Dispatch", ["Limits"]],
     ["Extensions", ["Persona statistics: enabled", "Solarized: enabled"]],
-    ["Appearance", ["Theme", "Colour", "Icons"]],
+    ["Appearance", ["Your theme", "Your appearance", "Theme", "Colour", "Icons"]],
     [
       "Plugins",
       [
@@ -456,6 +456,29 @@ describe("every workspace setting there is, at the Workspace level", () => {
         [...group.querySelectorAll(".ui-setting-label")].map((one) => one.textContent),
       ).toEqual(labels),
     );
+  });
+
+  it("keeps your theme for the workspace on this machine, and says which level draws (#2323)", async () => {
+    const { asked, sent } = core(ALPHA, undefined, {
+      ...NO_THEME,
+      folders: ["brand"],
+      drawn: "Brand",
+      level: "project-default",
+      from: "charter.toml",
+    });
+    const group = await at("Appearance");
+
+    const pick = within(group).getByLabelText("Your theme");
+    expect(group).toHaveTextContent("Drawn here: Brand, from charter.toml.");
+    await pickIn(pick, "brand");
+
+    await waitFor(() =>
+      expect(asked("theme_choose")).toEqual([
+        { plane: PLANE, workspace: "alpha", theme: "brand", appearance: null },
+      ]),
+    );
+    // Never a project file.
+    expect(sent).toHaveLength(0);
   });
 
   it("writes the icons a workspace's file trees draw once picked, as settings.theme.icons", async () => {

@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isGeometry } from "./theme/geometry";
+import { DURATIONS, EASINGS, motionProperty } from "./theme/motion";
 import { property, TOKENS } from "./theme/theme";
 
 const SRC = join(process.cwd(), "src");
@@ -118,10 +119,14 @@ describe("the control baseline", () => {
     expect(heights).toEqual([]);
   });
 
-  it("reads only tokens: a theme's colours and the core geometry", () => {
+  it("reads only tokens: a theme's colours and motion, and the core geometry", () => {
     const colours = new Set(TOKENS.map(property));
+    // The workspace-switch crossfade (#2323) moves at the theme's own motion.
+    const motion = new Set([...DURATIONS, ...EASINGS].map(motionProperty));
     const read = [...css.matchAll(/var\((--[\w-]+)\)/g)].map((hit) => hit[1]);
     expect(read.length).toBeGreaterThan(0);
-    expect(read.filter((name) => !colours.has(name) && !isGeometry(name))).toEqual([]);
+    expect(
+      read.filter((name) => !colours.has(name) && !motion.has(name) && !isGeometry(name)),
+    ).toEqual([]);
   });
 });

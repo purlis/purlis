@@ -1243,13 +1243,16 @@ export const commands = {
 	setExtensionOn: __WINDOW_ONLY_RESULT,
 	openExtensionRecord: __WINDOW_ONLY_RESULT,
 	/**
-	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it
-	 *  ([`purlis_core::theme::resolve`]) and the window only applies what comes back.
+	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it from the six
+	 *  theme levels ([`purlis_core::theme::resolve_levels`], #2323) and the window only applies what
+	 *  comes back.
 	 * 
-	 *  `pick` is what the project or workspace in front picked (`project_theme_drawn`), `on` the
-	 *  extensions it has on (`extensions_on`), `None` with no project in front, when every approved
-	 *  extension's theme may be drawn. `light` is the operating system's appearance, which a
-	 *  `system` pick follows; the window asks again when it changes.
+	 *  `at` is the project and workspace in front ([`ThemeAt`]); the engine reads their levels and
+	 *  theme folders itself. With no project in front, `pick` is what the window was told to draw,
+	 *  and the person's machine default is beneath it. `on` is the extensions the project has on
+	 *  (`extensions_on`), `None` with no project in front, when every approved extension's theme may
+	 *  be drawn. `light` is the operating system's appearance, which `system` follows; the window
+	 *  asks again when it changes.
 	 * 
 	 *  The themes approved extensions contribute come from a survey, which reads and fingerprints
 	 *  every extension's files, so it is taken only when the answer needs one and kept until
@@ -1515,11 +1518,14 @@ export const commands = {
 	projectTheme: (plane: PlaneId, workspace: string | null) => typedError<ProjectTheme, string>(__TAURI_INVOKE("project_theme", { plane, workspace })),
 	/**
 	 *  What the window draws while this project — and `workspace` in it, when one is named
-	 *  (charter-app#281) — is in front, as a file holds it: `null` leaves the window its own theme.
+	 *  (charter-app#281) — is in front, as the window is told it: the choice of the nearest theme
+	 *  level that made one (#2323, [`purlis_core::theme::Levels`]), `null` when none did and the
+	 *  window draws the person's own theme or asks the engine.
 	 * 
 	 *  **The record alone**, as [`extensions_on`] is, so it is cheap enough to ask for every project
-	 *  a window holds. A pick the extension does not contribute is left to the window, which only
-	 *  ever holds the themes a survey found, and draws the built-in when the pick is not among them.
+	 *  a window holds: an extension's theme the project has off is told as the built-in, and one the
+	 *  extension does not contribute is left to [`theme_in_force`], which reads the levels, their
+	 *  theme folders and the survey.
 	 */
 	projectThemeDrawn: (plane: PlaneId, workspace: string | null) => typedError<string | null, string>(__TAURI_INVOKE("project_theme_drawn", { plane, workspace })),
 	/**
@@ -6777,6 +6783,25 @@ export type ProjectTheme = {
 	 *  the drawn theme's (#1145).
 	 */
 	icons_why?: string | null,
+	/**  **What the theme levels draw here** (#2323): the theme's name as the window draws it. */
+	drawn?: string | null,
+	/**
+	 *  Which level chose it (`workspace-choice`, `workspace-default`, `project-choice`,
+	 *  `project-default`, `machine-default`, `purlis`).
+	 */
+	level?: string | null,
+	/**
+	 *  Where that level is, in a sentence's words: "your choice for this workspace on this
+	 *  machine", "charter.toml", …
+	 */
+	from?: string | null,
+	/**
+	 *  The person's own choice here, kept on this machine: for the workspace when asked in
+	 *  one, else for the project.
+	 */
+	yours?: YourTheme | null,
+	/**  The theme folders a pick here may name, nearest level first. */
+	folders?: string[] | null,
 };
 
 /**  Why what this machine accepted of the project's grants is not settled now (#1543). */
@@ -8514,6 +8539,15 @@ export type TheirAgentsMd = {
 	piece: string | null,
 };
 
+/**
+ *  **Where the window is**, for [`theme_in_force`] (#2323): the project in front and the
+ *  workspace it is on, `None` at its plane root, which resolves from the project's levels down.
+ */
+export type ThemeAt = {
+	plane: PlaneId,
+	workspace: string | null,
+};
+
 /**  What [`theme_in_force`] answers. */
 export type ThemeInForce = {
 	/**
@@ -9235,6 +9269,12 @@ export type YourLevel = {
 	 *  the file says that counts unconfirmed because it is stricter.
 	 */
 	confirmed: boolean,
+};
+
+/**  The person's own theme choice, as Settings shows it. */
+export type YourTheme = {
+	theme: string,
+	appearance: string | null,
 };
 
 /* Tauri Specta runtime */

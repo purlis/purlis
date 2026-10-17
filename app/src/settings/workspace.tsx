@@ -27,6 +27,7 @@ import { EXTENSIONS_LINK } from "./links";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "./driver";
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
+import { yourTheme } from "./yourTheme";
 import { workspaceDispatchGroup } from "./dispatch";
 
 /**
@@ -189,10 +190,14 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
       id: "workspace.appearance",
       label: "Appearance",
       help: "The theme and the icons the window draws while this workspace is in front, and the colour it is tinted with.",
-      settings: fromFile("workspace.appearance", [
-        ...theme.controls,
-        iconsControl("workspace", read.iconThemes, read.extensions.extensions),
-      ]),
+      settings: [
+        // The person's own choice first: it is the nearest level the theme engine reads.
+        ...yourTheme(read.plane, read.workspace, read.theme, () => undefined),
+        ...fromFile("workspace.appearance", [
+          ...theme.controls,
+          iconsControl("workspace", read.iconThemes, read.extensions.extensions),
+        ]),
+      ],
       notes: [
         ...theme.notes,
         ...iconsNotes(
