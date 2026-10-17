@@ -4816,4 +4816,35 @@ mod core_word_tests {
             "CORE_WORDS refuses {stale:?}, which is no longer a word charter answers"
         );
     }
+
+    #[test]
+    fn every_word_purlis_answers_is_a_name_no_profile_may_take() {
+        // #2422: a profile named like a command would shadow it, so the core refuses the name.
+        // The core cannot read this parser either, so here every word it answers is declared
+        // as a profile and each one must come back refused for its name.
+        let parser = words_the_parser_answers();
+        let local: String = parser
+            .iter()
+            .map(|word| format!("[harness.{word}]\nkind = \"claude\"\ncommand = [\"claude\"]\n"))
+            .collect();
+        let set = purlis_core::profiles::current_of(purlis_core::profiles::derive_from(
+            None,
+            Ok(Some(local)),
+        ));
+        let refused_for_the_name: BTreeSet<&str> = set
+            .refused
+            .iter()
+            .filter(|r| r.reason.contains("is named like the command"))
+            .map(|r| r.name.as_str())
+            .collect();
+        let unprotected: Vec<&String> = parser
+            .iter()
+            .filter(|word| !refused_for_the_name.contains(word.as_str()))
+            .collect();
+        assert!(
+            unprotected.is_empty(),
+            "`purlis {unprotected:?}` is a command a profile may still be named after — a word \
+             the parser answers must be in purlis_core::extension::cli::CORE_WORDS"
+        );
+    }
 }

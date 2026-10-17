@@ -135,68 +135,13 @@ pub(crate) fn kind_of(word: &str) -> Option<&'static Kind> {
     KINDS.iter().find(|k| k.word == word)
 }
 
-/// Every `charter <word>` this plane's CLI answers, which is a name a profile may not take.
+/// Every `purlis <word>` the command line answers, which is a name a profile may not take: a
+/// profile named like a command would shadow the command, and the name belongs to the command.
 ///
-/// Taken from the Python charter's `cli.command_words()`, which is the surface both binaries
-/// share until M2 finishes porting it. A profile named like a command would shadow the
-/// command, and the name belongs to the command.
-const COMMAND_WORDS: [&str; 55] = [
-    "_version-check",
-    "browser",
-    "change",
-    "clone",
-    "curation",
-    "discover",
-    "dispatch",
-    "docs",
-    "doctor",
-    "frame",
-    "frame-bar-rows",
-    "frame-chat",
-    "frame-chrome",
-    "frame-close",
-    "frame-density",
-    "frame-ended",
-    "frame-gather",
-    "frame-launch",
-    "frame-new-chat",
-    "frame-palette",
-    "frame-probe",
-    "frame-quit",
-    "frame-rename",
-    "frame-resize",
-    "frame-respawn",
-    "frame-switch",
-    "frame-toggle",
-    "frame-transcript",
-    "git-policy",
-    "gl-refresh",
-    "guard",
-    "handoff",
-    "harness",
-    "hook",
-    "init",
-    "news",
-    "panel",
-    "persona",
-    "recall",
-    "reinit",
-    "reopen",
-    "report",
-    "save",
-    "secret",
-    "status",
-    "statusline",
-    "sync",
-    "trace",
-    "update",
-    "vault",
-    "version",
-    "workspace",
-    "worktree",
-    "ws",
-    "wt",
-];
+/// The same words no extension may take as its id, so one list held to the parser serves both:
+/// `core_word_tests` in `purlis-cli/src/main.rs` reads every word off the parser and fails for
+/// one a profile could still be named after.
+const COMMAND_WORDS: &[&str] = &crate::extension::cli::CORE_WORDS;
 
 /// The names charter itself is invoked under (`charter/hooks.py:837`), `purlis` among them
 /// (RN-3).
