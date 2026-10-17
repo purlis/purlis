@@ -53,6 +53,8 @@ fn under(profile: &str, root: &Path, script: &str) -> String {
     let out = support::purlis()
         .args(&words)
         .current_dir(root)
+        .env_clear()
+        .envs(support::carrying(support::unsteered_with(&[])))
         .output()
         .expect("purlis ran");
     assert!(

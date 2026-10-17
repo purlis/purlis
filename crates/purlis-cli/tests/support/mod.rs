@@ -36,6 +36,27 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
     command
 }
 
+/// **What purlis's own wrap on Linux is started with** (#2460): nothing but `env` carried for its
+/// program, to be set after `env_clear()`.
+pub fn carrying<K: AsRef<OsStr>, V: AsRef<OsStr>>(
+    env: impl IntoIterator<Item = (K, V)>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    purlis_linux_sandbox::carried::carried(env)
+}
+
+/// What [`command`] would start a program with, then `set`: this test's own environment,
+/// unsteered.
+pub fn unsteered_with(set: &[(&str, &OsStr)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    let selecting: Vec<String> = purlis_core::envvar::SELECTING
+        .iter()
+        .flat_map(|rest| purlis_core::envvar::spellings(&format!("PURLIS_{rest}")))
+        .collect();
+    std::env::vars_os()
+        .filter(|(name, _)| !selecting.iter().any(|it| name == it.as_str()))
+        .chain(set.iter().map(|(k, v)| ((*k).into(), (*v).to_owned())))
+        .collect()
+}
+
 /// Where the app binds its hooks socket in a project at `root`: `.purlis/app/hooks.sock`, its
 /// folder made. A hook spools a line the app does not take in time beside its socket, and only
 /// under a project's state folder, the one a sandboxed chat is denied (`spool::covered`, V63).

@@ -125,10 +125,8 @@ impl Project {
             PROBE.to_owned(),
             probe.iter().map(|it| (*it).to_owned()).collect(),
         );
-        let out = Command::new(PROBE)
-            .args(&words)
+        let out = wrap_with(&words, &[("TMPDIR".into(), self.tmp.clone().into())])
             .current_dir(&self.cwd)
-            .env("TMPDIR", &self.tmp)
             .output()
             .expect("the wrap ran");
         let said = String::from_utf8_lossy(&out.stdout).trim().to_owned();
@@ -160,6 +158,27 @@ impl Project {
     fn s(&self, path: &Path) -> String {
         path.display().to_string()
     }
+}
+
+/// The wrap started with `words`, as purlis starts it: from an empty environment, carrying this
+/// test's own for the program.
+fn wrap(words: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>) -> Command {
+    wrap_with(words, &[])
+}
+
+/// [`wrap`], with `more` set in the program's environment after this test's own.
+fn wrap_with(
+    words: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+    more: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> Command {
+    let mut command = Command::new(PROBE);
+    command
+        .args(words)
+        .env_clear()
+        .envs(purlis_linux_sandbox::carried::carried(
+            std::env::vars_os().chain(more.iter().cloned()),
+        ));
+    command
 }
 
 fn echo(mut stream: impl Read + Write) {
@@ -394,18 +413,17 @@ fn a_process_the_chat_starts_is_held_the_same_and_cannot_lift_it() {
         "{PROBE} write {o} ; {PROBE} write inner.txt ; {PROBE} status",
         o = p.outside.join("from-shell").display()
     );
-    let out = Command::new(PROBE)
-        .args(purlis_linux_sandbox::line(
-            &{
-                let port = p.proxy_port();
-                p.profile(port)
-            },
-            "/bin/sh".to_owned(),
-            vec!["-c".to_owned(), shell],
-        ))
-        .current_dir(&p.cwd)
-        .output()
-        .expect("the wrap ran");
+    let out = wrap(purlis_linux_sandbox::line(
+        &{
+            let port = p.proxy_port();
+            p.profile(port)
+        },
+        "/bin/sh".to_owned(),
+        vec!["-c".to_owned(), shell],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
     let said = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = said.lines().collect();
     assert_eq!(lines.first().copied(), Some("EACCES"), "{said}");
@@ -446,18 +464,17 @@ print("add_key", call(ADD_KEY, 0, 0, 0, 0, 0))
 print("io_uring", call(IO_URING_SETUP, 1, 0))
 print("openat2", call(OPENAT2, -100, 0, 0, 0))
 "#;
-    let out = Command::new(PROBE)
-        .args(purlis_linux_sandbox::line(
-            &{
-                let port = p.proxy_port();
-                p.profile(port)
-            },
-            python,
-            vec!["-c".to_owned(), script.to_owned()],
-        ))
-        .current_dir(&p.cwd)
-        .output()
-        .expect("the wrap ran");
+    let out = wrap(purlis_linux_sandbox::line(
+        &{
+            let port = p.proxy_port();
+            p.profile(port)
+        },
+        python,
+        vec!["-c".to_owned(), script.to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
     let said = String::from_utf8_lossy(&out.stdout);
     assert!(said.contains("listener Operation not permitted"), "{said}");
     assert!(said.contains("keyctl Operation not permitted"), "{said}");
@@ -479,18 +496,17 @@ fn the_supervisor_s_own_process_is_out_of_reach() {
          {PROBE} read-at /proc/$PPID stat; {PROBE} path-then-read /proc/$PPID/cmdline; \
          {PROBE} path-then-read /proc/$PPID/stat"
     );
-    let out = Command::new(PROBE)
-        .args(purlis_linux_sandbox::line(
-            &{
-                let port = p.proxy_port();
-                p.profile(port)
-            },
-            "/bin/sh".to_owned(),
-            vec!["-c".to_owned(), script],
-        ))
-        .current_dir(&p.cwd)
-        .output()
-        .expect("the wrap ran");
+    let out = wrap(purlis_linux_sandbox::line(
+        &{
+            let port = p.proxy_port();
+            p.profile(port)
+        },
+        "/bin/sh".to_owned(),
+        vec!["-c".to_owned(), script],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
     let said = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = said.lines().collect();
     // Of a process outside the sandbox, its `stat` alone, from the top of `/proc`, from its own
@@ -513,16 +529,15 @@ fn a_file_held_by_name_stays_held_once_it_is_no_longer_linked() {
     assert_eq!(p.run(&["read", "held.key"]), "EACCES");
     let port = p.proxy_port();
     let go = p.tmp.join("go");
-    let reader = std::process::Command::new(PROBE)
-        .args(purlis_linux_sandbox::line(
-            &p.profile(port),
-            PROBE.to_owned(),
-            vec!["path-wait-read".to_owned(), p.s(&key), p.s(&go)],
-        ))
-        .current_dir(&p.cwd)
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("the wrap ran");
+    let reader = wrap(purlis_linux_sandbox::line(
+        &p.profile(port),
+        PROBE.to_owned(),
+        vec!["path-wait-read".to_owned(), p.s(&key), p.s(&go)],
+    ))
+    .current_dir(&p.cwd)
+    .stdout(std::process::Stdio::piped())
+    .spawn()
+    .expect("the wrap ran");
     std::thread::sleep(std::time::Duration::from_millis(500));
     std::fs::remove_file(&key).expect("unlinked");
     std::fs::write(&go, "").expect("go");
@@ -540,32 +555,89 @@ fn a_pipe_made_in_the_chat_s_folder_works() {
 #[test]
 fn the_wrap_ends_with_its_program_s_status() {
     let p = project();
-    let out = Command::new(PROBE)
-        .args(purlis_linux_sandbox::line(
-            &p.profile(1),
-            PROBE.to_owned(),
-            vec!["exit".to_owned(), "7".to_owned()],
-        ))
-        .current_dir(&p.cwd)
-        .output()
-        .expect("the wrap ran");
+    let out = wrap(purlis_linux_sandbox::line(
+        &p.profile(1),
+        PROBE.to_owned(),
+        vec!["exit".to_owned(), "7".to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
     assert_eq!(out.status.code(), Some(7));
 }
 
 #[test]
 fn a_profile_the_wrap_cannot_read_starts_nothing() {
     let p = project();
+    let out = wrap(purlis_linux_sandbox::line(
+        "(version 1)\n(allow file-write* (path-regex \"x\"))\n",
+        PROBE.to_owned(),
+        vec!["write".to_owned(), "never".to_owned()],
+    ))
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(out.status.code(), Some(126));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing was started"));
+    assert!(!p.cwd.join("never").exists());
+}
+
+#[test]
+fn the_program_is_given_exactly_the_environment_purlis_carried_for_it() {
+    let p = project();
     let out = Command::new(PROBE)
         .args(purlis_linux_sandbox::line(
-            "(version 1)\n(allow file-write* (path-regex \"x\"))\n",
-            PROBE.to_owned(),
-            vec!["write".to_owned(), "never".to_owned()],
+            &p.profile(1),
+            "/usr/bin/env".to_owned(),
+            Vec::new(),
         ))
+        .current_dir(&p.cwd)
+        .env_clear()
+        .envs(purlis_linux_sandbox::carried::carried([
+            ("PATH", "/usr/bin:/bin"),
+            ("ONLY", "this=and that"),
+        ]))
+        .output()
+        .expect("the wrap ran");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{said}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut given: Vec<&str> = said.lines().collect();
+    given.sort_unstable();
+    assert_eq!(given, ["ONLY=this=and that", "PATH=/usr/bin:/bin"]);
+}
+
+#[test]
+fn a_wrap_started_with_an_environment_purlis_did_not_build_starts_nothing() {
+    let p = project();
+    let words = purlis_linux_sandbox::line(
+        &p.profile(1),
+        PROBE.to_owned(),
+        vec!["write".to_owned(), "never".to_owned()],
+    );
+    // The chat's own, inherited whole; and carried, with a variable of the chat's beside it.
+    let inherited = Command::new(PROBE)
+        .args(&words)
         .current_dir(&p.cwd)
         .output()
         .expect("the wrap ran");
-    assert_eq!(out.status.code(), Some(126));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing was started"));
+    let beside = wrap(&words)
+        .env("LD_LIBRARY_PATH", &p.tmp)
+        .current_dir(&p.cwd)
+        .output()
+        .expect("the wrap ran");
+    for out in [inherited, beside] {
+        assert_eq!(out.status.code(), Some(126));
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            said.contains("an environment purlis did not build")
+                && said.contains("nothing was started"),
+            "{said}"
+        );
+    }
     assert!(!p.cwd.join("never").exists());
 }
 
