@@ -66,7 +66,6 @@ async function openMenuOf(bar: string, name: string): Promise<void> {
       timeoutMsg: `Shift+F10 on the ${name} icon in ${bar} never opened its menu`,
     },
   );
-  await $(MENU).waitForDisplayed({ timeout: 10_000 });
 }
 
 /** Presses the open menu's row `title`. */
