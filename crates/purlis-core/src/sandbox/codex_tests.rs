@@ -904,6 +904,50 @@ fn a_codex_chat_is_denied_the_manifests_of_its_folder_and_those_above_it_only() 
     }
 }
 
+/// #1598: whether a Codex chat may write its workspace's `workspace.md` itself, read off the
+/// profile Codex's own wrap writes. A chat in a clone may not: the file is outside the folder
+/// it writes, and the vision and sections reach it as brokered writes (ADR 0067 §2), which
+/// Codex's tool server makes through the app since it is handed the chat's connection (#1996).
+/// A chat in the workspace's own folder writes it with the rest of that folder, as the spec
+/// rules a chat may edit `workspace.md` (#1330); its Notice is #1334's. #1334 changes the first
+/// answer for the harness's own edit tool, and this test with it.
+#[test]
+fn a_codex_chat_writes_its_workspace_md_from_the_workspace_folder_and_not_from_a_clone() {
+    let plane = plane_saying(ON);
+    let workspace = plane.path().join("workspaces/alpha");
+    let clone = workspace.join("api");
+    std::fs::create_dir_all(&clone).expect("a clone");
+    std::fs::write(workspace.join("workspace.md"), "# alpha\n").expect("workspace.md");
+    let home = tempfile::tempdir().expect("a home");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let profile_in = |cwd: &Path| {
+        line_in(&applied, cwd, "", &confinement)
+            .expect("starts")
+            .args[1]
+            .clone()
+    };
+    let file = real(&workspace).join("workspace.md");
+
+    let in_the_clone = profile_in(&clone);
+    assert!(
+        super::tests::writes(&in_the_clone, &real(&clone).join("src/main.rs")),
+        "{in_the_clone}"
+    );
+    assert!(
+        !super::tests::writes(&in_the_clone, &file),
+        "a Codex chat in a clone writes workspace.md: {in_the_clone}"
+    );
+
+    let in_the_workspace = profile_in(&workspace);
+    assert!(
+        super::tests::writes(&in_the_workspace, &file),
+        "{in_the_workspace}"
+    );
+}
+
 /// The wrap, applied for real: what a Codex chat could do under Codex's own sandbox, measured
 /// in earlier rounds, refused under charter's.
 #[cfg(target_os = "macos")]

@@ -515,6 +515,7 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
         git_hooks: None,
         handed: Default::default(),
         confinement: None,
+        run: None,
     }
 }
 
@@ -2475,13 +2476,12 @@ on_every_target!(
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
-    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
-    not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
-    an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
-    not yet through a link ("a sandboxed chat starts on a runner through the link in #2217"):
+    the_event_log_has_one_writer_and_each_hook_line_is_written_once,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
+    not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
+    an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;

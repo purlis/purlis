@@ -11245,3 +11245,56 @@ fn a_dispatched_task_starts_where_its_asking_chat_runs_in_the_host() {
         .hearing_hooks_through_the_host();
     a_dispatched_task_starts_where_its_asking_chat_runs(planes, Some(&connection));
 }
+
+/// **A chat the window starts in the session host is listed in the run its start began**
+/// (#2172): the run its record holds, the one its `run.started` is written under, is the one
+/// the host lists it in, so a window that comes back finds it by its run (#2006).
+#[test]
+fn a_chat_started_in_the_host_is_listed_in_the_run_its_start_began() {
+    let runtime = crate::hostedsessions::tests::a_runtime();
+    let hosting = purlis_host::Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        purlis_host::standin::StandIns::default(),
+    );
+    let (connection, window) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
+    let planes = planes().running_sessions_on(Arc::new(move |_, root: &Path| {
+        Box::new(crate::hostedsessions::HostedSessions::new(
+            Arc::clone(&connection),
+            root,
+        ))
+    }));
+    let plane = Plane::new();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+
+    let chat = held
+        .chats()
+        .start(
+            &Chat {
+                name: "1".to_owned(),
+                cwd: Some(plane.root.clone()),
+                ..Default::default()
+            },
+            STARTING,
+        )
+        .expect("it starts");
+
+    let began = held
+        .chats()
+        .recorded_chat(chat)
+        .and_then(|one| one.identity.run)
+        .expect("its start began a run");
+    let listed = window
+        .call(purlis_session_protocol::session::Command::List)
+        .expect("the host lists its chats");
+    let purlis_session_protocol::session::Answer::Chats(chats) = listed else {
+        panic!("the host answered a list with {listed:?}");
+    };
+    let runs: Vec<(Option<u32>, Option<String>)> = chats
+        .into_iter()
+        .map(|listed| (listed.number, listed.run))
+        .collect();
+    assert_eq!(runs, [(Some(chat), Some(began))]);
+    planes.close(&id).expect("it closes");
+    drop(runtime);
+}

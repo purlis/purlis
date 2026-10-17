@@ -44,7 +44,7 @@
    dotted underline. */
 .ui-table thead th {
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -149,7 +149,7 @@
 
   .ui-table-stacks tbody th {
     grid-column: 1 / -1;
-    font-weight: 600;
+    font-weight: var(--font-weight-strong);
   }
 
   /* A cell across the columns (a question asked about the row above it) takes the whole width. */
