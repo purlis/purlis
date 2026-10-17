@@ -466,7 +466,7 @@ function HintMark({ label, help }: { label: string; help: ReactNode }) {
  * whole sentence in a tooltip (a Radix tooltip, D2). The badge is a word in the Tab order, so the
  * keyboard can reach it and read the tooltip; it presses nothing. Escape closes the tooltip.
  */
-export function OriginBadge({ badge }: { badge: Badge }) {
+function OriginBadge({ badge }: { badge: Badge }) {
   return (
     <Tooltip.Provider delayDuration={300}>
       <Tooltip.Root>

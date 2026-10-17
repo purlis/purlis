@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { WindowOption } from "../bindings";
 import { themeOptionsInForce } from "../Extensions";
 import { onDrawn } from "../theme/theme";
-import { OriginBadge, type Badge, type RowIds } from "./components";
+import type { Badge, RowIds } from "./components";
 import type { LiveSetting } from "./groups";
 
 /**
@@ -20,7 +20,7 @@ export function themeOptionsRow(group: string): LiveSetting {
     id: `${group}.options`,
     label: "Theme options",
     writes: "nothing",
-    help: "The options of the theme drawn here, each with the value it is drawn with and where that value comes from.",
+    help: "The options of the theme in force here: the value of each, and where that value comes from.",
     useControl: function useThemeOptions() {
       const options = useOptionsInForce();
       return {
@@ -57,6 +57,16 @@ export function optionBadge(option: WindowOption): Badge {
       };
 }
 
+/** An option's badge: the level's word, with its sentence as the badge's title and its
+ *  accessible description. */
+function OptionBadge({ badge }: { badge: Badge }) {
+  return (
+    <span className="ui-setting-badge" title={badge.says} aria-description={badge.says}>
+      {badge.label}
+    </span>
+  );
+}
+
 /** What an option's value is called: its value's label, or its id when the theme gives none. */
 function valueLabel(option: WindowOption): string {
   return option.values.find((one) => one.id === option.value)?.label ?? option.value;
@@ -86,7 +96,7 @@ function OptionsList({
       {said !== undefined && <p className="ui-setting-help">{said}</p>}
       {options?.map((option) => (
         <p key={option.id} className="ui-setting-help" title={option.description || undefined}>
-          {option.label}: {valueLabel(option)} <OriginBadge badge={optionBadge(option)} />
+          {option.label}: {valueLabel(option)} <OptionBadge badge={optionBadge(option)} />
         </p>
       ))}
     </div>
