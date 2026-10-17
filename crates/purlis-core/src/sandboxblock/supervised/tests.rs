@@ -214,16 +214,36 @@ fn a_refused_socket_and_a_refused_service_on_this_machine_name_what_a_grant_woul
 }
 
 #[test]
-fn a_refused_connection_to_an_internet_address_is_left_to_purlis_s_proxy() {
+fn a_refused_connection_to_an_internet_address_is_one_past_the_proxy_that_names_its_address() {
     // The chat reaches the internet through purlis's proxy alone, which tells the hosts it
-    // refuses by name; an address a program dialled past it is no host to allow.
-    assert_eq!(
-        block_of(
-            &refused("network-outbound", "93.184.216.34:443", "curl"),
-            &place()
-        ),
-        None
-    );
+    // refuses by name; an address a program dialled past it is no host to allow, and is told
+    // as what it is (#2423).
+    for (named, address) in [
+        ("93.184.216.34:443", "93.184.216.34:443"),
+        ("[2606:2800:220:1::1]:80", "[2606:2800:220:1::1]:80"),
+    ] {
+        let told = block_of(&refused("network-outbound", named, "curl"), &place());
+        assert_eq!(
+            told,
+            Some((
+                Block {
+                    operation: Operation::Connect,
+                    kind: Kind::Address,
+                    ours: false,
+                },
+                Some(address.to_owned()),
+            )),
+            "{named}"
+        );
+        let (block, _) = told.expect("told");
+        assert!(tells(&block));
+        assert!(!crate::sandboxblock::is_the_proxys(&block));
+        assert_eq!(
+            block.said(),
+            "a connection to an internet address by a program that does not go through the \
+             sandbox's proxy"
+        );
+    }
 }
 
 #[test]

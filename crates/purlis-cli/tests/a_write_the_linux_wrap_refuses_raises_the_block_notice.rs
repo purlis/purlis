@@ -235,6 +235,41 @@ fn a_write_refused_again_and_again_is_one_block_and_stays_refused_with_no_app_li
     assert!(!elsewhere.exists());
 }
 
+/// #2423: a program that connects straight to internet addresses, past the proxy, raises one
+/// quiet block a minute, naming the first address, and each connection stays refused.
+#[test]
+fn addresses_dialled_past_the_proxy_are_one_block_naming_the_first() {
+    purlis_core::unsteered!();
+    landlock();
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    fs::create_dir_all(&home).expect("a home");
+    let (_, chat, profile) = a_codex_chat(&out, &home);
+    // Addresses of the documentation range: nothing answers there, and the wrap refuses
+    // before anything is sent.
+    let script = "for n in 1 2 3 4 5; do bash -c \"exec 3<>/dev/tcp/192.0.2.$n/443\" \
+                  2>/dev/null && echo yes; done; echo done";
+
+    let ran = wrapped(&profile, &chat, &home, script, true);
+    assert_eq!(ran.said, "done", "every connection is refused");
+    assert_eq!(
+        ran.blocked,
+        vec![SandboxBlocked {
+            chat: 7,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::Address,
+                ours: false,
+            },
+            harness: Some("codex".to_owned()),
+            target: Some("192.0.2.1:443".to_owned()),
+            read_back: false,
+            suggested: None,
+        }]
+    );
+}
+
 /// The signals the wrap leaves to its one waiter, which passes an ending on to the chat: INT,
 /// QUIT, TERM and HUP, as a `SigBlk` mask.
 const LEFT_TO_THE_WAITER: u64 = bit(1) | bit(2) | bit(3) | bit(15);
