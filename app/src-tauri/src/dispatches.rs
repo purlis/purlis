@@ -1243,9 +1243,8 @@ pub(crate) fn what_changed(seen: &WorktreeLoss, now: &WorktreeLoss) -> String {
     }
     if seen.unmerged != now.unmerged || seen.lost != now.lost {
         said.push(format!(
-            "it holds {} commit{} of its own now, where it held {}",
-            now.unmerged,
-            if now.unmerged == 1 { "" } else { "s" },
+            "it holds {} of its own now, where it held {}",
+            purlis_core::counts::counted(now.unmerged, "commit", "commits"),
             seen.unmerged
         ));
     }
