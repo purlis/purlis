@@ -40,8 +40,8 @@ import { arithmeticLiteral } from "./cssMath.testkit";
  * **A box's size is not a step of the scale** (#2319). A width, a height and their min, max,
  * block and inline forms say how big one named box is (a dialog's width, an icon's square, a
  * strip's cap on a tab), and the scale has no step for them, so this guard does not read them.
- * A control's or a strip's height is still `--size-control` or `--size-chrome`, by the
- * primitives that draw them.
+ * A control's or a strip's height is still `--size-control` or `--size-chrome`, which the
+ * control guard holds (`controls.guard.test.ts`, #2449).
  *
  * **What is not a literal.** Nothing (`0`, in any unit); a hairline (`1px`); one of the
  * element's own text (`1em`, `1lh`, `1ch`: an icon as big as the words beside it); a share of

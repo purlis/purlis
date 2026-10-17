@@ -983,7 +983,7 @@ button.bare {
   justify-content: center;
   align-self: center;
   gap: var(--space-2);
-  min-width: 1.9rem;
+  min-width: var(--size-control);
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-md);
@@ -1498,7 +1498,7 @@ button.show-more:focus-visible {
   flex: none;
   gap: 0 var(--space-2);
   align-items: center;
-  height: 1.25rem;
+  height: var(--size-chrome);
   overflow: hidden;
   white-space: nowrap;
 }
@@ -1513,7 +1513,7 @@ button.show-more:focus-visible {
 .pane-task-ends .task-end,
 .task-end-confirm button {
   flex: none;
-  height: 1.25rem;
+  height: var(--size-chrome);
   padding: 0 var(--space-2);
   font: inherit;
   font-size: var(--font-size-xs);
@@ -1875,7 +1875,7 @@ button.show-more:focus-visible {
   align-items: center;
   align-self: center;
   min-width: min-content;
-  height: 1.35rem;
+  height: var(--size-chrome);
   /* Clear of the tab's close, whose press ends the chat: a press a pixel off a count must
      not be one. */
   margin-inline-end: var(--space-2);
@@ -1905,7 +1905,7 @@ button.show-more:focus-visible {
   display: flex;
   flex: none;
   align-items: center;
-  height: 1.35rem;
+  height: var(--size-chrome);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-full);
@@ -1944,7 +1944,7 @@ button.show-more:focus-visible {
   flex: none;
   gap: var(--space-1);
   align-items: center;
-  height: 1.35rem;
+  height: var(--size-chrome);
 }
 
 .tab-tasks-counts > .count[data-away] {
@@ -2159,8 +2159,8 @@ button.show-more:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.3rem;
-  height: 1.3rem;
+  width: var(--size-chrome);
+  height: var(--size-chrome);
   padding: 0;
   border: none;
   border-radius: var(--radius-md);
@@ -2584,7 +2584,7 @@ button.show-more:focus-visible {
   flex: none;
   align-items: center;
   gap: var(--space-2);
-  min-height: 1.4rem;
+  min-height: var(--size-chrome);
   padding: var(--space-2) var(--space-3) var(--space-2);
 }
 
@@ -6861,8 +6861,9 @@ h2.sidebar-title .node-icon {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  /* As tall as a heading with a view's button, so a heading without one lines up the same. */
-  min-height: 1.4rem;
+  /* As tall as a heading with a view's button, so a heading without one lines up the same:
+     the chrome height, the small button's. */
+  min-height: var(--size-chrome);
   margin: 0 0 var(--space-2);
 }
 
