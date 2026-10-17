@@ -167,7 +167,10 @@ fn the_notice_names_the_theme_and_each_floor_it_breaks_once() {
     let held = drawn_of(&mine).1.expect("held");
     assert_eq!(held.floors, [Floor::Danger, Floor::StateMarks]);
     let said = held.said();
-    assert!(said.starts_with("Muddle breaks the consent floors"), "{said}");
+    assert!(
+        said.starts_with("Muddle breaks the consent floors"),
+        "{said}"
+    );
     assert!(said.contains(Floor::Danger.says()), "{said}");
     assert!(said.contains(Floor::StateMarks.says()), "{said}");
     assert!(said.contains("state.running, state.waiting"), "{said}");
@@ -233,7 +236,10 @@ fn a_theme_folder_s_appearances_are_each_held_against_purlis_s_of_their_own_tag(
     });
     let duo = load(&document);
     assert!(!duo.refused, "{:?}", duo.complaints);
-    for (system, tag) in [(Appearance::Dark, Appearance::Dark), (Appearance::Light, Appearance::Light)] {
+    for (system, tag) in [
+        (Appearance::Dark, Appearance::Dark),
+        (Appearance::Light, Appearance::Light),
+    ] {
         let it = follow(&duo.theme, system);
         let drawn = it.theme.expect("drawn");
         assert_eq!(

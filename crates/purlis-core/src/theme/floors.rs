@@ -140,7 +140,9 @@ struct Failure {
 /// workspace colour, and danger apart from primary in the theme's own colours.
 fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
     let mut found = Vec::new();
-    let tints = tint::PALETTE.iter().map(|(colour, _)| tint::tinted(theme, colour));
+    let tints = tint::PALETTE
+        .iter()
+        .map(|(colour, _)| tint::tinted(theme, colour));
     for drawn in std::iter::once(theme.clone()).chain(tints) {
         for (floor, pair) in pairs() {
             if ratio(&drawn, pair) < pair.floor {
@@ -189,32 +191,31 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
         if failing.is_empty() {
             break;
         }
-        let mut changed = false;
+        // Each round decides from what was purlis's before it, so a pair failing in several
+        // tints is one failure and its ground waits for the round after its consent colour.
+        let mut take: BTreeSet<&'static str> = BTreeSet::new();
         for failure in &failing {
             floors.insert(failure.floor);
-            let open = |token: &&'static str| !taken.contains(*token);
-            let consent: Vec<&'static str> = failure
+            let open: Vec<&'static str> = failure
                 .tokens
+                .into_iter()
+                .filter(|token| !taken.contains(token))
+                .collect();
+            let consent: Vec<&'static str> = open
                 .iter()
-                .filter(open)
-                .filter(|token| is_consent(token))
                 .copied()
+                .filter(|token| is_consent(token))
                 .collect();
             // Purlis's own consent colour first; the ground too only once that is not enough.
-            let take = if consent.is_empty() {
-                failure.tokens.iter().filter(open).copied().collect()
-            } else {
-                consent
-            };
-            for token in take {
-                drawn.values.insert(token, ours.value(token).to_owned());
-                taken.insert(token);
-                changed = true;
-            }
+            take.extend(if consent.is_empty() { open } else { consent });
         }
         // Every token a failing floor names is purlis's already: there is nothing more to draw.
-        if !changed {
+        if take.is_empty() {
             break;
+        }
+        for token in take {
+            drawn.values.insert(token, ours.value(token).to_owned());
+            taken.insert(token);
         }
     }
     if floors.is_empty() {

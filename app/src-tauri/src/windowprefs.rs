@@ -341,6 +341,35 @@ mod tests {
     }
 
     #[test]
+    fn the_person_s_theme_is_handed_with_the_consent_floors_held_and_the_notice_for_them() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        let lost = theme::default_theme().value("surface.base");
+        std::fs::write(
+            dir.join(windowprefs::THEME),
+            format!(r#"{{"name":"Mine","tokens":{{"state.failed":"{lost}"}}}}"#),
+        )
+        .unwrap();
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
+        assert_eq!(
+            at["theme"]["theme"]["values"]["state.failed"],
+            theme::default_theme().value("state.failed")
+        );
+        let floors = at["theme"]["floors"]
+            .as_str()
+            .expect("the floors are named");
+        assert!(
+            floors.starts_with("Mine breaks the consent floors"),
+            "{floors}"
+        );
+
+        std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"Mine"}"#).unwrap();
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
+        assert_eq!(at["theme"]["floors"], serde_json::Value::Null);
+    }
+
+    #[test]
     fn every_window_is_handed_the_one_read_of_the_person_s_theme() {
         let home = tempfile::tempdir().unwrap();
         let dir = purlis_core::machine::dir(home.path());
