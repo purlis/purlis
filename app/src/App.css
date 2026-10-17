@@ -983,7 +983,7 @@ button.bare {
   justify-content: center;
   align-self: center;
   gap: var(--space-2);
-  min-width: 1.9rem;
+  min-width: var(--size-control);
   padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-md);
@@ -1150,7 +1150,7 @@ button.show-more:focus-visible {
    review rather than at runtime. */
 .pane-corner {
   position: absolute;
-  top: 3px;
+  top: var(--space-1);
   z-index: 2;
   display: flex;
   align-items: flex-start;
@@ -1164,8 +1164,8 @@ button.show-more:focus-visible {
    - **It takes no clicks of its own**: what is under the part of it that draws nothing is the
      terminal. Its row takes its own. */
 .pane-corner.at-start {
-  left: 8px;
-  max-width: calc(100% - 16px);
+  left: var(--space-4);
+  max-width: calc(100% - var(--space-4) * 2);
   pointer-events: none;
 }
 
@@ -1243,7 +1243,7 @@ button.show-more:focus-visible {
 }
 
 .pane-corner.at-end {
-  right: 8px;
+  right: var(--space-4);
 }
 
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
@@ -1253,8 +1253,8 @@ button.show-more:focus-visible {
    keyboard is while it is, so it is always visible and never takes the corners' hover rule. */
 .pane-find {
   position: absolute;
-  top: 2.1rem;
-  right: 8px;
+  top: var(--space-8);
+  right: var(--space-4);
   z-index: 3;
   display: flex;
   align-items: center;
@@ -1498,7 +1498,7 @@ button.show-more:focus-visible {
   flex: none;
   gap: 0 var(--space-2);
   align-items: center;
-  height: 1.25rem;
+  height: var(--size-chrome);
   overflow: hidden;
   white-space: nowrap;
 }
@@ -1513,7 +1513,7 @@ button.show-more:focus-visible {
 .pane-task-ends .task-end,
 .task-end-confirm button {
   flex: none;
-  height: 1.25rem;
+  height: var(--size-chrome);
   padding: 0 var(--space-2);
   font: inherit;
   font-size: var(--font-size-xs);
@@ -1875,7 +1875,7 @@ button.show-more:focus-visible {
   align-items: center;
   align-self: center;
   min-width: min-content;
-  height: 1.35rem;
+  height: var(--size-chrome);
   /* Clear of the tab's close, whose press ends the chat: a press a pixel off a count must
      not be one. */
   margin-inline-end: var(--space-2);
@@ -1905,7 +1905,7 @@ button.show-more:focus-visible {
   display: flex;
   flex: none;
   align-items: center;
-  height: 1.35rem;
+  height: var(--size-chrome);
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-full);
@@ -1944,7 +1944,7 @@ button.show-more:focus-visible {
   flex: none;
   gap: var(--space-1);
   align-items: center;
-  height: 1.35rem;
+  height: var(--size-chrome);
 }
 
 .tab-tasks-counts > .count[data-away] {
@@ -2139,7 +2139,7 @@ button.show-more:focus-visible {
 .tasks-menu-places {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: 0.3rem;
+  inset-inline-end: var(--space-2);
   display: none;
   gap: var(--space-1);
   align-items: center;
@@ -2159,8 +2159,8 @@ button.show-more:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.3rem;
-  height: 1.3rem;
+  width: var(--size-chrome);
+  height: var(--size-chrome);
   padding: 0;
   border: none;
   border-radius: var(--radius-md);
@@ -2584,7 +2584,7 @@ button.show-more:focus-visible {
   flex: none;
   align-items: center;
   gap: var(--space-2);
-  min-height: 1.4rem;
+  min-height: var(--size-chrome);
   padding: var(--space-2) var(--space-3) var(--space-2);
 }
 
@@ -2712,8 +2712,8 @@ button.show-more:focus-visible {
    corner. In the needs-you colours for the chats that need you, the plain count's otherwise. */
 .activity-count {
   position: absolute;
-  inset-block-end: 0.2rem;
-  inset-inline-end: 0.15rem;
+  inset-block-end: var(--space-1);
+  inset-inline-end: var(--space-1);
   min-width: 1rem;
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
@@ -6861,8 +6861,9 @@ h2.sidebar-title .node-icon {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  /* As tall as a heading with a view's button, so a heading without one lines up the same. */
-  min-height: 1.4rem;
+  /* As tall as a heading with a view's button, so a heading without one lines up the same:
+     the chrome height, the small button's. */
+  min-height: var(--size-chrome);
   margin: 0 0 var(--space-2);
 }
 

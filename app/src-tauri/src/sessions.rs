@@ -535,18 +535,8 @@ mod tests {
         Opening {
             program: Some("/bin/sh".to_owned()),
             args: vec!["-c".to_owned(), script.to_owned()],
-            cwd: None,
             size: SIZE,
-            env: Vec::new(),
-            env_strip: Vec::new(),
-            harness: None,
-            declared_env: Vec::new(),
-            env_pass: Vec::new(),
-            operator_shell: false,
-            git_hooks: None,
-            handed: Default::default(),
-            confinement: None,
-            run: None,
+            ..Opening::default()
         }
     }
 

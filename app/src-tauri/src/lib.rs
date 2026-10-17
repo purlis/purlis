@@ -3409,13 +3409,15 @@ pub fn run() {
             ));
             // How this launch stands with the session bus, for the window's notice
             // (`portal.rs`): nothing to say on one that has it.
-            app.manage(portal::SessionBus::of(
+            let session_bus = portal::SessionBus::of(
                 std::env::var(portal::SESSION_BUS).ok().as_deref(),
                 purlis_core::envvar::var(portal::SESSION_BUS_KEPT).as_deref(),
                 std::env::var_os("XDG_RUNTIME_DIR")
                     .map(PathBuf::from)
                     .as_deref(),
-            ));
+            );
+            session_bus.say();
+            app.manage(session_bus);
             #[cfg(target_os = "linux")]
             portal::listen_again(app.handle());
             // **The window, built here rather than by Tauri from the config, so it can be

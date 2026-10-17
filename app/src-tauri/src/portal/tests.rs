@@ -15,15 +15,6 @@ fn nothing_there() -> Option<(String, Heard)> {
     None
 }
 
-fn says_what_is_off(said: &str) {
-    assert!(
-        said.contains("tray") && said.contains("notifications"),
-        "{said}"
-    );
-    assert!(said.contains("second launch"), "{said}");
-    assert!(said.contains("charter-app#24"), "{said}");
-}
-
 #[test]
 fn a_portal_that_answered_leaves_the_launch_as_it_is() {
     assert_eq!(
@@ -35,23 +26,23 @@ fn a_portal_that_answered_leaves_the_launch_as_it_is() {
 
 #[test]
 fn a_silent_portal_starts_the_launch_again_without_the_bus_keeping_the_bus_for_chats() {
-    let Start::WithoutTheBus { say, kept } =
-        decide(Some(RUN_USER_BUS), Heard::Silence, &mut not_asked)
-    else {
-        panic!("a silent portal did not restart the launch");
-    };
-    assert!(say.contains("300 ms"), "{say}");
-    says_what_is_off(&say);
-    assert_eq!(kept, RUN_USER_BUS);
+    assert_eq!(
+        decide(Some(RUN_USER_BUS), Heard::Silence, &mut not_asked),
+        Start::WithoutTheBus {
+            kept: RUN_USER_BUS.to_owned()
+        }
+    );
 }
 
 /// Found by the standard lookup (`$XDG_RUNTIME_DIR/bus`), which a chat does too.
 #[test]
 fn a_silent_portal_on_a_bus_nothing_named_keeps_no_address() {
-    let Start::WithoutTheBus { kept, .. } = decide(None, Heard::Silence, &mut not_asked) else {
-        panic!("a silent portal did not restart the launch");
-    };
-    assert_eq!(kept, "");
+    assert_eq!(
+        decide(None, Heard::Silence, &mut not_asked),
+        Start::WithoutTheBus {
+            kept: String::new()
+        }
+    );
 }
 
 #[test]
@@ -80,26 +71,27 @@ fn with_no_bus_named_the_launch_starts_again_on_the_bus_of_the_x_session() {
 fn a_silent_portal_on_the_bus_of_the_x_session_starts_without_it_and_keeps_it_for_chats() {
     let mut autolaunched = || Some((AUTOLAUNCHED.to_owned(), Heard::Silence));
 
-    let Start::WithoutTheBus { say, kept } = decide(None, Heard::NoBus, &mut autolaunched) else {
-        panic!("a silent portal did not restart the launch");
-    };
-    says_what_is_off(&say);
-    assert_eq!(kept, AUTOLAUNCHED);
+    assert_eq!(
+        decide(None, Heard::NoBus, &mut autolaunched),
+        Start::WithoutTheBus {
+            kept: AUTOLAUNCHED.to_owned()
+        }
+    );
 }
 
 #[test]
-fn with_no_bus_anywhere_the_launch_says_what_that_costs_and_keeps_no_address() {
+fn with_no_bus_anywhere_the_launch_starts_without_one_and_keeps_no_address() {
     let mut unreachable = || Some((AUTOLAUNCHED.to_owned(), Heard::NoBus));
     for autolaunched in [
         &mut nothing_there as &mut dyn FnMut() -> _,
         &mut unreachable,
     ] {
-        let Start::WithoutTheBus { say, kept } = decide(None, Heard::NoBus, autolaunched) else {
-            panic!("a launch with no bus went on as if it had one");
-        };
-        assert!(say.contains("no session bus"), "{say}");
-        says_what_is_off(&say);
-        assert_eq!(kept, "");
+        assert_eq!(
+            decide(None, Heard::NoBus, autolaunched),
+            Start::WithoutTheBus {
+                kept: String::new()
+            }
+        );
     }
 }
 
@@ -112,6 +104,149 @@ fn a_launch_that_is_already_the_restart_never_restarts_again() {
             "{heard:?}"
         );
     }
+}
+
+/// One launch in `session` on `address`: how often its portal was asked, and how it went on.
+fn launched(
+    session: &LoginSession,
+    address: Option<&str>,
+    heard: Heard,
+    x_session_bus: &mut dyn FnMut() -> Option<(String, Heard)>,
+) -> (usize, Start) {
+    let mut asked = 0;
+    let start = launch(
+        address,
+        session,
+        &mut || {
+            asked += 1;
+            heard
+        },
+        x_session_bus,
+    );
+    (asked, start)
+}
+
+/// A silent portal is asked once per login session (#2432): the first launch gives it
+/// [`BUDGET`], and the next launch in the same session starts without the bus at once.
+#[test]
+fn a_portal_silent_once_in_a_login_session_is_not_asked_again_in_it() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+
+    let (asked, first) = launched(&session, Some(RUN_USER_BUS), Heard::Silence, &mut not_asked);
+    assert_eq!(asked, 1, "the first launch did not ask");
+    assert!(matches!(first, Start::WithoutTheBus { .. }), "{first:?}");
+
+    let (asked, next) = launched(&session, Some(RUN_USER_BUS), Heard::Answer, &mut not_asked);
+    assert_eq!(asked, 0, "a launch later in the session asked again");
+    assert_eq!(
+        next,
+        Start::WithoutTheBus {
+            kept: RUN_USER_BUS.to_owned()
+        },
+        "the chats lost the bus"
+    );
+}
+
+#[test]
+fn a_launch_that_remembers_nothing_asks() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+
+    let (asked, start) = launched(&session, None, Heard::Answer, &mut not_asked);
+
+    assert_eq!(asked, 1);
+    assert_eq!(start, Start::AsItIs);
+}
+
+#[test]
+fn a_portal_that_answered_is_asked_again_at_the_next_launch() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+
+    launched(&session, Some(RUN_USER_BUS), Heard::Answer, &mut not_asked);
+    let (asked, _) = launched(&session, Some(RUN_USER_BUS), Heard::Answer, &mut not_asked);
+
+    assert_eq!(asked, 1, "an answered portal was remembered as silent");
+    assert_eq!(
+        std::fs::read_dir(runtime.path())
+            .expect("the runtime directory")
+            .count(),
+        0,
+        "an answered portal left something in the runtime directory"
+    );
+}
+
+/// Without `$XDG_RUNTIME_DIR` there is nowhere that ends with the login session, so every launch
+/// asks, as before.
+#[test]
+fn with_no_runtime_directory_every_launch_asks() {
+    let session = LoginSession::at(None);
+
+    for _ in 0..2 {
+        let (asked, start) = launched(&session, Some(RUN_USER_BUS), Heard::Silence, &mut not_asked);
+        assert_eq!(asked, 1);
+        assert!(matches!(start, Start::WithoutTheBus { .. }), "{start:?}");
+    }
+}
+
+/// The silence was heard on one bus; a launch given another asks that one.
+#[test]
+fn a_launch_on_another_bus_asks_its_own_portal() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+    launched(&session, Some(RUN_USER_BUS), Heard::Silence, &mut not_asked);
+
+    let (asked, start) = launched(&session, None, Heard::Answer, &mut not_asked);
+
+    assert_eq!(asked, 1);
+    assert_eq!(start, Start::AsItIs);
+}
+
+/// `listen_again` heard the portal answer after the launch: the next launch asks it again.
+#[test]
+fn a_portal_that_answers_later_is_asked_again_at_the_next_launch() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+    launched(&session, Some(RUN_USER_BUS), Heard::Silence, &mut not_asked);
+
+    session.forget();
+    let (asked, start) = launched(&session, Some(RUN_USER_BUS), Heard::Answer, &mut not_asked);
+
+    assert_eq!(asked, 1);
+    assert_eq!(start, Start::AsItIs);
+}
+
+/// The X display's bus is found by `dbus-launch` at each launch and is not written down, so a
+/// silence there is asked about again.
+#[test]
+fn a_silence_on_the_bus_of_the_x_session_is_not_remembered() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+    let mut autolaunched = || Some((AUTOLAUNCHED.to_owned(), Heard::Silence));
+
+    for _ in 0..2 {
+        let (asked, start) = launched(&session, None, Heard::NoBus, &mut autolaunched);
+        assert_eq!(asked, 1);
+        assert!(matches!(start, Start::WithoutTheBus { .. }), "{start:?}");
+    }
+}
+
+#[test]
+fn the_restart_never_asks_and_never_remembers() {
+    let runtime = tempfile::tempdir().expect("a directory");
+    let session = LoginSession::at(Some(runtime.path()));
+
+    let (asked, start) = launched(
+        &session,
+        Some(NO_SESSION_BUS),
+        Heard::Silence,
+        &mut not_asked,
+    );
+
+    assert_eq!((asked, start), (0, Start::AsItIs));
+    let (asked, _) = launched(&session, Some(RUN_USER_BUS), Heard::Answer, &mut not_asked);
+    assert_eq!(asked, 1);
 }
 
 /// What a restart's environment says about the bus: set, removed, or left as it was.
@@ -210,8 +345,46 @@ fn a_launch_with_no_bus_at_all_tells_the_window_so() {
             .now()
             .expect("the window is told");
         assert!(told.says.contains("no session bus"), "{told:?}");
+        assert!(
+            !told.says.contains("XDG_RUNTIME_DIR"),
+            "a path in the window: {told:?}"
+        );
         assert!(told.says.contains("notifications"), "{told:?}");
     }
+}
+
+/// Said by the launch that starts again, once: the one before the restart says nothing.
+fn said(bus: &SessionBus) -> Vec<String> {
+    let mut said = Vec::new();
+    bus.say_to(&mut |line| said.push(line.to_owned()));
+    said
+}
+
+#[test]
+fn the_restarted_launch_says_why_it_has_no_bus_and_what_is_off() {
+    let away = SessionBus::of(Some(NO_SESSION_BUS), Some(RUN_USER_BUS), None);
+    let [line] = said(&away).try_into().expect("one line");
+    assert!(line.contains("desktop portal did not answer"), "{line}");
+    assert!(line.contains("300 ms"), "{line}");
+    for off in ["tray icon", "notifications", "second launch", "keyring"] {
+        assert!(line.contains(off), "{off} is not named: {line}");
+    }
+
+    let nowhere = SessionBus::of(Some(NO_SESSION_BUS), Some(""), None);
+    let [line] = said(&nowhere).try_into().expect("one line");
+    assert!(line.contains("no session bus"), "{line}");
+    for place in [
+        "DBUS_SESSION_BUS_ADDRESS",
+        "$XDG_RUNTIME_DIR/bus",
+        "X display",
+    ] {
+        assert!(line.contains(place), "{place} is not named: {line}");
+    }
+
+    assert!(
+        said(&SessionBus::of(Some(RUN_USER_BUS), None, None)).is_empty(),
+        "a launch on the bus said it had none"
+    );
 }
 
 #[test]
