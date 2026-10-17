@@ -140,10 +140,11 @@ const RESERVES: readonly { written: string; why: string }[] = [
 /** A number a token is multiplied or divided by inside `calc()`: `* 3`, `3 *`, `/ 2`. */
 const FACTOR = /([*/])\s*(-?\d*\.?\d+)(?![\w.%])|(?<![\w.-])(-?\d*\.?\d+)\s*\*/g;
 
-/** The text inside each `calc()` a value writes, nested ones in their outer one. */
+/** The text inside each `calc()`, `min()`, `max()` and `clamp()` a value writes, where CSS does
+ *  arithmetic; nested ones in their outer one too. */
 function calcs(value: string): string[] {
   const found: string[] = [];
-  for (const hit of value.matchAll(/calc\(/gi)) {
+  for (const hit of value.matchAll(/(?<![\w-])(?:calc|min|max|clamp)\(/gi)) {
     let depth = 1;
     let end = hit.index + hit[0].length;
     for (; end < value.length && depth > 0; end++) {
@@ -158,7 +159,10 @@ function calcs(value: string): string[] {
 /** Whether a value multiplies or divides by a number that is not whole: a token's multiple is a
  *  whole number of its steps, and its share a whole number of parts, but for the reserves. */
 function multipliesALiteral(value: string): boolean {
-  const kept = RESERVES.reduce((text, { written }) => text.split(written).join(""), value);
+  const kept = RESERVES.reduce((text, { written }) => {
+    const exactly = new RegExp(`${written.replace(/[()*.]/g, "\\$&")}(?![\\d.])`, "g");
+    return text.replace(exactly, "");
+  }, value);
   return calcs(kept).some((body) =>
     [...body.matchAll(FACTOR)].some(([, , divisor, multiplier]) => {
       const factor = Number(divisor ?? multiplier);
@@ -435,6 +439,7 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
       .a { padding: calc(var(--space-1) * 3.5); margin: calc(0.5 * var(--space-4)); }
       .b { gap: calc(var(--space-4) / 2.5); margin: calc(var(--space-5) * 2.5); }
       .c { padding: calc((var(--space-1) + var(--space-2)) * 1.5); }
+      .d { padding-inline-end: calc(var(--size-control) * 2.55); gap: max(var(--space-1) * 1.5, 1px); }
     `;
     expect(cssLiterals(odd)).toEqual([
       ".a | padding: calc(var(--space-1) * 3.5)",
@@ -442,6 +447,8 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
       ".b | gap: calc(var(--space-4) / 2.5)",
       ".b | margin: calc(var(--space-5) * 2.5)",
       ".c | padding: calc((var(--space-1) + var(--space-2)) * 1.5)",
+      ".d | padding-inline-end: calc(var(--size-control) * 2.55)",
+      ".d | gap: max(var(--space-1) * 1.5, 1px)",
     ]);
   });
 
