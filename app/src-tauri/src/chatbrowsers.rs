@@ -1154,8 +1154,8 @@ fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
 
 /// **What chat `session`'s browser reaches**: what its sandbox lists, as it was compiled at its
 /// start with the hosts allowed it live since, never its floor (a browser takes only what is
-/// listed, D-2011-10), and the browser sites you allowed for every chat here (#2018), while
-/// policy leaves `you` open. A host allowed for the chat's commands is a site its browser
+/// listed, D-2011-10), and the browser sites you allowed for every chat here (#2018) that
+/// policy leaves in force. A host allowed for the chat's commands is a site its browser
 /// reaches (D-2018-7); a browser site is never one its commands reach. A chat started without
 /// the sandbox has no such record, so its browser starts with nothing listed, and reaches a
 /// public site only where the person let it reach the open web. Its own sites, for this chat
@@ -1167,19 +1167,15 @@ fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
     };
     let mut reach = purlis_core::browsertools::browser_reach(&confines.decides(), false);
     let root = held.root();
-    if sandbox::policy::Locks::of(root)
-        .scope_removed(sandbox::grant::Level::You)
-        .is_none()
-    {
-        reach.listed.extend(
-            sandbox::local::browser_sites(root)
-                .iter()
-                .map(|site| Listed {
-                    host: site.to_string(),
-                    layer: Layer::You,
-                }),
-        );
-    }
+    let locks = sandbox::policy::Locks::of(root);
+    reach.listed.extend(
+        sandbox::local::browser_sites_in_force(root, &locks)
+            .iter()
+            .map(|site| Listed {
+                host: site.to_string(),
+                layer: Layer::You,
+            }),
+    );
     reach
 }
 

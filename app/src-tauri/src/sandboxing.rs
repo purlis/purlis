@@ -2249,7 +2249,7 @@ fn grants_of(
                 .iter()
                 .find(|one| one.what == sandbox::local::BROWSER_SITE && one.target == target)
                 .and_then(|one| one.chat.clone()),
-            locked: locks.scope_removed(Level::You),
+            locked: sandbox::local::browser_site_held(&site, &locks),
             ..row(GrantWhat::BrowserSite, target, Level::You, None)
         });
     }

@@ -1660,6 +1660,32 @@ pub fn browser_sites(root: &Path) -> Vec<super::browser_reach::Site> {
         .collect()
 }
 
+/// **Why policy holds the browser site `site` kept at `you`**, where it does (#2018): an
+/// administrator's `allow-scopes` leaves `you` out, or never allows its host, though it was
+/// allowed before. Held, it reaches no browser and stays kept, as a host kept at a scope is.
+pub fn browser_site_held(
+    site: &super::browser_reach::Site,
+    locks: &super::policy::Locks,
+) -> Option<String> {
+    let level = super::grant::Level::You;
+    locks.scope_removed(level).or_else(|| {
+        let host = super::hosts::Host::parse(&site.to_string()).ok()?;
+        locks.refuses_grant(&super::grant::What::Host(host), level)
+    })
+}
+
+/// The browser sites kept here that policy leaves in force (#2018): [`browser_sites`], less
+/// each one [`browser_site_held`] holds.
+pub fn browser_sites_in_force(
+    root: &Path,
+    locks: &super::policy::Locks,
+) -> Vec<super::browser_reach::Site> {
+    browser_sites(root)
+        .into_iter()
+        .filter(|site| browser_site_held(site, locks).is_none())
+        .collect()
+}
+
 /// Lets every chat's browser of the project at `root` reach `site` on this machine (#2018):
 /// a browser's Ask, never a chat.
 pub fn grant_browser_site(root: &Path, site: &super::browser_reach::Site) -> io::Result<()> {

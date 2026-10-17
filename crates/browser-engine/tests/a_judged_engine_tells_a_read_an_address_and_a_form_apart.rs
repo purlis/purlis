@@ -140,7 +140,7 @@ fn a_link_the_page_offered_is_a_read_and_loads() {
 fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
     let (judge, told) = judge();
     let _one = one_engine_at_a_time();
-    let Some((browser, _data, _site)) = started_judged(judge) else {
+    let Some((browser, _data, site)) = started_judged(judge) else {
         return;
     };
     open_the_way_out(&browser, &told);
@@ -156,6 +156,10 @@ fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
         !snapshot(&browser).contains("Deep button"),
         "the other site's page did not load"
     );
+    assert!(
+        !site.heard_from("other.test"),
+        "the other site was sent nothing"
+    );
     assert_eq!(
         told_about(&told, "http://other.test/deep.html"),
         [Why::Addressed]
@@ -167,7 +171,7 @@ fn an_address_the_agent_writes_for_the_site_is_asked_about_and_not_loaded() {
 fn a_form_sends(field: &str, button: &str) {
     let (judge, told) = judge();
     let _one = one_engine_at_a_time();
-    let Some((browser, _data, _site)) = started_judged(judge) else {
+    let Some((browser, _data, site)) = started_judged(judge) else {
         return;
     };
     open_the_way_out(&browser, &told);
@@ -193,6 +197,10 @@ fn a_form_sends(field: &str, button: &str) {
     assert!(
         !snapshot(&browser).contains("Deep button"),
         "{button}: nothing was sent, so the other site's page did not load"
+    );
+    assert!(
+        !site.heard_from("other.test"),
+        "{button}: the other site was sent nothing"
     );
     let sent = told_about(&told, "http://other.test/deep.html");
     assert_eq!(sent, [Why::Sends], "{sent:?}");

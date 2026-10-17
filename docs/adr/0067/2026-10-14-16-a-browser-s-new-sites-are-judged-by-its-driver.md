@@ -26,7 +26,10 @@ public site its browser's lane does not list.
    Allow for this chat, Always allow in this project on this machine, and Keep blocked. An Allow
    lists the site in the browser's lane only: the judge and the reach proxy read it, and the
    chat's own commands never do, so they still need their own Allow for that host. It is listed
-   apart in the Granted list, and removing it ends the browsers it reached. A browser site for
+   apart in the Granted list, and removing it ends the browsers it reached; one an
+   administrator's policy later holds (a scope left out, a host never allowed) is kept and
+   reaches no browser. This supersedes the sentence "nothing is listed for the browser alone"
+   in item 1 of the amendment *a browser's reach is a lane of its chat's*. A browser site for
    everyone in the project (committed) is not offered yet: it comes with #2443 (ruled
    2026-10-17). *A host allowed for the chat's commands stays a listed site for
    its browser, as the lane was ruled on 2026-10-14 (D-2018-7): decided in implementation,

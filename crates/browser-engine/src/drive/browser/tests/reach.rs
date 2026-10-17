@@ -486,3 +486,92 @@ fn a_link_the_page_followed_reads_and_so_do_its_redirects() {
         vec![Why::Reads, Why::Reads]
     );
 }
+
+#[test]
+fn a_frame_at_no_web_address_is_judged_by_its_nearest_web_ancestor_and_an_unknown_one_by_every_document()
+ {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    // A blank frame inside the cross-site frame, and a srcdoc frame of the page's own.
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "BLANK", "parentId": "PAYMENT-FRAME", "url": "about:blank"}}),
+        Some("S-PAYMENT"),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame": {"id": "SRCDOC", "parentId": "PAGE-1", "url": "about:srcdoc"}}),
+        Some("S-PAGE-1"),
+    );
+    let start = Instant::now();
+    while super::super::lock(&browser.inner.state)
+        .page("PAGE-1")
+        .is_none_or(|page| {
+            !page.frames.contains_key("SRCDOC") || !page.frames.contains_key("BLANK")
+        })
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "the frames were never seen"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let state = super::super::lock(&browser.inner.state);
+    assert_eq!(
+        state.documents_of("PAGE-1", "BLANK"),
+        ["http://other.test/pay.html"],
+        "the cross-site frame holds it"
+    );
+    assert_eq!(
+        state.documents_of("PAGE-1", "SRCDOC"),
+        ["http://fixture.test/frames.html"]
+    );
+    let every = state.documents_of("PAGE-1", "NO-SUCH-FRAME");
+    assert_eq!(every[0], "http://fixture.test/frames.html");
+    assert!(
+        every.contains(&"http://other.test/pay.html".to_owned()),
+        "{every:?}"
+    );
+}
+
+#[test]
+fn a_form_the_page_submits_sends_though_its_address_carries_no_query() {
+    // The form's own word alone: with no query, nothing else would make it a send.
+    let (judge, told) = judge(&[]);
+    let (_browser, engine) = browser_judged(judge);
+    engine.emit(
+        "Page.frameRequestedNavigation",
+        json!({
+            "frameId": "PAGE-1",
+            "reason": "formSubmissionGet",
+            "url": "https://new.test/subscribe",
+            "disposition": "currentTab",
+        }),
+        Some("S-PAGE-1"),
+    );
+    paused(
+        &engine,
+        "R1",
+        "https://new.test/subscribe",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    paused(
+        &engine,
+        "R2",
+        "https://new.test/subscribe",
+        "GET",
+        "Document",
+        "PAGE-1",
+    );
+    assert_eq!(answered(&engine, "R2"), "continue");
+    assert_eq!(
+        whys(&told)
+            .into_iter()
+            .map(|(_, why, _)| why)
+            .collect::<Vec<_>>(),
+        vec![Why::Sends, Why::Reads],
+        "the form's word is taken once; the same address unmarked reads"
+    );
+}

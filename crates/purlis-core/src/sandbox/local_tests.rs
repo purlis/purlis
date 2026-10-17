@@ -1126,3 +1126,25 @@ fn a_browser_site_is_kept_apart_from_the_hosts_and_removed_whole() {
     assert!(!revoke_browser_site(root, &site).expect("nothing to remove"));
     assert_eq!(charter_toml(root), "schema = 1\n");
 }
+
+/// #2018: a browser site kept here is held, kept and listed but reaching no browser, where an
+/// administrator's policy later never allows its host or leaves out the scope it was kept at.
+#[test]
+fn a_kept_browser_site_policy_now_refuses_reaches_no_browser() {
+    use crate::sandbox::browser_reach::Site;
+    use crate::sandbox::policy::Locks;
+    let project = a_project("schema = 1\n");
+    let root = project.path();
+    let pasted = Site::parse("bin.paste.example:443").expect("a site");
+    let news = Site::parse("news.example.org:443").expect("a site");
+    grant_browser_site(root, &pasted).expect("kept");
+    grant_browser_site(root, &news).expect("kept");
+    let file = Path::new("/etc/purlis/policy.json");
+    let never = Locks::parse(r#"{"sandbox": {"never-hosts": ["*.paste.example"]}}"#, file);
+    assert!(browser_site_held(&pasted, &never).is_some());
+    assert_eq!(browser_sites_in_force(root, &never), std::slice::from_ref(&news));
+    assert_eq!(browser_sites(root).len(), 2, "held, and still kept");
+    let scopes = Locks::parse(r#"{"sandbox": {"allow-scopes": ["chat"]}}"#, file);
+    assert!(browser_sites_in_force(root, &scopes).is_empty());
+    assert_eq!(browser_sites_in_force(root, &Locks::none()), [pasted, news]);
+}

@@ -332,16 +332,47 @@ impl State {
         why
     }
 
-    /// The address of document `frame` of `target`'s page, as its frame last navigated: the
-    /// page's own where the frame is its main one or is not known.
-    fn document_of(&self, target: &str, frame: &str) -> String {
+    /// **The addresses what is in document `frame` of `target`'s page goes to** (#2018): the
+    /// frame's own address where it is a web address; for a frame at none (`about:blank`, a
+    /// `srcdoc`), its nearest ancestor's that is, since that document holds it; and for a
+    /// frame the driver does not know, every document the page shows.
+    fn documents_of(&self, target: &str, frame: &str) -> Vec<String> {
         let Some(page) = self.page(target) else {
-            return String::new();
+            return Vec::new();
         };
-        match page.frames.get(frame) {
-            Some(known) if frame != target && !known.url.is_empty() => known.url.clone(),
-            _ => page.url.clone(),
+        let web = |url: &str| WebAddress::parse(url).is_ok();
+        if frame == target {
+            return vec![page.url.clone()];
         }
+        let Some(mut at) = page.frames.get(frame) else {
+            return self.every_document(target);
+        };
+        for _ in 0..=page.frames.len() {
+            if web(&at.url) {
+                return vec![at.url.clone()];
+            }
+            match at.parent.as_deref() {
+                Some(parent) if parent == target => break,
+                Some(parent) => match page.frames.get(parent) {
+                    Some(up) => at = up,
+                    None => return self.every_document(target),
+                },
+                None => break,
+            }
+        }
+        vec![page.url.clone()]
+    }
+
+    /// Every document `target`'s page shows, its own first.
+    fn every_document(&self, target: &str) -> Vec<String> {
+        self.page(target).map_or_else(Vec::new, |page| {
+            let mut every: Vec<String> = page.frames.values().map(|f| f.url.clone()).collect();
+            every.sort();
+            every.dedup();
+            every.retain(|one| *one != page.url);
+            every.insert(0, page.url.clone());
+            every
+        })
     }
 
     /// Keeps `site` to be said in the next answer, once.
@@ -850,11 +881,11 @@ impl Browser {
         Some(answer)
     }
 
-    /// The address of the document `written` is in: its frame's.
-    fn address_of(&self, written: &Ref) -> Result<String, Refusal> {
+    /// The addresses what is typed into the element `written` names goes to: its document's.
+    fn addresses_of(&self, written: &Ref) -> Result<Vec<String>, Refusal> {
         let state = lock(&self.inner.state);
         let (page, key) = live_ref(&state, written)?;
-        Ok(state.document_of(&page, &key.frame))
+        Ok(state.documents_of(&page, &key.frame))
     }
 
     /// The addresses of the documents what has the focus on `target`'s page may be in: the one
@@ -873,14 +904,8 @@ impl Browser {
             });
         let state = lock(&self.inner.state);
         match focused {
-            Some(frame) => vec![state.document_of(target, &frame)],
-            None => state.page(target).map_or_else(Vec::new, |page| {
-                let mut every: Vec<String> = page.frames.values().map(|f| f.url.clone()).collect();
-                every.push(page.url.clone());
-                every.sort();
-                every.dedup();
-                every
-            }),
+            Some(frame) => state.documents_of(target, &frame),
+            None => state.every_document(target),
         }
     }
 
@@ -1684,7 +1709,7 @@ impl Browser {
         let mut into = Vec::new();
         for field in fields {
             match &field.into {
-                Some(written) => into.push(self.address_of(written)?),
+                Some(written) => into.extend(self.addresses_of(written)?),
                 None => into.extend(self.focus_addresses(&target)),
             }
         }
@@ -1757,7 +1782,7 @@ impl Browser {
     fn select(&self, target: &Ref, options: &[String]) -> Result<Answer, Refusal> {
         let at = self.locate(target)?;
         let page = at.target.clone();
-        if let Some(held) = self.typing_held(&page, &[self.address_of(target)?]) {
+        if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
             return Ok(held);
         }
         let resolved = self
