@@ -6,16 +6,17 @@
 //! becomes, so the window raises the same Notice with the same ways on. The write stays refused
 //! whether or not the app hears of it.
 //!
-//! A Codex profile at the full sandbox, built as a start builds it, applied by this build's own
-//! `purlis _sandbox` to a shell that writes outside the project, with the environment the app
-//! starts a chat with and the app's hook socket listening.
+//! A Codex profile at the full sandbox, built as a start builds it for a chat in a workspace's
+//! folder, applied by this build's own `purlis _sandbox` to a shell that writes another
+//! workspace's file, with the environment the app starts a chat with and the app's hook socket
+//! listening.
 
 #![cfg(target_os = "linux")]
 
 mod support;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
@@ -27,13 +28,13 @@ use purlis_core::sandbox::{self, Decided, Form, Machine, Os};
 use purlis_core::sandboxblock::denial::Denial;
 use purlis_core::sandboxblock::{Block, CHAT_DIR_ENV, Kind, Operation, Place};
 
-/// What one wrapped shell running `script` in `root` printed, and the blocks the app heard.
+/// What one wrapped shell running `script` in `chat` printed, and the blocks the app heard.
 struct Ran {
     said: String,
     blocked: Vec<SandboxBlocked>,
 }
 
-fn wrapped(profile: &str, root: &Path, home: &Path, script: &str, listening: bool) -> Ran {
+fn wrapped(profile: &str, chat: &Path, home: &Path, script: &str, listening: bool) -> Ran {
     let sockets = tempfile::tempdir().expect("a folder for the socket");
     let path = sockets.path().join("hooks.sock");
     let listener = Listener::bind(sockets.path(), &path).expect("a socket");
@@ -65,14 +66,14 @@ fn wrapped(profile: &str, root: &Path, home: &Path, script: &str, listening: boo
     );
     let out = support::purlis()
         .args(&words)
-        .current_dir(root)
+        .current_dir(chat)
         .env("HOME", home)
         .env(SANDBOXED_ENV, "1")
         .env(SOCKET_ENV, &path)
         .env(CHAT_ENV, "7")
         .env(TOKEN_ENV, token.expose())
         .env(HARNESS_ENV, "codex")
-        .env(CHAT_DIR_ENV, root)
+        .env(CHAT_DIR_ENV, chat)
         .output()
         .expect("purlis ran");
     assert!(
@@ -88,12 +89,15 @@ fn wrapped(profile: &str, root: &Path, home: &Path, script: &str, listening: boo
     }
 }
 
-/// A project at `<out>/project` and the Codex profile a chat there starts under at the full
-/// sandbox, with `home` as the home.
-fn a_codex_chat(out: &Path, home: &Path) -> (std::path::PathBuf, String) {
+/// A project at `<out>/project`, the folder of a chat in its workspace `a`, and the Codex
+/// profile the chat starts under at the full sandbox, with `home` as the home.
+fn a_codex_chat(out: &Path, home: &Path) -> (PathBuf, PathBuf, String) {
     let root = out.join("project");
+    let chat = root.join("workspaces/a/repo");
     let tmp = out.join("tmp");
     fs::create_dir_all(root.join(".purlis")).expect("the state folder");
+    fs::create_dir_all(&chat).expect("the chat's folder");
+    fs::create_dir_all(root.join("workspaces/b")).expect("another workspace");
     fs::create_dir_all(&tmp).expect("a temporary folder");
     fs::write(
         root.join("purlis.toml"),
@@ -116,8 +120,8 @@ fn a_codex_chat(out: &Path, home: &Path) -> (std::path::PathBuf, String) {
     let Form::Codex(wrap) = applied.form() else {
         panic!("Codex is wrapped");
     };
-    let profile = sandbox::codex::profile(wrap, &root, &tmp, &[4040], None).expect("a profile");
-    (root, profile)
+    let profile = sandbox::codex::profile(wrap, &chat, &tmp, &[4040], None).expect("a profile");
+    (root, chat, profile)
 }
 
 fn landlock() {
@@ -137,42 +141,42 @@ fn a_write_the_linux_wrap_refuses_is_told_as_the_block_macos_s_kernel_line_of_it
     let out = scratch.path().canonicalize().expect("a real folder");
     let home = out.join("home");
     fs::create_dir_all(&home).expect("a home");
-    let (root, profile) = a_codex_chat(&out, &home);
-    let outside = home.join("outside");
+    let (root, chat, profile) = a_codex_chat(&out, &home);
+    let elsewhere = root.join("workspaces/b/notes.md");
 
     let ran = wrapped(
         &profile,
-        &root,
+        &chat,
         &home,
         &format!(
             "if touch {} 2>/dev/null; then echo yes; else echo no; fi",
-            outside.display()
+            elsewhere.display()
         ),
         true,
     );
     assert_eq!(ran.said, "no", "the write is refused");
-    assert!(!outside.exists());
+    assert!(!elsewhere.exists());
 
     let place = Place {
         root: &root,
-        chat: &root,
-        cwd: &root,
+        chat: &chat,
+        cwd: &chat,
         home: Some(&home),
     };
     let line = format!(
         "Sandbox: touch(4120) deny(1) file-write-create {}",
-        outside.display()
+        elsewhere.display()
     );
     let (as_on_macos, named) = Denial::of_line(&line).expect("a kernel line").block(&place);
     assert_eq!(
         as_on_macos,
         Block {
             operation: Operation::Write,
-            kind: Kind::Home,
+            kind: Kind::ProjectFiles,
             ours: false,
         }
     );
-    assert_eq!(named, Some(outside.display().to_string()));
+    assert_eq!(named, Some(elsewhere.display().to_string()));
     assert_eq!(
         ran.blocked,
         vec![SandboxBlocked {
@@ -195,19 +199,19 @@ fn a_write_refused_again_and_again_is_one_block_and_stays_refused_with_no_app_li
     let out = scratch.path().canonicalize().expect("a real folder");
     let home = out.join("home");
     fs::create_dir_all(&home).expect("a home");
-    let (root, profile) = a_codex_chat(&out, &home);
-    let outside = home.join("outside");
+    let (root, chat, profile) = a_codex_chat(&out, &home);
+    let elsewhere = root.join("workspaces/b/notes.md");
     let script = format!(
         "for n in 1 2 3 4 5 6 7 8 9 10 11 12; do touch {} 2>/dev/null && echo yes; done; echo done",
-        outside.display()
+        elsewhere.display()
     );
 
-    let ran = wrapped(&profile, &root, &home, &script, true);
+    let ran = wrapped(&profile, &chat, &home, &script, true);
     assert_eq!(ran.said, "done", "every write is refused");
     assert_eq!(ran.blocked.len(), 1, "{:?}", ran.blocked);
 
-    let unheard = wrapped(&profile, &root, &home, &script, false);
+    let unheard = wrapped(&profile, &chat, &home, &script, false);
     assert_eq!(unheard.said, "done", "refused with nobody listening");
     assert!(unheard.blocked.is_empty());
-    assert!(!outside.exists());
+    assert!(!elsewhere.exists());
 }
