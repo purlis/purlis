@@ -6,12 +6,13 @@
 //! one renewed ahead of its limit is replaced by the next. Over each new link host A holds the
 //! window's projects again, subscribes again from the window's cursor and attaches the window's
 //! views again, each with a snapshot, under the numbers the window already knows them by, and
-//! hands no event twice. A command in flight as its link is renewed is answered on it. While
-//! no link is up, every command is refused in words and none is sent on later; a host at the
-//! far end whose key is not the one pinned is never linked; and what host B named to a link
-//! that ended, a chat's confinement, is not the next link's (#2511). Host B's programs are
-//! stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs a
-//! terminal.
+//! hands no event twice. A command in flight as its link is renewed is answered on it. The
+//! window is told once that the link is down and once that it is back, and a renewal is neither
+//! (#2496). While no link is up, every command is refused in words and none is sent on later; a
+//! host at the far end whose key is not the one pinned is never linked; and what host B named to
+//! a link that ended, a chat's confinement, is not the next link's (#2511). Host B's programs
+//! are stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs
+//! a terminal.
 
 #![cfg(unix)]
 
@@ -429,6 +430,34 @@ async fn while_no_link_is_up_every_command_is_refused_and_none_is_sent_on_later(
 }
 
 #[tokio::test]
+async fn the_window_is_told_once_that_the_link_is_down_and_then_that_it_is_back() {
+    let mut window = a_window(never_renewed()).await;
+    let (_program, _running, mut viewer, mut first) = window.watching().await;
+    assert_eq!(snapshot(&mut first).await, b"ready> ");
+
+    window.cable.reach(Reach::Nothing);
+    window.cable.cut();
+    match window.pushed().await {
+        Pushed::LinkDown { why } => assert!(!why.is_empty()),
+        other => panic!("the window was told {other:?} before the link was down"),
+    }
+    // Host A tries again and again while nothing answers, and the window is told nothing more.
+    timeout(PATIENCE, async {
+        while window.cable.dials() < 4 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("host A keeps trying");
+
+    window.cable.reach(Reach::HostB);
+    assert_eq!(window.pushed().await, Pushed::LinkBack {});
+    let mut again = window.next_view(&mut viewer).await;
+    assert_eq!(again.view(), first.view());
+    assert_eq!(snapshot(&mut again).await, b"ready> ");
+}
+
+#[tokio::test]
 async fn a_host_at_the_other_end_with_a_key_that_is_not_pinned_is_never_linked() {
     let mut window = a_window(never_renewed()).await;
     let (program, _running, _viewer, _first) = window.watching().await;
@@ -499,9 +528,15 @@ async fn a_link_renewed_ahead_of_its_limit_carries_the_subscription_and_views_ov
     assert_eq!(running.seen().typed, typed);
     running.ends(Exit::Code(0));
     loop {
-        if let Pushed::Ended { program: ended, .. } = window.pushed().await {
-            assert_eq!(ended, program);
-            break;
+        match window.pushed().await {
+            Pushed::Ended { program: ended, .. } => {
+                assert_eq!(ended, program);
+                break;
+            }
+            Pushed::LinkDown { .. } | Pushed::LinkBack {} => {
+                panic!("a renewal was told to the window as a link that went down")
+            }
+            _ => {}
         }
     }
 }
@@ -651,8 +686,12 @@ async fn an_event_handed_to_the_window_over_one_link_is_not_handed_again_over_th
 
     window.cable.cut();
 
-    // Host B pushes 1 to 4 again over the next link: only 4 is new to the window.
-    assert_eq!(window.pushed().await, Pushed::Event(event(4)));
+    // Host B pushes 1 to 4 again over the next link: only 4 is new to the window, which is
+    // told the link went down and is back besides (#2496).
+    assert!(matches!(window.pushed().await, Pushed::LinkDown { .. }));
+    let mut told = vec![window.pushed().await, window.pushed().await];
+    told.retain(|pushed| *pushed != Pushed::LinkBack {});
+    assert_eq!(told, [Pushed::Event(event(4))]);
     assert!(
         timeout(Duration::from_millis(300), window.events.recv())
             .await
