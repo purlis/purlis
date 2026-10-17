@@ -24,6 +24,7 @@ import { commands, type Asking, type GrantLevel, type Shown } from "./bindings";
 import { listen } from "./here";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
+import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { askProfileSignIn } from "./settings/links";
 
@@ -291,6 +292,23 @@ export async function answerTaken(
         if (option === "keep")
           return commands.keepChatBrowserOff(plane, ask.session, reason?.trim() || null);
         break;
+      case "take-over": {
+        // A browser whose page needs the person (#2015): Take over takes the session host's
+        // lease first, so their first click or key reaches the page, then opens its view. The
+        // Ask waits on, until their Done in that view hands the browser back. Once they drive
+        // it, its one answer opens the view again and sends nothing.
+        if (option === OPEN_VIEW) {
+          askOpenBrowser(plane, path.program);
+          opened = true;
+          return { status: "ok" };
+        }
+        if (option !== TAKE_OVER) break;
+        const taken = await commands.takeOverBrowser(path.program);
+        if (taken.status === "error") return taken;
+        askOpenBrowser(plane, path.program);
+        opened = true;
+        return { status: "ok" };
+      }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

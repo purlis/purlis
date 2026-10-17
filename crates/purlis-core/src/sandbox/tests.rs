@@ -501,7 +501,7 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
             );
         }
 
-        // Codex and opencode run inside purlis's own wrap, which there is one of on macOS.
+        // Codex and opencode run inside purlis's own wrap, on macOS and on Linux (#1040).
         let codex = codex::wrap(&compiled(denied.clone(), os));
         let opencode = applied_for(
             Harness::Opencode,
@@ -510,17 +510,6 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
             plane.path(),
             &machine(os),
         );
-        if os == Os::Linux {
-            assert!(
-                codex.is_err(),
-                "codex compiles on Linux: check its spool denial here"
-            );
-            assert!(
-                opencode.is_err(),
-                "opencode compiles on Linux: check its spool denial here"
-            );
-            continue;
-        }
         let read_write = |denied: &[Denial]| -> Vec<std::path::PathBuf> {
             denied
                 .iter()
@@ -771,9 +760,7 @@ fn every_harness_denies_a_chat_the_record_of_what_was_refused_while_nobody_was_t
             );
         }
 
-        // Codex and opencode run inside purlis's own wrap, which there is one of on macOS.
-        // **On Linux neither compiles, so no such chat is started** (fail closed): there is
-        // no chat of theirs to read the record.
+        // Codex and opencode run inside purlis's own wrap, on macOS and on Linux (#1040).
         let codex = codex::wrap(&compiled(denied.clone(), os));
         let opencode = applied_for(
             Harness::Opencode,
@@ -782,17 +769,6 @@ fn every_harness_denies_a_chat_the_record_of_what_was_refused_while_nobody_was_t
             plane.path(),
             &machine(os),
         );
-        if os == Os::Linux {
-            assert!(
-                codex.is_err(),
-                "codex compiles on Linux: check its denials here"
-            );
-            assert!(
-                opencode.is_err(),
-                "opencode compiles on Linux: check its denials here"
-            );
-            continue;
-        }
         let read_write = |denied: &[Denial]| -> Vec<std::path::PathBuf> {
             denied
                 .iter()
@@ -1928,18 +1904,19 @@ fn a_claude_code_chat_in_a_sandboxed_plane_starts_sandboxed_for_claude_code() {
 #[test]
 fn a_mistyped_mode_does_not_start_a_chat_unsandboxed() {
     let plane = plane_saying("[sandbox]\nmode = \"of\"\n");
-    let refused = for_start(
+    let started = for_start(
         Harness::Opencode,
         plane.path(),
         &machine(Os::Linux),
         &|_| true,
     );
-    assert_eq!(
-        refused,
-        Err(NotStarted::Uncompilable(Uncompilable {
-            harness: Harness::Opencode,
-            unheld: Unheld::Wrap(Os::Linux),
-        }))
+    assert!(
+        matches!(
+            started,
+            Ok(Some(ref applied))
+                if applied.harness() == Harness::Opencode && applied.level() == Level::Full
+        ),
+        "{started:?}"
     );
 }
 
@@ -2680,6 +2657,7 @@ fn a_manifest_of_the_chats_folders_linked_to_its_ground_refuses_the_chat() {
                 hook_socket: None,
                 confinement: None,
                 no_opt_out: false,
+                purlis: None,
             },
         );
         let why = line.expect_err("refused");
@@ -2695,16 +2673,15 @@ fn a_manifest_of_the_chats_folders_linked_to_its_ground_refuses_the_chat() {
 fn whether_a_harness_ever_starts_sandboxed_here_is_its_compiler_its_hold_and_its_wrap() {
     assert_eq!(never_on(Harness::ClaudeCode, Os::MacOs), None);
     assert_eq!(never_on(Harness::Opencode, Os::MacOs), None);
+    // #1040: purlis's own wrap on Linux.
+    assert_eq!(never_on(Harness::Opencode, Os::Linux), None);
     assert_eq!(
-        never_on(Harness::Opencode, Os::Linux).as_deref(),
-        Some("purlis can wrap it on macOS only, so far")
+        never_on(Harness::Opencode, Os::Other).as_deref(),
+        Some("purlis can wrap it on macOS and Linux only, so far")
     );
     // #1123: charter wraps Codex as it wraps opencode.
     assert_eq!(never_on(Harness::Codex, Os::MacOs), None);
-    assert_eq!(
-        never_on(Harness::Codex, Os::Linux).as_deref(),
-        Some("purlis can wrap it on macOS only, so far")
-    );
+    assert_eq!(never_on(Harness::Codex, Os::Linux), None);
 }
 
 /// #1422: the window shows why a held-back harness never starts sandboxed, and a ticket number
@@ -3227,34 +3204,41 @@ fn an_unreadable_charter_toml_still_refuses_rather_than_reading_as_off() {
     );
 }
 
-/// #1123 lifts ruling V87f's hold-back where charter wraps Codex. Where it cannot (Linux, #1040),
-/// the picker shows that refusal before anything starts, and the opt-out inside it still starts
-/// the chat, audited.
+/// #1123 lifts ruling V87f's hold-back where charter wraps Codex, and #1040 wraps it on Linux.
+/// Where the kernel cannot (no Landlock 6), the picker shows that refusal before anything
+/// starts, and the opt-out inside it still starts the chat, audited.
 #[test]
 fn the_picker_shows_codex_sandboxed_where_charter_wraps_it_and_the_opt_out_elsewhere() {
     let plane = plane_saying(ON);
-    assert_eq!(
-        ahead(
-            Harness::Codex,
-            plane.path(),
-            &machine(Os::MacOs),
-            &|_| true,
-            "",
-            &|_| Ok(()),
-        ),
-        Ahead::Sandboxed
-    );
+    for os in [Os::MacOs, Os::Linux] {
+        assert_eq!(
+            ahead(
+                Harness::Codex,
+                plane.path(),
+                &machine(os),
+                &|_| true,
+                "",
+                &|_| Ok(()),
+            ),
+            Ahead::Sandboxed,
+            "{os:?}"
+        );
+    }
+    let no_landlock = |program: &str| program != backend::LANDLOCK;
     let Ahead::Refused { why, install } = ahead(
         Harness::Codex,
         plane.path(),
         &machine(Os::Linux),
-        &|_| true,
+        &no_landlock,
         "ID=debian\n",
         &|_| Ok(()),
     ) else {
-        panic!("refused on Linux");
+        panic!("refused on a kernel without Landlock 6");
     };
-    assert!(why.contains("not yet on Linux, so"), "{why}");
+    assert!(
+        why.contains("Landlock version 6 (Linux 6.12 or later)"),
+        "{why}"
+    );
     assert!(!why.contains('#'), "{why}");
     assert_eq!(install, None, "nothing to install fixes it");
     assert_eq!(
@@ -3262,7 +3246,7 @@ fn the_picker_shows_codex_sandboxed_where_charter_wraps_it_and_the_opt_out_elsew
             Harness::Codex,
             plane.path(),
             &machine(Os::Linux),
-            &|_| true,
+            &no_landlock,
             Some(&off(None)),
             None,
         ),

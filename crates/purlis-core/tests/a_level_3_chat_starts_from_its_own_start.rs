@@ -95,6 +95,23 @@ fn host<'a>(strip: &'a [String]) -> Host<'a> {
     }
 }
 
+/// `start` made ready on a machine where no sandbox can be applied, so a project that has not
+/// turned the sandbox on starts its chat with none at all, as before the floor (#2071): the one
+/// start a level-3 chat is offered for. Wherever purlis can apply the floor (macOS, and Linux
+/// since #1040) a chat of such a project starts at the floor, which level 3 is refused under.
+fn with_no_sandbox_here(start: &Start, root: &Path) -> start::Ready {
+    let ready = start::ready_on(
+        start,
+        root,
+        &purlis_core::harness_declaration::read(root),
+        &purlis_core::sandbox::Machine::this(),
+        &|_| false,
+    )
+    .expect("it starts");
+    assert!(ready.sandbox.is_none(), "no sandbox here: {ready:?}");
+    ready
+}
+
 fn named(env: &[(OsString, OsString)]) -> Vec<String> {
     env.iter()
         .map(|(name, _)| name.to_string_lossy().into_owned())
@@ -108,7 +125,7 @@ fn an_opencode_chat_runs_its_profile_s_program_as_its_acp_agent_in_the_chat_s_en
     let opencode = program(&outside, "opencode");
     let plane = Plane::new("");
     plane.profile("opencode", std::slice::from_ref(&opencode));
-    let ready = start::ready(&plane.start(), plane.root()).expect("it starts");
+    let ready = with_no_sandbox_here(&plane.start(), plane.root());
     let strip = ["VAULT_TOKEN_NAME".to_owned()];
 
     let launch = Launch::for_start(&ready, host(&strip)).expect("offered at level 3");
@@ -150,7 +167,7 @@ fn a_wrapper_profile_keeps_its_own_words_before_the_acp_word() {
     let wrapper = program(&outside, "ocw");
     let plane = Plane::new("");
     plane.profile("opencode", &[wrapper.clone(), "work".to_owned()]);
-    let ready = start::ready(&plane.start(), plane.root()).expect("it starts");
+    let ready = with_no_sandbox_here(&plane.start(), plane.root());
 
     let launch = Launch::for_start(&ready, host(&[])).expect("offered at level 3");
 
@@ -164,7 +181,7 @@ fn a_harness_charter_runs_over_acp_nowhere_yet_starts_in_its_terminal_and_says_w
     let codex = program(&outside, "codex");
     let plane = Plane::new("");
     plane.profile("codex", &[codex]);
-    let ready = start::ready(&plane.start(), plane.root()).expect("it starts");
+    let ready = with_no_sandbox_here(&plane.start(), plane.root());
 
     let not = Launch::for_start(&ready, host(&[])).expect_err("not at level 3");
 
@@ -175,14 +192,32 @@ fn a_harness_charter_runs_over_acp_nowhere_yet_starts_in_its_terminal_and_says_w
     );
 }
 
+/// #2071, #1040: a project that has not turned the sandbox on starts its chats at the floor
+/// wherever purlis can apply it, and a chat at the floor does not run over ACP either.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn a_chat_at_the_floor_does_not_run_over_acp_and_starts_in_its_terminal() {
+    purlis_core::unsteered!();
+    let outside = stand_in::NoChatWrites::new();
+    let opencode = program(&outside, "opencode");
+    let plane = Plane::new("");
+    plane.profile("opencode", &[opencode]);
+    let ready = start::ready(&plane.start(), plane.root()).expect("it starts at the floor");
+    assert!(ready.sandbox.is_some(), "{ready:?}");
+
+    let not = Launch::for_start(&ready, host(&[])).expect_err("not at level 3");
+
+    assert_eq!(not, NotOffered::Sandboxed);
+}
+
 /// The message every refusal in a sandboxed project gives: it starts in its terminal, and it
 /// never offers running unconfined as the way to get ACP.
-const SANDBOXED: &str = "this project turns the sandbox on, and purlis cannot sandbox a chat over ACP yet, so it starts in its terminal, where its sandbox is shown for as long as it runs";
+const SANDBOXED: &str = "this chat runs sandboxed, and purlis cannot sandbox a chat over ACP yet, so it starts in its terminal, where its sandbox is shown for as long as it runs";
 
 /// D-87h: a level-3 start goes through the same sandbox decision as a terminal start, and a
 /// sandboxed project refuses level 3 until charter can wrap a level-3 agent. opencode is wrapped
-/// on macOS only; elsewhere its sandboxed start is refused before this is asked.
-#[cfg(target_os = "macos")]
+/// on macOS and Linux; elsewhere its sandboxed start is refused before this is asked.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn a_sandboxed_chat_does_not_run_over_acp_and_starts_in_its_terminal() {
     purlis_core::unsteered!();

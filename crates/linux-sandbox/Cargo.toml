@@ -1,0 +1,37 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-linux-sandbox"
+description = "purlis's own sandbox on Linux: Landlock, a seccomp filter and the supervisor that performs a wrapped chat's connects and writes after judging them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# The rules a supervisor judges by are the profile purlis compiles for macOS's Seatbelt, read
+# here: its regular expressions are the regex crate's dialect for every pattern purlis writes.
+regex = "1"
+
+[target."cfg(target_os = \"linux\")".dependencies]
+# The kernel's Landlock, through the crate its own maintainers publish (MIT OR Apache-2.0).
+# Pinned: a sandbox's dependency moves only on purpose (ruled 2026-10-16).
+landlock = "=0.4.7"
+# Seccomp filters compiled to BPF, from the rust-vmm project (Apache-2.0 OR BSD-3-Clause).
+# Pinned likewise.
+seccompiler = "=0.5.0"
+# The seccomp notification structures and ioctl numbers the one audited block uses
+# (`linux::notify`). Already in this workspace's lockfile.
+libc = "0.2"
+# Safe wrappers for the rest: the `*at` calls the supervisor performs, the descriptor passing,
+# reading a notifying process's memory, and its signals. The version purlis-same-user links.
+nix = { version = "0.31", default-features = false, features = ["fs", "process", "socket", "uio", "signal", "user", "net", "time"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1566,6 +1566,7 @@ mod tests {
                 hook_socket: socket,
                 confinement: None,
                 no_opt_out: false,
+                purlis: None,
             },
         );
         (plane, line)
@@ -1663,6 +1664,7 @@ mod tests {
                     hook_socket: Some(&socket),
                     confinement: None,
                     no_opt_out: false,
+                    purlis: None,
                 },
             )
         };

@@ -545,17 +545,23 @@ export function copyFixturePlane(name = "daily"): string {
  * would make that test depend on running before every other spec — and the glob does not
  * promise that.
  */
+/** Whether purlis wraps a Codex chat here, at the floor too: macOS and Linux (#1040). */
+function wrapsCodex(): boolean {
+  return process.platform === "darwin" || process.platform === "linux";
+}
+
 export function declareAProfile(plane: string, program: string, kind = "claude"): void {
   const wrapper = theProfilesWrapper(plane);
   mkdirSync(dirname(wrapper), { recursive: true });
   writeFileSync(wrapper, theProfilesProgram(program));
   chmodSync(wrapper, 0o755);
-  // On macOS a Codex chat runs at the floor, so only on a sandbox-only profile (#2037): the
+  // On macOS and Linux a Codex chat runs at the floor (#1040 wraps it on Linux), so only on a
+  // sandbox-only profile (#2037): the
   // state run's machine store has one, `scenario` (`declareTheStateRunsProfile`), and a
   // project of a state spec's own makes it its default rather than declaring a Codex of its own.
   // That profile runs the program the state run gave it, so `program` is not used here: every
   // state spec passes the same reporting harness the run does.
-  if (kind === "codex" && process.platform === "darwin") {
+  if (kind === "codex" && wrapsCodex()) {
     writeFileSync(join(plane, "charter.local.toml"), '[harness]\ndefault = "scenario"\n');
     return;
   }
@@ -578,17 +584,17 @@ export function declareAProfile(plane: string, program: string, kind = "claude")
 }
 
 /**
- * **The state run's profile** for `plane`, running `program` as Codex: on macOS, where Codex
- * runs at the floor, a sandbox-only profile in the run's machine store, whose folder of programs
- * is put first on `environment`'s `PATH` (#2037); elsewhere, where no floor wraps Codex, the
- * project's own declared profile, as before.
+ * **The state run's profile** for `plane`, running `program` as Codex: on macOS and Linux,
+ * where Codex runs at the floor (#1040 on Linux), a sandbox-only profile in the run's machine
+ * store, whose folder of programs is put first on `environment`'s `PATH` (#2037); elsewhere,
+ * where no floor wraps Codex, the project's own declared profile, as before.
  */
 export function declareTheStateRunsProfile(
   plane: string,
   program: string,
   environment: Record<string, string>,
 ): void {
-  if (process.platform !== "darwin") {
+  if (!wrapsCodex()) {
     declareAProfile(plane, program, "codex");
     return;
   }

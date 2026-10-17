@@ -59,3 +59,29 @@ fn with_no_app_to_ask_there_is_no_browser_and_the_tool_says_so() {
         assert!(why.contains("browser"), "{why}");
     }
 }
+
+#[test]
+fn a_browser_question_answers_with_the_apps_words_alone() {
+    // #2015: what the app says the person was asked, and nothing of a page.
+    let reply = Reply::from(Answer::Browsed {
+        browser: "b1".into(),
+        browsed: Box::new(Browsed {
+            settled: true,
+            note: Some("purlis asked the person to take browser b1 over".into()),
+            ..Browsed::default()
+        }),
+    });
+
+    let said = super::the_person_was_asked(Ok(Ok(reply)));
+
+    assert_eq!(
+        said,
+        Ok("purlis asked the person to take browser b1 over".to_owned())
+    );
+    let refused = super::the_person_was_asked(Ok(Ok(Reply::from(Answer::No {
+        why: "this chat has no browser b9".into(),
+    }))));
+    assert_eq!(refused, Err("this chat has no browser b9".to_owned()));
+    let gone = super::the_person_was_asked(Err(NotTaken::AppGone));
+    assert!(gone.unwrap_err().contains("browser"));
+}

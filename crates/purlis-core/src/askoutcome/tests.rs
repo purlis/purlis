@@ -244,3 +244,21 @@ fn a_hostile_reason_stays_inside_its_quote_on_the_one_line() {
         assert!(!said.is_empty(), "{told:?}");
     }
 }
+
+#[test]
+fn a_chat_whose_browser_needed_the_person_is_told_only_that_they_finished() {
+    // #2015: the browser by name, that the person finished, and to look again; nothing of what
+    // they did.
+    let told = Outcome {
+        about: About::TakeOver {
+            browser: "b1".to_owned(),
+        },
+        answer: Answer::Finished,
+    }
+    .line();
+    assert_eq!(
+        told,
+        "⬢ purlis: your ask that the person take over browser `b1` — They finished and handed \
+         it back — take a fresh snapshot before you act: references from before are void."
+    );
+}

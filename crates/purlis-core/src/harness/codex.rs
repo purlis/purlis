@@ -226,11 +226,13 @@ impl HarnessAdapter for Codex {
         // D-88q, as amended 2026-10-15 (#2037): the folder of a profile for sandboxed chats
         // only, never the operator's own Codex home.
         let Some(home) = &wrap.home else {
-            return Err(format!(
-                "{lead} a sandboxed Codex chat runs in the folder of a profile for sandboxed \
-                 chats only, and this chat is on no such profile, so nothing was started. Make \
-                 or choose a sandbox-only Codex profile in Settings › You › Profiles."
-            ));
+            return Err(
+                "this chat runs sandboxed, and a sandboxed Codex chat runs in the folder of \
+                        a profile for sandboxed chats only, and this chat is on no such \
+                        profile, so nothing was started. Make or choose a sandbox-only Codex \
+                        profile in Settings › You › Profiles."
+                    .to_owned(),
+            );
         };
         let profile = crate::sandbox::codex::profile(
             wrap,
@@ -240,22 +242,29 @@ impl HarnessAdapter for Codex {
             at.hook_socket,
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
-        // Only now, with the line known to start (review F6): a refused chat readies no home.
-        crate::sandbox::codex::prepare(wrap, cwd, &armed);
         let mut charters = charters;
         let tail =
             charters.split_off(charters.len() - crate::sandbox::codex::positional_tail(&charters));
-        Ok(crate::sandbox::Line {
-            program: crate::sandbox::backend::SANDBOX_EXEC.to_owned(),
-            args: [
-                vec!["-p".to_owned(), profile, program],
+        let (program, args) = crate::sandbox::wrapper::line(
+            wrap.os,
+            at.purlis,
+            profile,
+            program,
+            [
                 command,
-                armed,
+                armed.clone(),
                 charters,
                 crate::sandbox::codex::flags(),
                 tail,
             ]
             .concat(),
+        )
+        .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+        // Only now, with the line known to start (review F6): a refused chat readies no home.
+        crate::sandbox::codex::prepare(wrap, cwd, &armed);
+        Ok(crate::sandbox::Line {
+            program,
+            args,
             env: [
                 crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp),
                 vec![

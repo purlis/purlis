@@ -5,6 +5,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // Started as purlis's own wrap of a chat on Linux (#1040), the hidden `_sandbox`: become it
+    // before anything of the app starts, so the program that starts a chat can wrap it.
+    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+        std::process::exit(code);
+    }
     // Started again by the session host as a browser engine's keeper (#2012): keep its process
     // group and never return, before anything of the app starts.
     #[cfg(unix)]
