@@ -5,10 +5,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use super::egress::{PLAIN_PORTS, TUNNEL_PORTS};
-use super::plan::{Beside, Plan};
-use super::reach::{By, Reach};
-use super::{Board, Confinement, HeldElsewhere, Placed, localport};
+use super::{Beside, Plan};
+use crate::sandbox::egress::{PLAIN_PORTS, TUNNEL_PORTS};
+use crate::sandbox::reach::{By, Reach};
+use crate::sandbox::{Board, Confinement, HeldElsewhere, Placed, localport};
 
 fn plan(given: Vec<u16>) -> Plan {
     Plan {
@@ -33,7 +33,7 @@ fn plan(given: Vec<u16>) -> Plan {
 fn a_plan_whose_given_port_purlis_listens_on_now_starts_nothing() {
     assert!(localport::hold_elsewhere(&[50811]));
 
-    let started = plan(vec![50811]).start(super::plan::Telling::default());
+    let started = plan(vec![50811]).start(super::Telling::default());
 
     assert!(started.is_err());
     localport::release(50811);
@@ -139,8 +139,8 @@ fn what_a_chat_held_elsewhere_keeps_is_written_in_the_folder_its_holder_made() {
 /// The window answers a board in this process and one the session host holds alike.
 #[test]
 fn a_board_here_answers_as_a_board() {
-    let board: Arc<dyn Board> = Arc::new(super::asks::Asks::new(Arc::new(|_| {})));
-    let host = super::hosts::Host::parse("pypi.example.com").expect("a host");
+    let board: Arc<dyn Board> = Arc::new(crate::sandbox::asks::Asks::new(Arc::new(|_| {})));
+    let host = crate::sandbox::hosts::Host::parse("pypi.example.com").expect("a host");
 
     assert!(board.allow(&host, By::Chat).is_empty());
 

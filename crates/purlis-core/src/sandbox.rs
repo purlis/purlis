@@ -5919,8 +5919,6 @@ mod opencode_tests;
 #[cfg(test)]
 mod persona_tests;
 #[cfg(test)]
-mod plan_tests;
-#[cfg(test)]
 mod reach_tests;
 #[cfg(test)]
 mod signin_tests;

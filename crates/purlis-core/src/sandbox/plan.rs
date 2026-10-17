@@ -203,3 +203,6 @@ impl Plan {
 pub(super) fn routes(root: &std::path::Path) -> PathBuf {
     tunnel::routes_folder(root)
 }
+
+#[cfg(test)]
+mod tests;
