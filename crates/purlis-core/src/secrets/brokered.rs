@@ -2493,17 +2493,25 @@ pub(crate) fn profile_on(
     };
     // Last of all, after the vaults every profile denies wherever they are (#2071): the run's
     // own credential files and folders, which purlis made in the vaults folder for it alone.
+    // Each under both names the kernel may give it, as the vaults are denied under both: across
+    // a macOS firmlink, `/private/var/…` is also `/System/Volumes/Data/private/var/…` (#2489).
+    let named = |path: &Path| -> Result<Vec<String>, &'static str> {
+        crate::sandbox::kernel_names(path)
+            .iter()
+            .map(|name| seatbelt::string(&name.display().to_string()))
+            .collect()
+    };
     for file in files {
-        profile.push_str(&format!(
-            "(allow file-read* (literal {}))\n",
-            seatbelt::quote(file)?
-        ));
+        for name in named(file)? {
+            profile.push_str(&format!("(allow file-read* (literal {name}))\n"));
+        }
     }
     for dir in dirs {
-        profile.push_str(&format!(
-            "(allow file-read* file-write* (subpath {}))\n",
-            seatbelt::quote(dir)?
-        ));
+        for name in named(dir)? {
+            profile.push_str(&format!(
+                "(allow file-read* file-write* (subpath {name}))\n"
+            ));
+        }
     }
     Ok(profile)
 }
