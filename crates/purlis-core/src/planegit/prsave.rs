@@ -1219,12 +1219,14 @@ pub enum MergedAsItStands {
 /// own, explicit action in the window (the operator's ruling P1, 2026-10-13), and nothing a
 /// save, a look or a chat ever does. Only the checks are passed over ([`Gate::Person`]): a
 /// conflict, a review the branch requires and every rule the forge enforces still refuse it,
-/// and it merges only at the commit purlis pushed.
+/// and it merges only what `seen` says the person was shown (#1978): at that commit, which
+/// must still be the one purlis pushed, and in that standing, both read again under the claim.
 pub(super) fn merge_as_it_stands(
     root: &Path,
     plane: &Plane,
     target: &str,
     sign: bool,
+    seen: &super::Seen,
     caller: &Caller,
     say: Sink,
 ) -> Result<MergedAsItStands, String> {
@@ -1239,6 +1241,9 @@ pub(super) fn merge_as_it_stands(
     let Some(known) = kept.pr.filter(|pr| pr.target == target) else {
         return Err("no pull request of this project's saves is open".into());
     };
+    if let Some(changed) = super::changed_since(seen, &known.head, known.merge.as_ref()) {
+        return Err(changed);
+    }
     if !is_ancestor(root, &known.head, "HEAD") {
         return Err(
             "this project is no longer on the commit its open pull request carries, so purlis \
@@ -1254,7 +1259,7 @@ pub(super) fn merge_as_it_stands(
         url: known.url.clone(),
     };
     let at = Pinned {
-        sha: &known.head,
+        sha: &seen.head,
         branch: &save,
         base: target,
     };

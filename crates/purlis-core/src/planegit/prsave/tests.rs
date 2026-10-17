@@ -440,3 +440,96 @@ fn where_a_request_stands_is_kept_beside_it_and_read_back() {
         (None, None, true)
     );
 }
+
+/// A `pr-merge` plane whose saves keep #12 open at `head`, standing as `merge` says, its
+/// page nowhere: a forge asked would not answer.
+fn kept_for_the_person(merge: Merging, head: &str) -> (tempfile::TempDir, PathBuf, Plane) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(
+        root.join("charter.toml"),
+        "[plane]\nmode = \"pr-merge\"\nbranch = \"main\"\n",
+    )
+    .unwrap();
+    let plane = crate::planesave::Settings::read(&root).plane;
+    Kept {
+        branch: Some(SAVE.to_string()),
+        pushed: Some(head.to_string()),
+        pr: Some(KeptPr {
+            number: 12,
+            url: "https://x.invalid/pull/12".into(),
+            head: head.to_string(),
+            target: "main".into(),
+            merges_itself: true,
+            pushed_at: Some(1_800_000_000),
+            merge: Some(merge),
+        }),
+        held: false,
+    }
+    .write(&root);
+    (dir, root, plane)
+}
+
+/// The person's merge as it stands of `seen`, at the plane `root` keeps.
+fn merged_as_shown(
+    root: &Path,
+    plane: &Plane,
+    seen: &super::super::Seen,
+) -> Result<MergedAsItStands, String> {
+    merge_as_it_stands(
+        root,
+        plane,
+        "main",
+        false,
+        seen,
+        &Caller::window(),
+        &mut |_| {},
+    )
+}
+
+/// **The person's merge is of the commit they were shown, and of no other** (#1978): what
+/// the confirmation showed is handed down to the merge, which reads no check, and is read
+/// again under its claim. A save that pushed a new commit onto the request after the fresh
+/// look is refused there, before the forge is asked anything, and never merged in its place.
+#[test]
+fn the_merge_as_it_stands_refuses_a_request_at_another_commit_than_the_one_shown() {
+    let red = Merging::new(MergeState::Red, "1 check failed: test");
+    let (_dir, root, plane) = kept_for_the_person(red.clone(), &"b".repeat(40));
+    let seen = super::super::Seen {
+        head: "a".repeat(40),
+        shown: red.shown(),
+    };
+
+    assert_eq!(
+        merged_as_shown(&root, &plane, &seen),
+        Err(
+            "The request changed since you looked: a new commit was pushed onto it, so purlis \
+             did not merge it. Look at it again"
+                .to_string()
+        )
+    );
+}
+
+/// **Nor past a failure that came after the look** (#1978): the confirmation showed a wait
+/// at this commit, and a look in the meantime kept it red at the same commit. The merge's own
+/// read under its claim refuses it, saying its checks failed, before the forge is asked.
+#[test]
+fn the_merge_as_it_stands_refuses_a_request_that_turned_red_after_the_look() {
+    let head = "a".repeat(40);
+    let red = Merging::new(MergeState::Red, "1 check failed: test");
+    let (_dir, root, plane) = kept_for_the_person(red, &head);
+    let waited = Merging::new(MergeState::Waiting, "no check has started on it");
+    let seen = super::super::Seen {
+        head,
+        shown: waited.shown(),
+    };
+
+    assert_eq!(
+        merged_as_shown(&root, &plane, &seen),
+        Err(
+            "The request changed since you looked (1 check failed: test), so purlis did not \
+             merge it. Look at it again"
+                .to_string()
+        )
+    );
+}

@@ -689,7 +689,56 @@ mod repo_saves {
         assert!(found.open && !found.changed, "{found:?}");
         assert_eq!(planegit::journal(&r.plane).len(), lines);
 
-        // The person's merge reads the merge state and no check.
+        // What the confirmation showed: the window's look, handed back with the press.
+        let seen = reposave::seen(&r.plane, "alpha", &widget(&r)).expect("what it shows");
+        assert_eq!(seen.head, head);
+
+        // A press on a confirmation drawn before the check failed: the fresh look at the press
+        // finds it red, and nothing is merged past a failure nobody was shown.
+        looked(&scene, &head, "UNSTABLE", &[FAILED]);
+        let waited = planegit::Merging::new(
+            planegit::MergeState::Waiting,
+            "its checks have not had time to start",
+        );
+        let before_the_failure = planegit::Seen {
+            head: head.clone(),
+            shown: waited.shown(),
+        };
+        let refused = reposave::merge_as_seen(
+            &r.plane,
+            "alpha",
+            &widget(&r),
+            &purlis_core::forge::Caller::window(),
+            &before_the_failure,
+        );
+        assert!(
+            matches!(&refused, Err(why) if why.contains("changed since you looked")),
+            "{refused:?}"
+        );
+        assert!(!was_asked(&put), "merged past a failure nobody was shown");
+
+        // A press on a confirmation of another commit: refused too.
+        looked(&scene, &head, "UNSTABLE", &[FAILED]);
+        let another_commit = planegit::Seen {
+            head: "1".repeat(40),
+            shown: seen.shown.clone(),
+        };
+        let refused = reposave::merge_as_seen(
+            &r.plane,
+            "alpha",
+            &widget(&r),
+            &purlis_core::forge::Caller::window(),
+            &another_commit,
+        );
+        assert!(
+            matches!(&refused, Err(why) if why.contains("a new commit was pushed")),
+            "{refused:?}"
+        );
+        assert!(!was_asked(&put), "merged a commit nobody confirmed");
+
+        // The press on what was shown: looked at again, found as shown, and merged at the
+        // pushed commit. The merge reads the merge state and no check.
+        looked(&scene, &head, "UNSTABLE", &[FAILED]);
         scene.answers(
             "gh",
             &[
@@ -720,13 +769,18 @@ mod repo_saves {
             ),
             "",
         );
-        let merged = reposave::merge_as_it_stands(
+        let merged = reposave::merge_as_seen(
             &r.plane,
             "alpha",
             &widget(&r),
             &purlis_core::forge::Caller::window(),
+            &seen,
         );
-        assert!(merged.is_ok(), "{merged:?}");
+        assert!(
+            matches!(&merged, Ok(planegit::MergedAsItStands::Later(said))
+                if said.starts_with("Merged as it stands, as you asked")),
+            "{merged:?}"
+        );
         assert!(was_asked(&put), "merged at the pushed commit");
         let line = r.last();
         assert_eq!(line["trigger"], "merge");

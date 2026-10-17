@@ -941,18 +941,24 @@ pub fn merge_as_seen(
     if let Some(changed) = planegit::changed_since(seen, &open.head, Some(&open.merge)) {
         return Err(changed);
     }
-    merge_as_it_stands(plane, workspace, repo, caller)
+    merge_as_it_stands(plane, workspace, repo, caller, seen)
 }
 
 /// **Merge a repo's open save request as it stands**, its failed and missing checks included:
 /// the person's own action in the window, and only there (the operator's ruling P1,
-/// 2026-10-13). The repo's half of [`planegit::merge_as_it_stands`]. The clone is not moved:
+/// 2026-10-13). The repo's half of the plane's merge as it stands. The clone is not moved:
 /// a repo's history is its developers' (ADR 0051).
-pub fn merge_as_it_stands(
+///
+/// Private, and reached only from [`merge_as_seen`] (#1978): the press that showed the
+/// request's checks. `seen` is what that press showed, and it is checked again under this
+/// merge's own claim: a request at another commit by now, or one whose standing changed since
+/// (its checks failed after the look), is refused before the forge is asked.
+fn merge_as_it_stands(
     plane: &Path,
     workspace: &str,
     repo: &repos::Repo,
     caller: &forge::Caller,
+    seen: &planegit::Seen,
 ) -> Result<MergedAsItStands, String> {
     let Some(_claim) = Claim::of(&repo.path) else {
         return Err(already_saving(workspace, &repo.name));
@@ -963,6 +969,9 @@ pub fn merge_as_it_stands(
             repo.name
         ));
     };
+    if let Some(changed) = planegit::changed_since(seen, &open.head, Some(&open.merge)) {
+        return Err(changed);
+    }
     let (merging, _) = ask_and_keep(
         plane,
         workspace,
