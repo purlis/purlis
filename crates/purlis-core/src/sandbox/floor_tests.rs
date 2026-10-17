@@ -436,8 +436,10 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
     let _ = crate::forklock::status(
         std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.test"]),
     );
-    // A later-code name spelled another way is refused too.
-    let home = real(sockets.path()).join("home");
+    // A later-code name spelled another way is refused too. In a home of its own: the hook
+    // socket's folder is held unwritten whatever is in it, so a home there proves nothing.
+    let homes = tempfile::tempdir().expect("a folder for a home");
+    let home = real(homes.path()).join("home");
     assert_eq!(
         run(&tried(&format!(
             "mkdir -p {0}/library/launchagents && touch {0}/library/launchagents/x.plist",
