@@ -21,10 +21,12 @@ const BUDGET_MS = 5_000;
 
 type Picture = { png: string; width: number; height: number; millis: number; appearance: string };
 
-/** The specimen in `appearance`, and how long the whole ask took. */
-async function specimen(appearance: "dark" | "light"): Promise<{ picture: Picture; took: number }> {
-  const started = Date.now();
-  const answer = await browser.executeAsync(
+/** Whether this platform's webview photographs the specimen (`specimen.rs`, `photograph`). */
+const PICTURED = process.platform === "linux";
+
+/** The window's `theme_specimen` in `appearance`: its answer, or why it refused. */
+async function asked(appearance: "dark" | "light"): Promise<{ ok?: unknown; trouble?: string }> {
+  return browser.executeAsync(
     (shown: string, done: (out: { ok?: unknown; trouble?: string }) => void) => {
       void window.__TAURI__.core
         .invoke("theme_specimen", { theme: "purlis-classic", appearance: shown })
@@ -33,6 +35,12 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
     },
     appearance,
   );
+}
+
+/** The specimen in `appearance`, and how long the whole ask took. */
+async function specimen(appearance: "dark" | "light"): Promise<{ picture: Picture; took: number }> {
+  const started = Date.now();
+  const answer = await asked(appearance);
   if (answer.trouble !== undefined) throw new Error(`theme_specimen refused: ${answer.trouble}`);
   return { picture: answer.ok as Picture, took: Date.now() - started };
 }
@@ -56,7 +64,18 @@ async function surfaceOf(name: string): Promise<number[]> {
 /** Whether two colours are the same within what a display's colour management moves. */
 const near = (a: number[], b: number[]) => a.every((channel, n) => Math.abs(channel - b[n]) <= 12);
 
-describe("the theme specimen", () => {
+/** Each platform runs the one block that is true of it. */
+const where = (pictured: boolean) => (pictured === PICTURED ? describe : describe.skip);
+
+where(false)("the theme specimen, where the webview takes no picture", () => {
+  it("is refused with a sentence that says so", async () => {
+    const answer = await asked("dark");
+    expect(answer.ok).toBeUndefined();
+    expect(answer.trouble).toContain("takes no picture of the theme specimen");
+  });
+});
+
+where(true)("the theme specimen", () => {
   it("is drawn within its budget, in the theme and appearance asked for", async () => {
     const dark = await specimen("dark");
     const light = await specimen("light");

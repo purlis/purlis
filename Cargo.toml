@@ -51,8 +51,6 @@ portable-pty = "0.9"
 #    (D-1407-8, 2026-10-07: a second audited block, in purlis-same-user, for `proc_pidinfo`).
 # 3. `purlis_linux_sandbox`'s `linux::notify::raw`, the seccomp notification calls of the Linux
 #    sandbox's supervisor (2026-10-16, #1040: one more small, isolated, audited module).
-# 4. `purlis-app`'s `specimen::photograph::snapshot`, WebKit's snapshot of the theme specimen's
-#    webview on macOS (#2330, for the operator's ruling).
 # `forbid` cannot be allowed anywhere, even there.
 # `crates/purlis-core/tests/three_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
 # this lint appears anywhere else.
