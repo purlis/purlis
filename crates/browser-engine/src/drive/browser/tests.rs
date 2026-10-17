@@ -67,6 +67,9 @@ struct Engine {
     model: Mutex<Model>,
     hook: Mutex<Option<Hook>>,
     dropped: Mutex<u64>,
+    /// The worlds of purlis's own made in the page's frames: each one's id, session and frame.
+    /// The page's own world lies about everything purlis's scripts read (#2138).
+    worlds: Mutex<Vec<(i64, String, String)>>,
 }
 
 impl Engine {
@@ -100,6 +103,32 @@ impl Engine {
 
     fn all_sent(&self) -> Vec<Sent> {
         super::lock(&self.sent).clone()
+    }
+
+    /// Every world of purlis's own is gone, as when its frames load other documents.
+    fn worlds_gone(&self) {
+        for world in super::lock(&self.worlds).iter_mut() {
+            world.1.clear();
+        }
+    }
+
+    /// Whether `context` names a world of purlis's own on `session`: `false` for the page's
+    /// own world (no context named), refused for a context the engine does not have there.
+    fn in_world(&self, context: &Value, session: Option<&str>) -> Result<bool, CallError> {
+        let Some(context) = context.as_i64() else {
+            return Ok(false);
+        };
+        if super::lock(&self.worlds)
+            .iter()
+            .any(|(id, s, _)| *id == context && Some(s.as_str()) == session)
+        {
+            Ok(true)
+        } else {
+            Err(CallError::Engine {
+                code: -32000,
+                message: "Cannot find context with specified id".into(),
+            })
+        }
     }
 
     fn on(
@@ -176,6 +205,26 @@ impl Engine {
                     }),
                 }
             }
+            "Page.createIsolatedWorld" => {
+                let mut worlds = super::lock(&self.worlds);
+                let id = 100 + i64::try_from(worlds.len()).unwrap();
+                worlds.push((
+                    id,
+                    on.unwrap_or_default().to_owned(),
+                    p["frameId"].as_str().unwrap_or_default().to_owned(),
+                ));
+                Ok(json!({ "executionContextId": id }))
+            }
+            // The page's own world says what the page made it say: its document still loading,
+            // nothing focused.
+            "Runtime.evaluate" if !self.in_world(&p["contextId"], on)? => {
+                let lie = if p["expression"] == ACTIVE_ELEMENT {
+                    ""
+                } else {
+                    "loading"
+                };
+                Ok(json!({"result":{"type":"string","value":lie}}))
+            }
             "Runtime.evaluate" if p["expression"] == ACTIVE_ELEMENT => {
                 Ok(json!({"result":{"type":"string","value":super::lock(&self.model).active}}))
             }
@@ -208,7 +257,20 @@ impl Engine {
                 }))
             }
             "DOM.resolveNode" => {
-                Ok(json!({"object":{"type":"object","subtype":"node","objectId":"OBJECT-1"}}))
+                let object = if self.in_world(&p["executionContextId"], on)? {
+                    "OBJECT-1"
+                } else {
+                    "PAGE-OBJECT"
+                };
+                Ok(json!({"object":{"type":"object","subtype":"node","objectId":object}}))
+            }
+            // In the page's own world a field holds nothing and no drop-down is one.
+            "Runtime.callFunctionOn" if p["objectId"] == "PAGE-OBJECT" => {
+                Ok(if p["functionDeclaration"] == READ_VALUE {
+                    json!({"result": {"type":"string","value": ""}})
+                } else {
+                    json!({"result": {"type":"object","value": {"notSelect": true}}})
+                })
             }
             "Runtime.callFunctionOn" if p["functionDeclaration"] == READ_VALUE => {
                 Ok(json!({"result": {"type":"string","value": super::lock(&self.model).value}}))
@@ -328,6 +390,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
+        worlds: Mutex::new(Vec::new()),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.
@@ -879,6 +942,61 @@ fn choosing_options_passes_them_as_a_value_to_purlis_own_function() {
             options: "Red, Blue".into(),
         })
     );
+}
+
+#[test]
+fn purlis_scripts_read_and_act_in_a_world_of_their_own_in_the_frame_they_act_on() {
+    // The stand-in's page lies in its own world about everything purlis's scripts read
+    // (#2138): its document is still loading and no drop-down is one.
+    let (browser, engine) = browser();
+    let text = snapshot(&browser, 1);
+    let volume = ref_of(&text, "- slider \"Volume\"");
+    let chose = browser.call(
+        &id(2),
+        Call::Select {
+            target: volume,
+            options: vec!["Blue".into()],
+        },
+    );
+    assert!(
+        matches!(&chose, Ok(a) if a.settled == Settled::Yes),
+        "{chose:?}"
+    );
+    let worlds = engine.sent("Page.createIsolatedWorld");
+    assert!(!worlds.is_empty());
+    for world in &worlds {
+        assert_eq!(
+            world.params["grantUniveralAccess"],
+            json!(false),
+            "{world:?}"
+        );
+        let frame = match world.session.as_deref() {
+            Some("S-PAGE-1") => "PAGE-1",
+            Some("S-PAYMENT") => "PAYMENT-FRAME",
+            other => panic!("a world on no frame's session: {other:?}"),
+        };
+        assert_eq!(world.params["frameId"], frame, "{world:?}");
+    }
+}
+
+#[test]
+fn a_world_whose_document_has_gone_is_made_again() {
+    let (browser, engine) = browser();
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let made = engine.sent("Page.createIsolatedWorld").len();
+    engine.worlds_gone();
+    let chose = browser.call(
+        &id(2),
+        Call::Select {
+            target: volume,
+            options: vec!["Blue".into()],
+        },
+    );
+    assert!(
+        matches!(&chose, Ok(a) if a.settled == Settled::Yes),
+        "{chose:?}"
+    );
+    assert!(engine.sent("Page.createIsolatedWorld").len() > made);
 }
 
 #[test]

@@ -31,8 +31,10 @@ use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
 
 mod takeover;
+mod world;
 
 use takeover::{Lease, Typing};
+use world::Worlds;
 
 /// DevTools as the driver needs it: the engine's connection, or a stand-in in tests.
 pub(crate) trait DevTools: Send + Sync {
@@ -639,6 +641,8 @@ struct Located {
     target: String,
     page_session: String,
     node_session: String,
+    /// The frame whose document holds the element.
+    frame: String,
     backend: i64,
     /// Frames between the page and the element that have sessions of their own, outermost
     /// first: each frame's id and its parent's session.
@@ -660,6 +664,8 @@ pub struct Browser {
     acting_epoch: AtomicU64,
     /// What the person typed while driving, kept out of later answers (#2014).
     typing: Mutex<Typing>,
+    /// purlis's own world in each frame its scripts run in (#2138).
+    worlds: Worlds,
     /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
     /// call in flight.
     #[cfg(unix)]
@@ -815,6 +821,7 @@ impl Browser {
             lease: Mutex::new(Lease::default()),
             acting_epoch: AtomicU64::new(0),
             typing: Mutex::new(Typing::default()),
+            worlds: Worlds::default(),
             #[cfg(unix)]
             engine: Mutex::new(None),
         })
@@ -1389,7 +1396,7 @@ impl Browser {
                             waiting.push(format!("{prefix}the page has no address yet"));
                         }
                         Some(session) => {
-                            sessions.push((prefix.clone(), session.clone()));
+                            sessions.push((prefix.clone(), session.clone(), page.target.clone()));
                             waiting.extend(
                                 page.settle
                                     .waiting_for(now, quiet)
@@ -1417,13 +1424,19 @@ impl Browser {
                 (waiting, sessions, opened)
             };
             if waiting.is_empty() {
-                for (prefix, session) in &sessions {
-                    let ready = self.devtools().call_within(
-                        "Runtime.evaluate",
-                        json!({ "expression": READY_STATE, "returnByValue": true }),
-                        Some(session),
-                        READY_STATE_WITHIN,
-                    );
+                for (prefix, session, frame) in &sessions {
+                    let ready = self.in_world(session, frame, |world| {
+                        self.devtools().call_within(
+                            "Runtime.evaluate",
+                            json!({
+                                "expression": READY_STATE,
+                                "contextId": world,
+                                "returnByValue": true,
+                            }),
+                            Some(session),
+                            READY_STATE_WITHIN,
+                        )
+                    });
                     let complete = ready
                         .ok()
                         .and_then(|r| r.pointer("/result/value").cloned())
@@ -1597,6 +1610,7 @@ impl Browser {
             target: page_target,
             page_session,
             node_session: frame.session.clone(),
+            frame: key.frame.clone(),
             backend: key.backend,
             boundaries,
         })
@@ -1805,12 +1819,13 @@ impl Browser {
             return Ok(held);
         }
         let resolved = self
-            .devtools()
-            .call(
-                "DOM.resolveNode",
-                json!({ "backendNodeId": at.backend }),
-                Some(&at.node_session),
-            )
+            .in_world(&at.node_session, &at.frame, |world| {
+                self.devtools().call(
+                    "DOM.resolveNode",
+                    json!({ "backendNodeId": at.backend, "executionContextId": world }),
+                    Some(&at.node_session),
+                )
+            })
             .map_err(|why| match why {
                 CallError::Engine { .. } => Refusal::NotShown(target.clone()),
                 other => refusal(other),
@@ -2113,6 +2128,7 @@ impl Browser {
                     target: String::new(),
                     page_session: String::new(),
                     node_session: session.to_owned(),
+                    frame: String::new(),
                     backend,
                     boundaries: boundaries.to_vec(),
                 };
