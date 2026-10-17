@@ -1031,5 +1031,4 @@ pub fn machine_folder() -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "policy_tests.rs"]
 mod tests;
