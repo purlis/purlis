@@ -64,6 +64,8 @@ export const LANES = {
       "listGrantableFolder",
       "unlistGrantableFolder",
       "allowBlockedHost",
+      // A service on this Mac added by its port on Settings' Network page (#1970).
+      "allowSandboxPort",
       "allowSandboxBlock",
       "forgetSandboxBlock",
       "allowSandboxBlockForTasks",

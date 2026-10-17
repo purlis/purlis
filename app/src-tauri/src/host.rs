@@ -117,7 +117,7 @@ impl Default for Opening {
     not(test),
     expect(
         dead_code,
-        reason = "the window starts a runner's chat by its names in #2217"
+        reason = "the window starts a runner's chat by its names in #2446"
     )
 )]
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ pub struct Named {
     not(test),
     expect(
         dead_code,
-        reason = "the window starts a runner's chat by its names in #2217"
+        reason = "the window starts a runner's chat by its names in #2446"
     )
 )]
 pub const NOT_COMPOSED_HERE: &str =
@@ -203,19 +203,26 @@ pub trait SessionHost: Send + Sync {
     /// **Starts a chat the session host composes itself** (#2171): by what `named` names of it,
     /// and nothing the window composed. Only a host composes one: the window's own process
     /// refuses it in a sentence.
+    ///
+    /// **The confinement the host composes for it is heard by this window** (#2407): where
+    /// `hearing` asks live, the host names that confinement to the window's link, `hearing` is
+    /// told what its proxy does, and its asks are answered from here, as a chat's the window
+    /// planned. The answer holds it beside the chat's id: dropping it lets the host end it, as
+    /// for one the window planned. None where the host composed none, or named it to no link.
     #[cfg_attr(
         not(test),
         expect(
             dead_code,
-            reason = "the window starts a runner's chat by its names in #2217"
+            reason = "the window starts a runner's chat by its names in #2446"
         )
     )]
     fn open_named(
         &self,
         _wanted: Option<u32>,
         _named: &Named,
+        _hearing: purlis_core::sandbox::plan::Hearing,
         _announce: &dyn Fn(u32),
-    ) -> Result<u32, String> {
+    ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
         Err(NOT_COMPOSED_HERE.to_owned())
     }
 

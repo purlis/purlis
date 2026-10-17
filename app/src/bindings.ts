@@ -606,6 +606,14 @@ export const commands = {
 	/**  **Allow** on a row of Blocked lately (#1662): the window's alone (`WINDOW_ONLY`). */
 	allowBlockedHost: (plane: PlaneId, host: string, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_blocked_host", { plane, host, level })),
 	/**
+	 *  **Allow port** on Settings' Network page (#1970): the service on this Mac at `port`, for open
+	 *  chat `chat` alone or for every chat of this project on this machine, granted by
+	 *  [`allow_port`] through the path a block's Notice takes. The window's alone (`WINDOW_ONLY`).
+	 * 
+	 *  Off the window's thread (#1949): it is judged, audited and kept on disk before it answers.
+	 */
+	allowSandboxPort: (plane: PlaneId, port: string, chat: number | null, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_sandbox_port", { plane, port, chat, level })),
+	/**
 	 *  **What the person kept blocked here** (#1700), from this machine's network record, newest
 	 *  first: the window's alone (`WINDOW_ONLY`).
 	 */

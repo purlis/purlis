@@ -6970,6 +6970,97 @@ pub(crate) mod tests {
         chats.close(other).expect("closed");
     }
 
+    /// #1970: a port added on Settings' Network page for one open chat is held for that chat
+    /// alone, audited, and owes it the restart its Notice's Allow would.
+    #[test]
+    fn a_port_added_in_settings_for_one_chat_is_held_for_it_alone() {
+        use purlis_core::sandbox::grant::What;
+        let plane = a_sandboxed_plane();
+        let (chats, _host) = armed_for_opencode(plane.path());
+        let ready = ready_under(
+            Harness::Opencode,
+            a_sandbox_for(Harness::Opencode, plane.path()),
+        );
+        let chat = Chat {
+            cwd: Some(plane.path().to_path_buf()),
+            ..chat("/bin/sh", "c", None)
+        };
+        let held = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+        let other = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+        let shell = chats
+            .start_ready(&chat, &a_shell_ready(), SIZE)
+            .expect("a shell starts");
+        let audited = std::sync::Mutex::new(Vec::new());
+        let audit = |chat: Option<u32>, made: &purlis_core::sandbox::grant::Audited<'_>| {
+            audited
+                .lock()
+                .unwrap()
+                .push((chat, made.what.to_owned(), made.target.to_owned()));
+            Ok(())
+        };
+        let machine = purlis_core::sandbox::Machine::this();
+        let form = |chat, port: &str| {
+            crate::sandboxing::allow_port(
+                plane.path(),
+                &machine,
+                &chats,
+                Some(chat),
+                (port, crate::sandboxing::GrantLevel::Chat),
+                &audit,
+                1,
+            )
+        };
+        // What a chat's own Notice refuses for it, the form refuses in the same words.
+        for never in ["0", "1-65535", "*", "localhost:50795", "47823"] {
+            let notice = crate::sandboxing::judged_and_kept(
+                plane.path(),
+                &machine,
+                &chats,
+                Some(held),
+                (
+                    crate::sandboxing::GrantWhat::Port,
+                    never,
+                    crate::sandboxing::GrantLevel::Chat,
+                ),
+                &audit,
+                1,
+            )
+            .expect_err("the Notice refuses it")
+            .to_string();
+            assert_eq!(
+                form(held, never).expect_err("refused").to_string(),
+                notice,
+                "{never}"
+            );
+        }
+        // A shell is no chat to allow a port for, and nothing is audited for it.
+        assert_eq!(
+            form(shell, "50795").expect_err("refused").to_string(),
+            format!(
+                "purlis did not allow port 50795: chat {shell} is not a chat open in this project."
+            )
+        );
+        assert!(audited.lock().unwrap().is_empty());
+        let allowed = form(held, "50795").expect("allowed");
+        assert!(
+            allowed.said.starts_with("Allowed for this chat."),
+            "{}",
+            allowed.said
+        );
+        assert!(chats.holds_for(held, &What::Port(50795)));
+        assert!(!chats.holds_for(other, &What::Port(50795)));
+        assert!(chats.owed_restarts().contains(&held));
+        assert!(!chats.owed_restarts().contains(&other));
+        assert_eq!(
+            *audited.lock().unwrap(),
+            [(Some(held), "port".to_owned(), "50795".to_owned())]
+        );
+        assert!(purlis_core::sandbox::local::granted_ports(plane.path()).is_empty());
+        chats.close(held).expect("closed");
+        chats.close(other).expect("closed");
+        chats.close(shell).expect("closed");
+    }
+
     #[test]
     fn a_chat_started_without_a_sandbox_is_never_told_it_has_one() {
         // #1345: what a chat says about "this chat's sandbox" is read from this word, so a

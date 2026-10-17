@@ -371,6 +371,7 @@ export const commands = {
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
 	chatNetwork: (plane: PlaneId, session: number) => typedError<ChatNetwork, string>(__TAURI_INVOKE("chat_network", { plane, session })),
 	allowBlockedHost: __WINDOW_ONLY_RESULT,
+	allowSandboxPort: __WINDOW_ONLY_RESULT,
 	sandboxKeptBlocked: __WINDOW_ONLY_RESULT,
 	listGrantableFolder: __WINDOW_ONLY_RESULT,
 	unlistGrantableFolder: __WINDOW_ONLY_RESULT,

@@ -12,7 +12,7 @@ import { DISPATCH } from "./dispatch";
 import { linkToGroup, openVault, settingsPlace, showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import type { SettingsGroup } from "./groups";
-import { BlockedLatelyList, OpenHostsList, useAllowedHere } from "./NetworkLists";
+import { AddPort, BlockedLatelyList, OpenHostsList, useAllowedHere } from "./NetworkLists";
 
 /** The address of the Network page (#1662): a sub-page of Sandbox, where the Granted list of
  *  #1348 is now the Allowed list. */
@@ -344,7 +344,8 @@ function GrantableFolders({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
 
 /**
  * **The Network page** (#1662), for the project at `plane`, whose committed file is `file`:
- * Open hosts, Allowed, Blocked lately, then the folders a block's Allow may name. Where an
+ * Open hosts, Allowed, Blocked lately, then the folders a block's Allow may name and a service
+ * on this Mac added by its port (#1970). Where an
  * administrator's policy forbids letting a chat write a folder (#1343), `writesLocked` is what it
  * says — "Locked by policy" and who set it — and the folders list offers no control.
  */
@@ -410,6 +411,16 @@ export function networkGroup(
                 </p>
               ),
           };
+        },
+      },
+      {
+        id: `${NETWORK}.port`,
+        label: "A service on this Mac",
+        // Kept on this machine, or for one open chat in memory: never committed.
+        writes: "this machine",
+        help: "Allow one port of a service on this Mac, such as a local cluster's, by its number: for every chat of this project on this machine, or for one open chat only. One port, never a range or every port, and never one purlis itself listens on. It lets a chat connect to whatever listens on that port, as you; a container engine's or a cluster's port can reach much of your machine. A chat reaches it from its next start.",
+        useControl: function useAddPort() {
+          return { control: (ids) => <AddPort plane={plane} ids={ids} /> };
         },
       },
       {

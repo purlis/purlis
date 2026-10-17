@@ -1538,7 +1538,7 @@ impl HostedSessions {
         start: StartProgram,
         operator_shell: bool,
         announce: &dyn Fn(u32),
-    ) -> Result<u32, String> {
+    ) -> Result<(u32, Option<session::Confined>), String> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let started = match link.call(Command::StartProgram(Box::new(start))) {
@@ -1555,21 +1555,24 @@ impl HostedSessions {
                 ));
             }
             Ok(Answer::ProgramStarted {
-                program, process, ..
-            }) => (program, process),
+                program,
+                process,
+                confined,
+                ..
+            }) => (program, process, confined),
             Ok(other) => {
                 return Err(format!("the session host answered a start with {other:?}"));
             }
             Err(why) => return Err(why),
         };
-        let (program, pid) = started;
+        let (program, pid, confined) = started;
         self.runs(link, id, &program, pid);
         lock(&self.lost).remove(&id);
         // A stop that landed while this program was being started is carried out now.
         if !operator_shell && self.kill_switch.is_stopped() {
             link.send(Command::Stop { chat: program });
         }
-        Ok(id)
+        Ok((id, confined))
     }
 }
 
@@ -1605,19 +1608,28 @@ impl SessionHost for HostedSessions {
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)
+            .map(|(id, _)| id)
     }
 
     fn open_named(
         &self,
         wanted: Option<u32>,
         named: &Named,
+        hearing: purlis_core::sandbox::plan::Hearing,
         announce: &dyn Fn(u32),
-    ) -> Result<u32, String> {
+    ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
+        use crate::hostedconfinement::{Hears, HeldInTheHost, placed};
         if self.kill_switch.is_stopped() {
             return Err(STOPPED.to_owned());
         }
         let (link, project) = self.link()?;
         let id = self.number_for(wanted)?;
+        // The confinement the host composes for it, named to this window where its proxy is to
+        // ask here (#2407), and heard before the start, so nothing its proxy does is missed.
+        let confinement = hearing.asks.is_some().then(purlis_core::reopen::mint);
+        if let Some(confinement) = &confinement {
+            link.hear(confinement, Hears::of(hearing));
+        }
         // Its own chat and the run this start begins (ADR 0066), which its trust event is
         // written under in the host.
         let start = StartProgram {
@@ -1632,9 +1644,42 @@ impl SessionHost for HostedSessions {
             resume: named.resume.clone(),
             first_message: named.first_message.clone(),
             without_sandbox: named.without_sandbox,
+            confinement: confinement.clone(),
             ..StartProgram::of(project, ProgramKind::Harness)
         };
-        self.started(&link, id, start, false, announce)
+        let unheard = |confinement: &Option<String>| {
+            if let Some(confinement) = confinement {
+                link.unhear(confinement);
+            }
+        };
+        let (id, confined) = self
+            .started(&link, id, start, false, announce)
+            .inspect_err(|_| unheard(&confinement))?;
+        // Held from here, where the host named it to this window: dropping it, on any path, lets
+        // the host end it. A host that named none tells this window nothing of it.
+        let named_here =
+            confined.filter(|confined| confinement.as_ref() == Some(&confined.confinement));
+        let (Some(confinement), Some(confined)) = (confinement.clone(), named_here) else {
+            unheard(&confinement);
+            return Ok((id, None));
+        };
+        let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
+        // One the window cannot hold is let go of, and the chat that runs in it is closed with
+        // it: a chat is never left running behind a start that says it did not start.
+        let confinement = match purlis_core::sandbox::Confinement::held_elsewhere(
+            placed(&confined),
+            Box::new(held),
+        ) {
+            Ok(confinement) => confinement,
+            Err(why) => {
+                let _ = self.close(id);
+                return Err(format!(
+                    "purlis could not hold the network the session host started for this \
+                         chat ({why}), so it closed the chat: start it again"
+                ));
+            }
+        };
+        Ok((id, Some(confinement)))
     }
 
     fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
