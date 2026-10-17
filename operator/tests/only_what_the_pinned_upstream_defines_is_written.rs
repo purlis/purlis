@@ -88,8 +88,16 @@ fn written() -> Vec<Value> {
         status: None,
     };
     [
-        serde_json::to_value(upstream::template_for(&pool, "ada")),
-        serde_json::to_value(upstream::warm_pool_for(&pool, "ada")),
+        serde_json::to_value(upstream::template_for(
+            &pool,
+            "ada",
+            upstream::owners_with(None, &claim),
+        )),
+        serde_json::to_value(upstream::warm_pool_for(
+            &pool,
+            "ada",
+            upstream::owners_with(None, &claim),
+        )),
         serde_json::to_value(upstream::sandbox_claim_for(&claim)),
     ]
     .into_iter()
