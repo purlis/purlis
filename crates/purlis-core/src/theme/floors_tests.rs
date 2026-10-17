@@ -45,6 +45,11 @@ fn the_built_in_themes_clear_every_consent_floor_and_are_drawn_unchanged() {
         assert_eq!(drawn.held, None, "{}", built.name);
         assert_eq!(drawn.theme.as_ref(), Some(built));
         assert!(floors::apart(built) >= DANGER_APART, "{}", built.name);
+        assert!(
+            floors::allow_apart(built) >= ALLOW_APART,
+            "{}",
+            built.name
+        );
     }
     for pick in ["purlis-dark", "purlis-light", "system"] {
         let pick = Pick::parse(pick).expect("a pick");
@@ -71,6 +76,7 @@ fn every_ask_pair_is_one_the_check_measures() {
         asked.into_iter().collect::<Vec<_>>(),
         [
             ("needs-you.text", "needs-you.base"),
+            ("text.primary", "accent.surface"),
             ("text.primary", "control.base"),
             ("text.primary", "danger.wash"),
             ("text.primary", "surface.overlay"),
@@ -272,6 +278,7 @@ fn a_theme_of_one_colour_everywhere_is_drawn_clearing_every_consent_floor() {
             held.floors,
             [
                 Floor::Ask,
+                Floor::AllowApart,
                 Floor::Danger,
                 Floor::DangerApart,
                 Floor::StateMarks
@@ -319,4 +326,76 @@ fn faded_words_are_measured_at_the_opacity_they_are_drawn() {
     let (drawn, held) = drawn_of(&mine);
     assert_eq!(drawn.value("text.primary"), ours("text.primary"));
     assert_eq!(held.expect("held").floors, [Floor::Ask]);
+}
+
+#[test]
+fn allow_and_keep_blocked_are_held_apart_by_the_allow_s_edge_and_its_ground() {
+    // Allow is the primary button, on `accent.surface` behind an `accent.base` edge; Keep
+    // blocked the plain one, on `control.base` behind a `border.strong` edge.
+    let held: Vec<(&str, &str)> = floors::pairs()
+        .filter(|(floor, _)| *floor == Floor::AllowApart)
+        .map(|(_, pair)| (pair.front, pair.back))
+        .collect();
+    assert_eq!(held, [("accent.base", "accent.surface")]);
+    for appearance in [Appearance::Dark, Appearance::Light] {
+        assert!(floors::allow_apart(built_in_for(appearance)) >= ALLOW_APART);
+    }
+}
+
+#[test]
+fn an_allow_edged_in_keep_blocked_s_colour_is_drawn_with_purlis_s_accent() {
+    let mine = theme(
+        "Slate",
+        json!({ "accent.base": ours("border.strong"), "text.primary": "#eeeeee" }),
+    );
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
+    assert_eq!(drawn.value("text.primary"), "#eeeeee");
+    let held = held.expect("the floor was held");
+    assert_eq!(held.floors, [Floor::AllowApart]);
+    assert_eq!(held.tokens, ["accent.base"]);
+    assert!(held.said().contains("Allow is distinguishable from Keep blocked"));
+    assert!(floors::allow_apart(&drawn) >= ALLOW_APART);
+    assert_eq!(draw(&drawn).held, None);
+}
+
+#[test]
+fn an_allow_whose_ground_hides_its_edge_and_its_words_is_drawn_on_purlis_s_ground() {
+    let mine = theme("Mint", json!({ "accent.surface": ours("accent.base") }));
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("accent.surface"), ours("accent.surface"));
+    let held = held.expect("the floor was held");
+    assert_eq!(held.floors, [Floor::Ask, Floor::AllowApart]);
+    assert_eq!(held.tokens, ["accent.surface"]);
+    assert_eq!(consent_failures(&drawn), []);
+}
+
+#[test]
+fn the_needs_you_mark_is_held_on_a_hovered_control() {
+    // The title bar's needs-you hand on its button under the pointer.
+    let pair = PAIRS
+        .iter()
+        .find(|pair| (pair.front, pair.back) == ("needs-you.base", "control.hover"))
+        .expect("the pair is measured");
+    assert_eq!(pair.floor, 3.0);
+    assert!(
+        floors::pairs().any(|(floor, one)| floor == Floor::StateMarks && one == pair),
+        "held by the consent floors"
+    );
+    for appearance in [Appearance::Dark, Appearance::Light] {
+        let classic = built_in_for(appearance);
+        assert!(
+            check(classic).findings.iter().all(
+                |one| !matches!(one, Finding::Contrast { pair: found, .. } if found == pair)
+            ),
+            "{appearance:?}"
+        );
+    }
+    // Classic's dark mark before it was lifted for this ground: 2.79:1 on its hovered control.
+    let mine = theme("Before", json!({ "needs-you.base": "#b85050" }));
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("needs-you.base"), ours("needs-you.base"));
+    let held = held.expect("the floor was held");
+    assert_eq!(held.floors, [Floor::StateMarks]);
+    assert_eq!(held.tokens, ["needs-you.base"]);
 }

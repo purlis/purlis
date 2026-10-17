@@ -365,6 +365,24 @@ describe("answering in place", () => {
     );
   });
 
+  it("draws each Allow in the primary style and its refusal in the plain one (ADR 0097 §6)", async () => {
+    core();
+    draw([permission(3, "p1", ["steward 3"]), HOST]);
+    const answers = (who: string) =>
+      within(screen.getByRole("group", { name: `Answers to ${who}` })).getAllByRole("button");
+    for (const [who, allow, keep] of [
+      ["steward 3", "Allow", "Deny"],
+      ["steward 5", "Allow for this chat", "Keep blocked"],
+    ]) {
+      const [first, second] = answers(who);
+      expect(first).toHaveAccessibleName(allow);
+      expect(first).toHaveClass("ui-button", "ui-button-primary");
+      expect(second).toHaveAccessibleName(keep);
+      expect(second).toHaveClass("ui-button");
+      expect(second).not.toHaveClass("ui-button-primary");
+    }
+  });
+
   it("marks a persona's declared browser in its place, and answers only on a press (#2241)", async () => {
     const calls = core();
     const browser: Shown = {

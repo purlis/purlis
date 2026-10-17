@@ -230,6 +230,26 @@ describe("the block Notice's ways out", () => {
     expect(ways[0].words).toMatch(/^Keep blocked/);
   });
 
+  it("draws each Allow in the primary style and Keep blocked in the plain one (ADR 0097 §6)", async () => {
+    answered(NAMED);
+    const notice = screen.getByRole("status", { name: "Sandbox block" });
+    const ways = within(notice).getAllByRole("button");
+    const allow = screen.getByRole("button", { name: "Allow for me on this machine" });
+    const keep = screen.getByRole("button", { name: /^Keep blocked/ });
+    const scopes = screen.getByRole("button", { name: "Other scopes…" });
+    expect(allow).toHaveClass("ui-button", "ui-button-primary");
+    expect(keep).toHaveClass("ui-button");
+    expect(keep).not.toHaveClass("ui-button-primary");
+    // Opening the scopes grants nothing, so it is drawn as Keep blocked is.
+    expect(scopes).not.toHaveClass("ui-button-primary");
+    // The order the keyboard meets them in is the line's, Allow first and Keep blocked last.
+    expect(ways.indexOf(allow)).toBeLessThan(ways.indexOf(keep));
+    await userEvent.click(scopes);
+    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toHaveClass(
+      "ui-button-primary",
+    );
+  });
+
   it("says nothing for an Allow that sends nothing", async () => {
     // A block that named no host, with nothing typed: the press allows nothing.
     const ways = answered(UNNAMED);

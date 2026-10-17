@@ -196,6 +196,7 @@ export function VaultRefusedNotice({
           {
             label: `Allow ${persona} to use this vault`,
             onPress: () => press(() => commands.allowRefusedVault(plane, session, vault)),
+            allows: true,
           },
           ...dispatchTo,
           keep,

@@ -973,7 +973,8 @@ function AllowNotice({
             <button
               key={option.id}
               type="button"
-              className="ui-button ui-button-sm"
+              // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
+              className="ui-button ui-button-sm ui-button-primary"
               tabIndex={0}
               disabled={
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)
@@ -998,6 +999,7 @@ function AllowNotice({
             label: main.label,
             onPress: () => allow(main.id, main.label),
             off: main.id === "project" ? readOnly : undefined,
+            allows: true,
           },
         ]
       : []),
@@ -1006,6 +1008,7 @@ function AllowNotice({
           {
             label: everywhere.label,
             onPress: () => allow(everywhere.id, everywhere.label),
+            allows: true,
           },
         ]
       : []),

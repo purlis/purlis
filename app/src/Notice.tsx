@@ -69,6 +69,11 @@ export type NoticeAction = {
    *  writes the project's files (#826). Drawn, said as its tooltip, and `aria-disabled` as a
    *  busy one is, so the keyboard stays on it; a press sends nothing. */
   off?: string;
+  /** **An answer that grants** (an Allow, an Accept): drawn in the primary style, apart from
+   *  Keep blocked and every other way out, which are the plain one, so the two are told apart
+   *  at a glance in every theme (ADR 0097 §6). Only the look: its place, its words and the
+   *  keyboard's order are the Notice's as they were. */
+  allows?: boolean;
 };
 
 type Ways = {
@@ -189,7 +194,7 @@ export function Notice(props: NoticeProps) {
         <button
           key={fix.label}
           type="button"
-          className="notice-fix ui-button ui-button-sm"
+          className={`notice-fix ui-button ui-button-sm${fix.allows === true ? " ui-button-primary" : ""}`}
           tabIndex={0}
           aria-expanded={fix.opens?.open}
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
