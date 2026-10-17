@@ -62,6 +62,23 @@ export function stepTimer(now = Date.now) {
   };
 }
 
+/** `text` with each line that looks like it holds a secret replaced, as the annotations do. */
+const printable = (text) => String(text).split("\n").map(redacted).join("\n");
+
+/**
+ * A check's line in the job log, and what it saw. The log is read by more people than the run's
+ * author, so it keeps the annotations' rule (#2382): a line that looks like a secret is not
+ * written out. Uncut, unlike an annotation, since the log has the room.
+ */
+export function checkLine(what, ok, detail = "") {
+  return printable(`${ok ? "ok  " : "FAIL"} ${what}${detail ? ` — ${detail}` : ""}`);
+}
+
+/** What a run that threw prints to stderr: its stack, or what it threw, redacted as `checkLine`. */
+export function stopLine(error) {
+  return printable(error?.stack ?? error);
+}
+
 /** `detail` cut to DETAIL_CHARS around an ellipsis, its head and its end kept. */
 function cut(detail) {
   if (detail.length <= DETAIL_CHARS) return detail;
