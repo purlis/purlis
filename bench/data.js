@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792254494086,
+  "lastUpdate": 1792255751655,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15456,6 +15456,48 @@ window.BENCHMARK_DATA = {
             "value": 104.40672599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.549, 103.516, 104.407, 105.512, 105.677 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "28a702051b77ef9e7e1c310f31128475664e8d8e",
+          "message": "Move more #2358 sweep tests to <module>/tests.rs (part 2 of #2417) (#2470)\n\n* purlis-core: move 12 modules' inline tests to <module>/tests.rs (move only)\n\nCONTRIBUTING, Where tests live: the #2358 sweep changed these modules\n(#2417). curate, doctor::fix::rename_plane, gitpolicy, gitstate,\npersonaverbs::{retired, select}, planegit::resolve, renamelocal::keychain,\nrepocmd::status, scaffold, secrets::{identity, keyring}. Each\nnew file carries the licence header; no test's name or body changed.\nrustfmt reflowed lines that fit once the indent was gone.\n\nRefs #2417\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* purlis-core: move four *_tests.rs files to <module>/tests.rs (move only)\n\nCONTRIBUTING, Where tests live (#2417): the #2358 sweep changed these\nmodules. personaverbs/upkeep_tests.rs, secrets/cmd_tests.rs and\nsecrets/program_tests.rs become <module>/tests.rs and lose their\n#[path]. secrets/tests_store.rs becomes secrets/tests/store.rs, declared\nfrom secrets/tests.rs (as change/push/tests/gitlab.rs is), keeping its\nUnix-only gate. Renames at 100% similarity; no test's name or body\nchanged.\n\nRefs #2417\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T20:46:21+04:00",
+          "tree_id": "9d9716ff2d7cc7fbf56296be4136a8a77518133e",
+          "url": "https://github.com/purlis/purlis/commit/28a702051b77ef9e7e1c310f31128475664e8d8e"
+        },
+        "date": 1792255750065,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.532834,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.533, 0.533, 0.538, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.109574,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.152, 16.989, 17.110, 17.201, 17.266 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.30461449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.317, 103.113, 104.305, 104.939, 105.697 ms"
           }
         ]
       }
