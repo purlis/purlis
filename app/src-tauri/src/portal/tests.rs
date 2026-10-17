@@ -345,9 +345,46 @@ fn a_launch_with_no_bus_at_all_tells_the_window_so() {
             .now()
             .expect("the window is told");
         assert!(told.says.contains("no session bus"), "{told:?}");
-        assert!(told.says.contains("X display"), "{told:?}");
+        assert!(
+            !told.says.contains("XDG_RUNTIME_DIR"),
+            "a path in the window: {told:?}"
+        );
         assert!(told.says.contains("notifications"), "{told:?}");
     }
+}
+
+/// Said by the launch that starts again, once: the one before the restart says nothing.
+fn said(bus: &SessionBus) -> Vec<String> {
+    let mut said = Vec::new();
+    bus.say_to(&mut |line| said.push(line.to_owned()));
+    said
+}
+
+#[test]
+fn the_restarted_launch_says_why_it_has_no_bus_and_what_is_off() {
+    let away = SessionBus::of(Some(NO_SESSION_BUS), Some(RUN_USER_BUS), None);
+    let [line] = said(&away).try_into().expect("one line");
+    assert!(line.contains("desktop portal did not answer"), "{line}");
+    assert!(line.contains("300 ms"), "{line}");
+    for off in ["tray icon", "notifications", "second launch", "keyring"] {
+        assert!(line.contains(off), "{off} is not named: {line}");
+    }
+
+    let nowhere = SessionBus::of(Some(NO_SESSION_BUS), Some(""), None);
+    let [line] = said(&nowhere).try_into().expect("one line");
+    assert!(line.contains("no session bus"), "{line}");
+    for place in [
+        "DBUS_SESSION_BUS_ADDRESS",
+        "$XDG_RUNTIME_DIR/bus",
+        "X display",
+    ] {
+        assert!(line.contains(place), "{place} is not named: {line}");
+    }
+
+    assert!(
+        said(&SessionBus::of(Some(RUN_USER_BUS), None, None)).is_empty(),
+        "a launch on the bus said it had none"
+    );
 }
 
 #[test]

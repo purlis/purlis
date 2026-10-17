@@ -103,7 +103,7 @@ pub enum Start {
 /// program the app starts, is given the bus and still reaches it.
 const WHAT_IS_OFF: &str = "For this run there is no tray icon and no desktop notifications, \
      a keyring vault cannot be opened from the window (chats still reach the keyring), and a \
-     second launch is refused instead of being handed to this one — charter-app#24.";
+     second launch is refused instead of being handed to this one.";
 
 /// What a launch does about what it heard.
 ///
@@ -122,13 +122,13 @@ pub fn decide(
     match heard {
         Heard::Answer => Start::AsItIs,
         // Found by the standard lookup when nothing named it, which a chat does as well.
-        Heard::Silence => without(address.unwrap_or_default()),
+        Heard::Silence => without_the_bus_keeping(address.unwrap_or_default()),
         // An address that names a dead bus already fails fast, in GIO too.
         Heard::NoBus if address.is_some() => Start::AsItIs,
         Heard::NoBus => match x_session_bus() {
             Some((bus, Heard::Answer)) => Start::OnTheBus(bus),
-            Some((bus, Heard::Silence)) => without(&bus),
-            Some((_, Heard::NoBus)) | None => without(""),
+            Some((bus, Heard::Silence)) => without_the_bus_keeping(&bus),
+            Some((_, Heard::NoBus)) | None => without_the_bus_keeping(""),
         },
     }
 }
@@ -208,7 +208,7 @@ pub fn launch(
         return Start::AsItIs;
     }
     if session.was_silent(address) {
-        return without(address.unwrap_or_default());
+        return without_the_bus_keeping(address.unwrap_or_default());
     }
     let heard = ask();
     if heard == Heard::Silence {
@@ -217,7 +217,7 @@ pub fn launch(
     decide(address, heard, x_session_bus)
 }
 
-fn without(kept: &str) -> Start {
+fn without_the_bus_keeping(kept: &str) -> Start {
     Start::WithoutTheBus {
         kept: kept.to_owned(),
     }
@@ -487,6 +487,8 @@ pub struct BusNotice {
 pub struct SessionBus {
     /// The line the window draws, when the launch is without the bus.
     says: Option<String>,
+    /// What the app's log says besides: where a launch with no bus at all looked for one.
+    looked: Option<&'static str>,
     /// The bus to ask again and to go back onto: `At` the kept address, or the `Default` one.
     /// `None` when there is nothing to go back onto.
     back: Option<Bus>,
@@ -509,6 +511,7 @@ impl SessionBus {
         if address != Some(NO_SESSION_BUS) {
             return Self {
                 says: None,
+                looked: None,
                 back: None,
                 runtime: None,
                 answers: false.into(),
@@ -521,6 +524,10 @@ impl SessionBus {
         } else {
             Some(Bus::At(kept.to_owned()))
         };
+        let looked = back.is_none().then_some(
+            "It looked for one named in DBUS_SESSION_BUS_ADDRESS, at $XDG_RUNTIME_DIR/bus and on \
+             the X display.",
+        );
         let why = if back.is_some() {
             format!(
                 "purlis started without the session bus: the desktop portal did not answer \
@@ -528,12 +535,11 @@ impl SessionBus {
                 BUDGET.as_millis()
             )
         } else {
-            "purlis found no session bus to start on: none named, none at \
-             $XDG_RUNTIME_DIR/bus, and none on the X display."
-                .to_owned()
+            "purlis found no session bus to start on, so this run has none.".to_owned()
         };
         Self {
             says: Some(format!("{why} {WHAT_IS_OFF}")),
+            looked,
             back,
             runtime: runtime.map(std::path::Path::to_path_buf),
             answers: false.into(),
@@ -545,8 +551,17 @@ impl SessionBus {
     /// window does: nothing on a launch with it. The launch before the restart says nothing,
     /// so this is said once ([`Start::WithoutTheBus`]).
     pub fn say(&self) {
-        if let Some(says) = &self.says {
-            tracing::warn!("{says}");
+        self.say_to(&mut |line| tracing::warn!("{line}"));
+    }
+
+    /// [`say`](Self::say), with where it is said handed in so a test can hear it.
+    fn say_to(&self, say: &mut dyn FnMut(&str)) {
+        let Some(says) = &self.says else {
+            return;
+        };
+        match self.looked {
+            Some(looked) => say(&format!("{says} {looked}")),
+            None => say(says),
         }
     }
 

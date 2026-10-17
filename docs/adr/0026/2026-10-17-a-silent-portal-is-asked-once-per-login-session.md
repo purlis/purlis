@@ -20,7 +20,7 @@ when the user's last session ends). With lingering on (`loginctl enable-linger`)
 logout, and so does the memory, until the bus answers or the machine restarts. The file holds
 only the address the silence was heard on, empty for the bus the standard lookup finds. A launch
 given a different address asks again. The bus that chats are given (`SESSION_BUS_KEPT`) is still
-the launch's own address and is never read from the file. Three more rules:
+the launch's own address and is never read from the file. Four more rules:
 
 - When the kept bus answers after the launch (`listen_again`), the file is removed, so the next
   launch asks again without waiting for a new login. The window still offers the restart, as
