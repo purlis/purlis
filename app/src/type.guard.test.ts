@@ -21,14 +21,14 @@ import { property, TOKENS } from "./theme/theme";
  *
  * | Property      | May be                                                        |
  * | ------------- | ------------------------------------------------------------- |
- * | `font-size`   | `var(--font-size-*)`, one of the core's six                    |
+ * | `font-size`   | `var(--font-size-*)`, one of the core's seven                  |
  * | `font-weight` | `var(--font-weight-*)`, one of the core's three                 |
  * | `line-height` | `var(--line-height-tight)`, `var(--line-height-body)`, or `1`  |
  * | `font-family` | `var(--font-mono)`                                             |
  * | `color`       | `var(--<a theme's colour token>)`, or `currentColor`           |
  * | `font`        | `inherit` only: the shorthand carries a size and a family      |
  *
- * and `inherit` for each. A line height of `1` (or `normal`) is no leading at all, the line as
+ * and `inherit` for each. A line height of exactly `1` is no leading at all, the line as
  * tall as its own text, as `1em` is no size to the geometry guard. Anything else is a literal:
  * `0.8rem`, `600`, `bold`, `1.4`, a stack of family names, a mixed or transparent colour.
  *
@@ -41,7 +41,8 @@ import { property, TOKENS } from "./theme/theme";
  * migration that gives a word its role deletes its line from both lists.
  *
  * **There is no allowance** (#2319). The migrations took every literal the window had onto a
- * token or a role, and the list they shrank is gone: any literal fails here.
+ * token or a role, and the list they shrank is gone: a literal in what this guard reads, as the
+ * table says, fails here.
  */
 
 /** The one stylesheet that gives the core tokens their values. */
@@ -62,7 +63,7 @@ const MAY_BE: Readonly<Record<string, ReadonlySet<string>>> = {
 export function isOnTheScale(name: string, value: string): boolean {
   const said = value.replace(/\s*!important$/i, "").trim();
   if (/^inherit$/i.test(said)) return true;
-  if (name === "line-height" && /^(?:1|normal)$/i.test(said)) return true;
+  if (name === "line-height" && said === "1") return true;
   if (name === "color" && /^currentcolor$/i.test(said)) return true;
   const token = /^var\((--[\w-]+)\)$/.exec(said)?.[1];
   return token !== undefined && MAY_BE[name].has(token);
@@ -242,9 +243,10 @@ describe("the type guard (#1920)", () => {
       .b { line-height: var(--line-height-tight); font-family: var(--font-mono); }
       .c { color: var(--text-muted); font: inherit; font-size: inherit; color: inherit; }
       .d { color: currentColor; color: var(--state-failed) !important; line-height: inherit; }
-      .e { line-height: 1; line-height: normal; }
+      .e { line-height: 1; }
     `;
     expect(cssLiterals(css)).toEqual([]);
+    expect(cssLiterals(".a { line-height: normal; line-height: 1.0; }")).toHaveLength(2);
     // A token of another kind is not this property's.
     const crossed = `
       .a { font-size: var(--space-4); font-weight: var(--font-size-sm); }

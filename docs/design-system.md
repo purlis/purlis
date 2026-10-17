@@ -819,14 +819,15 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   (`ui-menu`, `ui-menu-item`).
 
 Each started with **an allowance list of the offenders the window had when it landed**,
-grouped by file and one entry per line. The geometry and type lists reached zero with #2319 and
-are gone, so any literal those two guards read fails; `controls.guard.allowance.ts` remains. An entry names a declaration by its rule and what it sets (`.chat | padding: 0.1rem
-0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
+grouped by file and one entry per line. The geometry and type lists reached zero with #2319
+and are gone, so a literal in what those two guards read fails (widening what they read is
+#2450); `controls.guard.allowance.ts` remains. An entry names a declaration by its rule and what
+it sets (`.chat | padding: 0.1rem 0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
 number. The list only shrinks:
 
 - a new offender fails: take the value from a token, or give the control its class;
 - an entry with nothing left to name fails: delete its line when you fix it;
-- a file's list longer than its frozen ceiling (`CEILING` in each guard) fails, and a file
+- a file's list longer than its frozen ceiling (`CEILING` in the controls guard) fails, and a file
   without a ceiling may have no list.
 
 The surface tickets migrated a view and deleted its lines in the same change. Two of them
@@ -941,7 +942,8 @@ by the size or weight that was written.
 
 Its allowance landed at 159 lines in `App.css` (91 of them font sizes) and reached zero with
 #2319, and the list is gone: [as with the geometry guard](#the-guards-and-the-lists-that-only-shrink),
-any literal fails. A line height of `1` (or `normal`) is no leading and passes. A font size is
+a literal in what it reads fails (#2450 widens that). A line height of exactly `1` is no leading
+and passes. A font size is
 held by the geometry guard too.
 
 **A token is not yet a role.** `font-size: var(--font-size-sm)` passes the guard and is still

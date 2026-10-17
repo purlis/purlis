@@ -3626,10 +3626,9 @@ h2.sidebar-title .node-icon {
    own controls sit in its title bar; where the sidebar is too narrow for both, the switch goes
    under the title and is never cut. */
 .chats-top {
-  /* **The scope switch is sized by the text of the line it is on** (`.ui-levels-small`, in
-     `em`), and that line's text is the notes', the secondary's: the size the Inbox's own
-     switch stands in, and within a tenth of a pixel of what this one was before the list's
-     words took their roles (#1920). The title and the notes each wear their own role. */
+  /* **The line's text is the notes', the secondary's** (#1920). The scope switch at its end
+     has a fixed size of its own (`.ui-levels-small`, `--font-size-2xs`, #2319), so this line's
+     size no longer moves it. The title and the notes each wear their own role. */
   font-size: var(--font-size-sm);
   display: flex;
   flex-wrap: wrap;
@@ -4450,8 +4449,14 @@ h2.sidebar-title .node-icon {
   height: 0.8rem;
 }
 
+/* The word is a step under the line it sits in: `sm` in a chat's row and on a page, the floor
+   in the pane's breadcrumb, whose own text is the floor already. */
 .shown-state .word {
   color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pane-crumbs .shown-state .word {
   font-size: var(--font-size-xs);
 }
 

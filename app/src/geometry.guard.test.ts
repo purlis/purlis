@@ -44,8 +44,8 @@ import {
  * (`--elevation-*`), which this guard does not cover.
  *
  * **There is no allowance.** The surface tickets (DS-8, DS-12, DS-13, and #2315 to #2319) took
- * every literal the window had onto a token, and the list they shrank is gone: any literal in a
- * stylesheet, an inline style or a class fails here.
+ * every literal the window had onto a token, and the list they shrank is gone: a literal in what
+ * this guard reads, as said above, fails here. Widening what it reads is #2450.
  */
 
 /** The one stylesheet that gives the core tokens their values. */
@@ -223,6 +223,29 @@ describe("the geometry guard (#1837)", () => {
       "App.css: new literal, take it from a core token: .planted | padding: 7px",
       "App.css: new literal, take it from a core token: .planted | font-size: 13px",
     ]);
+  });
+
+  it("fails a padding taken from a custom property that holds a literal, in the real stylesheet", () => {
+    const css = sheets();
+    const planted = `${css.get("App.css")}\n.planted { --pad: 7px; padding: var(--pad); }\n`;
+    const found = new Map([
+      ...literalsByFile(),
+      ["App.css", cssLiterals(planted, checkedCustoms([...css.values(), planted]))],
+    ]);
+    expect(complaints(found)).toEqual([
+      "App.css: new literal, take it from a core token: .planted | --pad: 7px",
+    ]);
+  });
+
+  it("gives the step under the words' floor to the scope switch alone (#2319)", () => {
+    const readers = [...sheets()].flatMap(([file, text]) =>
+      declarations(text)
+        .filter(({ value }) => value.includes("--font-size-2xs"))
+        .map(({ context }) => `${file} ${context.join(" › ")}`),
+    );
+    expect(readers).toEqual(["App.css .ui-levels-small"]);
+    const views = sourceFiles(isView).filter((file) => read(file).includes("--font-size-2xs"));
+    expect(views).toEqual([]);
   });
 
   it("counts a declaration written twice as two", () => {
