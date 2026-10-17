@@ -109,6 +109,7 @@ mod projectsettings;
 mod proposals;
 mod readonly;
 mod rebrief;
+mod reconnecting;
 mod references;
 mod remotequestion;
 mod removalasks;
@@ -2787,6 +2788,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<chatbrowsers::BrowsersListed>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
+        // What `chats-reconnecting` carries (#2496).
+        .typ::<reconnecting::ChatsReconnecting>()
         // What `chat-stop` carries (#1448).
         .typ::<stopping::ChatStop>()
         // What `activity-line` carries (#1495).
@@ -3847,6 +3850,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             hostlost::LOST,
+                            &told,
+                        );
+                    })
+                })
+                // A runner's chats while its link is down: the window says "Reconnecting" over
+                // each one's screen until it is back (#2496).
+                .telling_reconnecting({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: reconnecting::ChatsReconnecting| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            reconnecting::EVENT,
                             &told,
                         );
                     })
