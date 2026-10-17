@@ -67,6 +67,7 @@ macro_rules! app_commands {
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,
                 sandboxing::acknowledge_project_hosts,
+                sandboxing::acknowledge_project_browser_sites,
                 sandboxing::acknowledge_project_presets,
                 sandboxing::allow_persona_hosts,
                 sandboxing::allow_project_expects,

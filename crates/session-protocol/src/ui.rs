@@ -356,6 +356,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's "Got it" on a Notice that the project's presets or its hosts changed.
     "acknowledge_project_presets",
     "acknowledge_project_hosts",
+    // ...and the person's "Got it" on the Notice of the project's browser sites (#2443), which
+    // lets them reach this machine's browsers.
+    "acknowledge_project_browser_sites",
     // What a task left on a branch of its own: the person's merge or discard (#1511).
     "task_branch_merge",
     "dispatch_worktree_discard",

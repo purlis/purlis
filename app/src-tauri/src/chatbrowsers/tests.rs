@@ -1365,3 +1365,17 @@ fn a_login_waits_for_the_chats_browser_ask_like_any_browser_call() {
     assert!(hosted.logins.lock().unwrap().is_empty());
     assert!(hosted.started.lock().unwrap().is_empty());
 }
+
+#[test]
+fn the_projects_browser_sites_are_listed_for_its_browser_at_the_projects_layer() {
+    use purlis_session_protocol::session::{Layer, Listed};
+    let site = purlis_core::sandbox::hosts::Host::parse("news.example.org:443").unwrap();
+    let reach = super::with_project_sites(BrowserReach::default(), &[site]);
+    assert_eq!(
+        reach.listed,
+        [Listed {
+            host: "news.example.org:443".into(),
+            layer: Layer::Project,
+        }]
+    );
+}

@@ -710,8 +710,9 @@ allowed.
 _Avoid_: allowlist (in UI text), network access, browser allowlist
 
 **Browser site**:
-A person's yes to one site, a host and port, for a chat's browser alone, at *this chat* or *this
-project on this machine*: the browser may open it, send to it and type on it. The chat's own
+A person's yes to one site, a host and port, for a chat's browser alone, at *this chat*, *this
+project on this machine*, or *everyone in the project*, which is committed and reaches a
+teammate's browsers once they were shown it: the browser may open it, send to it and type on it. The chat's own
 commands never reach a browser site; they still need an **Allowed host** for it. Asked by the
 browser's **judge**, and listed apart from allowed hosts in the Granted list and in the chat's
 Network view. An Allow reaches the browser from its next act; nothing restarts.

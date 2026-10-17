@@ -36,8 +36,8 @@ public site its browser's lane does not list.
    administrator's policy later holds (a scope left out, a host never allowed) is kept and
    reaches no browser. This supersedes the sentence "nothing is listed for the browser alone"
    in item 1 of the amendment *a browser's reach is a lane of its chat's*. A browser site for
-   everyone in the project (committed) is not offered yet: it comes with #2443 (ruled
-   2026-10-17). *A host allowed for the chat's commands stays a listed site for
+   everyone in the project (committed) is offered too: see the amendment *a browser site can be
+   allowed for everyone in the project* (ruled 2026-10-17, #2443). *A host allowed for the chat's commands stays a listed site for
    its browser, as the lane was ruled on 2026-10-14 (D-2018-7): decided in implementation,
    2026-10-17, to be confirmed.*
 4. **Widening reaches a running browser at its next act.** Each act carries what the browser
