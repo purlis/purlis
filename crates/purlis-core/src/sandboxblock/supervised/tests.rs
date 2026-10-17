@@ -85,6 +85,55 @@ fn a_refused_write_of_the_project_s_own_files_names_the_path_a_grant_would() {
 }
 
 #[test]
+fn a_refused_file_no_longer_linked_is_named_by_the_name_it_had() {
+    // The kernel names such a file with " (deleted)" after its last name.
+    for (operation, named, kind, had) in [
+        (
+            "file-write-data",
+            "/home/dev/plane/workspaces/beta/notes.md (deleted)",
+            Kind::ProjectFiles,
+            "/home/dev/plane/workspaces/beta/notes.md",
+        ),
+        (
+            "file-write-data",
+            "/home/dev/outside.log (deleted)",
+            Kind::Home,
+            "/home/dev/outside.log",
+        ),
+    ] {
+        let told = block_of(&refused(operation, named, "sh"), &place());
+        assert_eq!(
+            told,
+            Some((
+                Block {
+                    operation: Operation::Write,
+                    kind,
+                    ours: false,
+                },
+                Some(had.to_owned()),
+            )),
+            "{named}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_socket_no_longer_linked_is_named_by_the_path_it_had() {
+    let told = block_of(
+        &refused(
+            "network-outbound",
+            "/home/dev/run/agent.sock (deleted)",
+            "sh",
+        ),
+        &place(),
+    );
+    assert_eq!(
+        told.and_then(|(block, target)| (block.kind == Kind::LocalSocket).then_some(target)),
+        Some(Some("/home/dev/run/agent.sock".to_owned()))
+    );
+}
+
+#[test]
 fn a_refused_read_of_purlis_s_state_names_nothing_to_allow() {
     assert_eq!(
         block_of(

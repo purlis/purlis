@@ -46,8 +46,17 @@ pub fn block_of(refusal: &Refusal, place: &Place<'_>) -> Option<(Block, Option<S
         target: &refusal.target,
     };
     let (block, target) = denial.block(place);
+    // A file no longer linked is named by the kernel with " (deleted)" after its last name
+    // (#2425): what Allow would name is the name it had. Its kind is as that refusal sorts.
+    let target = match refusal.target.strip_suffix(UNLINKED) {
+        Some(had) if !block.ours => super::target_of(&block, had, place),
+        _ => target,
+    };
     (!super::is_the_proxys(&block)).then_some((block, target))
 }
+
+/// What the kernel puts after the last name of a file that is no longer linked.
+const UNLINKED: &str = " (deleted)";
 
 /// Whether the supervisor tells blocks such as `block` itself: every refused file operation,
 /// local socket and service on this machine. A lookup past the proxy it never sees.
