@@ -15,12 +15,14 @@
 //!   appearance, each complete — and what it had to say about it ([`Resolved`]).
 //!   - **Format 2** (a theme folder's `theme.json`, [`Library`]): a name, optionally a theme it
 //!     `extends`, a palette of named colours, and one or more appearances, each tagged dark or
-//!     light and optionally high contrast. A format 2 theme that breaks its grammar anywhere is
-//!     **refused whole** (ADR 0097 §2): it draws Purlis, and the complaints say why.
+//!     light and optionally high contrast.
 //!   - **Format 1** (today's single-appearance file) keeps loading as a theme with one
-//!     appearance, with its per-token fallback: a token that is missing, misspelled or malformed
-//!     falls back to Purlis Classic's of the same appearance, and the substitution is said.
+//!     appearance.
 //!
+//!   **One rule for both, and for every source**: a token the theme does not name is Purlis
+//!   Classic's of the same appearance, silently; a value that is there and outside its type or
+//!   bound, a key purlis does not have, or a document that is not a theme **refuses the theme
+//!   whole** (ADR 0097 §2). A refused theme draws Purlis, and the complaints name each value.
 //!   **It never fails**: ADR 0026 holds cold start at 2 s, and the window has to come up
 //!   whatever a file says.
 //! - [`classic`] is Purlis Classic, the theme purlis ships, compiled into the core from its theme
@@ -157,7 +159,8 @@ impl Theme {
     }
 }
 
-/// One thing [`load`] had to put right: a value the file did not supply usably.
+/// One thing [`load`] found wrong with a theme, which refuses it: a value the file did not
+/// supply usably.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Complaint {
     /// What was wrong, in the words to put in front of whoever wrote the file.
@@ -188,7 +191,7 @@ impl Complaint {
 pub struct Resolved {
     /// The theme, complete: Purlis when the document was refused.
     pub theme: Theme,
-    /// What was put right, or why it was refused.
+    /// Why it was refused; empty when it was not.
     pub complaints: Vec<Complaint>,
     /// Whether the document was refused whole, so [`Self::theme`] is Purlis and not the
     /// document's (a format 2 theme that breaks its grammar, ADR 0097 §2).
@@ -339,19 +342,23 @@ fn is_format_2(document: &serde_json::Map<String, Value>) -> bool {
         .any(|key| document.contains_key(*key))
 }
 
-/// **Reads a format 1 document**: one appearance. A token that is missing falls back to Purlis
-/// Classic's of the theme's appearance silently, since not naming a token is how a small theme
-/// says Classic's is right; a value that is there and unusable falls back too, and is said.
+/// **Reads a format 1 document**: one appearance. A token that is missing is Purlis Classic's of
+/// the theme's appearance, silently, since not naming a token is how a small theme says
+/// Classic's is right; a value that is there and unusable refuses the theme, and is said.
 fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     let mut complaints = Vec::new();
 
-    let appearance = match from.get("appearance").and_then(Value::as_str) {
-        Some("light") => Appearance::Light,
-        Some("dark") => Appearance::Dark,
-        _ => {
-            complaints.push(Complaint::said(
-                "appearance is \"dark\" or \"light\"; read this one as dark",
-            ));
+    // A key the file does not have says nothing: no appearance is dark, as no token is Purlis
+    // Classic's. A key that is there and not a value of its type refuses the theme.
+    let appearance = match from.get("appearance") {
+        None => Appearance::Dark,
+        Some(Value::String(tag)) if tag == "light" => Appearance::Light,
+        Some(Value::String(tag)) if tag == "dark" => Appearance::Dark,
+        Some(other) => {
+            complaints.push(Complaint::said(format!(
+                "appearance is {}; a theme's appearance is \"dark\" or \"light\"",
+                stringify(other)
+            )));
             Appearance::Dark
         }
     };
@@ -360,10 +367,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     let name = match from.get("name").and_then(Value::as_str).map(str::trim) {
         Some(name) if !name.is_empty() => name.to_owned(),
         _ => {
-            complaints.push(Complaint::said(format!(
-                "a theme has a name; called this one {}",
-                base.name
-            )));
+            complaints.push(Complaint::said("a theme has a name"));
             base.name.clone()
         }
     };
@@ -371,7 +375,10 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     let empty = serde_json::Map::new();
     let tokens = match from.get("tokens") {
         Some(Value::Object(tokens)) => tokens,
-        _ => {
+        // A theme that names no token is Purlis Classic's of its appearance, as one that names
+        // a few is for the rest.
+        None => &empty,
+        Some(_) => {
             complaints.push(Complaint::said(
                 "tokens is an object of token names to colours",
             ));
@@ -404,19 +411,17 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
 
     let mut values = BTreeMap::new();
     for token in TOKENS {
-        let fallback = base.value(token);
         match tokens.get(*token) {
             Some(Value::String(given)) if is_colour(given) => {
                 values.insert(*token, given.clone());
             }
             given => {
-                values.insert(*token, fallback.to_owned());
+                values.insert(*token, base.value(token).to_owned());
                 if let Some(given) = given {
                     complaints.push(Complaint::about(
                         token,
                         format!(
-                            "{token} is {}, which is not #rgb, #rgba, #rrggbb or #rrggbbaa; used \
-                             {fallback}",
+                            "{token} is {}, which is not #rgb, #rgba, #rrggbb or #rrggbbaa",
                             stringify(given)
                         ),
                     ));
@@ -429,6 +434,11 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     // exactly as a token it does not name is coloured by that built-in.
     let motion = load_motion(from.get("motion"), &base.motion, &mut complaints);
 
+    // A value outside its type refuses the whole theme (ADR 0097 §2), as in format 2: the
+    // window draws Purlis and the complaints name each value.
+    if !complaints.is_empty() {
+        return Resolved::refusal(complaints);
+    }
     Resolved {
         theme: Theme::one(ResolvedTheme {
             name,
@@ -447,12 +457,13 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
     }
 }
 
-/// [`load`] of a theme's text: `None` when the text is not JSON at all, which the caller decides
-/// about (an extension's theme that is not JSON is dropped, and the window keeps what it has).
-pub fn load_text(text: &str) -> Option<Resolved> {
-    serde_json::from_str::<Value>(text)
-        .ok()
-        .map(|document| load(&document))
+/// [`load`] of a theme's text. Text that is not JSON is refused like any other theme that is
+/// not one: Purlis is drawn, and the complaint says why.
+pub fn load_text(text: &str) -> Resolved {
+    match serde_json::from_str::<Value>(text) {
+        Ok(document) => load(&document),
+        Err(why) => Resolved::refusal(vec![Complaint::said(format!("a theme is JSON: {why}"))]),
+    }
 }
 
 /// A value as JSON writes it, for a sentence that names what a file said.
@@ -482,7 +493,8 @@ fn easing(value: &Value) -> Option<[f64; 4]> {
         .then_some([x1, y1, x2, y2])
 }
 
-/// Reads a theme's `motion`, filling what it does not supply usably from `base` and saying so.
+/// Reads a theme's `motion` over `base`, saying what it does not supply usably (which refuses
+/// the theme).
 fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complaint>) -> Motion {
     let Some(raw) = raw else {
         return base.clone();
@@ -514,10 +526,8 @@ fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complain
                 motion.durations.insert(*token, ms);
             }
             None => complaints.push(Complaint::said(format!(
-                "{token} is {}, which is not a whole number of milliseconds from 0 to {LONGEST}; \
-                 used {}",
+                "{token} is {}, which is not a whole number of milliseconds from 0 to {LONGEST}",
                 stringify(value),
-                base.durations[token]
             ))),
         }
     }
@@ -529,15 +539,11 @@ fn load_motion(raw: Option<&Value>, base: &Motion, complaints: &mut Vec<Complain
             Some(curve) => {
                 motion.easings.insert(*token, curve);
             }
-            None => {
-                let used: Vec<String> = base.easings[token].iter().map(f64::to_string).collect();
-                complaints.push(Complaint::said(format!(
-                    "{token} is {}, which is not [x1, y1, x2, y2] with each x from 0 to 1 and \
-                     each y from -1 to 2; used [{}]",
-                    stringify(value),
-                    used.join(", ")
-                )));
-            }
+            None => complaints.push(Complaint::said(format!(
+                "{token} is {}, which is not [x1, y1, x2, y2] with each x from 0 to 1 and each y \
+                 from -1 to 2",
+                stringify(value),
+            ))),
         }
     }
     motion

@@ -117,7 +117,7 @@ fn purlis_classic_draws_exactly_today_s_values() {
 
 #[test]
 fn the_classic_folder_loads_as_itself_without_a_word() {
-    let loaded = load_text(CLASSIC_FILE).expect("JSON");
+    let loaded = load_text(CLASSIC_FILE);
     assert_eq!(said(&loaded), Vec::<String>::new());
     assert!(!loaded.refused);
     assert_eq!(loaded.theme.name, "Purlis Classic");

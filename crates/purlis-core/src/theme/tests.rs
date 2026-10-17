@@ -151,10 +151,8 @@ fn a_colour_is_hex_and_only_hex() {
 fn a_value_that_is_not_a_string_is_never_a_colour() {
     for value in [json!(null), json!(16_711_680), json!({}), json!([])] {
         let resolved = load(&file(json!({ "tokens": { "surface.base": value } })));
-        assert_eq!(
-            resolved.theme.first().value("surface.base"),
-            dark().value("surface.base")
-        );
+        assert!(resolved.refused);
+        assert_eq!(&resolved.theme, classic());
         assert_eq!(resolved.complaints.len(), 1);
     }
 }
@@ -179,15 +177,13 @@ fn a_document_that_is_not_an_object_is_the_default_with_one_complaint() {
 }
 
 #[test]
-fn a_theme_falls_back_token_by_token() {
+fn a_value_outside_its_type_refuses_the_whole_theme_and_names_the_value() {
     let resolved = load(&file(json!({
         "tokens": { "surface.base": "#123456", "text.primary": "rgb(1 2 3)" }
     })));
-    assert_eq!(resolved.theme.first().value("surface.base"), "#123456");
-    assert_eq!(
-        resolved.theme.first().value("text.primary"),
-        dark().value("text.primary")
-    );
+    // Purlis is drawn whole: not the file's one good colour beside Purlis's.
+    assert!(resolved.refused);
+    assert_eq!(&resolved.theme, classic());
     assert_eq!(resolved.complaints.len(), 1);
     assert_eq!(
         resolved.complaints[0].token.as_deref(),
@@ -195,10 +191,7 @@ fn a_theme_falls_back_token_by_token() {
     );
     assert_eq!(
         resolved.complaints[0].said,
-        format!(
-            "text.primary is \"rgb(1 2 3)\", which is not #rgb, #rgba, #rrggbb or #rrggbbaa; used {}",
-            dark().value("text.primary")
-        )
+        "text.primary is \"rgb(1 2 3)\", which is not #rgb, #rgba, #rrggbb or #rrggbbaa"
     );
 }
 
@@ -215,6 +208,7 @@ fn a_token_the_file_did_not_mention_is_the_built_in_s_silently() {
 #[test]
 fn a_token_purlis_does_not_have_is_named() {
     let resolved = load(&file(json!({ "tokens": { "gray.800": "#123456" } })));
+    assert!(resolved.refused);
     assert_eq!(
         resolved.complaints,
         [Complaint {
@@ -250,7 +244,7 @@ fn geometry_is_refused_by_key_and_never_read() {
 }
 
 #[test]
-fn a_theme_that_tries_every_spelling_of_geometry_keeps_its_colours_and_is_told_each_is_core() {
+fn a_theme_that_tries_every_spelling_of_geometry_is_refused_and_told_each_is_core() {
     // The property itself, the token's dotted form, and whole groups.
     let mut tokens = serde_json::Map::new();
     for name in vocabulary::GEOMETRY {
@@ -264,19 +258,8 @@ fn a_theme_that_tries_every_spelling_of_geometry_keeps_its_colours_and_is_told_e
         "geometry": { "space.4": "100px" }, "radius": { "md": "20px" },
         "sizes": { "control": "60px" }, "motion": { "duration.quick": 100 },
     }));
-    assert_eq!(resolved.theme.first().value("accent.base"), "#123456");
-    assert_eq!(
-        resolved.theme.first().motion.durations["duration.quick"],
-        100
-    );
-    assert!(
-        resolved
-            .theme
-            .first()
-            .values
-            .keys()
-            .all(|key| TOKENS.contains(key))
-    );
+    assert!(resolved.refused);
+    assert_eq!(&resolved.theme, classic());
     let said = said(&resolved);
     for key in keys
         .iter()
@@ -308,35 +291,39 @@ fn a_light_theme_is_filled_from_the_light_built_in() {
 }
 
 #[test]
-fn an_unknown_appearance_is_read_as_dark_and_said() {
+fn an_unknown_appearance_refuses_the_theme_and_is_said() {
     let resolved = load(&file(json!({ "appearance": "solarized" })));
-    assert_eq!(resolved.theme.first().appearance, Appearance::Dark);
-    assert!(
-        said(&resolved)
-            .contains(&"appearance is \"dark\" or \"light\"; read this one as dark".to_owned())
+    assert!(resolved.refused);
+    assert_eq!(
+        said(&resolved),
+        ["appearance is \"solarized\"; a theme's appearance is \"dark\" or \"light\""]
     );
 }
 
 #[test]
-fn a_nameless_theme_is_called_after_its_built_in() {
+fn a_nameless_theme_is_refused() {
     for name in [json!(null), json!(""), json!("   "), json!(7)] {
         let mut raw = file(json!({}));
         raw["name"] = name;
         let resolved = load(&raw);
-        assert_eq!(resolved.theme.first().name, "purlis-dark");
-        assert!(
-            said(&resolved).contains(&"a theme has a name; called this one purlis-dark".to_owned())
-        );
+        assert!(resolved.refused);
+        assert_eq!(said(&resolved), ["a theme has a name"]);
     }
     let resolved = load(&file(json!({ "name": "  Mine  " })));
     assert_eq!(resolved.theme.first().name, "Mine");
 }
 
 #[test]
-fn tokens_that_are_not_an_object_still_give_a_whole_theme() {
+fn tokens_that_are_not_an_object_refuse_the_theme_and_one_without_tokens_is_classic_s() {
     let resolved = load(&file(json!({ "tokens": "purlis-dark" })));
-    assert!(said(&resolved).contains(&"tokens is an object of token names to colours".to_owned()));
-    assert_eq!(resolved.theme.first().values, dark().values);
+    assert!(resolved.refused);
+    assert_eq!(
+        said(&resolved),
+        ["tokens is an object of token names to colours"]
+    );
+    let bare = load(&json!({ "name": "Bare", "appearance": "light" }));
+    assert!(!bare.refused && bare.complaints.is_empty());
+    assert_eq!(bare.theme.first().values, light().values);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -413,19 +400,19 @@ fn an_easing_is_four_bounded_numbers() {
 }
 
 #[test]
-fn a_bad_motion_value_falls_back_and_says_what_was_used() {
+fn a_bad_motion_value_refuses_the_theme_and_names_the_value() {
     let resolved = load(&json!({
         "name": "typo", "appearance": "dark", "tokens": {},
         "motion": { "duration.enter": "160ms", "easing.enter": [2, 0, 0, 1] },
     }));
-    assert_eq!(resolved.theme.first().motion, dark().motion);
+    assert!(resolved.refused);
     assert_eq!(
         said(&resolved),
         [
             "duration.enter is \"160ms\", which is not a whole number of milliseconds from 0 to \
-             10000; used 160",
+             10000",
             "easing.enter is [2,0,0,1], which is not [x1, y1, x2, y2] with each x from 0 to 1 \
-             and each y from -1 to 2; used [0, 0, 0.2, 1]",
+             and each y from -1 to 2",
         ]
     );
 }
@@ -473,14 +460,23 @@ fn what_the_window_is_handed_is_written_from_parsed_values_never_from_the_file_s
         },
     }));
     let handed = serde_json::to_string(&resolved.theme).unwrap();
-    assert!(!resolved.refused);
+    assert!(resolved.refused);
     assert!(!handed.contains("display"), "{handed}");
 }
 
 #[test]
-fn text_that_is_not_json_is_no_theme() {
-    assert!(load_text("{ not json").is_none());
-    assert_eq!(load_text("[]").map(|it| it.theme), Some(classic().clone()));
+fn text_that_is_not_json_is_refused_like_any_theme_that_is_not_one() {
+    for text in ["{ not json", "[]", "\"purlis-dark\""] {
+        let resolved = load_text(text);
+        assert!(resolved.refused, "{text}");
+        assert_eq!(&resolved.theme, classic());
+        assert_eq!(resolved.complaints.len(), 1);
+    }
+    assert!(
+        load_text("{ not json").complaints[0]
+            .said
+            .starts_with("a theme is JSON: ")
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -499,7 +495,7 @@ fn the_person_s_theme_is_read_from_their_config_home_and_resolved() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("theme.json"),
-        r##"{ "name": "Mine", "appearance": "light", "tokens": { "accent.base": "nope" } }"##,
+        r##"{ "name": "Mine", "appearance": "light", "tokens": { "accent.base": "#abcdef" } }"##,
     )
     .unwrap();
     let mine = read_theirs(Some(home.path()));
@@ -507,13 +503,29 @@ fn the_person_s_theme_is_read_from_their_config_home_and_resolved() {
     let theme = mine.theme.expect("in force");
     assert_eq!(theme.name, "Mine");
     let theme = theme.first();
-    assert_eq!(theme.value("accent.base"), light().value("accent.base"));
-    assert_eq!(mine.complaints.len(), 1);
+    assert_eq!(theme.value("accent.base"), "#abcdef");
+    assert_eq!(theme.value("surface.base"), light().value("surface.base"));
+    assert!(mine.complaints.is_empty());
+
+    // A value outside its type refuses it: not in force, and the trouble names the value.
+    std::fs::write(
+        dir.join("theme.json"),
+        r##"{ "name": "Mine", "appearance": "light", "tokens": { "accent.base": "nope" } }"##,
+    )
+    .unwrap();
+    let bad = read_theirs(Some(home.path()));
+    assert!(bad.found && bad.theme.is_none());
+    assert!(bad.trouble.unwrap().contains("accent.base is \"nope\""));
 
     std::fs::write(dir.join("theme.json"), "[1]").unwrap();
     let refused = read_theirs(Some(home.path()));
     assert!(refused.theme.is_none());
-    assert!(refused.trouble.unwrap().contains("not a JSON object"));
+    assert!(
+        refused
+            .trouble
+            .unwrap()
+            .contains("a theme is a JSON object")
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -628,7 +640,7 @@ fn an_extension_pick_draws_its_theme_only_while_the_extension_is_on() {
 }
 
 #[test]
-fn an_extension_theme_that_is_not_json_keeps_the_window_unless_it_was_picked() {
+fn an_extension_theme_that_is_not_json_draws_purlis_and_says_why_picked_or_not() {
     let acme = ["acme".to_owned()];
     let only_broken =
         || -> Arc<[Offered]> { Arc::from(vec![Offered::of("acme".into(), "Broken".into(), "{")]) };
@@ -641,11 +653,11 @@ fn an_extension_theme_that_is_not_json_keeps_the_window_unless_it_was_picked() {
         },
         only_broken,
     );
-    assert_eq!(unpicked.theme, None);
-    assert_eq!(
-        name_of(&drawn(Some("acme/Broken"), None, On::Every)),
-        Some("purlis-dark")
-    );
+    assert_eq!(unpicked.theme.as_ref(), Some(default_theme()));
+    assert_eq!(unpicked.complaints.len(), 1);
+    let picked = drawn(Some("acme/Broken"), None, On::Every);
+    assert_eq!(name_of(&picked), Some("purlis-dark"));
+    assert_eq!(picked.complaints.len(), 1);
 }
 
 #[test]

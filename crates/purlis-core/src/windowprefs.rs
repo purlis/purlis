@@ -224,8 +224,8 @@ pub fn read_layout(config_root: &Path) -> Reading {
 /// The operator's theme, as a document the theme engine can load ([`crate::theme::load`]), or
 /// why not.
 ///
-/// Only the envelope is asked about: `load` checks every token against the vocabulary and the
-/// hex grammar and reports what it put right, and it is the one place that knows the tokens.
+/// Only whether it is JSON is asked here: `load` judges the rest, the envelope included, by the
+/// one rule every theme is held to, and it is the one place that knows the tokens.
 pub fn read_theme(config_root: &Path) -> Reading {
     read(config_root, THEME, "the operator's theme", theme_problem)
 }
@@ -304,9 +304,10 @@ fn layout_problem(document: &serde_json::Value) -> Option<String> {
     None
 }
 
-/// What is wrong with a theme's envelope, or `None` when the theme engine can load it.
-fn theme_problem(document: &serde_json::Value) -> Option<String> {
-    (!document.is_object()).then(|| "is not a theme: it is not a JSON object".to_owned())
+/// Nothing: any JSON document is the theme engine's to judge, so the person's theme, an
+/// extension's and a folder's are refused by one rule ([`crate::theme::load`]).
+fn theme_problem(_document: &serde_json::Value) -> Option<String> {
+    None
 }
 
 /// Writes the window's layout.
@@ -1141,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn a_theme_is_read_whole_and_judged_only_on_being_an_object() {
+    fn a_theme_is_read_whole_and_judged_by_the_theme_engine() {
         let home = home();
         put(
             home.path(),
@@ -1153,7 +1154,16 @@ mod tests {
         assert_eq!(reading.document.expect("a theme")["name"], "Mine");
 
         put(home.path(), THEME, "\"purlis-light\"");
-        assert!(trouble(&read_theme(home.path())).contains("not a JSON object"));
+        let reading = read_theme(home.path());
+        assert_eq!(reading.trouble, None);
+        assert_eq!(reading.document, Some(serde_json::json!("purlis-light")));
+        let theirs = crate::theme::read_theirs(Some(home.path()));
+        assert!(theirs.theme.is_none());
+        assert!(
+            theirs
+                .trouble
+                .is_some_and(|why| why.contains("a theme is a JSON object"))
+        );
     }
 
     // ---------------------------------------------------------------- use the built-in

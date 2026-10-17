@@ -304,10 +304,13 @@ appearance:
   also accepts. Converting an `rgb(0 0 0 / 55%)` to `#0000008c` costs an author one lookup.
 - **A partial theme is normal.** Name the tokens you are changing; the rest come from
   Purlis Classic's appearance of the same tag.
-- **Nothing in a theme file can stop the window.** A token that is missing, misspelled or
-  malformed falls back and the substitution is reported. The theme engine's `load` always
-  answers with a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up because a
-  colour was spelled wrong is worse than every possible wrong colour.
+- **A theme that breaks its grammar is refused whole, in either format and from any source**
+  (ADR 0097 §2): a value outside its type or bound, a token purlis does not have, or a file that
+  is not a theme. purlis draws Purlis in its place and a Notice names each value. A token the
+  theme does not name is not an error: it is Purlis Classic's.
+- **Nothing in a theme file can stop the window.** The theme engine's `load` always answers with
+  a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
+  because a colour was spelled wrong is worse than every possible wrong colour.
 
 ### The theme engine
 
@@ -353,7 +356,7 @@ has. Nothing about this needs ADR 0040 amended again.
 
 **It is read before the window exists and handed to it as it is created** (M6.7), the same way
 as the layout below, so an operator with a theme of their own never sees the built-in painted
-first. The theme engine (`purlis_core::theme`) judges it token by token, and whatever it had to put right — a
+first. The theme engine (`purlis_core::theme`) judges it, and whatever makes it refuse the theme — a
 misspelled token, a value that is not hex, a file that is not JSON — is said in the Inbox,
 as a Notice about this machine, with the file's path. **It wins over an extension's theme**: it
 is the one theme the operator wrote for this machine themselves, so an approved extension's
@@ -636,7 +639,8 @@ A theme file carries them under `motion`, beside `tokens`:
   would silently vanish — and the `y` range leaves room for an overshoot and none for a curve
   that flings a menu off the window.
 - **A partial `motion` is normal, and so is none.** What a theme does not name moves the way the
-  built-in of its appearance does; a bad value falls back and is reported, exactly as a colour is.
+  built-in of its appearance does; a bad value refuses the theme and is reported, exactly as a
+  colour does.
 - **`0` turns a motion off.** A theme that sets every duration to zero is a still window.
 - **An extension restyles motion the same way it restyles colour** — through the theme it
   contributes (ADR 0041; the panel contract of ADR 0043 is the same registry). Nothing

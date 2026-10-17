@@ -20,9 +20,9 @@
 //! appearance draws that one, and [`Drawn::note`] says that following the system stays there.
 //! With no `system` pick a theme draws its first appearance, as Purlis Classic draws its dark.
 //!
-//! An extension theme whose text is not JSON at all is dropped: with no pick the window keeps
-//! what it draws, and a pick of it draws the default (keeping it would leave the last project's
-//! theme on this one).
+//! **One rule for every source**: a theme that is not one — text that is not JSON, a document
+//! that is not an object, a value outside its type or bound — is refused whole, and Purlis is
+//! drawn in its place with the complaints that say why (ADR 0097 §2).
 
 use std::sync::Arc;
 
@@ -32,14 +32,14 @@ use super::{
 use crate::extension::project::theme::Pick;
 
 /// One theme an approved extension contributes, resolved from the text its fingerprint was taken
-/// over. `theme` is `None` when that text is not JSON at all.
+/// over: refused, as any theme is, when that text is not one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Offered {
     /// The extension it comes from.
     pub extension: String,
     /// The theme's name in that extension's manifest.
     pub name: String,
-    pub theme: Option<Resolved>,
+    pub theme: Resolved,
 }
 
 impl Offered {
@@ -86,7 +86,8 @@ pub struct Inputs<'a> {
 /// What the window draws.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Drawn {
-    /// The theme to draw, or `None` to keep the one the window draws.
+    /// The theme to draw. Always one: `None`, which keeps what the window draws, is no longer
+    /// answered, and the field stays an option so the window's wire type is unchanged.
     pub theme: Option<ResolvedTheme>,
     /// What resolving it had to put right.
     pub complaints: Vec<Complaint>,
@@ -165,16 +166,11 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
             .find(|one| &one.extension == id && &one.name == name),
         _ => offered.iter().find(may),
     };
-    match chosen.map(|one| one.theme.as_ref()) {
+    match chosen.map(|one| &one.theme) {
         None => Drawn::of(default_theme()),
-        Some(Some(resolved)) => Drawn {
+        Some(resolved) => Drawn {
             complaints: resolved.complaints.clone(),
             ..Drawn::of(resolved.theme.first())
-        },
-        Some(None) if inputs.pick.is_some() => Drawn::of(default_theme()),
-        Some(None) => Drawn {
-            theme: None,
-            ..Drawn::of(default_theme())
         },
     }
 }
