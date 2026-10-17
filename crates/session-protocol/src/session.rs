@@ -1092,6 +1092,23 @@ impl Command {
     }
 }
 
+impl Pushed {
+    /// **The power a link needs to be pushed this** ([`crate::grants`]), or none for what every
+    /// subscriber is pushed: a held project's hook lines need [`Power::Heard`], how saving it
+    /// goes [`Power::Save`], and what a chat's sandbox did [`Power::Confine`].
+    pub fn heard_with(&self) -> Option<Power> {
+        match self {
+            Pushed::Heard { .. } => Some(Power::Heard),
+            Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
+            Pushed::Sandbox { .. } => Some(Power::Confine),
+            Pushed::Event(_)
+            | Pushed::Missed { .. }
+            | Pushed::Ended { .. }
+            | Pushed::ViewEnded { .. } => None,
+        }
+    }
+}
+
 wire_words!(Answer {
     Chats => "chats",
     Attached => "attached",
@@ -1680,6 +1697,21 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             why: format!(
                 "a start the window composed is taken from purlis's window, or its host's relay, \
                  only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
+        && start
+            .launch
+            .as_ref()
+            .is_some_and(|launch| launch.harness.is_some())
+        && !scope.may(Power::LaunchAHarness)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a chat's harness on this host is started by its names, composed here with this \
+                 machine's own sandbox, and never from a launch a `{scope}` link hands it"
             ),
         });
     }

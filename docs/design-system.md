@@ -717,7 +717,8 @@ rings stay in px. The px below are at the default 14px text.
 | `--space-6`             | 16px                                       |                                                                          |
 | `--space-7`             | 24px                                       |                                                                          |
 | `--space-8`             | 32px                                       |                                                                          |
-| `--font-size-xs`        | 11px                                       | the type scale, six steps: badges, counts; the meta and label roles      |
+| `--font-size-2xs`       | 10px                                       | the type scale, seven steps: a tight secondary label only (#2319)        |
+| `--font-size-xs`        | 11px                                       | badges, counts; the meta and label roles: the words' floor               |
 | `--font-size-sm`        | 12px                                       | secondary lines, help text; the secondary role                           |
 | `--font-size-md`        | 13px                                       | dense lists and tables, a menu's rows; the body role                     |
 | `--font-size-base`      | 14px                                       | the window's text (`1rem`); the heading role                             |
@@ -799,13 +800,17 @@ What a tab on the three strips draws, and in what (the operator's asks of 2026-1
 Three guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837; the
 third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
-- **`geometry.guard.test.ts`** fails on a literal **size** (width, height and their min, max,
-  block and inline forms), **padding**, **margin**, **gap**, **corner** or **font size**, in any
-  stylesheet but `theme/geometry.css`, in a component's inline `style`, or as a Tailwind class off
-  the core scale (`p-5`, `text-2xl`, `rounded-2xl`). A custom property that holds a length counts,
-  so `--pad: 7px` is no way round. Not literals: `0`, a `1px` hairline, `1em`, `1lh` or `1ch` (as
-  big as the element's own text), a share (`%`, `vh`, `vw`), and a token, or a token's multiple
-  or share in `calc()`. A shadow's lengths are elevation, which this guard does not read.
+- **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**
+  or **font size**, in any stylesheet but `theme/geometry.css`, in a component's inline `style`,
+  or as a Tailwind class off the core scale (`p-5`, `text-2xl`, `rounded-2xl`). A custom
+  property that holds a length is held to what reads it: one a padding, margin, gap, corner or
+  font size reads, or that no stylesheet reads, counts, so `--pad: 7px` is no way round. Not
+  literals: `0`, a `1px` hairline, `1em`, `1lh` or `1ch` (as big as the element's own text), a
+  share (`%`, `vh`, `vw`), and a token, or a token's multiple or share in `calc()`. A shadow's
+  lengths are elevation, which this guard does not read. **A box's size** (a width, a height
+  and their min, max, block and inline forms, or a custom property only they read) is not a step
+  of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
+  and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
   `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
@@ -813,19 +818,20 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`).
 
-Each starts with **an allowance list of the offenders the window had when it landed**,
-`geometry.guard.allowance.ts` and `controls.guard.allowance.ts`, grouped by file and one entry
-per line. An entry names a declaration by its rule and what it sets (`.chat | padding: 0.1rem
-0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
+Each started with **an allowance list of the offenders the window had when it landed**,
+grouped by file and one entry per line. The geometry and type lists reached zero with #2319
+and are gone, so a literal in what those two guards read fails (widening what they read is
+#2450); `controls.guard.allowance.ts` remains. An entry names a declaration by its rule and what
+it sets (`.chat | padding: 0.1rem 0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
 number. The list only shrinks:
 
 - a new offender fails: take the value from a token, or give the control its class;
 - an entry with nothing left to name fails: delete its line when you fix it;
-- a file's list longer than its frozen ceiling (`CEILING` in each guard) fails, and a file
+- a file's list longer than its frozen ceiling (`CEILING` in the controls guard) fails, and a file
   without a ceiling may have no list.
 
-The surface tickets migrate a view and delete its lines in the same change. Two of them editing
-one file's list touch different lines, so their removals merge.
+The surface tickets migrated a view and deleted its lines in the same change. Two of them
+editing one file's list touched different lines, so their removals merged.
 
 **A migration snaps to the scale** (the operator, 2026-10-17, #2313). A spacing, corner, type
 size or weight with no exact token takes the nearest one, by computed px at the 14px root (a tie
@@ -835,8 +841,14 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
   steps stay even rather than flattening onto the top of the scale.
 - **A corner that draws the same is the pill.** A radius at or above half its box's height
   becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
-- **Line heights are outside the snap**, as is a structural size that is no step of the scale,
-  such as an icon's box or a strip's cap on a tab's width: each keeps its literal and its line.
+- **A structural size is outside the snap**: a size that is no step of the scale, such as an
+  icon's box or a strip's cap on a tab's width, keeps its literal, and the geometry guard does
+  not read a box's size. A structural reserve written as a margin is a multiple of a size token
+  (`calc(var(--size-control) * 2.5)`, the title bar's drag stretch).
+- **A line height keeps `1`**, a line as tall as its text, which the type guard reads as no
+  leading. Any other line height takes the nearest line-height token by computed px, as a size
+  does (#2319: a brief's text and the Welcome page's lede onto `--line-height-body`, the rail's
+  count onto `--line-height-tight`).
 
 Each snap is listed with its change in px in the pull request, and the window is looked at
 before and after.
@@ -870,8 +882,10 @@ view wears one.
    quieter colour; it is given the role it has, and the role brings the colour.
 2. **Muted is for meta only.** A help line or a where line is secondary. (Muted was the
    window's most used text colour, mostly on secondary-role text.)
-3. **Nothing is under the smallest step.** 11px (`--font-size-xs`) is the floor: `0.72rem` and
-   `0.65rem` become it.
+3. **Nothing is under the words' floor.** 11px (`--font-size-xs`) is it: `0.72rem` and
+   `0.65rem` become it, and a snap never lands under it. The one step below, `--font-size-2xs`
+   (10px, the operator, 2026-10-17), is for a tight secondary label only: the Chats view's and the
+   Inbox's scope switch (`.ui-levels-small`).
 4. **One colour for a word that says something is wrong:** `danger.text`. `state.failed` is a
    state's mark, not a word's colour.
 5. **Three weights.** Regular 400, medium 500 and strong 600, and no fourth.
@@ -910,9 +924,10 @@ window differ, the window was kept and the difference is recorded here for the m
 - **A read update in the Inbox is the body's size in the secondary colour**, which is no role.
   It wears none, and its one rule (`.inbox-update[data-read] .ask-says`) is built from tokens.
 - **The second monospace stack**, `ui-monospace, monospace` (a block's report and a brief's
-  text), is in the allowance, to move onto `--font-mono`; so is the window's own sans-serif
-  stack on `:root`, which has no token because nothing else should name it. The terminal and the
-  editor take their type from their own themes and are not covered.
+  text), is `--font-mono` now (#2319). The window's own sans-serif stack, which has no token
+  because nothing else should name it, is given once with the 14px root size in
+  `theme/geometry.css`, the core. The terminal and the editor take their type from their own
+  themes and are not covered.
 - **A label's capitals and its `0.06em` spacing have no token**; they are written once, in
   `.ui-text-label`.
 
@@ -925,12 +940,11 @@ colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
 pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to wear instead,
 by the size or weight that was written.
 
-Its allowance, `type.guard.allowance.ts`, is today's offenders by file, one per line, with a
-ceiling per file (`App.css` landed at 159, of which 91 were font sizes, and is
-shorter with each surface that moves), and it follows
-[the same rule as the other two](#the-guards-and-the-lists-that-only-shrink): a new literal
-fails, a stale entry fails, and a ceiling may only go down. A font size is held by the
-geometry guard too, so a migration deletes its line from both lists.
+Its allowance landed at 159 lines in `App.css` (91 of them font sizes) and reached zero with
+#2319, and the list is gone: [as with the geometry guard](#the-guards-and-the-lists-that-only-shrink),
+a literal in what it reads fails (#2450 widens that). A line height of exactly `1` is no leading
+and passes. A font size is
+held by the geometry guard too.
 
 **A token is not yet a role.** `font-size: var(--font-size-sm)` passes the guard and is still
 a surface ranking its own words. The guard stops the scale growing; the migrations give the

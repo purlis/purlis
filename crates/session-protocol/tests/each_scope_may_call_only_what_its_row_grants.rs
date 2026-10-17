@@ -386,8 +386,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "kill_switch",
         ],
         // The window's own commands, relayed by its host over the link between hosts (ruled
-        // 2026-10-15, #2042): a hold, a start with its launch, the numbers dealt, and its reply
-        // to what a project's hooks wrote; never an answer, a confinement or a re-arm.
+        // 2026-10-15, #2042): a hold, a start with its launch, the numbers dealt, its reply to
+        // what a project's hooks wrote, and a chat's confinement (#2217); never an answer or a
+        // re-arm.
         Scope::RemoteLink => &[
             "list",
             "attach",
@@ -409,6 +410,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "deal",
             "dealt_already",
             "reply_heard",
+            "confine",
+            "change_reach",
+            "reach_of",
+            "let_go_of_confinement",
             "stop_all",
             "kill_switch",
         ],
