@@ -1805,6 +1805,21 @@ fn keeping_it_off_leaves_the_project_as_it_was_and_asks_no_more() {
     );
 }
 
+/// The picker's row for `profile` alone, on this machine.
+fn ahead_here(
+    profile: &purlis_core::profiles::Profile,
+    root: &std::path::Path,
+) -> Option<SandboxAhead> {
+    ahead_of_each(
+        std::slice::from_ref(profile),
+        root,
+        &sandbox::Machine::this(),
+        &backend::installed,
+    )
+    .pop()
+    .flatten()
+}
+
 /// Must-fix (verifier r7): the picker never runs a profile's program before the start's
 /// gate lets it start (approved, among the rest). Past the gate, its program is checked,
 /// which runs it. The program answers as something other than Claude Code, so whether it
