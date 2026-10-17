@@ -134,15 +134,7 @@ fn a_shell(script: &str) -> Opening {
         cwd: Some("/tmp".to_owned()),
         size: SIZE,
         env: vec![("PURLIS_ROOT".to_owned(), "/home/me/project".to_owned())],
-        env_strip: Vec::new(),
-        harness: None,
-        declared_env: Vec::new(),
-        env_pass: Vec::new(),
-        operator_shell: false,
-        git_hooks: None,
-        handed: Default::default(),
-        confinement: None,
-        run: None,
+        ..Opening::default()
     }
 }
 

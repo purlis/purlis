@@ -504,18 +504,8 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
     Opening {
         program: Some(program.to_owned()),
         args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-        cwd: None,
         size: SIZE,
-        env: Vec::new(),
-        env_strip: Vec::new(),
-        harness: None,
-        declared_env: Vec::new(),
-        env_pass: Vec::new(),
-        operator_shell: false,
-        git_hooks: None,
-        handed: Default::default(),
-        confinement: None,
-        run: None,
+        ..Opening::default()
     }
 }
 
