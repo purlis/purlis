@@ -406,6 +406,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_window_reaches_only_the_notification_commands_its_shim_calls() {
+        // purlis sends its notifications from Rust. The window needs only the three commands
+        // the plugin's `window.Notification` shim invokes. `notification:default` would also
+        // grant action types, action listeners and closing shown notifications, which
+        // tauri-plugin-notification 2.6.0 made work on desktop and purlis does not use.
+        let mut granted = BTreeSet::new();
+        for capability in capabilities() {
+            for grant in grants(&capability) {
+                if grant.starts_with("notification:") {
+                    granted.insert(grant);
+                }
+            }
+        }
+        let wanted: BTreeSet<String> = [
+            "notification:allow-notify",
+            "notification:allow-is-permission-granted",
+            "notification:allow-request-permission",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(granted, wanted);
+    }
+
     /// The directives of `tauri.conf.json`'s Content-Security-Policy, by name.
     fn csp() -> std::collections::BTreeMap<String, Vec<String>> {
         let conf = json(&src_tauri().join("tauri.conf.json"));

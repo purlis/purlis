@@ -219,9 +219,27 @@ fn init_in_an_empty_directory_leaves_exactly_the_plane_the_python_charter_leaves
     };
     let text = String::from_utf8(python.clone()).expect("UTF-8");
     assert!(text.contains("\nrouting: advise\n"), "{text}");
+    // And its routing section points at the plane's personas instead of saying there are none,
+    // which a project template's personas made untrue (#882).
+    let routing = |text: &str| {
+        let from = text.find("## Routing\n").expect("a routing section");
+        let to = text
+            .find("## Scout before you scope\n")
+            .expect("the next section");
+        text[from..to].to_owned()
+    };
+    let old = routing(&text);
+    assert!(old.contains("no other personas yet"), "{old}");
+    let new = routing(include_str!(
+        "../../purlis-core/src/scaffold/testdata/front-door.md"
+    ));
     want.insert(
         front_door,
-        Node::File(text.replacen("\nrouting: advise\n", "\n", 1).into_bytes()),
+        Node::File(
+            text.replacen("\nrouting: advise\n", "\n", 1)
+                .replacen(&old, &new, 1)
+                .into_bytes(),
+        ),
     );
     // And the ask rules for filing a report and promoting a todo, which the Python charter
     // never had (#363, ADR 0059 amended 2026-09-26), where it wrote the handoff rule: a

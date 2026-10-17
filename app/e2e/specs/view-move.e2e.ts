@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
+import { closeMenus } from "../acting.js";
 
 /**
  * **A view moved to its half of the Panel from the keyboard** (#1752, #1740, P-3), in the built
@@ -10,11 +11,12 @@ import { $, browser, expect } from "@wdio/globals";
  * half, and the real sizes are read there: the half's line and its Lower icons fit, and nothing
  * overflows the window.
  *
- * **Written defensively, CI first**: the WebDriver plugin's keys are untrusted synthetic events,
- * so where the driver's Shift+F10 opens no menu the same key is dispatched from the page, where
- * the menu's own key handler hears it as it hears a person's. Every focus is given from the
- * page. **It leaves the window as it found it**: Search is moved back to the sidebar by its menu
- * there, and the left side shows Chats again, picked as a person picks it and waited for.
+ * **The key a person presses, on the icon that has the keyboard, and the menu's own state
+ * waited on** (#1973): the keydown Shift+F10 makes, dispatched from the page to the icon while
+ * it holds the keyboard, until the icon says its menu is open ({@link openMenuOf}). The
+ * driver's own Shift+F10 arrives without Shift held and opens nothing. Every focus is given from
+ * the page. **It leaves the window as it found it**: Search is moved back to the sidebar by its
+ * menu there, and the left side shows Chats again, picked as a person picks it and waited for.
  */
 
 const NAVIGATION = '[role="tablist"][aria-label="Navigation"]';
@@ -22,36 +24,48 @@ const LOWER_LEFT = '[role="tablist"][aria-label="Panel, left half"]';
 const HALF = '[data-panel][id="region-panel"] .panel-half[data-side="left"]';
 const MENU = '[role="menu"]';
 
-/** Gives the keyboard to the view icon `name` in the bar `bar`, from the page. */
-async function focusIcon(bar: string, name: string): Promise<void> {
-  const found = await browser.execute(
-    (selector: string, called: string) => {
-      const tab = document.querySelector<HTMLElement>(
-        `${selector} [role="tab"][aria-label="${called}"]`,
-      );
-      tab?.focus();
-      return tab !== null && document.activeElement === tab;
+/**
+ * **Opens the menu of the view icon `name` in the bar `bar` with the keydown a person's
+ * Shift+F10 makes** (#1973), and waits on the icon's own menu state: Radix marks the trigger
+ * `data-state="open"` once its menu is up.
+ *
+ * **The key is dispatched from the page, to the icon, in the same step that gives the icon the
+ * keyboard.** The menu opens only for a Shift+F10 whose target is the icon itself
+ * (`Menus.tsx`, `openFromTheKeyboard`). The driver's Shift+F10 cannot be that key: measured on
+ * both engines' scenario runs, the WebDriver plugin's F10 reaches the icon with `shiftKey`
+ * false, so it opens nothing. And a key sent to whatever has the keyboard a moment later misses
+ * whenever the window has moved the keyboard in between — a moved view takes it in a frame of
+ * its own (`PlaneView`'s `moveSideView`) — which is how this spec failed on main. Focus, the
+ * check that the icon holds it, and the key are one synchronous script, so nothing runs between
+ * them. A try that opens nothing is tried again; an icon whose menu is open is left alone, since
+ * focusing it again would close the menu.
+ */
+async function openMenuOf(bar: string, name: string): Promise<void> {
+  const icon = `${bar} [role="tab"][aria-label="${name}"]`;
+  await browser.waitUntil(
+    async () =>
+      browser.execute((css: string) => {
+        const tab = document.querySelector<HTMLElement>(css);
+        if (tab === null) return false;
+        if (tab.getAttribute("data-state") === "open") return true;
+        tab.focus();
+        if (document.activeElement !== tab) return false;
+        tab.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "F10",
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        return false;
+      }, icon),
+    {
+      timeout: 20_000,
+      interval: 500,
+      timeoutMsg: `Shift+F10 on the ${name} icon in ${bar} never opened its menu`,
     },
-    bar,
-    name,
   );
-  if (!found) throw new Error(`no ${name} icon in ${bar} took the keyboard`);
-}
-
-/** Opens the focused icon's menu from the keyboard: the driver's Shift+F10, else the page's. */
-async function openMenuFromTheKeyboard(): Promise<void> {
-  await browser.keys(["Shift", "F10"]);
-  const opened = await $(MENU)
-    .waitForDisplayed({ timeout: 3_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (opened) return;
-  await browser.execute(() => {
-    document.activeElement?.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }),
-    );
-  });
-  await $(MENU).waitForDisplayed({ timeout: 10_000 });
 }
 
 /** Presses the open menu's row `title`. */
@@ -73,28 +87,6 @@ const iconsOf = (bar: string) =>
       ),
     bar,
   );
-
-/** Closes a menu left open, from the keyboard: the driver's Escape, else the page's. */
-async function closeAnOpenMenu(): Promise<void> {
-  if (
-    !(await $(MENU)
-      .isDisplayed()
-      .catch(() => false))
-  )
-    return;
-  await browser.keys(["Escape"]);
-  const closed = await $(MENU)
-    .waitForDisplayed({ timeout: 3_000, reverse: true })
-    .then(() => true)
-    .catch(() => false);
-  if (closed) return;
-  await browser.execute(() => {
-    (document.activeElement ?? document.body).dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
-    );
-  });
-  await $(MENU).waitForDisplayed({ timeout: 10_000, reverse: true });
-}
 
 /**
  * **The left side back on Chats, as a person picks it** (#1759): a pointer press on the Chats
@@ -132,11 +124,10 @@ describe("moving a view from its icon's menu, by keyboard", function () {
 
   after(async () => {
     // A menu a failure left open is over everything the hook reaches for.
-    await closeAnOpenMenu();
+    await closeMenus();
     // Search back in the left sidebar, however far this spec got, and the side on Chats.
     if ((await iconsOf(LOWER_LEFT)).includes("Search")) {
-      await focusIcon(LOWER_LEFT, "Search");
-      await openMenuFromTheKeyboard();
+      await openMenuOf(LOWER_LEFT, "Search");
       await pressRow("Move to sidebar");
     }
     await showChatsAgain();
@@ -145,8 +136,7 @@ describe("moving a view from its icon's menu, by keyboard", function () {
   it("moves Search into the Panel's left half, open there", async () => {
     expect(await iconsOf(NAVIGATION)).toContain("Search");
 
-    await focusIcon(NAVIGATION, "Search");
-    await openMenuFromTheKeyboard();
+    await openMenuOf(NAVIGATION, "Search");
     await pressRow("Move to panel");
 
     await browser.waitUntil(async () => (await iconsOf(LOWER_LEFT)).includes("Search"), {
@@ -195,8 +185,7 @@ describe("moving a view from its icon's menu, by keyboard", function () {
   });
 
   it("moves it back to the sidebar from its Lower icon's menu", async () => {
-    await focusIcon(LOWER_LEFT, "Search");
-    await openMenuFromTheKeyboard();
+    await openMenuOf(LOWER_LEFT, "Search");
     await pressRow("Move to sidebar");
 
     await browser.waitUntil(async () => (await iconsOf(NAVIGATION)).includes("Search"), {

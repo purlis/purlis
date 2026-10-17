@@ -143,7 +143,7 @@ const SECRET_SHAPES = [
 
 // Colour codes the spec reporter and `expect` put in their messages.
 // eslint-disable-next-line no-control-regex
-const ANSI = /\u001b\[[0-9;]*m/g;
+export const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** The records in a `failures.jsonl`, skipping any line that is not JSON (a write cut short). */
 export function readRecords(text) {
@@ -209,9 +209,9 @@ export function trimMessage(message) {
 }
 
 // Workflow command escaping: `%`, CR and LF in data; `:` and `,` too in a property.
-const escapeData = (s) =>
+export const escapeData = (s) =>
   s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
-const escapeProperty = (s) =>
+export const escapeProperty = (s) =>
   escapeData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
 
 /**
