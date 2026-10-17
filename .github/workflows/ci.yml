@@ -721,6 +721,12 @@ jobs:
   # the tests are some 6,000 s of test time on a runner that runs three at once. Each part
   # builds every test binary and runs a third of each one's tests (`count:`), and a red night
   # still saves its build (`cache-on-failure`), so the next night starts from it.
+  #
+  # Measured on #2468 (2026-10-17, no cache): the builds took 9, 17 and 22 minutes, and the
+  # tests of the one part that finished 17; the other two were cancelled at 45 minutes, 21
+  # and 26 minutes into their tests. So each part has 60 minutes, and the app's `behaviour`
+  # tests are left out here until #2464: on macOS each takes some 160 s where Linux takes
+  # under 10 (about 1,000 s a part), and the Linux `rust` job runs them on every pull request.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
     if: github.event_name == 'schedule'
@@ -730,7 +736,7 @@ jobs:
       matrix:
         part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
@@ -746,7 +752,7 @@ jobs:
       - name: Build the tests
         run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci --partition count:${{ matrix.part }}/3
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
