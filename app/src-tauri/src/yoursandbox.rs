@@ -183,8 +183,11 @@ mod tests {
             file_kept: Some("/p/ops.json".to_owned()),
         };
         let said = said("ops", &kept);
-        assert!(said.contains("/p/ops.json"), "{said}");
-        assert!(said.contains("remove it yourself"), "{said}");
+        // Asserted without echoing the sentence: code scanning reads `Moved::secrets` (a count)
+        // as a secret, and a failed assertion's message as a log it is written to.
+        assert!(said.starts_with("Moved ops into the keychain: 2 secrets. Its old file"));
+        assert!(said.contains("/p/ops.json"));
+        assert!(said.contains("remove it yourself"));
         assert_eq!(
             listed(vec![tokeyring::PlainFile {
                 name: "ops".to_owned(),
