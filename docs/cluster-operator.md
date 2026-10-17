@@ -18,7 +18,10 @@ Claim says whether it is ready.
 - **Kubernetes 1.36 or later.** The operator's tests run on kind's Kubernetes 1.36.4.
 - **Upstream agent-sandbox v1.0.6**, the release purlis is tested against. Its manifest,
   controller and definitions together, is vendored verbatim in
-  [`operator/vendor/agent-sandbox/v1.0.6/`](../operator/vendor/agent-sandbox/v1.0.6/).
+  [`operator/vendor/agent-sandbox/v1.0.6/`](../operator/vendor/agent-sandbox/v1.0.6/), with a
+  kustomization beside it that names the controller's image by the digest of the release, so a
+  tag moved in the registry never changes what runs. Install it with
+  `kubectl apply --server-side -k`, as below.
 - **A runner image**, named by digest: purlis's own or a team's that keeps the
   [runner image contract](runner-image.md).
 
@@ -71,9 +74,10 @@ It names the cluster it asked (your context and its API server), then checks, in
 
 - **Kubernetes 1.36 or later**, from the version the API server reports.
 - **Upstream agent-sandbox v1.0.6**: its four definitions, each serving `v1beta1`, and its
-  controller, `agent-sandbox-system/agent-sandbox-controller`, running the image tagged
-  `v1.0.6` with a ready replica. Not installed yet is a finding too, whose next step is step 1
-  below.
+  controller, `agent-sandbox-system/agent-sandbox-controller`, running the release's image by
+  its digest with a ready replica. The same release by its tag alone, or at another digest, is
+  a finding whose next step is to apply it by digest. Not installed yet is a finding too, whose
+  next step is step 1 below.
 - **Your right to apply the install's cluster-scoped objects**: create and patch on
   namespaces, custom resource definitions, cluster roles and their bindings, and validating
   admission policies and their bindings, and `escalate` and `bind` on cluster roles, as
@@ -90,7 +94,7 @@ nothing of. What you may not read, or may not ask, is a finding naming the right
 ok: asked context kind-team, API server https://127.0.0.1:6443/
 ok: Kubernetes v1.36.4
 ok: you may apply the install's cluster-scoped definitions
-missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of the install: kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml.
+missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of the install: kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6.
 1 missing: install the cluster operator once doctor finds nothing missing
 ```
 
@@ -111,8 +115,9 @@ you set the real one.
 Helm 4, the version the tests use. Three steps, in order:
 
 ```bash
-# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
-kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
+# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller, named by
+#    the release's digest.
+kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
 # 2. The release's namespace. Only pods that meet the restricted Pod Security Standard are
 #    admitted in it; the operator's pod does.
@@ -154,8 +159,9 @@ The same steps with `kubectl`. The definitions and their policy are a step of th
 cluster admin can review and apply them apart from the controllers.
 
 ```bash
-# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
-kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
+# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller, named by
+#    the release's digest.
+kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
 # 2. The policy that admits a Claim only for someone who may use its Pool, then purlis's
 #    definitions, Pool and Claim. The policy goes first, so no Claim is admitted before it
@@ -292,7 +298,8 @@ and memory included. Give cluster-admin and node access accordingly.
   `PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart`.
 - [`operator/e2e/kind.sh`](../operator/e2e/kind.sh) `<runner image> <operator image>`: a kind
   cluster of Kubernetes 1.36 with a registry beside it, so images are named by digest; doctor,
-  which must name upstream agent-sandbox as missing; the pinned upstream, after which doctor
+  which must name upstream agent-sandbox as missing; the recorded controller digest checked
+  against the registry; the pinned upstream, its controller by that digest, after which doctor
   must find nothing missing; purlis's definitions, the policy and the operator installed by the
   chart in a namespace that enforces the restricted Pod Security Standard; `kubectl diff`
   showing the plain manifests would change nothing the chart made; then
@@ -305,6 +312,13 @@ and memory included. Give cluster-admin and node access accordingly.
 
 Upstream releases weekly. To move to another release: vendor its
 `sandbox-with-extensions.yaml` under `operator/vendor/agent-sandbox/<version>/` in place of the
-old one, set `VERSION` in `operator/src/upstream.rs` and the path in `operator/e2e/kind.sh`,
-and run the tests. `only_what_the_pinned_upstream_defines_is_written` fails when a field the
-operator writes is gone or renamed, before a cluster does.
+old one, with the old one's `kustomization.yaml` moved beside it; set `VERSION` in
+`operator/src/upstream.rs`, and the path and tag in `operator/e2e/kind.sh`; take the
+controller image's digest for the new tag from Kubernetes' image promoter
+([`registry.k8s.io/images/k8s-staging-agent-sandbox/images.yaml`](https://github.com/kubernetes/k8s.io/blob/main/registry.k8s.io/images/k8s-staging-agent-sandbox/images.yaml))
+and set it in the kustomization (`newTag` and `digest`) and as `CONTROLLER_DIGEST` in
+`upstream.rs`; then run the tests. `upstream_is_installed_by_digest` fails while the
+kustomization, the vendored manifest and `upstream.rs` disagree on the release or the digest,
+and the kind run fails when the registry holds another digest under the tag.
+`only_what_the_pinned_upstream_defines_is_written` fails when a field the operator writes is
+gone or renamed, before a cluster does.
