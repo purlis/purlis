@@ -96,7 +96,7 @@ fn a_hook_tells_the_app_what_the_harness_fired() {
 #[test]
 fn a_hook_without_its_chats_token_is_not_heard_and_the_turn_goes_on() {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let (tx, rx) = mpsc::channel();
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let _seven = listener.tokens().issue_to_this_process(7).expect("a token");
@@ -129,6 +129,18 @@ fn a_hook_without_its_chats_token_is_not_heard_and_the_turn_goes_on() {
         rx.recv_timeout(Duration::from_secs(2)).is_err(),
         "a hook without its chat's token was heard"
     );
+    // Nor told by the spool. With no token a line cannot be spooled. One under another chat's
+    // token is refused by the host that is there; where a loaded host was slower than the
+    // hook waits, the hook spools it under that token's key, and the drain, which checks a
+    // line under its own chat's key, rejects it. Either way no line is handed on.
+    spool::drain(&spool::dir_for(&path), &mut |item| {
+        assert!(
+            !matches!(item, spool::Drained::Line { .. }),
+            "a hook without its chat's token was told by the spool: {item:?}"
+        );
+        Ok(())
+    })
+    .expect("the spool drains");
 }
 
 #[test]

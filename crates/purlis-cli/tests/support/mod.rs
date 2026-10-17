@@ -63,6 +63,13 @@ pub fn hooks_socket(root: &std::path::Path) -> std::path::PathBuf {
 /// live as the drain ran: the drain waits for that a while, then hands it on too, erring on a
 /// line twice, never none (#952). Neither copy carries the delivery id that tells them apart,
 /// so here they are told apart by what they say.
+///
+/// **A tool call's two copies are not equal**: a spooled [`ToolCall`] has `args: None`, since
+/// no unkeyed digest of the arguments is kept on disk (#977), and a live one has the digest.
+/// Both come back then, the spooled one first, so `.next()` answers the spool's copy where
+/// there is one. A test that checks what a call carries checks every copy.
+///
+/// [`ToolCall`]: purlis_core::hookwire::ToolCall
 #[cfg(unix)]
 pub fn told<T: PartialEq>(
     socket: &std::path::Path,

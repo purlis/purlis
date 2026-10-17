@@ -443,8 +443,12 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
         refused: Box::new(|_| Ok(())),
         tool: Box::new({
             let recorded_at = std::sync::Arc::clone(&recorded_at);
+            // A host that answers promptly, well inside the 250 ms a hook waits
+            // (`A_NOTICE_TAKES_AT_MOST`), and still late enough that a hook answering before
+            // its line was recorded would answer first. A host slower than the hook waits is
+            // `a_tool_call_the_host_is_too_slow_to_take_is_in_the_spool_when_the_hook_answers`.
             move |_| {
-                std::thread::sleep(Duration::from_millis(120));
+                std::thread::sleep(Duration::from_millis(30));
                 *recorded_at.lock().unwrap() = Some(Instant::now());
                 Ok(())
             }
@@ -484,16 +488,16 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
     let _ = child.wait();
 
     assert!(said.contains("deny"), "{said}");
-    // Or once the line is durable in the spool, where the host was slower than the hook waits
-    // (`A_NOTICE_TAKES_AT_MOST`): a loaded runner can make it so. The hook spools before it
-    // answers, so the spool holds the line still.
-    if spool::holds_lines(&spool::dir_for(&path), 7) {
-        return;
-    }
+    // Taken live: a hook that spooled every line without waiting for the host's answer
+    // would answer at once too.
+    assert!(
+        !spool::holds_lines(&spool::dir_for(&path), 7),
+        "the hook spooled a line the host was there to take"
+    );
     let recorded_at = recorded_at
         .lock()
         .unwrap()
-        .expect("the host recorded the call, or the hook spooled it");
+        .expect("the host recorded the call");
     assert!(
         answered_at >= recorded_at,
         "the hook answered before the host had recorded its call"

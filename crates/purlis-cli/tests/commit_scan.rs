@@ -155,47 +155,14 @@ impl Chat {
         String::from_utf8_lossy(&self.git(&["rev-parse", "HEAD"]).stdout).into_owned()
     }
 
-    /// What the app was told of refusals, once the git that refused has returned: the lines its
-    /// hearer recorded live, and the lines the hook spooled beside the socket.
-    ///
-    /// **Nothing is waited for.** git returns once its hook has exited, and the hook exits only
-    /// once the app has said it recorded the line, which is after its hearer ran, or once the
-    /// line is durable in the chat's spool (`hookwire::deliver`, FD-30). On a loaded machine the
-    /// app can be slower than the hook waits (`A_NOTICE_TAKES_AT_MOST`, 250 ms), and the line is
-    /// then the spool's: a test that listened on the live channel alone waited for a line that
-    /// was never coming (#2255).
-    ///
-    /// A line can be in both: the hook stopped waiting and spooled it, and the app, only slow,
-    /// read it later and recorded it too. The app's drain knows that copy by the delivery id it
-    /// carries (#952), which neither copy hands a hearer, so here the copies are told apart by
-    /// what they say: this answers each distinct refusal once.
+    /// What the app was told of refusals, once the git that refused has returned: each
+    /// distinct one once, spooled beside the socket or recorded live ([`support::told`]). git
+    /// returns once its hook has exited, so nothing is waited for (#2255).
     fn told(&self) -> Vec<CommitRefused> {
-        // The spool first: a line the app recorded late the drain knows and skips (#952), and
-        // its hearer has run by then. Read the other way round, a late hearer could run
-        // between the two reads and the line be in neither.
-        let mut told: Vec<CommitRefused> = Vec::new();
-        spool::drain(&spool::dir_for(&self.socket), &mut |item| {
-            match item {
-                spool::Drained::Line {
-                    line: spool::Spooled::Refused(refused),
-                    ..
-                } => told.push(refused),
-                spool::Drained::Spool { .. } => {}
-                // A line that did not check, a number with no line, or a kind no git hook
-                // spools: never the quiet answer a test reads as "nothing was told".
-                other => panic!("the spool held more than refusals: {other:?}"),
-            }
-            Ok(())
+        support::told(&self.socket, &self.heard, |line| match line {
+            spool::Spooled::Refused(refused) => Some(refused),
+            _ => None,
         })
-        .expect("the spool drains");
-        told.extend(self.heard.try_iter());
-        let mut once = Vec::new();
-        for refused in told {
-            if !once.contains(&refused) {
-                once.push(refused);
-            }
-        }
-        once
     }
 
     /// The one refusal the app was told of ([`Chat::told`]).
