@@ -12,9 +12,9 @@
 //! fitted in the command's environment fits in the wrap's.
 //!
 //! A wrap whose own environment is anything else (a variable not carried, a piece missing)
-//! reads none and starts nothing. The one exception is [`SET_BY_THE_TERMINAL`], which the
-//! terminal a chat runs in sets on whatever it starts; it is let be and not handed on, as the
-//! command's own is carried with the rest.
+//! reads none and starts nothing. The exceptions are [`SET_BY_THE_TERMINAL`], which the
+//! terminal a chat runs in sets on whatever it starts; they are let be and not handed on, as the
+//! command's own are carried with the rest.
 
 use std::ffi::{OsStr, OsString};
 
@@ -24,9 +24,9 @@ pub const COUNT: &str = "PURLIS_SANDBOX_ENV";
 /// The start of each carried variable's name in the wrap's own environment; its place follows.
 pub const EACH: &str = "PURLIS_SANDBOX_ENV_";
 
-/// The one variable a wrap may start with beside what it carries: the terminal's type, which
-/// the terminal sets on every program it starts.
-pub const SET_BY_THE_TERMINAL: &str = "TERM";
+/// The variables a wrap may start with beside what it carries: those the terminal a chat runs
+/// in sets on every program it starts, its type and the pseudo-terminal's shell.
+pub const SET_BY_THE_TERMINAL: [&str; 2] = ["TERM", "SHELL"];
 
 /// Why a wrap reads no environment from its own: purlis did not build it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +76,7 @@ pub fn read(
             if n.to_string() != at || each.insert(n, value).is_some() {
                 return Err(NotBuilt);
             }
-        } else if name != SET_BY_THE_TERMINAL {
+        } else if !SET_BY_THE_TERMINAL.contains(&name) {
             return Err(NotBuilt);
         }
     }

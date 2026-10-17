@@ -14,8 +14,8 @@ whatever a library of purlis's own program reads from its environment, a chat ne
   `secret exec` start the wrap this way. On macOS, `sandbox-exec` is the system's own program and
   is handed the environment as before.
 - **Fail closed.** A wrap whose own environment holds anything else, or is missing a piece of
-  what it carries, starts nothing and says so. The terminal's type, which a terminal sets on
-  every program it starts, is the one variable let be beside it.
+  what it carries, starts nothing and says so. What a terminal sets on every program it starts,
+  its type (`TERM`) and its shell (`SHELL`), is let be beside it and not handed on.
 - **Not on its command line.** The environment holds a run's credentials and a chat's hook
   token, and a process's arguments are readable by every user of the machine; its environment
   is not.

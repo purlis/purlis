@@ -41,9 +41,10 @@ fn an_empty_environment_is_carried_as_one() {
 }
 
 #[test]
-fn the_terminal_s_own_type_beside_what_is_carried_is_let_be_and_not_handed_on() {
+fn what_the_terminal_sets_beside_what_is_carried_is_let_be_and_not_handed_on() {
     let mut own = carried(pairs(&[("A", "1")]));
     own.push(("TERM".into(), "xterm-256color".into()));
+    own.push(("SHELL".into(), "/bin/sh".into()));
     assert_eq!(read(own), Ok(pairs(&[("A", "1")])));
 }
 

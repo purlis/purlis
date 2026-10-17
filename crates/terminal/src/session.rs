@@ -1331,6 +1331,23 @@ mod tests {
     }
 
     #[test]
+    fn a_session_told_to_start_empty_still_names_its_terminal_and_a_shell() {
+        // What a session sets on every program it starts, beside what it is given: `TERM`, and
+        // the pseudo-terminal's `SHELL`. purlis's own wrap on Linux lets exactly these be
+        // (`purlis_linux_sandbox::carried::SET_BY_THE_TERMINAL`).
+        let mut spec = Spec::new("/bin/sh", SIZE).args([
+            "-c",
+            "echo \"seen<${TERM}|${SHELL:+a shell}>\"; exec sleep 30",
+        ]);
+        spec.env_clear = true;
+
+        let session = Session::spawn(spec, Box::new(AlacrittyEngine::new(SIZE, 1000)))
+            .expect("the session starts");
+
+        screen_until(&session, shows("seen<xterm-256color|a shell>"));
+    }
+
+    #[test]
     fn a_variable_nothing_asked_to_remove_is_still_inherited() {
         // The other half: a session gets the operator's environment, and only what charter
         // names is taken away.
