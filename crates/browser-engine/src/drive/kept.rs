@@ -2,78 +2,128 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The texts a browser keeps out of every answer (#2014, #2311), each with the element it was
-//! read from. An element is read again and again (a field the person types into, each key), and
-//! a read drops that element's earlier texts that it contains: a field keeps its latest value,
-//! not every value it held on the way to it. A text read from no element (a run of the person's
-//! keys) is kept as it is.
-
-use std::collections::HashSet;
+//! read from and how. A field the person types into is read from the field itself after each
+//! key, and a read drops that field's earlier values that it contains while they are shorter
+//! than [`KEPT_WHOLE_FROM`]: a field keeps its latest value, not every short value it held on
+//! the way. A read of a page's tree drops nothing, and a text read from no element (a run of
+//! the person's keys, or what they pasted) is kept as it is.
 
 use super::tree::NodeKey;
 
-/// Texts kept out of every answer, each with the element it was read from, if one.
+/// The length, in characters, from which an earlier value of a field stays kept out once a
+/// later value contains it (the person's ruling of 2026-10-17): a page that shows a long value
+/// cut short still shows nothing of it. A shorter earlier value goes.
+pub(crate) const KEPT_WHOLE_FROM: usize = 8;
+
+/// How a text kept out was read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Source {
+    /// From the field itself, or from the person's keys.
+    Field,
+    /// From the page's tree.
+    Tree,
+}
+
+/// One text kept out.
+#[derive(Debug, Clone)]
+struct Text {
+    /// The element it was read from, if one.
+    from: Option<NodeKey>,
+    source: Source,
+    text: String,
+}
+
+/// Texts kept out of every answer.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Kept {
-    texts: Vec<(Option<NodeKey>, String)>,
+    texts: Vec<Text>,
 }
 
 impl Kept {
-    /// One read of what `from` holds (or of texts from no element, if `None`): every text read
-    /// earlier from `from` that one of `texts` contains goes, and `texts` are kept.
-    pub(crate) fn read<S: AsRef<str>>(&mut self, from: Option<&NodeKey>, texts: &[S]) {
-        let read: Vec<&str> = texts
-            .iter()
-            .map(AsRef::as_ref)
-            .filter(|text| !text.is_empty())
-            .collect();
-        if read.is_empty() {
-            return;
-        }
-        if from.is_some() {
-            let lower: Vec<String> = read.iter().map(|text| text.to_lowercase()).collect();
-            self.texts.retain(|(by, earlier)| {
-                by.as_ref() != from || {
-                    let earlier = earlier.to_lowercase();
-                    !lower.iter().any(|text| text.contains(&earlier))
-                }
-            });
-        }
-        for text in read {
-            let lower = text.to_lowercase();
-            if !self
-                .texts
-                .iter()
-                .any(|(by, kept)| by.as_ref() == from && kept.to_lowercase() == lower)
-            {
-                self.texts.push((from.cloned(), text.to_owned()));
-            }
-        }
+    /// Texts read from no element, a run of the person's keys or what they pasted: never
+    /// dropped.
+    pub(crate) fn run<S: AsRef<str>>(&mut self, texts: &[S]) {
+        self.add(None, Source::Field, texts);
     }
 
-    /// Takes in every text `other` keeps, each element's texts as one read of it.
-    pub(crate) fn take_in(&mut self, other: &Kept) {
-        let mut seen: HashSet<Option<&NodeKey>> = HashSet::new();
-        for (from, _) in &other.texts {
-            if seen.insert(from.as_ref()) {
-                let texts: Vec<&str> = other
-                    .texts
-                    .iter()
-                    .filter(|(by, _)| by.as_ref() == from.as_ref())
-                    .map(|(_, text)| text.as_str())
-                    .collect();
-                self.read(from.as_ref(), &texts);
+    /// One read of what `from` holds, from the field itself: every earlier text of `from`
+    /// shorter than [`KEPT_WHOLE_FROM`] that one of `texts` contains goes, and `texts` are kept.
+    pub(crate) fn field<S: AsRef<str>>(&mut self, from: &NodeKey, texts: &[S]) {
+        let lower: Vec<String> = texts
+            .iter()
+            .map(|text| text.as_ref().to_lowercase())
+            .filter(|text| !text.is_empty())
+            .collect();
+        if lower.is_empty() {
+            return;
+        }
+        self.texts.retain(|kept| {
+            kept.from.as_ref() != Some(from) || kept.text.chars().count() >= KEPT_WHOLE_FROM || {
+                let earlier = kept.text.to_lowercase();
+                !lower.iter().any(|text| text.contains(&earlier))
             }
+        });
+        self.add(Some(from), Source::Field, texts);
+    }
+
+    /// One read of what `from` holds, from its page's tree: `texts` are kept, and nothing goes.
+    pub(crate) fn tree<S: AsRef<str>>(&mut self, from: &NodeKey, texts: &[S]) {
+        self.add(Some(from), Source::Tree, texts);
+    }
+
+    /// Takes in every text `other` keeps: what each field held, as one read of that field.
+    pub(crate) fn take_in(&mut self, other: &Kept) {
+        let mut fields: Vec<&NodeKey> = Vec::new();
+        for kept in &other.texts {
+            match (&kept.from, kept.source) {
+                (Some(from), Source::Field) => {
+                    if !fields.contains(&from) {
+                        fields.push(from);
+                    }
+                }
+                (Some(from), Source::Tree) => self.tree(from, &[&kept.text]),
+                (None, _) => self.run(&[&kept.text]),
+            }
+        }
+        for from in fields {
+            let held: Vec<&str> = other
+                .texts
+                .iter()
+                .filter(|kept| kept.source == Source::Field && kept.from.as_ref() == Some(from))
+                .map(|kept| kept.text.as_str())
+                .collect();
+            self.field(from, &held);
         }
     }
 
     /// Every text kept.
     pub(crate) fn texts(&self) -> Vec<&str> {
-        self.texts.iter().map(|(_, text)| text.as_str()).collect()
+        self.texts.iter().map(|kept| kept.text.as_str()).collect()
     }
 
     /// Whether nothing is kept.
     pub(crate) fn is_empty(&self) -> bool {
         self.texts.is_empty()
+    }
+
+    fn add<S: AsRef<str>>(&mut self, from: Option<&NodeKey>, source: Source, texts: &[S]) {
+        for text in texts.iter().map(AsRef::as_ref) {
+            if text.is_empty() {
+                continue;
+            }
+            let lower = text.to_lowercase();
+            if !self
+                .texts
+                .iter()
+                .any(|kept| kept.from.as_ref() == from && kept.text.to_lowercase() == lower)
+            {
+                self.texts.push(Text {
+                    from: from.cloned(),
+                    source,
+                    text: text.to_owned(),
+                });
+            }
+        }
     }
 }
 
@@ -89,45 +139,71 @@ mod tests {
     }
 
     #[test]
-    fn a_fields_later_value_drops_the_earlier_values_it_contains() {
+    fn a_fields_later_value_drops_the_short_earlier_values_it_contains() {
         let mut kept = Kept::default();
         for value in ["the", "them", "theme"] {
-            kept.read(Some(&field(8)), &[value]);
+            kept.field(&field(8), &[value]);
         }
         assert_eq!(kept.texts(), vec!["theme"]);
     }
 
     #[test]
+    fn an_earlier_value_as_long_as_kept_whole_from_stays() {
+        let mut kept = Kept::default();
+        kept.field(&field(8), &["plumtree"]);
+        kept.field(&field(8), &["plumtreew"]);
+        assert_eq!(kept.texts(), vec!["plumtree", "plumtreew"]);
+    }
+
+    #[test]
     fn a_fields_shorter_later_value_is_kept_with_the_longer_one() {
         let mut kept = Kept::default();
-        kept.read(Some(&field(8)), &["secret"]);
-        kept.read(Some(&field(8)), &["sec"]);
+        kept.field(&field(8), &["secret"]);
+        kept.field(&field(8), &["sec"]);
         assert_eq!(kept.texts(), vec!["secret", "sec"]);
     }
 
     #[test]
     fn a_value_never_drops_another_elements_text_or_a_run() {
         let mut kept = Kept::default();
-        kept.read(Some(&field(12)), &["the"]);
-        kept.read(None, &["them"]);
-        kept.read(Some(&field(8)), &["theme"]);
+        kept.field(&field(12), &["the"]);
+        kept.run(&["them"]);
+        kept.field(&field(8), &["theme"]);
         assert_eq!(kept.texts(), vec!["the", "them", "theme"]);
+    }
+
+    #[test]
+    fn a_tree_read_drops_nothing() {
+        let mut kept = Kept::default();
+        kept.field(&field(8), &["sec"]);
+        kept.tree(&field(8), &["secret"]);
+        kept.tree(&field(8), &["secrets"]);
+        assert_eq!(kept.texts(), vec!["sec", "secret", "secrets"]);
+    }
+
+    #[test]
+    fn a_field_read_drops_what_the_tree_read_on_the_way() {
+        let mut kept = Kept::default();
+        kept.tree(&field(8), &["the"]);
+        kept.field(&field(8), &["them"]);
+        assert_eq!(kept.texts(), vec!["them"]);
     }
 
     #[test]
     fn texts_of_one_read_never_drop_each_other() {
         let mut kept = Kept::default();
-        kept.read(Some(&field(8)), &["card 4111 123", "123"]);
-        kept.read(Some(&field(8)), &["card 4111 123", "123"]);
+        kept.field(&field(8), &["card 4111 123", "123"]);
+        kept.field(&field(8), &["card 4111 123", "123"]);
         assert_eq!(kept.texts(), vec!["card 4111 123", "123"]);
     }
 
     #[test]
-    fn taking_in_reads_each_elements_texts_together() {
+    fn taking_in_reads_each_fields_values_together() {
         let mut page = Kept::default();
-        page.read(Some(&field(8)), &["the"]);
+        page.tree(&field(8), &["the"]);
         let mut browser = Kept::default();
-        browser.read(Some(&field(8)), &["themes", "the"]);
+        browser.field(&field(8), &["themes"]);
+        browser.field(&field(8), &["the"]);
         page.take_in(&browser);
         assert_eq!(page.texts(), vec!["themes", "the"]);
     }

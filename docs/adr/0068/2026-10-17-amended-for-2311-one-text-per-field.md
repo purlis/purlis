@@ -6,13 +6,19 @@ read after each key; this note says which of those reads are kept. Nothing else 
 session protocol does not.
 
 1. **A field keeps its latest value.** Each text kept out is kept with the element it was read
-   from. A read of a field drops that field's earlier values that the new value contains, so a
-   value typed key by key is kept out as the value, not as each part of it on the way. An earlier
-   value the new one does not contain (one the person deleted back from) stays kept out. Each
-   run of characters as the person typed it is kept out as before, and is never dropped, nor is a
-   text read from another element. *D-2311-1, to be confirmed.*
+   from. A read of a field the person typed into, from the field itself, drops that field's
+   earlier values that the new value contains, while they are shorter than 8 characters; an
+   earlier value of 8 characters or more stays kept out, so a page that shows a long value cut
+   short still shows nothing of it. A value typed key by key is kept out as the value, not as each
+   short part of it on the way. An earlier value the new one does not contain (one the person
+   deleted back from) stays kept out. A read of a page's tree drops nothing. Each run of
+   characters as the person typed it, and what a key such as a paste put into the field, are kept
+   out as they were entered and never dropped, nor is a text read from another element. This is
+   the person's ruling of 2026-10-17. *D-2311-1, ruled.*
 2. **A text is kept on the site of the document its page shows.** The site a text is kept out on,
    whose pages' screenshots paint over what cannot be read (the amendment for #2303, item 2), is
    the one of the document the page has loaded when the text is kept, not of an address the page
-   is still loading. A page whose document is on no site counts as its opener's, or as kept when
-   it has none. *D-2311-2, to be confirmed.*
+   is still loading; until the page's document is known, it is the one of its address. Whether a
+   page's screenshots paint over what cannot be read is decided by the same site. A page whose
+   document is on no site counts as its opener's, or as kept when it has none. *D-2311-2, to be
+   confirmed.*

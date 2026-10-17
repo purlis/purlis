@@ -690,6 +690,43 @@ fn a_word_the_person_typed_only_on_the_way_to_a_longer_value_is_not_kept_out() {
 }
 
 #[test]
+fn a_long_value_typed_key_by_key_stays_out_when_the_page_shows_it_cut_short() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    type_key_by_key(&browser, &engine, "plumtreewalkerquiet7");
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", "Your key: plumtreew…");
+
+    let text = snapshot(&browser, 1);
+
+    assert!(!text.contains("plumtreew"), "{text}");
+}
+
+#[test]
+fn what_the_person_pasted_stays_out_once_they_edit_around_it() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    // The field holds what was pasted once the paste reaches the page.
+    engine.on(|sent, engine| {
+        if sent.method == "Input.dispatchKeyEvent" && sent.params["key"] == "v" {
+            super::super::lock(&engine.model).value = "zq7kp".into();
+        }
+        None
+    });
+    browser.person_input(&chord(&aim, "v", 4)).unwrap();
+    browser.person_input(&key(&aim, "Home", true)).unwrap();
+    super::super::lock(&engine.model).value = "xzq7kp".into();
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+    browser.hand_back();
+    the_page_says(&engine, "PAGE-1", "Code zq7kp saved");
+
+    let text = snapshot(&browser, 1);
+
+    assert!(text.contains("Code (blanked) saved"), "{text}");
+}
+
+#[test]
 fn a_screenshot_paints_over_what_the_person_typed_wherever_the_page_shows_it_as_text() {
     let (browser, engine) = browser();
     focus_on(&engine, &[]);

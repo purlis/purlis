@@ -23,8 +23,10 @@
 //!   of typed characters are kept as they typed them; both are kept out of every later answer
 //!   about every page of the browser, a page opened later included, whatever became of the
 //!   field. A press of the mouse and the hand-back read every field the person touched again.
-//!   A field keeps its latest value: a read drops the field's earlier values that the new one
-//!   contains, so what was typed key by key is kept out whole, not as each part on the way.
+//!   A field keeps its latest value: a read drops the field's short earlier values that the new
+//!   one contains ([`KEPT_WHOLE_FROM`](super::super::kept::KEPT_WHOLE_FROM)), so what was typed
+//!   key by key is kept out whole, not as each short part on the way. What a key that neither
+//!   types nor deletes put into the field (a paste) is kept as it was put in, like a run.
 //!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
@@ -305,6 +307,12 @@ impl Browser {
                 } else {
                     None
                 };
+                // A key that edits without typing or deleting (a paste, an undo) may put in text
+                // no run holds: what the field held before it is read, to tell what it put in.
+                let before = field
+                    .as_ref()
+                    .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
+                    .map(|field| self.field_holds(field));
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -319,8 +327,13 @@ impl Browser {
                 if let Some(field) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
+                    let after = self.field_holds(&field);
                     let mut held = Kept::default();
-                    held.read(Some(&field.1), &[self.field_holds(&field)]);
+                    if let Some(before) = before {
+                        // What the key put in is kept as it was put in, like a run.
+                        held.run(&[put_in(&before, &after)]);
+                    }
+                    held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);
                     lock(&self.typing).touched.insert(field);
                 }
@@ -412,7 +425,7 @@ impl Browser {
             (std::mem::take(&mut typing.dirty), runs, touched)
         };
         let mut held = Kept::default();
-        held.read(None, &runs);
+        held.run(&runs);
         for target in dirty {
             let _ = self.snapshot_of(&target);
             if let Some(page) = lock(&self.inner.state).page(&target) {
@@ -422,7 +435,7 @@ impl Browser {
         // Each field is read last, from the field itself: what it holds now is the latest of
         // its values, whatever its page's tree read before.
         for field in &touched {
-            held.read(Some(&field.1), &[self.field_holds(field)]);
+            held.field(&field.1, &[self.field_holds(field)]);
         }
         lock(&self.inner.state).keep_out_everywhere(&held);
     }
@@ -513,6 +526,25 @@ impl Typing {
             runs.push(String::new());
         }
     }
+}
+
+/// What `after` holds that `before` did not: `after` without the beginning and the end the two
+/// share. Empty when nothing was put in (a selection alone, or a deletion).
+fn put_in(before: &str, after: &str) -> String {
+    let before: Vec<char> = before.chars().collect();
+    let after: Vec<char> = after.chars().collect();
+    let start = before
+        .iter()
+        .zip(&after)
+        .take_while(|(b, a)| b == a)
+        .count();
+    let end = before[start..]
+        .iter()
+        .rev()
+        .zip(after[start..].iter().rev())
+        .take_while(|(b, a)| b == a)
+        .count();
+    after[start..after.len() - end].iter().collect()
 }
 
 /// Whether the keys held make a chord rather than a character: Meta, or Control without Alt

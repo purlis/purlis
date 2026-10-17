@@ -157,6 +157,15 @@ impl Page {
         scrubbed_address(address, &self.scrubbed.texts())
     }
 
+    /// The site this page is on: the one of the document it has loaded, not of an address it
+    /// is still loading; until its document is known, the one of its address.
+    fn site(&self) -> Option<String> {
+        match self.frames.get(&self.target) {
+            Some(frame) => site(&frame.url),
+            None => site(&self.url),
+        }
+    }
+
     /// Keeps `held` out of every later answer about this page.
     fn keep_out(&mut self, held: &Kept) {
         self.scrubbed.take_in(held);
@@ -268,17 +277,12 @@ struct State {
 }
 
 impl State {
-    /// The site `target`'s page is on: the one of the document it has loaded (not of an address
-    /// it is still loading), or for a document at an address that is not a web address, or none
-    /// known yet, the site of the page that opened it.
+    /// The site `target`'s page is on ([`Page::site`]), or for a page on none, the site of the
+    /// page that opened it.
     fn site_of(&self, target: &str) -> Option<String> {
         let mut at = self.page(target)?;
         for _ in 0..=self.pages.len() {
-            let shown = at
-                .frames
-                .get(&at.target)
-                .map_or("", |frame| frame.url.as_str());
-            if let Some(site) = site(shown) {
+            if let Some(site) = at.site() {
                 return Some(site);
             }
             at = self.page(at.opener.as_deref()?)?;
@@ -326,7 +330,7 @@ impl State {
             return true;
         };
         for _ in 0..=self.pages.len() {
-            let own = site(&at.url);
+            let own = at.site();
             if own.as_ref().is_some_and(|s| self.kept_sites.contains(s)) {
                 return true;
             }
@@ -1256,13 +1260,7 @@ impl Browser {
                     },
                 })
                 .collect();
-            let scrub: Vec<String> = page
-                .scrubbed
-                .texts()
-                .into_iter()
-                .map(str::to_owned)
-                .collect();
-            (frames, state.excluded.clone(), scrub)
+            (frames, state.excluded.clone(), page.scrubbed.clone())
         };
         let frames = if frames.is_empty() {
             vec![ToRead {
@@ -1303,7 +1301,7 @@ impl Browser {
             };
             trees.push(frame);
         }
-        let snapshot = build(&trees, &excluded, &scrub);
+        let snapshot = build(&trees, &excluded, &scrub.texts());
         if let Some(page) = lock(&self.inner.state).page_mut(target) {
             page.keep_out(snapshot.blanked_text());
         }
