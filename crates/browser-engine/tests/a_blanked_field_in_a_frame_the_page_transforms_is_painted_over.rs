@@ -13,9 +13,8 @@
 
 mod common;
 
-use common::drive::{call, find, open, red_pixels, ref_on, screenshot};
+use common::drive::{filled_and_blanked, find, open, red_pixels, ref_on, screenshot};
 use common::site::started;
-use purlis_browser_engine::drive::{Call, Field};
 
 /// Opens `path`, whose frame holds a red "Card number" field, fills the field and blanks it as a
 /// login does, and answers how much of the field's red the screenshots show before and after.
@@ -26,18 +25,7 @@ fn red_before_and_after(path: &str) -> (usize, usize) {
     open(&browser, path);
     let field = ref_on(&find(&browser, "Card number"), "Card number");
     let before = red_pixels(&screenshot(&browser));
-    call(
-        &browser,
-        Call::Type {
-            page: None,
-            fields: vec![Field {
-                into: Some(field.clone()),
-                text: "4000 1234 5678 9010".into(),
-                replace: true,
-            }],
-        },
-    );
-    browser.blank(&field).unwrap();
+    filled_and_blanked(&browser, field, "4000 1234 5678 9010");
     (before, red_pixels(&screenshot(&browser)))
 }
 

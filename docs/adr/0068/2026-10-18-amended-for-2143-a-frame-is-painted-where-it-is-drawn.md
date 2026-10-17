@@ -9,10 +9,12 @@ protocol does not.
 1. **Inside a frame drawn as laid out, the element's own box.** An element inside a frame whose
    document is read in a session of its own is placed by where that frame's element is drawn on
    the page, frame by frame, when each of those frames is drawn upright at the size it is laid out
-   at. *D-2143-1.*
+   at. *D-2143-1, decided in implementation, to be confirmed.*
 2. **Inside any other frame, the whole frame.** When a frame between the page and the element is
    drawn otherwise (turned, scaled or zoomed, by its own element or by anything around it), what
    is painted over for the element is the whole box that frame is drawn in, since everything its
-   document draws is drawn within it. *D-2143-2.*
+   document draws is drawn within it. *D-2143-2, decided in implementation, to be confirmed.*
 3. **Unsure means withheld.** When the engine does not say where a frame between the page and the
-   element is drawn, the screenshot is withheld in words. *D-2143-3.*
+   element is drawn, or the page draws a frame or a blanked element through a filter that may draw
+   it away from its box, the screenshot is withheld in words. *D-2143-3, decided in
+   implementation, to be confirmed.*

@@ -853,3 +853,73 @@ fn a_screenshot_paints_over_a_code_typed_across_several_boxes_wherever_the_page_
 
     assert_eq!(pixel(&after, 9, 9), GREY);
 }
+
+#[test]
+fn a_screenshot_is_withheld_when_the_frames_element_is_not_known() {
+    let (browser, engine) = browser();
+    the_frame_shows_the_secret_at(&engine, 0.0, 0.0);
+    engine.on(|sent, _| (sent.method == "DOM.getFrameOwner").then(|| Ok(json!({"nodeId": 0}))));
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+}
+
+/// The page draws its payment frame's element (node 50) inside a box drawn through `filter`,
+/// and the Secret word field (node 21) as it is.
+fn the_frame_is_drawn_through(engine: &super::Engine, filter: &str) {
+    let mut page = Document::new("PAGE-1");
+    let around = page.element(97, None, "DIV");
+    page.node(around).laid_out = Some((None, vec![("filter".into(), filter.into())]));
+    page.element(50, Some(around), "IFRAME");
+    page.element(21, None, "INPUT");
+    draws(engine, "S-PAGE-1", &page, &[]);
+}
+
+#[test]
+fn a_screenshot_is_withheld_when_a_frame_is_drawn_through_a_filter_that_may_draw_it_elsewhere() {
+    for filter in ["drop-shadow(rgb(0, 0, 0) 40px 40px 0px)", "url(\"#moved\")"] {
+        let (browser, engine) = browser();
+        the_frame_is_drawn_through(&engine, filter);
+        keep_out_the_secret(&browser);
+
+        let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+        assert!(
+            matches!(shot, Err(Refusal::Withheld(_))),
+            "{filter}: {shot:?}"
+        );
+    }
+}
+
+#[test]
+fn a_screenshot_is_withheld_when_a_blanked_field_is_drawn_through_such_a_filter() {
+    let (browser, engine) = browser();
+    let mut page = Document::new("PAGE-1");
+    let field = page.element(21, None, "INPUT");
+    page.node(field).laid_out = Some((
+        None,
+        vec![(
+            "filter".into(),
+            "drop-shadow(rgb(0, 0, 0) 40px 40px 0px)".into(),
+        )],
+    ));
+    draws(&engine, "S-PAGE-1", &page, &[]);
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(matches!(shot, Err(Refusal::Withheld(_))), "{shot:?}");
+}
+
+#[test]
+fn a_frame_drawn_through_a_filter_that_draws_it_in_its_box_does_not_withhold_the_screenshot() {
+    let (browser, engine) = browser();
+    the_frame_is_drawn_through(&engine, "blur(2px) grayscale(1)");
+    keep_out_the_secret(&browser);
+
+    let shot = browser.call(&id(1), Call::Screenshot { page: None });
+
+    assert!(shot.is_ok(), "{shot:?}");
+}
