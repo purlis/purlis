@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792251802203,
+  "lastUpdate": 1792253030166,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15372,6 +15372,48 @@ window.BENCHMARK_DATA = {
             "value": 104.77592100000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.056, 103.556, 104.776, 105.101, 105.337 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "222e4443320ecd3d13d85b8f61da2df0aa28cb4c",
+          "message": "The window mints and sends a chat's run with each start to the session host (#2440)\n\n* The window sends the run each start begins to the session host (#2172)\n\nA chat the window starts in the host is handed the run its identity\nminted (ADR 0066), the one its run.started is written under, so the\nhost lists the chat in it and names it in `ended`, as reattach needs\n(#2006, #646). Composed starts already sent theirs; the in-window path\nignores the field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A chat started through Chats is listed in the run its start began (#2172)\n\nReview of #2440: a test at the Chats seam, over a host of stand-ins,\nholds that the run a chat's record names is the one the host lists it\nin. The hosted-sessions test uses a_runtime(), and the ticket note\nstays on the field's doc.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T19:53:41+04:00",
+          "tree_id": "d754201c90a4bae82c79334824d89b9649eb8f04",
+          "url": "https://github.com/purlis/purlis/commit/222e4443320ecd3d13d85b8f61da2df0aa28cb4c"
+        },
+        "date": 1792253029129,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4282275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.421, 0.427, 0.428, 0.435, 0.439 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2873425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.167, 16.238, 16.287, 16.888, 16.979 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5245615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.827, 100.956, 101.525, 101.974, 103.067 ms"
           }
         ]
       }
