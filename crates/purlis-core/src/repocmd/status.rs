@@ -42,6 +42,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::{Say, Sink};
+use crate::counts::counted as counted_noun;
 use crate::forge::{self, py_str};
 use crate::tui;
 use crate::worktree::git;
@@ -133,9 +134,9 @@ pub fn status(req: &Request, out: Out, say: Sink) -> u8 {
     }
 
     out(format!(
-        "{group}: {} repos in inventory · {} workspace(s) · active: {} (via {})",
-        by_name.len(),
-        all_ws.len(),
+        "{group}: {} in inventory · {} · active: {} (via {})",
+        counted_noun(by_name.len(), "repo", "repos"),
+        counted_noun(all_ws.len(), "workspace", "workspaces"),
         req.active,
         req.via
     ));
@@ -193,8 +194,8 @@ fn for_workspace(
     let found = drawn(root, ws, &mut *say);
     let marker = if ws == active { " (active)" } else { "" };
     out(format!(
-        "— workspace: {ws}{marker} · {} repo(s) —",
-        found.len()
+        "— workspace: {ws}{marker} · {} —",
+        counted_noun(found.len(), "repo", "repos")
     ));
     if found.is_empty() {
         out(format!(
@@ -329,7 +330,10 @@ fn clone_note(at: &Path) -> String {
     let mut note = format!("{branch} · {dirty}");
     let (absent, moved) = super::submodules::drift(at);
     if !absent.is_empty() {
-        note.push_str(&format!(" · {} submodule(s) not initialised", absent.len()));
+        note.push_str(&format!(
+            " · {} not initialised",
+            counted_noun(absent.len(), "submodule", "submodules")
+        ));
     }
     if !moved.is_empty() {
         note.push_str(&format!(" · {} out of date", moved.len()));

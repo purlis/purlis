@@ -31,6 +31,7 @@ use super::{
     Claim, PushResult, Rebased, WRITE, changed_paths, count, fetch_branch, forget_replayed_push,
     gpgsign, rebase_in_progress, rebase_onto, tail,
 };
+use crate::counts::{counted, plural};
 use crate::gitstate;
 use crate::repocmd::{Say, Sink};
 use crate::worktree::git;
@@ -121,9 +122,10 @@ pub fn start(root: &Path, say: Sink) -> Settled {
     let changed = changed_paths(root);
     if !changed.is_empty() {
         return Settled::Refused(format!(
-            "Save first: {} changed file(s) here are not saved, and a rebase never moves \
+            "Save first: {} here {} not saved, and a rebase never moves \
              unsaved work.",
-            changed.len()
+            counted(changed.len(), "changed file", "changed files"),
+            plural(changed.len(), "is", "are")
         ));
     }
     say(Say::Info(format!("Fetching `{branch}` from the remote …")));

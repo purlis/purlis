@@ -20,6 +20,7 @@
 use std::path::Path;
 
 use super::{Doctor, Row};
+use crate::counts::plural;
 
 const NAME: &str = "shadowed docs";
 
@@ -109,7 +110,11 @@ pub(super) fn shadowed_docs(d: &Doctor) -> Row {
 fn said(hit: &Shadowed) -> Row {
     let mut parts: Vec<String> = Vec::new();
     if !hit.skills.is_empty() {
-        parts.push(format!("skill(s) {}", hit.skills.join(", ")));
+        parts.push(format!(
+            "{} {}",
+            plural(hit.skills.len(), "skill", "skills"),
+            hit.skills.join(", ")
+        ));
     }
     if !hit.docs.is_empty() {
         let pages: Vec<String> = hit.docs.iter().map(|d| format!("docs/{d}.md")).collect();
@@ -193,7 +198,7 @@ mod tests {
         });
         assert_eq!(
             r.detail,
-            "skill(s) browser, secrets · docs/hooks.md duplicate what purlis ships"
+            "skills browser, secrets · docs/hooks.md duplicate what purlis ships"
         );
     }
 

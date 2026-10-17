@@ -13,7 +13,9 @@ use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use purlis_core::hookwire::{CHAT_ENV, Conversation, Listener, Report, SOCKET_ENV, TOKEN_ENV};
+use purlis_core::hookwire::{
+    CHAT_ENV, Conversation, Listener, Report, SOCKET_ENV, TOKEN_ENV, spool,
+};
 use purlis_core::state::{Detail, Event};
 
 const CHARTER: &str = support::PURLIS;
@@ -40,10 +42,19 @@ fn hook(word: &str, payload: &str, env: &[(&str, &str)]) -> i32 {
     child.wait().expect("charter finishes").code().unwrap_or(-1)
 }
 
+/// The reports a host at `socket` was told, once the hook has exited: spooled where the host
+/// was slower than the hook waits, or recorded live ([`support::told`]).
+fn reports_told(socket: &std::path::Path, live: &mpsc::Receiver<Report>) -> Vec<Report> {
+    support::told(socket, live, |line| match line {
+        spool::Spooled::Report(report) => Some(report),
+        _ => None,
+    })
+}
+
 #[test]
 fn a_hook_tells_the_app_what_the_harness_fired() {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let (tx, rx) = mpsc::channel();
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
@@ -70,22 +81,22 @@ fn a_hook_tells_the_app_what_the_harness_fired() {
 
     assert_eq!(code, 0);
     assert_eq!(
-        rx.recv_timeout(Duration::from_secs(5)),
-        Ok(Report {
+        reports_told(&path, &rx),
+        [Report {
             chat: 7,
             event: Event::Stop,
             conversation: Conversation::Named("11111111-2222-4333-8444-555555555555".to_owned()),
             pid: Some(4242),
             agent: None,
             detail: Detail::default(),
-        })
+        }]
     );
 }
 
 #[test]
 fn a_hook_without_its_chats_token_is_not_heard_and_the_turn_goes_on() {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let (tx, rx) = mpsc::channel();
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let _seven = listener.tokens().issue_to_this_process(7).expect("a token");
@@ -118,17 +129,29 @@ fn a_hook_without_its_chats_token_is_not_heard_and_the_turn_goes_on() {
         rx.recv_timeout(Duration::from_secs(2)).is_err(),
         "a hook without its chat's token was heard"
     );
+    // Nor told by the spool. With no token a line cannot be spooled. One under another chat's
+    // token is refused by the host that is there; where a loaded host was slower than the
+    // hook waits, the hook spools it under that token's key, and the drain, which checks a
+    // line under its own chat's key, rejects it. Either way no line is handed on.
+    spool::drain(&spool::dir_for(&path), &mut |item| {
+        assert!(
+            !matches!(item, spool::Drained::Line { .. }),
+            "a hook without its chat's token was told by the spool: {item:?}"
+        );
+        Ok(())
+    })
+    .expect("the spool drains");
 }
 
 #[test]
 fn every_state_event_reaches_the_app_under_the_word_the_plugin_uses() {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let (tx, rx) = mpsc::channel();
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(1).expect("a token");
     let _reading = listener.each(Box::new(move |report| {
-        let _ = tx.send(report.event);
+        let _ = tx.send(report);
     }));
 
     for event in [
@@ -150,7 +173,11 @@ fn every_state_event_reaches_the_app_under_the_word_the_plugin_uses() {
         );
 
         assert_eq!(code, 0, "`charter hook {}` refused", event.word());
-        assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(event));
+        let told: Vec<Event> = reports_told(&path, &rx)
+            .into_iter()
+            .map(|report| report.event)
+            .collect();
+        assert_eq!(told, [event]);
     }
 }
 
@@ -950,12 +977,12 @@ fn the_command_line_the_charter_plugin_actually_writes_is_answered() {
     // entries calls `charter hook <word> --plugin-version 0.62.1`, and this binary rejected
     // the flag outright — an independent review found the test that claimed otherwise.
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let (tx, rx) = mpsc::channel();
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let _reading = listener.each(Box::new(move |report| {
-        let _ = tx.send(report.event);
+        let _ = tx.send(report);
     }));
 
     let mut child = support::command(CHARTER)
@@ -980,10 +1007,11 @@ fn the_command_line_the_charter_plugin_actually_writes_is_answered() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(
-        rx.recv_timeout(Duration::from_secs(5)),
-        Ok(Event::SessionStart)
-    );
+    let told: Vec<Event> = reports_told(&path, &rx)
+        .into_iter()
+        .map(|report| report.event)
+        .collect();
+    assert_eq!(told, [Event::SessionStart]);
 }
 
 #[test]
@@ -1078,7 +1106,7 @@ fn a_hook_reading_a_payload_that_never_ends_still_gets_out_of_the_way() {
     // known to produce — but it is the shape that would hang a turn forever, and the hook
     // has a deadline of its own rather than trusting the harness to close.
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let (tx, rx) = mpsc::channel();
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
@@ -1123,18 +1151,17 @@ fn a_hook_reading_a_payload_that_never_ends_still_gets_out_of_the_way() {
         Some(status) => status.code(),
         None => child.wait().expect("charter finishes").code(),
     };
-    // It sent its line before it exited: a bounded wait for the app to have heard it.
-    let report = rx.recv_timeout(Duration::from_secs(30));
+    // It sent its line before it exited: recorded, or spooled where the app was slow.
+    let told: Vec<Event> = reports_told(&path, &rx)
+        .into_iter()
+        .map(|report| report.event)
+        .collect();
 
     assert!(
         exited_with_stdin_open,
         "the hook waited on a payload that never ends"
     );
-    assert_eq!(
-        report.map(|report| report.event),
-        Ok(Event::Stop),
-        "the event never reached the app"
-    );
+    assert_eq!(told, [Event::Stop], "the event never reached the app");
     assert_eq!(code, Some(0));
 }
 

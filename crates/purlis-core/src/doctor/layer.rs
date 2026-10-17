@@ -29,6 +29,7 @@ use std::path::Path;
 
 use super::fsx::{self, Unread};
 use super::{DISPLAY_LIMIT, Doctor, Row};
+use crate::counts::counted;
 use crate::wslayer::{self, Found};
 
 const NAME: &str = "workspace layer";
@@ -189,9 +190,13 @@ fn read(root: &Path, workspaces: &[String]) -> Read {
 
 fn said(read: &Read, looked_for: usize) -> Row {
     let across = if read.workspaces == looked_for {
-        format!("{} workspace(s)", read.workspaces)
+        counted(read.workspaces, "workspace", "workspaces")
     } else {
-        format!("{} of {looked_for} workspace(s)", read.workspaces)
+        format!(
+            "{} of {}",
+            read.workspaces,
+            counted(looked_for, "workspace", "workspaces")
+        )
     };
     if read.findings.is_empty() {
         if looked_for == 0 {
@@ -209,8 +214,8 @@ fn said(read: &Read, looked_for: usize) -> Row {
         return Row::ok(
             NAME,
             format!(
-                "{} generated file(s) across {across}, all current",
-                read.total
+                "{} across {across}, all current",
+                counted(read.total, "generated file", "generated files")
             ),
         );
     }
@@ -364,14 +369,11 @@ mod tests {
         };
         assert_eq!(
             said(&read, 2),
-            Row::ok(
-                NAME,
-                "2 generated file(s) across 2 workspace(s), all current"
-            )
+            Row::ok(NAME, "2 generated files across 2 workspaces, all current")
         );
         assert_eq!(
             said(&read, 3).detail,
-            "2 generated file(s) across 2 of 3 workspace(s), all current"
+            "2 generated files across 2 of 3 workspaces, all current"
         );
     }
 
@@ -597,7 +599,7 @@ mod tests {
         assert_eq!(r.status, Status::Ok, "{r:?}");
         assert_eq!(
             r.detail,
-            "2 generated file(s) across 1 workspace(s), all current"
+            "2 generated files across 1 workspace, all current"
         );
 
         // The block taken out by hand: every file is current, and purlis's files now show in
@@ -630,7 +632,7 @@ mod tests {
         assert_eq!(r.status, Status::Warn, "{r:?}");
         assert!(
             r.detail
-                .ends_with("(1 of 2 workspace(s)); workspaces/beta cannot be checked"),
+                .ends_with("(1 of 2 workspaces); workspaces/beta cannot be checked"),
             "{r:?}"
         );
         assert!(

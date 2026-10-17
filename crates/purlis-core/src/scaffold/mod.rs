@@ -80,6 +80,7 @@ pub mod text;
 
 use std::path::{Path, PathBuf};
 
+use crate::counts::counted;
 use crate::names;
 use crate::plane::Place;
 use settings::Wrote;
@@ -572,9 +573,9 @@ pub fn init(place: &Place, args: &InitArgs) -> Outcome {
     } else {
         let entries = fold(&run.created);
         run.ok(format!(
-            "Initialized control plane (schema {}) — {} item(s) written.",
+            "Initialized control plane (schema {}) — {} written.",
             planefile::WRITTEN,
-            entries.len()
+            counted(entries.len(), "item", "items")
         ));
         for item in entries {
             run.info(format!("  + {item}"));
@@ -2190,7 +2191,7 @@ mod tests {
              ws todo promote, ask: purlis report --yes, ask: purlis ws todo promote)"
         };
         let mut said = vec![
-            Say::Ok("Initialized control plane (schema 1) — 9 item(s) written.".to_owned()),
+            Say::Ok("Initialized control plane (schema 1) — 9 items written.".to_owned()),
             Say::Info("  + charter.toml".to_owned()),
             Say::Info("  + personas/".to_owned()),
             Say::Info("  + inventory/".to_owned()),
@@ -4029,7 +4030,7 @@ mod report_ask_tests {
         );
         assert!(
             outcome.said.contains(&Say::Info(
-                "  Carried into the generated settings of workspace(s) alpha.".to_owned()
+                "  Carried into the generated settings of workspace alpha.".to_owned()
             )),
             "{:?}",
             outcome.said

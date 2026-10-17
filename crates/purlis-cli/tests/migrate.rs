@@ -174,7 +174,7 @@ fn migrate_copies_a_keyring_vaults_items_and_undo_reads_the_old_ones_again() {
 
     assert!(out.status.success(), "{}", said(&out));
     assert!(
-        said(&out).contains("vault 'ops': 1 secret(s) copied"),
+        said(&out).contains("vault 'ops': 1 secret copied"),
         "{}",
         said(&out)
     );

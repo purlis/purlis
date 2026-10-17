@@ -11,7 +11,7 @@
 // - the same rows, by name, in the same order: a bless adds, drops and renames none;
 // - only rows that were named may differ at all;
 // - and a named row may differ only in what a bless rewrites: the text of its stdout and
-//   stderr, the status line's alert rows, the tree it leaves, and where its work lands
+//   stderr (with the stderr lines it sets apart), the status line's alert rows, the tree it leaves, and where its work lands
 //   (`crates/purlis-cli/tests/recorded_behaviour/replay.rs`). Its command, its environment, its
 //   stdin, its start, its masks and its verdict (`denies`, `allows`, `says`) are never a
 //   bless's to move, so a difference there is refused.
@@ -28,6 +28,8 @@ import { fileURLToPath } from "node:url";
 export const BLESSABLE = [
   ["stdout", "text"],
   ["stderr", "text"],
+  // The stderr lines a scenario sets apart (`drop_lines`): text the replay re-records too.
+  ["stderr", "dropped"],
   ["alerts"],
   ["tree"],
   ["outside", "hit"],

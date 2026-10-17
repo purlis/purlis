@@ -54,6 +54,7 @@ use std::time::{Duration, Instant};
 
 use super::egress::{self, Reached, Tally};
 use super::reach::{Decision, Reach, Refused};
+use crate::counts::counted;
 
 /// The address a value is pointed at instead: the loopback interface, where the tunnel listens.
 pub const LOOPBACK: &str = "127.0.0.1";
@@ -1032,7 +1033,8 @@ pub fn sweep_routes(root: &Path) -> usize {
     }
     if removed > 0 {
         tracing::info!(
-            "purlis: removed {removed} ssh route folder(s) a chat left behind in {}",
+            "purlis: removed {} a chat left behind in {}",
+            counted(removed, "ssh route folder", "ssh route folders"),
             within.display()
         );
     }

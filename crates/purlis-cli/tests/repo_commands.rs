@@ -721,7 +721,7 @@ fn discover_writes_the_inventory_and_the_topology_from_what_the_forge_answered()
     // `legacy`'s probe and `../evil`'s both failed: a probe is counted before the name that
     // cannot be one is dropped, as Python counts it.
     assert!(
-        stderr(&out).contains("stack probe FAILED for 2 repo(s)"),
+        stderr(&out).contains("stack probe FAILED for 2 repos"),
         "{}",
         stderr(&out)
     );

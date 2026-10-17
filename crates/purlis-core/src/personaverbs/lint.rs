@@ -30,6 +30,7 @@ use std::sync::OnceLock;
 use crate::repocmd::{Say, Sink};
 
 use super::mcp;
+use crate::counts::{counted, plural};
 
 /// How bad a finding is: an error makes `lint` exit 1, a warning does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -349,13 +350,15 @@ impl<'a> Linter<'a> {
             wants.sort();
             if !wants.is_empty() && vault.is_none() {
                 issues.push(Issue::error(format!(
-                    "mcp: server(s) {} declare `secrets` or `secret_files` but this persona \
+                    "mcp: {} {} {} `secrets` or `secret_files` but this persona \
                      names no vault — add `vault:` or drop the declaration",
+                    plural(wants.len(), "server", "servers"),
                     wants
                         .iter()
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    plural(wants.len(), "declares", "declare")
                 )));
             }
         }
@@ -773,7 +776,8 @@ pub fn lint_command(linter: &Linter, name: Option<&str>, only: Option<&str>, say
     }
     if errors > 0 {
         say(Say::Fail(format!(
-            "{errors} error(s) — dangling reuse or unloadable persona."
+            "{} — dangling reuse or unloadable persona.",
+            counted(errors, "error", "errors")
         )));
         return 1;
     }
@@ -781,5 +785,4 @@ pub fn lint_command(linter: &Linter, name: Option<&str>, only: Option<&str>, say
 }
 
 #[cfg(test)]
-#[path = "lint_tests.rs"]
 mod tests;

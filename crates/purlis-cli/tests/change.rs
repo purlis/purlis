@@ -141,7 +141,7 @@ fn create_then_add_then_show_prints_the_member_on_its_default_branch() {
     assert_eq!(rec["members"][0]["branch"], "change/api-2");
     assert_eq!(rec["by"], "Tester");
     let (_, out, _) = plane.change(&["show", "api-2"]);
-    assert!(out.contains("api-2 · 1 member(s)"), "{out}");
+    assert!(out.contains("api-2 · 1 member"), "{out}");
     assert!(out.contains("why: bump the component API"), "{out}");
     assert!(out.contains("svc  branch change/api-2"), "{out}");
     assert!(!out.contains("needs"), "{out}");
@@ -202,10 +202,10 @@ fn list_shows_every_change_with_its_counts() {
     let (code, out, _) = plane.change(&["list"]);
     assert_eq!(code, 0);
     assert!(
-        out.contains("api-2  1 member(s), 1 excluded  ·  bump the API"),
+        out.contains("api-2  1 member, 1 excluded  ·  bump the API"),
         "{out}"
     );
-    assert!(out.contains("b      0 member(s)  ·  second"), "{out}");
+    assert!(out.contains("b      0 members  ·  second"), "{out}");
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn a_dropped_member_joins_excluded_with_its_reason_and_a_timestamp() {
     plane.ok(&["create", "api-2", "--why", "bump"]);
     plane.ok(&["add", "api-2", "svc"]);
     let said = plane.ok(&["drop", "api-2", "svc", "--why", "not needed after all"]);
-    assert!(said.contains("'svc' excluded — 0 member(s) left"), "{said}");
+    assert!(said.contains("'svc' excluded — 0 members left"), "{said}");
     let rec = plane.read("api-2");
     assert!(rec["members"].as_array().unwrap().is_empty());
     assert_eq!(rec["excluded"][0]["repo"], "svc");

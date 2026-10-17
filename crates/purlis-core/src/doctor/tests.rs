@@ -113,13 +113,12 @@ fn a_row_with_nothing_to_say_has_no_trailing_space() {
 fn the_verdict_names_every_blocker_and_only_a_blocker_fails_the_exit() {
     let failing = [Row::fail("git", "", "x"), Row::warn("frame", "", "y")];
     assert!(table(&failing, false).ends_with(
-        "\u{2717} 1 blocker(s): git. Fix the \u{2192} hints above, then re-run `purlis doctor`.\n"
+        "\u{2717} 1 blocker: git. Fix the \u{2192} hints above, then re-run `purlis doctor`.\n"
     ));
     assert_eq!(exit_code(&failing), 1);
     let warning = [Row::ok("git", ""), Row::warn("frame", "", "y")];
     assert!(
-        table(&warning, false)
-            .ends_with("! 1 optional item(s) pending \u{2014} see hints above.\n")
+        table(&warning, false).ends_with("! 1 optional item pending \u{2014} see hints above.\n")
     );
     assert_eq!(exit_code(&warning), 0);
     let fine = [Row::ok("git", "")];
@@ -401,7 +400,7 @@ fn schema_names_a_missing_directory_and_one_occupied_by_a_file() {
     assert_eq!(r.status, Status::Warn);
     assert_eq!(
         r.detail,
-        "2 issue(s): missing directory: inventory/; workspaces/ is occupied by a file, not a \
+        "2 issues: missing directory: inventory/; workspaces/ is occupied by a file, not a \
          directory — reinit will refuse to touch it"
     );
 }
@@ -411,7 +410,7 @@ fn a_forge_block_that_does_not_resolve_is_named() {
     let (_d, root) = plane("[[forge]]\nkind = \"github\"\n[[forge]]\nkind = \"bitbucket\"\n");
     let r = one(&root, "charter.toml");
     assert_eq!(r.status, Status::Warn);
-    assert_eq!(r.detail, "1 [[forge]] block(s) failed to resolve");
+    assert_eq!(r.detail, "1 [[forge]] block failed to resolve");
     assert!(
         r.hint.starts_with(
             "[[forge]] block 1: unknown forge kind 'bitbucket' — known kinds: github, gitlab — \
@@ -716,7 +715,7 @@ fn a_root_off_its_branch_and_dirty_says_both_and_where_the_work_belongs() {
     std::fs::write(root.join("charter.toml"), "schema = 1\n# edited\n").unwrap();
     let r = one(&root, "plane root");
     assert_eq!(r.status, Status::Warn);
-    assert_eq!(r.detail, "on feature, not main, 1 uncommitted file(s)");
+    assert_eq!(r.detail, "on feature, not main, 1 uncommitted file");
     assert_eq!(
         r.hint,
         format!(
@@ -935,7 +934,7 @@ fn an_index_lock_being_written_is_stated_and_a_crashed_one_is_a_warning() {
     std::fs::write(&lock, "").unwrap();
     let r = one(&root, "index lock");
     assert_eq!(r.status, Status::Ok);
-    assert!(r.detail.starts_with("held now — 0 byte(s), "), "{r:?}");
+    assert!(r.detail.starts_with("held now — 0 bytes, "), "{r:?}");
     let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 3600);
     std::fs::File::options()
         .write(true)
@@ -945,7 +944,7 @@ fn an_index_lock_being_written_is_stated_and_a_crashed_one_is_a_warning() {
         .unwrap();
     let r = one(&root, "index lock");
     assert_eq!(r.status, Status::Warn);
-    assert_eq!(r.detail, format!("{} — 0 byte(s), 3h old", lock.display()));
+    assert_eq!(r.detail, format!("{} — 0 bytes, 3h old", lock.display()));
     assert!(r.hint.ends_with(&format!(
         "rm -f {}  — purlis never removes a lock.",
         lock.display()
@@ -1010,7 +1009,7 @@ fn a_clone_behind_its_upstream_is_named_in_whichever_workspace_it_is() {
     );
     assert_eq!(
         one(&root, "workspace clones").detail,
-        "1 clone(s) across all workspaces, none behind"
+        "1 clone across all workspaces, none behind"
     );
     git(&origin, &["commit", "-q", "--allow-empty", "-m", "two"]);
     git(&root.join("workspaces/beta/svc"), &["fetch", "-q"]);
@@ -1039,7 +1038,7 @@ fn a_workspace_charter_cannot_list_is_named_and_never_read_as_empty() {
     assert_eq!(r.status, Status::Warn, "{r:?}");
     assert_eq!(
         r.detail,
-        "0 clone(s) across 0 of 1 workspace(s), none behind; workspaces/shut cannot be checked"
+        "0 clones across 0 of 1 workspace, none behind; workspaces/shut cannot be checked"
     );
     assert_eq!(
         r.hint,
@@ -1188,7 +1187,7 @@ fn indexes_that_agree_with_their_files_are_counted() {
     std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
     // steward, _shared and ws:alpha — a base with no `memory/` is still counted, as Python
     // counts it.
-    assert_eq!(one(&root, "memory indexes").detail, "3 base(s) consistent");
+    assert_eq!(one(&root, "memory indexes").detail, "3 bases consistent");
 }
 
 #[test]
@@ -1282,7 +1281,7 @@ fn an_index_linked_out_of_the_plane_is_refused_and_not_counted_consistent() {
     .unwrap();
     let r = one(&root, "memory indexes");
     assert_eq!(r.status, Status::Warn);
-    assert_eq!(r.detail, "1 index(es) purlis will not touch");
+    assert_eq!(r.detail, "1 index purlis will not touch");
     assert!(r.hint.starts_with("_shared: '"), "{r:?}");
     assert!(r.hint.contains("outside the directories a control plane keeps its data in (persona-state, personas, workspaces). A committed symlink there redirects the write"), "{r:?}");
 }
@@ -1315,7 +1314,7 @@ fn with_no_front_door_declared_the_personas_that_exist_are_counted() {
     let r = one(&root, "front door");
     assert_eq!(r.status, Status::Ok);
     assert!(
-        r.detail.starts_with("none declared — 1 persona(s) exist"),
+        r.detail.starts_with("none declared — 1 persona exists"),
         "{r:?}"
     );
     std::fs::write(root.join("personas/.default"), "devops\n").unwrap();
@@ -1539,7 +1538,7 @@ fn the_built_in_profiles_are_listed_and_a_preflight_probes_none() {
     let rows = doctor(&root).run();
     assert_eq!(
         row(&rows, "harness profiles").detail,
-        "3 profile(s): claude, opencode, codex"
+        "3 profiles: claude, opencode, codex"
     );
     assert!(!rows.iter().any(|r| r.name.starts_with("profile ")));
 }
@@ -1671,7 +1670,7 @@ fn only_a_typed_doctor_asks_git_whether_the_local_file_would_be_committed() {
     let hook = Doctor::at(&root, &root, false, true).run();
     assert_eq!(
         row(&hook, "harness profiles").detail,
-        "4 profile(s): claude, opencode, codex, claude-work"
+        "4 profiles: claude, opencode, codex, claude-work"
     );
 }
 
@@ -1878,8 +1877,8 @@ fn a_forge_a_workspace_repo_is_on_has_its_cli_looked_for_and_its_sign_in_asked_f
     assert!(!gh.detail.starts_with("not looked for"), "{gh:?}");
     assert!(
         gh.detail
-            .ends_with("1 workspace repo(s) have their origin on github.com)")
-            || gh.detail == "not found, and 1 workspace repo(s) have their origin on github.com",
+            .ends_with("1 workspace repo has its origin on github.com)")
+            || gh.detail == "not found, and 1 workspace repo has its origin on github.com",
         "{gh:?}"
     );
     // This file's doctor is the preflight, which asks no forge, so the CLI is never started
@@ -1906,7 +1905,7 @@ fn git_auth_is_green_when_every_repo_carries_its_forges_token_only_policy() {
     assert_eq!(r.status, Status::Ok, "{r:?}");
     assert_eq!(
         r.detail,
-        "token-only across 1 repo(s) (each forge's own HTTPS token; no SSH/signing)"
+        "token-only across 1 repo (each forge's own HTTPS token; no SSH/signing)"
     );
 }
 
@@ -1918,7 +1917,7 @@ fn git_auth_names_a_drifted_clone_and_the_command_that_fixes_it() {
     let r = one(&root, "git auth");
 
     assert_eq!(r.status, Status::Warn, "{r:?}");
-    assert_eq!(r.detail, "1/1 repo(s) not token-only: svc");
+    assert_eq!(r.detail, "1/1 repo not token-only: svc");
     assert_eq!(
         r.hint,
         "Apply the single-credential policy to every clone: purlis git-policy --apply"
@@ -1950,9 +1949,9 @@ fn git_auth_does_not_send_an_unmanaged_forge_to_an_apply_that_skips_it() {
     let r = one(&root, "git auth");
 
     assert_eq!(r.status, Status::Warn, "{r:?}");
-    assert_eq!(r.detail, "1/1 repo(s) not token-only: svc");
+    assert_eq!(r.detail, "1/1 repo not token-only: svc");
     assert!(
-        r.hint.starts_with("1 repo(s) have an unrecognised forge"),
+        r.hint.starts_with("1 repo has an unrecognised forge"),
         "{r:?}"
     );
     // The fix is a [[forge]] block, so the row links to Forges (SE-22).
@@ -1969,10 +1968,10 @@ fn git_auth_splits_its_hint_between_fixable_and_unmanaged_repos_and_names_at_mos
 
     let r = one(&root, "git auth");
 
-    assert_eq!(r.detail, "4/4 repo(s) not token-only: a, b, c …");
+    assert_eq!(r.detail, "4/4 repos not token-only: a, b, c …");
     assert!(
         r.hint.starts_with(
-            "purlis git-policy --apply fixes 3 drifted repo(s); 1 more have an unrecognised forge"
+            "purlis git-policy --apply fixes 3 drifted repos; 1 more has an unrecognised forge"
         ),
         "{r:?}"
     );
@@ -1996,7 +1995,7 @@ fn git_auth_names_a_workspace_it_cannot_read_rather_than_counting_it_clean() {
     assert_eq!(r.status, Status::Warn, "{r:?}");
     assert_eq!(
         r.detail,
-        "token-only across 1 repo(s); 1 director(ies) under workspaces/ cannot be checked"
+        "token-only across 1 repo; 1 directory under workspaces/ cannot be checked"
     );
     assert_eq!(
         r.hint,
@@ -2278,7 +2277,7 @@ fn a_handoff_rule_a_person_wrote_is_named_and_is_no_warning() {
     assert_eq!(r.fix, None, "{r:?}");
     assert!(
         r.detail.contains(
-            "your own rule(s) stay, and your harness decides by them: .claude/settings.json \
+            "your own rules stay, and your harness decides by them: .claude/settings.json \
              (deny: Bash(purlis handoff *)); .claude/settings.local.json (ask: Bash(purlis handoff *))"
         ),
         "{r:?}"
@@ -2376,7 +2375,7 @@ fn an_ask_rule_that_shadows_a_persona_tool_is_named_with_who_declares_it() {
     .unwrap();
     let r = one(&root, "ask rules");
     assert_eq!(r.status, Status::Warn, "{r:?}");
-    assert_eq!(r.detail, "kubectl prompt(s) despite being declared by ops");
+    assert_eq!(r.detail, "kubectl prompts despite being declared by ops");
     std::fs::write(
         root.join(".claude/settings.json"),
         r#"{"permissions": {"ask": ["Bash(charter report *--yes*)", "Bash(terraform *)"]}}"#,
@@ -2384,7 +2383,7 @@ fn an_ask_rule_that_shadows_a_persona_tool_is_named_with_who_declares_it() {
     .unwrap();
     assert_eq!(
         one(&root, "ask rules").detail,
-        "2 rule(s), none shadow a persona tool"
+        "2 rules, none shadow a persona tool"
     );
 }
 
@@ -2418,7 +2417,7 @@ fn a_plane_without_the_report_rule_is_flagged_and_fix_adds_it() {
     );
     let r = one(&root, "ask rules");
     assert_eq!(r.status, Status::Ok, "{r:?}");
-    assert_eq!(r.detail, "1 rule(s), none shadow a persona tool");
+    assert_eq!(r.detail, "1 rule, none shadow a persona tool");
     assert!(
         std::fs::read_to_string(root.join("opencode.json"))
             .unwrap()
@@ -2595,7 +2594,7 @@ fn changes_are_counted_across_every_workspace_not_only_the_active_one() {
     change_record(&root, "beta", "b", &[]);
     let r = one(&root, "changes");
     assert_eq!(r.status, Status::Ok, "{r:?}");
-    assert_eq!(r.detail, "2 change(s), none divergent");
+    assert_eq!(r.detail, "2 changes, none divergent");
 }
 
 #[test]
@@ -2611,7 +2610,7 @@ fn an_unreadable_record_is_a_fail_that_names_it() {
     assert_eq!(r.status, Status::Fail);
     assert!(
         r.detail
-            .starts_with("unreadable record(s): alpha/bad: change 'bad': unknown key state"),
+            .starts_with("unreadable record: alpha/bad: change 'bad': unknown key state"),
         "{}",
         r.detail
     );
@@ -2656,7 +2655,7 @@ fn a_changes_directory_it_cannot_list_is_named_beside_the_verdict() {
         "never OK over a store it did not read: {r:?}"
     );
     assert!(
-        r.detail.starts_with("1 change(s), none divergent"),
+        r.detail.starts_with("1 change, none divergent"),
         "{}",
         r.detail
     );
@@ -3513,7 +3512,7 @@ fn an_index_lock_dated_ahead_of_the_clock_is_being_written_not_a_crash() {
     assert_eq!(r.status, Status::Ok, "{r:?}");
     assert_eq!(
         r.detail,
-        "held now — 0 byte(s), 0s old; a git is probably writing"
+        "held now — 0 bytes, 0s old; a git is probably writing"
     );
 }
 
@@ -3542,7 +3541,7 @@ fn a_git_file_past_the_record_bound_is_not_followed_to_a_lock() {
     )
     .unwrap();
     let r = one(&root, "index lock");
-    assert!(r.detail.starts_with("held now — 0 byte(s)"), "{r:?}");
+    assert!(r.detail.starts_with("held now — 0 bytes"), "{r:?}");
 }
 
 /// The `plane root` row over a push record of exactly these bytes.
@@ -3727,7 +3726,7 @@ fn a_plane_inside_a_larger_repository_is_checked_on_that_repositorys_index() {
     );
     std::fs::write(top.join(".git/index.lock"), "").unwrap();
     let r = one(&root, "index lock");
-    assert!(r.detail.starts_with("held now — 0 byte(s)"), "{r:?}");
+    assert!(r.detail.starts_with("held now — 0 bytes"), "{r:?}");
 }
 
 // ---- where a list stops naming (#464) ---------------------------------------------------------
@@ -3741,13 +3740,13 @@ fn three_unresolved_forge_blocks_are_all_named_and_a_fourth_is_counted_not_named
     };
     let (_d, root) = plane(&blocks(3));
     let r = one(&root, "charter.toml");
-    assert_eq!(r.detail, "3 [[forge]] block(s) failed to resolve", "{r:?}");
+    assert_eq!(r.detail, "3 [[forge]] blocks failed to resolve", "{r:?}");
     assert!(r.hint.contains("'nope2'"), "{r:?}");
     assert!(!r.hint.contains('…'), "{r:?}");
 
     let (_d, root) = plane(&blocks(4));
     let r = one(&root, "charter.toml");
-    assert_eq!(r.detail, "4 [[forge]] block(s) failed to resolve", "{r:?}");
+    assert_eq!(r.detail, "4 [[forge]] blocks failed to resolve", "{r:?}");
     assert!(!r.hint.contains("'nope3'"), "{r:?}");
     assert!(r.hint.contains(" … — those hosts"), "{r:?}");
 }
@@ -3761,7 +3760,7 @@ fn git_auth_names_three_drifted_repos_without_saying_there_are_more() {
 
     let r = one(&root, "git auth");
 
-    assert_eq!(r.detail, "3/3 repo(s) not token-only: a, b, c");
+    assert_eq!(r.detail, "3/3 repos not token-only: a, b, c");
 }
 
 #[cfg(unix)]
@@ -3790,7 +3789,7 @@ fn git_auth_names_the_workspaces_folder_itself_when_it_cannot_be_listed() {
     assert_eq!(r.status, Status::Warn, "{r:?}");
     assert_eq!(
         r.detail,
-        "token-only across 0 repo(s); workspaces/ cannot be checked"
+        "token-only across 0 repos; workspaces/ cannot be checked"
     );
 }
 

@@ -392,10 +392,7 @@ fn commits_no_other_ref_reaches_are_named_and_kept_unless_forced() {
 
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     let text = said(&out);
-    assert!(
-        text.contains("1 commit(s) that exist nowhere else"),
-        "{text}"
-    );
+    assert!(text.contains("1 commit that exists nowhere else"), "{text}");
     assert!(
         text.contains("the unpushed feature"),
         "the commit is named: {text}"

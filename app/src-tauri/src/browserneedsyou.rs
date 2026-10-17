@@ -20,7 +20,8 @@
 //!   gated send held to the board's answer, as a vault's Allow is (ADR 0064, amended
 //!   2026-10-16).
 //! - **The Ask ends with its browser**: closed by the chat, ended by a narrowing, by its chat
-//!   closing, or by Stop all. Each leaves an Update in the Inbox ([`Ended`]),
+//!   closing, by Stop all, or by its engine ending on its own, which the session host's word of
+//!   the program's end tells at once (#2385). Each leaves an Update in the Inbox ([`Ended`]),
 //!   and the chat is told nothing more than its next browser call says.
 //!
 //! **In memory only**, like every Ask a chat raises: a relaunch starts with none. Nothing the
@@ -99,6 +100,17 @@ pub type Teller = Arc<dyn Fn(AskEnded) + Send + Sync + 'static>;
 /// Told each Ask that ended with its browser.
 pub type EndedTeller = Arc<dyn Fn(Ended) + Send + Sync + 'static>;
 
+/// What came of raising an Ask on a chat's browser ([`NeedsYou::raise_on`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Raised {
+    /// It waits now.
+    Waits,
+    /// One waits on that browser already.
+    Already,
+    /// Its engine has ended: nothing waits on it.
+    Gone,
+}
+
 /// The Asks of one project's chats that wait on the person to take a browser over.
 pub struct NeedsYou {
     waiting: Mutex<Vec<Waiting>>,
@@ -147,6 +159,22 @@ impl NeedsYou {
         }
         waiting.push(one);
         true
+    }
+
+    /// **Raises `one` on a browser whose engine runs** (#2385), and looks again once it is
+    /// raised: an engine whose end was settled between the chat's look at its browser and the
+    /// raise ends the Ask at once, with an Update, as any browser's end does.
+    pub(crate) fn raise_on(&self, browsers: &ChatBrowsers, one: Waiting, now: u64) -> Raised {
+        let (session, program) = (one.session, one.program.clone());
+        let raised = self.raise(one);
+        self.settle(browsers, now);
+        if !browsers.holds(session, &program) {
+            Raised::Gone
+        } else if raised {
+            Raised::Waits
+        } else {
+            Raised::Already
+        }
     }
 
     /// **The person took browser `program` over**, from its Ask or its view: the Ask waits on,
@@ -273,18 +301,32 @@ pub fn answered_first(
                     ),
                 });
             };
-            let raised = needs.raise(Waiting {
-                session: browse.chat,
-                browser: name.clone(),
-                program,
-                question: question.clone(),
-                since: now,
-                taken: false,
-            });
-            Some(if raised {
-                told(&name, asked_said(&name))
+            // A browser whose engine ended is gone: the person is asked nothing about it (#2385).
+            let raised = if browsers.holds(browse.chat, &program) {
+                needs.raise_on(
+                    browsers,
+                    Waiting {
+                        session: browse.chat,
+                        browser: name.clone(),
+                        program,
+                        question: question.clone(),
+                        since: now,
+                        taken: false,
+                    },
+                    now,
+                )
             } else {
-                told(&name, already_said(&name))
+                Raised::Gone
+            };
+            Some(match raised {
+                Raised::Waits => told(&name, asked_said(&name)),
+                Raised::Already => told(&name, already_said(&name)),
+                Raised::Gone => {
+                    browsers.let_go_of_ended(browse.chat, &name);
+                    Answer::No {
+                        why: crate::chatbrowsers::gone_said(&name),
+                    }
+                }
             })
         }
         Browsing::Act(_) => {

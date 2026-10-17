@@ -11,6 +11,7 @@
 use std::path::Path;
 
 use super::{Say, Sink};
+use crate::counts::{counted, plural};
 use crate::worktree::git;
 
 /// The one remedy charter names.
@@ -75,16 +76,17 @@ pub fn report(
     let mut bits = Vec::new();
     if !absent.is_empty() {
         bits.push(format!(
-            "{} submodule(s) recorded but not initialised ({}) — nothing is checked out \
-             there, so anything that runs from them fails with 'no such file or directory'",
-            absent.len(),
-            absent.join(", ")
+            "{} recorded but not initialised ({}) — nothing is checked out \
+             there, so anything that runs from {} fails with 'no such file or directory'",
+            counted(absent.len(), "submodule", "submodules"),
+            absent.join(", "),
+            plural(absent.len(), "it", "them")
         ));
     }
     if !moved.is_empty() {
         bits.push(format!(
-            "{} submodule(s) not at the commit {} records ({})",
-            moved.len(),
+            "{} not at the commit {} records ({})",
+            counted(moved.len(), "submodule", "submodules"),
             branch.unwrap_or("this branch"),
             moved.join(", ")
         ));

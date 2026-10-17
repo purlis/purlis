@@ -144,6 +144,9 @@ struct Chat {
     browsers: Vec<(String, String)>,
     /// The one a call that names none uses.
     current: Option<String>,
+    /// The programs of its browsers whose engine ended by itself (#2385): no longer listed, and
+    /// its next call on one says it has gone.
+    ended: Vec<String>,
     /// The number the next browser is named by.
     next: u32,
     /// Its browsers were ended because the person narrowed its reach, and it is not told yet.
@@ -168,6 +171,7 @@ impl Default for Chat {
             since: 0,
             browsers: Vec::new(),
             current: None,
+            ended: Vec::new(),
             next: 1,
             narrowed: false,
             as_persona: AsPersona::default(),
@@ -187,7 +191,18 @@ impl Chat {
             .map(|(_, program)| program.clone())
     }
 
+    /// How many of its browsers run: one whose engine ended counts no more.
+    fn running(&self) -> usize {
+        self.browsers
+            .iter()
+            .filter(|(_, program)| !self.ended.contains(program))
+            .count()
+    }
+
     fn drop_browser(&mut self, name: &str) {
+        if let Some(program) = self.program(name) {
+            self.ended.retain(|one| *one != program);
+        }
         self.browsers.retain(|(one, _)| one != name);
         if self.current.as_deref() == Some(name) {
             self.current = self.browsers.last().map(|(one, _)| one.clone());
@@ -232,6 +247,14 @@ fn end(driver: &dyn Driver, program: &str) -> bool {
             false
         }
     }
+}
+
+/// What a chat is told of its browser `name`, which has ended.
+pub fn gone_said(name: &str) -> String {
+    format!(
+        "browser {name} has ended (stopped, or its engine closed), and what it held is gone: the \
+         next browser call opens a new one"
+    )
 }
 
 /// What a chat is told while the person has not answered its Ask.
@@ -312,12 +335,15 @@ impl ChatBrowsers {
             .lock()
             .iter()
             .flat_map(|(session, chat)| {
-                chat.browsers.iter().map(|(name, program)| ChatBrowser {
-                    session: *session,
-                    name: name.clone(),
-                    program: program.clone(),
-                    unended: false,
-                })
+                chat.browsers
+                    .iter()
+                    .filter(|(_, program)| !chat.ended.contains(program))
+                    .map(|(name, program)| ChatBrowser {
+                        session: *session,
+                        name: name.clone(),
+                        program: program.clone(),
+                        unended: false,
+                    })
             })
             .collect();
         // And those not ended yet, after the ones its chat uses (D-2013-16).
@@ -379,11 +405,38 @@ impl ChatBrowsers {
         Some((name, program))
     }
 
-    /// Whether chat `session` still has browser `program` (#2015).
+    /// Whether chat `session` still has browser `program` (#2015), its engine running.
     pub fn holds(&self, session: u32, program: &str) -> bool {
-        self.lock()
-            .get(&session)
-            .is_some_and(|chat| chat.browsers.iter().any(|(_, one)| one == program))
+        self.lock().get(&session).is_some_and(|chat| {
+            !chat.ended.iter().any(|one| one == program)
+                && chat.browsers.iter().any(|(_, one)| one == program)
+        })
+    }
+
+    /// Chat `session` lets go of its browser `name`, which has ended: the next call opens a new
+    /// one.
+    pub fn let_go_of_ended(&self, session: u32, name: &str) {
+        if let Some(chat) = self.lock().get_mut(&session) {
+            chat.drop_browser(name);
+            self.relisted();
+        }
+    }
+
+    /// **Browser `program`'s engine ended by itself** (#2385), as the session host said: a
+    /// crash, or the host stopping it. It leaves its chat's rows at once, and the chat's next
+    /// call on it says it has gone. Whether it was a chat's.
+    pub fn engine_ended(&self, program: &str) -> bool {
+        let mut chats = self.lock();
+        let Some(chat) = chats.values_mut().find(|chat| {
+            chat.browsers.iter().any(|(_, one)| one == program)
+                && !chat.ended.iter().any(|one| one == program)
+        }) else {
+            return false;
+        };
+        chat.ended.push(program.to_owned());
+        drop(chats);
+        self.relisted();
+        true
     }
 
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
@@ -675,6 +728,7 @@ impl ChatBrowsers {
                 .iter_mut()
                 .flat_map(|(session, chat)| {
                     chat.current = None;
+                    chat.ended.clear();
                     chat.browsers
                         .drain(..)
                         .map(|(name, program)| ChatBrowser {
@@ -725,6 +779,7 @@ impl ChatBrowsers {
                 })
                 .collect();
             chat.current = None;
+            chat.ended.clear();
             chat.narrowed |= !programs.is_empty();
             programs
         };
@@ -833,7 +888,7 @@ impl ChatBrowsers {
             + chats
                 .iter()
                 .filter(|(session, _)| **session != browse.chat)
-                .map(|(_, chat)| chat.browsers.len())
+                .map(|(_, chat)| chat.running())
                 .sum::<usize>();
         let chat = chats.entry(browse.chat).or_default();
         // Always for this persona answers the Ask, raised or not (#2241).
@@ -860,7 +915,7 @@ impl ChatBrowsers {
         let named = browse.browser.clone().or_else(|| chat.current.clone());
         let chat_sites = chat.sites.clone();
         let start = |chat: &mut Chat| -> Result<String, String> {
-            if elsewhere + chat.browsers.len() >= AT_MOST_PER_PROJECT {
+            if elsewhere + chat.running() >= AT_MOST_PER_PROJECT {
                 return Err(format!(
                     "this project's chats have {AT_MOST_PER_PROJECT} browsers open, the most \
                      it may: close one of this chat's with browser_close first, or go on \
@@ -962,10 +1017,17 @@ impl ChatBrowsers {
                 Err(why) => return (no(&why), false),
             },
         };
+        // One whose engine ended is gone, as the host would say (#2385).
+        let ended = chat.ended.contains(&program);
         // The act may wait on its page a while: never under the lock.
         drop(chats);
         let reach_now = with_sites(reach(), open_web, &chat_sites);
-        match driver.act(&program, &browse.call_id, act, reach_now) {
+        let acted = if ended {
+            Err(Refused::Gone)
+        } else {
+            driver.act(&program, &browse.call_id, act, reach_now)
+        };
+        match acted {
             Ok(browsed) => (
                 Answer::Browsed {
                     browser: name,
@@ -975,17 +1037,8 @@ impl ChatBrowsers {
             ),
             Err(Refused::Said(why)) => (no(&why), false),
             Err(Refused::Gone) => {
-                if let Some(chat) = self.lock().get_mut(&browse.chat) {
-                    chat.drop_browser(&name);
-                    self.relisted();
-                }
-                (
-                    no(&format!(
-                        "browser {name} has ended (stopped, or its engine closed), and what it \
-                         held is gone: the next browser call opens a new one"
-                    )),
-                    false,
-                )
+                self.let_go_of_ended(browse.chat, &name);
+                (no(&gone_said(&name)), false)
             }
         }
     }
@@ -1030,6 +1083,19 @@ pub struct BrowsersListed {
 
 /// Told each project whose chats' browsers were added to or taken from.
 pub type ListedTeller = Arc<dyn Fn(crate::planes::PlaneId) + Send + Sync + 'static>;
+
+/// **Browser `program`'s engine ended by itself** (#2385), in whichever project its chat is:
+/// it leaves its chat's rows, and an Ask about it ends with an Update
+/// (`crate::browserneedsyou::settled`), at once, before the chat calls again.
+pub fn engine_ended(projects: &[Arc<crate::planes::Held>], program: &str) {
+    for held in projects {
+        let listing = held.browsers().listing();
+        if held.browsers().engine_ended(program) {
+            held.browsers_listed_since(listing);
+            crate::browserneedsyou::settled(held);
+        }
+    }
+}
 
 /// **The person narrowed chat `session`'s reach while it runs, in project `held`**: its
 /// browsers end ([`ChatBrowsers::narrowed`]), and where any did, `told` hears it for its tab.

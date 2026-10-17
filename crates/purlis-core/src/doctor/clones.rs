@@ -14,6 +14,7 @@
 use super::fsx::{self, Unread};
 use super::git::git_in;
 use super::{Doctor, Row, Status};
+use crate::counts::counted;
 use crate::memstore::py_strip;
 
 pub(super) fn workspace_clones(d: &Doctor) -> Row {
@@ -85,8 +86,10 @@ pub(super) fn workspace_clones(d: &Doctor) -> Row {
             let row = Row::warn(
                 NAME,
                 format!(
-                    "{total} clone(s) across {} of {looked_for} workspace(s), none behind",
-                    looked_for - unread_ws
+                    "{} across {} of {}, none behind",
+                    counted(total, "clone", "clones"),
+                    looked_for - unread_ws,
+                    counted(looked_for, "workspace", "workspaces")
                 ),
                 "",
             );
@@ -97,7 +100,10 @@ pub(super) fn workspace_clones(d: &Doctor) -> Row {
         }
         return Row::ok(
             NAME,
-            format!("{total} clone(s) across all workspaces, none behind"),
+            format!(
+                "{} across all workspaces, none behind",
+                counted(total, "clone", "clones")
+            ),
         );
     }
     let mut detail = behind

@@ -11,6 +11,7 @@
 //! no log, and a healthy one has nothing to report; a row on every run would be furniture.
 
 use super::{Doctor, Row};
+use crate::counts::counted;
 use crate::work::log;
 
 const NAME: &str = "work links";
@@ -56,7 +57,8 @@ pub(super) fn work_links(d: &Doctor) -> Option<Row> {
         Row::warn(
             NAME,
             format!(
-                "{skipped} line(s) skipped, not one of the four closed key sets: {}",
+                "{} skipped, not one of the four closed key sets: {}",
+                counted(skipped, "line", "lines"),
                 files.join(", ")
             ),
             "Lines purlis did not write, or a newer purlis wrote. Each is read as absent; \
@@ -114,7 +116,7 @@ mod tests {
         assert_eq!(row.status, super::super::Status::Warn);
         assert_eq!(
             row.detail,
-            "1 line(s) skipped, not one of the four closed key sets: 1 in \
+            "1 line skipped, not one of the four closed key sets: 1 in \
              workspaces/alpha/work/01K6H0Z8Y3V1N3G4QK0A9T5B7C.jsonl"
         );
 

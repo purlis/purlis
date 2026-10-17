@@ -22,6 +22,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::counts::counted;
 use crate::repocmd::{Say, Sink};
 use crate::wscmd;
 
@@ -149,8 +150,8 @@ pub fn snapshot(request: &Request, say: Sink) -> u8 {
         return 1;
     }
     say(Say::Done(format!(
-        "Snapshot '{ws}' → workspaces/{ws}/workspace.json  ({} repo(s)):",
-        rows.len()
+        "Snapshot '{ws}' → workspaces/{ws}/workspace.json  ({}):",
+        counted(rows.len(), "repo", "repos")
     )));
     for row in &rows {
         say(Say::Info(format!(
@@ -281,7 +282,7 @@ mod tests {
         let (code, said) = run(dir.path(), "beta", false);
         assert_eq!(code, 2, "{said:?}");
         assert!(said[0].contains("Refusing to snapshot 'beta'"), "{said:?}");
-        assert!(said[1].contains("svc: 1 unpushed commit(s)"), "{said:?}");
+        assert!(said[1].contains("svc: 1 unpushed commit"), "{said:?}");
         assert!(
             !dir.path().join("workspaces/beta/workspace.json").exists(),
             "a refused snapshot records nothing"

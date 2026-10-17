@@ -113,7 +113,7 @@ fn a_keyring_vault_is_said_from_its_index_and_each_items_presence() {
     assert_eq!(row.status, Status::Ok, "{row:?}");
     assert_eq!(
         row.detail,
-        "'empty' (keyring): nothing stored yet; 'ops' (keyring): 2 key(s) in its index, each \
+        "'empty' (keyring): nothing stored yet; 'ops' (keyring): 2 keys in its index, each \
          with its item in the system keyring"
     );
     assert!(!format!("{row:?}").contains(VALUE));
@@ -144,7 +144,7 @@ fn a_key_the_index_lists_with_no_item_in_the_keyring_is_named_without_its_value(
     assert_eq!(row.status, Status::Warn, "{row:?}");
     assert_eq!(
         row.detail,
-        "'ops' (keyring): 1 of 2 key(s) its index lists have no item in the system keyring: \
+        "'ops' (keyring): 1 of 2 keys its index lists has no item in the system keyring: \
          DB_PASSWORD"
     );
     assert!(!format!("{row:?}").contains(VALUE));
@@ -174,7 +174,7 @@ fn the_preflight_asks_the_keyring_nothing() {
     assert_eq!(row.status, Status::Ok, "{row:?}");
     assert_eq!(
         row.detail,
-        "'ops' (keyring): 1 key(s) in its index; the preflight asks the keyring nothing"
+        "'ops' (keyring): 1 key in its index; the preflight asks the keyring nothing"
     );
 }
 

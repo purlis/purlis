@@ -1199,8 +1199,8 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
         }) => (
             true,
             format!(
-                "{} secret(s) in {STORE_NAME}, service '{service}'",
-                keys.len()
+                "{} in {STORE_NAME}, service '{service}'",
+                crate::counts::counted(keys.len(), "secret", "secrets")
             ),
         ),
     }
@@ -1589,7 +1589,7 @@ mod tests {
             health(&ctx, &ops),
             (
                 true,
-                format!("2 secret(s) in the system keyring, service '{service}'")
+                format!("2 secrets in the system keyring, service '{service}'")
             )
         );
     }

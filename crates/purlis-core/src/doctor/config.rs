@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::adopt::PinVerdict;
 
 use super::{Config, Doctor, NOT_CHECKED_HINT, Row, SettingsGroup, deferred, first_line};
+use crate::counts::counted;
 
 /// The words `[harness] default` may name, in registration order — Python's
 /// `instance.launchable_harnesses`.
@@ -415,7 +416,10 @@ fn forge_finding(cfg: &toml::Table) -> Option<(String, String)> {
         shown.push_str(" …");
     }
     Some((
-        format!("{} [[forge]] block(s) failed to resolve", errors.len()),
+        format!(
+            "{} failed to resolve",
+            counted(errors.len(), "[[forge]] block", "[[forge]] blocks")
+        ),
         format!(
             "{shown} — those hosts are NOT covered by the one-credential guard or \
              git-policy until fixed (other declared/default hosts still are)."
@@ -516,7 +520,11 @@ pub(super) fn schema(d: &Doctor) -> Row {
     }
     let row = Row::warn(
         NAME,
-        format!("{} issue(s): {}", found.len(), found.join("; ")),
+        format!(
+            "{}: {}",
+            counted(found.len(), "issue", "issues"),
+            found.join("; ")
+        ),
         "Run: purlis reinit  (creates what's missing; never touches existing content).",
     );
     // Reinit is the fix only when there is something it creates: a folder occupied by a file

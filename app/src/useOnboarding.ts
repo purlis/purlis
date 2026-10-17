@@ -24,6 +24,10 @@ import {
  * - **Read each time the steps appear** (`reread`, which `Onboarding.tsx` asks as it mounts),
  *   from the core's `onboarding.json` (Machine tier, no secrets), so a quit at any step, or a
  *   person who left the welcome for a project and came back, is at the same step.
+ *   `reread` settles once the place has answered (or could not be read): on a window that
+ *   already holds a project, `Onboarding.tsx` draws nothing until then (#2400), because the
+ *   answer decides whether the steps guide it, and a welcome swapped under a door press drops
+ *   the page that press opened.
  * - **Kept on every change**, the whole of it. A machine with no config home keeps nothing and
  *   says so once, in `trouble`; the steps still work for this launch.
  * - **The git check is the git gate's** (`gitPresence.ts`): while an act waits for git at the
@@ -48,8 +52,9 @@ export type Onboarding = {
   /** Whether a project opening now is the one the steps asked for. */
   awaiting: boolean;
   dispatch: (event: Event) => void;
-  /** Reads the kept place again, and looks at which harnesses this machine has. */
-  reread: () => void;
+  /** Reads the kept place again, and looks at which harnesses this machine has. Settles once
+   *  the kept place has answered, or could not be read. */
+  reread: () => Promise<void>;
   /** A project the steps asked for opened. */
   arrived: (made: Made) => void;
 };
@@ -83,7 +88,7 @@ export function useOnboarding({
   const pressed = useRef(0);
   const reread = useCallback(() => {
     const at = pressed.current;
-    void commands
+    const place = commands
       .onboardingProgress()
       .then((answer) => {
         // A place that could not be read is no place: the welcome, which is where a person
@@ -105,6 +110,7 @@ export function useOnboarding({
           setHarnessMissing(!answer.data.harnesses.some((row) => row.installed));
       })
       .catch(() => undefined);
+    return place;
   }, []);
 
   // Kept whole on every change, once the kept place has been read. One write at a time, in

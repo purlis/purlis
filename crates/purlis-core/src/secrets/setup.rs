@@ -1029,7 +1029,8 @@ pub fn create(ctx: &Ctx, req: &Request) -> Result<Marked, VaultError> {
     let left = identity::forget(ctx, &replaced);
     if left > 0 {
         tracing::warn!(
-            "purlis: {left} replaced identity item(s) of vault '{}' could not be deleted from {}",
+            "purlis: {} of vault '{}' could not be deleted from {}",
+            crate::counts::counted(left, "replaced identity item", "replaced identity items"),
             crate::personas::one_line(&req.name),
             keyring::STORE_NAME
         );

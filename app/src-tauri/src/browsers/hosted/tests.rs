@@ -102,6 +102,29 @@ fn two_clones_of_one_project_each_open_a_browser() {
 }
 
 #[test]
+fn an_engine_that_ends_by_itself_is_told_at_once_by_its_program() {
+    // #2385: nobody calls the browser; the host's word of its end is what tells.
+    let told: Arc<Mutex<Vec<String>>> = Arc::default();
+    let telling = Arc::clone(&told);
+    let window = window();
+    let browsers = WindowBrowsers::new(Arc::clone(&window.browsers.connection)).telling_ended(
+        Arc::new(move |program| telling.lock().unwrap().push(program)),
+    );
+    let program = browsers.open(&window.root).unwrap();
+    let other = browsers.open(&window.root).unwrap();
+
+    window.started.started()[0].ends(purlis_session_protocol::session::Exit::Signal(
+        "SIGSEGV".into(),
+    ));
+
+    until("the window hears the engine ended", || {
+        !told.lock().unwrap().is_empty()
+    });
+    assert_eq!(*told.lock().unwrap(), vec![program]);
+    assert_ne!(other, told.lock().unwrap()[0], "the other runs on");
+}
+
+#[test]
 fn stop_all_stops_every_browser_the_host_runs() {
     let window = window();
     window.browsers.open(&window.root).unwrap();

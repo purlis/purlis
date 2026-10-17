@@ -541,6 +541,78 @@ fn a_browser_not_yet_ended_counts_toward_the_projects_three() {
     assert_eq!(hosted.started.lock().unwrap().len(), 3);
 }
 
+#[test]
+fn a_browser_whose_engine_ended_no_longer_counts_toward_the_projects_three() {
+    // #2385: the host said it ended; the chat has not called since.
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    for _ in 0..3 {
+        answered(&browsers, &hosted, &ask(3, Browsing::New));
+    }
+    assert!(browsers.engine_ended("program-2"));
+
+    let fourth = answered(&browsers, &hosted, &ask(3, Browsing::New)).0;
+
+    assert!(matches!(fourth, Answer::Browsed { .. }), "{fourth:?}");
+    assert_eq!(hosted.started.lock().unwrap().len(), 4);
+}
+
+/// #2385: the host's word that a browser's engine ended reaches the project its chat is in:
+/// the browser leaves the listing, the window is told so, and the Ask about it ends with an
+/// Update for the Inbox. It holds the project and its hook socket, which a sandboxed run may
+/// not: CI runs it first.
+#[test]
+fn an_engine_that_ends_ends_the_ask_about_it_in_its_project_with_an_update() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its manifest");
+    let hosted = Arc::new(Hosted::default());
+    let asks_ended: Arc<Mutex<Vec<crate::browserneedsyou::AskEnded>>> = Arc::default();
+    let listed: Arc<Mutex<u32>> = Arc::default();
+    let planes = crate::planes::Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
+        .driving_browsers_with(hosted.clone())
+        .telling_browser_asks_ended({
+            let told = Arc::clone(&asks_ended);
+            Arc::new(move |one: crate::browserneedsyou::AskEnded| told.lock().unwrap().push(one))
+        })
+        .telling_browsers_listed({
+            let told = Arc::clone(&listed);
+            Arc::new(move |_: crate::planes::PlaneId| *told.lock().unwrap() += 1)
+        });
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    answered(held.browsers(), &hosted, &ask(3, click()));
+    held.browsers().allow(3, false);
+    answered(held.browsers(), &hosted, &ask(3, click()));
+    let question = BrowseAsk {
+        browser: Some("b1".into()),
+        ..ask(
+            3,
+            Browsing::NeedsYou {
+                question: "letters".into(),
+            },
+        )
+    };
+    crate::browserneedsyou::answered_first(held.browsers(), held.needs_you(), &question, 1000);
+    assert_eq!(held.needs_you().waiting().len(), 1);
+    let before = *listed.lock().unwrap();
+
+    super::engine_ended(&planes.every_held(), "program-1");
+
+    assert!(held.needs_you().waiting().is_empty());
+    let ended = asks_ended.lock().unwrap().clone();
+    assert_eq!(ended.len(), 1);
+    assert_eq!((ended[0].session, ended[0].browser.as_str()), (3, "b1"));
+    assert!(held.browsers().listed().is_empty());
+    assert!(
+        *listed.lock().unwrap() > before,
+        "the window reads the listing again"
+    );
+}
+
 /// #2245: a chat's browser tools run without the harness's own prompt, so the app refuses a
 /// browser call from a chat this window does not have open, before any Ask: it raises none,
 /// starts nothing, and says why. It holds the project and its hook socket, which a sandboxed

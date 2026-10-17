@@ -60,6 +60,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use super::Asker;
+use crate::counts::counted;
 use crate::hookwire::{Answer, CommitAsk, Stage};
 use crate::repocmd::Say;
 use crate::worktree::{self, git, link};
@@ -522,8 +523,8 @@ fn made(
     lines.insert(
         0,
         Say::Done(format!(
-            "committed {id} on {branch}: {} file(s)",
-            staged.len()
+            "committed {id} on {branch}: {}",
+            counted(staged.len(), "file", "files")
         )),
     );
     Ok(lines)

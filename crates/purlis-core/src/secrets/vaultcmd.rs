@@ -14,6 +14,7 @@ use super::cmd::{self, Io, Say};
 use super::persons_own::{self, Verb};
 use super::registry::{self, Vault};
 use super::{Ctx, onepassword};
+use crate::counts::counted;
 
 /// Cells between one column of `vault list` and the next.
 const GAP: usize = 2;
@@ -357,8 +358,8 @@ fn token_tested(
     match setup::test(ctx, name, &sign_in, place) {
         Ok(tested) => {
             io.say(Say::Ok(format!(
-                "Signed in to 1Password: {} item(s) in vault '{}'; item '{}' {}.",
-                tested.items,
+                "Signed in to 1Password: {} in vault '{}'; item '{}' {}.",
+                counted(tested.items, "item", "items"),
                 crate::personas::one_line(&place.op_vault),
                 crate::personas::one_line(&tested.item),
                 if tested.item_there {
@@ -939,17 +940,17 @@ pub fn verify(ctx: &Ctx, name: Option<&str>, io: &mut dyn Io) -> i32 {
         }
         if bad.is_empty() {
             io.say(Say::Ok(format!(
-                "{}: {} reference(s) resolved",
+                "{}: {} resolved",
                 v.name,
-                rows.len()
+                counted(rows.len(), "reference", "references")
             )));
             continue;
         }
         io.say(Say::Err(format!(
-            "{}: {} of {} reference(s) did NOT resolve",
+            "{}: {} of {} did NOT resolve",
             v.name,
             bad.len(),
-            rows.len()
+            counted(rows.len(), "reference", "references")
         )));
         for (k, e) in bad {
             io.out(format!("    {k}: {}\n", e.as_deref().unwrap_or_default()).as_bytes());
@@ -1161,5 +1162,4 @@ pub fn destroy_with(
 }
 
 #[cfg(test)]
-#[path = "vaultcmd_tests.rs"]
 mod tests;

@@ -133,7 +133,7 @@ fn a_persona_chat_is_told_which_of_its_persona_s_servers_it_was_not_started_with
     let claude = told_on("claude-code");
     assert!(
         claude.contains(
-            "⬡ This persona's MCP server(s) `ga4` were not started: each is handed a \
+            "⬡ This persona's MCP server `ga4` was not started: it is handed a \
              credential from the persona's vault, and nobody has approved that on this \
              machine."
         ),
@@ -584,7 +584,7 @@ fn memory_and_refs_left_uncommitted_are_counted_by_where_they_sit() {
     std::fs::write(root.join("personas/ops/memory/b.md"), "# B\n").unwrap();
     assert_eq!(
         uncommitted_memory_nudge(&root).unwrap(),
-        "⬤ 1 persona memory/ref file(s) are **uncommitted** — durable knowledge not yet \
+        "⬤ 1 persona memory/ref file is **uncommitted** — durable knowledge not yet \
          shared. Commit + push it with `purlis save`."
     );
     std::fs::create_dir_all(root.join("personas/ops/refs")).unwrap();
@@ -592,14 +592,14 @@ fn memory_and_refs_left_uncommitted_are_counted_by_where_they_sit() {
     assert!(
         uncommitted_memory_nudge(&root)
             .unwrap()
-            .starts_with("⬤ 2 persona memory/ref file(s)")
+            .starts_with("⬤ 2 persona memory/ref files are")
     );
     std::fs::create_dir_all(root.join("workspaces/alpha/memory")).unwrap();
     std::fs::write(root.join("workspaces/alpha/memory/w.md"), "# W\n").unwrap();
     assert!(
         uncommitted_memory_nudge(&root)
             .unwrap()
-            .starts_with("⬤ 3 persona + workspace memory/ref file(s)")
+            .starts_with("⬤ 3 persona + workspace memory/ref files are")
     );
     crate::testgit::run(&root, &["add", "personas"]);
     crate::testgit::run(
@@ -618,7 +618,7 @@ fn memory_and_refs_left_uncommitted_are_counted_by_where_they_sit() {
     assert!(
         uncommitted_memory_nudge(&root)
             .unwrap()
-            .starts_with("⬤ 1 workspace memory/ref file(s)")
+            .starts_with("⬤ 1 workspace memory/ref file is")
     );
     // Anything else uncommitted is not memory.
     crate::testgit::run(&root, &["add", "workspaces"]);

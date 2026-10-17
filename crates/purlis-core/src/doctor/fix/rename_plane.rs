@@ -51,6 +51,7 @@ use std::path::Path;
 use crate::scaffold::settings;
 
 use super::Fixed;
+use crate::counts::counted;
 
 /// The commit's subject line.
 pub const SUBJECT: &str = "Rename this project's files to purlis names (rename-plane)";
@@ -366,8 +367,9 @@ fn rename(root: &Path, tracked: &[String], work: &mut Work) -> Result<(), String
             work.touched.retain(|p| p != settings::OPENCODE);
         } else {
             work.said.push(format!(
-                "✓ {}: {added} rule(s) under purlis's name, beside charter's",
-                settings::OPENCODE
+                "✓ {}: {} under purlis's name, beside charter's",
+                settings::OPENCODE,
+                counted(added, "rule", "rules")
             ));
         }
     }

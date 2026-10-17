@@ -266,8 +266,8 @@ fn create_says_which_leftover_selections_it_revives_and_use_selects_it() {
     assert_eq!(rc, 0);
     assert!(
         heard.err.contains(
-            "! 2 selection(s) already named 'qa' before it existed, and now select it: 1 \
-             session pointer(s), the plane-wide .charter/active-persona. Nobody chose it \
+            "! 2 selections already named 'qa' before it existed, and now select it: 1 \
+             session pointer, the plane-wide .charter/active-persona. Nobody chose it \
              again: those sessions and terminals now resolve to this persona.\n"
         ),
         "{}",

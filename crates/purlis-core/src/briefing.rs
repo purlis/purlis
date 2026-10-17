@@ -51,6 +51,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::active::{self, Ids};
+use crate::counts::plural;
 use crate::workspaces::Plane;
 use crate::{memstore, personagrant, pieces, shown};
 
@@ -897,9 +898,10 @@ fn uncommitted_memory_nudge(root: &Path) -> Option<String> {
         ("persona + workspace", "`purlis save`")
     };
     Some(format!(
-        "⬤ {} {where_} memory/ref file(s) are **uncommitted** — durable knowledge not yet \
+        "⬤ {} {where_} memory/ref {} **uncommitted** — durable knowledge not yet \
          shared. Commit + push it with {how}.",
-        rows.len()
+        rows.len(),
+        plural(rows.len(), "file is", "files are")
     ))
 }
 

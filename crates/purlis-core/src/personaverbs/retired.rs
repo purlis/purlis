@@ -28,6 +28,7 @@
 //! one that is merely stale. The marker line says "edit the persona, not this file", and every
 //! `sync-agents` run overwrote such a file, so an edit under the marker was never kept.
 
+use crate::counts::{counted, plural};
 use std::path::{Path, PathBuf};
 
 /// What `purlis persona sync-agents` answers now: one sentence, and what replaced it.
@@ -162,8 +163,11 @@ pub fn model_notice(model: &str, chain_names_profile: bool, offered: &[String]) 
 /// persona is started with them ([`super::chatstart`], D-1451-17).
 pub fn servers_notice(count: usize) -> String {
     format!(
-        "it declares {count} MCP server(s). A chat as this persona is started with them on \
-         Claude Code; on Codex and opencode they are not started"
+        "it declares {}. A chat as this persona is started with {} on \
+         Claude Code; on Codex and opencode {} not started",
+        counted(count, "MCP server", "MCP servers"),
+        plural(count, "it", "them"),
+        plural(count, "it is", "they are")
     )
 }
 

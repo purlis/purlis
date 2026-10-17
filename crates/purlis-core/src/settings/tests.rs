@@ -220,7 +220,7 @@ fn a_forge_that_does_not_resolve_is_refused_as_the_doctor_says_it() {
     );
     assert_eq!(why.len(), 1, "{why:?}");
     assert!(
-        why[0].starts_with("1 [[forge]] block(s) failed to resolve — [[forge]] block 0:"),
+        why[0].starts_with("1 [[forge]] block failed to resolve — [[forge]] block 0:"),
         "{why:?}"
     );
 }
@@ -865,7 +865,7 @@ fn a_problem_the_file_already_has_does_not_stop_an_unrelated_edit_but_a_new_one_
     let err = save(dir.path(), Which::Shared, Some(&after), &worse).unwrap_err();
     assert_eq!(err.len(), 1, "{err:?}");
     assert!(
-        err[0].starts_with("2 [[forge]] block(s) failed to resolve"),
+        err[0].starts_with("2 [[forge]] blocks failed to resolve"),
         "{err:?}"
     );
 }
@@ -1587,7 +1587,7 @@ fn each_reader_of_the_committed_file_gives_the_key_of_its_refusal() {
         keys(&["plane", "worktrees"])
     );
     assert_eq!(at("repos.app.sign in"), keys(&["repos", "app", "sign"]));
-    assert_eq!(at("[[forge]] block(s) failed"), keys(&["forge"]));
+    assert_eq!(at("[[forge]] block failed"), keys(&["forge"]));
 }
 
 /// **This machine's file hands its keys over too** (#1292), and **a refused profile gives its

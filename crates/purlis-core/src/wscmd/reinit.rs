@@ -39,6 +39,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::counts::counted;
 use crate::repocmd::{Say, Sink};
 use crate::wscmd::{self, ensure};
 use crate::wslayer::{self, Did, Why};
@@ -456,10 +457,11 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
             format!("{unseen} could not be checked; ")
         };
         say(Say::Info(format!(
-            "Applied {repairs} repair(s) across {} of {} workspace(s); {stuck}{kept}{unchecked}\
+            "Applied {} across {} of {}; {stuck}{kept}{unchecked}\
              the rest were current.",
+            counted(repairs, "repair", "repairs"),
             repaired.len(),
-            names.len() + unseen
+            counted(names.len() + unseen, "workspace", "workspaces")
         )));
     }
     0
@@ -621,7 +623,7 @@ mod tests {
         let (_code, lines) = run(dir.path(), Scope::All);
         let closing = lines.last().unwrap();
         assert!(
-            closing.contains("Applied 3 repair(s) across 2 of 2 workspace(s)"),
+            closing.contains("Applied 3 repairs across 2 of 2 workspaces"),
             "{lines:?}"
         );
     }

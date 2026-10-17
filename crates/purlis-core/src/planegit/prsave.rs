@@ -51,6 +51,7 @@
 //! the plane, and nothing is moved.
 
 use super::*;
+use crate::counts::counted;
 use crate::forge::Caller;
 use crate::forge::pr::{self, Gate, Pinned, Pr, Ready, Repo, State};
 use crate::planesave::{Mode, Plane};
@@ -1114,8 +1115,9 @@ pub(super) fn settle(
             };
             return blocked(
                 format!(
-                    "{request} merged, but the {newer} commit(s) made since would \
-                     not replay onto {target}: {said}"
+                    "{request} merged, but the {} made since would \
+                     not replay onto {target}: {said}",
+                    counted(newer, "commit", "commits")
                 ),
                 false,
                 say,
@@ -1131,7 +1133,10 @@ pub(super) fn settle(
         kind.request_noun_capitalised(),
         kind.request_ref(number),
         if newer > 0 {
-            format!(", with {newer} newer commit(s) on top")
+            format!(
+                ", with {} on top",
+                counted(newer, "newer commit", "newer commits")
+            )
         } else {
             String::new()
         }
