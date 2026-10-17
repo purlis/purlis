@@ -790,5 +790,4 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "stats_tests.rs"]
 mod recorded;

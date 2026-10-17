@@ -247,5 +247,4 @@ pub fn told(root: &Path, state: &Path, persona: &str, harness: Option<Harness>) 
 }
 
 #[cfg(test)]
-#[path = "chatstart_tests.rs"]
 mod tests;

@@ -221,5 +221,4 @@ fn said_refused(name: &str, cli: &str, e: &ForgeError) -> Row {
 }
 
 #[cfg(test)]
-#[path = "forgecli_tests.rs"]
 mod tests;

@@ -564,5 +564,4 @@ pub(crate) fn remove_unless_adopted(
 }
 
 #[cfg(test)]
-#[path = "define_tests.rs"]
 mod tests;

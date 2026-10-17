@@ -781,5 +781,4 @@ pub fn lint_command(linter: &Linter, name: Option<&str>, only: Option<&str>, say
 }
 
 #[cfg(test)]
-#[path = "lint_tests.rs"]
 mod tests;

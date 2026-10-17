@@ -305,5 +305,4 @@ fn open_to_others(_meta: &std::fs::Metadata) -> bool {
 }
 
 #[cfg(test)]
-#[path = "credentials_tests.rs"]
 mod tests;

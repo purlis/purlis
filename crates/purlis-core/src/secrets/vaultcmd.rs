@@ -1161,5 +1161,4 @@ pub fn destroy_with(
 }
 
 #[cfg(test)]
-#[path = "vaultcmd_tests.rs"]
 mod tests;

@@ -602,5 +602,4 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
 }
 
 #[cfg(test)]
-#[path = "onepassword_tests.rs"]
 mod tests;

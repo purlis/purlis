@@ -536,5 +536,4 @@ fn with_line(text: &str, key: &str, line: impl Fn(&str) -> String) -> String {
 }
 
 #[cfg(test)]
-#[path = "persona_agents_tests.rs"]
 mod tests;

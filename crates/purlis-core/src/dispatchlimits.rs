@@ -1458,5 +1458,4 @@ pub fn of(
 }
 
 #[cfg(test)]
-#[path = "dispatchlimits_tests.rs"]
 mod tests;
