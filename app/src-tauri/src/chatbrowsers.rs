@@ -1289,5 +1289,4 @@ fn no_such(name: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "chatbrowsers_tests.rs"]
 mod tests;
