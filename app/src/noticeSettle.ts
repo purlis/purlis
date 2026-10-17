@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import { SETTLE_MS } from "./TaskBlocksNotice";
+
+/**
+ * How long after a question formed, or after the tasks it lists changed, a press on it does
+ * nothing: a guard against a press aimed at what was there before. It only blunts a misclick;
+ * what binds an answer to what was shown is the core's check of each task's block (D-1508-9).
+ */
+export const SETTLE_MS = 1500;
 
 /** What a press on a granting Notice drawn or moved just now says: nothing was done. */
 export const NOTICE_MOVED_JUST_NOW =

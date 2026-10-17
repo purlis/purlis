@@ -14,7 +14,7 @@ import "../styles.css";
 import "./specimen.css";
 import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
-import { DEFAULT_TEXT, drawWindowText } from "../textSize";
+import { DEFAULT_TEXT, drawWindowText } from "../textDefaults";
 import { apply, drawIn } from "../theme/theme";
 import { Specimen } from "./Specimen";
 import { drawn, failed, given } from "./page";

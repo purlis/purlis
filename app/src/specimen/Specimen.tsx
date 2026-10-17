@@ -30,7 +30,7 @@ import {
   SettingsLayout,
 } from "../settings/components";
 import { look } from "../editor/look";
-import { DEFAULT_TEXT } from "../textSize";
+import { DEFAULT_TEXT } from "../textDefaults";
 import { xtermTheme, type Theme } from "../theme/theme";
 import { CHAT_LINES, EDITOR_FILE, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 
