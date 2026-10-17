@@ -345,6 +345,16 @@ tint lists it writes, and `core.test.ts` holds each to the engine's; the stylesh
 contrast suite stays in `contrast.test.ts`, which reads the engine's `PAIRS` and fails for a pair
 a stylesheet draws that the list does not hold.
 
+**The command line asks the same engine** (#2321). `purlis theme list` shows every theme
+available on the machine and where it comes from (built in, the person's `theme.json` as
+`mine`, an approved extension's as `<extension>/<theme>`), and `purlis theme check <theme>`
+prints the check: the values `load` had to put right as errors, each contrast finding with
+its pair and ratio as a warning, and the hard floors, as text or as `--json` for a chat. It
+exits 0 with no errors, 1 with an error or a refused file, 2 when there is no such theme.
+`purlis docs show themes` has the JSON's shape. **An extension's theme says what is wrong
+with it** on its row in Extensions, beside the row's other complaints: what the engine put
+right, or that it is not JSON and is not drawn.
+
 ### Where a user's theme lives
 
 `$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config` — then `charter/theme.json`.

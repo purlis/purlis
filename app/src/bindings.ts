@@ -5299,6 +5299,11 @@ export type ExtensionRow = {
 	 *  says what is in force rather than what was asked for.
 	 */
 	themes_in_force: string[],
+	/**
+	 *  What is wrong with each colour theme it is contributing right now, as the theme engine
+	 *  read it: one entry per theme with something to say, beside the row's other complaints.
+	 */
+	theme_trouble: ThemeTrouble[],
 	/**  Every contribution it declares, whether or not any of it is in force. */
 	declares: string[],
 	/**
@@ -9922,6 +9927,22 @@ export type ThemeOption = {
 	value: string,
 	/**  What the select shows. */
 	label: string,
+};
+
+/**
+ *  What is wrong with one colour theme an extension is contributing (#2321), in the theme
+ *  engine's words: what it had to put right, or that the theme is not JSON at all.
+ */
+export type ThemeTrouble = {
+	/**  The theme's name, as the manifest gives it. */
+	name: string,
+	/**
+	 *  What the engine had to put right, one sentence each; each value is drawn as the
+	 *  built-in's. Empty when the theme is refused.
+	 */
+	complaints: string[],
+	/**  Whether the theme is not JSON at all, so it is not drawn. */
+	refused: boolean,
 };
 
 /**  What a close that stops the chats below does next with the chat itself. */

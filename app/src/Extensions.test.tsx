@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { drawThemeFor, Extensions, troubleSaid } from "./Extensions";
+import { drawThemeFor, Extensions, themeTroubleSaid, troubleSaid } from "./Extensions";
 import {
   BUILT_IN,
   DEFAULT_THEME,
@@ -78,6 +78,7 @@ type Row = {
   source: string;
   on: boolean;
   themes_in_force: string[];
+  theme_trouble: { name: string; complaints: string[]; refused: boolean }[];
   declares: string[];
   refused: string | null;
   ask: typeof ASK | null;
@@ -130,6 +131,7 @@ const newRow: Row = {
   source: "installed",
   on: true,
   themes_in_force: [],
+  theme_trouble: [],
   declares: ASK.declares,
   refused: null,
   ask: ASK,
@@ -144,6 +146,7 @@ const builtInRow: Row = {
   source: "app",
   on: true,
   themes_in_force: [],
+  theme_trouble: [],
   declares: ["a view, “Statistics”"],
   refused: null,
   ask: null,
@@ -217,6 +220,59 @@ describe("what a contributed icon theme got wrong (#1145)", () => {
     for (const mark of ["\u0007", "\u202e", "\u2066"]) expect(said).not.toContain(mark);
     expect(said).toContain(`Icon theme “Seti${"n".repeat(59)}…”`);
     expect(said).toContain(`folder names "xy", which is no symbol`);
+  });
+});
+
+describe("what an extension's colour theme got wrong (#2321)", () => {
+  const approved = { ...newRow, standing: "approved", ask: null, themes_in_force: ["Dim"] };
+
+  it("says on the extension's row what the theme engine put right", async () => {
+    core({
+      rows: [
+        {
+          ...approved,
+          theme_trouble: [
+            {
+              name: "Dim",
+              complaints: ['text.primary is "red", which is not #rgb; used #d8d8d8'],
+              refused: false,
+            },
+          ],
+        },
+        builtInRow,
+      ],
+    });
+    render(<Extensions onClose={() => undefined} />);
+
+    const row = (await screen.findByText("Solarized")).closest("li") as HTMLElement;
+    expect(
+      within(row).getByText(
+        'Theme “Dim”, drawn as purlis’s own where it is wrong: text.primary is "red", which is not #rgb; used #d8d8d8.',
+      ),
+    ).toHaveAttribute("role", "status");
+    const other = screen.getByText("Persona statistics").closest("li") as HTMLElement;
+    expect(within(other).queryByText(/^Theme “/)).toBeNull();
+  });
+
+  it("says a theme that is not JSON is not drawn", async () => {
+    core({
+      rows: [{ ...approved, theme_trouble: [{ name: "Dim", complaints: [], refused: true }] }],
+    });
+    render(<Extensions onClose={() => undefined} />);
+
+    expect(
+      await screen.findByText("Theme “Dim” is not JSON, so it is not drawn."),
+    ).toBeInTheDocument();
+  });
+
+  it("bounds what it says, as an icon theme's", () => {
+    const said = themeTroubleSaid({
+      name: `Dim\u202e`,
+      complaints: ["x".repeat(400), "b", "c", "d"],
+      refused: false,
+    });
+    expect(said).toContain(`${"x".repeat(159)}…; b; c; and 1 more.`);
+    expect(said).not.toContain("\u202e");
   });
 });
 

@@ -133,6 +133,9 @@ pub struct ExtensionRow {
     /// The themes it is contributing **right now** — empty unless it is approved, so the row
     /// says what is in force rather than what was asked for.
     pub themes_in_force: Vec<String>,
+    /// What is wrong with each colour theme it is contributing right now, as the theme engine
+    /// read it: one entry per theme with something to say, beside the row's other complaints.
+    pub theme_trouble: Vec<ThemeTrouble>,
     /// Every contribution it declares, whether or not any of it is in force.
     pub declares: Vec<String>,
     /// Why charter could not read it, when it could not. A row that contributes nothing says
@@ -156,6 +159,19 @@ pub struct InstalledExtensions {
     pub unreadable: Option<String>,
     /// Rows the record held and charter dropped, with the reason for each.
     pub dropped: Vec<String>,
+}
+
+/// What is wrong with one colour theme an extension is contributing (#2321), in the theme
+/// engine's words: what it had to put right, or that the theme is not JSON at all.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct ThemeTrouble {
+    /// The theme's name, as the manifest gives it.
+    pub name: String,
+    /// What the engine had to put right, one sentence each; each value is drawn as the
+    /// built-in's. Empty when the theme is refused.
+    pub complaints: Vec<String>,
+    /// Whether the theme is not JSON at all, so it is not drawn.
+    pub refused: bool,
 }
 
 /// One theme an approved extension is contributing, as the window receives it.
@@ -458,6 +474,7 @@ fn listed(seen: &extension::Survey) -> InstalledExtensions {
                         .iter()
                         .map(|theme| theme.name.clone())
                         .collect(),
+                    theme_trouble: theme_trouble_of(row),
                     declares: asked.as_ref().map_or_else(
                         || {
                             row.found.as_ref().map_or_else(Vec::new, |found| {
@@ -474,6 +491,39 @@ fn listed(seen: &extension::Survey) -> InstalledExtensions {
         unreadable: seen.unreadable.clone(),
         dropped: seen.dropped.clone(),
     }
+}
+
+/// What is wrong with each colour theme `row` contributes right now: the theme engine reads
+/// each from the text its fingerprint was taken over, as it does to draw it.
+fn theme_trouble_of(row: &extension::Surveyed) -> Vec<ThemeTrouble> {
+    let Some(found) = &row.found else {
+        return Vec::new();
+    };
+    row.themes_in_force()
+        .iter()
+        .filter_map(|theme| {
+            let text = found.theme_text(theme)?;
+            let offered = purlis_core::theme::Offered::of(row.id.clone(), theme.name.clone(), text);
+            let trouble = match offered.theme {
+                None => ThemeTrouble {
+                    name: offered.name,
+                    complaints: Vec::new(),
+                    refused: true,
+                },
+                Some(resolved) if resolved.complaints.is_empty() => return None,
+                Some(resolved) => ThemeTrouble {
+                    name: offered.name,
+                    complaints: resolved
+                        .complaints
+                        .into_iter()
+                        .map(|one| one.said)
+                        .collect(),
+                    refused: false,
+                },
+            };
+            Some(trouble)
+        })
+        .collect()
 }
 
 /// The folder picker, for an extension this machine does not have.
@@ -1283,6 +1333,72 @@ mod tests {
             ask.state_note, None,
             "an extension with no state directory has no exception to state"
         );
+    }
+
+    #[test]
+    fn an_approved_extension_s_theme_says_what_the_engine_put_right_on_its_row() {
+        // #2321: an extension theme's complaints reach the person, on the row its other
+        // complaints are on, instead of being dropped.
+        let (_dir, at, config) = made();
+        std::fs::write(
+            at.join("dark.json"),
+            r#"{"name":"Solarized Dark","appearance":"dark","tokens":{"text.primary":"red"}}"#,
+        )
+        .expect("a theme");
+        let found =
+            extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+        extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
+
+        let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        let trouble = &listed.extensions[0].theme_trouble;
+        assert_eq!(trouble.len(), 1, "{trouble:?}");
+        assert_eq!(trouble[0].name, "Solarized Dark");
+        assert!(!trouble[0].refused);
+        assert_eq!(trouble[0].complaints.len(), 1, "{trouble:?}");
+        assert!(
+            trouble[0].complaints[0].starts_with("text.primary is \"red\", which is not #rgb"),
+            "{trouble:?}"
+        );
+    }
+
+    #[test]
+    fn an_approved_extension_s_theme_that_is_not_json_is_said_to_be_refused() {
+        let (_dir, at, config) = made();
+        std::fs::write(at.join("dark.json"), "{ not json").expect("a theme");
+        let found =
+            extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+        extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
+
+        let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        assert_eq!(
+            listed.extensions[0].theme_trouble,
+            [ThemeTrouble {
+                name: "Solarized Dark".to_owned(),
+                complaints: Vec::new(),
+                refused: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_theme_the_engine_reads_whole_has_nothing_to_say_and_one_not_approved_is_not_read() {
+        let (_dir, at, config) = made();
+        std::fs::write(
+            at.join("dark.json"),
+            r#"{"name":"Solarized Dark","appearance":"dark","tokens":{}}"#,
+        )
+        .expect("a theme");
+        let found =
+            extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+        let new = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        assert!(
+            new.extensions[0].theme_trouble.is_empty(),
+            "not in force, not read"
+        );
+        extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
+
+        let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        assert!(listed.extensions[0].theme_trouble.is_empty());
     }
 
     #[test]

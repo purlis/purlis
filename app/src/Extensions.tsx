@@ -9,6 +9,7 @@ import {
   type ExtensionAsk,
   type ExtensionTheme,
   type InstalledExtensions,
+  type ThemeTrouble,
 } from "./bindings";
 import { extensionsChanged } from "./extensionsOn";
 import { Choice, SettingActions } from "./settings/components";
@@ -260,6 +261,12 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                 {row.themes_in_force.length > 0 && (
                   <span className="in-force">Drawing: {row.themes_in_force.join(", ")}</span>
                 )}
+                {/* What the theme engine put right in each colour theme it draws (#2321). */}
+                {row.theme_trouble.map((trouble) => (
+                  <span key={trouble.name} className="came-back theme-trouble" role="status">
+                    {themeTroubleSaid(trouble)}
+                  </span>
+                ))}
                 {(iconTrouble.get(row.id) ?? []).map((trouble) => (
                   <span key={trouble.name} className="came-back icon-trouble" role="status">
                     {troubleSaid(trouble)}
@@ -355,12 +362,28 @@ function iconTroubleOf(offered: readonly ExtensionTheme[]): Map<string, IconTrou
   return by;
 }
 
-/** One icon theme's complaints as a sentence, bounded: its text is the extension's. */
-export function troubleSaid({ name, complaints }: IconTrouble): string {
+/** At most {@link MOST_COMPLAINTS} complaints, each cut to a line, and how many more. */
+function complaintsSaid(complaints: readonly string[]): string {
   const cut = (text: string) => plainLine(text, LONGEST_COMPLAINT);
   const said = complaints.slice(0, MOST_COMPLAINTS).map(cut).join("; ");
   const more = complaints.length - MOST_COMPLAINTS;
-  return `Icon theme “${plainLine(name)}”, drawn as purlis’s own where it is wrong: ${said}${more > 0 ? `; and ${more} more` : ""}.`;
+  return `${said}${more > 0 ? `; and ${more} more` : ""}`;
+}
+
+/** One icon theme's complaints as a sentence, bounded: its text is the extension's. */
+export function troubleSaid({ name, complaints }: IconTrouble): string {
+  return `Icon theme “${plainLine(name)}”, drawn as purlis’s own where it is wrong: ${complaintsSaid(complaints)}.`;
+}
+
+/**
+ * One colour theme's trouble as a sentence, bounded as an icon theme's is: what the theme
+ * engine put right in it, or that it is not JSON and so is not drawn. The words are the
+ * engine's; `purlis theme check` says them in full.
+ */
+export function themeTroubleSaid({ name, complaints, refused }: ThemeTrouble): string {
+  const theme = `Theme “${plainLine(name)}”`;
+  if (refused) return `${theme} is not JSON, so it is not drawn.`;
+  return `${theme}, drawn as purlis’s own where it is wrong: ${complaintsSaid(complaints)}.`;
 }
 
 /** What a standing says, in the words to put in front of the operator. */
