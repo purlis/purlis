@@ -26,11 +26,12 @@ function secret(key: string, over: Partial<VaultSecret> = {}): VaultSecret {
 }
 
 function contents(secrets: VaultSecret[], over: Partial<VaultContents> = {}): VaultContents {
+  const noun = secrets.length === 1 ? "secret" : "secrets";
   return {
     name: "ops",
     provider: "keyring",
     count: secrets.length,
-    health: { ok: true, detail: `${secrets.length} ${secrets.length === 1 ? "secret" : "secrets"} in the system keyring` },
+    health: { ok: true, detail: `${secrets.length} ${noun} in the system keyring` },
     secrets,
     refused: null,
     identity_unset_elsewhere: [],
