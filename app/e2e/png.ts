@@ -19,7 +19,7 @@ export function readPng(png: Buffer): Pixels {
   let height = 0;
   let channels = 0;
   const data: Buffer[] = [];
-  for (let at = 8; at < png.length; ) {
+  for (let at = 8; at < png.length;) {
     const length = png.readUInt32BE(at);
     const kind = png.toString("latin1", at + 4, at + 8);
     const body = png.subarray(at + 8, at + 8 + length);
@@ -48,7 +48,8 @@ export function readPng(png: Buffer): Pixels {
       const [pa, pb, pc] = [Math.abs(p - a), Math.abs(p - b), Math.abs(p - c)];
       const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
       const predicted = [0, a, b, (a + b) >> 1, paeth][filter];
-      if (predicted === undefined) throw new Error(`a PNG row filter this reader does not know: ${filter}`);
+      if (predicted === undefined)
+        throw new Error(`a PNG row filter this reader does not know: ${filter}`);
       pixels[y * stride + x] = (line[x] + predicted) & 0xff;
     }
   }
