@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use purlis_core::hookwire::{
     CHAT_ENV, HARNESS_ENV, Hearing, Listener, SANDBOXED_ENV, SOCKET_ENV, SandboxBlocked, TOKEN_ENV,
-    ToolCall,
+    ToolCall, spool,
 };
 use purlis_core::sandboxblock::{Block, CHAT_DIR_ENV, Kind, Operation};
 
@@ -43,7 +43,7 @@ fn hook_in(word: &str, payload: &serde_json::Value, sandboxed: bool) -> Heard {
 /// [`hook_in`], in a chat of `harness`.
 fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &str) -> Heard {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let (tools, heard_tool) = mpsc::channel();
@@ -58,7 +58,7 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
         saved: Box::new(|_| {}),
         refused: Box::new(|_| Ok(())),
         tool: Box::new(move |call| {
-            tools.lock().unwrap().send(call).unwrap();
+            let _ = tools.lock().unwrap().send(call);
             Ok(())
         }),
         doing: Box::new(|_| {}),
@@ -94,7 +94,13 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
         !stderr.contains(CANARY),
         "the hook's stderr, which goes to the harness's log, names the path: {stderr}"
     );
-    let tool = heard_tool.recv_timeout(Duration::from_secs(5)).ok();
+    // Spooled, where the host was slower than the hook waits, or recorded live.
+    let tool = support::told(&path, &heard_tool, |line| match line {
+        spool::Spooled::Tool(call) => Some(call),
+        _ => None,
+    })
+    .into_iter()
+    .next();
     let blocked =
         std::iter::from_fn(|| heard_block.recv_timeout(Duration::from_millis(300)).ok()).collect();
     Heard {

@@ -170,7 +170,10 @@ impl Chat {
     /// carries (#952), which neither copy hands a hearer, so here the copies are told apart by
     /// what they say: this answers each distinct refusal once.
     fn told(&self) -> Vec<CommitRefused> {
-        let mut told: Vec<CommitRefused> = self.heard.try_iter().collect();
+        // The spool first: a line the app recorded late the drain knows and skips (#952), and
+        // its hearer has run by then. Read the other way round, a late hearer could run
+        // between the two reads and the line be in neither.
+        let mut told: Vec<CommitRefused> = Vec::new();
         spool::drain(&spool::dir_for(&self.socket), &mut |item| {
             match item {
                 spool::Drained::Line {
@@ -185,6 +188,7 @@ impl Chat {
             Ok(())
         })
         .expect("the spool drains");
+        told.extend(self.heard.try_iter());
         let mut once = Vec::new();
         for refused in told {
             if !once.contains(&refused) {

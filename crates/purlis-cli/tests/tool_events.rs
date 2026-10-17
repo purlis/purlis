@@ -45,13 +45,41 @@ fn hook_with(
     payload: &serde_json::Value,
     env: &[(&str, &str)],
 ) -> (i32, String, Option<Heard>) {
+    let ran = run(word, payload, env, Host::Hears);
+    (ran.code, ran.said, ran.told)
+}
+
+/// How the host hears a tool call.
+#[derive(Clone, Copy, PartialEq)]
+enum Host {
+    /// At once.
+    Hears,
+    /// Not until the hook has exited: far past the 250 ms a hook waits for it
+    /// (`A_NOTICE_TAKES_AT_MOST`), so the hook spools its line.
+    Stalls,
+}
+
+/// One `charter hook` run against a host listening as the app does.
+struct Ran {
+    code: i32,
+    said: String,
+    /// The tool call the host was told, live or by the spool.
+    told: Option<Heard>,
+    /// Whether the spool beside the socket held a line when the hook had exited.
+    spooled_at_exit: bool,
+}
+
+fn run(word: &str, payload: &serde_json::Value, env: &[(&str, &str)], host: Host) -> Ran {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let (tx, heard) = mpsc::channel();
     let tx = Mutex::new(tx);
-    let _reading = listener.hear(Hearing {
+    // Held while the host is to stall; dropped, it lets the hearer go.
+    let (stall, held) = mpsc::channel::<()>();
+    let held = Mutex::new(held);
+    let reading = listener.hear(Hearing {
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
@@ -63,7 +91,12 @@ fn hook_with(
         saved: Box::new(|_| {}),
         refused: Box::new(|_| Ok(())),
         tool: Box::new(move |call| {
-            tx.lock().unwrap().send(call).unwrap();
+            if host == Host::Stalls {
+                // Until the test lets go; only ever disconnected, never sent to.
+                let _ = held.lock().unwrap().recv();
+            }
+            // A stalled hearer is let go once the test has read what it was told.
+            let _ = tx.lock().unwrap().send(call);
             Ok(())
         }),
         permission: Box::new(|_| None),
@@ -85,41 +118,51 @@ fn hook_with(
         .expect("charter runs");
     stand_in::feed(&mut child, payload.to_string().as_bytes());
     let out = child.wait_with_output().expect("charter finishes");
-    // A hook answers its harness once the host has recorded its line, or once it has spooled
-    // the line beside the socket for the next drain: a host slower than the hook waits is told
-    // by the spool.
-    let told = spooled_beside(&path)
-        .into_iter()
-        .next()
-        .map(Heard::Spooled)
-        .or_else(|| {
-            heard
-                .recv_timeout(Duration::from_secs(5))
-                .ok()
-                .map(Heard::Live)
-        });
-    (
-        out.status.code().unwrap_or(-1),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
+    let spooled_at_exit = spool::holds_lines(&spool::dir_for(&path), 7);
+    let told = told(&path, &heard);
+    // Before the reading is dropped, which wakes its thread and waits for it.
+    drop(stall);
+    drop(reading);
+    Ran {
+        code: out.status.code().unwrap_or(-1),
+        said: String::from_utf8_lossy(&out.stdout).into_owned(),
         told,
-    )
+        spooled_at_exit,
+    }
 }
 
-/// The tool calls spooled beside the host's socket at `path`, drained.
-fn spooled_beside(path: &std::path::Path) -> Vec<ToolCall> {
-    let mut spooled = Vec::new();
-    spool::drain(&spool::dir_for(path), &mut |item| {
-        if let spool::Drained::Line {
-            line: spool::Spooled::Tool(call),
-            ..
-        } = item
-        {
-            spooled.push(call);
+/// The one tool call a host at `socket` was told, once its hook has exited
+/// ([`support::told`]): spooled, or recorded live.
+///
+/// A line can be in both, where the host was still recording it live as the spool was drained
+/// (`Deliveries::begin` errs on a line twice, never none). The copies are the same call, told
+/// apart only by the arguments' digest, which a spooled line leaves out (#977).
+fn told(socket: &std::path::Path, live: &mpsc::Receiver<ToolCall>) -> Option<Heard> {
+    let mut heard: Vec<Heard> = spooled_beside(socket)
+        .into_iter()
+        .map(Heard::Spooled)
+        .collect();
+    heard.extend(live.try_iter().map(Heard::Live));
+    let at_rest = |call: &ToolCall| ToolCall {
+        args: None,
+        ..call.clone()
+    };
+    let mut once: Vec<ToolCall> = Vec::new();
+    for call in &heard {
+        if !once.contains(&at_rest(call)) {
+            once.push(at_rest(call));
         }
-        Ok(())
+    }
+    assert!(once.len() <= 1, "one tool call, live or spooled: {heard:?}");
+    heard.into_iter().next()
+}
+
+/// The tool calls spooled beside the host's socket at `path`, drained ([`support::spooled`]).
+fn spooled_beside(path: &std::path::Path) -> Vec<ToolCall> {
+    support::spooled(path, |line| match line {
+        spool::Spooled::Tool(call) => Some(call),
+        _ => None,
     })
-    .expect("the spool drains");
-    spooled
 }
 
 #[test]
@@ -170,6 +213,40 @@ fn a_tool_hook_that_decides_nothing_still_tells_the_host_it_ran() {
     assert_eq!(heard.tool.as_deref(), Some("Read"));
     assert_eq!(heard.decision, Decision::None);
     assert_eq!(heard.rule, None);
+}
+
+/// #2386: a host slower than a hook waits is told of the call by the spool. The hook does not
+/// wait past `A_NOTICE_TAKES_AT_MOST`; it spools the line and answers its harness. The host
+/// here records nothing until the hook has exited, so only the spool can hold the line.
+#[test]
+fn a_tool_call_the_host_is_too_slow_to_take_is_in_the_spool_when_the_hook_answers() {
+    let ran = run(
+        "pretooluse",
+        &serde_json::json!({
+            "tool_name": "Bash",
+            "tool_use_id": "toolu_8",
+            "tool_input": {"command": "GIT_CONFIG_COUNT=1 git commit -m x"},
+            "cwd": "/tmp",
+        }),
+        &[],
+        Host::Stalls,
+    );
+
+    assert_eq!(ran.code, 0);
+    assert!(
+        ran.said.contains("deny"),
+        "the harness still gets the refusal: {}",
+        ran.said
+    );
+    assert!(
+        ran.spooled_at_exit,
+        "the hook spooled the line the host did not take in time"
+    );
+    let heard = ran.told.expect("the host was told the tool call");
+    assert!(matches!(heard, Heard::Spooled(_)), "{heard:?}");
+    assert_eq!(heard.call.as_deref(), Some("toolu_8"));
+    assert_eq!(heard.decision, Decision::Deny);
+    assert_eq!(heard.rule.as_deref(), Some("git-hook-skip"));
 }
 
 #[test]
@@ -349,7 +426,7 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
     use std::io::BufRead;
     use std::time::Instant;
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let recorded_at = std::sync::Arc::new(Mutex::new(None::<Instant>));
@@ -407,10 +484,16 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
     let _ = child.wait();
 
     assert!(said.contains("deny"), "{said}");
+    // Or once the line is durable in the spool, where the host was slower than the hook waits
+    // (`A_NOTICE_TAKES_AT_MOST`): a loaded runner can make it so. The hook spools before it
+    // answers, so the spool holds the line still.
+    if spool::holds_lines(&spool::dir_for(&path), 7) {
+        return;
+    }
     let recorded_at = recorded_at
         .lock()
         .unwrap()
-        .expect("the host recorded the call");
+        .expect("the host recorded the call, or the hook spooled it");
     assert!(
         answered_at >= recorded_at,
         "the hook answered before the host had recorded its call"

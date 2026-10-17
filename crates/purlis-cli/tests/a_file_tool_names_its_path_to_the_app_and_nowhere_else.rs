@@ -16,7 +16,7 @@ use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::hookwire::{
-    CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, Touching,
+    CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, Touching, spool,
 };
 
 const CANARY: &str = "CANARY-touched-4f2a";
@@ -31,7 +31,7 @@ struct Heard {
 
 fn hook(word: &str, payload: &serde_json::Value) -> Heard {
     let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("hooks.sock");
+    let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(7).expect("a token");
     let (tools, heard_tool) = mpsc::channel();
@@ -46,7 +46,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         saved: Box::new(|_| {}),
         refused: Box::new(|_| Ok(())),
         tool: Box::new(move |call| {
-            tools.lock().unwrap().send(call).unwrap();
+            let _ = tools.lock().unwrap().send(call);
             Ok(())
         }),
         blocked: Box::new(|_| {}),
@@ -77,7 +77,13 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         "the hook's stderr, which goes to the harness's log, names the path: {stderr}"
     );
     let said = String::from_utf8_lossy(&out.stdout).into_owned();
-    let tool = heard_tool.recv_timeout(Duration::from_secs(5)).ok();
+    // Spooled, where the host was slower than the hook waits, or recorded live.
+    let tool = support::told(&path, &heard_tool, |line| match line {
+        spool::Spooled::Tool(call) => Some(call),
+        _ => None,
+    })
+    .into_iter()
+    .next();
     // The touch is written after the tool call, by the same process, which has exited.
     let touching =
         std::iter::from_fn(|| heard_touch.recv_timeout(Duration::from_millis(300)).ok()).collect();
