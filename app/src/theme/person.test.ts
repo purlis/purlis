@@ -54,7 +54,10 @@ describe("the person's layer", () => {
       '"purlis-terminal-0123456789ab", monospace',
     );
     expect(
-      drawnFont("terminal", withFonts, { density: "comfortable", fonts: { terminal: '"X", monospace' } }),
+      drawnFont("terminal", withFonts, {
+        density: "comfortable",
+        fonts: { terminal: '"X", monospace' },
+      }),
     ).toBe('"X", monospace');
   });
 });

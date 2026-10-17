@@ -486,11 +486,17 @@ impl PersonInForce {
 
 /// **The person's density and font override, read by the core's theme engine** (#2326): what
 /// the window draws over every theme once Settings changed them. The window keeps them in its
-/// layout file beside the text sizes, and is handed the same at creation.
+/// layout file beside the text sizes, and is handed the same at creation. `appearance` is the
+/// layout's `appearance` as JSON text.
 #[tauri::command]
 #[specta::specta]
-pub fn theme_person(appearance: Option<serde_json::Value>) -> PersonInForce {
-    PersonInForce::of(appearance.as_ref())
+pub fn theme_person(appearance: Option<String>) -> PersonInForce {
+    // As JSON text, as the layout itself crosses (`write_layout`): what is not JSON is read as
+    // a value of no setting's type, and said.
+    let value = appearance.map(|text| {
+        serde_json::from_str::<serde_json::Value>(&text).unwrap_or(serde_json::Value::String(text))
+    });
+    PersonInForce::of(value.as_ref())
 }
 
 /// Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on

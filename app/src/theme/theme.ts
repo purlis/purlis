@@ -266,8 +266,7 @@ export const NO_PERSON: Person = { density: "comfortable", fonts: {} };
 /** The person's layer the window was handed as it was created. */
 function handedPerson(): Person {
   const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
-    | { person?: Person }
-    | undefined;
+    { person?: Person } | undefined;
   const person = given?.person;
   return person && typeof person === "object" && person.fonts ? person : NO_PERSON;
 }

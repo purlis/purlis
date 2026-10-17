@@ -22,8 +22,8 @@
 //!   **One rule for both, and for every source**: a token the theme does not name is Purlis
 //!   Classic's of the same appearance, silently; a token or motion name purlis does not have,
 //!   and a key format 1 does not have, is said and left out; a value that is there and outside
-//!   its type or bound, a key format 2 does not have, geometry, or a document that is not a
-//!   theme **refuses the theme whole**
+//!   its type or bound, a key format 2 does not have, geometry in format 1, or a document that
+//!   is not a theme **refuses the theme whole**
 //!   (ADR 0097 §2). A refused theme draws Purlis, and the complaints name each value.
 //!   **It never fails**: ADR 0026 holds cold start at 2 s, and the window has to come up
 //!   whatever a file says.
@@ -38,8 +38,10 @@
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
 //!   vocabulary (`docs/schema/theme.schema.json`, held to it by a test).
 //!
-//! The spec's later steps (theme options, the choice levels, geometry and fonts, import and
-//! export) grow these same entries: `resolve` takes more inputs, `check` covers more
+//! **Geometry and fonts** (#2326, [`geometry`], [`Fonts`]) are read from a theme folder within
+//! their bounds, and [`Person`] reads the person's density and font override, whose [`Layer`]
+//! the window draws over every theme. The spec's later steps (theme options, the choice levels,
+//! import and export) grow these same entries: `resolve` takes more inputs, `check` covers more
 //! combinations, and a resolved theme carries more than colour and motion.
 //!
 //! # Values are closed grammars
@@ -109,8 +111,8 @@ pub struct Motion {
 /// **One appearance of a theme, complete**: what the window draws. Every token in [`TOKENS`] has
 /// a value, and so does every motion token.
 ///
-/// **It will grow** (spec #2313): typed values beyond colour, motion and icons (geometry and
-/// fonts #2326) and the option values it was drawn with (#2325). Its users are the window's wire types
+/// It carries the icon set (#2337), the geometry for both densities and the fonts (#2326); it
+/// will grow the option values it was drawn with (#2325). Its users are the window's wire types
 /// and the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ResolvedTheme {

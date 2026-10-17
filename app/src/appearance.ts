@@ -24,7 +24,8 @@ function loadAppearance(raw: unknown): { value: Appearance; said: string[] } {
     raw !== null && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as { appearance?: unknown }).appearance
       : undefined;
-  if (held === null || typeof held !== "object" || Array.isArray(held)) return { value: {}, said: [] };
+  if (held === null || typeof held !== "object" || Array.isArray(held))
+    return { value: {}, said: [] };
   return { value: held as Appearance, said: [] };
 }
 
@@ -59,19 +60,26 @@ export function useAppearance(): Appearance {
 async function drawAppearance(value: Appearance): Promise<void> {
   let answered: Awaited<ReturnType<typeof commands.themePerson>>;
   try {
-    answered = await commands.themePerson(written(value) ?? null);
+    const kept = written(value);
+    answered = await commands.themePerson(kept === undefined ? null : JSON.stringify(kept));
   } catch {
     return;
   }
   if (answered === null || typeof answered !== "object") return;
   const person = answered as Person & { complaints: string[] };
   drawPerson({ density: person.density, fonts: person.fonts, complaints: person.complaints });
+  sayAppearance(person.complaints);
+}
+
+/** Says what the engine put right in the person's settings, or takes it back: at launch, from
+ *  what the window was handed, and after each change. */
+export function sayAppearance(complaints: readonly string[] | undefined): void {
   sayAboutThisMachine(
     "appearance",
-    person.complaints.length > 0
+    complaints && complaints.length > 0
       ? {
           severity: "warn",
-          detail: person.complaints.join("; "),
+          detail: complaints.join("; "),
           remedy: "change it in Settings",
           settings: "you.look",
         }
