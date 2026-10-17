@@ -15,8 +15,10 @@ import {
   ratchet,
   SRC,
   sourceFiles,
-  withoutComments,
+  styleEntries,
+  utilityOf,
 } from "./guards.testkit";
+import { arithmeticLiteral } from "./cssMath.testkit";
 
 /**
  * **No spacing, corner or type size is written outside the core tokens** (DS-4, #1837;
@@ -24,12 +26,15 @@ import {
  *
  * Colour and motion stayed consistent because a guard refused a literal the day it was typed.
  * Geometry had no guard, and drifted to 132 paddings, 20 font sizes and 11 radii. This is that
- * guard for geometry: a stylesheet, an inline style or a Tailwind class that sets a **padding**,
- * a **margin**, a **gap**, a **corner**, a **font size** or an **offset** (`top`, `right`,
- * `bottom`, `left`, `inset` and its forms) takes it from `theme/geometry.css`, as
- * `var(--space-4)`, `var(--radius-md)` or `var(--font-size-sm)`. A Tailwind class is read by the
- * step it names (`p-5` is off the scale) or by the value it writes of its own (`p-[7px]`,
- * `text-[13px]`, `rounded-[5px]`, read as the same value in a stylesheet).
+ * guard for geometry: a stylesheet, a component's inline style (`{{ … }}` or `{ … } as
+ * CSSProperties`), a `.style.setProperty(…)` call in any script, or a Tailwind class that sets a
+ * **padding**, a **margin**, a **gap**, a **corner**, a **font size** or an **offset** (`top`,
+ * `right`, `bottom`, `left`, `inset` and its forms) takes it from `theme/geometry.css`, as
+ * `var(--space-4)`, `var(--radius-md)` or `var(--font-size-sm)`. A Tailwind class is read past
+ * its variants (`md:`, `data-[open]:`, `[&>*]:`) and its `!`, by the step it names (`p-5`,
+ * `start-5`, `text-2xl/7` are off the scale), by a value of its own (`p-[7px]`,
+ * `text-[13px]/7`, `rounded-[5px]`) or by an arbitrary property (`[padding:7px]`), each read as
+ * the same value in a stylesheet.
  *
  * **A box's size is not a step of the scale** (#2319). A width, a height and their min, max,
  * block and inline forms say how big one named box is (a dialog's width, an icon's square, a
@@ -40,14 +45,17 @@ import {
  * **What is not a literal.** Nothing (`0`, in any unit); a hairline (`1px`); one of the
  * element's own text (`1em`, `1lh`, `1ch`: an icon as big as the words beside it); a share of
  * the box or the window (`%`, `vh`, `vw`, `fr`); a keyword; and a token, or a token's whole
- * multiple or whole share inside `calc()` (`* 3`, `* -1`, `/ 2`). A multiplier or divisor that
- * is not a whole number is a literal (`calc(var(--space-1) * 3.5)`), but for the two structural
- * reserves sized in controls (`RESERVES`). A custom property that holds a length is held to the
- * rule of what reads it, in a stylesheet or in a component (its inline `style`, or a utility
- * such as `p-(--pad)`): one read by a padding, a margin, a gap, a corner, a font size or an
- * offset (or by a custom property that is), or read by nothing at all, is checked, so `--pad:
- * 7px; padding: var(--pad)` is still a literal, and so is a component's `"--pad": "7px"`; one
- * read only by a size or by another property this guard does not cover (a `translate`) is not.
+ * multiple or whole share (`* 3`, `* -1`, `/ 2`). The arithmetic of every CSS math function is
+ * read (`cssMath.testkit.ts`): a number in it that is not whole is a literal, however it is
+ * spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`), and so is a length written out times
+ * anything but ±1 (`calc(1px * 7)`, `calc(1em * 3)`). The two structural reserves sized in
+ * controls (`RESERVES`) pass in the one declaration each is written in. A custom property that
+ * holds a length is held to the rule of what reads it, in a stylesheet or in a component (an
+ * inline `style`, a utility such as `p-(--pad)` or `[padding:var(--pad)]`): one read by a
+ * padding, a margin, a gap, a corner, a font size or an offset (or by a custom property that
+ * is), or read by nothing at all, is checked, so `--pad: 7px; padding: var(--pad)` is still a
+ * literal, and so is a component's `"--pad": "7px"` or `setProperty("--pad", "7px")`; one read
+ * only by a size or by another property this guard does not cover (a `translate`) is not.
  * A shadow's lengths are its elevation's (`--elevation-*`), which this guard does not cover.
  *
  * **There is no allowance.** The surface tickets (DS-8, DS-12, DS-13, and #2315 to #2319) took
@@ -123,58 +131,40 @@ function isLiteral(length: string): boolean {
 }
 
 /**
- * **The reserves that are not a whole number of controls** (D-2319-7), each written exactly so:
- * a structural reserve given as a padding or a margin, sized in controls rather than snapped.
+ * **The two reserves that are not a whole number of controls** (D-2319-7), each held to the one
+ * declaration that writes it: a structural reserve given as a padding or a margin, sized in
+ * controls rather than snapped. The same expression anywhere else is a literal.
  */
-const RESERVES: readonly { written: string; why: string }[] = [
+const RESERVES: readonly { rule: string; property: string; written: string; why: string }[] = [
   {
-    written: "var(--size-control) * 2.5",
-    why: "the title bar's drag stretch (`--title-bar-drag`)",
+    rule: ".title-bar",
+    property: "--title-bar-drag",
+    written: "calc(var(--size-control) * 2.5)",
+    why: "the title bar's drag stretch",
   },
   {
-    written: "var(--size-control) * 2.75",
-    why: "the pane chips' room for the corner's controls before they are measured",
+    rule: ".pane-chips:has(.pane-crumbs)",
+    property: "margin-right",
+    written: "calc(var(--size-control) * 2.75)",
+    why: "the pane chips' room for the corner's controls before they are measured (the `--pane-controls` fallback)",
   },
 ];
 
-/** A number a token is multiplied or divided by inside `calc()`: `* 3`, `3 *`, `/ 2`. */
-const FACTOR = /([*/])\s*(-?\d*\.?\d+)(?![\w.%])|(?<![\w.-])(-?\d*\.?\d+)\s*\*/g;
-
-/** The text inside each `calc()`, `min()`, `max()` and `clamp()` a value writes, where CSS does
- *  arithmetic; nested ones in their outer one too. */
-function calcs(value: string): string[] {
-  const found: string[] = [];
-  for (const hit of value.matchAll(/(?<![\w-])(?:calc|min|max|clamp)\(/gi)) {
-    let depth = 1;
-    let end = hit.index + hit[0].length;
-    for (; end < value.length && depth > 0; end++) {
-      if (value[end] === "(") depth++;
-      else if (value[end] === ")") depth--;
-    }
-    found.push(value.slice(hit.index + hit[0].length, end - 1));
-  }
-  return found;
-}
-
-/** Whether a value multiplies or divides by a number that is not whole: a token's multiple is a
- *  whole number of its steps, and its share a whole number of parts, but for the reserves. */
-function multipliesALiteral(value: string): boolean {
-  const kept = RESERVES.reduce((text, { written }) => {
-    const exactly = new RegExp(`${written.replace(/[()*.]/g, "\\$&")}(?![\\d.])`, "g");
-    return text.replace(exactly, "");
-  }, value);
-  return calcs(kept).some((body) =>
-    [...body.matchAll(FACTOR)].some(([, , divisor, multiplier]) => {
-      const factor = Number(divisor ?? multiplier);
-      return !Number.isInteger(factor);
-    }),
+/** A declaration's value with its own reserve, if it has one, read as the control it is
+ *  sized in. */
+function withoutReserve(context: readonly string[], property: string, value: string): string {
+  const reserve = RESERVES.find(
+    (one) => one.rule === context.join(" › ") && one.property === property,
   );
+  return reserve ? value.split(reserve.written).join("var(--size-control)") : value;
 }
 
-/** Whether a value writes a literal size. */
+/** Whether a value writes a literal size: a length that is one (`isLiteral`), or arithmetic
+ *  that is (`arithmeticLiteral`: a factor that is not whole, or a length written out times
+ *  anything but ±1). */
 export function writesALiteral(value: string): boolean {
   return (
-    [...value.matchAll(LENGTH)].some(([length]) => isLiteral(length)) || multipliesALiteral(value)
+    [...value.matchAll(LENGTH)].some(([length]) => isLiteral(length)) || arithmeticLiteral(value)
   );
 }
 
@@ -190,57 +180,43 @@ export function cssLiterals(
       ({ property }) =>
         (GEOMETRY_PROPERTY.test(property) || customs.has(property)) && !/shadow/.test(property),
     )
-    .filter(({ value }) => writesALiteral(value))
+    .filter(({ context, property, value }) =>
+      writesALiteral(withoutReserve(context, property, value)),
+    )
     .map(({ context, property, value }) => `${context.join(" › ")} | ${property}: ${value}`);
 }
 
-/** Each entry of a component's inline `style` that is written out (a number, or a string with
- *  nothing interpolated), as the property it sets: `paddingTop` is `padding-top`, and a custom
- *  property (`"--least"`) is its own name. */
-function styleEntries(source: string): { key: string; property: string; value: string }[] {
-  const found: { key: string; property: string; value: string }[] = [];
-  const text = withoutComments(source, "ts");
-  for (const style of text.matchAll(/\bstyle=\{\{([\s\S]*?)\}\}/g)) {
-    for (const [, key, value] of style[1].matchAll(
-      /(?<![\w$.])(\w+|"--[\w-]+"|'--[\w-]+')\s*:\s*(-?\d*\.?\d+(?![\w.])|"[^"]*"|'[^']*'|`[^`$]*`)/g,
-    )) {
-      const property = /^["']/.test(key)
-        ? key.slice(1, -1)
-        : key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-      found.push({ key: key.replace(/^["']|["']$/g, ""), property, value });
-    }
-  }
-  return found;
+/** The property a Tailwind utility sets from a value of its own, by the utility's name. */
+function utilityProperty(utility: string): string {
+  if (/^p/.test(utility)) return "padding";
+  if (/^(?:m|space)/.test(utility)) return "margin";
+  if (/^gap/.test(utility)) return "gap";
+  if (/^rounded/.test(utility)) return "border-radius";
+  if (utility === "text") return "font-size";
+  return "inset";
 }
 
 /**
  * A Tailwind utility that sets geometry from a value of its own, in brackets (`p-[7px]`,
- * `text-[13px]`, `rounded-tl-[5px]`) or a custom property in parentheses (`p-(--pad)`), as the
- * property it sets and the value it writes (`_` is a space). `md:` and the other variants are
- * read past.
+ * `text-[13px]/7`, `rounded-tl-[5px]`) or a custom property in parentheses (`p-(--pad)`), and an
+ * arbitrary property (`[padding:7px]`, `[--pad:7px]`), as the property it sets and the value it
+ * writes (`_` is a space). Its variants (`md:`, `data-[open]:`, `[&>*]:`) are read past.
  */
 const ARBITRARY =
-  /^(?:[\w-]+:)*-?(p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|rounded(?:-[trblse]{1,2})?|text)-(?:\[([^\]]+)\]|\((--[\w-]+)\))$/;
+  /^-?(p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|rounded(?:-[trblse]{1,2})?|text)-(?:\[([^\]]+)\]|\((--[\w-]+)\))(?:\/.+)?$/;
 
 function arbitrary(word: string): { property: string; value: string } | undefined {
-  const [, utility, written, custom] = ARBITRARY.exec(word) ?? [];
-  if (utility === undefined) return undefined;
-  const property = /^p/.test(utility)
-    ? "padding"
-    : /^(?:m|space)/.test(utility)
-      ? "margin"
-      : /^gap/.test(utility)
-        ? "gap"
-        : /^rounded/.test(utility)
-          ? "border-radius"
-          : utility === "text"
-            ? "font-size"
-            : "inset";
-  return { property, value: custom ? `var(${custom})` : written.replace(/_/g, " ") };
+  const utility = utilityOf(word);
+  const property = /^\[(--[\w-]+|[a-z-]+):(.+)\]$/.exec(utility);
+  if (property) return { property: property[1], value: property[2].replace(/_/g, " ") };
+  const [, name, written, custom] = ARBITRARY.exec(utility) ?? [];
+  if (name === undefined) return undefined;
+  const value = custom ? `var(${custom})` : written.replace(/_/g, " ");
+  return { property: utilityProperty(name), value };
 }
 
 /** What a component sets the way a stylesheet does, for `checkedCustoms`: each entry of its
- *  inline styles, and each utility that writes a value of its own. */
+ *  inline styles and `setProperty` calls, and each utility that writes a value of its own. */
 function componentDeclarations(source: string): Declaration[] {
   const found: Declaration[] = styleEntries(source).map(({ property, value }) => ({
     context: [],
@@ -262,21 +238,27 @@ function componentDeclarations(source: string): Declaration[] {
  * 24 or 32px); its text sizes are the core's and nothing else, so another one draws nothing;
  * its corners are the core's but for the four Tailwind keeps of its own. A size (`w-*`, `h-*`,
  * `size-*` and their min and max) is a box's, as in a stylesheet, and is not read. A value of
- * its own (`p-[7px]`, `text-[13px]`) is read as the same value in a stylesheet is.
+ * its own (`p-[7px]`, `[padding:7px]`) is read as the same value in a stylesheet is.
  */
 const ON_THE_SCALE = new Set(["0", "px", "0.5", "1", "1.5", "2", "3", "4", "6", "8"]);
 const SPACING_UTILITY =
-  /^-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-(?:x|y)|inset(?:-[xy])?|top|right|bottom|left)-(\d+(?:\.\d+)?|px)$/;
-const TEXT_UTILITY = /^text-(\d?xs|sm|md|base|lg|xl|[2-9]xl)$/;
+  /^-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-(?:x|y)|inset(?:-[xy])?|top|right|bottom|left|start|end)-(\d+(?:\.\d+)?|px)$/;
+const TEXT_UTILITY = /^text-(\d?xs|sm|md|base|lg|xl|[2-9]xl)(?:\/.+)?$/;
 const CORE_TEXT = new Set(["xs", "sm", "md", "base", "lg", "xl"]);
 const RADIUS_UTILITY = /^rounded(?:-[trblse]{1,2})?(?:-(xs|sm|md|lg|xl|2xl|3xl|4xl|none|full))?$/;
 const CORE_RADIUS = new Set(["sm", "md", "lg", "xl", "none", "full"]);
 
-/** Whether one Tailwind class sets geometry off the core. `md:p-5` is read as `p-5`. */
-export function offTheScale(word: string): boolean {
+/** Whether one Tailwind class sets geometry off the core, given the custom properties held to
+ *  the rule. `md:p-5` is read as `p-5`. */
+export function offTheScale(word: string, customs: ReadonlySet<string> = new Set()): boolean {
   const own = arbitrary(word);
-  if (own) return writesALiteral(own.value);
-  const utility = word.split(":").pop() ?? word;
+  if (own) {
+    const read = CUSTOM.test(own.property)
+      ? customs.has(own.property)
+      : GEOMETRY_PROPERTY.test(own.property);
+    return read && writesALiteral(own.value);
+  }
+  const utility = utilityOf(word);
   const spacing = SPACING_UTILITY.exec(utility);
   if (spacing) return !ON_THE_SCALE.has(spacing[1]);
   const text = TEXT_UTILITY.exec(utility);
@@ -286,24 +268,25 @@ export function offTheScale(word: string): boolean {
   return false;
 }
 
-/** Each literal geometry a component writes: in an inline `style`, as `style <key>: <value>`,
- *  and in a `className`, as `class <utility>`. A custom property it sets inline is read by what
- *  reads it in `customs` (`checkedCustoms`), as one a stylesheet sets. */
+/** Each literal geometry a component writes: in an inline `style` or a `setProperty` call, as
+ *  `style <key>: <value>` or `setProperty <name>: <value>`, and in a `className`, as
+ *  `class <utility>`. A custom property it sets is read by what reads it in `customs`
+ *  (`checkedCustoms`), as one a stylesheet sets. */
 export function componentLiterals(
   source: string,
   customs: ReadonlySet<string> = new Set(),
 ): string[] {
   const found: string[] = [];
-  for (const { key, property, value } of styleEntries(source)) {
+  for (const { label, property, value } of styleEntries(source)) {
     if (!(CUSTOM.test(property) ? customs.has(property) : GEOMETRY_PROPERTY.test(property))) {
       continue;
     }
     const literal = /^-?\d/.test(value) ? Number(value) !== 0 : writesALiteral(value.slice(1, -1));
-    if (literal) found.push(`style ${key}: ${value}`);
+    if (literal) found.push(`${label}: ${value}`);
   }
   for (const tag of openingTags(source, /^[A-Za-z]/)) {
     for (const word of classUtilities(classNameOf(tag.text))) {
-      if (offTheScale(word)) found.push(`class ${word}`);
+      if (offTheScale(word, customs)) found.push(`class ${word}`);
     }
   }
   return found;
@@ -311,20 +294,25 @@ export function componentLiterals(
 
 const read = (file: string) => readFileSync(join(SRC, file), "utf8");
 
+/** A source the window runs, components and scripts alike (a script may `setProperty`), not a
+ *  test or a test kit. */
+const isScript = (name: string) =>
+  /\.tsx?$/.test(name) && !/\.(test|testkit)\.tsx?$/.test(name) && !name.endsWith(".d.ts");
+
 /** The window's stylesheets, the core aside, by file. */
 function sheets(): Map<string, string> {
   const files = sourceFiles((name) => name.endsWith(".css")).filter((file) => file !== THE_CORE);
   return new Map(files.map((file) => [file, read(file)]));
 }
 
-/** Every literal in the window, by file: its stylesheets (the core aside) and its components,
+/** Every literal in the window, by file: its stylesheets (the core aside) and its scripts,
  *  as they are or with a file's text replaced (`planted`). A custom property is held by what
  *  reads it in any of them. */
 function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<string, string[]> {
   const text = (file: string) => planted[file] ?? read(file);
   const byFile = new Map<string, string[]>();
   const css = new Map([...sheets().keys()].map((file) => [file, text(file)]));
-  const views = new Map(sourceFiles(isView).map((file) => [file, text(file)]));
+  const views = new Map(sourceFiles(isScript).map((file) => [file, text(file)]));
   const customs = checkedCustoms([...css.values()], [...views.values()]);
   for (const [file, sheet] of css) byFile.set(file, cssLiterals(sheet, customs));
   for (const [file, source] of views) byFile.set(file, componentLiterals(source, customs));
@@ -414,6 +402,52 @@ export const Planted = () => <div className="p-(--planted-pad)" />;
     ]);
   });
 
+  it("fails an arbitrary property planted in a real component, and holds the custom property it reads", () => {
+    const css = `${read("App.css")}\n.planted { --planted-pad: 7px; width: var(--planted-pad); }\n`;
+    const tsx = `${read("PlaneView.tsx")}
+export const Planted = () => <div className="md:[padding:7px] [padding:var(--planted-pad)]" />;
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "PlaneView.tsx": tsx }))).toEqual([
+      "App.css: new literal, take it from a core token: .planted | --planted-pad: 7px",
+      "PlaneView.tsx: new literal, take it from a core token: class md:[padding:7px]",
+    ]);
+  });
+
+  it("holds a custom property a component sets, in each way a component sets one", () => {
+    const css = `${read("App.css")}\n.planted { padding: var(--planted-pad); margin: var(--planted-at); }\n`;
+    const tsx = `${read("LayoutPanes.tsx")}
+export const Cast = () => <div style={{ "--planted-pad": "7px" } as CSSProperties} />;
+export const Lines = () => (
+  <div
+    style={
+      {
+        "--planted-at": \`9px\`,
+        "--least": \`\${least}px\`,
+      } as CSSProperties
+    }
+  />
+);
+export function plant(frame: HTMLElement) {
+  frame.style.setProperty("--planted-pad", "5px");
+  frame.style.setProperty("padding-top", '3px');
+}
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "LayoutPanes.tsx": tsx }))).toEqual([
+      'LayoutPanes.tsx: new literal, take it from a core token: style --planted-pad: "7px"',
+      "LayoutPanes.tsx: new literal, take it from a core token: style --planted-at: `9px`",
+      'LayoutPanes.tsx: new literal, take it from a core token: setProperty --planted-pad: "5px"',
+      "LayoutPanes.tsx: new literal, take it from a core token: setProperty padding-top: '3px'",
+    ]);
+  });
+
+  it("stops an inline style at its own end, so what follows it is not read as an entry", () => {
+    const tsx = `
+      <div style={{ gap: 0 }} data-x={{ padding: "7px" }} />
+      <div style={{ ...base, padding: size, margin: "4px", nested: { padding: "9px" } }} />
+    `;
+    expect(componentLiterals(tsx)).toEqual(['style margin: "4px"']);
+  });
+
   it("holds a custom property a component sets inline to what reads it", () => {
     const css = `${read("App.css")}\n.planted { padding: var(--planted-pad); }\n`;
     const tsx = `${read("PlaneView.tsx")}
@@ -425,30 +459,71 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
     ]);
   });
 
-  it("passes a whole multiple or a whole share of a token, and the named reserves alone", () => {
+  it("passes a whole multiple or a whole share of a token, and each reserve where it is declared", () => {
     const css = `
       .a { padding: calc(var(--space-5) * 3); margin: calc(-1 * var(--space-2)); }
       .b { gap: calc(var(--space-4) / 2); margin-inline: calc(var(--space-3) * -1); }
-      .c { padding-inline-end: calc(var(--size-control) * 2.5); }
-      .d { margin-right: var(--x, calc(var(--size-control) * 2.75)); }
+      .title-bar { --title-bar-drag: calc(var(--size-control) * 2.5); padding-left: var(--title-bar-drag); }
+      .pane-chips:has(.pane-crumbs) { margin-right: calc(var(--pane-controls, calc(var(--size-control) * 2.75)) + var(--space-3)); }
       .e { padding-block: calc((var(--size-control) - 1lh) / 2 - 1px); }
-      .f { inline-size: calc(var(--space-6) * 1.6); }
+      .f { inline-size: calc(var(--space-6) * 1.6); top: calc(100% / 3); }
+      .g { margin: calc(var(--space-1) * (1 + 2)); padding: round(nearest, var(--space-4) * 3, 1px); }
+      .h { inset-inline-start: calc(var(--ui-tree-drawn) * var(--ui-tree-step)); }
     `;
     expect(cssLiterals(css)).toEqual([]);
+  });
+
+  it("fails any factor that is not whole, however it is spelled, and a reserve away from its declaration", () => {
     const odd = `
       .a { padding: calc(var(--space-1) * 3.5); margin: calc(0.5 * var(--space-4)); }
       .b { gap: calc(var(--space-4) / 2.5); margin: calc(var(--space-5) * 2.5); }
       .c { padding: calc((var(--space-1) + var(--space-2)) * 1.5); }
-      .d { padding-inline-end: calc(var(--size-control) * 2.55); gap: max(var(--space-1) * 1.5, 1px); }
+      .d { gap: max(var(--space-1) * 1.5, 1px); margin: calc(var(--space-1) * +0.5); }
+      .e { padding: calc(var(--space-1) * (0.5)); margin: calc(var(--space-1) * calc(3.5)); }
+      .f { padding: calc(var(--space-1) * 35e-1); margin: calc(var(--space-1) * pi); }
+      .g { gap: round(nearest, var(--space-1) * 3.5, 1px); margin: abs(var(--space-2) * 1.5); }
+      .h { padding: mod(var(--space-8), var(--space-1) * 2.5); margin: rem(var(--space-8) * 0.5, 1px); }
+      .i { gap: calc(var(--space-1) * sign(var(--x))); padding: calc(var(--space-1) * (7 / 2)); }
+      .title-bar { padding-left: calc(var(--size-control) * 2.5); }
+      .j { --title-bar-drag: calc(var(--size-control) * 2.5); padding: var(--title-bar-drag); }
+      .title-bar { --title-bar-drag: calc(var(--space-1) * var(--size-control) * 2.5); }
+      .k { padding-inline-end: calc(var(--size-control) * 2.55); }
     `;
-    expect(cssLiterals(odd)).toEqual([
-      ".a | padding: calc(var(--space-1) * 3.5)",
-      ".a | margin: calc(0.5 * var(--space-4))",
-      ".b | gap: calc(var(--space-4) / 2.5)",
-      ".b | margin: calc(var(--space-5) * 2.5)",
-      ".c | padding: calc((var(--space-1) + var(--space-2)) * 1.5)",
-      ".d | padding-inline-end: calc(var(--size-control) * 2.55)",
-      ".d | gap: max(var(--space-1) * 1.5, 1px)",
+    expect(cssLiterals(odd).map((entry) => entry.split(": ")[0])).toEqual([
+      ".a | padding",
+      ".a | margin",
+      ".b | gap",
+      ".b | margin",
+      ".c | padding",
+      ".d | gap",
+      ".d | margin",
+      ".e | padding",
+      ".e | margin",
+      ".f | padding",
+      ".f | margin",
+      ".g | gap",
+      ".g | margin",
+      ".h | padding",
+      ".h | margin",
+      ".i | gap",
+      ".i | padding",
+      ".title-bar | padding-left",
+      ".j | --title-bar-drag",
+      ".title-bar | --title-bar-drag",
+      ".k | padding-inline-end",
+    ]);
+  });
+
+  it("fails a length written out times anything but one", () => {
+    const css = `
+      .a { padding: calc(1px * 7); margin: calc(7 * 1px); gap: calc(1em * 3); }
+      .b { padding: calc(1lh / 2); margin: calc(-1 * 1px); gap: calc(1px * -1); }
+    `;
+    expect(cssLiterals(css)).toEqual([
+      ".a | padding: calc(1px * 7)",
+      ".a | margin: calc(7 * 1px)",
+      ".a | gap: calc(1em * 3)",
+      ".b | padding: calc(1lh / 2)",
     ]);
   });
 
@@ -580,6 +655,29 @@ export const Planted = () => <div style={{ "--planted-pad": "7px", "--planted-at
       "class rounded-2xl",
       "class md:mt-7",
       "class rounded",
+    ]);
+  });
+
+  it("reads an arbitrary property and every variant's spelling, and the start and end offsets", () => {
+    const tsx = `
+      <p className="[padding:7px] md:[margin-top:0.3rem] [width:37px] [padding:var(--space-2)]" />
+      <p className="data-[open]:p-5 max-[600px]:p-[7px] *:m-7 group-hover/x:gap-[3px] [&>*]:p-5" />
+      <p className="start-5 -end-[3px] start-4 end-0 text-[13px]/7 text-2xl/7 text-sm/[1.3] !p-5 p-[7px]!" />
+    `;
+    expect(componentLiterals(tsx)).toEqual([
+      "class [padding:7px]",
+      "class md:[margin-top:0.3rem]",
+      "class data-[open]:p-5",
+      "class max-[600px]:p-[7px]",
+      "class *:m-7",
+      "class group-hover/x:gap-[3px]",
+      "class [&>*]:p-5",
+      "class start-5",
+      "class -end-[3px]",
+      "class text-[13px]/7",
+      "class text-2xl/7",
+      "class !p-5",
+      "class p-[7px]!",
     ]);
   });
 

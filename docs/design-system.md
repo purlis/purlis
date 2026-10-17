@@ -802,16 +802,22 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
 - **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**,
   **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), in any
-  stylesheet but `theme/geometry.css`, in a component's inline `style`, or as a Tailwind class
-  off the core scale (`p-5`, `text-2xl`, `rounded-2xl`) or with a value of its own (`p-[7px]`,
-  `text-[13px]`, `rounded-[5px]`). A custom property that holds a length is held to what reads
-  it, in a stylesheet or a component (an inline `style`, a utility such as `p-(--pad)`): one a
-  padding, margin, gap, corner, font size or offset reads, or that nothing reads, counts, so
-  `--pad: 7px` is no way round, set in a stylesheet or inline. Not literals: `0`, a `1px`
-  hairline, `1em`, `1lh` or `1ch` (as big as the element's own text), a share (`%`, `vh`,
-  `vw`), and a token, or a token's whole multiple or whole share in `calc()` (`* 3`, `* -1`,
-  `/ 2`). A factor that is not whole is a literal (`calc(var(--space-1) * 3.5)`), but for the
-  two structural reserves sized in controls, below. A shadow's
+  stylesheet but `theme/geometry.css`, in a component's inline `style` (`{{ … }}` or
+  `{ … } as CSSProperties`), in a `.style.setProperty(…)` call, or as a Tailwind class, read
+  past its variants (`md:`, `data-[open]:`, `[&>*]:`): off the core scale (`p-5`, `start-5`,
+  `text-2xl`, `rounded-2xl`), with a value of its own (`p-[7px]`, `text-[13px]`,
+  `rounded-[5px]`) or as an arbitrary property (`[padding:7px]`). A custom property that holds
+  a length is held to what reads it, in a stylesheet or a component (an inline `style`, a
+  utility such as `p-(--pad)` or `[padding:var(--pad)]`): one a padding, margin, gap, corner,
+  font size or offset reads, or that nothing reads, counts, so `--pad: 7px` is no way round,
+  set in a stylesheet, inline or by `setProperty`. Not literals: `0`, a `1px` hairline, `1em`,
+  `1lh` or `1ch` (as big as the element's own text), a share (`%`, `vh`, `vw`), and a token, or
+  a token's whole multiple or whole share (`* 3`, `* -1`, `/ 2`). The guard reads the
+  arithmetic of every CSS math function (`calc()`, `min()`, `max()`, `clamp()`, `round()`,
+  `mod()`, `rem()`, `abs()`, `sign()` and the rest): a number in it that is not whole is a
+  literal however it is spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`), and so is a
+  length written out times anything but ±1 (`calc(1px * 7)`). The two structural reserves sized
+  in controls, below, pass only in the declaration each is written in. A shadow's
   lengths are elevation, which this guard does not read. **A box's size** (a width, a height
   and their min, max, block and inline forms, or a custom property only they read) is not a step
   of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
@@ -843,15 +849,19 @@ size or weight with no exact token takes the nearest one, by computed px at the 
 goes to the smaller), and a px literal may become a rem token. Three more rules go with it:
 
 - **An evenly stepped series takes a multiple of one token** (`calc(var(--space-5) * 3)`), so its
-  steps stay even rather than flattening onto the top of the scale.
+  steps stay even rather than flattening onto the top of the scale. That is why the geometry
+  guard passes a token's whole multiple and whole share (an indent per level of a tree or a
+  menu is the level's number of steps), and nothing in between.
 - **A corner that draws the same is the pill.** A radius at or above half its box's height
   becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
 - **A structural size is outside the snap**: a size that is no step of the scale, such as an
   icon's box or a strip's cap on a tab's width, keeps its literal, and the geometry guard does
   not read a box's size. A structural reserve written as a padding or a margin is a multiple of
-  a size token. Two are not whole, and the guard names them (`RESERVES`): the title bar's drag
-  stretch (`calc(var(--size-control) * 2.5)`) and the pane chips' room for the corner's
-  controls (`calc(var(--size-control) * 2.75)`). Any other factor is whole.
+  a size token. Two are not whole, and the guard names each with the one declaration it is
+  written in (`RESERVES`): the title bar's drag stretch (`.title-bar`'s `--title-bar-drag`,
+  `calc(var(--size-control) * 2.5)`) and the pane chips' room for the corner's controls (the
+  `--pane-controls` fallback in `.pane-chips:has(.pane-crumbs)`'s `margin-right`,
+  `calc(var(--size-control) * 2.75)`). The same expression anywhere else is a literal.
 - **An offset snaps as a margin does** (#2450): a `top`, `left` or `inset-inline-end` takes the
   nearest spacing token, as the pane's corners and the activity bar's count do.
 - **A line height keeps `1`**, a line as tall as its text, which the type guard reads as no
@@ -945,10 +955,12 @@ window differ, the window was kept and the difference is recorded here for the m
 `app/src/type.guard.test.ts` refuses a `font-size`, `font-weight`, `line-height`,
 `font-family` or text `color` that is not its token (or `inherit`, or `currentColor` for a
 colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
-`theme/geometry.css`, in a component's inline `style`, and as a Tailwind utility, read as the
-declaration it writes: a weight by name (`font-semibold`), a family of Tailwind's own
-(`font-mono`), a line height other than `leading-none`, and a value of its own (`text-[13px]`,
-`font-[600]`, `leading-[1.3]`) unless it is the property's token. A token of another kind does not
+`theme/geometry.css`, in a component's inline `style` or `setProperty` call, and as a Tailwind
+utility, read past its variants as the declarations it writes: a weight by name
+(`font-semibold`), a family of Tailwind's own (`font-mono`), a line height other than
+`leading-none` (and a size's `/7` or `/[1.3]`, as in `text-sm/7`), a value of its own
+(`text-[13px]`, `font-[600]`, `leading-[1.3]`) and an arbitrary property (`[font-weight:600]`),
+unless it is the property's token. A token of another kind does not
 pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to wear instead,
 by the size or weight that was written.
 
