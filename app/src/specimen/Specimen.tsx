@@ -234,7 +234,7 @@ function SpecimenSettings() {
 
 /** A dialog, drawn in place: the dialog surface and its answer bar, open, with nothing behind
  *  it to hold. */
-function SpecimenDialog() {
+export function SpecimenDialog() {
   return (
     <div className="ui-dialog warning" role="dialog" aria-labelledby="specimen-dialog-title">
       <h2 id="specimen-dialog-title">Delete the branch sample/header?</h2>

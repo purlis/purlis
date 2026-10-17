@@ -138,7 +138,7 @@ describe("the theme specimen shows nothing of the person's", () => {
       expect(view.container.innerHTML).not.toContain(CANARY);
       expect(asked).toEqual([]);
     } finally {
-      for (const key of Object.keys(atCreation)) delete atCreation[key];
+      for (const key of Object.keys(atCreation)) Reflect.deleteProperty(atCreation, key);
       Object.assign(atCreation, before);
       globalThis.localStorage.clear();
     }
@@ -150,7 +150,7 @@ describe("the theme specimen shows nothing of the person's", () => {
     expect(editor?.textContent).toBe(EDITOR_TEXT.split("\n").join(""));
     // xterm keeps each row it drew; every non-blank row is a fixture line.
     const rows = [...view.container.querySelectorAll(".xterm-rows > div")]
-      .map((row) => row.textContent?.replace(/ /g, " ").trimEnd() ?? "")
+      .map((row) => row.textContent?.replace(/\u00a0/g, " ").trimEnd() ?? "")
       .filter((row) => row !== "");
     const fixture = new Set([...plain(CHAT_LINES), ...plain(TERMINAL_LINES)].map((l) => l.trimEnd()));
     for (const row of rows) expect(fixture, row).toContain(row);
@@ -188,7 +188,7 @@ describe("the specimen page's contract with the app", () => {
       failed(new Error("no fonts"));
       expect(document.title).toBe(`${FAILED}no fonts`);
     } finally {
-      delete held[GIVEN];
+      Reflect.deleteProperty(held, GIVEN);
     }
   });
 
