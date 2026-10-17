@@ -457,14 +457,16 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
     );
     // The hook socket and the proxy's port, and no other socket or port of this machine.
     let nc = |target: &str| tried(&format!("/usr/bin/nc -z -w 2 {target}"));
-    assert_eq!(
-        run(&tried(&format!("/usr/bin/nc -U -z {}", hook.display()))),
-        "yes"
-    );
-    assert_eq!(
-        run(&tried(&format!("/usr/bin/nc -U -z {}", other.display()))),
-        "no"
-    );
+    // A socket is connected to by zsh's own module: macOS 26.6's `nc -U -z` fails on a socket
+    // that is listening, with no sandbox at all (#2489).
+    let connect = |socket: &Path| {
+        tried(&format!(
+            "/bin/zsh -c 'zmodload zsh/net/socket && zsocket {}'",
+            socket.display()
+        ))
+    };
+    assert_eq!(run(&connect(hook.as_path())), "yes");
+    assert_eq!(run(&connect(other.as_path())), "no");
     assert_eq!(run(&nc(&format!("127.0.0.1 {proxy_port}"))), "yes");
     assert_eq!(run(&nc(&format!("127.0.0.1 {service_port}"))), "no");
 }
