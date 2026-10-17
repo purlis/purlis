@@ -46,8 +46,9 @@ export const GEOMETRY = {
     "--font-size-lg",
     "--font-size-xl",
   ],
-  /** The two weights of the window's words: regular, and the one strong (#1920). */
-  weight: ["--font-weight-regular", "--font-weight-strong"],
+  /** The three weights of the window's words: regular, medium (a form's label, #2317) and the
+   *  one strong (#1920). */
+  weight: ["--font-weight-regular", "--font-weight-medium", "--font-weight-strong"],
   /** Line heights, as a share of the text's size: a compact line, and the window's own. */
   leading: ["--line-height-tight", "--line-height-body"],
   /** The one monospace family: a command, a path, a host (`ui-text-code`). */
