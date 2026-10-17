@@ -2043,6 +2043,8 @@ describe("the grants table's look (DS-9, #1841)", () => {
     expect(group).not.toHaveClass("dispatch-persona");
     expect(drawnWith(group, "display")).toBeUndefined();
     expect(drawnWith(group, "padding-block")).toBe("var(--ui-cell-pad-block)");
-    expect(drawnWith(group.querySelector("span") as HTMLElement, "font-weight")).toBe("600");
+    expect(drawnWith(group.querySelector("span") as HTMLElement, "font-weight")).toBe(
+      "var(--font-weight-strong)",
+    );
   });
 });
