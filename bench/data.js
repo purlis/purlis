@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792222179287,
+  "lastUpdate": 1792223369282,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15078,6 +15078,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0983615,
             "unit": "ms",
             "extra": "median of 5 runs: 100.510, 102.008, 102.098, 102.193, 102.485 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9e9d042a80256102205f9035d9e2a9b1d264f7d4",
+          "message": "Browsers: screenshots paint over what the person typed wherever the page shows it (#2353)\n\n* Browsers: screenshots paint over what the person typed wherever the page draws it (#2303)\n\nOnce a page keeps anything out, a screenshot reads the engine's own layout of\nevery document on the page (DOMSnapshot, each session apart, no page script)\nand paints over laid-out text that holds a kept text whatever the tree says of\nit, fields and drop-downs that show one, every canvas, image, video, embedded\nobject and element drawn with an image or a paint script, and every frame whose\ndocument no read holds. A page that cannot be read, or that reflects an element\noutside its box, has its screenshot withheld.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a kept text split over elements is painted over at the element that holds it (#2303)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: the real-engine screenshot tests keep a text out by filling and blanking its field (#2303)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: say where a layout read could not be read (#2303)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a layout read takes no styles for what is not an element (#2303)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: screenshots paint what moves the whole way, and paint what cannot be read on the kept site only (#2303)\n\nEach painted item is keyed by its session and node, and the boxes from before\nand after the picture are joined. Option and optgroup labels, each text a split\nvalue is drawn in, and white space runs are matched. Where each frame sits is\nasked once per read. Canvases, images and video are painted over on pages of\nthe site a text was kept out on (the person's ruling of 2026-10-17), by the\npublic suffix list; kept text is painted over on every site.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a screenshot greys by the document it shows and every page a kept page opened (#2303)\n\nThe site is read from the top document the screenshot reads, and a page opened\nfrom a kept page counts whatever its own site. An IP or localhost site is its\nhost, as the browser's own same-site rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a screenshot takes the page's own document as the one it shows (#2303)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T11:39:34+04:00",
+          "tree_id": "d132df859c8c0a8063418a017133faee16e51174",
+          "url": "https://github.com/purlis/purlis/commit/9e9d042a80256102205f9035d9e2a9b1d264f7d4"
+        },
+        "date": 1792223368241,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.355541,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.336, 0.354, 0.356, 0.356, 0.357 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.351776,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.280, 16.305, 16.352, 16.398, 16.451 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.508209,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.986, 101.085, 101.508, 101.840, 101.981 ms"
           }
         ]
       }
