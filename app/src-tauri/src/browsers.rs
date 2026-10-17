@@ -630,37 +630,54 @@ pub async fn unwatch_browser(
 /// words until [`hand_back_browser`], and a call in flight is cut.
 #[tauri::command]
 #[specta::specta]
-pub async fn take_over_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+pub async fn take_over_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    program: String,
+) -> Result<(), String> {
+    // An Ask that asked the person to take it over says from now on that they drive it (#2015).
+    let projects = planes.every_held();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("taking a browser over", move || {
-            browsers.take_over(&program)
+            browsers.take_over(&program)?;
+            crate::browserneedsyou::taken_over(&projects, &program);
+            Ok(())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program);
+        let _ = (app, program, projects);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }
 
-/// The person hands browser `program` back to its chat (#2014): Done.
+/// The person hands browser `program` back to its chat (#2014): Done. An Ask that asked them
+/// to take it over ends, and its chat is told they finished, never what they did (#2015).
 #[tauri::command]
 #[specta::specta]
-pub async fn hand_back_browser(app: tauri::AppHandle, program: String) -> Result<(), String> {
+pub async fn hand_back_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    program: String,
+) -> Result<(), String> {
+    // The Ask that asked the person to take it over ends, and its chat is woken (#2015).
+    let projects = planes.every_held();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("handing a browser back", move || {
-            browsers.hand_back(&program)
+            browsers.hand_back(&program)?;
+            crate::browserneedsyou::handed_back(&projects, &program);
+            Ok(())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program);
+        let _ = (app, program, projects);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }
@@ -757,9 +774,11 @@ pub fn stop_every_browser(app: &tauri::AppHandle) -> usize {
     {
         use tauri::Manager;
         let stopped = browsers(app).map_or(0, |browsers| browsers.stop_every_browser());
-        // The chats' browsers leave their rows and tabs (#2024).
+        // The chats' browsers leave their rows and tabs (#2024), and every Ask about one ends
+        // with it, each with an Update (#2015).
         if let Some(planes) = app.try_state::<crate::planes::Planes>() {
             planes.chat_browsers_stopped();
+            crate::browserneedsyou::all_ended(&planes.every_held());
         }
         stopped
     }

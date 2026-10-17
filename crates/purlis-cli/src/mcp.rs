@@ -123,6 +123,14 @@ impl ServerHandler for Server {
             ));
         }
         let args = request.arguments.clone().unwrap_or_default();
+        // Pointed at one of the chat's browsers (#2015): the app asks the person to take it
+        // over, under Needs you, and answers at once; the harness's prompt asks nothing.
+        if name == chattools::ASK_OPERATOR && purlis_core::browsertools::points_at_a_browser(&args)
+        {
+            return Ok(done(
+                blocking(move || crate::browsing::needs_you(&args)).await,
+            ));
+        }
         if name == chattools::ASK_OPERATOR {
             return ask_operator(&request, &args, &context, &self.waiting).await;
         }

@@ -292,6 +292,24 @@ impl ChatBrowsers {
         waits
     }
 
+    /// **Chat `session`'s browser `name`, or the one it used last**, by its name and its
+    /// program in the session host (#2015). None where the chat has no such browser: another
+    /// chat's is never found by its name.
+    pub fn which(&self, session: u32, name: Option<&str>) -> Option<(String, String)> {
+        let chats = self.lock();
+        let chat = chats.get(&session)?;
+        let name = name.map(str::to_owned).or_else(|| chat.current.clone())?;
+        let program = chat.program(&name)?;
+        Some((name, program))
+    }
+
+    /// Whether chat `session` still has browser `program` (#2015).
+    pub fn holds(&self, session: u32, program: &str) -> bool {
+        self.lock()
+            .get(&session)
+            .is_some_and(|chat| chat.browsers.iter().any(|(_, one)| one == program))
+    }
+
     /// **Allow** on chat `session`'s Ask, with the open web or not. Answers whether it waited.
     pub fn allow(&self, session: u32, open_web: bool) -> bool {
         self.answered(session, Posture::Allowed { open_web })
@@ -730,6 +748,13 @@ impl ChatBrowsers {
                 );
             }
             Browsing::Act(act) => act.clone(),
+            // Answered before the browsers are (`crate::browserneedsyou::answered_first`).
+            Browsing::NeedsYou { .. } => {
+                return (
+                    no("purlis could not ask the person about this browser"),
+                    false,
+                );
+            }
         };
         let (name, program) = match named {
             Some(name) => match chat.program(&name) {
@@ -823,6 +848,7 @@ pub fn narrowed(
     let listing = held.browsers().listing();
     let Ended { ended, unended } = held.browsers().narrowed(held.browser_driver(), session);
     held.browsers_listed_since(listing);
+    crate::browserneedsyou::settled(held);
     if unended > 0 {
         told(BrowsersEnded {
             plane: plane.clone(),
@@ -856,6 +882,16 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
             ),
         };
     }
+    // A browser that needs the person, and the acts on it while it waits (#2015).
+    let now = crate::sandboxing::now_secs();
+    if let Some(answer) =
+        crate::browserneedsyou::answered_first(held.browsers(), held.needs_you(), browse, now)
+    {
+        if matches!(browse.asked, Browsing::NeedsYou { .. }) {
+            held.chats().asks_may_have_moved();
+        }
+        return answer;
+    }
     let reach = || reach_of(held.chats(), browse.chat);
     let as_persona = || as_persona_of(held, browse.chat);
     let listing = held.browsers().listing();
@@ -865,7 +901,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         browse,
         &reach,
         &as_persona,
-        crate::sandboxing::now_secs(),
+        now,
     );
     held.browsers_listed_since(listing);
     if raised {
@@ -873,6 +909,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
             "purlis: chat {} asked for a browser; the person is asked what it may reach",
             browse.chat
         );
+        held.chats().asks_may_have_moved();
+    }
+    // A browser that ended takes the person's Ask about it with it (#2015).
+    if held.needs_you().settle(held.browsers(), now) > 0 {
         held.chats().asks_may_have_moved();
     }
     answer
@@ -1108,6 +1148,7 @@ pub fn allowed_always(
             note: note.to_owned(),
         });
     }
+    crate::browserneedsyou::settled(held);
     for answered in held.browsers().allow_always(&persona, open_web) {
         tell_allowed(
             held,
@@ -1154,6 +1195,7 @@ pub fn always_removed(
             note: note.to_owned(),
         });
     }
+    crate::browserneedsyou::settled(held);
 }
 
 /// **Keep off** on chat `session`'s browser Ask (#2013): its every browser call is refused,
