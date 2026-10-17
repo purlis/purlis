@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792216455654,
+  "lastUpdate": 1792218755197,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -14952,6 +14952,48 @@ window.BENCHMARK_DATA = {
             "value": 101.60257849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.153, 101.254, 101.603, 101.694, 102.321 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c2f99f5f216b3c244c44a10668691c3c41fd2a59",
+          "message": "Codex and opencode chats run sandboxed on Linux, inside purlis's own wrap (#2349)\n\n* Codex and opencode chats run sandboxed on Linux, inside purlis's own wrap\n\npurlis's own sandbox on Linux (#1040, as ruled on 2026-10-14 and 2026-10-16):\nLandlock (ABI 6 or later), a seccomp filter the chat applies to itself, and a\nseccomp user-notification supervisor that is the wrap's own unprivileged parent.\nThe supervisor judges every connect and every create, rename, link, removal,\nmode change and open by the same profile the macOS Seatbelt backend applies, and\nperforms the call itself, handing the chat the result or the descriptor.\n\n- New crate purlis-linux-sandbox: the profile reader and judge, the Landlock\n  layers, the seccomp filters, the supervisor and the path walk.\n- The seccomp notification calls are the workspace's third audited unsafe block\n  (linux::notify::raw), named in three_unsafe_blocks.rs and AGENTS.md.\n- The entry point is the hidden `purlis _sandbox`, dispatched before clap.\n- Codex and opencode compile on Linux; their line starts with purlis's own\n  program. A kernel without Landlock 6 is refused with the version it needs.\n- The credential store is held for wrapped harnesses on Linux.\n- ADR 0067 amendment, runner image contract, plane format, changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* The program that starts a chat wraps it; tests of other things start without the floor\n\n- The app and `purlis` both answer the hidden `_sandbox` first thing\n  (`purlis_linux_sandbox::serve_if_asked`), and a wrapped line starts with the\n  running program, so a chat is wrapped wherever purlis starts it.\n- Codex and opencode now run at the floor on Linux, as on macOS: tests about\n  plugins, a resume, a handoff, typing, a relaunch and level 3 start their\n  stand-in harness with a person's opt-out, their level off, or on a machine\n  where no sandbox can be applied; the scenario run declares Codex's\n  sandbox-only profile on Linux as on macOS.\n- A chat at the floor does not run over ACP, tested.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Linux wrap: a chat reads what any process reads of one outside it; more tests start without the floor\n\n- `/proc/<pid>` of a process outside the sandbox: its folder's names and its\n  stat, status, statm, comm and cmdline (and its threads') are read, as the\n  kernel lets any same-user process read them; what needs the right to trace\n  it stays refused. purlis's own hooks climb their parents through these.\n- Core start tests about a Codex line, a resume, a deny-list and opencode's\n  wrap start with a person's opt-out, or expect the wrap on Linux too.\n- App tests that start a Codex or opencode chat without the sandbox keep an\n  event log, so the opt-out is recorded; the level is written first in the\n  local file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Linux wrap: a unix socket is judged by what its path reaches\n\nThe supervisor walks a unix socket's path as the kernel would for the chat,\njudges the socket by the name the kernel gives it (a link to the hook socket\nreaches it, a link to another socket does not), and connects through the\ndescriptor it holds, whatever the path's length. Seatbelt matches a socket the\nsame way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A hook inside the Linux wrap tells its host by the far end's pidfd\n\n`admit_host` reads the listener's descriptors to prove it is the ancestor its\npid names. Inside purlis's own Linux sandbox no process outside it may have its\ndescriptors read, so there the listener is told by the pidfd the kernel gives\nfor the far end (SO_PEERPIDFD): one process for its whole life, never another\ngiven its number. A permission hook run inside the wrap asks the window and\nprints its answer, tested.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* same-user: the pidfd reading is Linux's alone\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Linux wrap: review round one\n\n- The filter refuses every call of another ABI, and a change of a file's owner\n  or extended attributes; a file's times are judged and set by the supervisor.\n  The compiled filters are read in a test.\n- Of a process outside the sandbox only its stat is read, from any folder of\n  /proc. A file no longer linked is judged by its last name too.\n- Linux's login-time names join the later-code names. The wrap's own program\n  is checked and held as the harness's program is, and a program replaced while\n  it ran says to restart purlis.\n- The Landlock refusal names its ways on, once. The missing-program refusal\n  names its next step. The ACP and Codex refusals say \"this chat runs\n  sandboxed\". A chat whose listener never arrives is ended.\n- Changelog and ADR say what changes on Linux. The new crate's tests live in\n  <module>/tests.rs; the older modules' moves are #2383.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Linux wrap: review round two\n\n- The judge holds a process outside the sandbox to its stat wherever a walk\n  arrives, a descriptor reopened through /proc/self/fd among them; tested.\n- The wrap's program is the one the start checked, carried on the sandbox,\n  never looked up again.\n- One Landlock sentence, shared by the host's refusal and the wrap's own.\n- fchmodat2 with no path and AT_EMPTY_PATH acts on the descriptor.\n- The dead-listener test starts this test program as the listener.\n- `writable` has its doc comment back; the replaced-program check is\n  portable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T10:30:42+04:00",
+          "tree_id": "3824f7d6c848fe4cedfac8aba86ad95398fe149e",
+          "url": "https://github.com/purlis/purlis/commit/c2f99f5f216b3c244c44a10668691c3c41fd2a59"
+        },
+        "date": 1792218753395,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.434132,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.430, 0.433, 0.434, 0.445, 0.458 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.364469,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.287, 16.308, 16.364, 16.398, 16.908 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.492238,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.175, 101.379, 101.492, 101.607, 102.743 ms"
           }
         ]
       }
