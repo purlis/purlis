@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { commands, type PlaneId, type StaleClone, type StaleFix } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { GIT, usePlaneChanged } from "./planeChanged";
@@ -38,7 +38,9 @@ export const staleCloneCause = (stale: StaleClone) =>
  *   of the branch is on the remote or another branch, and no chat standing in it is mid-turn;
  *   the branch is kept.
  * - **On a moved remote**: the forge answered a fetch with the repo's new address. *Use the new
- *   address* sets `origin` to exactly the address the Notice shows.
+ *   address* sets `origin` to exactly the address the Notice shows. A push address of `origin`'s
+ *   own goes with it where every one is its old address, and the Notice says pushes move
+ *   too; where any is another, every one is left, and the Notice names them (#2117).
  *
  * A Fix that would lose work does nothing and says what blocks it, on the Notice. The list is
  * read again when the window comes back into focus and when the project's git standing moves,
@@ -160,6 +162,8 @@ export function StaleCloneNotices({
                     <code>{one.remote.origin}</code>, and the forge says it moved to{" "}
                     <code>{one.remote.now}</code>. Its fetches and pushes reach it only while the
                     forge redirects the old address.
+                    {one.remote.pushes_follow && " Pushes move to the new address too."}
+                    <KeptPushes places={one.remote.pushes_kept} />
                   </>
                 )}
                 {blocked !== undefined && ` ${blocked}`}
@@ -169,4 +173,29 @@ export function StaleCloneNotices({
         })}
     </>
   );
+}
+
+/**
+ * Where the repo pushes that *Use the new address* leaves as it is (#2117): its push addresses,
+ * where any is another than `origin`'s old one. Nothing where there is none.
+ */
+function KeptPushes({ places }: { places: readonly string[] }) {
+  if (places.length === 0) return null;
+  const left = places.length === 1 ? "it is" : "they are";
+  return (
+    <>
+      {" "}
+      It pushes to <Places places={places} />, which Use the new address leaves as {left}.
+    </>
+  );
+}
+
+/** `places` as code, in a sentence: `a`, `a and b`, `a, b and c`. */
+function Places({ places }: { places: readonly string[] }) {
+  return places.map((place, at) => (
+    <Fragment key={place}>
+      {at === 0 ? "" : at === places.length - 1 ? " and " : ", "}
+      <code>{place}</code>
+    </Fragment>
+  ));
 }

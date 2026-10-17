@@ -1359,10 +1359,26 @@ async fn harness_cards(
 
 /// What [`start_options`] answers for the project at `root`.
 fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
+    start_options_on(
+        root,
+        &purlis_core::sandbox::Machine::this(),
+        &purlis_core::sandbox::backend::installed,
+    )
+}
+
+/// [`start_options_in`] on `machine`, with `has` saying what is installed.
+fn start_options_on(
+    root: &std::path::Path,
+    machine: &purlis_core::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> Result<StartOptions, String> {
     let (set, check) = purlis_core::profiles::for_launch(root);
+    // The sandbox each row starts under, compiled once per harness for every row (#2179): a
+    // New tab no longer pays a compile per profile.
+    let sandboxes = sandboxing::ahead_of_each(set.profiles(), root, machine, has);
     // What each row is billed to is read from this machine's records and what the project
     // passes its chats, once for every row (#2036).
-    let machine = purlis_core::profilestore::listed_here();
+    let profiles_here = purlis_core::profilestore::listed_here();
     let passed = purlis_core::chatenv::read(root);
     let on_disk = purlis_core::workspaces::Plane::open(root);
     // Every harness the project has, read once for every row (HP-19).
@@ -1394,7 +1410,8 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
         profiles: set
             .profiles()
             .iter()
-            .map(|p| ProfileRow {
+            .zip(sandboxes)
+            .map(|(p, sandbox)| ProfileRow {
                 name: p.name.clone(),
                 kind: p.kind.clone(),
                 shown: purlis_core::profiletrust::shown(root, p),
@@ -1409,9 +1426,9 @@ fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
                     .iter()
                     .find(|card| card.name == p.kind)
                     .map(HarnessGlance::from),
-                sandbox: sandboxing::ahead_here(p, root),
+                sandbox,
                 model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
-                billed_to: purlis_core::profilesignin::billed(p, &machine, &passed),
+                billed_to: purlis_core::profilesignin::billed(p, &profiles_here, &passed),
             })
             .collect(),
         refused: set

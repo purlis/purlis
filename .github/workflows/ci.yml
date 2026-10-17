@@ -524,12 +524,15 @@ jobs:
         env: &coldstart-env
           APP: ${{ steps.main-app.outputs.change }}
           BASELINE_APP: ${{ steps.main-app.outputs.app }}
-          # Report-only on pull requests too, for now (#1876): the relative gate's first runs
-          # held the same app code at 0.98 in one job and 1.20 in another. While it is, a case
-          # that could not be measured at all (no X server, no i3, a window that never appeared)
-          # is a warning naming its cause and passes; this change's own build leaving before
-          # its first frame still fails (`tools/coldstart-linux.sh`).
-          EVIDENCE_ONLY: "1"
+          # Gated on a pull request, evidence on a push to main and a nightly. It was report-only
+          # on pull requests from train 87 (#1876) until its record was read (#1866): 524 pull
+          # request runs from 2026-10-14 to 2026-10-17, 1,572 cases: the ratio 0.80 to 1.10 in
+          # all but five, in two runs that held one build steadily slower through a whole job
+          # (each round line now says where both builds' time went), while the absolute median
+          # missed 2 s in 39 of them. Where the gate reports, a case that could not be
+          # measured at all is a warning naming its cause and passes; this change's own build
+          # leaving before its first frame fails either way (`tools/coldstart-linux.sh`).
+          EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus
         if: runner.os == 'Linux'
