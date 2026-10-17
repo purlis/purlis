@@ -401,27 +401,38 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
         "a job handed to launchd"
     );
     // The control: the same submit, under the same profile less that one rule, goes through,
-    // so the refusal above is the rule's.
+    // so the refusal above is the rule's. Only where launchd takes a job from a sandboxed
+    // process at all: some take none, even under a profile that allows everything (#2489, a
+    // macOS 26.6 runner), and there nothing can show the rule is what refuses it.
     assert!(profile.contains("(deny job-creation)\n"), "{profile}");
-    let without = profile.replace("(deny job-creation)\n", "");
-    let submitted = crate::forklock::output(
-        std::process::Command::new(backend::SANDBOX_EXEC)
-            .args(["-p", &without, "/bin/sh", "-c"])
-            .arg(tried(&format!(
-                "{} submit -l purlis.floor.control -- /usr/bin/true",
-                copied.display()
-            )))
-            .current_dir(&root),
-    )
-    .expect("it runs");
-    let _ = crate::forklock::status(
-        std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.control"]),
-    );
-    assert_eq!(
-        String::from_utf8_lossy(&submitted.stdout).trim(),
-        "yes",
-        "the same submit without the rule"
-    );
+    let submits_under = |profile: &str, label: &str| -> bool {
+        let out = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", profile, "/bin/sh", "-c"])
+                .arg(tried(&format!(
+                    "{} submit -l {label} -- /usr/bin/true",
+                    copied.display()
+                )))
+                .current_dir(&root),
+        )
+        .expect("it runs");
+        let _ = crate::forklock::status(
+            std::process::Command::new("/bin/launchctl").args(["remove", label]),
+        );
+        String::from_utf8_lossy(&out.stdout).trim() == "yes"
+    };
+    if submits_under("(version 1)(allow default)", "purlis.floor.anything") {
+        let without = profile.replace("(deny job-creation)\n", "");
+        assert!(
+            submits_under(&without, "purlis.floor.control"),
+            "the same submit without the rule"
+        );
+    } else {
+        let _ = writeln!(
+            std::io::stderr(),
+            "control skipped: launchd here takes no job from a sandboxed process"
+        );
+    }
     let _ = crate::forklock::status(
         std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.test"]),
     );
