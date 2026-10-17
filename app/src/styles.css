@@ -54,7 +54,8 @@
  * (`text-sm` is `--font-size-sm`; `text-2xl` makes nothing). The core keeps its own names
  * (`--space-*`, `--font-size-*`), so a token is never Tailwind's to redefine.
  * `geometry.guard.test.ts` refuses a spacing step that lands off the core scale (`p-5`), a text
- * size Tailwind no longer has, and a corner it keeps of its own (`rounded-2xl`).
+ * size Tailwind no longer has, a corner it keeps of its own (`rounded-2xl`), and a value of a
+ * class's own (`p-[7px]`, `text-[13px]`).
  *
  * **Each kind of control is one class, in `components`** (#1834). `primitives/controls.css` draws the
  * button, field, select, checkbox, radio, switch, segmented control and menu from the tokens

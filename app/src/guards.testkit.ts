@@ -170,6 +170,13 @@ export function classWords(className: string | undefined): string[] {
   return className ? className.split(/[^\w.:-]+/).filter(Boolean) : [];
 }
 
+/** The utilities a `className` can hand Tailwind, as `classWords` but with an arbitrary value's
+ *  brackets or parentheses kept on its word: `p-[7px]`, `m-[calc(var(--space-1)*3)]`,
+ *  `p-(--pad)`. */
+export function classUtilities(className: string | undefined): string[] {
+  return className ? className.split(/[^\w.:\-[\]()%#/,*+]+/).filter(Boolean) : [];
+}
+
 /** The line `index` is on, the way an editor jumps to it. */
 export function lineOf(text: string, index: number): number {
   return text.slice(0, index).split("\n").length;

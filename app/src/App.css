@@ -1150,7 +1150,7 @@ button.show-more:focus-visible {
    review rather than at runtime. */
 .pane-corner {
   position: absolute;
-  top: 3px;
+  top: var(--space-1);
   z-index: 2;
   display: flex;
   align-items: flex-start;
@@ -1164,8 +1164,8 @@ button.show-more:focus-visible {
    - **It takes no clicks of its own**: what is under the part of it that draws nothing is the
      terminal. Its row takes its own. */
 .pane-corner.at-start {
-  left: 8px;
-  max-width: calc(100% - 16px);
+  left: var(--space-4);
+  max-width: calc(100% - var(--space-4) * 2);
   pointer-events: none;
 }
 
@@ -1243,7 +1243,7 @@ button.show-more:focus-visible {
 }
 
 .pane-corner.at-end {
-  right: 8px;
+  right: var(--space-4);
 }
 
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
@@ -1253,8 +1253,8 @@ button.show-more:focus-visible {
    keyboard is while it is, so it is always visible and never takes the corners' hover rule. */
 .pane-find {
   position: absolute;
-  top: 2.1rem;
-  right: 8px;
+  top: var(--space-8);
+  right: var(--space-4);
   z-index: 3;
   display: flex;
   align-items: center;
@@ -2139,7 +2139,7 @@ button.show-more:focus-visible {
 .tasks-menu-places {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: 0.3rem;
+  inset-inline-end: var(--space-2);
   display: none;
   gap: var(--space-1);
   align-items: center;
@@ -2712,8 +2712,8 @@ button.show-more:focus-visible {
    corner. In the needs-you colours for the chats that need you, the plain count's otherwise. */
 .activity-count {
   position: absolute;
-  inset-block-end: 0.2rem;
-  inset-inline-end: 0.15rem;
+  inset-block-end: var(--space-1);
+  inset-inline-end: var(--space-1);
   min-width: 1rem;
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);

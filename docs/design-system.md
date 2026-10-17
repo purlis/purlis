@@ -800,13 +800,18 @@ What a tab on the three strips draws, and in what (the operator's asks of 2026-1
 Three guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837; the
 third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
-- **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**
-  or **font size**, in any stylesheet but `theme/geometry.css`, in a component's inline `style`,
-  or as a Tailwind class off the core scale (`p-5`, `text-2xl`, `rounded-2xl`). A custom
-  property that holds a length is held to what reads it: one a padding, margin, gap, corner or
-  font size reads, or that no stylesheet reads, counts, so `--pad: 7px` is no way round. Not
-  literals: `0`, a `1px` hairline, `1em`, `1lh` or `1ch` (as big as the element's own text), a
-  share (`%`, `vh`, `vw`), and a token, or a token's multiple or share in `calc()`. A shadow's
+- **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**,
+  **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), in any
+  stylesheet but `theme/geometry.css`, in a component's inline `style`, or as a Tailwind class
+  off the core scale (`p-5`, `text-2xl`, `rounded-2xl`) or with a value of its own (`p-[7px]`,
+  `text-[13px]`, `rounded-[5px]`). A custom property that holds a length is held to what reads
+  it, in a stylesheet or a component (an inline `style`, a utility such as `p-(--pad)`): one a
+  padding, margin, gap, corner, font size or offset reads, or that nothing reads, counts, so
+  `--pad: 7px` is no way round, set in a stylesheet or inline. Not literals: `0`, a `1px`
+  hairline, `1em`, `1lh` or `1ch` (as big as the element's own text), a share (`%`, `vh`,
+  `vw`), and a token, or a token's whole multiple or whole share in `calc()` (`* 3`, `* -1`,
+  `/ 2`). A factor that is not whole is a literal (`calc(var(--space-1) * 3.5)`), but for the
+  two structural reserves sized in controls, below. A shadow's
   lengths are elevation, which this guard does not read. **A box's size** (a width, a height
   and their min, max, block and inline forms, or a custom property only they read) is not a step
   of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
@@ -820,8 +825,8 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
 Each started with **an allowance list of the offenders the window had when it landed**,
 grouped by file and one entry per line. The geometry and type lists reached zero with #2319
-and are gone, so a literal in what those two guards read fails (widening what they read is
-#2450); `controls.guard.allowance.ts` remains. An entry names a declaration by its rule and what
+and are gone, so a literal in what those two guards read fails; `controls.guard.allowance.ts`
+remains. An entry names a declaration by its rule and what
 it sets (`.chat | padding: 0.1rem 0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
 number. The list only shrinks:
 
@@ -843,8 +848,12 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
   becomes `--radius-full`, whatever its literal was (`999px`, or `0.7rem` on a box 1.35rem tall).
 - **A structural size is outside the snap**: a size that is no step of the scale, such as an
   icon's box or a strip's cap on a tab's width, keeps its literal, and the geometry guard does
-  not read a box's size. A structural reserve written as a margin is a multiple of a size token
-  (`calc(var(--size-control) * 2.5)`, the title bar's drag stretch).
+  not read a box's size. A structural reserve written as a padding or a margin is a multiple of
+  a size token. Two are not whole, and the guard names them (`RESERVES`): the title bar's drag
+  stretch (`calc(var(--size-control) * 2.5)`) and the pane chips' room for the corner's
+  controls (`calc(var(--size-control) * 2.75)`). Any other factor is whole.
+- **An offset snaps as a margin does** (#2450): a `top`, `left` or `inset-inline-end` takes the
+  nearest spacing token, as the pane's corners and the activity bar's count do.
 - **A line height keeps `1`**, a line as tall as its text, which the type guard reads as no
   leading. Any other line height takes the nearest line-height token by computed px, as a size
   does (#2319: a brief's text and the Welcome page's lede onto `--line-height-body`, the rail's
@@ -936,13 +945,16 @@ window differ, the window was kept and the difference is recorded here for the m
 `app/src/type.guard.test.ts` refuses a `font-size`, `font-weight`, `line-height`,
 `font-family` or text `color` that is not its token (or `inherit`, or `currentColor` for a
 colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
-`theme/geometry.css` and in a component's inline `style`. A token of another kind does not
+`theme/geometry.css`, in a component's inline `style`, and as a Tailwind utility, read as the
+declaration it writes: a weight by name (`font-semibold`), a family of Tailwind's own
+(`font-mono`), a line height other than `leading-none`, and a value of its own (`text-[13px]`,
+`font-[600]`, `leading-[1.3]`) unless it is the property's token. A token of another kind does not
 pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to wear instead,
 by the size or weight that was written.
 
 Its allowance landed at 159 lines in `App.css` (91 of them font sizes) and reached zero with
 #2319, and the list is gone: [as with the geometry guard](#the-guards-and-the-lists-that-only-shrink),
-a literal in what it reads fails (#2450 widens that). A line height of exactly `1` is no leading
+a literal in what it reads fails. A line height of exactly `1` is no leading
 and passes. A font size is
 held by the geometry guard too.
 

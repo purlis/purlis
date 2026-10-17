@@ -5,7 +5,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { declarations, isView, ratchet, SRC, sourceFiles, withoutComments } from "./guards.testkit";
+import {
+  classNameOf,
+  classUtilities,
+  declarations,
+  isView,
+  openingTags,
+  ratchet,
+  SRC,
+  sourceFiles,
+  withoutComments,
+} from "./guards.testkit";
 import { GEOMETRY } from "./theme/geometry";
 import { property, TOKENS } from "./theme/theme";
 
@@ -17,7 +27,10 @@ import { property, TOKENS } from "./theme/theme";
  * bare numbers, two monospace stacks, and the section label written five ways. A word now
  * wears a **text role** (`primitives/text.css`: `ui-text-title`, `-heading`, `-body`,
  * `-secondary`, `-meta`, `-label`, `-code`, and `ui-text-strong`), and this guard refuses the
- * other way of ranking it. In a stylesheet, or in a component's inline `style`:
+ * other way of ranking it. In a stylesheet, in a component's inline `style`, or as a Tailwind
+ * utility read as the declaration it writes (`utilityDeclaration`: `font-semibold` is a weight of
+ * `600`, `leading-[1.3]` a line height, `text-[13px]` a size, `font-mono` a family of Tailwind's
+ * own):
  *
  * | Property      | May be                                                        |
  * | ------------- | ------------------------------------------------------------- |
@@ -88,8 +101,59 @@ const STYLE_KEY: Readonly<Record<string, string>> = {
   font: "font",
 };
 
-/** Each type literal in a component's inline `style`, as `style <key>: <value>`. A value that
- *  is computed (a variable, a call) is not read: only what is written out. */
+/** Tailwind's weights, by name, as the numbers it gives them. */
+const WEIGHTS: Readonly<Record<string, string>> = {
+  thin: "100",
+  extralight: "200",
+  light: "300",
+  normal: "400",
+  medium: "500",
+  semibold: "600",
+  bold: "700",
+  extrabold: "800",
+  black: "900",
+};
+
+/**
+ * **A Tailwind utility that ranks a word**, as the declaration it writes: `font-semibold` is
+ * `font-weight: 600`, `font-mono` a family of Tailwind's own, `leading-6` and `leading-tight` a
+ * line height, `leading-none` a line height of `1`, and a value of its own in brackets
+ * (`text-[13px]`, `font-[600]`, `leading-[1.3]`) or a custom property in parentheses
+ * (`leading-(--line-height-body)`) the value it writes. `text-[…]` is a size only when it
+ * writes one (a length, `length:`, a `--font-size-*`); a colour is not this table's. A named
+ * text size (`text-sm`) is the core's, held by the geometry guard.
+ */
+export function utilityDeclaration(word: string): { name: string; value: string } | undefined {
+  const [, kind, rest] = /^(?:[\w-]+:)*(text|font|leading)-(.+)$/.exec(word) ?? [];
+  if (kind === undefined) return undefined;
+  const own = /^\[(.+)\]$/.exec(rest)?.[1]?.replace(/_/g, " ");
+  const custom = /^\((--[\w-]+)\)$/.exec(rest)?.[1];
+  const value = own ?? (custom ? `var(${custom})` : undefined);
+  if (kind === "text") {
+    if (value === undefined) return undefined;
+    const size = value.replace(/^length:/, "");
+    const isSize = /^length:/.test(value) || /\d(?:px|rem|em|%)\b|--font-size-/.test(value);
+    return isSize ? { name: "font-size", value: size } : undefined;
+  }
+  if (kind === "leading") {
+    if (rest === "none") return { name: "line-height", value: "1" };
+    return { name: "line-height", value: value ?? rest };
+  }
+  if (value !== undefined) {
+    const token = /^var\((--[\w-]+)\)$/.exec(value)?.[1];
+    if (token !== undefined && MAY_BE["font-family"].has(token)) {
+      return { name: "font-family", value };
+    }
+    return { name: "font-weight", value };
+  }
+  if (rest in WEIGHTS) return { name: "font-weight", value: WEIGHTS[rest] };
+  if (/^(?:sans|serif|mono)$/.test(rest)) return { name: "font-family", value: rest };
+  return undefined;
+}
+
+/** Each type literal in a component's inline `style`, as `style <key>: <value>`, and each
+ *  Tailwind utility that ranks a word off the tokens, as `class <utility>`. A value that is
+ *  computed (a variable, a call) is not read: only what is written out. */
 export function componentLiterals(source: string): string[] {
   const found: string[] = [];
   const text = withoutComments(source, "ts");
@@ -103,19 +167,26 @@ export function componentLiterals(source: string): string[] {
       if (!isOnTheScale(name, written)) found.push(`style ${key}: ${value}`);
     }
   }
+  for (const tag of openingTags(source, /^[A-Za-z]/)) {
+    for (const word of classUtilities(classNameOf(tag.text))) {
+      const set = utilityDeclaration(word);
+      if (set && !isOnTheScale(set.name, set.value)) found.push(`class ${word}`);
+    }
+  }
   return found;
 }
 
 const read = (file: string) => readFileSync(join(SRC, file), "utf8");
 
-/** Every type literal in the window today, by file: its stylesheets (the core aside) and its
- *  components. */
-function literalsByFile(): Map<string, string[]> {
+/** Every type literal in the window, by file: its stylesheets (the core aside) and its
+ *  components, as they are or with a file's text replaced (`planted`). */
+function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<string, string[]> {
+  const text = (file: string) => planted[file] ?? read(file);
   const byFile = new Map<string, string[]>();
   for (const file of sourceFiles((name) => name.endsWith(".css"))) {
-    if (file !== THE_CORE) byFile.set(file, cssLiterals(read(file)));
+    if (file !== THE_CORE) byFile.set(file, cssLiterals(text(file)));
   }
-  for (const file of sourceFiles(isView)) byFile.set(file, componentLiterals(read(file)));
+  for (const file of sourceFiles(isView)) byFile.set(file, componentLiterals(text(file)));
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
@@ -136,8 +207,11 @@ const ROLES_SAID = 'docs/ui-primitives.md "Text roles"';
  * rule a colour, a line height or a family broke.
  */
 export function roleFor(entry: string): string {
-  const [, name = "", value = ""] =
-    /(?:\| |^style )([\w-]+): ?(.*)$/.exec(entry.replace(/["'`]/g, "")) ?? [];
+  const utility = /^class (.+)$/.exec(entry)?.[1];
+  const set = utility === undefined ? undefined : utilityDeclaration(utility);
+  const [, name = "", value = ""] = set
+    ? ["", set.name, set.value]
+    : (/(?:\| |^style )([\w-]+): ?(.*)$/.exec(entry.replace(/["'`]/g, "")) ?? []);
   const key = STYLE_KEY[name] ?? name;
   if (key === "font-size" || key === "font") {
     const size = px(value);
@@ -286,6 +360,45 @@ describe("the type guard (#1920)", () => {
     expect(roleFor("style fontSize: 13")).toContain("ui-text-body");
     expect(roleFor(".a | font-size: 0.9em")).toContain("a size in em");
     expect(roleFor(".a | font: 600 12px/1.2 system-ui")).toContain("ui-text-secondary");
+  });
+
+  it("fails a Tailwind type utility planted in a real component, and says which role to wear", () => {
+    const planted = `${read("Inbox.tsx")}
+export const Planted = () => (
+  <p className="md:text-[13px] font-semibold leading-[1.3] font-mono text-sm leading-none" />
+);
+`;
+    const result = complaints(literalsByFile({ "Inbox.tsx": planted }));
+    expect(result.map((complaint) => complaint.split(" (")[0])).toEqual([
+      "Inbox.tsx: new type literal: class md:text-[13px]",
+      "Inbox.tsx: new type literal: class font-semibold",
+      "Inbox.tsx: new type literal: class leading-[1.3]",
+      "Inbox.tsx: new type literal: class font-mono",
+    ]);
+    expect(result[0]).toContain("ui-text-body");
+    expect(result[1]).toContain("ui-text-strong");
+    expect(result[2]).toContain("var(--line-height-body)");
+    expect(result[3]).toContain("ui-text-code");
+  });
+
+  it("reads Tailwind's size, weight, leading and family utilities, and passes their tokens", () => {
+    const tsx = `
+      <p className="text-[0.8rem] text-[length:12px] font-[600] font-bold leading-tight leading-6" />
+      <p className="text-[var(--font-size-sm)] font-[var(--font-weight-strong)] leading-none" />
+      <p className={cn("leading-(--line-height-body) font-(--font-mono) text-[#fff] text-text-muted", x && "font-sans")} />
+      <p className="leading-[var(--space-2)] font-[var(--font-size-sm)] leading-[1]" />
+    `;
+    expect(componentLiterals(tsx)).toEqual([
+      "class text-[0.8rem]",
+      "class text-[length:12px]",
+      "class font-[600]",
+      "class font-bold",
+      "class leading-tight",
+      "class leading-6",
+      "class font-sans",
+      "class leading-[var(--space-2)]",
+      "class font-[var(--font-size-sm)]",
+    ]);
   });
 
   it("names the nearest role for each size the window has written", () => {
