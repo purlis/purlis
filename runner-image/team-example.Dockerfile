@@ -6,10 +6,11 @@
 # `tools/runner-image-contract.mjs`, so the contract is shown to be keepable by an image that is
 # not purlis's own.
 #
-# The build context holds the `purlis` binary, as for purlis's image. A team takes it from
-# purlis's image instead, by digest:
+# The build context holds the `purlis` binary and purlis's plugin, as for purlis's image. A team
+# takes both from purlis's image instead, by digest:
 #
 #   COPY --from=ghcr.io/purlis/purlis-runner@sha256:<digest> /usr/local/bin/purlis /usr/local/bin/purlis
+#   COPY --from=ghcr.io/purlis/purlis-runner@sha256:<digest> /usr/local/lib/purlis/plugin /usr/local/lib/purlis/plugin
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 # What the contract asks for (ca-certificates, git, bash, an init), and what this team adds:
@@ -21,6 +22,9 @@ RUN apt-get update \
  && chmod 0700 /home/runner
 
 COPY --chmod=0755 purlis /usr/local/bin/purlis
+# purlis's plugin, beside the binary, where `purlis serve` finds it: a sandboxed Claude Code
+# chat is armed with it (#2447). Read-only to the image's user.
+COPY plugin /usr/local/lib/purlis/plugin
 
 USER 20000:20000
 ENV HOME=/home/runner

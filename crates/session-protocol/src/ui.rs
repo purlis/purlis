@@ -200,6 +200,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // (ADR 0052 amended 2026-10-14). The clipboard is the person's, and may hold a vault's
     // value: no link reads it, so no chat, tool or hook does.
     "clipboard_text",
+    // The bytes of a font a theme folder brings (#2326), from the person's and the project's
+    // theme folders, which the window loads its faces from. Held to the window, failing closed:
+    // a link draws with the platform's fonts.
+    "theme_font",
     // Ends.
     "end_task",
     "task_ending",
@@ -872,6 +876,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "tasks_used",
     "template_that_fits",
     "theme_in_force",
+    // The person's density and font override, read by the engine (#2326): no file, no state.
+    "theme_person",
     "this_machine",
     "title_bar_room",
     "todo_add",

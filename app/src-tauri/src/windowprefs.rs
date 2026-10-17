@@ -21,7 +21,7 @@ use std::path::Path;
 use purlis_core::theme::{self, Complaint, Theirs, TheirsKept};
 use purlis_core::windowprefs::{self, Reading};
 
-use crate::extensions::WindowTheme;
+use crate::extensions::{PersonInForce, WindowTheme};
 
 /// The global the page reads both readings from. `app/src/windowprefs.ts` names it too; the
 /// test below holds the script to it, and `windowprefs.test.ts` holds the page to it.
@@ -37,6 +37,9 @@ struct AtCreation {
     theme: TheirTheme,
     /// The themes purlis ships, resolved: what the first frame is drawn in otherwise.
     built_in: Vec<WindowTheme>,
+    /// The person's density and font override, read by the engine from the layout file's
+    /// `appearance` (#2326): what the first frame draws over the theme.
+    person: PersonInForce,
 }
 
 /// [`Theirs`] with its theme in the window's shape.
@@ -87,10 +90,18 @@ pub(crate) fn creation_script(config_root: Option<&Path>) -> String {
 
 /// [`creation_script`], from the person's theme as `kept` holds it.
 fn creation_script_from(kept: &TheirsKept, config_root: Option<&Path>) -> String {
+    let layout = config_root.map_or_else(Reading::default, windowprefs::read_layout);
+    // A layout file purlis refused has no document: the person's settings are the defaults.
+    let appearance = layout
+        .document
+        .as_ref()
+        .and_then(|document| document.get("appearance"));
+    let person = PersonInForce::of(appearance);
     let at = AtCreation {
-        layout: config_root.map_or_else(Reading::default, windowprefs::read_layout),
         theme: kept.get(config_root).into(),
         built_in: theme::built_ins().iter().map(WindowTheme::from).collect(),
+        person,
+        layout,
     };
     let json = serde_json::to_string(&at).expect("a reading is plain data serde can always write");
     format!(
