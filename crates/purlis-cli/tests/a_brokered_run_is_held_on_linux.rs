@@ -144,17 +144,22 @@ fn a_declared_tool_s_run_is_held_by_the_chat_s_own_profile_on_linux() {
         let decided = sandbox::decide(Harness::Codex, &root, &machine, &|_| true, None, None)
             .expect("decided")
             .expect("a sandbox in force");
-        let Decided::Sandboxed(applied) = decided else {
+        let Decided::Sandboxed(mut applied) = decided else {
             panic!("not sandboxed: {decided:?}");
         };
         assert_eq!(applied.level(), level, "{name}");
+        // The wrap the chat's start checked and held: this build's own `purlis`.
+        applied.wrap_with(
+            Path::new(support::PURLIS)
+                .canonicalize()
+                .expect("purlis's real path"),
+        );
         let mut confines = applied.confines().clone();
-        // The persona's tool, as the chat's start armed it, and the wrap its start held.
+        // The persona's tool, as the chat's start armed it.
         confines.tools.push(Ready {
             tool: Tool::one("sh", "team", "KUBECONFIG", Handed::File, "KUBECONFIG"),
             program: PathBuf::from("/bin/sh"),
         });
-        confines.wrap = Some(PathBuf::from(support::PURLIS));
         let asker = Asker {
             root: root.clone(),
             env: Env::of(&[("PATH", "/usr/bin:/bin")]),
