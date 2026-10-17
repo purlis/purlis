@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_session_protocol::auth::{Credentials, Scope};
+use purlis_session_protocol::hostlink::{self, Handshake, Identity, Liveness, Pinned};
 use purlis_session_protocol::link;
 use purlis_session_protocol::local::Listener;
 use purlis_session_protocol::session;
@@ -39,7 +40,19 @@ impl Place {
             credentials,
         }
     }
+
+    /// Where a runner's host takes links from its desktop (ADR 0078 §2: the bridge a
+    /// connector runs opens it): beside its socket, named as it is with `.link.sock` for
+    /// `.sock`, in the same folder that is this user's alone.
+    pub fn link(&self) -> PathBuf {
+        self.socket.with_extension("link.sock")
+    }
 }
+
+/// Who a runner's host is on a link and the one desktop it admits (ADR 0078 §3, ruled
+/// 2026-10-15), read as each link arrives: `Ok(None)` while it is not paired, which admits no
+/// link, and an `Err` when what it keeps cannot be read safely, which admits none either.
+pub type Answering = Arc<dyn Fn() -> Result<Option<(Identity, Pinned)>, String> + Send + Sync>;
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
 pub const LOCK: &str = "purlisd.lock";
@@ -87,6 +100,20 @@ pub async fn serve(
     ready: impl FnOnce(),
     until: impl Future<Output = ()>,
 ) -> Result<(), HostError> {
+    serve_answering(place, window, hosting, None, ready, until).await
+}
+
+/// [`serve`], and, for a runner's host, links from the desktop it is paired with on
+/// [`Place::link`] (`answering`): each is the link between hosts (ADR 0078 §3), served as
+/// `remote-link` once its handshake proves the desktop's pinned key.
+pub async fn serve_answering(
+    place: &Place,
+    window: Option<Window>,
+    hosting: Hosting,
+    answering: Option<Answering>,
+    ready: impl FnOnce(),
+    until: impl Future<Output = ()>,
+) -> Result<(), HostError> {
     let folder = place.socket.parent().unwrap_or(Path::new("/"));
     let _private = purlis_same_user::PrivateDirectory::open(folder)
         .map_err(unsafe_at("make its folder this user's alone", folder))?;
@@ -96,6 +123,10 @@ pub async fn serve(
     let settling = hosting.clone();
     let _ = tokio::task::spawn_blocking(move || settling.take_over_from_the_last_host()).await;
     let listener = bind(&place.socket)?;
+    let links = match answering {
+        Some(answering) => Some((bind(&place.link())?, answering)),
+        None => None,
+    };
     let credentials = Arc::new(
         Credentials::mint_into(&place.credentials)
             .map_err(unsafe_at("mint its credentials", &place.credentials))?,
@@ -104,16 +135,71 @@ pub async fn serve(
     // A stop written elsewhere is heard with no window there, as the host starts and every few
     // seconds while it serves; every start looks first too (#2190).
     let heeding = tokio::spawn(hosting.clone().heed_stops_written_elsewhere());
+    let answering_links = links.map(|(listener, answering)| {
+        tokio::spawn(answer_links(listener, answering, hosting.clone()))
+    });
     ready();
 
     let served = accept(&listener, &credentials, &hosting, until).await;
     heeding.abort();
+    if let Some(answering_links) = answering_links {
+        answering_links.abort();
+    }
     // Quitting still ends every chat (ADR 0068 §2), as does the grace period passing.
     let ending = hosting.clone();
     let _ = tokio::task::spawn_blocking(move || ending.end_all()).await;
     // The lock is still held, so the socket at the path is this host's.
     let _ = std::fs::remove_file(&place.socket);
+    let _ = std::fs::remove_file(place.link());
     served
+}
+
+/// Answers each link on a runner's link socket: as `remote-link`, from the one desktop
+/// `answering` names, through the link between hosts' handshake. Nothing else is served there.
+async fn answer_links(listener: Listener, answering: Answering, hosting: Hosting) {
+    loop {
+        let peer = match listener.accept().await {
+            Ok(Ok(peer)) => peer,
+            Ok(Err(not_this_user)) => {
+                say(&format!("a link was refused: {not_this_user}"));
+                continue;
+            }
+            Err(why) => {
+                say(&format!("the link socket stopped accepting: {why}"));
+                return;
+            }
+        };
+        let (ours, desktop) = match answering() {
+            Ok(Some(paired)) => paired,
+            Ok(None) => {
+                say("a link was refused: this runner is not paired with a desktop");
+                continue;
+            }
+            Err(why) => {
+                say(&format!("a link was refused: {why}"));
+                continue;
+            }
+        };
+        let hosting = hosting.clone();
+        tokio::spawn(async move {
+            let chats = Arc::new(hosting.clone());
+            match hostlink::answer_local(
+                peer,
+                &chats,
+                Handshake::THIS_BUILD,
+                &ours,
+                &desktop,
+                Liveness::default(),
+            )
+            .await
+            {
+                Ok(answered) => {
+                    let _ = session::serve(answered.link, hosting, None).await;
+                }
+                Err(refused) => say(&format!("a link was refused: {refused}")),
+            }
+        });
+    }
 }
 
 /// The folder's lock, held for as long as the host serves: an exclusive `flock`, which the

@@ -46,6 +46,8 @@ mod browsers;
 #[cfg(unix)]
 mod confining;
 #[cfg(unix)]
+mod connector;
+#[cfg(unix)]
 mod hearing;
 #[cfg(unix)]
 mod hosting;
@@ -72,6 +74,8 @@ pub use browsers::{
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Tell, ToConfine};
 #[cfg(unix)]
+pub use connector::{BeforeEach, CommandConnector, Connected};
+#[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
@@ -92,7 +96,7 @@ pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Relay};
 #[cfg(unix)]
-pub use serving::{HostError, LOCK, Place, Window, serve};
+pub use serving::{Answering, HostError, LOCK, Place, Window, serve, serve_answering};
 
 /// The argument that starts the window's binary as its session host. Its word is the window's
 /// own business: the binary is the window's, and only the window starts it so.
@@ -128,7 +132,7 @@ pub fn serve_for_the_window_if_asked(
             // (ADR 0071): the window's binary keeps it in the place's credentials folder.
             let hosting = hosting(&place);
             let lives = hosting.clone();
-            run(&place, Some(window), hosting, async move {
+            run(&place, Some(window), hosting, None, async move {
                 lives
                     .while_a_window_may_come_back(GRACE, until_the_window_closes_its_end())
                     .await;
@@ -146,7 +150,25 @@ pub fn serve_for_the_window_if_asked(
 /// code is what a failure to start gives.
 #[cfg(unix)]
 pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i32 {
-    run(place, None, hosting(place), std::future::pending())
+    run(place, None, hosting(place), None, std::future::pending())
+}
+
+/// [`serve_alone`], as a runner's host: it also answers links from the one desktop it is paired
+/// with ([`Answering`]) on its link socket ([`Place::link`]), which the bridge a connector runs
+/// opens (ADR 0078 §2).
+#[cfg(unix)]
+pub fn serve_alone_answering(
+    place: &Place,
+    hosting: impl FnOnce(&Place) -> Hosting,
+    answering: Answering,
+) -> i32 {
+    run(
+        place,
+        None,
+        hosting(place),
+        Some(answering),
+        std::future::pending(),
+    )
 }
 
 #[cfg(unix)]
@@ -154,6 +176,7 @@ fn run(
     place: &Place,
     window: Option<Window>,
     hosting: Hosting,
+    answering: Option<Answering>,
     until: impl Future<Output = ()>,
 ) -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -173,7 +196,9 @@ fn run(
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{READY}").and_then(|()| out.flush());
     };
-    match runtime.block_on(serve(place, window, hosting, ready, until)) {
+    match runtime.block_on(serve_answering(
+        place, window, hosting, answering, ready, until,
+    )) {
         Ok(()) => 0,
         Err(why) => {
             say(&why.to_string());
