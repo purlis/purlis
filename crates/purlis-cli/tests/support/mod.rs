@@ -43,8 +43,7 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
 /// (#2255, #2386).
 #[cfg(unix)]
 pub fn hooks_socket(root: &std::path::Path) -> std::path::PathBuf {
-    // RED (#2386, temporary): the old location, outside a covered spool.
-    let socket = root.join("hooks.sock");
+    let socket = root.join(".purlis").join("app").join("hooks.sock");
     std::fs::create_dir_all(socket.parent().expect("a folder")).expect("the socket's folder");
     socket
 }
