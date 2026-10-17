@@ -112,16 +112,12 @@ impl Default for Opening {
 
 /// **A chat by what it is named, for the session host to compose** (#2171): its profile and
 /// persona, its workspace, the conversation it carries on, its first message, and whether the
-/// person opted it out of the sandbox.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the window starts a runner's chat by its names in #2446"
-    )
-)]
+/// person opted it out of the sandbox. And who it is and the run this start begins (ADR 0066),
+/// where the window knows them: a start that names none is given new ones.
 #[derive(Debug, Clone)]
 pub struct Named {
+    pub chat: Option<String>,
+    pub run: Option<String>,
     pub profile: Option<String>,
     pub persona: Option<String>,
     pub workspace: Option<String>,
@@ -132,13 +128,6 @@ pub struct Named {
 }
 
 /// Why a chat by what it is named alone is not started in the window's own process.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the window starts a runner's chat by its names in #2446"
-    )
-)]
 pub const NOT_COMPOSED_HERE: &str =
     "a chat in the window is started from what the window composed, never by its names alone";
 
@@ -209,13 +198,6 @@ pub trait SessionHost: Send + Sync {
     /// told what its proxy does, and its asks are answered from here, as a chat's the window
     /// planned. The answer holds it beside the chat's id: dropping it lets the host end it, as
     /// for one the window planned. None where the host composed none, or named it to no link.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the window starts a runner's chat by its names in #2446"
-        )
-    )]
     fn open_named(
         &self,
         _wanted: Option<u32>,
@@ -224,6 +206,14 @@ pub trait SessionHost: Send + Sync {
         _announce: &dyn Fn(u32),
     ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
         Err(NOT_COMPOSED_HERE.to_owned())
+    }
+
+    /// **Whether this host composes every harness chat the window starts in it** (#2446): a
+    /// runner's, which takes no harness launch from the window (ADR 0068, amended for #2217).
+    /// The window starts such a chat by its names ([`Self::open_named`]), and a shell by its own
+    /// launch ([`Self::open`]), as everywhere. Never, where chats run on this machine.
+    fn composes_its_harness_chats(&self) -> bool {
+        false
     }
 
     /// Sends what a pane typed to the program: bytes, written to its pty as they are. Text is
@@ -496,7 +486,7 @@ pub(crate) mod pretend {
     use purlis_core::engine::Size;
     use purlis_core::session::Exit;
 
-    use super::{Ends, Opening, Readiness, SessionHost, Sink, Watching};
+    use super::{Ends, NOT_COMPOSED_HERE, Named, Opening, Readiness, SessionHost, Sink, Watching};
 
     /// Deals numbers, remembers what it was asked to run, and ends a session when a test says
     /// its program ended. A clone is the same host, so a test keeps one after handing one over.
@@ -546,9 +536,25 @@ pub(crate) mod pretend {
         reattached: Mutex<Vec<u32>>,
         /// The chats left running that nothing reattached, closed.
         closed_left: Mutex<Vec<u32>>,
+        /// Whether it runs its chats on a runner, which composes each harness chat
+        /// ([`Pretend::on_a_runner`], #2446).
+        on_a_runner: std::sync::atomic::AtomicBool,
+        /// Each chat started by its names, its number, and whether its hearing asks.
+        named: Mutex<Vec<(u32, Named, bool)>>,
     }
 
     impl Pretend {
+        /// Runs its chats on a runner from now on, which composes each harness chat (#2446).
+        pub fn on_a_runner(&self) {
+            self.seen.on_a_runner.store(true, Ordering::SeqCst);
+        }
+
+        /// Each chat started by its names, in order: its number, what it was named, and whether
+        /// its hearing asks.
+        pub fn named(&self) -> Vec<(u32, Named, bool)> {
+            lock(&self.seen.named).clone()
+        }
+
         /// Chat `number` runs from before this window, in `plan` where it is confined: a window
         /// that comes back reattaches it (#2006).
         pub fn leaves_running(&self, number: u32, plan: Option<purlis_core::sandbox::plan::Plan>) {
@@ -720,6 +726,29 @@ pub(crate) mod pretend {
             lock(&self.seen.running).push(id);
             drop(asked);
             Ok(id)
+        }
+        fn open_named(
+            &self,
+            wanted: Option<u32>,
+            named: &Named,
+            hearing: purlis_core::sandbox::plan::Hearing,
+            announce: &dyn Fn(u32),
+        ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
+            if !self.composes_its_harness_chats() {
+                return Err(NOT_COMPOSED_HERE.to_owned());
+            }
+            if let Some(why) = lock(&self.seen.refusing).clone() {
+                return Err(why);
+            }
+            let id = wanted.unwrap_or_else(|| self.deal());
+            self.seen.dealt.fetch_max(id, Ordering::SeqCst);
+            announce(id);
+            lock(&self.seen.named).push((id, named.clone(), hearing.asks.is_some()));
+            lock(&self.seen.running).push(id);
+            Ok((id, None))
+        }
+        fn composes_its_harness_chats(&self) -> bool {
+            self.seen.on_a_runner.load(Ordering::SeqCst)
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
             self.here(id)?;
