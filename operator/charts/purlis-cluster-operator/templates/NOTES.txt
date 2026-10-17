@@ -1,0 +1,14 @@
+{{- /*
+Copyright 2026 Purlis
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+purlis's cluster operator is installed in {{ .Release.Namespace }}: Pool and Claim
+(runners.purlis.dev/v1alpha1), the policy on Claims, and the operator, running
+{{ include "purlis-cluster-operator.image" . }}.
+
+Check the cluster has everything the operator needs:
+
+  cargo run --manifest-path operator/Cargo.toml --release -- doctor
+
+Pools, Claims and who may use a pool:
+https://github.com/purlis/purlis/blob/main/docs/cluster-operator.md

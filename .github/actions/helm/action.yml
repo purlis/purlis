@@ -1,0 +1,24 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Helm, one exact release, checked against the SHA-256 it publishes, in place of any the runner
+# image carries: one place names the version, and a workflow never names it again. The cluster
+# operator's chart tests render and lint its chart with it, and its kind run installs with it
+# (`.github/workflows/operator.yml`).
+name: Helm
+description: Installs the Helm release this action pins, checked against its published SHA-256.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        HELM_VERSION: v4.3.0
+        HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
+      run: |
+        set -euo pipefail
+        curl --fail --silent --show-error --location -o "$RUNNER_TEMP/helm.tgz" \
+          "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+        echo "$HELM_SHA256  $RUNNER_TEMP/helm.tgz" | sha256sum --check --strict
+        tar -xzf "$RUNNER_TEMP/helm.tgz" -C "$RUNNER_TEMP"
+        sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
+        helm version

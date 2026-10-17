@@ -1,0 +1,8 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Nothing but the chart goes in a package of it.
+.DS_Store
+*.orig
+*.swp
+*~
