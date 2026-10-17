@@ -30,6 +30,9 @@ use serde_json::{Value, json};
 
 /// The version of the JSON `list --json` and `check --json` answer, as `hook --list --json`
 /// carries one: a reader checks it before it reads the rest.
+///
+/// Beside it, both answers carry `theme_schema`: the address of the theme schema this purlis
+/// reads (`theme::SCHEMA_URL`), the one a theme written for it names in its `$schema`.
 pub const SCHEMA: u64 = 1;
 
 /// The id of the person's own theme, `theme.json` beside `machine.json`.
@@ -191,7 +194,14 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             let found = available(config.as_deref());
             if *json {
                 let themes: Vec<Value> = found.iter().map(Found::summary_json).collect();
-                println!("{}", json!({ "schema": SCHEMA, "themes": themes }));
+                println!(
+                    "{}",
+                    json!({
+                        "schema": SCHEMA,
+                        "theme_schema": theme::SCHEMA_URL,
+                        "themes": themes
+                    })
+                );
             } else {
                 print!("{}", table(&found));
             }
@@ -705,6 +715,7 @@ fn checked_json(found: &Found, checked: &[(String, theme::Report)]) -> Value {
     let clean = found.refused.is_none() && found.notes.is_empty() && warnings.is_empty();
     json!({
         "schema": SCHEMA,
+        "theme_schema": theme::SCHEMA_URL,
         "theme": {
             "id": summary["id"],
             "name": summary["name"],

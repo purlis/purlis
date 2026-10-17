@@ -517,3 +517,23 @@ fn listing_and_checking_write_nothing_in_the_plane_or_the_config_home() {
 
     assert_eq!(every_file(rig.dir.path()), before);
 }
+
+#[test]
+fn both_answers_name_the_theme_schema_of_this_purlis() {
+    let rig = Rig::new();
+
+    for args in [
+        &["list", "--json"][..],
+        &["check", "purlis-classic", "--json"],
+    ] {
+        let ran = rig.run(args);
+
+        assert_eq!(ran.code, 0, "{}", ran.err);
+        assert_eq!(
+            ran.json()["theme_schema"],
+            purlis_core::theme::SCHEMA_URL,
+            "{args:?}"
+        );
+    }
+    assert!(purlis_core::theme::SCHEMA_URL.contains(concat!("/v", env!("CARGO_PKG_VERSION"), "/")));
+}

@@ -4,7 +4,7 @@ A **theme** is how the window looks: every colour and every motion value, in eac
 appearances (dark, light, high contrast). purlis's theme engine reads each theme, refuses one
 that breaks its grammar, decides which theme the window draws, and checks whether its words can
 be read. The window only draws what the engine hands it. The full format is in the
-repository's `docs/design-system.md`, and its schema is `docs/schema/theme.schema.json`.
+repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.schema.json`.
 
 ## Where a theme comes from
 
@@ -30,7 +30,9 @@ APPEARANCES names each appearance by its id, with its tag when the id is not one
 theme name can: quote it on the command line (`purlis theme check "solarized/Solarized Dark"`).
 
 Then `refused:`, one line per theme purlis refused and why. `--json` answers
-`{"schema": 1, "themes": [{"id", "name", "appearances", "from", "refused"}]}`, where each
+`{"schema": 1, "theme_schema", "themes": [{"id", "name", "appearances", "from", "refused"}]}`,
+where `theme_schema` is the address of the theme schema this purlis reads (see
+[The schema a theme names](#the-schema-a-theme-names)) and each
 appearance is `{"id", "appearance", "high_contrast"}`, `from` is `{"kind": "built-in"}`,
 `{"kind": "mine", "path"}` or `{"kind": "extension", "extension"}`, and `refused` is `null` or
 why (`name` and `appearances` are then `null`).
@@ -76,6 +78,7 @@ is refused, **2** when there is no such theme.
 ```json
 {
   "schema": 1,
+  "theme_schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "theme": {"id": "mine", "name": "Dim",
             "appearances": [{"id": "dark", "appearance": "dark", "high_contrast": false}],
             "from": {"kind": "mine", "path": "/home/me/.config/purlis/theme.json"}},
@@ -103,6 +106,21 @@ error, no note and no warning; it covers those only, never hard floors, which `h
 reports on its own. `schema` is the version of this shape, in both answers: a reader checks it
 first. A theme folder's `from` is `{"kind": "folder", "path"}`, a theme file's
 `{"kind": "file", "path"}`.
+
+## The schema a theme names
+
+A theme's `$schema` names the published schema, so an editor completes token names and flags a
+mistake as you type. Name the one of the purlis the theme is for, at its release:
+
+```
+https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json
+```
+
+`<version>` is what `purlis --version` prints; `purlis theme list --json` gives the whole
+address as `theme_schema`. An address at `main` would offer tokens your purlis does not have
+yet, and it leaves those out. The `v2` is the format: within it the schema only ever grows, so
+a theme valid against one release's schema is valid against every later release's. purlis
+itself never fetches the address; only your editor does.
 
 ## An extension's theme
 

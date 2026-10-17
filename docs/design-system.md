@@ -249,7 +249,7 @@ rewrites the file; the next pick made in Settings writes the new id.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
+  "$schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "name": "Dusk",
   "extends": "purlis-classic",
   "palette": { "lavender": "#b4a7f5" },
@@ -260,9 +260,10 @@ rewrites the file; the next pick made in Settings writes the new id.
 }
 ```
 
-- **`$schema`** names the published schema (`docs/schema/theme.schema.json`), which the theme
-  engine generates from its own vocabulary (`purlis_core::theme::schema`, held to the file by a
-  test): an editor completes every token name and flags a value outside the grammar.
+- **`$schema`** names the published schema, which the theme engine generates from its own
+  vocabulary (`purlis_core::theme::schema`, held to `docs/schema/theme.v2.schema.json` by a
+  test): an editor completes every token name and flags a value outside the grammar. See
+  [Which schema a theme names](#which-schema-a-theme-names).
 - **`extends`** names the theme this one starts from: `purlis-classic` (or an id a pick names
   one of its appearances by), or another theme folder by its name. The theme holds only what
   differs. A parent that is not there, a parent purlis cannot draw, and themes that extend one
@@ -326,6 +327,37 @@ appearance:
 - **Nothing in a theme file can stop the window.** The theme engine's `load` always answers with
   a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
   because a colour was spelled wrong is worse than every possible wrong colour.
+
+### Which schema a theme names
+
+**Name the schema of the purlis the theme is for**, at its release:
+
+```
+https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json
+```
+
+`<version>` is the one `purlis --version` prints, and `purlis theme list --json` gives the whole
+address as `theme_schema`. Purlis Classic's folder names its own release's, and so does every
+theme purlis writes.
+
+- **Why a release, not `main`.** `main`'s schema has every token the next purlis will know, so
+  an editor pointed at it completes tokens an installed purlis leaves out. The address at a
+  release tag is that release's schema, and stays there for as long as the tag does: a theme
+  written for 0.4.2 still opens with 0.4.2's completions after 0.5 ships.
+- **Why the format is in the file's name.** Within one format the schema only grows: a release
+  adds tokens, keys and accepted values, and never takes one away or narrows one, so a theme
+  valid against an earlier release's schema is valid against every later one of that format.
+  A test (`theme::published`) refuses a schema that removes or narrows anything against the one
+  committed for its format; such a change is a new format, with a file of its own.
+- **Why GitHub's raw file and not the docs site.** The tag is what a release is, and a raw file
+  at a tag cannot change after the release; the docs site is one version, the newest, and is not
+  published yet. purlis never fetches the address (ADR 0083's amendments of 2026-10-17): the
+  theme engine reads a theme against its own vocabulary, and only an editor opening `theme.json`
+  reads the schema.
+- **A dev build** names the release it becomes, which is not tagged until it ships. Until then,
+  point `$schema` at `main`'s file (`…/purlis/purlis/main/docs/schema/theme.v2.schema.json`)
+  and expect it to offer tokens the dev build may not have yet; purlis says such a token and
+  leaves it out.
 
 ### The theme engine
 

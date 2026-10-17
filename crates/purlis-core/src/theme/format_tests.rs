@@ -13,7 +13,7 @@ use super::*;
 use crate::extension::project::theme::Pick;
 
 /// The schema as the repo publishes it.
-const PUBLISHED_SCHEMA: &str = include_str!("../../../../docs/schema/theme.schema.json");
+const PUBLISHED_SCHEMA: &str = include_str!("../../../../docs/schema/theme.v2.schema.json");
 
 fn said(resolved: &Resolved) -> Vec<String> {
     resolved
@@ -130,7 +130,11 @@ fn the_classic_folder_loads_as_itself_without_a_word() {
 #[test]
 fn the_classic_folder_names_the_published_schema() {
     let file: Value = serde_json::from_str(CLASSIC_FILE).unwrap();
-    assert_eq!(file["$schema"], SCHEMA_URL);
+    assert_eq!(
+        file["$schema"], SCHEMA_URL,
+        "Purlis Classic's folder names the schema of the purlis it ships in: after a version \
+         bump, run PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema"
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -695,18 +699,28 @@ fn a_folder_in_the_library_is_extended_by_its_folder_name() {
 fn the_published_schema_is_the_one_the_engine_generates() {
     let published: Value =
         serde_json::from_str(PUBLISHED_SCHEMA).expect("the published schema is JSON");
+    // Before anything is written: a format only grows (`theme::published`).
+    let narrowed = published::narrowings(&published, &schema());
+    assert!(
+        narrowed.is_empty(),
+        "format 2's schema only grows, and the engine's takes away or narrows what \
+         {SCHEMA_FILE} has; a theme valid against an earlier release would stop being valid. \
+         Keep it, or make the change a new format:\n{}",
+        narrowed.join("\n")
+    );
     if std::env::var_os("PURLIS_THEME_SCHEMA_WRITE").is_some_and(|v| v == "1") {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../docs/schema/theme.schema.json"
+            "/../../docs/schema/theme.v2.schema.json"
         );
         std::fs::write(path, schema_text()).expect("the schema is written");
+        published_tests::name_this_release_in_the_classic_folder();
         return;
     }
     assert_eq!(
         published,
         schema(),
-        "docs/schema/theme.schema.json is not what the engine generates: run \
+        "{SCHEMA_FILE} is not what the engine generates: run \
          PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema"
     );
     assert_eq!(PUBLISHED_SCHEMA, schema_text());
@@ -715,7 +729,6 @@ fn the_published_schema_is_the_one_the_engine_generates() {
 #[test]
 fn the_schema_completes_every_token_and_motion_name_and_nothing_else() {
     let schema = schema();
-    assert_eq!(schema["$id"], SCHEMA_URL);
     let tokens = schema["$defs"]["tokens"]["properties"]
         .as_object()
         .expect("token names");

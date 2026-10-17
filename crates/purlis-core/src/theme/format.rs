@@ -5,7 +5,7 @@
 //!
 //! ```json
 //! {
-//!   "$schema": "…/theme.schema.json",
+//!   "$schema": "…/v<version>/docs/schema/theme.v2.schema.json",
 //!   "name": "Dusk",
 //!   "extends": "purlis-classic",
 //!   "palette": { "lavender": "#b4a7f5" },
