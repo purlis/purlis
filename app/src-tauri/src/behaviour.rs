@@ -215,7 +215,7 @@ pub(crate) fn a_host(folder: &Path, data: &Path) -> purlis_host::Hosting {
         folder,
         crate::sessionhost::Composes::as_the_tests_ship(),
         purlis_host::Terminals,
-        crate::sessionhost::HookChannels(kept.clone()),
+        crate::sessionhost::hook_channels(&kept),
         crate::hostedconfinement::ConfinesHere,
     )
     .recording_with(kept)

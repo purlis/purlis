@@ -1,6 +1,6 @@
 # Amendment, 2026-10-17: a child given another turn is a new run
 
-Decided in implementation (#2455, PR #2479), pending the operator's acknowledgement.
+Decided in implementation (#2455, PR #2479); acknowledged by the operator on 2026-10-18.
 
 §6 gives a child run three states and one way in: the first hook carrying a **new** `agent_id`.
 It said nothing of a child heard again after its own `SubagentStop`. Codex runs `SubagentStop`

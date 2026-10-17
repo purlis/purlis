@@ -6,9 +6,9 @@
 # `tools/runner-image-contract.mjs` checks it against that contract before it is pushed.
 #
 # Built by `.github/workflows/runner-image.yml`, once per architecture on a runner of that
-# architecture, from a build context holding ONE file: the `purlis` binary that job compiled
-# with the repository's pinned toolchain. Nothing else of the repository is in the context, so
-# nothing else can reach the image.
+# architecture, from a build context holding the `purlis` binary that job compiled with the
+# repository's pinned toolchain, and purlis's plugin (`app/src-tauri/plugin`) as the commit has
+# it. Nothing else of the repository is in the context, so nothing else can reach the image.
 #
 # The base is Ubuntu 26.04 LTS. The binary is compiled on Ubuntu 24.04 and needs glibc 2.39 or
 # later; a newer glibc runs what an older one linked. The base is pinned by the digest of its
@@ -28,6 +28,9 @@ RUN apt-get update \
  && chmod 0700 /home/purlis
 
 COPY --chmod=0755 purlis /usr/local/bin/purlis
+# purlis's plugin, beside the binary, where `purlis serve` finds it: a sandboxed Claude Code
+# chat is armed with it (#2447). Read-only to the image's user.
+COPY plugin /usr/local/lib/purlis/plugin
 
 USER 10001:10001
 ENV HOME=/home/purlis

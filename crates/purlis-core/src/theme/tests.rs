@@ -271,14 +271,16 @@ fn an_extension_theme_past_the_one_cap_is_refused_unread() {
 }
 
 #[test]
-fn geometry_is_refused_by_key_and_never_read() {
+fn geometry_in_format_1_is_refused_by_key_and_never_read() {
     let resolved = load(&file(json!({
         "tokens": { "space.4": "#123456", "radius.md": "#123456" },
         "geometry": { "space.4": 99 },
     })));
     let said = said(&resolved);
     assert!(said.contains(
-        &"space.4 is geometry, which this purlis does not read from a theme yet (#2326)".to_owned()
+        &"space.4 is geometry, which a theme sets in a theme folder's theme.json (format 2), not \
+          here"
+            .to_owned()
     ));
     assert!(
         said.iter()

@@ -18,12 +18,15 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Stdio};
 
-/// `purlis serve` with its config home and runtime directory in `dir`.
+/// `purlis serve` with its config, data and runtime homes in `dir`.
 fn serve(dir: &Path) -> std::process::Command {
     let mut serve = support::purlis();
     serve
         .arg("serve")
         .env("PURLIS_CONFIG_HOME", dir.join("config"))
+        // Its event log and purlis's git hooks, which it writes as it starts (#2447).
+        .env("PURLIS_DATA_HOME", dir.join("data"))
+        .env("XDG_DATA_HOME", dir.join("data"))
         .env("XDG_RUNTIME_DIR", dir.join("run"))
         // A temporary directory the process inherits does not move the socket. It is the
         // test's own folder, which the build's fence already holds the run to.
@@ -94,7 +97,8 @@ fn purlis_serve_listens_under_the_runtime_directory_and_a_second_one_leaves_it_s
     beside.sort();
     assert_eq!(
         beside,
-        ["config", "run"],
+        // The homes the test pinned there, and nothing else.
+        ["config", "data", "run"],
         "nothing went in the inherited temporary directory"
     );
     let credentials = purlis_core::machine::charterd(&dir.path().join("config"));

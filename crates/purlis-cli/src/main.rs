@@ -799,12 +799,13 @@ fn serve() -> ExitCode {
             purlis_core::browsers::given_to(
                 purlis_host::Hosting::kept(
                     &place.credentials,
-                    Composes(purlis_core::hoststart::Kit::found(
-                        std::env::current_exe().ok(),
-                        None,
-                    )),
+                    Composes(purlis_core::hoststart::Kit::installed_beside_this_binary()),
                     purlis_host::Terminals,
-                    purlis_host::HearsNothing,
+                    // Each held project's hooks, heard as the window's own host hears them
+                    // (#2447), in the event log of this machine, opened as it first holds one.
+                    purlis_core::hookchannel::HookChannels::keeping(
+                        purlis_core::hookchannel::EventLog::on_this_machine(),
+                    ),
                     Confines,
                 )
                 // `purlis stop --all` is heard with no window there (#2190).
@@ -817,7 +818,8 @@ fn serve() -> ExitCode {
 
 /// **How `purlis serve` composes each start** (#2174, #2171): a launch by its words, or, for a
 /// start with no launch, the launch the window would compose, from the project's own files
-/// ([`purlis_core::hoststart::spec`]), its hooks run by this `purlis`. It ships no plugin.
+/// ([`purlis_core::hoststart::spec`]), armed with what is installed beside this `purlis`
+/// (#2447, [`purlis_core::hoststart::Kit::installed_beside_this_binary`]).
 #[cfg(unix)]
 struct Composes(purlis_core::hoststart::Kit);
 

@@ -19,7 +19,7 @@ green `main`. A team can also build its own, as long as it keeps the contract be
 - **What:** `linux/amd64` and `linux/arm64` under one index. Each architecture is built on
   a GitHub runner of that architecture, from the `purlis` binary compiled there the way the
   Linux release binary is: the pinned toolchain, `cargo auditable`, the `dev-release`
-  profile, no cache.
+  profile, no cache. purlis's plugin is copied in beside it from the same commit.
 - **Tags:** `sha-<commit>` for the commit it was built from, and `main` for the image of
   the latest commit. `main` only moves forward: when an older commit's run finishes after
   a newer one's, its image gets only its `sha-<commit>` tag. Tags can move, so a pool names
@@ -43,8 +43,8 @@ green `main`. A team can also build its own, as long as it keeps the contract be
   builds and checks it the same way, and pushes nothing.
 
 The image is Ubuntu 26.04 LTS (its base pinned by digest) with `ca-certificates`, `git` and
-`tini`, the `purlis` binary, and one user, `purlis` (10001), who is not root. Its source is
-[`runner-image/Dockerfile`](../runner-image/Dockerfile).
+`tini`, the `purlis` binary and purlis's plugin beside it, and one user, `purlis` (10001),
+who is not root. Its source is [`runner-image/Dockerfile`](../runner-image/Dockerfile).
 
 ## The contract
 
@@ -66,6 +66,7 @@ it starts the image's default command. It prints every problem it found, one to 
 | Linux | The image is for `linux`. |
 | `/bin/sh` | A POSIX shell at `/bin/sh`. The check inside the image runs with it. |
 | The `purlis` binary | An executable at `/usr/local/bin/purlis`, and `purlis --version` answers with a line that starts with `purlis `. |
+| purlis's plugin | `/usr/local/lib/purlis/plugin`, holding `.claude-plugin/plugin.json`, readable by the image's user. `purlis serve` arms a Claude Code chat with the plugin it finds beside its binary, and refuses a sandboxed Claude Code chat when there is none. |
 | A user who is not root | `USER` is a user number other than 0 (`USER 10001:10001`), so a cluster can check `runAsNonRoot`. Inside the image, `id -u` is not 0. |
 | A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules, and a kept claim's volume is mounted there. |
 | `/tmp` | Writable. The session host makes its socket's folder there (`/tmp/purlis-<uid>/`, closed to every other user) unless `XDG_RUNTIME_DIR` names a folder of the user's own. With a read-only root file system, mount a writable volume at `/tmp` and at `HOME`. |

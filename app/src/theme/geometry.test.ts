@@ -91,14 +91,19 @@ describe("the core geometry", () => {
     expect(scale("focus")).toEqual([2, 2, -2]);
   });
 
-  it("names three weights, two line heights and one monospace family (#1920)", () => {
+  it("names three weights, two line heights, the window's family and one monospace family", () => {
     const of = (group: keyof typeof GEOMETRY) => GEOMETRY[group].map((name) => values.get(name));
     expect(of("weight")).toEqual(["400", "500", "600"]);
     // The window's own line height (`:root`), and a compact line's: nothing moves.
     expect(of("leading")).toEqual(["1.2", "1.4"]);
     const root = /:root\s*\{([^}]*)\}/.exec(read(join(SRC, "App.css")))?.[1] ?? "";
     expect(root).toContain("line-height: var(--line-height-body);");
-    expect(of("family")).toEqual(["ui-monospace, Menlo, Consolas, monospace"]);
+    expect(of("family")).toEqual([
+      "ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif",
+      "ui-monospace, Menlo, Consolas, monospace",
+    ]);
+    expect(root.length).toBeGreaterThan(0);
+    expect(read(CORE)).toContain("font-family: var(--font-ui);");
   });
 
   it("lifts a surface in the theme's shadow colour and no other", () => {
@@ -125,8 +130,14 @@ describe("the core geometry", () => {
   });
 });
 
-describe("a theme cannot set the geometry", () => {
-  it("has no geometry in its vocabulary", () => {
+/**
+ * A theme sets geometry and fonts only as the core's theme engine wrote them from its numbers
+ * and files (#2326, `purlis_core::theme::geometry`, whose tests hold the bounds and that what it
+ * writes for Purlis Classic is `geometry.css`). Its colours, its motion and a workspace's tint
+ * never write a geometry property.
+ */
+describe("a colour, a motion value or a tint is never geometry", () => {
+  it("has no geometry among the colour and motion tokens", () => {
     expect(TOKENS.map(property).filter(isGeometry)).toEqual([]);
     const motion = Object.keys(motionVariables(BUILT_IN["purlis-dark"].motion, false));
     expect(motion.length).toBeGreaterThan(0);
