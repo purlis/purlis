@@ -472,19 +472,7 @@ fn composed_from(
     ready: purlis_core::start::Ready,
     host: &dyn Beside,
 ) -> Result<Launch, String> {
-    let start = asking(|_| {});
-    hoststart::compose_ready(
-        &Starting {
-            root: project.root(),
-            number: 3,
-            start: &start,
-            reporting: None,
-            started_by: "terminal",
-        },
-        ready,
-        &project.kit(),
-        host,
-    )
+    composed_with(project, ready, &project.kit(), host)
 }
 
 /// On every machine: a sandboxed start the host composes runs in the confinement the host
@@ -577,4 +565,81 @@ fn a_sandboxed_start_runs_in_the_confinement_the_host_started_for_it() {
         set(&launch, purlis_core::hookwire::SANDBOXED_ENV).as_deref(),
         Some("1")
     );
+}
+
+/// On every machine: at the floor, the plugin and the git hooks a composed chat is armed with
+/// are never written by it: its sandbox, on its line, holds both.
+#[test]
+fn a_composed_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed_with() {
+    purlis_core::unsteered!();
+    let project = Project::on("codex");
+    let data = tempfile::tempdir().unwrap();
+    let git_hooks = data.path().canonicalize().unwrap().join("git-hooks");
+    fs::create_dir_all(&git_hooks).unwrap();
+    let kit = Kit {
+        git_hooks: Some(purlis_core::githooks::GitHooks::at(&git_hooks)),
+        ..project.kit()
+    };
+    let plugin = kit.plugin.clone().unwrap().canonicalize().unwrap();
+    let host = Host {
+        tmp: Some(tempfile::tempdir().unwrap()),
+        ..Host::default()
+    };
+
+    let launch = composed_with(&project, a_sandboxed_opencode_start(&project), &kit, &host)
+        .expect("composed");
+
+    let line = words(&launch).join(" ");
+    for folder in [&plugin, &git_hooks] {
+        let rule = format!("(deny file-write* (subpath \"{}\"))", folder.display());
+        assert!(line.contains(&rule), "{rule} not in {line}");
+    }
+}
+
+/// On every machine: a composed chat whose plugin lies where it would write is refused, and
+/// the refusal says what to do. Nothing is started beside it.
+#[test]
+fn a_composed_chat_whose_plugin_it_could_write_is_refused() {
+    purlis_core::unsteered!();
+    let project = Project::on("codex");
+    let plugin = project.root().join("tools/plugin");
+    fs::create_dir_all(&plugin).unwrap();
+    let kit = Kit {
+        plugin: Some(plugin),
+        ..project.kit()
+    };
+    let host = Host::default();
+
+    let refused =
+        composed_with(&project, a_sandboxed_opencode_start(&project), &kit, &host).unwrap_err();
+
+    assert!(
+        refused.contains("Install purlis outside the project and outside what a chat may write"),
+        "{refused}"
+    );
+    assert!(
+        host.confined.borrow().is_empty(),
+        "nothing started beside it"
+    );
+}
+
+fn composed_with(
+    project: &Project,
+    ready: purlis_core::start::Ready,
+    kit: &Kit,
+    host: &dyn Beside,
+) -> Result<Launch, String> {
+    let start = asking(|_| {});
+    hoststart::compose_ready(
+        &Starting {
+            root: project.root(),
+            number: 3,
+            start: &start,
+            reporting: None,
+            started_by: "terminal",
+        },
+        ready,
+        kit,
+        host,
+    )
 }

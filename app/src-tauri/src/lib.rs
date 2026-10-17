@@ -285,7 +285,13 @@ impl Default for Shipped {
         static SHIPPED: std::sync::OnceLock<(tempfile::TempDir, PathBuf, PathBuf)> =
             std::sync::OnceLock::new();
         let (_, binary, plugin) = SHIPPED.get_or_init(|| {
-            let dir = tempfile::tempdir().expect("a folder for the stand-in binary");
+            // Beside this test's own program, as an install is beside the app: outside every
+            // plane and every temp folder a sandboxed chat writes, where its kit is refused.
+            let beside = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+                .expect("this test's own folder");
+            let dir = tempfile::tempdir_in(beside).expect("a folder for the stand-in binary");
             let binary = stand_in::program(dir.path(), "purlis", "#!/bin/sh\nexit 0\n");
             let plugin = dir.path().join("plugin");
             std::fs::create_dir_all(&plugin).expect("a folder for the stand-in plugin");
