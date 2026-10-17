@@ -14,6 +14,10 @@ import { type Chose, type Door, Welcome } from "./Welcome";
 
 type WelcomeProps = ComponentProps<typeof Welcome>;
 
+/** How long a window that already holds a project waits for the kept place before drawing its
+ *  welcome anyway (#2400): far past one local read, and short of a wait anyone would notice. */
+export const PLACE_READ_DEADLINE_MS = 400;
+
 /**
  * **The guided steps** (#1817, spec #1810): what a window with no project in front draws, one
  * step at a time, each saying where it is — "Step 2 of 5" — over the list of them.
@@ -56,17 +60,28 @@ export function Onboarding({
   const { step } = progress;
 
   // Each time the steps appear, at the place this machine kept: a quit, or a project the person
-  // went to and came back from, picks up where it was.
-  const [placeRead, setPlaceRead] = useState(false);
+  // went to and came back from, picks up where it was. The read is normally one IPC round trip;
+  // one that has not answered by the deadline no longer holds the window (#2400).
+  const [placeRead, setPlaceRead] = useState<"answered" | "late">();
   useEffect(() => {
     let gone = false;
+    const late = setTimeout(() => {
+      if (!gone) setPlaceRead((was) => was ?? "late");
+    }, PLACE_READ_DEADLINE_MS);
     void reread().then(() => {
-      if (!gone) setPlaceRead(true);
+      if (!gone) setPlaceRead((was) => was ?? "answered");
     });
     return () => {
       gone = true;
+      clearTimeout(late);
     };
   }, [reread]);
+  // **Past the deadline, whether the steps guide this window is decided from what is known, and
+  // held for this appearance**: a read that answers later still updates the place, but it does
+  // not swap one welcome for the other under a door press.
+  const [guidingHeld, setGuidingHeld] = useState<boolean>();
+  if (placeRead === "late" && guidingHeld === undefined) setGuidingHeld(steps.guiding);
+  const guiding = guidingHeld ?? steps.guiding;
 
   const chose = useCallback(
     (to: Chose) => {
@@ -113,12 +128,13 @@ export function Onboarding({
 
   // A window that already holds a project, before the kept place has answered (#2400): whether
   // the steps guide it is not known yet. A welcome drawn now could be swapped for the other one
-  // under a door press, which drops the page the press opened. It is one small local read.
-  if (!placeRead && welcome.adding) return null;
+  // under a door press, which drops the page the press opened. It is one small local read, waited on
+  // for `PLACE_READ_DEADLINE_MS` at most.
+  if (placeRead === undefined && welcome.adding) return null;
 
   // Not guiding (a window full of projects, on a machine that has been through the steps): the
   // plain welcome, still behind the git gate, with no step drawn and no door kept.
-  if (!steps.guiding)
+  if (!guiding)
     return <Welcome {...welcome} onOpenRepo={openRepoWithGit} withGit={withGit} />;
 
   return (
