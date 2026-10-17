@@ -64,7 +64,23 @@ pub fn spec(app: impl IntoIterator<Item = (OsString, OsString)>, chat: &Terminal
     }
     // What the starter added, under both names too (V93k), as `compose` gave the rest.
     spec.env = crate::envvar::twinned(std::mem::take(&mut spec.env));
+    // **purlis's own wrap on Linux starts with nothing of the chat's** (#2460): the chat's
+    // environment is carried for its program, after the terminal's type its terminal would
+    // have given that program, and the wrap's own environment is only what carries it.
+    if wraps(chat.args) {
+        let mut env = vec![(OsString::from("TERM"), OsString::from(crate::session::TERM))];
+        env.append(&mut spec.env);
+        spec.env = purlis_linux_sandbox::carried::carried(env);
+    }
     spec
+}
+
+/// Whether a chat's arguments, after its program, are purlis's own wrap's line
+/// ([`purlis_linux_sandbox::line`]).
+fn wraps(args: &[String]) -> bool {
+    args.split_first().is_some_and(|(command, rest)| {
+        command == purlis_linux_sandbox::COMMAND && purlis_linux_sandbox::read_line(rest).is_some()
+    })
 }
 
 /// A chat's start as the window composed it and handed it to the session host, by its words
