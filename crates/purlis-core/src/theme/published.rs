@@ -67,13 +67,14 @@ mod promise {
         "maxProperties",
     ];
 
-    /// **Each way `after` accepts less than `before`**, one line each, as `<pointer>: <what>`;
+    /// **Each way `after` accepts less than `before`**, one line each, as `<pointer>: <what>`, sorted;
     /// none when every value `before` accepts, `after` accepts too. A keyword this comparison
     /// does not know is a narrowing until it is taught, so the rule never passes by not
     /// looking.
     pub fn narrowings(before: &Value, after: &Value) -> Vec<String> {
         let mut found = Vec::new();
         compare(before, after, "", &mut found);
+        found.sort();
         found
     }
 
@@ -82,8 +83,11 @@ mod promise {
             (Value::Bool(false), _) | (_, Value::Bool(true)) => {}
             (_, Value::Bool(false)) => found.push(format!("{}: accepts nothing now", shown(at))),
             (Value::Bool(true), Value::Object(after)) => {
-                for key in after.keys().filter(|key| !ANNOTATIONS.contains(&key.as_str())) {
-                    found.push(format!("{}/{key}: a new constraint", shown(at)));
+                for key in after
+                    .keys()
+                    .filter(|key| !ANNOTATIONS.contains(&key.as_str()))
+                {
+                    found.push(format!("{at}/{key}: a new constraint"));
                 }
             }
             (Value::Object(before), Value::Object(after)) => objects(before, after, at, found),
@@ -110,7 +114,6 @@ mod promise {
         value.unwrap_or(ANY)
     }
 
-    #[allow(clippy::too_many_lines)]
     fn objects(
         before: &Map<String, Value>,
         after: &Map<String, Value>,
@@ -151,7 +154,12 @@ mod promise {
                     }
                     for (name, added) in now_named {
                         if !was_named.contains_key(name) {
-                            compare(property(before, name), added, &format!("{here}/{name}"), found);
+                            compare(
+                                property(before, name),
+                                added,
+                                &format!("{here}/{name}"),
+                                found,
+                            );
                         }
                     }
                 }
