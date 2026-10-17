@@ -30,6 +30,12 @@ else
   esac
 fi
 
+# purlis's plugin, where `purlis serve` finds it beside /usr/local/bin/purlis: a sandboxed
+# Claude Code chat is armed with it, and refused without it (#2447).
+if [ ! -r "$root/usr/local/lib/purlis/plugin/.claude-plugin/plugin.json" ]; then
+  problem "there is no purlis plugin at /usr/local/lib/purlis/plugin, beside /usr/local/bin/purlis"
+fi
+
 for tool in git bash; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     problem "there is no $tool on PATH"
