@@ -175,10 +175,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "Extensions.tsx": {
-    count: 2,
+    count: 3,
     why:
-      "an installed extension's row trouble and an icon theme's complaint, inside its row of the " +
-      "Extensions dialog: the row's Review and its box are the way out (#630)",
+      "an installed extension's row trouble, a colour theme's complaint (#2321) and an icon " +
+      "theme's complaint, inside its row of the Extensions dialog: the row's Review and its box " +
+      "are the way out (#630)",
   },
   "FindBar.tsx": { count: 1, why: "the find bar's match count, a live value" },
   "FinishedTasks.tsx": {
