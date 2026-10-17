@@ -262,8 +262,8 @@ and none takes a workspace, a project or a path:
 | --- | --- |
 | `todo_list`, `todo_add`, `todo_done` | The workspace's todos; closing one writes its trace to memory |
 | `memory_search`, `memory_add` | The workspace's memory |
-| `persona_remember` | One memory of the chat's own persona, or of shared memory; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there (under Codex, which hands the tool no connection to purlis, run `purlis persona remember` in the chat) |
-| `persona_where` | Where the chat is working, from purlis's own record: the chat that asked for it, that chat's other tasks, and the other chats running as its persona, by name, workspace and state; never another chat's content (under Codex, run `purlis persona where` in the chat) |
+| `persona_remember` | One memory of the chat's own persona, or of shared memory; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there |
+| `persona_where` | Where the chat is working, from purlis's own record: the chat that asked for it, that chat's other tasks, and the other chats running as its persona, by name, workspace and state; never another chat's content |
 | `session_record_list`, `session_record_read` | The session records where the chat works, by file name |
 | `workspace_vision`, `workspace_section` | For a write outside a smart close, which keeps its own way of writing `workspace.md`: the `## Vision` of the workspace's `workspace.md`, replaced, and one entry added to its `## Context & decisions` (`decisions`) or `## Glossary` (`glossary`), with what is there kept; in a chat purlis started, purlis writes it for the chat, and the tool never writes it itself there |
 | `change_status` | The workspace's cross-repo changes, from their records; the forge is not asked |
