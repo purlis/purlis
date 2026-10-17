@@ -197,7 +197,31 @@ fn a_profile_that_names_an_absolute_program_starts_that_exact_program() {
     // Resolution must not canonicalise, rewrite or re-search a path that is already one: on
     // macOS a temp directory is `/var/folders/…` and its resolved spelling is
     // `/private/var/…`, and a launch that silently swapped them would start a program under a
-    // path the record then could not match.
+    // path the record then could not match. The search is asked alone here, with no sandbox:
+    // a sandboxed start runs the real file instead, on purpose (the test below).
+    let plane = Plane::new();
+    let bin = stand_in::claude_code(beside(), "claude-stand-in", "#!/bin/sh\n");
+    plane.running(&bin.display().to_string());
+    let start = Start {
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..plane.start()
+    };
+
+    let ready = start::ready(&start, plane.root()).expect("it starts");
+
+    assert_eq!(ready.program, bin.display().to_string());
+}
+
+// macOS only: there a temp folder's real path differs from its written one, and Seatbelt is
+// always there to sandbox the start; on Linux the two paths are one and the same.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_sandboxed_start_runs_the_real_file_its_check_asked() {
+    purlis_core::unsteered!();
+    // ADR 0067, V87g: a sandboxed start resolves the program once, checks the real file
+    // links lead to, and runs that same real path, so the file checked is the file run. A
+    // start that ran the path as written would leave a link between the check and the launch.
+    // The real path of a temp folder here is `/private/var/…`.
     let plane = Plane::new();
     // Beside the plane, answering `--version` as Claude Code does: a start asks (#2071).
     let bin = stand_in::claude_code(beside(), "claude-stand-in", "#!/bin/sh\n");
@@ -205,7 +229,12 @@ fn a_profile_that_names_an_absolute_program_starts_that_exact_program() {
 
     let ready = start::ready(&plane.start(), plane.root()).expect("it starts");
 
-    assert_eq!(ready.program, bin.display().to_string());
+    assert!(
+        ready.sandbox.is_some(),
+        "the premise: this start is sandboxed"
+    );
+    let real = bin.canonicalize().expect("the stand-in's real path");
+    assert_eq!(ready.program, real.display().to_string());
 }
 
 #[test]
