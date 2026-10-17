@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792226898957,
+  "lastUpdate": 1792249320014,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -15246,6 +15246,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8056735,
             "unit": "ms",
             "extra": "median of 5 runs: 101.464, 101.788, 101.806, 102.018, 102.082 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "04e65716059a54a3e7183fddf0c5304d5afbc7c5",
+          "message": "A door pressed on Add another project stays pressed (#2400) (#2413)\n\n* Read the guided steps' kept place as the window mounts, so a door press is not undone (#2400)\n\nCause: useOnboarding started at FRESH (finished_once false) and read onboarding.json only when\n<Onboarding> mounted. On a window that holds a project, on a machine through the steps, the first\n`+` of a launch therefore drew the guided Welcome. A door pressed before the read answered was\nkept, but the read's finished_once flipped guides() to false, Onboarding swapped to the plain\n<Welcome> (another tree), and that Welcome remounted with no door: the Create page and its Where\nit lives were gone. This is the create-project e2e flake on macOS.\n\nThe kept place is now read once as App mounts; Onboarding looks only at the harnesses each time\nit appears. A window that holds a project draws nothing in the welcome's place until the read\nhas answered; a window with none is guided at once, as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Keep reading the kept place each time the steps appear; hold the adding welcome until it answers (#2400)\n\nReading it once as App mounts broke onboarding.e2e.ts's resume, which writes a place to the\nstore and expects the next appearance of the steps to draw it (and a second window shares the\nstore). reread() now settles once the place has answered, and Onboarding draws nothing on a\nwindow that holds a project until this appearance's read has settled, so guiding cannot flip\nunder a door press. A window with no project is guided at once, as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Draw the adding welcome past a read deadline, holding guiding for the appearance (#2400)\n\nA read of the kept place that never answered left a window that holds a project blank. The\nwelcome now waits for it at most PLACE_READ_DEADLINE_MS (400 ms); past that, whether the steps\nguide the window is decided from what is known and held for this appearance, so a late answer\nupdates the place but does not swap the welcome under a press. The tests wait on events (the\nread asked, the place kept) instead of fixed sleeps.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Format Onboarding.tsx (#2400)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-17T19:00:47+04:00",
+          "tree_id": "3bb14084488c5daf3bdced9af1d36549671a899e",
+          "url": "https://github.com/purlis/purlis/commit/04e65716059a54a3e7183fddf0c5304d5afbc7c5"
+        },
+        "date": 1792249318423,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.28325849999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.263, 0.279, 0.283, 0.290, 0.292 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.516848000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.470, 16.500, 16.517, 16.589, 16.663 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.291372,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.979, 101.225, 101.291, 101.297, 101.715 ms"
           }
         ]
       }
