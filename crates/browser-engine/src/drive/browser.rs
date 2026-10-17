@@ -1933,7 +1933,7 @@ impl Browser {
             let state = lock(&self.inner.state);
             let shown = reads
                 .iter()
-                .find(|(root, _)| root.parent.is_none())
+                .find(|(root, _)| root.frame == target)
                 .and_then(|(_, found)| found.address.clone())
                 .unwrap_or_default();
             state.greys_at(&shown)
