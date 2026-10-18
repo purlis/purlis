@@ -279,10 +279,9 @@ fn look<W: notify::Watcher>(inner: &mut Inner<W>) {
             continue;
         };
         let now = Look::of(watched);
-        match inner.looks.insert(label.clone(), now.clone()) {
-            Some(before) => changed.push((label, before.changed(&now))),
-            // The first look is what the next is compared with.
-            None => {}
+        // The first look is what the next is compared with.
+        if let Some(before) = inner.looks.insert(label.clone(), now.clone()) {
+            changed.push((label, before.changed(&now)));
         }
     }
     let mut again = false;
@@ -305,7 +304,7 @@ static WATCH: OnceLock<ThemeWatch> = OnceLock::new();
 /// **The window draws its theme from `target` now**: watch its theme folders, and tell it
 /// [`CHANGED`] when one changes.
 pub(crate) fn follow(window: &tauri::WebviewWindow, target: Target) {
-    use tauri::Emitter as _;
+    use tauri::{Emitter as _, Manager as _};
     let app = window.app_handle().clone();
     let watch = WATCH.get_or_init(|| {
         ThemeWatch::start(Arc::new(move |label: &str, said: ThemeFoldersChanged| {
@@ -325,7 +324,9 @@ pub(crate) fn forget(label: &str) {
 
 /// Every folder watched now, for a test.
 #[cfg(test)]
-fn watching<W: notify::Watcher>(watch: &ThemeWatch<W>) -> std::collections::BTreeSet<PathBuf> {
+fn watching<W: notify::Watcher + Send + 'static>(
+    watch: &ThemeWatch<W>,
+) -> std::collections::BTreeSet<PathBuf> {
     watch.lock().watching.iter().cloned().collect()
 }
 

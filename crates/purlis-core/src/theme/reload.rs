@@ -475,6 +475,8 @@ mod walk {
             let Ok(found) = statat(&at, name, AtFlags::SYMLINK_NOFOLLOW) else {
                 continue;
             };
+            // The widths of a stat's times differ between platforms.
+            #[allow(clippy::useless_conversion)]
             out.insert(
                 name.to_owned(),
                 (

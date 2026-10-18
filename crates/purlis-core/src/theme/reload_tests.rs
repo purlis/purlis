@@ -215,7 +215,7 @@ fn at_most_the_cap_of_folders_is_watched_the_nearest_level_s_first() {
         );
         std::fs::create_dir_all(places.workspace().join(format!("w{n:03}/fonts"))).unwrap();
     }
-    assert!(1 + 2 * levels::MOST_FOLDERS > MOST_WATCHED);
+    const { assert!(1 + 2 * levels::MOST_FOLDERS > MOST_WATCHED) };
     put(&places.machine(), "mine", &dark("Mine", json!({})));
     let watched = watched(&places);
     let got = folders_of(&watched);
@@ -368,7 +368,7 @@ fn a_change_that_asks_nothing_owes_no_redraw() {
 #[test]
 fn the_last_save_of_a_steady_stream_is_drawn_within_a_second() {
     // A gathered burst, then the gap: what the window waits at most after a save.
-    assert!(reload::QUIET_FOR + GAP < Duration::from_secs(1));
+    const { assert!(reload::QUIET_FOR.as_millis() + GAP.as_millis() < 1000) };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -574,4 +574,37 @@ fn colours_saved_in_an_unapproved_project_s_folder_draw_with_no_approval() {
     );
     assert!(!drawn.refused);
     assert_eq!(drawn.theme.unwrap().value("surface.base"), "#121212");
+}
+
+#[test]
+fn the_extensions_watched_are_the_installed_ones_of_themes_alone() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config");
+    let make = |id: &str, more: &str| {
+        let dir = home.path().join(id);
+        std::fs::create_dir_all(dir.join("themes")).unwrap();
+        std::fs::write(
+            dir.join("themes/dark.json"),
+            r#"{"name":"Dark","appearance":"dark","tokens":{}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(crate::extension::MANIFEST),
+            format!(
+                r#"{{"version":1,"id":"{id}","name":"{id}","contributes":{{"themes":[{{"name":"Dark","file":"themes/dark.json"}}]{more}}}}}"#
+            ),
+        )
+        .unwrap();
+        crate::extension::install(&config, &crate::extension::BuiltIn::none(), &dir).unwrap();
+        dir
+    };
+    let only = make("only", "");
+    make("panelled", r#","panels":[{"id":"p","title":"P"}]"#);
+    assert_eq!(
+        ThemesOnly::installed(&config, &crate::extension::BuiltIn::none()),
+        [ThemesOnly {
+            dir: only,
+            files: vec!["themes/dark.json".to_owned()],
+        }]
+    );
 }

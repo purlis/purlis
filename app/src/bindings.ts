@@ -2379,12 +2379,52 @@ export const commands = {
 	pickExtension: () => typedError<string | null, string>(__TAURI_INVOKE("pick_extension")),
 	/**
 	 *  Read the extension at `path`, write it into the record **unapproved**, and hand back the
-	 *  question to ask about it.
+	 *  question to ask about it — none for an extension that contributes only themes, which is a set
+	 *  of theme folders and needs no approval (ADR 0098 §3).
 	 * 
 	 *  An extension charter cannot read is an error here rather than a silent nothing: the
 	 *  operator pointed at a directory and is owed the reason it is not one.
 	 */
-	installExtension: (path: string) => typedError<ExtensionAsk, string>(__TAURI_INVOKE("install_extension", { path })),
+	installExtension: (path: string) => typedError<{
+	/**  The id the record is keyed by, and the id the yes is recorded against. */
+	id: string,
+	/**  What to call it, as its own manifest does. */
+	name: string,
+	/**
+	 *  Where it is. Shown and not merely carried: an extension is approved at a path, and one
+	 *  re-installed from another directory is a different question.
+	 */
+	path: string,
+	/**  Every contribution it declares, in charter's own words, one line each. */
+	declares: string[],
+	/**
+	 *  The fingerprint of the bytes that were read to build this question. It goes back to
+	 *  [`approve_extension`] untouched, so the yes is for what was shown.
+	 */
+	fingerprint: string,
+	/**  Whether this is a first ask rather than a re-ask. */
+	first: boolean,
+	/**
+	 *  `extension::RUNS_AS_YOU` — that a plugin runs with the operator's own access and that
+	 *  the list above is a declaration, not a limit.
+	 */
+	runs_as_you: string,
+	/**
+	 *  `extension::FINGERPRINTED` — that the fingerprint catches a change and is not a
+	 *  boundary.
+	 */
+	fingerprint_note: string,
+	/**
+	 *  `extension::state_note` — which one directory charter does NOT read, when this
+	 *  extension declares one, and `null` when it declares none (charter-app#152).
+	 * 
+	 *  It travels for the same reason the other two do. The fingerprint note says charter read
+	 *  every file in the directory; the exception to that sentence belongs on the same screen
+	 *  as the sentence, in the core's words, or the wording has the defect #152 was opened over
+	 *  one carve-out later.
+	 */
+	state_note: string | null,
+} | null, string>(__TAURI_INVOKE("install_extension", { path })),
 	/**
 	 *  The operator's answer to [`ExtensionAsk`]: yes.
 	 * 
@@ -2427,6 +2467,10 @@ export const commands = {
 	 *  every extension's files, so it is taken only when the answer needs one and kept until
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
+	 * 
+	 *  **And the theme folders it is read from are watched for this window** (#2324,
+	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
+	 *  the window or a chat names. A save in one tells the window to ask again.
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
@@ -10256,6 +10300,12 @@ export type ThemeInForce = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

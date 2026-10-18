@@ -209,6 +209,8 @@ pub struct ExtensionTheme {
 /// the window or a chat names. A save in one tells the window to ask again.
 #[tauri::command]
 #[specta::specta]
+// The window and the state are Tauri's to hand in; the rest is the window's question.
+#[allow(clippy::too_many_arguments)]
 pub async fn theme_in_force(
     window: tauri::WebviewWindow,
     planes: tauri::State<'_, crate::planes::Planes>,
@@ -1857,7 +1859,8 @@ mod tests {
         std::fs::write(
             at.join(extension::MANIFEST),
             r#"{"version":1,"id":"solarized","name":"Solarized",
-                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}]}}"#,
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
         )
         .expect("a manifest");
         std::fs::write(at.join("dark.json"), "{}").expect("a theme");
@@ -1941,6 +1944,24 @@ mod tests {
         assert!(off.columns.is_empty() && off.badges.is_empty(), "{off:?}");
         let project = facts_in(&config, plane.path(), None, chrono::Utc::now());
         assert_eq!(project.columns.len(), 1, "the project has it on");
+    }
+
+    #[test]
+    fn an_extension_of_themes_alone_is_listed_as_themes_drawing_with_nothing_to_ask() {
+        let (_dir, at, config) = made();
+        std::fs::write(
+            at.join(extension::MANIFEST),
+            r#"{"version":1,"id":"solarized","name":"Solarized",
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}]}}"#,
+        )
+        .expect("a manifest");
+        extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+
+        let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        let row = &listed.extensions[0];
+        assert_eq!(row.standing, "themes");
+        assert_eq!(row.themes_in_force, ["Solarized Dark"]);
+        assert_eq!(row.ask, None);
     }
 
     #[test]
@@ -2104,7 +2125,8 @@ mod tests {
         std::fs::write(
             at.join(extension::MANIFEST),
             r#"{"version":1,"id":"solarized","name":"Solarized","state":"cache",
-                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}]}}"#,
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
         )
         .expect("a manifest with a state directory");
         extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
@@ -2439,7 +2461,8 @@ mod tests {
         std::fs::write(
             at.join(extension::MANIFEST),
             r#"{"version":1,"id":"seti","name":"Seti",
-                "contributes":{"icon_themes":[{"name":"Seti","file":"seti.json"}]}}"#,
+                "contributes":{"icon_themes":[{"name":"Seti","file":"seti.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
         )
         .expect("a manifest");
         std::fs::write(at.join("seti.json"), r#"{"symbols":{}}"#).expect("an icon theme");
