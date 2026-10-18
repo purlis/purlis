@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792356170734,
+  "lastUpdate": 1792357998979,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2730,6 +2730,42 @@ window.BENCHMARK_DATA = {
             "value": 379.2,
             "unit": "MB",
             "extra": "median of 6 samples: 307.9, 389.5, 374.4, 384.1, 384.9, 273.6 MB; window 194.3 MB, session host 184.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7e739c9ddd673300a34f93e3e518df5f95889dea",
+          "message": "Linux: a refused file no longer linked is sorted by the name it had (#2630)\n\n* Linux: a refused file no longer linked is sorted by the name it had (#2574)\n\nThe wrap's supervisor sorts a refusal whose target ends in the kernel's\n\" (deleted)\" by the path before it: its kind, and what Allow would name.\nA protected file that was unlinked is a protected file, with no Allow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Linux: the name-lookup check reads the name a socket had (#2574)\n\nA resolver socket with \" (deleted)\" after its name is told as a lookup\nwith nothing to allow, as under the name it had.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T00:33:15+04:00",
+          "tree_id": "632b3ee916ebf51445b62ce411b3655e44086d3e",
+          "url": "https://github.com/purlis/purlis/commit/7e739c9ddd673300a34f93e3e518df5f95889dea"
+        },
+        "date": 1792357997684,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 947,
+            "unit": "MB",
+            "extra": "median of 3 samples: 700, 947, 1053 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 372.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 362.5, 373, 377.5, 372.1, 372.8, 317.6 MB; window 197.8 MB, session host 175.1 MB"
           }
         ]
       }
