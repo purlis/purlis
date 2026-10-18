@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792360239805,
+  "lastUpdate": 1792362826390,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2802,6 +2802,42 @@ window.BENCHMARK_DATA = {
             "value": 386.9,
             "unit": "MB",
             "extra": "median of 6 samples: 302, 397.6, 396.3, 386.5, 387.3, 309.9 MB; window 200 MB, session host 190.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "efb9dfd6b7a9dbb980224ee6bfb28a827d1dd23f",
+          "message": "The guards follow a style wherever the file hands it on (#2659)\n\n* The guards follow a style wherever the file hands it on (#2566)\n\nThe geometry and type guards read a component's or a script's style\nthrough one follower, and the controls guard reads a control's style\nthrough the same one. From a style={…} expression, a spread, the objects\nObject.assign writes and a style typed as CSSProperties, it follows a\nheld variable, a member of a local object or a destructuring, each\nbranch of a ternary and each side of ||, ?? and &&, what a local\nfunction or useMemo returns, and what a relative import gives. In\nscript it reads an element's style under any name the file holds it by\n(const st = el.style, const { style } = el), cssText += and a\ntemplate-literal index. Each spelling has a planted-literal test through\nthe real tree; docs/design-system.md lists what the guards read and what\nthey do not.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The style follower reads each file once and lazily (#2566)\n\nA variable's initializer and a function's body are found where they end\nonly when a style is followed into them; a file that holds no element\nstyle skips alias detection, and one that names no CSSProperties skips\nthe typed pass. Alias names are escaped as a whole pattern. The geometry\nguard reads each source's declarations once per run.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The style follower fails closed and follows the review's misses (#2566)\n\nA style handed on past FOLLOW_LIMIT hops, and a style from a relative\nimport the guard cannot open (above src, not found, not script), now\nfail the guard with a sentence naming the file and the style. A script\nextension resolves as TypeScript resolves it (./s.js is s.ts).\n\nThe follower now also follows a default-exported function, a call on a\n`* as` import, a written-key member (styles[\"box\"]), a function with an\nobject return type, useCallback, and el[\"style\"] and (el.style)\naliases. Each imported file is read and parsed once per guard pass. The\nreview's planted cases are tests, and \"What the guards read in script\"\nlists what is still not followed.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T01:39:41+04:00",
+          "tree_id": "58741fe41322c7c1392521ebbbc2160bbc8e1d2e",
+          "url": "https://github.com/purlis/purlis/commit/efb9dfd6b7a9dbb980224ee6bfb28a827d1dd23f"
+        },
+        "date": 1792362824933,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 891,
+            "unit": "MB",
+            "extra": "median of 3 samples: 823, 891, 980 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 325.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 251, 352.1, 347.4, 325.2, 326, 278.8 MB; window 152.2 MB, session host 173.4 MB"
           }
         ]
       }
