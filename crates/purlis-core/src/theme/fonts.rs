@@ -30,6 +30,15 @@
 //! reads that file again under the same containment and cap, and answers its bytes only when they
 //! still have that digest.
 //!
+//! **A face is read through the theme folder's own handle** (#2555): `fonts/` is opened from
+//! the handle of the folder its `theme.json` was read through, refusing a link, and each face
+//! from the handle of `fonts/`, refusing a link again. [`served`] reads it again from the same
+//! handles. Nothing on the way is looked up by path after `theme.json` was read.
+//!
+//! **A project's and a workspace's fonts need the project opened** (ADR 0035): a level's
+//! folders say whether their fonts are read (`super::folders`), and only a project the window
+//! opened through the trust gate reads them.
+//!
 //! **The CSS family name is purlis's**: a face is registered under a name the engine makes from
 //! its digest ([`Font::stack`]); the theme's `family` is a label, said in Settings, and never
 //! reaches a declaration.
@@ -170,13 +179,80 @@ fn face_file(file: &str) -> Option<&str> {
     plain.then_some(name)
 }
 
-/// One file the engine read for a face, kept so it can be served by its digest.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// **A theme folder, held**: where it is, for a sentence, and the handle its fonts are opened
+/// from, or why its fonts are not read.
+#[derive(Debug, Clone)]
+pub(crate) struct ThemeDir {
+    path: PathBuf,
+    handle: Result<held::Handle, String>,
+}
+
+impl ThemeDir {
+    /// The folder at `path`, held by `handle`: the one its `theme.json` was read through.
+    #[cfg(unix)]
+    pub(crate) fn held(path: PathBuf, handle: std::os::fd::OwnedFd) -> Self {
+        Self {
+            path,
+            handle: Ok(std::sync::Arc::new(handle)),
+        }
+    }
+
+    /// The folder at `path`, whose fonts are not read, and `why`.
+    pub(crate) fn refusing(path: PathBuf, why: String) -> Self {
+        Self {
+            path,
+            handle: Err(why),
+        }
+    }
+
+    /// The folder `name` inside `root`, or `root` itself, opened now: `root` is the caller's to
+    /// trust, and `name` is opened from it refusing a link. For a theme whose `theme.json` is
+    /// read from that folder by its path: the person's own, and one named on the command line.
+    pub(crate) fn open(root: &Path, name: Option<&str>) -> Self {
+        let path = name.map_or_else(|| root.to_path_buf(), |name| root.join(name));
+        let handle = held::open(root, name).map_err(|why| {
+            format!(
+                "purlis could not open {} to read its fonts: {why}",
+                path.display()
+            )
+        });
+        Self { path, handle }
+    }
+
+    /// The folder, for a sentence.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+/// Why a folder or a file a face is read from was not opened.
+#[derive(Debug, Clone)]
+enum Missed {
+    /// It is not there.
+    Gone,
+    /// It is a link, or something that is not what it should be.
+    Linked,
+    /// Anything else, said.
+    Failed(String),
+}
+
+/// One file the engine read for a face, kept so it can be served by its digest: the handle of
+/// the `fonts/` it was opened from, and its name there.
+#[derive(Debug, Clone)]
 pub(crate) struct Kept {
-    /// The theme folder, the containment root.
-    folder: PathBuf,
+    fonts: held::Handle,
+    name: String,
+    /// Where it is, for a sentence.
     file: PathBuf,
 }
+
+impl PartialEq for Kept {
+    fn eq(&self, other: &Self) -> bool {
+        self.file == other.file && self.name == other.name
+    }
+}
+
+impl Eq for Kept {}
 
 /// Every font file of an accepted theme the engine read, by its digest: each place it was read
 /// from, since two themes may bring the same face.
@@ -199,17 +275,23 @@ fn hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// `file` inside `folder`, read whole under the cap, contained and link-refusing, and a woff2
-/// file by its signature: its bytes, or why not.
-fn read_face(folder: &Path, file: &Path, shown: &str) -> Result<Vec<u8>, String> {
+/// What a missed open of `shown` says.
+fn missed(shown: &str, why: Missed) -> String {
+    match why {
+        Missed::Gone => format!("{shown} is not in the theme's folder"),
+        Missed::Linked => format!(
+            "{shown} is reached through a link or something that is not a plain file, so it is \
+             not read"
+        ),
+        Missed::Failed(why) => format!("purlis could not read {shown}: {why}"),
+    }
+}
+
+/// The face `name` in the folder `fonts` holds, opened from that handle refusing a link, read
+/// whole under the cap, and a woff2 file by its signature: its bytes, or why not.
+fn read_face(fonts: &held::Handle, name: &str, shown: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
-    let mut open = match crate::contain::open_no_link(folder, file) {
-        Ok(open) => open,
-        Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => {
-            return Err(format!("{shown} is not in the theme's folder"));
-        }
-        Err(why) => return Err(format!("purlis could not read {shown}: {why}")),
-    };
+    let mut open = held::face(fonts, name).map_err(|why| missed(shown, why))?;
     let found = open
         .metadata()
         .map_err(|why| format!("purlis could not read {shown}: {why}"))?;
@@ -246,7 +328,7 @@ pub fn served(asset: &str) -> Result<Vec<u8>, String> {
     let mut why = String::new();
     for one in places {
         let shown = one.file.display().to_string();
-        match read_face(&one.folder, &one.file, &shown) {
+        match read_face(&one.fonts, &one.name, &shown) {
             Ok(bytes) if hex(&bytes) == asset => return Ok(bytes),
             Ok(_) => why = format!("{shown} changed since purlis read the theme"),
             Err(refused) => why = refused,
@@ -257,14 +339,24 @@ pub fn served(asset: &str) -> Result<Vec<u8>, String> {
 
 /// **Registers the faces of an accepted theme's fonts** for [`served`]. A theme that is refused
 /// registers nothing, so none of its files is served.
+///
+/// A file is kept once, under the digest it was last read with and the handles it was last read
+/// through: a file read again with other bytes is no longer kept as what it was.
 pub(super) fn register(fonts: &Fonts) {
     let mut kept = kept();
     for font in [&fonts.ui, &fonts.mono, &fonts.terminal] {
         for face in &font.faces {
             let Some(place) = &face.from else { continue };
+            kept.retain(|asset, places| {
+                if *asset != face.asset {
+                    places.retain(|one| one != place);
+                }
+                !places.is_empty()
+            });
             let places = kept.entry(face.asset.clone()).or_default();
-            if !places.iter().any(|one| one.file == place.file) {
-                places.push(place.clone());
+            match places.iter_mut().find(|one| *one == place) {
+                Some(one) => *one = place.clone(),
+                None => places.push(place.clone()),
             }
         }
     }
@@ -283,7 +375,7 @@ fn face_name(slot: &str, faces: &[Face]) -> String {
 pub(super) fn read(
     raw: Option<&Value>,
     base: &Fonts,
-    folder: Option<&Path>,
+    folder: Option<&ThemeDir>,
     complaints: &mut Vec<String>,
 ) -> Fonts {
     let mut fonts = base.clone();
@@ -302,6 +394,21 @@ pub(super) fn read(
         );
         return fonts;
     };
+    if given.is_empty() {
+        return fonts;
+    }
+    let dir = match &folder.handle {
+        Ok(dir) => dir,
+        Err(why) => {
+            complaints.push(why.clone());
+            return fonts;
+        }
+    };
+    // `fonts/`, from the handle the folder's `theme.json` was read through, once for every face.
+    let inside = Inside {
+        fonts: held::fonts(dir),
+        folder: folder.path(),
+    };
     for (slot, font) in given {
         if !SLOTS.contains(&slot.as_str()) {
             complaints.push(format!(
@@ -309,15 +416,27 @@ pub(super) fn read(
             ));
             continue;
         }
-        if let Some(read) = font_of(slot, font, folder, complaints) {
+        if let Some(read) = font_of(slot, font, &inside, complaints) {
             *fonts.slot_mut(slot) = read;
         }
     }
     fonts
 }
 
+/// A theme folder's `fonts/`, opened from the folder's handle, or why not; and the folder, for a
+/// sentence.
+struct Inside<'a> {
+    fonts: Result<held::Handle, Missed>,
+    folder: &'a Path,
+}
+
 /// One slot's font, or `None` (and why).
-fn font_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>) -> Option<Font> {
+fn font_of(
+    slot: &str,
+    raw: &Value,
+    folder: &Inside<'_>,
+    complaints: &mut Vec<String>,
+) -> Option<Font> {
     let before = complaints.len();
     let empty = Map::new();
     let given = raw.as_object().unwrap_or_else(|| {
@@ -384,7 +503,12 @@ fn font_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>)
 }
 
 /// One face, read and registered, or `None` (and why).
-fn face_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>) -> Option<Face> {
+fn face_of(
+    slot: &str,
+    raw: &Value,
+    folder: &Inside<'_>,
+    complaints: &mut Vec<String>,
+) -> Option<Face> {
     let Some(given) = raw.as_object() else {
         complaints.push(format!("a face of fonts.{slot} is an object with its file"));
         return None;
@@ -447,9 +571,15 @@ fn face_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>)
     if complaints.len() != before {
         return None;
     }
-    let path = folder.join("fonts").join(&file);
     let shown = format!("fonts/{file}");
-    match read_face(folder, &path, &shown) {
+    let fonts = match &folder.fonts {
+        Ok(fonts) => fonts,
+        Err(why) => {
+            complaints.push(missed(&shown, why.clone()));
+            return None;
+        }
+    };
+    match read_face(fonts, &file, &shown) {
         Ok(bytes) => {
             let asset = hex(&bytes);
             Some(Face {
@@ -457,8 +587,9 @@ fn face_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>)
                 weight,
                 style,
                 from: Some(Kept {
-                    folder: folder.to_path_buf(),
-                    file: path,
+                    fonts: fonts.clone(),
+                    file: folder.folder.join("fonts").join(&file),
+                    name: file,
                 }),
             })
         }
@@ -466,5 +597,95 @@ fn face_of(slot: &str, raw: &Value, folder: &Path, complaints: &mut Vec<String>)
             complaints.push(why);
             None
         }
+    }
+}
+
+#[cfg(unix)]
+mod held {
+    //! The opens, from handles: each step opened with `O_NOFOLLOW`, the file read from the
+    //! descriptor that was opened.
+
+    use std::os::fd::OwnedFd;
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use rustix::fs::{Mode, OFlags, openat};
+    use rustix::io::Errno;
+
+    use super::Missed;
+
+    /// A folder, held.
+    pub(crate) type Handle = Arc<OwnedFd>;
+
+    const DIRECTORY: OFlags = OFlags::RDONLY
+        .union(OFlags::DIRECTORY)
+        .union(OFlags::NOFOLLOW)
+        .union(OFlags::CLOEXEC);
+
+    fn missed(why: Errno) -> Missed {
+        match why {
+            Errno::NOENT => Missed::Gone,
+            Errno::LOOP | Errno::NOTDIR | Errno::MLINK => Missed::Linked,
+            why => Missed::Failed(why.to_string()),
+        }
+    }
+
+    /// `root`, opened as the caller trusts it, and then `name` inside it refusing a link.
+    pub(super) fn open(root: &Path, name: Option<&str>) -> rustix::io::Result<Handle> {
+        let at = rustix::fs::open(
+            root,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )?;
+        let at = match name {
+            Some(name) => openat(&at, name, DIRECTORY, Mode::empty())?,
+            None => at,
+        };
+        Ok(Arc::new(at))
+    }
+
+    /// The folder's `fonts/`, opened from its handle refusing a link.
+    pub(super) fn fonts(dir: &Handle) -> Result<Handle, Missed> {
+        openat(dir, "fonts", DIRECTORY, Mode::empty())
+            .map(Arc::new)
+            .map_err(missed)
+    }
+
+    /// The face `name` in `fonts`, opened from its handle refusing a link.
+    pub(super) fn face(fonts: &Handle, name: &str) -> Result<std::fs::File, Missed> {
+        openat(
+            fonts,
+            name,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map(std::fs::File::from)
+        .map_err(missed)
+    }
+}
+
+#[cfg(not(unix))]
+mod held {
+    //! **No font is read off unix**: a face is opened from its folder's handle refusing a link,
+    //! which this build cannot express, and a guard that cannot be expressed refuses rather
+    //! than degrades (ADR 0031), as the theme folders' reads do.
+
+    use std::path::Path;
+
+    use super::Missed;
+
+    /// No folder is held here.
+    pub(crate) type Handle = std::convert::Infallible;
+
+    pub(super) fn open(_root: &Path, _name: Option<&str>) -> Result<Handle, String> {
+        Err("fonts are read from theme folders on macOS and Linux".to_owned())
+    }
+
+    pub(super) fn fonts(dir: &Handle) -> Result<Handle, Missed> {
+        match *dir {}
+    }
+
+    pub(super) fn face(fonts: &Handle, _name: &str) -> Result<std::fs::File, Missed> {
+        match *fonts {}
     }
 }

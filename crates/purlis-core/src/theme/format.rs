@@ -53,11 +53,11 @@
 //!   and its own hues ([`super::tint`]). What it does not say is its parent's.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::fonts::Fonts;
+use super::fonts::{Fonts, ThemeDir};
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
 use super::options::{self, MOST_COMBINATIONS};
@@ -136,16 +136,17 @@ enum Beside {
     /// Nothing: the theme is one document, not a folder.
     Nothing,
     /// A folder, and the icon set its `theme.json` names, parsed, or why not; `None` when it
-    /// names none. `folder` is the theme's folder, whose `fonts/` its fonts are read from.
+    /// names none. `folder` is the theme's folder, held: its fonts are read from its `fonts/`.
     Folder {
         icons: Option<Result<Value, String>>,
-        folder: PathBuf,
+        folder: ThemeDir,
     },
 }
 
 /// A theme folder as read: its `theme.json`, the icon set it names, parsed, or why not, and the
-/// folder itself, whose `fonts/` its fonts are read from.
-pub(crate) type FolderRead = (Value, Option<Result<Value, String>>, PathBuf);
+/// folder itself, held by the handle `theme.json` was read through: its fonts are read from its
+/// `fonts/`.
+pub(crate) type FolderRead = (Value, Option<Result<Value, String>>, ThemeDir);
 
 /// A theme read: the theme, and the names it gave that purlis left out.
 type Read = (Theme, Vec<Complaint>);
@@ -242,7 +243,7 @@ impl Library {
         };
         let beside = Beside::Folder {
             icons,
-            folder: folder.to_path_buf(),
+            folder: ThemeDir::open(folder, None),
         };
         self.load_beside(id, document, &beside)
     }
@@ -321,7 +322,7 @@ impl Library {
         let called = if name.is_empty() { "this theme" } else { &name };
         let palette = palette(from.get("palette"), &mut complaints);
         let folder = match beside {
-            Beside::Folder { folder, .. } => Some(folder.as_path()),
+            Beside::Folder { folder, .. } => Some(folder),
             Beside::Nothing => None,
         };
         let own_options = options::read(from.get("options"), &palette, &mut complaints, &mut notes);
@@ -541,6 +542,8 @@ fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
             stringify(&Value::String(name.to_owned()))
         ));
     }
+    // Held before `theme.json` is read: its fonts are read from this handle.
+    let held = ThemeDir::open(themes, Some(name));
     let folder = themes.join(name);
     let file = folder.join(THEME_JSON);
     let text = read_capped(themes, &file, || {
@@ -556,7 +559,10 @@ fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
     };
     Ok(Held {
         document,
-        beside: Beside::Folder { icons, folder },
+        beside: Beside::Folder {
+            icons,
+            folder: held,
+        },
     })
 }
 

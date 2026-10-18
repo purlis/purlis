@@ -19,7 +19,14 @@
 //! Each `themes/` folder is opened from its level's root one folder at a time, refusing a link
 //! at every step; its folders and their `theme.json` are opened from that handle, refusing a link
 //! again; and the file is read from the handle that was checked. Nothing is looked up by path
-//! between the check and the read.
+//! between the check and the read. A theme folder's fonts are read from the same handle
+//! (`super::fonts`).
+//!
+//! # A project's fonts need the project opened
+//!
+//! A theme folder of the project or of a workspace has its fonts read only when the project is
+//! one the window opened through the trust gate (ADR 0035): [`Folders::opened`] says so, and
+//! [`Folders::of`] reads every level's `theme.json` but the person's own fonts alone.
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -59,6 +66,9 @@ pub struct ThemesFolder {
     pub root: PathBuf,
     /// The `themes/` folder, relative to [`Self::root`].
     pub below: PathBuf,
+    /// Whether its theme folders' fonts are read, or why not: the person's own always; a
+    /// project's and a workspace's only for a project the window opened ([`Folders::opened`]).
+    pub fonts: Result<(), String>,
 }
 
 impl ThemesFolder {
@@ -91,8 +101,37 @@ pub enum Found {
 impl Folders {
     /// The levels' folders: the person's under `config_root`'s purlis folder, the project's at
     /// `plane`'s root, and `workspace`'s inside it. A workspace whose name is not one is left
-    /// out.
+    /// out. The project's and the workspace's fonts are not read: [`Self::opened`] reads them.
     pub fn of(config_root: Option<&Path>, plane: Option<&Path>, workspace: Option<&str>) -> Self {
+        Self::at(config_root, plane, workspace, false)
+    }
+
+    /// [`Self::of`] for `plane`, a project **the window opened through the trust gate** (ADR
+    /// 0035): its and its workspace's theme folders' fonts are read too. Only a caller holding
+    /// a project the person opened calls this.
+    pub fn opened(
+        config_root: Option<&Path>,
+        plane: Option<&Path>,
+        workspace: Option<&str>,
+    ) -> Self {
+        Self::at(config_root, plane, workspace, true)
+    }
+
+    fn at(
+        config_root: Option<&Path>,
+        plane: Option<&Path>,
+        workspace: Option<&str>,
+        opened: bool,
+    ) -> Self {
+        let plane_fonts = |whose: &str| {
+            if opened {
+                Ok(())
+            } else {
+                Err(format!(
+                    "a {whose} theme folder's fonts are read only in a project purlis opened"
+                ))
+            }
+        };
         let machine = config_root.map(|root| {
             let dir = crate::machine::dir(root);
             ThemesFolder {
@@ -102,17 +141,20 @@ impl Folders {
                     .map(Path::to_path_buf)
                     .unwrap_or_default()
                     .join(THEMES),
+                fonts: Ok(()),
             }
         });
         let project = plane.map(|root| ThemesFolder {
             root: root.to_path_buf(),
             below: PathBuf::from(THEMES),
+            fonts: plane_fonts("project's"),
         });
         let workspace = plane
             .zip(workspace.filter(|name| crate::contain::workspace_name_ok(name)))
             .map(|(root, name)| ThemesFolder {
                 root: root.to_path_buf(),
                 below: Path::new("workspaces").join(name).join(THEMES),
+                fonts: plane_fonts("workspace's"),
             });
         Self {
             workspace,
@@ -234,7 +276,7 @@ fn load(library: &Library, name: &str, mut said: Vec<Complaint>) -> Resolved {
 
 /// One level's theme folders, each read, or nothing when the level has no `themes/`; what is
 /// wrong with the level itself is said in `said`.
-fn read_level(folder: &ThemesFolder, said: &mut Vec<Complaint>) -> Held {
+pub(super) fn read_level(folder: &ThemesFolder, said: &mut Vec<Complaint>) -> Held {
     match read::level(folder) {
         Ok((held, notes)) => {
             said.extend(notes.into_iter().map(Complaint::said));
@@ -269,6 +311,7 @@ mod read {
     use std::path::{Component, Path};
 
     use super::{Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, plain_below};
+    use crate::theme::fonts::ThemeDir;
 
     const DIRECTORY: OFlags = OFlags::RDONLY
         .union(OFlags::DIRECTORY)
@@ -324,8 +367,16 @@ mod read {
             .iter()
             .take(MOST_FOLDERS)
             .map(|name| {
-                let read = theme_json(&at, &shown.to_string(), name)
-                    .map(|(document, icons)| (document, icons, folder.path().join(name)));
+                let read =
+                    theme_json(&at, &shown.to_string(), name).map(|(document, icons, dir)| {
+                        let path = folder.path().join(name);
+                        // Its fonts are read from the handle its `theme.json` was read through.
+                        let held = match &folder.fonts {
+                            Ok(()) => ThemeDir::held(path, dir),
+                            Err(why) => ThemeDir::refusing(path, why.clone()),
+                        };
+                        (document, icons, held)
+                    });
                 (name.clone(), read)
             })
             .collect();
@@ -350,13 +401,12 @@ mod read {
         Ok(names)
     }
 
-    /// The theme folder `name` in `themes`: its `theme.json`, parsed, and the icon set it names,
-    /// each read from a handle opened from `themes` refusing a link; or why not.
-    fn theme_json(
-        themes: &OwnedFd,
-        shown: &str,
-        name: &str,
-    ) -> Result<(Value, Option<Result<Value, String>>), String> {
+    /// A theme folder opened: its `theme.json`, the icon set it names, and the folder's handle.
+    type Opened = (Value, Option<Result<Value, String>>, OwnedFd);
+
+    /// The theme folder `name` in `themes`: its `theme.json`, parsed, the icon set it names,
+    /// each read from a handle opened from `themes` refusing a link, and that handle; or why not.
+    fn theme_json(themes: &OwnedFd, shown: &str, name: &str) -> Result<Opened, String> {
         let folder = format!("{shown}/{name}");
         let dir = match openat(themes, name, DIRECTORY, Mode::empty()) {
             Ok(fd) => fd,
@@ -377,7 +427,7 @@ mod read {
             Some(Value::String(named)) => Some(icons(&dir, &folder, named)),
             _ => None,
         };
-        Ok((document, icons))
+        Ok((document, icons, dir))
     }
 
     /// The icon set `named` inside the folder `dir`, parsed, or why not: a relative path of

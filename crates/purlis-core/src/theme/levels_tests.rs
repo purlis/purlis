@@ -1163,4 +1163,144 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
             );
         }
     }
+// ---------------------------------------------------------------------------------------
+// A theme folder's fonts (#2555): read through the folder's handle, and a project's only
+// once the project is opened.
+// ---------------------------------------------------------------------------------------
+
+/// A woff2 file's bytes: the signature, then `body`.
+fn woff2(body: &str) -> Vec<u8> {
+    let mut bytes = b"wOF2".to_vec();
+    bytes.extend_from_slice(body.as_bytes());
+    bytes
+}
+
+fn digest(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A theme folder `folder` in `themes` whose UI font is one face, `fonts/Plex.woff2`, of `face`.
+fn put_with_a_face(themes: &Path, folder: &str, face: &[u8]) {
+    let mut document = named(folder, "#101010");
+    document["fonts"] = json!({ "ui": { "family": "Plex", "faces": [
+        { "file": "fonts/Plex.woff2" }
+    ] } });
+    put(themes, folder, &document);
+    std::fs::create_dir_all(themes.join(folder).join("fonts")).unwrap();
+    std::fs::write(themes.join(folder).join("fonts/Plex.woff2"), face).unwrap();
+}
+
+fn complaints_of(resolved: &Resolved) -> Vec<String> {
+    resolved
+        .complaints
+        .iter()
+        .map(|one| one.said.clone())
+        .collect()
+}
+
+/// The machine level's `plex`, read; then `swap` done to the disk; then the theme drawn from
+/// what was read: what a swap between reading `theme.json` and reading its fonts reaches.
+#[cfg(unix)]
+fn read_then(places: &Places, swap: impl FnOnce(&Path)) -> Resolved {
+    let level = places.folders(None).machine.unwrap();
+    let mut said = Vec::new();
+    let held = super::folders::read_level(&level, &mut said);
+    assert_eq!(said, Vec::new());
+    swap(&places.machine_themes());
+    Library::new()
+        .with_read("plex", held["plex"].clone())
+        .load_id("plex")
+}
+
+#[cfg(unix)]
+#[test]
+fn a_face_is_read_through_the_folder_s_handle_when_the_folder_becomes_a_link() {
+    let places = Places::new();
+    let read = woff2("the folder purlis read, #2555");
+    put_with_a_face(&places.machine_themes(), "plex", &read);
+    let elsewhere = tempfile::tempdir().unwrap();
+    put_with_a_face(elsewhere.path(), "plex", &woff2("another folder, #2555"));
+    let resolved = read_then(&places, |themes| {
+        std::fs::rename(themes.join("plex"), themes.join("plex-before")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path().join("plex"), themes.join("plex")).unwrap();
+    });
+    assert!(!resolved.refused, "{:?}", complaints_of(&resolved));
+    let face = &resolved.theme.first().fonts.ui.faces[0];
+    assert_eq!(face.asset, digest(&read));
+    // And it is served from the same handles, not from the link.
+    assert_eq!(served(&face.asset).unwrap(), read);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_face_is_read_through_the_folder_s_handle_when_its_fonts_become_a_link() {
+    let places = Places::new();
+    let elsewhere = tempfile::tempdir().unwrap();
+    put_with_a_face(
+        &places.machine_themes(),
+        "plex",
+        &woff2("fonts purlis read, #2555"),
+    );
+    put_with_a_face(elsewhere.path(), "plex", &woff2("other fonts, #2555"));
+    let resolved = read_then(&places, |themes| {
+        let folder = themes.join("plex");
+        std::fs::remove_dir_all(folder.join("fonts")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path().join("plex/fonts"), folder.join("fonts"))
+            .unwrap();
+    });
+    // `fonts/` is opened from the folder's handle refusing a link: nothing behind it is read.
+    assert!(resolved.refused);
+    assert_eq!(
+        complaints_of(&resolved),
+        [
+            "fonts/Plex.woff2 is reached through a link or something that is not a plain file, \
+             so it is not read"
+        ]
+    );
+}
+
+#[test]
+fn a_project_s_and_a_workspace_s_fonts_are_read_only_in_a_project_purlis_opened() {
+    let places = Places::new();
+    put_with_a_face(&places.project_themes(), "team", &woff2("team, #2555"));
+    put_with_a_face(
+        &places.workspace_themes(),
+        "client",
+        &woff2("client, #2555"),
+    );
+    put_with_a_face(&places.machine_themes(), "mine", &woff2("mine, #2555"));
+    let opened = Folders::opened(Some(&places.config), Some(&places.plane), Some("alpha"));
+    for (name, reach, whose) in [
+        ("team", levels::Reach::Project, "project's"),
+        ("client", levels::Reach::Workspace, "workspace's"),
+    ] {
+        let levels::Found::Read(held) = places.folders(Some("alpha")).find(name, reach) else {
+            panic!("{name} is read");
+        };
+        assert!(held.refused, "{name}");
+        assert_eq!(
+            complaints_of(&held),
+            [format!(
+                "a {whose} theme folder's fonts are read only in a project purlis opened"
+            )]
+        );
+        let levels::Found::Read(drawn) = opened.find(name, reach) else {
+            panic!("{name} is read");
+        };
+        assert!(!drawn.refused, "{name}: {:?}", complaints_of(&drawn));
+        assert_eq!(drawn.theme.first().fonts.ui.faces.len(), 1, "{name}");
+    }
+    // The person's own fonts are read either way.
+    let levels::Found::Read(mine) = places
+        .folders(Some("alpha"))
+        .find("mine", levels::Reach::Machine)
+    else {
+        panic!("mine is read");
+    };
+    assert!(!mine.refused, "{:?}", complaints_of(&mine));
+    assert_eq!(mine.theme.first().fonts.ui.faces.len(), 1);
 }
