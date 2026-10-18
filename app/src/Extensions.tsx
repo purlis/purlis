@@ -452,7 +452,7 @@ export function drawThemeFor(
 /**
  * **The options of the theme the window draws** (#2325), each with the value it is drawn with
  * and whether a choice made it: the core's theme engine answers (`theme_in_force`), for what
- * the project in front picked and has on. Settings › Appearance shows them; nothing is drawn.
+ * the project in front picked and has on. Settings › Theme shows them; nothing is drawn.
  * An answer the core cannot give is no options.
  */
 export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
@@ -491,8 +491,7 @@ function adoptOnce(plane: PlaneId, workspace: string | null) {
       sayAboutThisMachine("theme choice", {
         severity: "warn",
         detail: said.data.join(" "),
-        remedy:
-          "change it in Settings › Appearance › Your theme, which says where each theme drawn comes from",
+        remedy: "change it in Settings › Theme, which says where the theme drawn comes from",
       });
       projectThemeChanged(plane);
     })

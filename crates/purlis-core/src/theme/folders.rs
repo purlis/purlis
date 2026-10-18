@@ -271,6 +271,42 @@ fn load(library: &Library, name: &str, mut said: Vec<Complaint>) -> Resolved {
     resolved
 }
 
+impl Folders {
+    /// **Every theme folder's name within `reach`, with the level it is read from**: nearest
+    /// level first, by name within one, each name once, at the nearest level that has it, as
+    /// [`Self::find`] reads it.
+    pub fn named(&self, reach: Reach) -> Vec<(Reach, String)> {
+        let mut said = Vec::new();
+        let mut named: Vec<(Reach, String)> = Vec::new();
+        for (level, folder) in self.levels(reach) {
+            for name in read_level(folder, &mut said).into_keys() {
+                if !named.iter().any(|(_, one)| *one == name) {
+                    named.push((level, name));
+                }
+            }
+        }
+        named
+    }
+
+    /// The `themes/` folder of `level`, when there is one.
+    pub fn at(&self, level: Reach) -> Option<&ThemesFolder> {
+        match level {
+            Reach::Workspace => self.workspace.as_ref(),
+            Reach::Project => self.project.as_ref(),
+            Reach::Machine => self.machine.as_ref(),
+        }
+    }
+
+    /// The levels `reach` reaches with their folders, nearest first.
+    fn levels(&self, reach: Reach) -> Vec<(Reach, &ThemesFolder)> {
+        [Reach::Workspace, Reach::Project, Reach::Machine]
+            .into_iter()
+            .filter(|level| *level >= reach)
+            .filter_map(|level| self.at(level).map(|folder| (level, folder)))
+            .collect()
+    }
+}
+
 /// One level's theme folders, each read, or nothing when the level has no `themes/`; what is
 /// wrong with the level itself is said in `said`.
 pub(super) fn read_level(folder: &ThemesFolder, said: &mut Vec<Complaint>) -> Held {

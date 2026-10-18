@@ -406,7 +406,7 @@ fn cannot(why: String) -> Drawn {
 /// appearance of that id; one it does not have draws its first, and says so. With more
 /// `contrast` asked for, its first and following the system draw the appearance of their tag
 /// tagged high contrast, when it has one; an appearance chosen by its id is drawn as chosen.
-fn appear(
+pub(super) fn appear(
     theme: &Theme,
     appearance: Option<&str>,
     system: Appearance,
