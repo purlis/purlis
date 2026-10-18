@@ -78,6 +78,9 @@ pub type Tell = Arc<dyn Fn(Heard) + Send + Sync + 'static>;
 struct State {
     /// Hosts allowed while the chat runs, each with its scope, as a grant writes them.
     live: Vec<(String, By)>,
+    /// Ports of this machine allowed for this chat alone while its confinement runs (#2510):
+    /// never a grant, and never told as one ([`Asks::allowed_live`]).
+    this_machine: Vec<u16>,
     /// Hosts kept blocked, until an Allow.
     blocked: Vec<Host>,
     /// Targets held and given up on, which an Allow tells the chat to retry.
@@ -306,6 +309,30 @@ impl Asks {
         retry
     }
 
+    /// **The person allowed the service on `port` of this machine for this chat alone**
+    /// (#2510): a connection held on it goes on now, and every later one is carried while the
+    /// confinement runs. Only a chat planned on another machine is asked about one, for a
+    /// service its plan gave it alone ([`super::egress::Serving::asked_for`]). Answers the
+    /// targets that were held on it and gave up, which the chat is told to retry.
+    pub fn allow_this_machine(&self, port: u16) -> Vec<String> {
+        let mut state = self.state();
+        if !state.this_machine.contains(&port) {
+            state.this_machine.push(port);
+        }
+        let covered = |target: &String| super::localport::loopback_port(target) == Some(port);
+        let retry: Vec<String> = state
+            .gave_up
+            .iter()
+            .filter(|t| covered(t))
+            .cloned()
+            .collect();
+        state.gave_up.retain(|target| !covered(target));
+        state.asked.retain(|target| !covered(target));
+        drop(state);
+        self.changed.notify_all();
+        retry
+    }
+
     /// **The person kept `host` blocked**, from the window: what is held on it is refused now,
     /// and so is every later connection to it, until an Allow.
     pub fn keep_blocked(&self, host: &Host) {
@@ -350,6 +377,11 @@ pub fn asks_about_among(asked: &[String], host: &Host) -> bool {
 
 /// The scope a live Allow in `state` carries `host` on `port` at.
 fn allowed_in(state: &State, host: &str, port: u16, defaults: &[u16]) -> Option<By> {
+    if state.this_machine.contains(&port)
+        && super::localport::loopback_port(&host_and_port(host, port)) == Some(port)
+    {
+        return Some(By::Chat);
+    }
     state
         .live
         .iter()

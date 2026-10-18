@@ -3777,6 +3777,10 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     fn forget(&self, host: &hosts::Host, by: reach::By);
     /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
     fn allowed_live(&self) -> Vec<(String, reach::By)>;
+    /// The person allowed the service on `port` of the machine its proxy runs on, for this chat
+    /// alone ([`asks::Asks::allow_this_machine`], #2510): the targets held connections gave up
+    /// on before it, which the chat is told to retry.
+    fn allow_this_machine(&self, port: u16) -> Vec<String>;
 }
 
 impl Board for asks::Asks {
@@ -3798,6 +3802,10 @@ impl Board for asks::Asks {
 
     fn allowed_live(&self) -> Vec<(String, reach::By)> {
         asks::Asks::allowed_live(self)
+    }
+
+    fn allow_this_machine(&self, port: u16) -> Vec<String> {
+        asks::Asks::allow_this_machine(self, port)
     }
 }
 
@@ -3975,7 +3983,8 @@ impl Confinement {
         };
         Some(format!(
             "This chat runs on a runner, which does not give it {ports} that you allowed for \
-             this chat alone on this machine, so the chat cannot reach {it} there.",
+             this chat alone on this machine until you allow {it} there: you are asked when the \
+             chat reaches for {it}.",
             it = if rest.is_empty() { "it" } else { "them" }
         ))
     }

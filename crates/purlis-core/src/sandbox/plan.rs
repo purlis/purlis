@@ -282,20 +282,28 @@ impl Plan {
     /// Refused where a port the chat was given is one purlis listens on now in this process,
     /// so no proxy and no chat ever share a port, and where the reach does not read back.
     pub fn start(&self, telling: Telling) -> std::io::Result<Confinement> {
-        self.starting(telling, None)
+        self.starting(telling, None, Vec::new())
     }
 
     /// [`Self::start`], for a plan made on another machine (#2445): its proxy carries an
     /// internal address only where `internal`, the runner's policy, lists it, checked at every
-    /// connect ([`super::internal`]).
-    pub fn start_held(&self, telling: Telling, internal: Internal) -> std::io::Result<Confinement> {
-        self.starting(telling, Some(internal))
+    /// connect ([`super::internal`]). A service of the runner on `asked_for`, one the plan gave
+    /// the chat for it alone and the runner left out ([`Self::as_the_runner_starts_it`]), is
+    /// asked about live, and carried once the person allows it for this chat (#2510).
+    pub fn start_held(
+        &self,
+        telling: Telling,
+        internal: Internal,
+        asked_for: Vec<u16>,
+    ) -> std::io::Result<Confinement> {
+        self.starting(telling, Some(internal), asked_for)
     }
 
     fn starting(
         &self,
         telling: Telling,
         internal: Option<Internal>,
+        asked_for: Vec<u16>,
     ) -> std::io::Result<Confinement> {
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
@@ -306,6 +314,7 @@ impl Plan {
         let reach = Reach::from_written(&self.reach).map_err(std::io::Error::other)?;
         let serving = egress::Serving {
             internal,
+            asked_for,
             ..self.serving(reach, telling)
         };
         match &self.beside {

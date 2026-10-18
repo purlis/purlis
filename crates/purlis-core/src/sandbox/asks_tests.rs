@@ -328,3 +328,27 @@ fn a_host_allowed_live_reaches_a_run_started_after_and_a_removed_one_does_not() 
         Route::Refused(_)
     ));
 }
+
+/// #2510: a service of this machine allowed for this chat alone lets a connection held on it
+/// on, by any of its loopback spellings, and only on its port; it is never told as a host
+/// allowed live, since it is no grant.
+#[test]
+fn a_service_of_this_machine_allowed_for_this_chat_lets_only_its_port_on_and_is_no_grant() {
+    let (asks, _) = board(Duration::from_secs(30), Duration::from_millis(10));
+    let waiting = held(&asks, "127.0.0.1", 5432);
+    until_holding(&asks, 1);
+
+    assert!(asks.allow_this_machine(5432).is_empty(), "nothing gave up");
+
+    assert_eq!(waiting.join().unwrap(), Answer::Allowed(By::Chat));
+    assert_eq!(
+        asks.hold("localhost", 5432, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+    assert!(asks.allowed_live().is_empty(), "no grant");
+    let other = held(&asks, "127.0.0.1", 5433);
+    until_holding(&asks, 1);
+    asks.keep_blocked(&host("api.example.com"));
+    assert_eq!(asks.holding(), 1, "another port is still asked about");
+    drop(other);
+}

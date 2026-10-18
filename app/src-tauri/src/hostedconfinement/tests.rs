@@ -440,11 +440,13 @@ fn a_runner_starts_a_relayed_plan_only_where_it_fits_the_runner() {
 }
 
 /// **A service the person allowed for this chat alone, on the window's machine, never keeps a
-/// runner chat from starting** (#2510): the runner starts the relayed plan without it, says so
-/// in its answer, and the chat does not reach it there. Binds the loopback interface: CI.
+/// runner chat from starting** (#2510, ruled 2026-10-18): the runner starts the relayed plan
+/// without it and says so in its answer; the person's Allow of it reaches the runner, which
+/// takes it for that port alone and refuses any other port of its own. Binds the loopback
+/// interface: CI.
 #[test]
 fn a_runner_starts_a_relayed_plan_without_a_service_allowed_for_this_chat_alone() {
-    use purlis_session_protocol::session::{Answer, Client, Command, Confine};
+    use purlis_session_protocol::session::{Answer, Client, Command, Confine, Layer, ReachChange};
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -486,13 +488,35 @@ fn a_runner_starts_a_relayed_plan_without_a_service_allowed_for_this_chat_alone(
                 confinement: "01J9CNFNMNT0000000000000000".into(),
                 project: PROJECT.into(),
                 plan: plan.clone(),
-                asks: false,
+                asks: true,
             })))
             .await
         {
             Ok(Answer::Confined(confined)) => assert_eq!(confined.left_out, [port]),
             other => panic!("not confined: {other:?}"),
         }
+        let allow = |host: String| Command::ChangeReach {
+            confinement: "01J9CNFNMNT0000000000000000".into(),
+            change: ReachChange::Allow {
+                host,
+                layer: Layer::Chat,
+            },
+        };
+        match peer.call(allow(format!("127.0.0.1:{port}"))).await {
+            Ok(Answer::ReachChanged { .. }) => {}
+            other => panic!("not allowed: {other:?}"),
+        }
+        let other = if port == u16::MAX { port - 1 } else { port + 1 };
+        let refused = peer
+            .call(allow(format!("127.0.0.1:{other}")))
+            .await
+            .expect_err("refused");
+        assert!(
+            refused
+                .refusal()
+                .is_some_and(|refusal| refusal.why.contains(&other.to_string())),
+            "{refused:?}"
+        );
     });
     hosting.end_all();
     drop(service);

@@ -10,8 +10,9 @@
 //! the host (#2003), 1.10's board kept in the host (#2194), 1.11's browsers for chats
 //! (#2013), 1.13's window coming back to a host that outlived it (#2006), 1.14's taking a
 //! browser over (#2014), 1.15's reach Asks (#2018), 1.16's window hearing a chat its host
-//! composed (#2407), and 1.17's services a host left out of a plan made elsewhere (#2510). Each must read back as it was recorded, by this build and so by every later
-//! one, which is what lets a client and a host one version apart talk. A frame kind added without
+//! composed (#2407), and 1.20's services a host left out of a plan made elsewhere (#2510). Each
+//! must read back as it was recorded, by this build and so by every later one, which is what
+//! lets a client and a host one version apart talk. A frame kind added without
 //! being recorded fails here, so the promise grows on purpose. The UI RPC is not in it: it is
 //! private to one build of the app, and excluded from this promise (V7).
 //!

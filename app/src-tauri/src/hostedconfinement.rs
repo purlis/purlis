@@ -278,6 +278,15 @@ impl Board for HostBoard {
         });
     }
 
+    /// Sent as an Allow of the port at this machine's loopback, which the host takes only for a
+    /// service its plan gave the chat alone and it left out (#2510).
+    fn allow_this_machine(&self, port: u16) -> Vec<String> {
+        self.change(ReachChange::Allow {
+            host: format!("127.0.0.1:{port}"),
+            layer: layer_of(By::Chat),
+        })
+    }
+
     fn allowed_live(&self) -> Vec<(String, By)> {
         self.now()
             .allowed_live

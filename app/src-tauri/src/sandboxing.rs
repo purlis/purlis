@@ -1901,9 +1901,9 @@ pub(crate) fn kept_for(
         told_to_retry: retry,
     } = match what {
         What::Host(host) => chats.allow_live(session, host, level),
-        What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
-            crate::chats::Live::default()
-        }
+        // A service a runner asks about for a chat planned here alone (#2510).
+        What::Port(port) => chats.allow_port_live(session, *port, level),
+        What::Write(_) | What::Socket(_) | What::Service(_) => crate::chats::Live::default(),
     };
     if let Some(session) = session
         && !live.contains(&session)

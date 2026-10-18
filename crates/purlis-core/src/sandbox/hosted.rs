@@ -52,8 +52,11 @@ pub struct Hosted {
     confinement: Confinement,
     board: Option<Arc<Asks>>,
     /// The services of this machine its plan gave the chat for it alone, which this machine's
-    /// sandbox for the project does not give, so it was started without them (#2510).
+    /// sandbox for the project does not give, so it was started without them (#2510). Its
+    /// proxy asks about each, and the person may allow it for this chat alone.
     left_out: Vec<u16>,
+    /// Where its plan was made.
+    planned: Planned,
 }
 
 /// **Starts the confinement `confine` plans, in the project at `project_path`**, its proxy
@@ -131,13 +134,16 @@ pub fn start(
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),
-        Planned::Elsewhere => plan.start_held(telling, Internal::of(project_path)),
+        Planned::Elsewhere => {
+            plan.start_held(telling, Internal::of(project_path), left_out.clone())
+        }
     }
     .map_err(|why| why.to_string())?;
     Ok(Hosted {
         confinement,
         board,
         left_out,
+        planned,
     })
 }
 
@@ -194,6 +200,35 @@ fn given_here(root: &Path) -> Vec<u16> {
     super::Widened::default().and_ports(&yours, &locks).ports
 }
 
+/// What an Allow the window sent allows ([`allowed_as`]).
+#[derive(Debug, PartialEq, Eq)]
+enum Allowing {
+    /// A host, at the scope the person chose.
+    Host(Host, By),
+    /// The service on this port of this machine, for this chat alone, while its confinement
+    /// runs (#2510).
+    ThisMachine(u16),
+}
+
+/// **What an Allow of `typed` at `by` allows, in a confinement planned `planned`** (#2510, ruled
+/// 2026-10-18). A host off this machine is allowed as it says. A service of this machine's
+/// loopback is allowed only in a confinement planned on another machine, and only where it is
+/// one the runner `left_out` of what the plan gave for this chat alone: then for this chat, for
+/// as long as the confinement runs. Any other is refused in a sentence, as a host of this machine
+/// always is.
+fn allowed_as(planned: Planned, left_out: &[u16], typed: &str, by: By) -> Result<Allowing, String> {
+    match super::localport::loopback_port(typed) {
+        Some(port) if planned == Planned::Elsewhere && left_out.contains(&port) => {
+            Ok(Allowing::ThisMachine(port))
+        }
+        Some(port) if planned == Planned::Elsewhere => Err(format!(
+            "the runner does not let this chat reach port {port} of its own: it was not \
+             allowed for this chat alone where the chat was planned"
+        )),
+        _ => Host::parse(typed).map(|host| Allowing::Host(host, by)),
+    }
+}
+
 impl Hosted {
     /// Where it is: its proxy's ports and the folders beside it. The id is the host's to fill.
     pub fn confined(&self) -> Confined {
@@ -221,7 +256,12 @@ impl Hosted {
             return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());
         };
         Ok(match change {
-            ReachChange::Allow { host, layer } => board.allow(&Host::parse(host)?, by_of(*layer)),
+            ReachChange::Allow { host, layer } => {
+                match allowed_as(self.planned, &self.left_out, host, by_of(*layer))? {
+                    Allowing::Host(host, by) => board.allow(&host, by),
+                    Allowing::ThisMachine(port) => board.allow_this_machine(port),
+                }
+            }
             ReachChange::Forget { host, layer } => {
                 board.forget(&Host::parse(host)?, by_of(*layer));
                 Vec::new()
@@ -252,3 +292,6 @@ impl Hosted {
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests;

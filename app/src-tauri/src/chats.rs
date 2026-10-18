@@ -2041,6 +2041,52 @@ impl Chats {
         live
     }
 
+    /// **The person allowed the service on `port` at `level`, from the window, where a runner
+    /// asks about it** (#2510, ruled 2026-10-18): every open chat it reaches (chat `session`
+    /// alone for this chat, every chat of the project for yours) whose confinement a runner
+    /// started without that service takes it now, for this chat alone on that runner, while its
+    /// confinement runs. Each chat a held connection of had given up on it is told to retry.
+    pub fn allow_port_live(
+        &self,
+        session: Option<u32>,
+        port: u16,
+        level: purlis_core::sandbox::grant::Level,
+    ) -> Live {
+        use purlis_core::sandbox::grant::Level;
+        let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
+            let open = lock(&self.open);
+            open.iter()
+                .filter(|(number, _)| level != Level::Chat || Some(**number) == session)
+                .filter_map(|(number, running)| {
+                    let confinement = running.confinement.as_ref()?;
+                    confinement
+                        .left_out()
+                        .contains(&port)
+                        .then(|| Some((*number, confinement.asks()?.clone())))?
+                })
+                .collect()
+        };
+        let mut live = Live::default();
+        for (number, board) in boards {
+            if !board.allow_this_machine(port).is_empty() {
+                self.tell_outcome(
+                    number,
+                    purlis_core::askoutcome::Outcome {
+                        about: purlis_core::askoutcome::About::Port {
+                            port: port.to_string(),
+                        },
+                        answer: purlis_core::askoutcome::Answer::Allowed {
+                            scope: purlis_core::askoutcome::Scope::live(Level::Chat),
+                        },
+                    },
+                );
+                live.told_to_retry.push(number);
+            }
+            live.reached.push(number);
+        }
+        live
+    }
+
     /// **An Allow of `host` at `level` was removed**, from the window (#1666): what it allowed
     /// live reaches nothing again in the chats it reached: the chat whose id is `chat` for this
     /// chat, every open chat for the other two.
@@ -5327,11 +5373,19 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                     let Some(raise) = lock(&hear).clone() else {
                         continue;
                     };
+                    // A service of the runner the chat was planned to reach for it alone is
+                    // asked about as a service on its machine, by its port, never as a host
+                    // (#2510).
+                    let (kind, target) = match purlis_core::sandbox::localport::named_port(&target)
+                    {
+                        Some(port) => (Kind::LocalService, port.to_string()),
+                        None => (Kind::Host, target),
+                    };
                     let block = purlis_core::hookwire::SandboxBlocked {
                         chat,
                         sandbox_blocked: Block {
                             operation: Operation::Connect,
-                            kind: Kind::Host,
+                            kind,
                             ours: false,
                         },
                         harness: harness.map(|harness| harness.name().to_owned()),
