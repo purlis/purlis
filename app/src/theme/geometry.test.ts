@@ -26,8 +26,15 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GEOMETRY, GEOMETRY_PROPERTIES, isGeometry } from "./geometry";
 import { motionProperty, motionVariables } from "./motion";
-import { BUILT_IN, cssVariables, property, tinted, tintVariables, TOKENS } from "./theme";
-import { PALETTE } from "./tint";
+import {
+  BUILT_IN,
+  cssVariables,
+  property,
+  tinted,
+  tintVariables,
+  TOKENS,
+  WORKSPACE_COLOURS,
+} from "./theme";
 
 const SRC = join(process.cwd(), "src");
 const CORE = join(SRC, "theme", "geometry.css");
@@ -151,7 +158,7 @@ describe("a colour, a motion value or a tint is never geometry", () => {
       ...Object.keys(cssVariables(theme)),
       ...Object.keys(motionVariables(theme.motion, false)),
       ...Object.keys(motionVariables(theme.motion, true)),
-      ...Object.keys(PALETTE).flatMap((colour) => [
+      ...WORKSPACE_COLOURS.flatMap((colour) => [
         ...Object.keys(cssVariables(tinted(theme, colour))),
         ...Object.keys(tintVariables(theme, colour, TOKENS)),
       ]),

@@ -178,6 +178,15 @@ fn lock<T: ?Sized>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// Reads messages until the pipe ends or carries something that is not one, then fails every
 /// waiting call and refuses every later one.
+/// Events the runtime sends that nothing reads: what a page writes to its console, and its
+/// uncaught errors.
+const UNREAD_EVENTS: [&str; 4] = [
+    "Runtime.consoleAPICalled",
+    "Runtime.exceptionThrown",
+    "Runtime.exceptionRevoked",
+    "Runtime.inspectRequested",
+];
+
 fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender<Event>) {
     let mut frames = Frames::new(from_engine);
     while let Some(Ok(message)) = frames.next_message() {
@@ -209,6 +218,11 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                 let Some(Value::String(method)) = message.remove("method") else {
                     break;
                 };
+                // What a page writes to its console nobody here reads: never queued, so it
+                // never takes the place of an event the driver needs (#2138).
+                if UNREAD_EVENTS.contains(&method.as_str()) {
+                    continue;
+                }
                 let event = Event {
                     method,
                     params: message.remove("params").unwrap_or(Value::Null),

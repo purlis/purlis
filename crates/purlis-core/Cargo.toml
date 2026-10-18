@@ -71,6 +71,15 @@ ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
+# `purlis theme import` and `export` (#2334): an iTerm2 colour preset is a property list, and a
+# theme folder travels as a zip. `plist` is the crate Tauri reads property lists with and `zip`
+# the one the browser engine unpacks with, on the zlib-rs backend flate2 already links: both
+# already in this workspace's lockfile, so they add no crate to the tree and no licence to review.
+# Its event reader counts a preset's nesting before a value is built (`theme::import`), and is
+# public only behind the feature below, which allows a breaking change in a minor version: so
+# `~1.10`, and a minor bump is a reviewed change.
+plist = { version = "~1.10", default-features = false, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # The secret-shape rules are `charter/hooks.py`'s regexes, ported character for character.
 regex = "1"
 # A profile's pinned harness version (#2038): the version each harness answers `--version` with,
@@ -198,7 +207,7 @@ tempfile.workspace = true
 # answers only the requests a test mounted. It runs its own runtime on its own thread, so a
 # synchronous test drives it through `tokio`'s `block_on`.
 wiremock = "0.6"
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
 # The token-leak test records every `log` line `ureq` and rustls write at trace level, which the
 # diagnostic log does not carry. Already in this workspace's lockfile through both.
 log = { version = "0.4", features = ["std"] }

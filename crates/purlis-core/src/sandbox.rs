@@ -266,6 +266,17 @@ impl Plane {
         Said::of(self.top.as_ref())
     }
 
+    /// What its `[sandbox] browser-sites` holds ([`browser_sites`], #2443): read as a project's
+    /// own hosts are, and never among them.
+    pub fn browser_sites(&self) -> Result<hosts::Listed, hosts::NotAList> {
+        hosts::read(
+            self.top
+                .as_ref()
+                .and_then(|top| top.get(TABLE))
+                .and_then(|table| table.get(browser_sites::KEY)),
+        )
+    }
+
     /// What it says of the team's say over each person's level ([`team`], #2071).
     pub fn team(&self) -> team::Team {
         team::Team::of_top(self.top.as_ref())
@@ -393,6 +404,10 @@ pub enum Refusal {
     HostsNotAList,
     /// An entry of `hosts` that is not a host ([`hosts::Host::parse`]): as written, and why.
     Host(String, String),
+    /// `browser-sites` that is not a list (#2443).
+    BrowserSitesNotAList,
+    /// An entry of `browser-sites` that is not a host: as written, and why.
+    BrowserSite(String, String),
     /// `certificate-checks` that is not `true` or `false`.
     CertificateChecksNotABool,
     /// A `policy` that is not `"never"` or `"local"`: read as `"never"`.
@@ -450,6 +465,18 @@ impl fmt::Display for Refusal {
                 f,
                 "{TABLE}.hosts in {FILE} names {written}, which no chat is let reach: {why}"
             ),
+            Self::BrowserSitesNotAList => write!(
+                f,
+                "{TABLE}.{} in {FILE} is not a list of sites, so no browser site of the \
+                 project's is allowed — write {} = [\"news.example.org\"]",
+                browser_sites::KEY,
+                browser_sites::KEY
+            ),
+            Self::BrowserSite(written, why) => write!(
+                f,
+                "{TABLE}.{} in {FILE} names {written}, which no browser is let reach: {why}",
+                browser_sites::KEY
+            ),
             Self::CertificateChecksNotABool => write!(
                 f,
                 "{TABLE}.{CERTIFICATE_CHECKS} in {FILE} is not true or false; certificate checks \
@@ -482,6 +509,7 @@ impl Refusal {
             Self::ModeOff | Self::ModeUnknown => at("mode"),
             Self::EgressNotAList | Self::EgressUnknown(_) => at("egress"),
             Self::HostsNotAList | Self::Host(..) => at(hosts::KEY),
+            Self::BrowserSitesNotAList | Self::BrowserSite(..) => at(browser_sites::KEY),
             Self::CertificateChecksNotABool => at(CERTIFICATE_CHECKS),
             Self::PolicyUnknown => at(team::KEY),
             Self::Persona(said) => said.key.clone().unwrap_or_else(|| at(persona::KEY)),
@@ -587,6 +615,7 @@ impl Said {
             if key != "mode"
                 && key != "egress"
                 && key != hosts::KEY
+                && key != browser_sites::KEY
                 && key != CERTIFICATE_CHECKS
                 && key != persona::KEY
                 && key != services::EXPECTS
@@ -629,6 +658,16 @@ impl Said {
                 Vec::new()
             }
         };
+        // The project's browser sites (#2443): never a host of the chats' own, so only said here.
+        match hosts::read(table.get(browser_sites::KEY)) {
+            Ok(listed) => refused.extend(
+                listed
+                    .refused
+                    .into_iter()
+                    .map(|(written, why)| Refusal::BrowserSite(written, why)),
+            ),
+            Err(hosts::NotAList) => refused.push(Refusal::BrowserSitesNotAList),
+        }
         // On unless the file says `false` (R1): what cannot be read is refused and read as off,
         // the narrow value.
         let certificate_checks = match table.get(CERTIFICATE_CHECKS) {
@@ -1525,6 +1564,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             for daemon in crate::names::DAEMON_DIR.spellings() {
                 deny(Class::HumanPowers, home.join(daemon), Access::ReadWrite);
             }
+            // A runner's one peer (ADR 0078 §8, #2044): chats touch none of the link's
+            // records, reading included.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::PEERS_FILE),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).
@@ -6003,6 +6049,7 @@ pub fn at_start(
 pub mod asks;
 pub mod backend;
 pub mod browser_reach;
+pub mod browser_sites;
 pub mod caches;
 pub mod claude;
 pub mod codex;

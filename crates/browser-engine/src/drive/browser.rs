@@ -34,10 +34,12 @@ mod changes;
 mod login;
 mod takeover;
 mod view;
+mod world;
 
 pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use takeover::{Lease, Typing};
+use world::Worlds;
 
 /// DevTools as the driver needs it: the engine's connection, or a stand-in in tests.
 pub(crate) trait DevTools: Send + Sync {
@@ -77,26 +79,27 @@ impl DevTools for Connection {
 /// The script that says whether a document has loaded: a constant, never the caller's words.
 pub(crate) const READY_STATE: &str = "document.readyState";
 
-/// The function that chooses a drop-down's options, run on the drop-down itself. A constant:
-/// the options the caller named reach it only as its argument, a value.
-pub(crate) const SELECT_OPTIONS: &str = r"function (wanted) {
-  if (!(this instanceof HTMLSelectElement)) return { notSelect: true };
-  const options = Array.from(this.options);
+/// The function that chooses a drop-down's options, given the drop-down as it is in purlis's
+/// own world (#2138). A constant: the options the caller named reach it only as its argument,
+/// a value.
+pub(crate) const SELECT_OPTIONS: &str = r"function (select, wanted) {
+  if (!(select instanceof HTMLSelectElement)) return { notSelect: true };
+  const options = Array.from(select.options);
   const named = (o, w) => o.value === w || o.label === w || o.text.trim() === w;
   const missing = wanted.filter((w) => !options.some((o) => named(o, w)));
   if (missing.length) return { missing, options: options.map((o) => o.label || o.text) };
-  if (!this.multiple && wanted.length > 1) return { notMultiple: true };
+  if (!select.multiple && wanted.length > 1) return { notMultiple: true };
   for (const o of options) o.selected = wanted.some((w) => named(o, w));
-  this.dispatchEvent(new Event('input', { bubbles: true }));
-  this.dispatchEvent(new Event('change', { bubbles: true }));
+  select.dispatchEvent(new Event('input', { bubbles: true }));
+  select.dispatchEvent(new Event('change', { bubbles: true }));
   return { picked: options.filter((o) => o.selected).map((o) => o.label || o.text) };
 }";
 
-/// The function that reads what a field holds, run on the field itself (#2014): a constant,
-/// whatever the field.
-pub(crate) const READ_VALUE: &str = r"function () {
-  if (typeof this.value === 'string') return this.value;
-  if (this.isContentEditable) return this.innerText;
+/// The function that reads what a field holds, given the field as it is in purlis's own world
+/// (#2014, #2138): a constant, whatever the field.
+pub(crate) const READ_VALUE: &str = r"function (field) {
+  if (typeof field.value === 'string') return field.value;
+  if (field.isContentEditable) return field.innerText;
   return '';
 }";
 
@@ -115,6 +118,9 @@ const POLL: Duration = Duration::from_millis(50);
 const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
+/// How long a drag waits after its last move for the engine to say its own drag started
+/// (#2136).
+const DRAG_STARTS_WITHIN: Duration = Duration::from_millis(150);
 /// The most form submissions, and links followed, remembered until their request is seen
 /// (#2018).
 const FORMS_KEPT: usize = 16;
@@ -299,6 +305,9 @@ struct State {
     /// A text was kept out on a page on no site with no opener: every page's screenshot paints
     /// over what cannot be read.
     kept_off_site: bool,
+    /// What the engine's own drag carries, once a drag of the agent's started one (#2136), by
+    /// the session it started on.
+    dragged: Option<(String, Value)>,
 }
 
 impl State {
@@ -623,6 +632,8 @@ pub(crate) struct Inner {
     /// own (#2018): each waits on the engine, and the event reader must stay free to hear every
     /// held request, or a page's load waits on a call that waits on the load.
     following: Mutex<Option<std::sync::mpsc::Sender<FollowUp>>>,
+    /// purlis's own world in each frame its scripts run in, as the engine told of each (#2138).
+    worlds: Worlds,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -646,6 +657,8 @@ struct Located {
     target: String,
     page_session: String,
     node_session: String,
+    /// The frame whose document holds the element.
+    frame: String,
     backend: i64,
     /// Frames between the page and the element that have sessions of their own, outermost
     /// first: each frame's id and its parent's session.
@@ -730,6 +743,7 @@ impl Browser {
             purlis_drives: AtomicBool::new(false),
             judging: Mutex::new(None),
             following: Mutex::new(None),
+            worlds: Worlds::default(),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -893,6 +907,18 @@ impl Browser {
     /// of `target`'s page** (#2018): each judged as something sent to its site. Where the judge
     /// asks about any, nothing is sent to the page, and the answer says so.
     fn typing_held(&self, target: &str, addresses: &[String]) -> Option<Answer> {
+        let site = self.sends_to_a_new_site(addresses)?;
+        let mut answer = self.answer_now(target, Content::Nothing);
+        answer.note = Some(format!(
+            "nothing was typed: this page shows {site}, a site new to this project, where this \
+             would have gone, and purlis asked the person whether this browser may send to it"
+        ));
+        Some(answer)
+    }
+
+    /// **Whether sending to the documents at `addresses` waits on the person** (#2018): each is
+    /// judged as something sent to its site; the first site the judge asks about, now asked.
+    fn sends_to_a_new_site(&self, addresses: &[String]) -> Option<String> {
         let judge = self.inner.judge.as_ref()?;
         let site = addresses.iter().find_map(|address| {
             let outbound = Outbound {
@@ -907,12 +933,7 @@ impl Browser {
             }
         })?;
         lock(&self.inner.state).ask(&site);
-        let mut answer = self.answer_now(target, Content::Nothing);
-        answer.note = Some(format!(
-            "nothing was typed: this page shows {site}, a site new to this project, where this \
-             would have gone, and purlis asked the person whether this browser may send to it"
-        ));
-        Some(answer)
+        Some(site)
     }
 
     /// The addresses what is typed into the element `written` names goes to: its document's.
@@ -1424,7 +1445,7 @@ impl Browser {
                             waiting.push(format!("{prefix}the page has no address yet"));
                         }
                         Some(session) => {
-                            sessions.push((prefix.clone(), session.clone()));
+                            sessions.push((prefix.clone(), session.clone(), page.target.clone()));
                             waiting.extend(
                                 page.settle
                                     .waiting_for(now, quiet)
@@ -1452,13 +1473,19 @@ impl Browser {
                 (waiting, sessions, opened)
             };
             if waiting.is_empty() {
-                for (prefix, session) in &sessions {
-                    let ready = self.devtools().call_within(
-                        "Runtime.evaluate",
-                        json!({ "expression": READY_STATE, "returnByValue": true }),
-                        Some(session),
-                        READY_STATE_WITHIN,
-                    );
+                for (prefix, session, frame) in &sessions {
+                    let ready = self.in_world(session, frame, |world| {
+                        self.devtools().call_within(
+                            "Runtime.evaluate",
+                            json!({
+                                "expression": READY_STATE,
+                                "uniqueContextId": world.unique,
+                                "returnByValue": true,
+                            }),
+                            Some(session),
+                            READY_STATE_WITHIN,
+                        )
+                    });
                     let complete = ready
                         .ok()
                         .and_then(|r| r.pointer("/result/value").cloned())
@@ -1639,6 +1666,7 @@ impl Browser {
             target: page_target,
             page_session,
             node_session: frame.session.clone(),
+            frame: key.frame.clone(),
             backend: key.backend,
             boundaries,
         })
@@ -1897,37 +1925,56 @@ impl Browser {
         if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
             return Ok(held);
         }
-        let resolved = self
-            .devtools()
-            .call(
-                "DOM.resolveNode",
-                json!({ "backendNodeId": at.backend }),
-                Some(&at.node_session),
-            )
-            .map_err(|why| match why {
-                CallError::Engine { .. } => Refusal::NotShown(target.clone()),
-                other => refusal(other),
-            })?;
-        let object = resolved
-            .pointer("/object/objectId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| Refusal::NotShown(target.clone()))?
-            .to_owned();
-        let answer = self.acting_on(&page, || {
-            let chose = self
-                .gated(|| {
+        self.acting_on(&page, || {
+            // The drop-down is resolved into purlis's world, and the function run there by the
+            // world's unique id: an element of any other world is refused by the engine, which
+            // runs nothing, and the world is made again once.
+            let cut = std::cell::RefCell::new(None);
+            let chose = self.in_world(&at.node_session, &at.frame, |world| {
+                let resolved = self.devtools().call(
+                    "DOM.resolveNode",
+                    json!({ "backendNodeId": at.backend, "executionContextId": world.id }),
+                    Some(&at.node_session),
+                )?;
+                let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str)
+                else {
+                    return Ok(Value::Null);
+                };
+                let chose = self.gated(|| {
                     self.devtools().call(
                         "Runtime.callFunctionOn",
                         json!({
-                            "objectId": object,
+                            "uniqueContextId": world.unique,
                             "functionDeclaration": SELECT_OPTIONS,
-                            "arguments": [{ "value": options }],
+                            "arguments": [{ "objectId": object }, { "value": options }],
                             "returnByValue": true,
                         }),
                         Some(&at.node_session),
                     )
-                })?
-                .map_err(refusal)?;
+                });
+                let _ = self.devtools().call(
+                    "Runtime.releaseObject",
+                    json!({ "objectId": object }),
+                    Some(&at.node_session),
+                );
+                match chose {
+                    Ok(chose) => chose,
+                    Err(why) => {
+                        cut.replace(Some(why));
+                        Ok(Value::Null)
+                    }
+                }
+            });
+            if let Some(why) = cut.into_inner() {
+                return Err(why);
+            }
+            let chose = chose.map_err(|why| match why {
+                CallError::Engine { .. } => Refusal::NotShown(target.clone()),
+                other => refusal(other),
+            })?;
+            if chose.is_null() {
+                return Err(Refusal::NotShown(target.clone()));
+            }
             let said = chose.pointer("/result/value").cloned().unwrap_or_default();
             if said.get("notSelect").is_some() {
                 return Err(Refusal::NotADropDown(target.clone()));
@@ -1950,13 +1997,7 @@ impl Browser {
                 });
             }
             Ok(None)
-        });
-        let _ = self.devtools().call(
-            "Runtime.releaseObject",
-            json!({ "objectId": object }),
-            Some(&at.node_session),
-        );
-        answer
+        })
     }
 
     fn drag(&self, from: &Ref, to: &DragTo) -> Result<Answer, Refusal> {
@@ -1979,17 +2020,192 @@ impl Browser {
                 (DragTo::Element(r), None) => return Err(Refusal::NoSuchRef(r.clone())),
             };
             let session = &start_at.page_session;
-            self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
-            self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
-            for step in 1..=DRAG_STEPS {
-                let part = step as f64 / DRAG_STEPS as f64;
-                let x = start.0 + (end.0 - start.0) * part;
-                let y = start.1 + (end.1 - start.1) * part;
-                self.mouse(session, "mouseMoved", x, y, 0, 1)?;
-            }
-            self.mouse(session, "mouseReleased", end.0, end.1, 1, 0)?;
-            Ok(None)
+            // Where what a native drag carries may go when it drops (#2018): into whichever
+            // document is drawn at the drop, which may be any of the page's, whatever element
+            // the drag aims at.
+            let drops_into = lock(&self.inner.state).every_document(&page);
+            // A native drag source starts the engine's own drag, which the engine hands over
+            // while this drag lasts, and never after (#2136): once asked to, it is told to stop
+            // however the drag ends.
+            lock(&self.inner.state).dragged = None;
+            let dragged = self
+                .devtools()
+                .call(
+                    "Input.setInterceptDrags",
+                    json!({ "enabled": true }),
+                    Some(session),
+                )
+                .map_err(refusal)
+                .and_then(|_| self.dragging(&page, session, start, end, &drops_into));
+            let handed_back = self.devtools().call(
+                "Input.setInterceptDrags",
+                json!({ "enabled": false }),
+                Some(session),
+            );
+            lock(&self.inner.state).dragged = None;
+            let note = dragged?;
+            handed_back.map_err(refusal)?;
+            Ok(note)
         })
+    }
+
+    /// Presses at `start`, moves to `end` with the button held and releases there; once the
+    /// engine's own drag starts on the way, the rest of the way is its drag events, the drop at
+    /// `end` into the documents at `drops_into`. A drag that fails on the way, or is cut by the
+    /// person taking over, is cancelled and its button let go.
+    fn dragging(
+        &self,
+        target: &str,
+        session: &str,
+        start: (f64, f64),
+        end: (f64, f64),
+        drops_into: &[String],
+    ) -> Result<Option<String>, Refusal> {
+        self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
+        self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
+        let mut carried = None;
+        let dragged = self.dragged_on(session, start, end, drops_into, target, &mut carried);
+        if dragged.is_err() || matches!(dragged, Ok(Some(_))) {
+            self.let_go(session, end, carried.as_ref());
+        }
+        dragged
+    }
+
+    /// [`Browser::dragging`] once the button is pressed: `carried` is what the engine's own
+    /// drag carries, once it has started. A note where the drop was held back.
+    fn dragged_on(
+        &self,
+        session: &str,
+        start: (f64, f64),
+        end: (f64, f64),
+        drops_into: &[String],
+        target: &str,
+        carried: &mut Option<Value>,
+    ) -> Result<Option<String>, Refusal> {
+        let at = |step: usize| {
+            let part = step as f64 / DRAG_STEPS as f64;
+            (
+                start.0 + (end.0 - start.0) * part,
+                start.1 + (end.1 - start.1) * part,
+            )
+        };
+        let mut step = 1;
+        while step <= DRAG_STEPS {
+            let (x, y) = at(step);
+            self.mouse(session, "mouseMoved", x, y, 0, 1)?;
+            step += 1;
+            *carried = self.engine_drag(session, Duration::ZERO);
+            if carried.is_some() {
+                break;
+            }
+        }
+        // The engine says its drag started a moment after the move that started it.
+        if carried.is_none() {
+            *carried = self.engine_drag(session, DRAG_STARTS_WITHIN);
+        }
+        if let Some(data) = carried.as_mut() {
+            // A drag of an element carries what the page put in it, never files.
+            if let Some(data) = data.as_object_mut() {
+                data.remove("files");
+            }
+            if self.carries_kept_text(target, data) {
+                return Err(Refusal::DragKeptOut);
+            }
+            if let Some(site) = self.sends_to_a_new_site(drops_into) {
+                return Ok(Some(format!(
+                    "nothing was dropped: the drop would have gone to {site}, a site new to this \
+                     project, and purlis asked the person whether this browser may send to it"
+                )));
+            }
+            let data = data.clone();
+            let mut kind = "dragEnter";
+            for step in step..=DRAG_STEPS {
+                let (x, y) = at(step);
+                self.drag_event(session, kind, x, y, &data)?;
+                kind = "dragOver";
+            }
+            self.drag_event(session, kind, end.0, end.1, &data)?;
+            self.drag_event(session, "drop", end.0, end.1, &data)?;
+        }
+        self.mouse(session, "mouseReleased", end.0, end.1, 1, 0)?;
+        Ok(None)
+    }
+
+    /// Cancels the engine's own drag where one carries `carried`, and lets the button go at
+    /// `end`: whoever drives next starts from nothing held.
+    fn let_go(&self, session: &str, end: (f64, f64), carried: Option<&Value>) {
+        if let Some(data) = carried {
+            let _ = self.devtools().call(
+                "Input.dispatchDragEvent",
+                json!({ "type": "dragCancel", "x": end.0, "y": end.1, "modifiers": 0, "data": data }),
+                Some(session),
+            );
+        }
+        let _ = self.devtools().call(
+            "Input.dispatchMouseEvent",
+            json!({
+                "type": "mouseReleased", "x": end.0, "y": end.1, "modifiers": 0, "buttons": 0,
+                "button": "left", "clickCount": 1,
+            }),
+            Some(session),
+        );
+    }
+
+    /// Whether what a drag on `target`'s page carries holds a text kept out of the agent's
+    /// answers.
+    fn carries_kept_text(&self, target: &str, data: &Value) -> bool {
+        let state = lock(&self.inner.state);
+        let mut kept = state.kept.clone();
+        if let Some(page) = state.page(target) {
+            kept.take_in(&page.scrubbed);
+        }
+        let scrub = Scrub::of(&kept);
+        data["items"].as_array().into_iter().flatten().any(|item| {
+            ["data", "title", "baseURL"]
+                .iter()
+                .filter_map(|field| item[*field].as_str())
+                .any(|text| scrub.holds(text))
+        })
+    }
+
+    /// What the engine's own drag on `session` carries, once it has started, waiting up to
+    /// `within` for it.
+    fn engine_drag(&self, session: &str, within: Duration) -> Option<Value> {
+        let deadline = Instant::now() + within;
+        let mut state = lock(&self.inner.state);
+        loop {
+            if let Some((on, data)) = &state.dragged
+                && on == session
+            {
+                return Some(data.clone());
+            }
+            let now = Instant::now();
+            if now >= deadline || state.ended {
+                return None;
+            }
+            state = self
+                .inner
+                .changed
+                .wait_timeout(state, deadline - now)
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+        }
+    }
+
+    /// One of the engine's own drag events at (`x`, `y`), carrying `data`.
+    fn drag_event(
+        &self,
+        session: &str,
+        kind: &str,
+        x: f64,
+        y: f64,
+        data: &Value,
+    ) -> Result<(), Refusal> {
+        self.input(
+            "Input.dispatchDragEvent",
+            json!({ "type": kind, "x": x, "y": y, "modifiers": 0, "data": data }),
+            session,
+        )
     }
 
     fn scroll(
@@ -2206,6 +2422,7 @@ impl Browser {
                     target: String::new(),
                     page_session: String::new(),
                     node_session: session.to_owned(),
+                    frame: String::new(),
                     backend,
                     boundaries: boundaries.to_vec(),
                 };
@@ -2566,6 +2783,7 @@ impl Inner {
                 }
                 "Target.detachedFromTarget" => {
                     if let Some(session) = text("/sessionId") {
+                        self.worlds.cleared(&session);
                         if let Some(target) = state.page_of_session(&session)
                             && let Some(page) = state.page_mut(&target)
                         {
@@ -2592,7 +2810,26 @@ impl Inner {
                 }
                 "Page.frameNavigated" => {
                     if let Some(session) = &event.session_id {
+                        if let Some(frame) = text("/frame/id") {
+                            self.worlds.left(&frame);
+                        }
                         state.frame_seen(session, &params["frame"], true);
+                    }
+                }
+                // purlis's own worlds, as the engine tells of them (#2138).
+                "Runtime.executionContextCreated" => {
+                    if let Some(session) = &event.session_id {
+                        self.worlds.told(session, &params["context"]);
+                    }
+                }
+                "Runtime.executionContextDestroyed" => {
+                    if let Some(session) = &event.session_id {
+                        self.worlds.ended(session, params);
+                    }
+                }
+                "Runtime.executionContextsCleared" => {
+                    if let Some(session) = &event.session_id {
+                        self.worlds.cleared(session);
                     }
                 }
                 // A form submitted (#2018): its request, when it comes, sends what was typed.
@@ -2646,12 +2883,22 @@ impl Inner {
                     }
                 }
                 "Page.frameDetached" => {
+                    if let Some(frame) = text("/frameId") {
+                        self.worlds.left(&frame);
+                    }
                     let swapped = text("/reason").as_deref() == Some("swap");
                     if !swapped
                         && let (Some(session), Some(frame)) = (&event.session_id, text("/frameId"))
                         && let Some(target) = state.page_of_session(session)
                     {
                         state.frame_gone(&target, &frame);
+                    }
+                }
+                // A drag of the agent's started the engine's own (#2136): it is carried on by
+                // drag events from here.
+                "Input.dragIntercepted" => {
+                    if let Some(session) = &event.session_id {
+                        state.dragged = Some((session.clone(), params["data"].clone()));
                     }
                 }
                 _ => {}
@@ -2737,6 +2984,8 @@ impl Inner {
             FollowUp::SetUp(session) => {
                 let on = Some(session.as_str());
                 let _ = devtools.call("Page.enable", json!({}), on);
+                // So the engine tells of each world it makes (#2138).
+                let _ = devtools.call("Runtime.enable", json!({}), on);
                 let size = {
                     let state = lock(&self.state);
                     let is_page = matches!(state.sessions.get(&session), Some(Session::Page(_)));
