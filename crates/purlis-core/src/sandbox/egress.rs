@@ -977,10 +977,10 @@ impl Allowed {
         };
         let decision = self.reach.decide_by_name(host, port, ports, own);
         // A service asked for this chat alone (#2510): asked about, never refused as this
-        // machine, where the proxy asks live.
+        // machine or as a name of it that is never a host, where the proxy asks live.
         let refused_here = matches!(
             decision,
-            Decision::Ask | Decision::Refused(Refused::LocalAddress)
+            Decision::Ask | Decision::Refused(Refused::LocalAddress | Refused::NeverAHost(_))
         );
         if refused_here && self.asks.is_some() && self.asks_for(host, port) {
             return Decision::Ask;
