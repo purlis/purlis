@@ -551,6 +551,8 @@ mod hosted {
             let id = link.id();
             let first = {
                 let mut dimming = lock(&self.dimming);
+                // A view on a link the window's has replaced ended with that link.
+                dimming.views.retain(|(on, _), _| *on == id);
                 dimming.views.insert(
                     (id, view),
                     Followed {

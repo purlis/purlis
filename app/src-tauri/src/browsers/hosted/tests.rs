@@ -547,3 +547,24 @@ fn a_browser_view_closed_while_its_link_is_down_is_told_nothing_more() {
 
     assert_eq!(*said.lock().unwrap(), [Reconnection::Reconnecting]);
 }
+
+#[test]
+fn the_views_of_a_window_link_that_was_replaced_are_followed_no_more() {
+    let window = window();
+    let (_said, view, _) = a_watched_browser(&window);
+    let old = window.browsers.link().unwrap().id();
+    let (_connection, replaced) = crate::hostedsessions::tests::in_memory(
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        &window._runtime,
+    );
+
+    window.browsers.follow(&replaced, view, Arc::new(|_| {}));
+
+    let followed: Vec<(u64, u32)> = super::lock(&window.browsers.dimming)
+        .views
+        .keys()
+        .copied()
+        .collect();
+    assert_eq!(followed, [(replaced.id(), view)]);
+    assert_ne!(old, replaced.id());
+}

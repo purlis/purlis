@@ -342,7 +342,8 @@ export function BrowserView({ program }: { program: string }) {
           {reconnecting && `${RECONNECTING_SAID} `}
           {driving
             ? "You are driving this browser. The agent is paused until you press Done."
-            : "Click or type in the page to take it over."}
+            : // Nothing reaches the page while its runner's link is down: no hint to try.
+              !reconnecting && "Click or type in the page to take it over."}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
         <Select

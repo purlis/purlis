@@ -177,7 +177,7 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
 
     host.reconnection("reconnecting");
 
-    await waitFor(() => expect(barSaid()).toHaveTextContent(/^Reconnecting…/));
+    await waitFor(() => expect(barSaid()).toHaveTextContent(/^Reconnecting…$/));
     expect(within(surface).getByText("Reconnecting…")).toBeInTheDocument();
     expect(surface).toHaveClass("reconnecting");
     expect(screen.queryByText("This browser has ended")).toBeNull();
@@ -186,7 +186,10 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
     host.reconnection("reconnected");
     host.send("/9j/AQ==");
 
-    await waitFor(() => expect(barSaid()).not.toHaveTextContent("Reconnecting…"));
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent("Click or type in the page to take it over."),
+    );
+    expect(barSaid()).not.toHaveTextContent("Reconnecting…");
     expect(within(surface).queryByText("Reconnecting…")).toBeNull();
     expect(surface).not.toHaveClass("reconnecting");
     await waitFor(() => expect(painted).toHaveLength(2));
