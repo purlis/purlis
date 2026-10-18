@@ -1198,6 +1198,57 @@ fn a_runs_own_credential_file_is_given_back_under_both_names_the_kernel_gives_it
     }
 }
 
+/// A run's named link (#1977) is given back under its own name, which the wrap starts it by and
+/// the kernel reads it by, and never under what it points at: the grant is the link alone
+/// (#2617).
+#[cfg(unix)]
+#[test]
+fn a_runs_named_link_is_given_back_by_its_own_name_and_not_what_it_points_at() {
+    use purlis_linux_sandbox::profile::{FileOp, Kind, Op, Profile};
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let vaults = Ctx::new(&root, Env::of(&[])).vaults_dir();
+    let within = private_dir(&vaults).unwrap();
+    let elsewhere = vaults.join("team.json");
+    std::fs::write(&elsewhere, "{}").unwrap();
+    let (_dir, link) = named_link(&within, "zcat", &elsewhere).unwrap();
+    for level in [crate::sandbox::Level::Full, crate::sandbox::Level::Floor] {
+        let confines = Confines {
+            level,
+            ..compiled(&root)
+        };
+        let profile = profile_on(
+            &confines,
+            std::slice::from_ref(&link),
+            &[],
+            &root.join("work"),
+            &root.join("tmp"),
+            &[4242],
+        )
+        .expect("a profile");
+        let read = Profile::parse(&profile).expect("it reads");
+        let may =
+            |what: FileOp, path: &Path, kind: Kind| read.allows(&Op::File { what, path, kind });
+        for name in crate::sandbox::both_firmlink_names(link.clone()) {
+            assert!(
+                may(FileOp::ReadData, &name, Kind::Symlink),
+                "{level:?} {name:?}: {profile}"
+            );
+            assert!(
+                may(FileOp::ReadMetadata, &name, Kind::Symlink),
+                "{level:?} {name:?}"
+            );
+            assert!(!may(FileOp::WriteData, &name, Kind::Symlink), "{level:?}");
+        }
+        for name in crate::sandbox::both_firmlink_names(elsewhere.clone()) {
+            assert!(
+                !may(FileOp::ReadData, &name, Kind::Regular),
+                "{level:?} {name:?}: what the link points at stays denied"
+            );
+        }
+    }
+}
+
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
 /// the environment of chat 7 inside it: sandboxed, with its socket and its token.
 fn an_app(
@@ -4051,7 +4102,8 @@ fn a_tool_declared_under_another_name_runs_its_program_under_that_name() {
 
 /// [`a_tool_declared_under_another_name_runs_its_program_under_that_name`] in the run's
 /// sandbox, applied for real where this machine can apply one: macOS's `gunzip` is also its
-/// `zcat`, which writes what it unpacks to standard output.
+/// `gzcat`, which writes what it unpacks to standard output. Not its `zcat`: started as that it
+/// reads only `<file>.Z`, as `compress`'s does.
 #[cfg(target_os = "macos")]
 #[test]
 fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
@@ -4087,7 +4139,7 @@ fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
     std::fs::write(&file, packed.stdout).unwrap();
     let asker = armed_as(
         asker(&root, Some("devops")),
-        "zcat",
+        "gzcat",
         "team",
         Path::new("/usr/bin/gunzip"),
     );
