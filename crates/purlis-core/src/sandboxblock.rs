@@ -1933,8 +1933,8 @@ pub fn kind_of_in(path: &Path, place: &Place<'_>, temp: &Path) -> Kind {
     // Before the temp folders: a hook whose own `TMPDIR` is the per-user folder itself would
     // otherwise take a tool's write there for the chat's own.
     if let Some(parts) = per_user_folder(&unprivate(&path))
-        && !(within(&temp)
-            && per_user_folder(&unprivate(&lexical(&temp))).is_some_and(|at| at.len() > 1))
+        && !(within(temp)
+            && per_user_folder(&unprivate(&lexical(temp))).is_some_and(|at| at.len() > 1))
     {
         return if parts[0] == "C" {
             Kind::SystemCache
@@ -1950,7 +1950,7 @@ pub fn kind_of_in(path: &Path, place: &Place<'_>, temp: &Path) -> Kind {
     ]
     .iter()
     .any(|dir| within(Path::new(dir)))
-        || within(&temp)
+        || within(temp)
     {
         return Kind::Temp;
     }
