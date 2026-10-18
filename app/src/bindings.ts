@@ -2326,6 +2326,13 @@ export const commands = {
 	updateChannel: () => __TAURI_INVOKE<string>("update_channel"),
 	/**  Put this machine on a channel. A word charter does not know is refused, not guessed at. */
 	setUpdateChannel: (channel: string) => typedError<null, string>(__TAURI_INVOKE("set_update_channel", { channel })),
+	/**  **The browser limits in force on this machine**, and their defaults here. */
+	browserLimits: () => typedError<BrowserLimitsShown, string>(__TAURI_INVOKE("browser_limits")),
+	/**
+	 *  **Sets one browser limit on this machine**, or with no `to`, puts it back to purlis's
+	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
+	 */
+	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -4048,6 +4055,29 @@ export type BrowserFrame = {
  *  Meta 4, Shift 8).
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+
+/**  Which limit a row sets. */
+export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
+
+/**  One limit, as its row draws it. */
+export type BrowserLimitShown = {
+	/**  What is in force now. */
+	value: number,
+	/**  What purlis's default is here: for the device's budget, what its memory gives. */
+	default: number,
+	/**  Whether the person set it, so a reset is on offer. */
+	set: boolean,
+	least: number,
+	most: number,
+};
+
+/**  What the Browsers group draws. */
+export type BrowserLimitsShown = {
+	per_project: BrowserLimitShown,
+	on_this_device: BrowserLimitShown,
+	/**  `0` is never. */
+	idle_minutes: BrowserLimitShown,
+};
 
 /**
  *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each

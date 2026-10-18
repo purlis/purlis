@@ -225,7 +225,6 @@ mod hosted {
 
     use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome};
     use crate::chatbrowsers::NotStarted;
-    use crate::hostedsessions::{Connection, FrameSink, HostLink};
     use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
     use crate::reconnecting::Reconnection;
 
