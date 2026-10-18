@@ -44,6 +44,9 @@ use super::{Forge, ForgeError, Kind};
 /// holds the token (ADR 0070 §4).
 pub trait TokenSource: Send + Sync {
     fn token(&self) -> Result<SecretString, ForgeError>;
+    /// The forge refused the token this handed out (HTTP 401): a source that remembers its
+    /// token forgets it, so the next request reads it again (#2656). Most remember nothing.
+    fn refused(&self) {}
 }
 
 /// Where a forge's API lives: its REST root and its GraphQL endpoint.
@@ -309,6 +312,9 @@ impl Http {
         });
         let response = response.map_err(|e| format!("{method} {} failed: {e}", self.root.rest))?;
         let status = response.status().as_u16();
+        if status == 401 {
+            self.tokens.refused();
+        }
         let headers: Vec<(String, String)> = KEPT
             .iter()
             .filter_map(|name| {

@@ -18,8 +18,9 @@
 //! **Following the system works with any theme that has a dark and a light appearance**: the
 //! window is told it follows, and asks again when the system turns. [`follow`] of a theme with
 //! only one appearance draws that one, and [`Drawn::note`] says that following the system stays
-//! there. A `system` pick with a person's theme of one appearance follows with Purlis Classic,
-//! as it did before format 2, until Settings › Theme can show that note (#2331). With no
+//! there, which Settings › Theme says on a theme's card (#2331). The old `system` id with a
+//! person's `theme.json` of one appearance follows with Purlis Classic, as it did before format
+//! 2: that file is no card, so nothing would say why it stopped following. With no
 //! `system` pick a theme draws its first appearance, as Purlis Classic draws its dark. With no
 //! pick, the first extension theme in force that is not refused is drawn.
 //!

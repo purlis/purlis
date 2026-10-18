@@ -164,8 +164,8 @@ pub enum Elsewhere {
 /// trailing spaces dropped, compared without case. That is why `com1.txt` is the serial port
 /// and why a table of literal filenames is the wrong shape — it would have to hold every
 /// extension anyone might ever append. The device table itself is `CON PRN AUX NUL`,
-/// `COM0`–`COM9` and `LPT0`–`LPT9`, plus the superscript spellings `COM¹ COM² COM³`
-/// (U+00B9, U+00B2, U+00B3), which modern Windows folds onto 1, 2 and 3.
+/// `CONIN$ CONOUT$`, `COM0`–`COM9` and `LPT0`–`LPT9`, plus the superscript spellings
+/// `COM¹ COM² COM³` (U+00B9, U+00B2, U+00B3), which modern Windows folds onto 1, 2 and 3.
 ///
 /// # What this deliberately does not decide
 ///
@@ -199,15 +199,19 @@ pub fn mintable(name: &str) -> Result<(), Elsewhere> {
 /// Does Windows read `name` as one of its devices?
 ///
 /// The stem — up to the first `.`, trailing spaces dropped — against the device table. See
-/// [`mintable`] for why it is spelled as a rule rather than as a list of filenames.
-fn dos_device(name: &str) -> bool {
+/// [`mintable`] for why it is spelled as a rule rather than as a list of filenames. A theme's
+/// names ask it too (`crate::theme::portable`).
+pub(crate) fn dos_device(name: &str) -> bool {
     let stem = name
         .split('.')
         .next()
         .unwrap_or_default()
         .trim_end_matches(' ')
         .to_ascii_lowercase();
-    if matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") {
+    if matches!(
+        stem.as_str(),
+        "con" | "prn" | "aux" | "nul" | "conin$" | "conout$"
+    ) {
         return true;
     }
     // One port number, and only one: `com10` is an ordinary name. The superscripts are here

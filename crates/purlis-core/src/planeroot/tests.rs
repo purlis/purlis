@@ -2555,3 +2555,96 @@ fn a_call_inside_another_shares_its_memory_and_only_the_outer_ends_it() {
     remembering(ask);
     assert_eq!(times_asked(&f.root, before, &HEAD_COMMIT), 2);
 }
+
+/// What a long line exported or assigned near its start still reaches a git near its end, past
+/// many other exports and gits, as it does on a short line: the line's environment is shared
+/// between its gits, not copied into each (#2648). Each case is judged at both lengths and must
+/// answer the same.
+#[test]
+fn an_early_export_reaches_a_git_at_the_end_of_a_long_line() {
+    let (_dir, root, elsewhere) = bare_root();
+    std::fs::create_dir_all(format!("{root}/.git")).unwrap();
+    let moves = |cmd: &str| {
+        plane_root_git(cmd, &elsewhere, &root)
+            .iter()
+            .any(|inv| BRANCH_MOVERS.contains(&inv.sub.as_str()))
+    };
+    // Exports, bare assignments, `eval`s and strings handed to shells, each with a git.
+    let filler = |n: usize| -> String {
+        (0..n)
+            .map(|i| {
+                format!(
+                    "export GIT_V{i}=x; A{i}=y; git status; eval export B{i}=z; \
+                     sh -c 'git log'; eval GIT_W{i}=w; "
+                )
+            })
+            .collect()
+    };
+    let cases = |gap: &str| {
+        let moving = [
+            format!("export GIT_DIR={root}/.git; {gap}git checkout feature"),
+            format!("eval export GIT_DIR={root}/.git; {gap}git checkout feature"),
+            format!("set -a; eval GIT_DIR={root}/.git; {gap}git checkout feature"),
+            format!("eval set -a; GIT_DIR={root}/.git; {gap}git checkout feature"),
+            format!("export GIT_WORK_TREE={root}; {gap}git switch -c x"),
+            format!("export GIT_DIR={root}/.git; {gap}sh -c 'git checkout feature'"),
+            format!(
+                "export GIT_DIR=/nowhere/.git; {gap}export GIT_DIR={root}/.git; {gap}\
+                 git checkout feature"
+            ),
+        ];
+        let staying = [
+            format!("GIT_DIR={root}/.git; {gap}git checkout feature"),
+            format!("eval GIT_DIR={root}/.git; {gap}git checkout feature"),
+            format!("sh -c 'export GIT_DIR={root}/.git'; {gap}git checkout feature"),
+            format!(
+                "export GIT_DIR={root}/.git; {gap}export GIT_DIR=/nowhere/.git; {gap}\
+                 git checkout feature"
+            ),
+        ];
+        (moving, staying)
+    };
+    let (short_moving, short_staying) = cases("");
+    let gap = filler(60);
+    let (long_moving, long_staying) = cases(&gap);
+    for (short, long) in short_moving.iter().zip(&long_moving) {
+        assert!(moves(short), "{short:?}");
+        assert!(moves(long), "{short:?}, after a long run");
+    }
+    for (short, long) in short_staying.iter().zip(&long_staying) {
+        assert!(!moves(short), "{short:?}");
+        assert!(!moves(long), "{short:?}, after a long run");
+    }
+}
+
+/// An alias an export near the start of a long line defines is still unread at its end, and
+/// refused, as on a short line (#2648, D-1358f).
+#[test]
+fn an_alias_an_early_export_defines_is_still_unread_at_the_end_of_a_long_line() {
+    let f = fixture();
+    let gap: String = (0..60)
+        .map(|i| format!("export GIT_V{i}=x; A{i}=y; git status; eval GIT_W{i}=w; "))
+        .collect();
+    for gap in ["", gap.as_str()] {
+        for cmd in [
+            format!(
+                "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.yy GIT_CONFIG_VALUE_0=checkout; \
+                 {gap}git yy -b x"
+            ),
+            format!("export GIT_CONFIG_PARAMETERS=\"'alias.yy=checkout'\"; {gap}git yy -b x"),
+            format!("export V=checkout; {gap}git --config-env=alias.yy=V yy -b x"),
+            format!("export HOME=/tmp/h; {gap}git yy -b x"),
+        ] {
+            let said = branch(&f, &cmd).expect(&cmd);
+            assert!(
+                said.starts_with("cannot tell what `git yy` does"),
+                "{cmd:?}: {said}"
+            );
+        }
+        // A word the line does not make an alias stays git's own.
+        assert_eq!(
+            branch(&f, &format!("export HOME=/tmp/h; {gap}git status")),
+            None
+        );
+    }
+}

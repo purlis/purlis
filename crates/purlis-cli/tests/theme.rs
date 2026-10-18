@@ -1385,3 +1385,95 @@ fn an_export_of_what_is_not_a_theme_folder_says_so_and_exits_two() {
     assert_eq!(ran.code, 2);
     assert!(ran.err.contains("a folder of its own"), "{}", ran.err);
 }
+
+#[test]
+fn a_level_s_theme_folder_is_exported_by_its_id() {
+    let rig = Rig::new();
+    let [base, team, client, _] = every_level(&rig);
+    std::fs::write(team.join("LICENSE"), "made up for a test\n").expect("a licence");
+
+    for (asked, folder, files) in [
+        ("machine:base", &base, 1),
+        ("project:team", &team, 2),
+        ("workspace:alpha:client", &client, 1),
+    ] {
+        let zip = rig
+            .dir
+            .path()
+            .join(format!("{}.zip", asked.replace(':', "-")));
+
+        let exported = rig.run(&["export", asked, "--to", zip.to_str().expect("a path")]);
+
+        assert_eq!(
+            exported.code, 0,
+            "{asked}: {}{}",
+            exported.out, exported.err
+        );
+        let name = folder
+            .file_name()
+            .and_then(|it| it.to_str())
+            .expect("a name");
+        assert_eq!(
+            exported.out.lines().next().unwrap_or_default(),
+            format!(
+                "exported {name} ({files} {}) to {}",
+                if files == 1 { "file" } else { "files" },
+                zip.display()
+            ),
+            "{asked}"
+        );
+        // The zip is that level's folder, file for file, under its name.
+        let (top, files) =
+            purlis_core::theme::unpack(&std::fs::read(&zip).expect("the zip")).expect("unpacked");
+        assert_eq!(top, name, "{asked}");
+        let packed: Vec<(String, Vec<u8>)> = files.into_iter().collect();
+        assert_eq!(packed, folder_files(folder), "{asked}");
+    }
+}
+
+#[test]
+fn a_level_id_with_no_folder_at_that_level_is_refused_naming_the_level_s_form() {
+    let rig = Rig::new();
+    every_level(&rig);
+
+    for (asked, form) in [
+        // Each name is a folder of another level: it is never exported in this one's place.
+        ("project:base", "`project:<folder>`"),
+        ("workspace:alpha:team", "`workspace:<workspace>:<folder>`"),
+        ("machine:team", "`machine:<folder>`"),
+        ("workspace:gamma:night", "`workspace:<workspace>:<folder>`"),
+    ] {
+        let zip = rig.dir.path().join("never.zip");
+
+        let ran = rig.run(&["export", asked, "--to", zip.to_str().expect("a path")]);
+
+        assert_eq!(ran.code, 2, "{asked}: {}{}", ran.out, ran.err);
+        assert_eq!(ran.out, "", "{asked}");
+        assert!(ran.err.contains(form), "{asked}: {}", ran.err);
+        assert!(
+            ran.err.contains("never a farther level's of the same name"),
+            "{}",
+            ran.err
+        );
+        assert!(!zip.exists(), "{asked}: nothing is written");
+    }
+}
+
+#[test]
+fn a_level_s_folder_windows_cannot_hold_is_checked_and_refused_with_why() {
+    let rig = Rig::new();
+    rig.folder(
+        &rig.machine_themes(),
+        "con",
+        &a_folder("Console", None, &serde_json::json!({})),
+    );
+
+    let ran = rig.run(&["check", "machine:con"]);
+
+    assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
+    assert!(
+        ran.out.contains("con is a name Windows keeps for a device"),
+        "{}",
+        ran.out
+    );
+}

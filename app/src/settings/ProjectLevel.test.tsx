@@ -356,6 +356,7 @@ describe("the Project level", () => {
         "Dispatch",
         "Forges",
         "Extensions",
+        "Theme",
         "Appearance",
         "Plugins",
       ]),
@@ -1220,8 +1221,8 @@ describe("the Project level of a read-only project (#826)", () => {
       "Network: Allowed for",
       "Network: Open that page",
       "Extensions: Go to Extensions…",
-      // The person's own theme, kept on this machine (#2323).
-      "Appearance: Your theme",
+      // Settings › Theme writes this machine alone (#2331); with no gallery from the mock core
+      // it has no card and its buttons are off.
     ]);
   });
 

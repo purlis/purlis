@@ -1796,7 +1796,7 @@ fn configures(inv: &RootInvocation) -> bool {
     inv.pre
         .iter()
         .any(|word| word.starts_with("-c") || word.starts_with("--config-env"))
-        || inv.env.iter().chain(&inv.own_env).any(|assign| {
+        || inv.env.newest_first().chain(&inv.own_env).any(|assign| {
             // Any of git's own variables may change what it does mid-move: its config, its
             // directories, a program it starts (an askpass, a proxy, an ssh).
             let assign = assign.trim_start_matches("export ");

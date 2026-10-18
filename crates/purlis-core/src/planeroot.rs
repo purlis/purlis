@@ -90,6 +90,10 @@ use crate::shellseg;
 use crate::shellwrap::{self, GIT_VALUE_OPTS};
 use crate::worktree::git as runner;
 
+mod lineenv;
+use lineenv::Chain;
+pub use lineenv::LineEnv;
+
 /// git subcommands that move HEAD from one branch to another — `_BRANCH_MOVERS`.
 ///
 /// Deliberately short: the evidence in #157 is about SWITCHING. `reset` has its own guard with
@@ -420,8 +424,9 @@ pub struct RootInvocation {
     /// all: what an unread denial says it could not read (#1326).
     pub program_unnamed: bool,
     /// The environment it may run with as the line sets it — earlier bare assignments and
-    /// exports, then its own assignments — which can define aliases (#1358).
-    pub env: Vec<String>,
+    /// exports, then its own assignments — which can define aliases (#1358). Shared with the
+    /// line's other gits rather than copied into each (#2648).
+    pub env: LineEnv,
     /// Its own assignments alone: what reaches git whatever an earlier segment's fate (`unset`,
     /// `env -u`, a subshell, `false &&`). An alias the two disagree on is unread ([`LineConfig`]),
     /// so a line value can only add refusals.
@@ -1152,6 +1157,13 @@ fn read_line(cmd: &str, cwd: &str, root: &str) -> (Vec<RootInvocation>, bool) {
 /// The walk of `cmd`, gathering the git invocations that act elsewhere too where `elsewhere`
 /// is a list to put them in.
 fn walked(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -> Walk {
+    // What the walk asks git — the line's aliases, whether a word is a tracked path — is asked
+    // once for the line, whichever guard reads it ([`remembering`]).
+    remembering(|| walked_once(cmd, cwd, root, elsewhere))
+}
+
+/// [`walked`], inside its memory.
+fn walked_once(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -> Walk {
     let shared = Shared {
         root,
         the_root: std::cell::OnceCell::new(),
@@ -1404,13 +1416,13 @@ const STRING_BUDGET_FLOOR: usize = 64 * 1024;
 /// what the line around it does to a `cd`, and whether `set -a` is on where an `eval` runs the
 /// string in this shell. Empty for the line itself.
 ///
-/// The lists are borrowed in parts, one or two for each level the string is in, and joined
-/// only for a segment that may be git: a line of many assignments handing many strings on
+/// The lists are kept in parts, one or two for each level the string is in, each a prefix of a
+/// chain the line shares ([`LineEnv`]): a line of many assignments handing many strings on
 /// would otherwise copy the one into the other, its square.
 #[derive(Default)]
 struct Outer<'a> {
-    exported: Vec<&'a [String]>,
-    assigned: Vec<&'a [String]>,
+    exported: Vec<Chain>,
+    assigned: Vec<Chain>,
     own_env: Vec<&'a [String]>,
     loose_cd: bool,
     context: Option<CdContext>,
@@ -1489,6 +1501,11 @@ fn walk_line(
     // and those an `eval` made, as each is met (#1325). Grows by each once, so it stays linear.
     let mut exported: Vec<String> = Vec::new();
     let mut exports_taken = 0usize;
+    // `exported` and `assigned` (below) as chains each git and string shares a prefix of, each
+    // entry copied in once: a git's environment is then a few pointers, not a copy of all the
+    // line set before it, which made a line alternating exports and gits cost its square (#2648).
+    let mut exported_chain = Chain::default();
+    let mut assigned_chain = Chain::default();
     // Where the shell stays if a `cd … &&` failed: back in play once the `&&` chain ends.
     let mut left_behind = Whereabouts::default();
     // A certain `cd` not joined by `&&` came before: what the denial's hint is for (#1326).
@@ -1525,7 +1542,8 @@ fn walk_line(
                 walk,
             );
         }
-        let before = &exported[..];
+        let before = exported_chain.freeze(&exported);
+        let assigned_before = assigned_chain.freeze(&assigned);
         let (out, made) = (&mut walk.out, &mut walk.made);
         let (elsewhere, wrote, changed, git_wrote) = (
             &mut walk.elsewhere,
@@ -1547,25 +1565,26 @@ fn walk_line(
             out.extend(env.iter().cloned());
             out
         };
-        // `before + env`, built only for a segment that may be git: copying every earlier
-        // export into every segment made a line of exports cost its square. A string starts
-        // with what its line exported to it.
-        let inherited = || {
-            let mut out = joined(&outer.exported);
-            out.extend(before.iter().cloned());
-            out.extend(own_env_of());
-            out
+        // `before + env`, built only for a segment that may be git, of the chains the line
+        // shares: copying every earlier export into every segment made a line of exports cost
+        // its square. A string starts with what its line exported to it.
+        let inherited_parts = || {
+            let mut parts = outer.exported.clone();
+            parts.push(before.clone());
+            parts.push(Chain::default().freeze(&own_env_of()));
+            parts
         };
+        let inherited = || LineEnv::of(inherited_parts());
         // What may set git's configuration for this segment: every bare assignment the line
         // made before it, exported or not — HOME and the session's own GIT_CONFIG_* are already
         // exported, so a bare `HOME=/x;` reaches git — then the exports and the segment's own.
         // Built only for a segment that may be git, so a long line of assignments costs what it
         // is long.
         let config_env = || {
-            let mut out = joined(&outer.assigned);
-            out.extend(assigned.iter().cloned());
-            out.extend(inherited());
-            out
+            let mut parts = outer.assigned.clone();
+            parts.push(assigned_before.clone());
+            parts.extend(inherited_parts());
+            LineEnv::of(parts)
         };
         if let Some(cd) = cd_call(&seg.argv, &prog, &args) {
             let moved = if cd.args.iter().any(|arg| made.reaches(arg, &here)) {
@@ -1594,7 +1613,7 @@ fn walk_line(
             // before the line's configuration is gathered for it.
             let words = args.get(1..).unwrap_or(&[]);
             let (env, own_env) = if words.is_empty() {
-                (Vec::new(), Vec::new())
+                (LineEnv::default(), Vec::new())
             } else {
                 (config_env(), own_env_of())
             };
@@ -1607,7 +1626,13 @@ fn walk_line(
                 None => {
                     let (pre, rest) = shellwrap::git_globals(&args);
                     subcommand_after_splice(
-                        &pre, &rest, &env, &own_env, aliases, configured, configured,
+                        &pre,
+                        &rest,
+                        &env.to_vec(),
+                        &own_env,
+                        aliases,
+                        configured,
+                        configured,
                     )
                     .map(|(sub, post, unread)| (sub, post, pre, unread))
                 }
@@ -1644,9 +1669,15 @@ fn walk_line(
             *wrote = true;
             *changed = true;
             *git_wrote = true;
-            if let Some((sub, post, unread)) =
-                subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, true, after_a_writer)
-            {
+            if let Some((sub, post, unread)) = subcommand_after_splice(
+                &pre,
+                &rest,
+                &env.to_vec(),
+                &own_env,
+                aliases,
+                true,
+                after_a_writer,
+            ) {
                 out.push(RootInvocation {
                     sub,
                     post,
@@ -1688,7 +1719,7 @@ fn walk_line(
                 let found = subcommand_after_splice(
                     &pre,
                     &rest,
-                    &env,
+                    &env.to_vec(),
                     &own_env,
                     aliases,
                     true,
@@ -1715,7 +1746,9 @@ fn walk_line(
                     .argv
                     .windows(2)
                     .any(|w| matches!(w[0].as_str(), "-C" | "-D" | "--chdir") && w[1] == chdir);
-                let inherited = inherited();
+                // Only what the walk reads of it ([`LineEnv::read_by_the_walk`]): the directory
+                // variables and a `core.worktree`, as long as those are and not as the line.
+                let inherited = inherited().read_by_the_walk();
                 let readings = invocation_readings(
                     &pre,
                     &inherited,
@@ -1742,8 +1775,10 @@ fn walk_line(
                 };
                 // One in the root that only puts files back changes nothing the guards read of
                 // the repository after it.
+                // Once the line has changed it, nothing more is asked of git for it.
                 let changes = writes
-                    && !((named || unnamed)
+                    && !(!*changed
+                        && (named || unnamed)
                         && !spliced
                         && touches_only_files(&sub, &post, shared.root));
                 *changed |= changes;
@@ -1788,12 +1823,17 @@ fn walk_line(
         let evals = shellwrap::basename(&prog) == "eval";
         let handed = (!scripts.is_empty() || !found.is_empty()).then(|| {
             let gives = Outer {
-                exported: outer.exported.iter().copied().chain([before]).collect(),
+                exported: outer
+                    .exported
+                    .iter()
+                    .cloned()
+                    .chain([before.clone()])
+                    .collect(),
                 assigned: outer
                     .assigned
                     .iter()
-                    .copied()
-                    .chain([&assigned[..]])
+                    .cloned()
+                    .chain([assigned_before.clone()])
                     .collect(),
                 own_env: outer.own_env.iter().copied().chain([&env[..]]).collect(),
                 loose_cd,
@@ -1904,14 +1944,14 @@ fn walk_line(
             exported: outer
                 .exported
                 .iter()
-                .copied()
-                .chain([&exported[..]])
+                .cloned()
+                .chain([exported_chain.freeze(&exported)])
                 .collect(),
             assigned: outer
                 .assigned
                 .iter()
-                .copied()
-                .chain([&assigned[..]])
+                .cloned()
+                .chain([assigned_chain.freeze(&assigned)])
                 .collect(),
             own_env: outer.own_env.clone(),
             loose_cd: false,
@@ -2504,7 +2544,8 @@ pub fn resolve_git_alias(
     post: &[String],
     pre: &[String],
 ) -> (String, Vec<String>) {
-    let (sub, post, _) = resolve_git_alias_to_its_end(root, sub, post, pre, &[], &[]);
+    let (sub, post, _) =
+        resolve_git_alias_to_its_end(root, sub, post, pre, &LineEnv::default(), &[]);
     (sub, post)
 }
 
@@ -2520,14 +2561,14 @@ pub fn resolve_git_alias_to_its_end(
     sub: &str,
     post: &[String],
     pre: &[String],
-    env: &[String],
+    env: &LineEnv,
     own_env: &[String],
 ) -> (String, Vec<String>, AliasEnd) {
     // Read only for a word that may be an alias: a line of exports hands every git on it the
     // whole of them, and reading them for each `git status` cost the line its square (qw367).
     let mut line: Option<LineConfig> = None;
     expand_alias(sub, post, &mut |name| {
-        let line = line.get_or_insert_with(|| LineConfig::of(pre, env, own_env));
+        let line = line.get_or_insert_with(|| LineConfig::of(pre, &env.to_vec(), own_env));
         if let Some(found) = line.body(&name.to_lowercase()) {
             return found;
         }
