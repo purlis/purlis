@@ -142,6 +142,9 @@ fn purlis_serve_writes_the_run_of_a_chat_it_composes_under_the_windows_ids() {
                 run: Some(RUN.into()),
                 profile: Some("work".into()),
                 persona: Some("steward".into()),
+                // Out of the sandbox, as `purlis serve` has no plugin to carry one to a Claude
+                // Code chat (#2490).
+                without_sandbox: true,
                 ..StartProgram::of(PROJECT, ProgramKind::Harness)
             })
             .await
