@@ -9160,6 +9160,15 @@ export type WindowTheme = {
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */
 	fonts: WindowFonts,
+	/**  The tokens that are not colours (#2327). */
+	typed: WindowTyped,
+};
+
+/**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */
+export type WindowTyped = {
+	flags: { [key in string]: boolean },
+	choices: { [key in string]: string },
+	numbers: { [key in string]: number | null },
 };
 
 /**  A person's opt-out, as the picker sends it. */
