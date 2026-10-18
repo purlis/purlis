@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792301097923,
+  "lastUpdate": 1792302325254,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16548,6 +16548,48 @@ window.BENCHMARK_DATA = {
             "value": 103.9520235,
             "unit": "ms",
             "extra": "median of 5 runs: 102.881, 103.487, 103.952, 104.491, 105.869 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "aeb502f58b384a0dad688b3c9eef34047f7ac6d4",
+          "message": "The theme schema is published per format and release (#2520)\n\n* The theme schema is published per format and release\n\nA theme's `$schema` names the theme schema at the release of the purlis\nit is for: docs/schema/theme.v2.schema.json at the `v<version>` tag, so\nan editor completes only the tokens that purlis knows, and each\nrelease's schema stays at its address. The address lives in\n`theme::published` (`SCHEMA_URL`, `SCHEMA_FILE`), apart from the\nvocabulary in `theme::schema`; the schema file drops `$id`, since the\nfile is the format's and the address is the release's.\n\nWithin a format the schema only grows: the schema test first compares\nthe engine's schema with the committed one and fails on a removed\ntoken, key, definition or branch, a narrowed type, bound or enum, a new\nrequirement or an unknown keyword; the write step refuses the same.\nPurlis Classic's folder names its release's schema, the write step\nmoves it on a version bump, and `purlis theme list --json` and\n`purlis theme check --json` carry the address as `theme_schema`.\n\nThe ADR 0083 guard's one allowance moves to `theme/published.rs` and\nthe line naming the tag. The docs say which address to use and why.\n\nCloses #2448. Part of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme::published: findings sorted, fmt\n\nThe narrowings come out sorted, so a failure reads the same whatever\norder the schema keeps its keys in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme::published: review round\n\noneOf joins the keywords the rule cannot judge: not, if, then, else and\noneOf anywhere in the later schema are a narrowing until it is taught\nthem. deprecated, markdownDescription and enumDescriptions are\nannotations. The docs examples name v<version>, and docs/updating.md says\nClassic's $schema moves whenever the version fields change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme::published: unjudged keywords only where values reached\n\nA not, if, then, else or oneOf is a narrowing where the earlier schema\nhad something at the same place and the keyword is new or changed. A new\ndefinition or a new key of a closed object holds nothing an earlier theme\ncould, so what is inside it only adds: format 2's options definition,\nwhich is a oneOf, passes against the schema before it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T09:39:12+04:00",
+          "tree_id": "57b80f30699eb547debceea86d8d48402123fa32",
+          "url": "https://github.com/purlis/purlis/commit/aeb502f58b384a0dad688b3c9eef34047f7ac6d4"
+        },
+        "date": 1792302323617,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.37937299999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.361, 0.373, 0.379, 0.397, 0.418 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.568282500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.439, 16.462, 16.568, 16.703, 16.706 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.21057350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.864, 101.193, 101.211, 101.713, 102.844 ms"
           }
         ]
       }
