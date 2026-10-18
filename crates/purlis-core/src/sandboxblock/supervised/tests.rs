@@ -117,6 +117,36 @@ fn a_refused_file_no_longer_linked_is_named_by_the_name_it_had() {
     }
 }
 
+/// A protected file no longer linked is sorted by the name it had (#2574): a protected file, so
+/// its Notice offers no Allow, as for the same file still linked.
+#[test]
+fn a_refused_protected_file_no_longer_linked_is_sorted_by_the_name_it_had() {
+    for had in [
+        "/home/dev/plane/workspaces/alpha/repo/.git/config",
+        "/home/dev/plane/workspaces/alpha/repo/.vscode/settings.json",
+    ] {
+        let linked = block_of(&refused("file-write-data", had, "sh"), &place());
+        let unlinked = block_of(
+            &refused("file-write-data", &format!("{had} (deleted)"), "sh"),
+            &place(),
+        );
+
+        assert_eq!(
+            unlinked,
+            Some((
+                Block {
+                    operation: Operation::Write,
+                    kind: Kind::ProtectedFile,
+                    ours: false,
+                },
+                None,
+            )),
+            "{had}"
+        );
+        assert_eq!(unlinked, linked, "{had}");
+    }
+}
+
 #[test]
 fn a_refused_socket_no_longer_linked_is_named_by_the_path_it_had() {
     let told = block_of(
