@@ -23,7 +23,7 @@ use purlis_core::forge::refresh::Refresher;
 use purlis_core::forge::route::HostScope;
 use purlis_core::forge::transport::Transport;
 use purlis_core::forge::{Forge, ForgeError, Kind, gitcredential, signin};
-use purlis_core::secrets::keyring::{self, FileStore, STUB_FILE};
+use purlis_core::secrets::keyring::{self, FileStore, STUB_FILE, Store};
 use secrecy::ExposeSecret;
 
 /// Not shaped like any forge's token: the commit hook scans for those.
@@ -66,8 +66,7 @@ fn asked(home: &Path) -> (usize, usize) {
 }
 
 #[test]
-fn one_start_with_three_projects_reads_the_sign_in_once_and_asks_whether_it_is_there_at_most_once()
-{
+fn one_start_with_three_projects_asks_the_keychain_once() {
     purlis_core::unsteered!();
     let (home, account) = signed_in_by_an_earlier_run();
     let before = asked(home.path());
@@ -99,12 +98,10 @@ fn one_start_with_three_projects_reads_the_sign_in_once_and_asks_whether_it_is_t
     let reads = after.0 - before.0;
     let asks = after.1 - before.1;
     assert_eq!(
-        reads, 1,
-        "the token is read from the keychain once per process"
-    );
-    assert!(
-        asks <= 1,
-        "whether the item is there is asked at most once per process, asked {asks} times"
+        reads + asks,
+        1,
+        "one start asks the keychain once: one read answers both whether the item is there and \
+         its token ({reads} reads, {asks} searches)"
     );
 }
 
@@ -140,4 +137,62 @@ fn the_credential_helper_reads_the_token_once_and_asks_nothing_else() {
         "git's helper is a process of its own: one read, and no separate question whether the \
          item is there"
     );
+}
+
+/// Over HTTP to a stand-in forge on this machine's loopback: a token the forge refuses is
+/// forgotten, and the next request reads the item again, finding the one the window put there
+/// since. Needs a socket, so it first runs on CI.
+#[test]
+fn a_token_the_forge_refuses_is_forgotten_and_the_next_request_reads_the_item_again() {
+    purlis_core::unsteered!();
+    use purlis_core::forge::http::{ApiRoot, Http};
+    use purlis_core::forge::transport::Call;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let (home, account) = signed_in_by_an_earlier_run();
+    let replaced = ["replaced", "by", "the", "window"].join("-");
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let server = rt.block_on(MockServer::start());
+    let refused = format!("Bearer {TOKEN}");
+    let taken = format!("Bearer {replaced}");
+    rt.block_on(async {
+        Mock::given(method("GET"))
+            .and(path("/user"))
+            .and(header("authorization", refused.as_str()))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_string(r#"{"message":"Bad credentials"}"#),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/user"))
+            .and(header("authorization", taken.as_str()))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"login":"octocat"}"#))
+            .expect(1)
+            .mount(&server)
+            .await;
+    });
+    let scope = HostScope::for_a_test();
+    let tokens = Arc::new(signin::KeyringToken::new(
+        account.clone(),
+        Arc::new(Refresher::new(&scope, home.path())),
+    ));
+    let http = Http::new(Kind::GitHub, ApiRoot::at(&server.uri()), tokens).unwrap();
+    let forge = Forge::default_of(Kind::GitHub);
+    let user = Call::get("user", std::time::Duration::from_secs(10));
+
+    let first = http.send(&forge, &user).unwrap();
+    assert_eq!(first.status, Some(401));
+    // The window signed in again meanwhile, in its own process: the item holds a new token.
+    FileStore::at(stub(home.path()))
+        .set(&accounts::service(&account), "token", &replaced)
+        .unwrap();
+    let second = http.send(&forge, &user).unwrap();
+    assert_eq!(second.status, Some(200));
+    rt.block_on(server.verify());
 }

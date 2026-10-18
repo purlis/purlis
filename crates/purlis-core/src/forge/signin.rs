@@ -46,13 +46,20 @@ use super::{Failure, Forge, ForgeError};
 /// Where the person signs in, in the window's words.
 pub const SIGN_IN_AT: &str = "Settings › You › Accounts";
 
-/// One account's token, taken from its own keyring item (read once per process) each time a
-/// request is sent, and
-/// renewed first when a browser sign-in's token is about to expire ([`Refresher`], ADR 0077
-/// §3).
+/// One account's token, taken from its own keyring item each time a request is sent (the item
+/// is read once per process), and renewed first when a browser sign-in's token is about to
+/// expire ([`Refresher`], ADR 0077 §3). A token the forge refuses is forgotten, so the next
+/// request reads the item again.
 pub struct KeyringToken {
     account: ForgeAccount,
     refresher: Arc<Refresher>,
+}
+
+impl KeyringToken {
+    /// `account`'s token, renewed through `refresher`, which only the host can make.
+    pub fn new(account: ForgeAccount, refresher: Arc<Refresher>) -> KeyringToken {
+        KeyringToken { account, refresher }
+    }
 }
 
 impl TokenSource for KeyringToken {
@@ -61,6 +68,10 @@ impl TokenSource for KeyringToken {
             let said = unechoed(why.said());
             why.reworded(said)
         })
+    }
+
+    fn refused(&self) {
+        self.refresher.refused(&self.account);
     }
 }
 

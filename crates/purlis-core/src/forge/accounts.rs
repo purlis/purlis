@@ -66,7 +66,7 @@ const MOST_BYTES: u64 = 1 << 20;
 
 /// The keyring item's account field: the token. A browser sign-in keeps its pair under the same
 /// item (ADR 0077 §3, one write): see [`Pair`].
-pub(super) const ITEM_ACCOUNT: &str = "token";
+const ITEM_ACCOUNT: &str = "token";
 
 /// Where [`FILE`] is under the config home `config_root`.
 pub fn path(config_root: &Path) -> PathBuf {
@@ -127,9 +127,13 @@ fn service_of(host: &str, id: &str) -> String {
 pub fn keyring_at(config_root: &Path) -> Box<dyn Store> {
     let remembering = if crate::fence::FENCED {
         let stub = crate::machine::dir(config_root).join(STUB_FILE);
-        Remembering::of(&stub, || Box::new(FileStore::at(stub.clone())))
+        Remembering::of(&stub, true, || Box::new(FileStore::at(stub.clone())))
     } else {
-        Remembering::of(Path::new(""), || Box::new(OsStore))
+        // On macOS asking whether an item is there is a Keychain search, a question of its
+        // own: a read answers it and keeps the value. Elsewhere the store does not search.
+        Remembering::of(Path::new(""), cfg!(target_os = "macos"), || {
+            Box::new(OsStore)
+        })
     };
     Box::new(remembering)
 }
@@ -772,6 +776,27 @@ pub fn token(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<Secre
 /// log as [`token`] says. An item of a browser sign-in that is not the pair it wrote is an
 /// error, never sent anywhere as a token.
 pub(super) fn kept(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<Kept>, String> {
+    kept_as_remembered(keyring, account)
+}
+
+/// [`kept`], read afresh from the keyring past this process's memory (#2656): what a renewal
+/// and a sign-out read, so a pair another process renewed is the one renewed again or revoked,
+/// and never the spent one this process remembers.
+pub(super) fn kept_afresh(
+    keyring: &dyn Store,
+    account: &ForgeAccount,
+) -> Result<Option<Kept>, String> {
+    forget(keyring, account);
+    kept_as_remembered(keyring, account)
+}
+
+/// Forget what this process remembers of `account`'s item, so the next read asks the keyring:
+/// for a token the forge refused (#2656).
+pub(super) fn forget(keyring: &dyn Store, account: &ForgeAccount) {
+    keyring.forget(&service(account), ITEM_ACCOUNT);
+}
+
+fn kept_as_remembered(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<Kept>, String> {
     let read = keyring.get(&service(account), ITEM_ACCOUNT).map_err(|e| {
         format!(
             "purlis could not read the token for {} on {} from the keychain: {}",

@@ -8,47 +8,50 @@
 //! for their password: a read of the item's value, and a search for whether it is there. Each
 //! forge caller used to make its own (every listing searched, every request read), so a start
 //! with a few projects asked several times for one item. [`Remembering`] sits in front of the
-//! store [`super::keyring_at`] hands out and keeps, for the life of this process:
+//! store [`super::keyring_at`] hands out and keeps, for the life of this process, **the value
+//! of each item it read or wrote** (for a browser sign-in, the access token, the refresh token
+//! and the expiry), wiped when it is dropped. One call answers both questions:
 //!
-//! - **a value it read or wrote**, wiped when it is dropped, so the next read is answered here;
-//! - **that an item is there**, once a search found it or a value is held, so a listing asks
-//!   once.
+//! - **A read is answered from memory** once the value is held.
+//! - **Whether an item is there is answered by a read**, where the store would otherwise search
+//!   for it (macOS, and the fenced stub that stands in for it): the value it reads is kept, so
+//!   the listing and the request that follows it ask the Keychain once between them. Elsewhere
+//!   the store says it cannot tell, as before, and nothing is read for it.
 //!
 //! **Only this process holds it.** It is never written anywhere, never logged, and never handed
 //! to another process: a second process (the session host, git's credential helper) keeps its
 //! own and asks once itself. Whatever purlis writes or deletes through this store updates it
-//! first-hand. That an item is gone is never remembered: a search or read that finds nothing is
-//! asked again next time, and so is one that failed.
+//! first-hand. That an item is gone is never remembered: a read that finds nothing is asked
+//! again next time, and so is one that failed.
 //!
-//! **What it does not see** is a change made outside purlis while the process runs: an item
+//! **One call at a time.** The memory's lock is held across the store's own call, so a read
+//! racing a delete or a write never puts back a value that is gone or replaced, and two first
+//! reads at once make one call, not two questions.
+//!
+//! **What it does not see** is a change made outside this process while it runs: an item
 //! deleted in Keychain Access is still used until the process ends (the forge still checks the
-//! token), and another process's renewal is seen when the remembered token is due for renewal,
-//! since [`super::super::refresh::Refresher`] then forgets it and reads afresh before it renews.
+//! token). Callers that must see another process's write read afresh ([`Store::forget`], then
+//! a read): a renewal and a sign-out do, and a token the forge refuses is forgotten.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use zeroize::Zeroizing;
 
 use crate::secrets::VaultError;
 use crate::secrets::keyring::{Held, Presence, Secret, Store};
 
-/// What is known of one item.
-enum Known {
-    /// Its value, read or written by this process.
-    Value(Zeroizing<String>),
-    /// That it is there, from a search that read no value.
-    There,
-}
-
-type Items = BTreeMap<(String, String), Known>;
+/// Each item's value this process read or wrote, by `(service, account)`.
+type Items = BTreeMap<(String, String), Zeroizing<String>>;
 
 /// A store, and what this process learnt from it. Cheap to clone: every clone shares the memory.
 #[derive(Clone)]
 pub(super) struct Remembering {
     inner: Arc<dyn Store>,
     items: Arc<Mutex<Items>>,
+    /// Whether "is it there" is answered by a read rather than the store's own search.
+    reads_for_presence: bool,
 }
 
 impl std::fmt::Debug for Remembering {
@@ -61,79 +64,107 @@ impl std::fmt::Debug for Remembering {
 /// system's keyring, and in a fenced build one per stub.
 static PROCESS: OnceLock<Mutex<BTreeMap<PathBuf, Remembering>>> = OnceLock::new();
 
+fn key(service: &str, account: &str) -> (String, String) {
+    (service.to_owned(), account.to_owned())
+}
+
 impl Remembering {
     /// This process's memory of the store kept at `place`, made with `inner` the first time.
-    pub(super) fn of(place: &Path, inner: impl FnOnce() -> Box<dyn Store>) -> Remembering {
+    /// `reads_for_presence` where the store's own answer to "is it there" is a question of its
+    /// own the person may be asked.
+    pub(super) fn of(
+        place: &Path,
+        reads_for_presence: bool,
+        inner: impl FnOnce() -> Box<dyn Store>,
+    ) -> Remembering {
         let all = PROCESS.get_or_init(Mutex::default);
         let mut all = all.lock().unwrap_or_else(|e| e.into_inner());
         all.entry(place.to_path_buf())
-            .or_insert_with(|| Remembering {
-                inner: Arc::from(inner()),
-                items: Arc::default(),
-            })
+            .or_insert_with(|| Remembering::over(Arc::from(inner()), reads_for_presence))
             .clone()
     }
 
-    fn items(&self) -> std::sync::MutexGuard<'_, Items> {
+    /// A memory of its own over `inner`: what [`Remembering::of`] makes once per place.
+    pub(super) fn over(inner: Arc<dyn Store>, reads_for_presence: bool) -> Remembering {
+        Remembering {
+            inner,
+            items: Arc::default(),
+            reads_for_presence,
+        }
+    }
+
+    fn items(&self) -> MutexGuard<'_, Items> {
         self.items.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn key(service: &str, account: &str) -> (String, String) {
-        (service.to_owned(), account.to_owned())
-    }
-
-    fn keep(&self, service: &str, account: &str, value: &str) {
-        self.items().insert(
-            Self::key(service, account),
-            Known::Value(Zeroizing::new(value.to_owned())),
-        );
-    }
-
-    fn written(&self, service: &str, account: &str, value: &str, held: &Result<Held, VaultError>) {
-        if held.is_ok() {
-            self.keep(service, account, value);
-        } else {
-            self.forget(service, account);
+    /// The value, from memory or else read, with the lock already held.
+    fn read(
+        &self,
+        items: &mut Items,
+        service: &str,
+        account: &str,
+    ) -> Result<Option<Secret>, VaultError> {
+        if let Some(value) = items.get(&key(service, account)) {
+            return Ok(Some(Secret::new(String::clone(value))));
         }
+        let Some(secret) = self.inner.get(service, account)? else {
+            return Ok(None);
+        };
+        let value = secret.into_inner();
+        items.insert(key(service, account), Zeroizing::new(value.clone()));
+        Ok(Some(Secret::new(value)))
+    }
+
+    /// One write through `write`, remembered when it took and forgotten when it did not.
+    fn written(
+        &self,
+        service: &str,
+        account: &str,
+        value: &str,
+        write: impl FnOnce(&dyn Store) -> Result<Held, VaultError>,
+    ) -> Result<Held, VaultError> {
+        let mut items = self.items();
+        let held = write(self.inner.as_ref());
+        if held.is_ok() {
+            items.insert(key(service, account), Zeroizing::new(value.to_owned()));
+        } else {
+            items.remove(&key(service, account));
+        }
+        held
     }
 }
 
 impl Store for Remembering {
     fn get(&self, service: &str, account: &str) -> Result<Option<Secret>, VaultError> {
-        if let Some(Known::Value(value)) = self.items().get(&Self::key(service, account)) {
-            return Ok(Some(Secret::new(String::clone(value))));
-        }
-        let Some(secret) = self.inner.get(service, account)? else {
-            self.forget(service, account);
-            return Ok(None);
-        };
-        let value = secret.into_inner();
-        self.keep(service, account, &value);
-        Ok(Some(Secret::new(value)))
+        let mut items = self.items();
+        self.read(&mut items, service, account)
     }
 
     fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
-        let held = self.inner.set(service, account, value);
-        self.written(service, account, value, &held);
-        held
+        self.written(service, account, value, |store| {
+            store.set(service, account, value)
+        })
     }
 
     fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
-        self.forget(service, account);
+        let mut items = self.items();
+        items.remove(&key(service, account));
         self.inner.delete(service, account)
     }
 
     fn exists(&self, service: &str, account: &str) -> Presence {
-        if self.items().contains_key(&Self::key(service, account)) {
+        let mut items = self.items();
+        if items.contains_key(&key(service, account)) {
             return Presence::Present;
         }
-        let presence = self.inner.exists(service, account);
-        if presence == Presence::Present {
-            self.items()
-                .entry(Self::key(service, account))
-                .or_insert(Known::There);
+        if !self.reads_for_presence {
+            return self.inner.exists(service, account);
         }
-        presence
+        match self.read(&mut items, service, account) {
+            Ok(Some(_)) => Presence::Present,
+            Ok(None) => Presence::Absent,
+            Err(_) => Presence::Unknown,
+        }
     }
 
     fn holds(&self) -> bool {
@@ -141,24 +172,27 @@ impl Store for Remembering {
     }
 
     fn rehold(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
-        let held = self.inner.rehold(service, account, value);
-        self.written(service, account, value, &held);
-        held
+        self.written(service, account, value, |store| {
+            store.rehold(service, account, value)
+        })
     }
 
     fn make_fresh(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
-        let held = self.inner.make_fresh(service, account, value);
-        self.written(service, account, value, &held);
-        held
+        self.written(service, account, value, |store| {
+            store.make_fresh(service, account, value)
+        })
     }
 
     fn make_own(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
-        let held = self.inner.make_own(service, account, value);
-        self.written(service, account, value, &held);
-        held
+        self.written(service, account, value, |store| {
+            store.make_own(service, account, value)
+        })
     }
 
     fn forget(&self, service: &str, account: &str) {
-        self.items().remove(&Self::key(service, account));
+        self.items().remove(&key(service, account));
     }
 }
+
+#[cfg(test)]
+mod tests;
