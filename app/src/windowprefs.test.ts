@@ -6,11 +6,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ON_THIS_MACHINE, ONCE_ON_THIS_MACHINE } from "./dismissals";
-import { drawWhatIsInForce } from "./Extensions";
+import { drawThemeFor, drawWhatIsInForce, forgetExtensionThemes } from "./Extensions";
+import type { PlaneId } from "./bindings";
 import { DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
 import {
   aboutThisMachine,
   atCreation,
+  firstFollowsSystem,
+  firstFrameOnce,
   forgetTheirTheme,
   GLOBAL,
   sayAboutThisMachine,
@@ -66,7 +69,7 @@ afterEach(() => {
 
 describe("what the window was handed as it was created", () => {
   it("is nothing at all when it was handed nothing", () => {
-    expect(atCreation()).toEqual({ layout: NONE, theme: NO_THEME });
+    expect(atCreation()).toEqual({ layout: NONE, theme: NO_THEME, first: null });
   });
 
   it("costs the preference and never the window when it is not what the Rust side writes", () => {
@@ -141,7 +144,7 @@ describe("the operator's own theme", () => {
     expect(atCreation().theme.complaints).toEqual([]);
   });
 
-  it("is drawn again at once for a project that picks nothing, asking the core nothing", async () => {
+  it("is drawn again at once for a project no level of which chooses, asking the core nothing", async () => {
     handed({ theme: MINE });
     // As `main.tsx` draws it: once, so drawing it again is the same theme and repaints nothing.
     const theirs = theirThemeOnce();
@@ -150,13 +153,116 @@ describe("the operator's own theme", () => {
     const asked: string[] = [];
     mockIPC((cmd) => {
       asked.push(cmd);
-      return null;
+      return cmd === "theme_levels_adopt" ? [] : null;
+    });
+
+    await drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
+
+    expect(inForce()).toBe(theirs);
+    expect(asked).not.toContain("theme_in_force");
+    forgetExtensionThemes();
+  });
+
+  it("gives way to the levels with no project in front, where a machine default may choose (#2602)", async () => {
+    handed({ theme: MINE });
+    drawIn(DEFAULT_THEME);
+    const CHOSEN = { ...MINE, name: "Chosen" };
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      return cmd === "theme_in_force"
+        ? { theme: CHOSEN, complaints: [], follows_system: false, floors: null, options: [] }
+        : null;
     });
 
     await drawWhatIsInForce();
 
-    expect(inForce()).toBe(theirs);
-    expect(asked).not.toContain("theme_in_force");
+    expect(asked).toContain("theme_in_force");
+    expect(inForce().name).toBe("Chosen");
+    forgetExtensionThemes();
+  });
+});
+
+describe("the first frame, the levels resolved once at creation (#2602, #2582)", () => {
+  const frame = (name: string, light: boolean, more: boolean) => ({
+    light,
+    more,
+    theme: { ...MINE, name },
+    floors: null,
+  });
+  const created = (first: unknown) => {
+    (globalThis as Record<string, unknown>)[GLOBAL] = { layout: NONE, theme: NO_THEME, first };
+    forgetTheirTheme();
+  };
+  /** The system's appearance and contrast, as `matchMedia` answers them. */
+  const system = ({ light = false, more = false }) =>
+    vi.stubGlobal("matchMedia", (media: string) => ({
+      matches:
+        (light && media === "(prefers-color-scheme: light)") ||
+        (more && media === "(prefers-contrast: more)"),
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    forgetTheirTheme();
+    forgetExtensionThemes();
+  });
+
+  it("is the frame the core resolved, for the contrast the core read", () => {
+    created({ follows_system: false, contrast: "more", frames: [frame("Sharp", false, true)] });
+    // The core's native read wins over a page that has not caught up.
+    system({ more: false });
+    expect(firstFrameOnce()?.theme.name).toBe("Sharp");
+    expect(firstFollowsSystem()).toBe(false);
+  });
+
+  it("is the page's own prefers-contrast where the core read none", () => {
+    const frames = [frame("Plain", false, false), frame("Sharp", false, true)];
+    created({ follows_system: false, contrast: null, frames });
+    system({ more: true });
+    expect(firstFrameOnce()?.theme.name).toBe("Sharp");
+    created({ follows_system: false, contrast: null, frames });
+    system({ more: false });
+    expect(firstFrameOnce()?.theme.name).toBe("Plain");
+  });
+
+  it("is the frame for the system's appearance while the theme follows it", () => {
+    const frames = [frame("Night", false, false), frame("Day", true, false)];
+    created({ follows_system: true, contrast: "standard", frames });
+    system({ light: true });
+    expect(firstFrameOnce()?.theme.name).toBe("Day");
+    expect(firstFollowsSystem()).toBe(true);
+    created({ follows_system: true, contrast: "standard", frames });
+    system({ light: false });
+    expect(firstFrameOnce()?.theme.name).toBe("Night");
+  });
+
+  it("is nothing when nothing was handed, or what was handed is not a frame", () => {
+    created(undefined);
+    expect(firstFrameOnce()).toBeUndefined();
+    created({ follows_system: false, contrast: "standard", frames: [{ theme: "Mine" }] });
+    expect(firstFrameOnce()).toBeUndefined();
+  });
+
+  it("is not drawn again when the window asks what is in force and is answered the same", async () => {
+    created({ follows_system: false, contrast: "standard", frames: [frame("Team", false, false)] });
+    const drawn = firstFrameOnce()?.theme;
+    if (drawn === undefined) throw new Error("no first frame");
+    drawIn(drawn);
+    mockIPC((cmd) =>
+      cmd === "theme_in_force"
+        ? // The core answers a fresh copy of the same theme.
+          { theme: { ...drawn }, complaints: [], follows_system: false, floors: null, options: [] }
+        : cmd === "theme_levels_adopt"
+          ? []
+          : null,
+    );
+
+    await drawThemeFor(new Set(), "team", { plane: "p-1" as PlaneId });
+
+    expect(inForce()).toBe(drawn);
   });
 });
 
