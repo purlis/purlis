@@ -107,7 +107,8 @@ it. That theme is the one the levels choose for the project and the workspace th
 on, resolved once as the window is created (#2602): the creation script, the native window and
 the page's first frame take that one answer, and the window's later ask of what is in force
 answers it again, so nothing is repainted. The system's contrast is read natively at creation
-where purlis can (#2582): the desktop portal's `contrast` on Linux. Where nothing is read, the
+where purlis can (#2582): Increase contrast on macOS, the desktop portal's `contrast` on Linux.
+Where nothing is read, the
 page picks with `prefers-contrast` among the frames it is handed for both. The page
 hands both over again whenever it draws another theme
 (`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the

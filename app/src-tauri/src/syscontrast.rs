@@ -6,11 +6,12 @@
 //! in that appearance's `window.background` and its first frame draws it, with nothing to put
 //! right once the page reads `prefers-contrast`.
 //!
+//! - **macOS**: Increase contrast (`NSWorkspace.accessibilityDisplayShouldIncreaseContrast`).
 //! - **Linux**: the desktop portal's `org.freedesktop.appearance` `contrast`, asked within
 //!   [`BUDGET`]; a session with no portal that answers in time answers nothing.
-//! - **macOS and Windows**: nothing is read here yet, and the page's own `prefers-contrast` picks
-//!   among the frames it is handed for both contrasts (`windowprefs.rs`), so the first frame is
-//!   still the high-contrast appearance when the system asks for it.
+//! - **Windows**: nothing is read here yet, and the page's own `prefers-contrast` picks among
+//!   the frames it is handed for both contrasts (`windowprefs.rs`), so the first frame is still
+//!   the high-contrast appearance when the system asks for it.
 //!
 //! Where nothing is read the answer is `None`: the window is created for the standard contrast
 //! and the page decides its first frame from `prefers-contrast`, as it did before.
@@ -19,13 +20,19 @@ use purlis_core::theme::Contrast;
 
 /// What the platform says it asks for, or `None` where it says nothing purlis can read.
 pub(crate) fn asked() -> Option<Contrast> {
-    read().map(|more| {
-        if more {
-            Contrast::More
-        } else {
-            Contrast::Standard
-        }
-    })
+    decided(read())
+}
+
+/// The contrast a platform's answer asks for: more when it says so, the standard one when it
+/// says not, and `None` when it said nothing.
+fn decided(more: Option<bool>) -> Option<Contrast> {
+    more.map(crate::extensions::contrast_of)
+}
+
+#[cfg(target_os = "macos")]
+fn read() -> Option<bool> {
+    use objc2_app_kit::NSWorkspace;
+    Some(NSWorkspace::sharedWorkspace().accessibilityDisplayShouldIncreaseContrast())
 }
 
 /// How long the portal is given to answer. A running portal answers in milliseconds; the window
@@ -58,7 +65,32 @@ fn portal_contrast() -> Option<bool> {
     u32::try_from(value).ok().map(|contrast| contrast == 1)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn read() -> Option<bool> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_platform_s_answer_decides_the_contrast_a_window_is_created_for() {
+        assert_eq!(decided(Some(true)), Some(Contrast::More));
+        assert_eq!(decided(Some(false)), Some(Contrast::Standard));
+        // Nothing read: the page's `prefers-contrast` picks among the frames it is handed.
+        assert_eq!(decided(None), None);
+    }
+
+    #[test]
+    fn this_platform_says_what_it_reads() {
+        // macOS and Linux read; elsewhere nothing is, and the page decides.
+        let read = asked();
+        if cfg!(target_os = "macos") {
+            assert!(read.is_some());
+        }
+        if !cfg!(any(target_os = "macos", target_os = "linux")) {
+            assert_eq!(read, None);
+        }
+    }
 }
