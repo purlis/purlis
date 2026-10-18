@@ -490,8 +490,10 @@ can be read. Its interface:
   each finding with its ratio.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
-gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds five
-floors for any theme from any source:
+gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
+`draw`, which holds five floors for any theme from any source. `draw` takes an appearance with
+its theme options' values already layered on it, so the floors hold in every combination of
+appearance and option values, and no option value can bring a consent surface below its floor:
 
 - **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
   0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and `control.hover`

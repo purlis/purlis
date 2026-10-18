@@ -1236,14 +1236,27 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
             })
         })
         .collect();
-    if held.is_empty() {
-        out.push_str("floors held: none\n");
-    } else {
-        out.push_str(&format!("floors held ({}):\n", held.len()));
-        // The floors' words and the tokens are the engine's own; the combination is shown.
-        for line in held {
-            out.push_str(&format!("  {line}\n"));
+    // Every combination is checked against the consent floors, as the window draws it: with
+    // more than one, the line says how many were, and in how many the window holds one.
+    let combinations = checked.len();
+    let combinations = format!(
+        "{combinations} {}",
+        purlis_core::counts::plural(combinations, "combination", "combinations")
+    );
+    match (held.is_empty(), named) {
+        (true, true) => {
+            out.push_str(&format!("consent floors: none held in {combinations}\n"));
         }
+        (true, false) => out.push_str("consent floors: none held\n"),
+        (false, true) => out.push_str(&format!(
+            "consent floors: held in {} of {combinations}:\n",
+            held.len()
+        )),
+        (false, false) => out.push_str("consent floors: held:\n"),
+    }
+    // The floors' words and the tokens are the engine's own; the combination is shown.
+    for line in held {
+        out.push_str(&format!("  {line}\n"));
     }
     out.push_str(&format!("hard floors: {FLOORS_NOT_CHECKED}\n"));
     out
