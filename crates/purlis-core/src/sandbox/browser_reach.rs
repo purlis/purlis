@@ -47,7 +47,7 @@ use super::egress::{
     LIMITS, Limits, PATIENCE, PLAIN_PORTS, Request, TUNNEL_PORTS, answer, read_head, same_host,
     splice,
 };
-use super::hosts::{embedded_v4, ends_in_a_number, refused_address};
+use super::hosts::{carried_v4, ends_in_a_number, refused_address};
 use super::localport::is_a_name_of_this_mac;
 use super::reach::{self, Decision, Reach};
 
@@ -871,9 +871,11 @@ fn this_machine(ip: IpAddr, own: &[IpAddr]) -> bool {
     }
     match ip {
         IpAddr::V4(ip) => ip.is_loopback() || ip.octets()[0] == 0,
-        IpAddr::V6(ip) => match embedded_v4(ip) {
-            Some(carried) => this_machine(IpAddr::V4(carried), own),
-            None => ip.is_loopback() || ip.is_unspecified(),
+        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
+            [] => ip.is_loopback() || ip.is_unspecified(),
+            carried => carried
+                .iter()
+                .any(|one| this_machine(IpAddr::V4(*one), own)),
         },
     }
 }
@@ -892,7 +894,7 @@ pub fn private_address(ip: IpAddr, own: &[IpAddr]) -> bool {
             let [a, b, ..] = ip.octets();
             ip.is_private() || (a == 100 && (64..128).contains(&b))
         }
-        IpAddr::V6(ip) => embedded_v4(ip).is_none() && ip.segments()[0] & 0xfe00 == 0xfc00,
+        IpAddr::V6(ip) => carried_v4(ip).is_empty() && ip.segments()[0] & 0xfe00 == 0xfc00,
     }
 }
 
@@ -911,9 +913,11 @@ pub fn public_address(ip: IpAddr, own: &[IpAddr]) -> bool {
     }
     match ip {
         IpAddr::V4(ip) => public_v4(ip),
-        IpAddr::V6(ip) => match embedded_v4(ip) {
-            Some(carried) => public_address(IpAddr::V4(carried), own),
-            None => public_v6(ip),
+        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
+            [] => public_v6(ip),
+            carried => carried
+                .iter()
+                .all(|one| public_address(IpAddr::V4(*one), own)),
         },
     }
 }
