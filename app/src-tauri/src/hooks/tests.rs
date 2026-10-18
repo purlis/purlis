@@ -2812,3 +2812,48 @@ fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
     assert_eq!(service.target.as_deref(), Some("5432"));
     assert!(!service.levels.is_empty(), "{:?}", service.levels);
 }
+
+/// #2657: a block's Notice for the system's name lookup offers no Allow, only the chat
+/// without the sandbox: for each of its sockets, and on macOS saying why in the grant's own
+/// words, and for the Mac's own lookup service.
+#[test]
+fn a_notice_for_the_systems_name_lookup_offers_no_allow() {
+    use purlis_core::sandbox::services::{
+        NAME_LOOKUP_REFUSED, NAME_LOOKUP_SERVICES, NAME_LOOKUP_SOCKETS,
+    };
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let told = |operation, kind, target: &str| {
+        blocked(
+            &plane,
+            &purlis_core::hookwire::SandboxBlocked {
+                chat: 3,
+                sandbox_blocked: Block {
+                    operation,
+                    kind,
+                    ours: false,
+                },
+                harness: None,
+                target: Some(target.to_owned()),
+                read_back: false,
+                suggested: None,
+            }
+            .into(),
+        )
+    };
+    for lookup in NAME_LOOKUP_SOCKETS {
+        let said = told(Operation::Connect, Kind::LocalSocket, lookup);
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
+        if cfg!(target_os = "macos") {
+            assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
+        }
+    }
+    for lookup in NAME_LOOKUP_SERVICES {
+        let said = told(Operation::Lookup, Kind::SystemService, lookup);
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
+        assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
+    }
+}

@@ -710,6 +710,75 @@ fn allowing_a_tasks_dispatch_for_this_chat_allows_nothing_for_its_session_or_sib
     );
 }
 
+/// #2657: the centralized Ask never allows the system's name lookup for the tasks it lists, at
+/// any level: every task is judged as a Notice judges it, so nothing is kept and the answer
+/// says why in one line.
+#[test]
+fn the_ask_never_allows_the_systems_name_lookup_for_its_tasks_at_any_level() {
+    use purlis_core::sandbox::services::{
+        NAME_LOOKUP_REFUSED, NAME_LOOKUP_SERVICES, NAME_LOOKUP_SOCKETS,
+    };
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let machine = purlis_core::sandbox::Machine::this();
+    let lookups = NAME_LOOKUP_SOCKETS
+        .iter()
+        .map(|path| (GrantWhat::Socket, "local-socket", *path))
+        .chain(
+            NAME_LOOKUP_SERVICES
+                .iter()
+                .map(|name| (GrantWhat::Service, "system-service", *name)),
+        );
+    for (what, kind, target) in lookups {
+        let seen: Vec<SeenBlock> = [4, 5]
+            .map(|task| SeenBlock {
+                task,
+                operation: "connect".to_owned(),
+                kind: kind.to_owned(),
+                what,
+                target: target.to_owned(),
+            })
+            .to_vec();
+        for level in [
+            GrantLevel::Once,
+            GrantLevel::Chat,
+            GrantLevel::You,
+            GrantLevel::Machine,
+            GrantLevel::Project,
+        ] {
+            let app = App::default();
+            for one in &seen {
+                app.blocks.heard(one.task, held(one));
+            }
+            let judge = |task: u32, block: &HeldBlock| {
+                crate::sandboxing::judged(
+                    root,
+                    &machine,
+                    None,
+                    task,
+                    (block.what, &block.target, level),
+                )
+            };
+            let refused = app
+                .answer(1, &seen, level, &judge, &[])
+                .expect_err("refused");
+            if level == GrantLevel::Project {
+                assert!(
+                    refused.starts_with("Nothing was allowed: for chat 4, purlis will not"),
+                    "{target} {level:?}: {refused}"
+                );
+            } else {
+                assert_eq!(
+                    refused,
+                    format!("Nothing was allowed: for chat 4, {NAME_LOOKUP_REFUSED}"),
+                    "{target} {level:?}"
+                );
+            }
+            assert!(app.kept().is_empty());
+        }
+    }
+}
+
 // ---- real chats: these need a terminal ------------------------------------------------------
 
 /// A session (steward 1), and `names` started as its tasks, on `chats`, each in its own folder

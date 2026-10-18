@@ -2222,7 +2222,8 @@ pub struct HeldGrant {
 /// folder, socket and service you allowed for this project, then each socket and service you
 /// allowed for every project, that [`policy::Locks::holds_kept`] says reaches no chat, then
 /// each host an Allow kept for you or for the project at a scope left out ([`host_held`]),
-/// with why. What Doctor counts; Settings' Allowed list marks each row by the same judgement. The
+/// with why, and each socket or service of the system's name lookup kept here
+/// ([`services::name_lookup_refused`]). What Doctor counts; Settings' Allowed list marks each row by the same judgement. The
 /// certificate check's service is never listed: one an older build kept is no grant (R1).
 pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
     use grant::{Level, What};
@@ -2247,8 +2248,10 @@ pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
     let mut out: Vec<HeldGrant> = yours
         .chain(everywhere)
         .filter_map(|(what, level)| {
-            locks
-                .holds_kept(&what, level)
+            // The system's name lookup reaches no chat whatever was kept for it (#2657).
+            services::name_lookup_refused(&what)
+                .map(str::to_owned)
+                .or_else(|| locks.holds_kept(&what, level))
                 .map(|why| HeldGrant { what, level, why })
         })
         .collect();
