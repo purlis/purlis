@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792309848433,
+  "lastUpdate": 1792311678724,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16800,6 +16800,48 @@ window.BENCHMARK_DATA = {
             "value": 100.88792799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.120, 100.599, 100.888, 100.908, 101.867 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "85d34584b8c07a13292fb98830fc461fb6fa2aa2",
+          "message": "macOS floor: prove the job-creation rule where (allow default) no longer counts it (#2607)\n\nOn macOS 26.6 `(allow default)` no longer covers `job-creation`: launchd refuses a submit or\nbootstrap from any sandboxed process unless the profile says `(allow job-creation)`, so the\nfloor less its rule refused a submit too and #2514 skipped the control there (#2533).\n\nThe live floor test now allows `job-creation` right after the floor's `(allow default)`, as an\nolder macOS counts it, and asserts the floor still refuses the submit; and allows it in the\nrule's place and asserts the submit goes through. Both run on every macOS, so the skip is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward",
+          "timestamp": "2026-10-18T12:19:56+04:00",
+          "tree_id": "39507bf2ef0158a77b57a14c633ee11711d3aaf4",
+          "url": "https://github.com/purlis/purlis/commit/85d34584b8c07a13292fb98830fc461fb6fa2aa2"
+        },
+        "date": 1792311677558,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5076805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.492, 0.505, 0.508, 0.521, 0.530 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.038606,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.487, 16.825, 17.039, 17.258, 17.270 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.03121050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.541, 102.746, 104.031, 104.147, 104.814 ms"
           }
         ]
       }
