@@ -53,3 +53,54 @@ fn a_host_off_this_machine_is_answered_as_it_says() {
         );
     }
 }
+
+/// The locks of a policy file saying `sandbox` (#1343).
+fn locked(sandbox: &str) -> crate::sandbox::policy::Locks {
+    crate::sandbox::policy::Locks::parse(
+        &format!(r#"{{"sandbox": {sandbox}}}"#),
+        std::path::Path::new("/etc/purlis/policy.json"),
+    )
+}
+
+/// Under the runner's policy `sandbox`, a service left out of a relayed plan is asked about
+/// nowhere, and no Allow of it is taken (#2510).
+fn never_asked_under(sandbox: &str) {
+    let project = tempfile::tempdir().expect("a project");
+    crate::sandbox::policy::set_for_this_test(locked(sandbox));
+    let asked = super::askable_here(project.path(), vec![5432]);
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert!(asked.is_empty(), "nothing is asked about");
+    assert!(
+        answered_about(Planned::Elsewhere, &asked, "127.0.0.1:5432").is_err(),
+        "no Allow is taken"
+    );
+}
+
+#[test]
+fn a_service_left_out_is_never_asked_about_where_the_runners_policy_forbids_services() {
+    never_asked_under(r#"{"socket-grants": false}"#);
+}
+
+#[test]
+fn a_service_left_out_is_never_asked_about_where_the_runners_policy_turns_live_asks_off() {
+    never_asked_under(r#"{"live-asks": false}"#);
+}
+
+#[test]
+fn a_service_left_out_is_never_asked_about_where_the_runners_policy_keeps_no_one_chat_scope() {
+    never_asked_under(r#"{"allow-scopes": ["you", "machine"]}"#);
+}
+
+#[test]
+fn a_service_left_out_is_asked_about_where_the_runners_policy_keeps_a_one_chat_scope() {
+    let project = tempfile::tempdir().expect("a project");
+    crate::sandbox::policy::set_for_this_test(locked(r#"{"allow-scopes": ["chat"]}"#));
+    let kept = super::askable_here(project.path(), vec![5432]);
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert_eq!(kept, [5432]);
+    assert_eq!(
+        super::askable_here(project.path(), vec![5432]),
+        [5432],
+        "no policy"
+    );
+}

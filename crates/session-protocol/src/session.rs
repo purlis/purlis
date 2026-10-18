@@ -168,6 +168,8 @@ use crate::view::{Limits, Views};
 /// 1.23 added what a host leaves out of a plan made on another machine (#2510): `confined` may
 /// name the services of the host's machine the plan gave the chat for it alone, which the host
 /// started it without (`left_out`), and the name of that machine (`host_name`).
+///
+/// 1.24 is unused: the change it was kept for needed no new word on the wire.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 23,

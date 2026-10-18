@@ -75,7 +75,10 @@ pub fn start(
     // machine does not give (#2510).
     let (plan, left_out) = match planned {
         Planned::Here => (planned_as, Vec::new()),
-        Planned::Elsewhere => planned_as.as_the_runner_starts_it(&given_here(project_path)),
+        Planned::Elsewhere => {
+            let (plan, left_out) = planned_as.as_the_runner_starts_it(&given_here(project_path));
+            (plan, askable_here(project_path, left_out))
+        }
     };
     let root = project_path.to_path_buf();
     let board = confine.asks.then(|| {
@@ -198,6 +201,19 @@ fn given_here(root: &Path) -> Vec<u16> {
         Vec::new()
     };
     super::Widened::default().and_ports(&yours, &locks).ports
+}
+
+/// **The services left out of a relayed plan that may be asked about here** (#2510): `left_out`,
+/// unless this machine's own administrator's policy (`Locks::of(project_path)`) forbids a chat
+/// a service on it, turns the live ask off, or keeps an Allow at neither one-chat scope. Then
+/// none is asked about, none is said left out, and the chat does not reach it.
+fn askable_here(project_path: &Path, left_out: Vec<u16>) -> Vec<u16> {
+    use super::grant::Level;
+    let locks = super::policy::Locks::of(project_path);
+    let forbidden = locks.port_grants_refused().is_some()
+        || locks.forbids_live_asks()
+        || (!locks.keeps_scope(Level::Once) && !locks.keeps_scope(Level::Chat));
+    if forbidden { Vec::new() } else { left_out }
 }
 
 /// What the window's answer to an ask names ([`answered_about`]).

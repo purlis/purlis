@@ -36,7 +36,10 @@ D-2510-2, D-2510-4, D-2510-5).
    long as its confinement runs, and is never kept on the runner; kept blocked, the held
    connection is refused at once, and so is every later one until an Allow; an Allow removed
    reaches it no more. A port withdrawn from the chat is asked about no more. A proxy that asks
-   nobody refuses such a connection at once, as before.
+   nobody refuses such a connection at once, as before. Where the runner's own administrator's
+   policy forbids a chat a service on the runner, turns the live ask off, or keeps an Allow at
+   neither one-chat scope, the runner asks about none, says none left out, and the chat does
+   not reach it.
 4. **The ask is held on the runner's own board, and is no grant there.** The board keeps the
    ports allowed this way apart from the hosts allowed live, so they are never told back to
    the window as a grant to carry into the chat's next start. *Rejected:* listing them as hosts
