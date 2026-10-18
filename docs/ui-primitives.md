@@ -508,6 +508,10 @@ permission prompt, a sandbox block, a browser's sites and an away refusal's Allo
 words and the keyboard are the ask's. A press on its way
 (`aria-busy`) keeps the button reachable and shows the pointer as working.
 
+**An answer that trusts text from outside is plain too** (#2591): the repository-instructions
+tab's Add to memory saves a repository's own words into memory, so it is a `.ui-button` beside
+Not now, with the same weight. It grants nothing, so it is not `.ui-button-grants`.
+
 What every class holds to:
 
 - **One height.** A button, a field, a select and a segmented control are `--size-control`
