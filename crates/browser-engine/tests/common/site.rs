@@ -61,7 +61,11 @@ fn say_failures_on_ci() {
                 .replace('%', "%25")
                 .replace('\r', "%0D")
                 .replace('\n', "%0A");
-            println!("::error title={test}::{said}");
+            // Written to the process's own output, past the test harness's capture, so a run
+            // under `cargo test` is read for it as a run under nextest is.
+            let mut out = std::io::stdout().lock();
+            let _ = writeln!(out, "::error title={test}::{said}");
+            let _ = out.flush();
             before(info);
         }));
     });

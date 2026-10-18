@@ -9,11 +9,13 @@
 //! [`ResolvedTheme::native`] answers both from a resolved theme, and [`Native::parse`] reads the
 //! same two values back from the page, which hands them over as it draws a theme: one grammar,
 //! the engine's, whichever side gives them. [`first_frame`] is what the window draws as it is
-//! created, so the window can be made in that colour and that appearance, with no flash of
-//! another.
+//! created, the levels resolved once (#2602), so the window can be made in that colour and that
+//! appearance, with no flash of another and no repaint when the window asks what is in force.
+
+use std::sync::Arc;
 
 use super::vocabulary::is_colour;
-use super::{Appearance, Contrast, Drawn, ResolvedTheme, Theme, default_theme, draw};
+use super::{Appearance, Drawn, LevelInputs, ResolvedTheme, default_theme, draw, resolve_levels};
 
 /// **What the operating system draws of the window**: the appearance its own parts take, and
 /// the colour the window is before the page paints, opaque.
@@ -60,13 +62,28 @@ impl Native {
     }
 }
 
-/// **What the window draws as it is created**: the person's own theme, when one is in force, in
-/// its first appearance for `contrast`, else Purlis's; the consent floors held. The page draws
-/// this before its first frame and the window is created in its [`Native`].
-pub fn first_frame(theirs: Option<&Theme>, contrast: Contrast) -> Drawn {
-    theirs.map_or_else(
+/// **What the window draws as it is created** (#2602): the theme the levels choose
+/// ([`resolve_levels`], resolved once, for the project and workspace the window is created on),
+/// for the system's appearance and `contrast` in `inputs`, the consent floors held. The page draws
+/// this in its first frame and the window is created in its [`Native`], so neither is drawn again
+/// once the window asks what is in force.
+///
+/// **No extension's theme is drawn here**: the themes extensions contribute come from a survey,
+/// which reads and fingerprints every extension's files, and the first frame does not wait for
+/// one. Where the levels' answer needs it, the first frame is the person's own theme in its
+/// first appearance for `contrast`, else Purlis, and the window draws the answer once it has it.
+pub fn first_frame(inputs: &LevelInputs<'_>) -> Drawn {
+    let mut surveyed = false;
+    let drawn = resolve_levels(inputs, || {
+        surveyed = true;
+        Arc::from(Vec::new())
+    });
+    if !surveyed {
+        return drawn;
+    }
+    inputs.theirs.map_or_else(
         || draw(default_theme()),
-        |theme| draw(theme.first_for(contrast)),
+        |theme| draw(theme.first_for(inputs.contrast)),
     )
 }
 

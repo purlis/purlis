@@ -3,7 +3,13 @@
 
 import { useSyncExternalStore } from "react";
 import type { AlertRow } from "./bindings";
-import { AT_CREATION, type Complaint, type Theme, systemAsksMoreContrast } from "./theme/theme";
+import {
+  AT_CREATION,
+  type Complaint,
+  type Theme,
+  systemAsksMoreContrast,
+  systemIsLight,
+} from "./theme/theme";
 
 /**
  * **What the window was handed as it was created**: the operator's layout file, and their theme
@@ -56,8 +62,24 @@ export type TheirReading = {
 /** One appearance of the person's theme, as the engine drew it, and its floors' Notice. */
 export type TheirDrawn = { theme: Theme; floors: string | null };
 
-/** Both readings. */
-export type AtCreation = { layout: Reading; theme: TheirReading };
+/** One frame of {@link FirstFrame}: for a light system (when the theme follows it) and for more
+ *  contrast, or not. */
+export type Frame = { light: boolean; more: boolean; theme: Theme; floors: string | null };
+
+/**
+ * **What the first frame draws** (#2602): the theme the levels choose for the project and the
+ * workspace the window was created on, resolved once by the core, which created the native
+ * window in the same answer. One frame for each system appearance when it follows the system,
+ * and for each contrast where the core read none (`contrast` `null`).
+ */
+export type FirstFrame = {
+  follows_system: boolean;
+  contrast: "standard" | "more" | null;
+  frames: Frame[];
+};
+
+/** Both readings, and the first frame. */
+export type AtCreation = { layout: Reading; theme: TheirReading; first: FirstFrame | null };
 
 const NOTHING: Reading = { path: "", found: false, document: null, trouble: null };
 const NO_THEME: TheirReading = {
@@ -81,7 +103,29 @@ export function atCreation(): AtCreation {
   const given = (globalThis as Record<string, unknown>)[GLOBAL];
   const held =
     given !== null && typeof given === "object" ? (given as Record<string, unknown>) : {};
-  return { layout: reading(held.layout), theme: theirReading(held.theme) };
+  return {
+    layout: reading(held.layout),
+    theme: theirReading(held.theme),
+    first: firstFrame(held.first),
+  };
+}
+
+function firstFrame(raw: unknown): FirstFrame | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const from = raw as Record<string, unknown>;
+  const frames: Frame[] = [];
+  for (const one of Array.isArray(from.frames) ? (from.frames as unknown[]) : []) {
+    const drawn = theirDrawn(one);
+    if (drawn === null) continue;
+    const frame = one as Record<string, unknown>;
+    frames.push({ ...drawn, light: frame.light === true, more: frame.more === true });
+  }
+  if (frames.length === 0) return null;
+  return {
+    follows_system: from.follows_system === true,
+    contrast: from.contrast === "more" || from.contrast === "standard" ? from.contrast : null,
+    frames,
+  };
 }
 
 /** `raw` as a theme the engine resolved, or `null` when it is not one. */
@@ -207,6 +251,33 @@ export function theirThemeOnce(): Theme | undefined {
   return systemAsksMoreContrast() && theirs.more !== undefined ? theirs.more : theirs.theme;
 }
 
+/** The frame drawn first, read once: so drawing it again is the same object. */
+let first: Frame | undefined;
+
+/**
+ * **The frame the window's first frame draws** (#2602): of what the core handed, the one for the
+ * system's appearance (while the theme follows it) and its contrast: the contrast the core read
+ * where it read one, else `prefers-contrast`. `undefined` when nothing was handed.
+ */
+export function firstFrameOnce(): Frame | undefined {
+  if (first !== undefined) return first;
+  const handed = atCreation().first;
+  if (handed === null) return undefined;
+  const light = handed.follows_system && systemIsLight();
+  const more = handed.contrast === null ? systemAsksMoreContrast() : handed.contrast === "more";
+  const fits = (frame: Frame) => frame.light === light;
+  first =
+    handed.frames.find((frame) => fits(frame) && frame.more === more) ??
+    handed.frames.find(fits) ??
+    handed.frames[0];
+  return first;
+}
+
+/** Whether the first frame follows the system's appearance, as the core resolved it. */
+export function firstFollowsSystem(): boolean {
+  return atCreation().first?.follows_system === true;
+}
+
 /** The Notice naming the consent floors the person's theme breaks as it is drawn now: for more
  *  contrast, its appearance tagged high contrast's, when it has one. */
 export function theirFloors(reading: TheirReading = atCreation().theme): string | null {
@@ -216,6 +287,7 @@ export function theirFloors(reading: TheirReading = atCreation().theme): string 
 /** For tests: read the handed theme again. */
 export function forgetTheirTheme() {
   theirs = undefined;
+  first = undefined;
 }
 
 /**
