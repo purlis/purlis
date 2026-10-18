@@ -93,7 +93,7 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
         .declared(&image)
         .expect("the image declares its user and home");
     let name = format!("test-{}", ulid::Ulid::generate().to_string().to_lowercase());
-    let runner = Runner::new(&name, image, user, &home).unwrap();
+    let runner = Runner::new(&name, image.clone(), user, &home).unwrap();
     let mut removes = Removes(docker.clone(), None);
     let made = docker
         .make(&runner)
@@ -114,6 +114,20 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
         key: stranger.key.public(),
     };
     assert!(docker.pair(&made, &stranger_pinned).is_err());
+
+    // Another runner of the same image mints a device id of its own at its pairing (#2539).
+    let second = Runner::new(&format!("{name}-2"), image, user, &home).unwrap();
+    let mut removes_second = Removes(docker.clone(), None);
+    let second = docker
+        .make(&second)
+        .expect("a second runner of the image is made");
+    removes_second.1 = Some(second.clone());
+    let second_pinned = docker
+        .pair(&second, &pinned)
+        .expect("the second runner is paired");
+    assert_ne!(second_pinned.device, runner_pinned.device);
+    assert_ne!(second_pinned.key, runner_pinned.key);
+    drop(removes_second);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
