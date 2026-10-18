@@ -1,19 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host A keeps its link to host B for each window link it relays (#2215, ADR 0078 §2): the
-//! link is kept through `hostlink::keep_linked`, so a link that is cut comes back on its own and
-//! one renewed ahead of its limit is replaced by the next. Over each new link host A holds the
-//! window's projects again, subscribes again from the window's cursor and attaches the window's
-//! views again, each with a snapshot, under the numbers the window already knows them by, and
-//! hands no event twice. A project is held where the window holds it now, and a hold host B
-//! refuses is not carried (#2535). A command in flight as its link is renewed is answered on it. The
-//! window is told once that the link is down and once that it is back, and a renewal is neither
-//! (#2496). While no link is up, every command is refused in words and none is sent on later; a
-//! host at the far end whose key is not the one pinned is never linked; and over each new link
-//! the window takes back the confinements of the chats it started on host B, and only its own
-//! (#2511). Host B's programs
-//! are stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs
+//! Host A keeps its link to host B for each window link it relays (#2215, ADR 0078 §2): the link is
+//! kept through `hostlink::keep_linked`, so a link that is cut comes back on its own and one
+//! renewed ahead of its limit is replaced by the next. Over each new link host A holds the window's
+//! projects again, subscribes again from the window's cursor and attaches the window's views again,
+//! each with a snapshot, under the numbers the window already knows them by, and hands no event
+//! twice. A project is held where the window holds it now, and a hold host B refuses is not carried
+//! (#2535). A command in flight as its link is renewed is answered on it. The window is told once
+//! that the link is down and once that it is back, and a renewal is neither (#2496). While no link
+//! is up, every command is refused in words and none is sent on later; a host at the far end whose
+//! key is not the one pinned is never linked; and over each new link the window takes back the
+//! confinements of the chats it started on host B, and only its own (#2511). Host B's programs are
+//! stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs
 //! a terminal.
 
 #![cfg(unix)]
@@ -1197,7 +1196,7 @@ async fn a_hold_host_b_refuses_through_a_carry_over_is_no_longer_carried_for_the
     assert_eq!(b.held_on(1).get(PROJECT), None);
 
     // Host B would take the hold now, and the next link is not sent it: the relay no longer
-    // keeps the project for the window, which holds it again itself, and is answered.
+    // keeps the project for the window. A hold the window sends again is answered.
     b.refusing.lock().unwrap().clear();
     timeout(PATIENCE, async {
         while b.links.lock().unwrap().len() < 3 || b.subscribed_on(2).is_none() {

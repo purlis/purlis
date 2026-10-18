@@ -11,6 +11,8 @@ was decided in #2535 and is marked *decided in implementation, to be confirmed*.
 2. **A hold is carried once the runner takes it.** A hold the runner refuses in a pass of the
    carry-over is sent again in the next. One the last pass could not carry is no longer kept for
    the window: no later link holds it in the window's name, the desktop's host says so in its
-   log, and the runner answers the window's next command for that project as one it does not
-   hold. The window holds it again itself. *Decided in implementation, to be confirmed*
-   (D-2535-2).
+   log, and the runner refuses the window's next command for that project as one it does not
+   hold. The window is not told of it yet, and goes on counting the project as held; telling it
+   and holding the project again follow in #2645. A let-go the runner refuses keeps the project
+   where it was carried, and so it is not held at the new path either. *Decided in
+   implementation, to be confirmed* (D-2535-2).
