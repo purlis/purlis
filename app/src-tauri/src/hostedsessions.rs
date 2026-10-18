@@ -448,7 +448,7 @@ struct Shared {
 
 /// What a link hears of the runner its host relays it to (#2496).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Reconnect {
+pub(crate) enum Reconnect {
     /// The host says the link to the runner is down.
     Started,
     /// The host says it is back; or the window cannot tell any more, because it fell behind and
@@ -460,7 +460,7 @@ enum Reconnect {
 }
 
 /// Told what a link hears of the runner its host relays it to.
-type Reconnects = Arc<dyn Fn(Reconnect) + Send + Sync>;
+pub(crate) type Reconnects = Arc<dyn Fn(Reconnect) + Send + Sync>;
 
 /// The most a reply to a hook line may be on the link, its frame's envelope aside: a larger
 /// answer is refused with a sentence rather than sent.
@@ -593,6 +593,11 @@ impl HostLink {
         self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))));
     }
 
+    /// Which link this is, never another's.
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Draw browser view `view`'s frames into `sink`, each whole (#2012): its stream may already
     /// be here.
     pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink) {
@@ -705,8 +710,9 @@ impl HostLink {
         lock(&self.shared.hearing).insert(project.to_owned(), relayed);
     }
 
-    /// Tell `tell` what this link hears of the runner its host relays it to, from now on.
-    fn when_reconnecting(&self, tell: Reconnects) {
+    /// Tell `tell` what this link hears of the runner its host relays it to, from now on: a
+    /// project's chats (#2496) and the window's browser views (#2542) each follow their link.
+    pub(crate) fn when_reconnecting(&self, tell: Reconnects) {
         lock(&self.shared.reconnects).push(tell);
     }
 }
@@ -891,6 +897,7 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
 async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<Mutex<FrameSink>>) {
     let view = reader.view().0;
     let mut frames = purlis_session_protocol::view::frames::Frames::default();
+    let mut first = true;
     while let Some(Ok(chunk)) = reader.next().await {
         let bytes = match chunk {
             Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
@@ -898,6 +905,11 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
         let Ok(whole) = frames.push(&bytes) else {
             break;
         };
+        // Its stream's first frame is the host's snapshot, which comes only over a link that is
+        // up: whatever was said of its runner's link, the view is reconnected (#2542).
+        if !whole.is_empty() && std::mem::take(&mut first) {
+            reconnect(shared, Reconnect::Drawn(view));
+        }
         for frame in whole {
             use purlis_session_protocol::view::frames::{AIMED_JPEG, JPEG};
             match frame.format {

@@ -800,3 +800,20 @@ fn a_port_grant_is_told_and_audited_by_its_number() {
          — retry."
     );
 }
+
+/// #2629: "Allow once" and "Allow for this chat" are the one-chat levels; every other level
+/// reaches more than one chat.
+#[test]
+fn once_and_this_chat_are_the_one_chat_levels() {
+    let one_chat: Vec<Level> = [
+        Level::Once,
+        Level::Chat,
+        Level::You,
+        Level::Machine,
+        Level::Project,
+    ]
+    .into_iter()
+    .filter(|level| level.one_chat())
+    .collect();
+    assert_eq!(one_chat, [Level::Once, Level::Chat]);
+}

@@ -145,8 +145,9 @@ enum Command {
     #[command(subcommand)]
     Harness(HarnessCommand),
 
-    /// Themes: every theme available here and where it comes from, and the theme check of
-    /// any one of them — its errors, its contrast warnings and its hard floors.
+    /// Themes: every theme available here and where it comes from, the theme check of any one
+    /// of them — its errors, its contrast warnings and its hard floors — and a theme folder
+    /// imported from another program's theme or exported as a zip.
     #[command(subcommand)]
     Theme(theme::ThemeCommand),
 

@@ -567,6 +567,9 @@ pub enum Refusal {
          read again when the browser is handed back"
     )]
     FieldUnreadAfterKey,
+    /// A native drag carried a text kept out of the agent's answers (#2136): cancelled.
+    #[error("what this drag carries is kept out of your answers, so the drag was cancelled")]
+    DragKeptOut,
 }
 
 /// How long and how much, all configurable (from Settings, by the session host).

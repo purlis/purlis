@@ -1797,15 +1797,15 @@ async fn a_cuttable_link_to<H: session::Host>(
 /// missed one. It keeps which of its subscriptions, numbered from 0 as they were made, the
 /// window let go of.
 #[derive(Clone)]
-struct Between<H> {
+pub(crate) struct Between<H> {
     inner: H,
     drops_link_back: bool,
-    pushes: tokio::sync::broadcast::Sender<session::Pushed>,
+    pub(crate) pushes: tokio::sync::broadcast::Sender<session::Pushed>,
     subscriptions: Arc<Mutex<(usize, std::collections::BTreeSet<usize>)>>,
 }
 
 impl<H> Between<H> {
-    fn new(inner: H, drops_link_back: bool) -> Self {
+    pub(crate) fn new(inner: H, drops_link_back: bool) -> Self {
         Between {
             inner,
             drops_link_back,

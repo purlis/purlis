@@ -25,6 +25,12 @@
 //! [`hand_back_browser`] on Done. The lease is the session host's: a view opened again, after
 //! a crash of the window too, says whether the person still drives ([`BrowserWatching`]).
 //! These are the window's alone (`ui::WINDOW_ONLY`): what the person types is theirs.
+//!
+//! **A browser view drawn from a runner says it is reconnecting** while the link to that runner
+//! is down (#2542, as a runner's chats do, #2496): its view rides the window's own link, so
+//! the window follows what that link hears of the runner, and tells each view drawn from it
+//! ([`BrowserFrame::reconnection`]). A view is reconnected once the link is back, once it draws
+//! again from a snapshot, or once the window can no longer tell.
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -50,10 +56,17 @@ pub struct BrowserWatching {
 /// One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
 /// page and its document), which the person's input names back, and the JPEG in base64. An
 /// empty `jpeg` says the view has ended for good.
+///
+/// Or, with `reconnection` and no image, where the view stands while the link to the runner it
+/// is drawn from is down and back (#2542): its last frame stays, dimmed, until it is
+/// reconnected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct BrowserFrame {
     pub aim: String,
     pub jpeg: String,
+    /// Where the view stands while its runner's link is down and back (#2542): said on its
+    /// own, with no image; `null` on every frame.
+    pub reconnection: Option<crate::reconnecting::Reconnection>,
 }
 
 /// What the person's mouse did, in a browser they drive (#2014).
@@ -211,7 +224,8 @@ mod hosted {
     };
 
     use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome};
-    use crate::hostedsessions::{Connection, FrameSink, HostLink};
+    use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
+    use crate::reconnecting::Reconnection;
 
     /// How long a browser command waits for the window's link to its host.
     const LINK_WITHIN: Duration = Duration::from_secs(30);
@@ -310,6 +324,27 @@ mod hosted {
         connection: Arc<Connection>,
         projects: Mutex<HashMap<PathBuf, Held>>,
         ended: Ended,
+        /// Each view the window watches, and whether it is dimmed while its runner's link is
+        /// down (#2542).
+        dimming: Arc<Mutex<Dimming>>,
+    }
+
+    /// Told where a browser view stands while the link to the runner it is drawn from comes and
+    /// goes (#2542).
+    pub(crate) type LinkSaid = Arc<dyn Fn(Reconnection) + Send + Sync + 'static>;
+
+    /// The views the window watches, by the link each rides and its number there, and the links
+    /// heard already.
+    #[derive(Default)]
+    struct Dimming {
+        views: HashMap<(u64, u32), Followed>,
+        heard: std::collections::HashSet<u64>,
+    }
+
+    /// One view: who is told where it stands, and whether it is dimmed now.
+    struct Followed {
+        tell: LinkSaid,
+        dimmed: bool,
     }
 
     /// Told the program of each browser the window started whose engine ended (#2385), on the
@@ -328,6 +363,7 @@ mod hosted {
                 connection,
                 projects: Mutex::new(HashMap::new()),
                 ended: Arc::new(|_| {}),
+                dimming: Arc::default(),
             }
         }
 
@@ -398,12 +434,15 @@ mod hosted {
             }
         }
 
-        /// Attaches a view of `program` as `role`, its whole frames handed to `frames`.
+        /// Attaches a view of `program` as `role`, its whole frames handed to `frames`, and
+        /// `link_said` told where it stands while the link to the runner it is drawn from is down and
+        /// back (#2542).
         pub(crate) fn watch(
             &self,
             program: &str,
             role: BrowserViewRole,
             frames: FrameSink,
+            link_said: LinkSaid,
         ) -> Result<BrowserWatching, String> {
             let link = self.link()?;
             let role = match role {
@@ -423,6 +462,8 @@ mod hosted {
                     ));
                 }
             };
+            // Followed before it draws, so its first frame finds it.
+            self.follow(&link, attached.view, link_said);
             link.draw_frames(attached.view, frames);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
@@ -495,12 +536,42 @@ mod hosted {
         /// Closes view `view` of `program`: its frames stop with the last view.
         pub(crate) fn unwatch(&self, program: &str, view: u32) -> Result<(), String> {
             let link = self.link()?;
+            lock(&self.dimming).views.remove(&(link.id(), view));
             link.undraw(view);
             link.call(Command::DetachView {
                 program: program.to_owned(),
                 view,
             })
             .map(|_| ())
+        }
+
+        /// View `view` on `link` is told where it stands as `link` hears of its runner, from
+        /// now on (#2542).
+        fn follow(&self, link: &HostLink, view: u32, tell: LinkSaid) {
+            let id = link.id();
+            let first = {
+                let mut dimming = lock(&self.dimming);
+                // A view on a link the window's has replaced ended with that link.
+                dimming.views.retain(|(on, _), _| *on == id);
+                dimming.views.insert(
+                    (id, view),
+                    Followed {
+                        tell,
+                        dimmed: false,
+                    },
+                );
+                dimming.heard.insert(id)
+            };
+            if first {
+                let dimming = Arc::clone(&self.dimming);
+                link.when_reconnecting(Arc::new(move |heard| hear(&dimming, id, heard)));
+            }
+        }
+
+        /// What link `link` heard of the runner its views are drawn from (#2542).
+        #[cfg(test)]
+        pub(crate) fn heard(&self, link: u64, heard: Reconnect) {
+            hear(&self.dimming, link, heard);
         }
 
         fn projects(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Held>> {
@@ -577,6 +648,37 @@ mod hosted {
         }
     }
 
+    fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+        mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Each view drawn from `link` follows what it heard of its runner** (#2542): every one is
+    /// dimmed while the link is down, every dimmed one is reconnected once it is back or the
+    /// window cannot tell, and one alone once it draws again from a snapshot. Each is told once
+    /// for each change, outside the hold.
+    fn hear(dimming: &Mutex<Dimming>, link: u64, heard: Reconnect) {
+        let (dim, now) = match heard {
+            Reconnect::Started => (true, Reconnection::Reconnecting),
+            Reconnect::Over | Reconnect::Drawn(_) => (false, Reconnection::Reconnected),
+        };
+        let told: Vec<LinkSaid> = lock(dimming)
+            .views
+            .iter_mut()
+            .filter(|((on, view), followed)| {
+                *on == link
+                    && followed.dimmed != dim
+                    && !matches!(heard, Reconnect::Drawn(drawn) if drawn != *view)
+            })
+            .map(|(_, followed)| {
+                followed.dimmed = dim;
+                Arc::clone(&followed.tell)
+            })
+            .collect();
+        for tell in told {
+            tell(now);
+        }
+    }
+
     #[cfg(test)]
     mod tests;
 }
@@ -628,6 +730,7 @@ pub async fn watch_browser(
     {
         use base64::Engine as _;
         let browsers = browsers(&app)?;
+        let said = frames.clone();
         crate::off_the_window("opening a browser view", move || {
             browsers.watch(
                 &program,
@@ -637,6 +740,15 @@ pub async fn watch_browser(
                     let _ = frames.send(BrowserFrame {
                         aim: aim.unwrap_or_default(),
                         jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
+                        reconnection: None,
+                    });
+                }),
+                // Where it stands while its runner's link is down and back (#2542).
+                std::sync::Arc::new(move |reconnection| {
+                    let _ = said.send(BrowserFrame {
+                        aim: String::new(),
+                        jpeg: String::new(),
+                        reconnection: Some(reconnection),
                     });
                 }),
             )

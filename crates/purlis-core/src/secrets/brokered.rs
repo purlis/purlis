@@ -1219,19 +1219,17 @@ pub(crate) fn chat_writes(asker: &Asker, confines: &Confines) -> Vec<PathBuf> {
 /// values from its vault, for purlis to fill in the chat's browser itself, so none reaches the
 /// chat. Exactly what a declared tool's run is held to (D-PE-ruling-2): a tool the chat's start
 /// armed, allowed on this machine with its persona's hosts, whose vault the registry, or your
-/// grant on this machine, lets that persona use. Refused, with a sentence and no value, for
-/// anything else, and for a chat the app did not start sandboxed.
+/// grant on this machine, lets that persona use. A chat the app started without the sandbox,
+/// `unconfined` (no sandbox compiled for it and none holding it), is held to the same, its
+/// persona's declarations and this machine's Allow read at the call (#2560); one a sandbox
+/// still holds with no record of its start is offered a restart. Refused, with a sentence and
+/// no value, for anything else.
 pub fn login_for(
     asker: &Asker,
     name: &str,
+    unconfined: bool,
 ) -> Result<purlis_session_protocol::browsing::LogIn, String> {
     use purlis_session_protocol::browsing::{LogIn, Secret};
-    let Some(confines) = &asker.confines else {
-        return Err(format!(
-            "this chat was started without the sandbox, so purlis performs no browser login for \
-             it: {name} logs in only in a chat of its persona started with the sandbox"
-        ));
-    };
     let persona = asker.persona.as_deref().unwrap_or_default();
     let not_a_login = || {
         format!(
@@ -1239,17 +1237,49 @@ pub fn login_for(
              browser_login takes a tool declared with browser = \"https://…\""
         )
     };
-    let Some(ready) = confines.tools.iter().find(|ready| ready.tool.name == name) else {
-        let listed = declared_now(&asker.root, persona);
+    // A sandboxed chat's tools are what its start armed; one started without the sandbox,
+    // which no start armed, is held to the same declarations and Allow, read now (#2560).
+    let (armed, listed, then) = match &asker.confines {
+        Some(confines) => (
+            confines
+                .tools
+                .iter()
+                .map(|ready| ready.tool.clone())
+                .collect(),
+            declared_now(&asker.root, persona),
+            "Start the chat again once it is",
+        ),
+        // A chat a sandbox still holds whose start's record the app no longer keeps (a sandbox
+        // that changed while no window was there, D-2006-11) is offered a restart, as it is
+        // for the rest of its sandbox.
+        None if !unconfined => {
+            return Err(format!(
+                "this chat's sandbox changed since it started, so purlis performs no browser \
+                 login for it until it starts again: restart the chat, then call browser_login \
+                 with {name} again"
+            ));
+        }
+        None if asker.persona.as_deref().is_some_and(|p| !p.is_empty()) => {
+            let (declared, allowed) =
+                crate::sandbox::tools::declared_and_allowed_here(&asker.root, persona);
+            (allowed, declared, "Call browser_login again once it is")
+        }
+        None => (Vec::new(), Vec::new(), ""),
+    };
+    let Some(tool) = armed.into_iter().find(|tool| tool.name == name) else {
         return Err(match listed.iter().find(|tool| tool.name == name) {
             Some(tool) if tool.login.is_some() => format!(
-                "{name} is {persona}'s browser login, and it is not armed in this chat: it logs \
-                 in only once {persona}'s hosts and tools are allowed on this machine (the \
-                 project's Notice, or Settings › Sandbox) and policy allows persona tools. Start \
-                 the chat again once it is ({})",
+                "{name} is {persona}'s browser login, and it is not allowed on this machine for \
+                 this chat: it logs in only once {persona}'s hosts and tools are allowed here \
+                 (the project's Notice, or Settings › Sandbox) and policy allows persona tools. \
+                 {then} ({})",
                 tool.whole()
             ),
             Some(_) => not_a_login(),
+            None if persona.is_empty() => format!(
+                "this chat runs as no persona, so it has no browser login {name}, and nothing \
+                 was filled"
+            ),
             None => format!(
                 "{persona} declares no browser login {name}, so nothing was filled. A login is \
                  declared in the project's settings, [sandbox.personas.{persona}] tools = {{ \
@@ -1258,11 +1288,20 @@ pub fn login_for(
             ),
         });
     };
+    let ready = crate::sandbox::tools::Ready {
+        tool,
+        program: PathBuf::new(),
+    };
     let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
     else {
         return Err(not_a_login());
     };
-    let ctx = Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref());
+    let ctx = match &asker.confines {
+        Some(confines) => {
+            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
+        }
+        None => Ctx::new(&asker.root, asker.env.clone()),
+    };
     authorise(&ctx, asker.persona.as_deref(), &ready.tool.vault)?;
     let vault = &ready.tool.vault;
     let v = cmd::provider(&ctx, vault).map_err(|e| e.message)?;
@@ -2519,8 +2558,10 @@ pub(crate) fn profile_on(
     // own credential files and folders, which purlis made in the vaults folder for it alone.
     // Each under both names the kernel may give it, as the vaults are denied under both: across
     // a macOS firmlink, `/private/var/…` is also `/System/Volumes/Data/private/var/…` (#2489).
+    // A file is given back by its own name, never followed: a run's named link is read and
+    // started by the link's name, and what it points at is given nothing (#2617).
     for file in files {
-        for name in seatbelt::kernel_strings(file)? {
+        for name in seatbelt::kernel_strings_itself(file)? {
             profile.push_str(&format!("(allow file-read* (literal {name}))\n"));
         }
     }

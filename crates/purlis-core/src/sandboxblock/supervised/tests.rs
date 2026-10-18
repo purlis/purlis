@@ -247,6 +247,42 @@ fn a_refused_connection_to_an_internet_address_is_one_past_the_proxy_that_names_
 }
 
 #[test]
+fn a_refused_socket_of_the_system_s_name_lookup_is_a_lookup_past_the_proxy() {
+    // On a host whose lookups go through a local socket, a program's own lookup is refused at
+    // that socket: the block a lookup past the proxy is, with no host, since the supervisor
+    // never sees the name (#2428).
+    for socket in [
+        "/run/systemd/resolve/io.systemd.Resolve",
+        "/run/nscd/socket",
+        "/var/run/nscd/socket",
+        "/var/lib/sss/pipes/nss",
+        "/run/avahi-daemon/socket",
+    ] {
+        assert_eq!(
+            block_of(&refused("network-outbound", socket, "curl"), &place()),
+            Some((
+                Block {
+                    operation: Operation::Lookup,
+                    kind: Kind::Host,
+                    ours: false,
+                },
+                None,
+            )),
+            "{socket}"
+        );
+    }
+    // Any other socket is a local socket still.
+    assert_eq!(
+        block_of(
+            &refused("network-outbound", "/run/docker.sock", "docker"),
+            &place()
+        )
+        .map(|(block, _)| block.kind),
+        Some(Kind::LocalSocket)
+    );
+}
+
+#[test]
 fn nothing_is_told_from_a_chat_the_app_did_not_start_sandboxed_or_that_names_no_socket() {
     let full = |name: &str| -> Option<String> {
         match name {

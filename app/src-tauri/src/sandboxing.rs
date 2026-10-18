@@ -1816,7 +1816,7 @@ pub(crate) fn kept_for(
 ) -> Result<Kept, String> {
     use sandbox::grant::{self, Level, What};
     let target = what.target();
-    if session.is_none() && matches!(level, Level::Once | Level::Chat) {
+    if session.is_none() && level.one_chat() {
         return Err(
             "purlis allows a host for one chat from that chat's own Notice, not from Blocked \
              lately."
@@ -2568,6 +2568,12 @@ fn revoke(
         ),
         _ => return Err(gone()),
     };
+    // A chat is named for a one-chat grant alone, and every one-chat grant names its chat
+    // (#2653): a grant for me, for every project or for everyone is removed where it is kept,
+    // never as one chat's.
+    if chat.is_some() != level.one_chat() {
+        return Err(gone());
+    }
     let grant = match GrantWhat::of_word(what).ok_or_else(gone)? {
         // A vault's grant is named with its persona, and a persona's hosts and browser by it,
         // above.

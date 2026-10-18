@@ -4146,9 +4146,13 @@ fn compile_checked(
         return Err(refused.placed_in(root));
     }
     let form = compile(compiled).map_err(NotStarted::Uncompilable)?;
-    let denied = form
-        .denied()
-        .map_or_else(|| compiled.denied.paths.clone(), <[Denial]>::to_vec);
+    // Held again only where the compiler added denials of its own (#2570): a harness whose own
+    // sandbox holds the policy (Claude Code) denies exactly the neutral list, which the check
+    // above has just held to this ground.
+    let Some(added) = form.denied() else {
+        return Ok((form, compiled.denied.paths.clone()));
+    };
+    let denied = added.to_vec();
     if let Some(refused) = covering(&denied, &ground) {
         return Err(refused.placed_in(root));
     }
@@ -4513,6 +4517,18 @@ pub(crate) fn firmlinks_from(text: Option<&str>) -> Vec<PathBuf> {
 /// The name off the data volume comes first, so either spelling gives one order.
 pub(crate) fn kernel_names(path: &Path) -> Vec<PathBuf> {
     both_firmlink_names(real(path))
+}
+
+/// `path` itself as the kernel names it, its last part never followed: its folder as the kernel
+/// names it ([`real`]) with its own name, and under its other name across a firmlink
+/// ([`firmlink_twin`]) where it has one. A rule on a link held to the link, never to what it
+/// points at (#2617).
+pub(crate) fn kernel_names_itself(path: &Path) -> Vec<PathBuf> {
+    let itself = match (path.parent(), path.file_name()) {
+        (Some(folder), Some(name)) => real(folder).join(name),
+        _ => real(path),
+    };
+    both_firmlink_names(itself)
 }
 
 /// `path` as it is spelled, and under its other name across a firmlink ([`firmlink_twin`])

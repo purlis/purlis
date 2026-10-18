@@ -17,7 +17,8 @@ import { AnswerBar } from "./AnswerBar";
  *
  * What it shows is what charter can enumerate, and no more: the plugins the project's
  * committed settings enable, the environment they set, the programs its reopen record would
- * start, and the tools each persona may run without a prompt. It does not and cannot summarise
+ * start, the tools each persona may run without a prompt, and the font files its theme folders
+ * bring (ADR 0098 as amended: a face from the project is drawn only as approved). It does not and cannot summarise
  * the project's persona charters, its memory or its todos, which are text a model will read and
  * act on — charter has no model and makes no judgements about the content of work. Said on screen, in the last line, rather than left for
  * whoever first assumes the dialog covered everything.
@@ -53,7 +54,8 @@ export function ApprovePlane({
     contributes.env.length === 0 &&
     contributes.starts.length === 0 &&
     contributes.profiles.length === 0 &&
-    contributes.grants.length === 0;
+    contributes.grants.length === 0 &&
+    contributes.fonts.length === 0;
   // Cancel, focused by the dialog itself rather than by tab order: opening a project puts
   // what this lists in force, and it is never what a stray Return key finds.
   const cancel = useRef<HTMLButtonElement>(null);
@@ -106,7 +108,7 @@ export function ApprovePlane({
           {nothing && (
             <p className="came-back">
               Nothing purlis can enumerate: it enables no plugins, sets no environment, grants no
-              persona a tool, and its record names no chat to start.
+              persona a tool, brings no font files, and its record names no chat to start.
             </p>
           )}
           {contributes.plugins.length > 0 && (
@@ -152,6 +154,15 @@ export function ApprovePlane({
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+          {contributes.fonts.length > 0 && (
+            <section>
+              {/* Each font file by its path in the project, its size and its sha-256 (the full
+                digest on hover): the window draws a face from the project only when it is
+                approved here with that digest, so a face that changes later asks again. */}
+              <h4>Font files its themes bring</h4>
+              <FontFiles fonts={contributes.fonts} />
             </section>
           )}
           {contributes.starts.length > 0 && (
@@ -208,5 +219,68 @@ export function ApprovePlane({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/** How many font files the ask draws before it says how many more there are. */
+const FONT_FILES_SHOWN = 12;
+
+/** One font file as the contribution records it: its path, its sha-256 and its size. */
+type FontFile = { folder: string; name: string; digest: string; bytes: number };
+
+function fontFile([path, listed]: [string, string]): FontFile {
+  const at = path.lastIndexOf("/fonts/");
+  const [digest = "", bytes = "0"] = listed.split(" ");
+  return {
+    folder: at < 0 ? "" : path.slice(0, at),
+    name: at < 0 ? path : path.slice(at + "/fonts/".length),
+    digest,
+    bytes: Number(bytes) || 0,
+  };
+}
+
+function size(bytes: number): string {
+  return bytes < 1024 ? `${bytes} bytes` : `${Math.round(bytes / 1024)} KiB`;
+}
+
+/**
+ * A project's font files, grouped by the theme folder that brings them: each file's name, its
+ * size and the first twelve hex digits of its digest, the whole digest on hover. The first
+ * {@link FONT_FILES_SHOWN} are drawn, and the rest are counted.
+ */
+function FontFiles({ fonts }: { fonts: [string, string][] }) {
+  const files = fonts.map(fontFile);
+  const shown = files.slice(0, FONT_FILES_SHOWN);
+  const folders = [...new Set(shown.map((file) => file.folder))];
+  const more = files.length - shown.length;
+  return (
+    <>
+      {folders.map((folder) => (
+        <div key={folder}>
+          <p className="where">
+            <code>{folder}</code>
+          </p>
+          <ul className="contributes">
+            {shown
+              .filter((file) => file.folder === folder)
+              .map((file) => (
+                <li key={file.name}>
+                  <code>{file.name}</code>
+                  <span className="value">
+                    {" "}
+                    {size(file.bytes)}, sha-256{" "}
+                    <span title={file.digest}>{file.digest.slice(0, 12)}</span>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+      {more > 0 && (
+        <p className="came-back">
+          and {more} more font file{more === 1 ? "" : "s"}
+        </p>
+      )}
+    </>
   );
 }

@@ -55,6 +55,18 @@ pub fn block_of_in(
         target: &refusal.target,
     };
     let (block, target) = denial.block_in(place, temp);
+    // The system's name lookup, refused at its socket (#2428): a program's own lookup, past the
+    // proxy. The name it looked up is never seen here, so none is named.
+    if block.operation == Operation::Connect
+        && super::RESOLVER_SOCKETS.contains(&refusal.target.as_str())
+    {
+        let block = Block {
+            operation: Operation::Lookup,
+            kind: Kind::Host,
+            ..block
+        };
+        return Some((block, None));
+    }
     // The supervisor sees no host, only the address a program dialled: one past the proxy,
     // since the proxy's own port is what the chat reaches (#2423). It names that address.
     if super::is_the_proxys(&block) {

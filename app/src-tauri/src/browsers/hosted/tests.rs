@@ -11,8 +11,13 @@ use std::time::{Duration, Instant};
 use purlis_host::standin::{StandInBrowsers, StandIns};
 use purlis_host::{ComposesNothing, Hosting};
 
+use purlis_session_protocol::session::Pushed;
+
 use super::WindowBrowsers;
 use crate::browsers::{BrowserInput, BrowserViewRole, InputOutcome, KeyAct};
+use crate::hostedsessions::Reconnect;
+use crate::hostedsessions::tests::Between;
+use crate::reconnecting::Reconnection;
 
 struct Window {
     browsers: WindowBrowsers,
@@ -23,6 +28,25 @@ struct Window {
 }
 
 fn window() -> Window {
+    window_with(|hosting| hosting)
+}
+
+/// [`window`], its host behind a host that says, as a relaying host would, that the window's
+/// link to a runner is down and back when the test pushes those words (#2542).
+fn window_on_a_runner() -> (Window, tokio::sync::broadcast::Sender<Pushed>) {
+    let mut pushes = None;
+    let window = window_with(|hosting| {
+        let between = Between::new(hosting, false);
+        pushes = Some(between.pushes.clone());
+        between
+    });
+    (window, pushes.unwrap())
+}
+
+/// A window whose host is `host` around one that runs stand-in browsers.
+fn window_with<H: purlis_session_protocol::session::Host + Clone>(
+    host: impl FnOnce(Hosting) -> H,
+) -> Window {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -32,7 +56,7 @@ fn window() -> Window {
     let started = StandInBrowsers::in_folder(store.path().join("browsers"));
     let hosting =
         Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(started.clone());
-    let (connection, _window) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
+    let (connection, _window) = crate::hostedsessions::tests::in_memory(host(hosting), &runtime);
     let project = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(project.path()).unwrap();
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();
@@ -67,6 +91,7 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
             &program,
             BrowserViewRole::Focused,
             Box::new(move |_aim, image| drawing.lock().unwrap().push(image.to_vec())),
+            Arc::new(|_| {}),
         )
         .unwrap();
     assert_eq!((watching.width, watching.height), (1280, 800));
@@ -203,6 +228,7 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
             &program,
             BrowserViewRole::Focused,
             Box::new(move |aim, _image| seen.lock().unwrap().push(aim.unwrap_or_default())),
+            Arc::new(|_| {}),
         )
         .unwrap();
     screen.shown().document = 5;
@@ -263,7 +289,12 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
     let program = window.browsers.open(&window.root).unwrap();
     let watching = window
         .browsers
-        .watch(&program, BrowserViewRole::Focused, Box::new(|_, _| {}))
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Arc::new(|_| {}),
+        )
         .unwrap();
     assert!(!watching.person_drives);
     window.browsers.take_over(&program).unwrap();
@@ -271,7 +302,12 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
 
     let again = window
         .browsers
-        .watch(&program, BrowserViewRole::Focused, Box::new(|_, _| {}))
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Arc::new(|_| {}),
+        )
         .unwrap();
 
     assert!(again.person_drives);
@@ -352,7 +388,12 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
     let screen = window.started.started()[0].clone();
     window
         .browsers
-        .watch(&program, BrowserViewRole::Focused, Box::new(|_, _| {}))
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Arc::new(|_| {}),
+        )
         .unwrap();
     screen.shown().document = 1;
     let typed = BrowserInput::Key {
@@ -392,4 +433,138 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
         matches!(call(Browsing::Act(Act::Pages)), Answer::Browsed { .. }),
         "the browser is the chat's again"
     );
+}
+
+/// Where a browser view was said to stand, in the order it was said (#2542).
+type Said = Arc<Mutex<Vec<Reconnection>>>;
+
+/// A browser opened and watched, its first frame drawn: what its view was said, its view, and
+/// its program.
+fn a_watched_browser(window: &Window) -> (Said, u32, String) {
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let drawn: Arc<Mutex<usize>> = Arc::default();
+    let said: Said = Arc::default();
+    let watching = window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new({
+                let drawn = Arc::clone(&drawn);
+                move |_, _| *drawn.lock().unwrap() += 1
+            }),
+            Arc::new({
+                let said = Arc::clone(&said);
+                move |now| said.lock().unwrap().push(now)
+            }),
+        )
+        .unwrap();
+    screen.makes(b"\xff\xd8 a page");
+    until("the first frame is drawn", || *drawn.lock().unwrap() == 1);
+    (said, watching.view, program)
+}
+
+#[test]
+fn a_browser_view_on_a_runner_is_reconnecting_while_its_link_is_down_and_reconnected_after() {
+    let (window, pushes) = window_on_a_runner();
+    let (said, _, _) = a_watched_browser(&window);
+    assert!(
+        said.lock().unwrap().is_empty(),
+        "nothing said while it is up"
+    );
+
+    pushes
+        .send(Pushed::LinkDown {
+            why: "the link to it ended".into(),
+        })
+        .unwrap();
+    until("the view is said to be reconnecting", || {
+        *said.lock().unwrap() == [Reconnection::Reconnecting]
+    });
+    pushes.send(Pushed::LinkBack {}).unwrap();
+
+    until("the view is said to be reconnected", || {
+        *said.lock().unwrap() == [Reconnection::Reconnecting, Reconnection::Reconnected]
+    });
+}
+
+#[test]
+fn a_browser_view_that_draws_again_from_a_snapshot_is_reconnected() {
+    let (window, pushes) = window_on_a_runner();
+    let (said, view, _) = a_watched_browser(&window);
+    pushes
+        .send(Pushed::LinkDown {
+            why: "the link to it ended".into(),
+        })
+        .unwrap();
+    until("the view is said to be reconnecting", || {
+        *said.lock().unwrap() == [Reconnection::Reconnecting]
+    });
+
+    // Its link_back went missing; its stream drawn again, from a snapshot, says it is back.
+    let link = window.browsers.link().unwrap();
+    window.browsers.heard(link.id(), Reconnect::Drawn(view));
+
+    assert_eq!(
+        *said.lock().unwrap(),
+        [Reconnection::Reconnecting, Reconnection::Reconnected]
+    );
+}
+
+#[test]
+fn a_browser_views_first_frame_says_it_drew_from_a_snapshot() {
+    let window = window();
+    let heard: Arc<Mutex<Vec<Reconnect>>> = Arc::default();
+    window.browsers.link().unwrap().when_reconnecting({
+        let heard = Arc::clone(&heard);
+        Arc::new(move |one| heard.lock().unwrap().push(one))
+    });
+
+    let (_, view, _) = a_watched_browser(&window);
+
+    until("its first frame is heard", || {
+        *heard.lock().unwrap() == [Reconnect::Drawn(view)]
+    });
+}
+
+#[test]
+fn a_browser_view_closed_while_its_link_is_down_is_told_nothing_more() {
+    let (window, pushes) = window_on_a_runner();
+    let (said, view, program) = a_watched_browser(&window);
+    pushes
+        .send(Pushed::LinkDown {
+            why: "the link to it ended".into(),
+        })
+        .unwrap();
+    until("the view is said to be reconnecting", || {
+        *said.lock().unwrap() == [Reconnection::Reconnecting]
+    });
+
+    window.browsers.unwatch(&program, view).unwrap();
+    let link = window.browsers.link().unwrap();
+    window.browsers.heard(link.id(), Reconnect::Over);
+
+    assert_eq!(*said.lock().unwrap(), [Reconnection::Reconnecting]);
+}
+
+#[test]
+fn the_views_of_a_window_link_that_was_replaced_are_followed_no_more() {
+    let window = window();
+    let (_said, view, _) = a_watched_browser(&window);
+    let old = window.browsers.link().unwrap().id();
+    let (_connection, replaced) = crate::hostedsessions::tests::in_memory(
+        Hosting::running_with(ComposesNothing, StandIns::default()),
+        &window._runtime,
+    );
+
+    window.browsers.follow(&replaced, view, Arc::new(|_| {}));
+
+    let followed: Vec<(u64, u32)> = super::lock(&window.browsers.dimming)
+        .views
+        .keys()
+        .copied()
+        .collect();
+    assert_eq!(followed, [(replaced.id(), view)]);
+    assert_ne!(old, replaced.id());
 }

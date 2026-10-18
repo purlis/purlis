@@ -1,0 +1,13 @@
+{
+  "system": "base24",
+  "name": "Dune",
+  "variant": "light",
+  "palette": {
+    "base00": "#f7f1e3", "base01": "#ece4d2", "base02": "#e0d6c0", "base03": "#a39a86",
+    "base04": "#7d7564", "base05": "#3d382e", "base06": "#2c2820", "base07": "#1d1a14",
+    "base08": "#b5473a", "base09": "#b8742a", "base0A": "#9a7b12", "base0B": "#56802c",
+    "base0C": "#2d7f7a", "base0D": "#33669e", "base0E": "#7d4f9a", "base0F": "#8c5a3c",
+    "base10": "#fbf7ee", "base11": "#fffcf6", "base12": "#c9554a", "base13": "#ad8b1c",
+    "base14": "#629236", "base15": "#38928c", "base16": "#3e78b5", "base17": "#905cb0"
+  }
+}

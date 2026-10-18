@@ -2612,24 +2612,121 @@ mod tests {
         );
     }
 
+    /// A program's output as the session's reading thread reads it: one read per piece sent
+    /// here, in the order sent, so where the writes fall is the test's to say and not the
+    /// scheduler's. The output ends once nothing is left to send.
+    struct Reads(Receiver<Vec<u8>>);
+
+    impl Read for Reads {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            match self.0.recv() {
+                Ok(piece) => {
+                    buffer[..piece.len()].copy_from_slice(&piece);
+                    Ok(piece.len())
+                }
+                Err(_) => Ok(0),
+            }
+        }
+    }
+
+    /// A session's terminal with one view open on it, and that view's queue.
+    fn watched_terminal() -> (Arc<Mutex<Terminal>>, Receiver<Vec<u8>>) {
+        let terminal = Arc::new(Mutex::new(Terminal {
+            engine: Box::new(AlacrittyEngine::new(SIZE, 100)),
+            views: Vec::new(),
+            opened: 0,
+            ended: false,
+            wrote_at: Instant::now(),
+        }));
+        let (sends, output) = mpsc::channel();
+        lock(&terminal).views.push(Watcher {
+            id: 1,
+            sends: Sends::Blocking(sends),
+            held: Vec::new(),
+        });
+        (terminal, output)
+    }
+
+    /// The program's writes for the two tests below, cut where a runner cut them (#2618):
+    /// each update opens in one write and closes in the next.
+    const STRADDLING: [&[u8]; 4] = [
+        b"\x1b[?2026hone|",
+        b"two\x1b[?2026l",
+        b"\x1b[?2026hthree|",
+        b"four\x1b[?2026l",
+    ];
+
     #[test]
     fn a_view_is_sent_every_byte_the_program_wrote_when_updates_are_held_across_writes() {
         // Holding output back may neither lose it nor repeat it: what the program wrote is
         // what the pane is written, in order, to the byte, however the writes fell and
-        // whatever was held between them.
-        let wrote = b"\x1b[?2026hone|two\x1b[?2026l\x1b[?2026hthree|four\x1b[?2026l".to_vec();
-        let session = sh(
-            "sleep 0.3; printf '\\033[?2026hone|'; sleep 0.05; printf 'two\\033[?2026l'; \
-             sleep 0.05; printf '\\033[?2026hthree|'; sleep 0.05; \
-             printf 'four\\033[?2026l'; exec sleep 30",
-        );
-        let view = session.attach();
+        // whatever was held between them. Each write here comes well inside the update's
+        // deadline, which is the case this is about; a program slower than that is the next
+        // test's.
+        let (terminal, output) = watched_terminal();
+        let (program, reads) = mpsc::channel();
+        for piece in STRADDLING {
+            program.send(piece.to_vec()).expect("the reads are waiting");
+        }
+        drop(program);
+        let (replies, _answers) = mpsc::sync_channel(INPUT_QUEUE);
+        let (holding, _held) = mpsc::sync_channel(1);
 
-        let pieces = pieces_until(&view, "four", PATIENCE);
+        read_until_the_output_ends(Box::new(Reads(reads)), &terminal, &replies, &holding);
 
+        let sent: Vec<u8> = output.try_iter().flatten().collect();
         assert_eq!(
-            String::from_utf8_lossy(&pieces.followed()),
-            String::from_utf8_lossy(&wrote)
+            String::from_utf8_lossy(&sent),
+            String::from_utf8_lossy(&STRADDLING.concat())
+        );
+    }
+
+    #[test]
+    fn an_update_still_open_at_its_deadline_is_ended_for_the_view_and_the_rest_follows_untouched() {
+        // The nightly runner's failure of the test above (#2618), forced: the program is slower
+        // between two writes than an update may stay open, so the session gives up on it at
+        // the deadline, as the engine does for its own screen, and the pane draws half a frame
+        // instead of waiting on its own safety timeout. The program's own close, arriving
+        // after, goes over as written: one more `?2026l` outside any update, which a pane
+        // ignores. Nothing the program wrote is lost or repeated.
+        let (terminal, output) = watched_terminal();
+        let (program, reads) = mpsc::channel();
+        let (replies, _answers) = mpsc::sync_channel(INPUT_QUEUE);
+        let (holding, held) = mpsc::sync_channel(1);
+        let deadlines = thread::spawn({
+            let terminal = Arc::clone(&terminal);
+            move || give_up_on_open_updates(held, &terminal)
+        });
+        let reader = thread::spawn({
+            let terminal = Arc::clone(&terminal);
+            move || {
+                read_until_the_output_ends(Box::new(Reads(reads)), &terminal, &replies, &holding)
+            }
+        });
+
+        program
+            .send(STRADDLING[0].to_vec())
+            .expect("the reader is reading");
+        // The next write waits until the session has given up on the update, however long that
+        // takes, so the order is the one the runner saw and not the scheduler's.
+        let given_up = output
+            .recv_timeout(PATIENCE)
+            .expect("the update was never given up on");
+        assert_eq!(
+            String::from_utf8_lossy(&given_up),
+            "\x1b[?2026hone|\x1b[?2026l"
+        );
+        for piece in &STRADDLING[1..] {
+            program.send(piece.to_vec()).expect("the reader is reading");
+        }
+        drop(program);
+        reader.join().expect("the reader ended");
+        deadlines.join().expect("the deadline keeper ended");
+
+        let rest: Vec<u8> = output.try_iter().flatten().collect();
+        assert_eq!(
+            String::from_utf8_lossy(&rest),
+            "two\x1b[?2026l\x1b[?2026hthree|four\x1b[?2026l"
         );
     }
 

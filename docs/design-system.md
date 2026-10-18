@@ -454,7 +454,11 @@ theme purlis writes.
   adds tokens, keys and accepted values, and never takes one away or narrows one, so a theme
   valid against an earlier release's schema is valid against every later one of that format.
   A test (`theme::published`) refuses a schema that removes or narrows anything against the one
-  committed for its format; such a change is a new format, with a file of its own.
+  committed for its format, and CI's `rust` job holds it to the one the last release's tag
+  holds too (`tools/theme-schema-since-release.sh`); such a change is a new format, with a file
+  of its own. Under `not`, `if` and a `oneOf` whose branches no constant tells apart, a wider
+  schema can accept less, so whatever a reference there reaches stays as it was.
+  The check reads `patternProperties` with Rust's `regex` semantics, not ECMA-262's.
 - **Why GitHub's raw file and not the docs site.** The tag is what a release is, and a raw file
   at a tag cannot change after the release; the docs site is one version, the newest, and is not
   published yet. purlis never fetches the address (ADR 0083's amendments of 2026-10-17): the
@@ -486,8 +490,10 @@ can be read. Its interface:
   each finding with its ratio.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
-gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds five
-floors for any theme from any source:
+gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
+`draw`, which holds five floors for any theme from any source. `draw` takes an appearance with
+its theme options' values already layered on it, so the floors hold in every combination of
+appearance and option values, and no option value can bring a consent surface below its floor:
 
 - **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
   0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and `control.hover`
@@ -537,7 +543,13 @@ left out of it, each appearance's contrast findings with the pair and ratio as w
 consent floors the window holds in each combination with the tokens it draws as purlis's own,
 and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
-`purlis docs show themes` has the JSON's shape. **An extension's theme says what is wrong
+`purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
+makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
+preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a
+fixed table (`theme::table`, printed in `purlis docs show themes` and held to it by a test),
+lists every source key no token takes, and the folder is put in place only when the engine
+draws it, never over one that is there without `--force`. **`purlis theme export <folder>`**
+writes the folder as a zip that `import` gives back file for file. **An extension's theme says what is wrong
 with it** on its row in Extensions, beside the row's other complaints: why the engine refused
 it, or what it left out.
 
@@ -1042,6 +1054,15 @@ The faces are asked for after the first frame: it is drawn in the family list's 
 the text redraws when a face arrives. A theme not read from a folder (an extension's text) has
 no `fonts/`, so naming a font refuses it. The person's own `theme.json` is in their config
 folder, beside `machine.json`, and its fonts are that folder's `fonts/`.
+
+**A face is read through the theme folder's handle.** For a theme folder of a level, `fonts/`
+is opened from the handle the folder's `theme.json` was read through, refusing a link, and each
+face from the handle of `fonts/`, refusing a link again; serving a face reads it from the same
+handles. **A project's and a workspace's font files are approved with the project** (ADR 0098,
+as amended 2026-10-18): the trust ask lists each by its theme folder, size and digest (at most
+64 files and 32 MiB per project, 24 per folder), asks again when one is new or changed, and a
+face from the project is drawn only when that approval holds it. The
+person's own theme folders' fonts need no approval.
 
 **The person's font beats the theme's.** Settings › You › Density and fonts takes a family for
 the window, for code and for the terminal; an empty field draws the theme's. The engine holds
