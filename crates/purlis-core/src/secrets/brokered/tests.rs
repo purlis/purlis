@@ -3524,7 +3524,7 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
     .unwrap();
     let mut asker = asker(project.path(), Some("devops"));
     asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", Some("NAME"))];
-    let login = login_for(&asker, "shop-login").expect("the login");
+    let login = login_for(&asker, "shop-login", false).expect("the login");
     assert_eq!(login.address, "https://shop.example.test/login");
     assert_eq!(login.password.expose(), TOKEN);
     assert_eq!(
@@ -3534,18 +3534,13 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
     assert!(!format!("{login:?}").contains(TOKEN));
 }
 
-/// What no chat is handed a login for (#2016): a chat the app did not start sandboxed, a login
-/// its start did not arm, a tool that is no login, and a vault its persona may not use. Each
-/// refusal names no value.
+/// What no sandboxed chat is handed a login for (#2016): a login its start did not arm, a tool
+/// that is no login, and a vault its persona may not use. Each refusal names no value.
 #[test]
 fn a_browser_login_is_refused_for_anything_but_its_armed_tool() {
     let project = project();
     let mut asker = asker(project.path(), Some("devops"));
-    let mut unsandboxed = asker.clone();
-    unsandboxed.confines = None;
-    let why = login_for(&unsandboxed, "shop-login").unwrap_err();
-    assert!(why.contains("started without the sandbox"), "{why}");
-    let why = login_for(&asker, "shop-login").unwrap_err();
+    let why = login_for(&asker, "shop-login", false).unwrap_err();
     assert!(
         why.contains("devops declares no browser login shop-login"),
         "{why}"
@@ -3560,10 +3555,10 @@ fn a_browser_login_is_refused_for_anything_but_its_armed_tool() {
         ),
         program: PathBuf::from("/usr/bin/true"),
     }];
-    let why = login_for(&asker, "shop-login").unwrap_err();
+    let why = login_for(&asker, "shop-login", false).unwrap_err();
     assert!(why.contains("not a browser login"), "{why}");
     asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("other", "TOKEN", None)];
-    let why = login_for(&asker, "shop-login").unwrap_err();
+    let why = login_for(&asker, "shop-login", false).unwrap_err();
     assert!(why.contains("vault 'other'"), "{why}");
     assert!(!why.contains("n0t-yours") && !why.contains(TOKEN), "{why}");
 }
@@ -4170,4 +4165,96 @@ fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
         Vec::<PathBuf>::new(),
         "the run's link went with it"
     );
+}
+
+/// A chat started without the sandbox (#2560): its persona's browser login is read from the
+/// project's settings and this machine's Allow at the login itself, as a sandboxed chat's start
+/// arms it, with the same vault rules; a login this machine has not allowed fills nothing.
+#[test]
+fn a_chat_started_without_the_sandbox_gets_its_personas_allowed_login() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\ntools = { shop-login = { \
+         vault = \"team\", browser = \"https://shop.example.test/login\", key = \"TOKEN\" } }\n",
+    )
+    .unwrap();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines = None;
+    let why = login_for(&asker, "shop-login", true).unwrap_err();
+    assert!(why.contains("not allowed on this machine"), "{why}");
+    assert!(!why.contains(TOKEN), "{why}");
+    let tool = shop_login_armed("team", "TOKEN", None).tool;
+    crate::sandbox::local::allow_persona_hosts(
+        project.path(),
+        "devops",
+        &crate::sandbox::persona::digest_of(&[], std::slice::from_ref(&tool), false),
+    )
+    .unwrap();
+    let login = login_for(&asker, "shop-login", true).expect("the login");
+    assert_eq!(login.address, "https://shop.example.test/login");
+    assert_eq!(login.password.expose(), TOKEN);
+    let why = login_for(&asker, "mail-login", true).unwrap_err();
+    assert!(
+        why.contains("devops declares no browser login mail-login"),
+        "{why}"
+    );
+    // On no persona, nothing.
+    let mut nobody = asker.clone();
+    nobody.persona = None;
+    assert!(login_for(&nobody, "shop-login", true).is_err());
+}
+
+/// A chat a sandbox still holds, reattached with no record of its start because its sandbox
+/// changed while no window was there (D-2006-11, #2560): never taken for one started without
+/// the sandbox. It is offered a restart, and nothing is read from the vault.
+#[test]
+fn a_held_chat_with_no_record_of_its_start_is_offered_a_restart_for_a_login() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\ntools = { shop-login = { \
+         vault = \"team\", browser = \"https://shop.example.test/login\", key = \"TOKEN\" } }\n",
+    )
+    .unwrap();
+    let tool = shop_login_armed("team", "TOKEN", None).tool;
+    crate::sandbox::local::allow_persona_hosts(
+        project.path(),
+        "devops",
+        &crate::sandbox::persona::digest_of(&[], std::slice::from_ref(&tool), false),
+    )
+    .unwrap();
+    let mut held = asker(project.path(), Some("devops"));
+    held.confines = None;
+    let why = login_for(&held, "shop-login", false).unwrap_err();
+    assert!(why.contains("restart the chat"), "{why}");
+    assert!(!why.contains(TOKEN), "{why}");
+    // The same chat started without the sandbox gets it.
+    assert!(login_for(&held, "shop-login", true).is_ok());
+}
+
+/// A chat on no persona has no login, whatever persona the project gives new chats by default
+/// (#2560): the vault rule is the one every brokered read of a vault holds to.
+#[test]
+fn a_chat_on_no_persona_is_refused_a_login_though_the_project_has_a_default() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[persona]\ndefault = \"devops\"\n\n[sandbox]\nmode = \"on\"\n\n\
+         [sandbox.personas.devops]\ntools = { shop-login = { vault = \"team\", browser = \
+         \"https://shop.example.test/login\", key = \"TOKEN\" } }\n",
+    )
+    .unwrap();
+    let tool = shop_login_armed("team", "TOKEN", None).tool;
+    crate::sandbox::local::allow_persona_hosts(
+        project.path(),
+        "devops",
+        &crate::sandbox::persona::digest_of(&[], std::slice::from_ref(&tool), true),
+    )
+    .unwrap();
+    let mut nobody = asker(project.path(), None);
+    nobody.confines = None;
+    let why = login_for(&nobody, "shop-login", true).unwrap_err();
+    assert!(why.contains("runs as no persona"), "{why}");
+    assert!(!why.contains(TOKEN), "{why}");
 }
