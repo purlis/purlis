@@ -454,7 +454,11 @@ theme purlis writes.
   adds tokens, keys and accepted values, and never takes one away or narrows one, so a theme
   valid against an earlier release's schema is valid against every later one of that format.
   A test (`theme::published`) refuses a schema that removes or narrows anything against the one
-  committed for its format; such a change is a new format, with a file of its own.
+  committed for its format, and CI's `rust` job holds it to the one the last release's tag
+  holds too (`tools/theme-schema-since-release.sh`); such a change is a new format, with a file
+  of its own. Under `not`, `if` and a `oneOf` whose branches no constant tells apart, a wider
+  schema can accept less, so whatever a reference there reaches stays as it was.
+  The check reads `patternProperties` with Rust's `regex` semantics, not ECMA-262's.
 - **Why GitHub's raw file and not the docs site.** The tag is what a release is, and a raw file
   at a tag cannot change after the release; the docs site is one version, the newest, and is not
   published yet. purlis never fetches the address (ADR 0083's amendments of 2026-10-17): the
@@ -1050,6 +1054,15 @@ The faces are asked for after the first frame: it is drawn in the family list's 
 the text redraws when a face arrives. A theme not read from a folder (an extension's text) has
 no `fonts/`, so naming a font refuses it. The person's own `theme.json` is in their config
 folder, beside `machine.json`, and its fonts are that folder's `fonts/`.
+
+**A face is read through the theme folder's handle.** For a theme folder of a level, `fonts/`
+is opened from the handle the folder's `theme.json` was read through, refusing a link, and each
+face from the handle of `fonts/`, refusing a link again; serving a face reads it from the same
+handles. **A project's and a workspace's font files are approved with the project** (ADR 0098,
+as amended 2026-10-18): the trust ask lists each by its theme folder, size and digest (at most
+64 files and 32 MiB per project, 24 per folder), asks again when one is new or changed, and a
+face from the project is drawn only when that approval holds it. The
+person's own theme folders' fonts need no approval.
 
 **The person's font beats the theme's.** Settings › You › Density and fonts takes a family for
 the window, for code and for the terminal; an empty field draws the theme's. The engine holds

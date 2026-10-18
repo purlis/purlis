@@ -59,6 +59,9 @@ fn what_was_written_is_what_the_next_launch_reads() {
             grants: [("ops".to_owned(), r#"{"gh":""}"#.to_owned())]
                 .into_iter()
                 .collect(),
+            fonts: [("themes/plex/fonts/Plex.woff2".to_owned(), "ab12".to_owned())]
+                .into_iter()
+                .collect(),
         },
     );
     store.windows = vec![Window {

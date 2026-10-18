@@ -53,11 +53,11 @@
 //!   and its own hues ([`super::tint`]). What it does not say is its parent's.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::fonts::Fonts;
+use super::fonts::{Fonts, ThemeDir};
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
 use super::options::{self, MOST_COMBINATIONS};
@@ -121,6 +121,9 @@ pub(super) fn is_name(name: &str) -> bool {
 pub struct Library {
     /// Each folder's `theme.json` and the files beside it, or why it could not be read.
     folders: BTreeMap<String, Result<Held, String>>,
+    /// Whether [`Self::with_folder`] and [`Self::load_folder`] read the fonts of the folders they
+    /// name ([`Self::reading_named_fonts`]).
+    named_fonts: bool,
 }
 
 /// A theme the library holds: its `theme.json`, and what was read beside it.
@@ -136,16 +139,17 @@ enum Beside {
     /// Nothing: the theme is one document, not a folder.
     Nothing,
     /// A folder, and the icon set its `theme.json` names, parsed, or why not; `None` when it
-    /// names none. `folder` is the theme's folder, whose `fonts/` its fonts are read from.
+    /// names none. `folder` is the theme's folder, held: its fonts are read from its `fonts/`.
     Folder {
         icons: Option<Result<Value, String>>,
-        folder: PathBuf,
+        folder: ThemeDir,
     },
 }
 
 /// A theme folder as read: its `theme.json`, the icon set it names, parsed, or why not, and the
-/// folder itself, whose `fonts/` its fonts are read from.
-pub(crate) type FolderRead = (Value, Option<Result<Value, String>>, PathBuf);
+/// folder itself, held by the handle `theme.json` was read through: its fonts are read from its
+/// `fonts/`.
+pub(crate) type FolderRead = (Value, Option<Result<Value, String>>, ThemeDir);
 
 /// A theme read: the theme, and the names it gave that purlis left out.
 type Read = (Theme, Vec<Complaint>);
@@ -194,13 +198,23 @@ impl Library {
         self
     }
 
+    /// **The library reading the fonts of the folders [`Self::with_folder`] and
+    /// [`Self::load_folder`] name**, which it does not otherwise: for a folder the person named
+    /// themselves, as `purlis theme check <folder>` does. A theme folder of a level is read
+    /// through [`super::Folders`], whose project and workspace fonts are read only as approved.
+    #[must_use]
+    pub fn reading_named_fonts(mut self) -> Self {
+        self.named_fonts = true;
+        self
+    }
+
     /// The library with the theme folder `name` inside `themes`, a level's `themes/` folder. A
     /// folder whose `theme.json` cannot be read is held with why, and a theme that extends it is
-    /// told that.
+    /// told that. Its fonts are read only by a library [`Self::reading_named_fonts`].
     #[must_use]
     pub fn with_folder(mut self, themes: &Path, name: &str) -> Self {
-        self.folders
-            .insert(name.to_owned(), read_folder(themes, name));
+        let read = read_folder(themes, name, self.named_fonts);
+        self.folders.insert(name.to_owned(), read);
         self
     }
 
@@ -242,7 +256,7 @@ impl Library {
         };
         let beside = Beside::Folder {
             icons,
-            folder: folder.to_path_buf(),
+            folder: ThemeDir::open(folder, None),
         };
         self.load_beside(id, document, &beside)
     }
@@ -285,9 +299,10 @@ impl Library {
     /// `theme.json`, which may sit alone or beside `fonts/`, `icons/`, a preview and a licence.
     /// Its id is `name`. A folder that is a link, a name that is not one plain folder name, and
     /// a `theme.json` that is a link, not a plain file, or larger than the cap are refused; so
-    /// is an icon set that is any of those, or outside the folder.
+    /// is an icon set that is any of those, or outside the folder. Its fonts are read only by a
+    /// library [`Self::reading_named_fonts`].
     pub fn load_folder(&self, themes: &Path, name: &str) -> Resolved {
-        match read_folder(themes, name) {
+        match read_folder(themes, name, self.named_fonts) {
             Ok(held) => self.load_beside(Some(name), &held.document, &held.beside),
             Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
         }
@@ -321,7 +336,7 @@ impl Library {
         let called = if name.is_empty() { "this theme" } else { &name };
         let palette = palette(from.get("palette"), &mut complaints);
         let folder = match beside {
-            Beside::Folder { folder, .. } => Some(folder.as_path()),
+            Beside::Folder { folder, .. } => Some(folder),
             Beside::Nothing => None,
         };
         let own_options = options::read(from.get("options"), &palette, &mut complaints, &mut notes);
@@ -528,8 +543,9 @@ fn is_classic(id: &str) -> bool {
 /// The theme folder `name` inside `themes`: its `theme.json`, parsed, and the icon set it names,
 /// or why not. `themes` is the containment root: `name` is one plain folder name, nothing on the
 /// way from `themes` to either file is a link, each file is a plain file under the cap, and each
-/// read itself stops at the cap. A theme folder may be anybody's.
-fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
+/// read itself stops at the cap. A theme folder may be anybody's. Its fonts are read when
+/// `fonts`, the library's [`Library::reading_named_fonts`], says so.
+fn read_folder(themes: &Path, name: &str, fonts: bool) -> Result<Held, String> {
     let plain = !name.is_empty()
         && name != "."
         && name != ".."
@@ -542,6 +558,17 @@ fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
         ));
     }
     let folder = themes.join(name);
+    // Held before `theme.json` is read: its fonts are read from this handle.
+    let held = if fonts {
+        ThemeDir::open(themes, Some(name))
+    } else {
+        ThemeDir::refusing(
+            folder.clone(),
+            "a theme folder's fonts are read when it is one of your theme folders, or one you \
+             name yourself"
+                .to_owned(),
+        )
+    };
     let file = folder.join(THEME_JSON);
     let text = read_capped(themes, &file, || {
         format!("{} has no {THEME_JSON}", folder.display())
@@ -556,7 +583,10 @@ fn read_folder(themes: &Path, name: &str) -> Result<Held, String> {
     };
     Ok(Held {
         document,
-        beside: Beside::Folder { icons, folder },
+        beside: Beside::Folder {
+            icons,
+            folder: held,
+        },
     })
 }
 

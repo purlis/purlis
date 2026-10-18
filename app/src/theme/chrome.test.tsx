@@ -546,7 +546,7 @@ const DIALOGS: Opened[] = [
             path: PLANE,
             first: true,
             changes: [],
-            contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [] },
+            contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [], fonts: [] },
           }}
           onApprove={nothing}
           onCancel={nothing}

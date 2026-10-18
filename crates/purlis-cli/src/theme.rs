@@ -970,7 +970,8 @@ fn read_folder(path: &Path, shown: String) -> Found {
     } else {
         themes
     };
-    let mut library = theme::Library::new();
+    // A folder the person named: its fonts are read, as the window would read their own.
+    let mut library = theme::Library::new().reading_named_fonts();
     for parent in extends_chain(themes, name) {
         library = library.with_folder(themes, &parent);
     }
