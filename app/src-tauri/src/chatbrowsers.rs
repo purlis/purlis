@@ -28,7 +28,9 @@
 //! - **Keep off** refuses every call of the chat's, in words that say not to retry.
 //! - **A login is purlis's to perform** (#2016). `browser_login` names one of the chat's
 //!   persona's declared browser logins; the app reads its values for exactly the login the
-//!   chat's start armed (`purlis_core::secrets::brokered::login_for`) and hands them to the
+//!   chat's start armed, or, for a chat started without the sandbox, the login its persona
+//!   declares and this machine allowed, read at the call (#2560,
+//!   `purlis_core::secrets::brokered::login_for`), and hands them to the
 //!   session host ([`Driver::log_in`]), whose browser fills them on the login's own origin and
 //!   hands the browser back reaching that origin alone. The chat is told the page the login
 //!   left, never a value; it chooses which declared login, and nothing else.
@@ -1418,22 +1420,13 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
 /// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
 fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<LogIn, String> {
-    let open = held
+    // The persona the chat was started as, as every brokered read of a vault takes it, and
+    // whether it runs with no sandbox at all, from the same run of it (#2560).
+    let (asker, unconfined) = held
         .chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == session)
+        .login_asker(held.root(), session)
         .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
-    let asker = purlis_core::secrets::brokered::Asker {
-        root: held.root().to_path_buf(),
-        env: purlis_core::secrets::Env::from_process(),
-        chat: session,
-        persona: open.persona,
-        folder: open.cwd,
-        confines: held.chats().confines_now(session),
-        harness: open.harness,
-    };
-    purlis_core::secrets::brokered::login_for(&asker, name)
+    purlis_core::secrets::brokered::login_for(&asker, name, unconfined)
 }
 
 /// The persona chat `session` runs with, from the app's own record of it, never from what
