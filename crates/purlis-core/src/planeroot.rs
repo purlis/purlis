@@ -444,6 +444,10 @@ pub struct RootInvocation {
     /// split into words git reads as options and as its command. Refused, with the quoted
     /// spelling the guard reads as one word.
     pub unquoted_substitution: bool,
+    /// The shell fills in its command word (`git $S …`, `git "$@"`), so a word after it that
+    /// reads as a command may be an option or an operand of another: refused as unknown unless
+    /// a more specific reason applies.
+    pub command_filled: bool,
 }
 
 impl RootInvocation {
@@ -1177,6 +1181,7 @@ fn walked_once(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere
         wrote: false,
         changed: false,
         git_wrote: false,
+        configures_git: false,
         too_deep: false,
         budget: STRING_BUDGET_PER_BYTE
             .saturating_mul(cmd.len())
@@ -1394,6 +1399,10 @@ struct Walk {
     /// A git that may write has been met, or a program that may be git told to `config`: a
     /// word after a program only the shell can name may then be an alias it defined.
     git_wrote: bool,
+    /// A segment so far sets or exports a variable that points git at configuration (a
+    /// `GIT_*` variable, `HOME`, `XDG_CONFIG_HOME`): no git after it is taken to only put files
+    /// back ([`touches_only_files`]).
+    configures_git: bool,
     /// A string was handed on past [`guardcaps::MAX_NESTING`], or past the budget, where it
     /// may name git.
     too_deep: bool,
@@ -1544,12 +1553,14 @@ fn walk_line(
         }
         let before = exported_chain.freeze(&exported);
         let assigned_before = assigned_chain.freeze(&assigned);
+        walk.configures_git |= seg.argv.iter().any(|w| sets_git_configuration(w));
         let (out, made) = (&mut walk.out, &mut walk.made);
-        let (elsewhere, wrote, changed, git_wrote) = (
+        let (elsewhere, wrote, changed, git_wrote, configures_git) = (
             &mut walk.elsewhere,
             &mut walk.wrote,
             &mut walk.changed,
             &mut walk.git_wrote,
+            &walk.configures_git,
         );
         // Whether the segment is one of git's, which answers for itself below.
         let mut gits = false;
@@ -1620,6 +1631,12 @@ fn walk_line(
             // After a git that may write, any word may be an alias it defined.
             let after_a_writer = *changed;
             let configured = *git_wrote;
+            // Its first word after git's own options, filled in by the shell: a later word that
+            // reads as a command is not taken to be the one git runs.
+            let command_filled = {
+                let (pre, rest) = shellwrap::git_globals(&args);
+                shell_fills_the_command(&pre, &rest)
+            };
             let found = match literal_mover_after(words) {
                 Some((sub, post)) => Some((sub, post, Vec::new(), false)),
                 None if words.is_empty() => None,
@@ -1656,6 +1673,7 @@ fn walk_line(
                     after_loose_cd: loose_cd,
                     after_a_writer,
                     unquoted_substitution: false,
+                    command_filled,
                 });
             }
         } else if let Some(at) = spliced_before_program(&seg.argv, &prog) {
@@ -1690,6 +1708,7 @@ fn walk_line(
                     after_loose_cd: loose_cd,
                     after_a_writer,
                     unquoted_substitution: false,
+                    command_filled: false,
                 });
             }
         } else if shellwrap::base_lower(&prog) == "git" {
@@ -1776,8 +1795,12 @@ fn walk_line(
                 // One in the root that only puts files back changes nothing the guards read of
                 // the repository after it.
                 // Once the line has changed it, nothing more is asked of git for it.
+                // Not where the line sets git configuration, which can run a program
+                // (`core.fsmonitor`, a clean filter) as files are put back.
                 let changes = writes
                     && !(!*changed
+                        && !*configures_git
+                        && !carries_config(&pre)
                         && (named || unnamed)
                         && !spliced
                         && touches_only_files(&sub, &post, shared.root));
@@ -1795,6 +1818,7 @@ fn walk_line(
                     after_loose_cd: loose_cd,
                     after_a_writer,
                     unquoted_substitution: unquoted,
+                    command_filled: filled,
                 };
                 if named || unnamed {
                     out.push(inv);
@@ -1968,6 +1992,22 @@ fn walk_line(
         assigned,
         allexport: allexport_own || allexport_given,
     }
+}
+
+/// Whether a word sets or exports a variable that points git at configuration: any `GIT_*`
+/// variable, `HOME` or `XDG_CONFIG_HOME`, read wide, since it can only add a refusal.
+fn sets_git_configuration(word: &str) -> bool {
+    let name = word.split_once('=').map_or(word, |(name, _)| name);
+    name.starts_with("GIT_") || matches!(name, "HOME" | "XDG_CONFIG_HOME")
+}
+
+/// Whether git's own options set configuration for this one invocation (`-c`, `--config-env`).
+fn carries_config(pre: &[String]) -> bool {
+    pre.iter().any(|w| {
+        w == "-c"
+            || w.starts_with("--config-env")
+            || (w.starts_with("-c") && w.len() > 2 && !w.starts_with("--"))
+    })
 }
 
 /// Whether `git <sub> <post…>` run in the root only puts files back in the index or the working
@@ -3085,6 +3125,15 @@ fn branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
         }
         // Read as nothing the guard refuses, but the words git reads are not the ones on the
         // line: refused all the same, with the spelling purlis reads.
+        if inv.command_filled {
+            return Some(format!(
+                "cannot tell what this `git` command does: the shell fills in its command word \
+                 (a variable, a function's arguments), so a word after it that reads as a \
+                 command may be an option or an operand of another. Spell the command out and \
+                 purlis checks it. {}",
+                root_tail(default_branch(&root).as_deref())
+            ));
+        }
         if inv.unquoted_substitution {
             return Some(format!(
                 "cannot tell which repository this `git` command acts on, or which command it \
@@ -3383,7 +3432,10 @@ fn head_pointed_at(post: &[String]) -> Option<String> {
         i += 1;
     }
     match words.as_slice() {
-        [name, to, ..] if name.as_str() == "HEAD" || shell_fills(name) => Some(to.to_string()),
+        // Folded, as a volume that folds case reads `head` as `HEAD`.
+        [name, to, ..] if name.eq_ignore_ascii_case("HEAD") || shell_fills(name) => {
+            Some(to.to_string())
+        }
         _ => None,
     }
 }
@@ -3665,10 +3717,13 @@ fn ref_update_lands_on(
         i += 1;
     }
     let name = words.first()?;
-    let ours = matches!(name.as_str(), "HEAD" | "@")
+    // Folded: on a volume that folds case (macOS's, by default) `refs/heads/MAIN` is the file
+    // `refs/heads/main`; where it does not, folding only adds a refusal.
+    let ours = name.eq_ignore_ascii_case("HEAD")
+        || name.as_str() == "@"
         || shell_fills(name)
-        || (after_a_writer && name.starts_with("refs/heads/"))
-        || branch_on().as_deref() == Some(name.as_str());
+        || (after_a_writer && name.to_ascii_lowercase().starts_with("refs/heads/"))
+        || branch_on().is_some_and(|on| on.eq_ignore_ascii_case(name));
     if !ours {
         return None;
     }

@@ -2648,3 +2648,51 @@ fn an_alias_an_early_export_defines_is_still_unread_at_the_end_of_a_long_line() 
         );
     }
 }
+
+/// When the shell fills in git's command word, a word after it that reads as a command may be
+/// an option or an operand of another: the command is refused as unknown, not judged as that
+/// word.
+#[test]
+fn a_word_after_a_command_word_the_shell_fills_in_is_not_taken_for_the_command() {
+    let f = fixture();
+    for cmd in [
+        "S=checkout; git $S -b reset",
+        "S=update-ref; git $S -m reset refs/heads/main HEAD~1",
+        "G=git; S=checkout; $G $S -b reset",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.starts_with("cannot tell what"), "{cmd:?}: {said}");
+    }
+    assert_eq!(branch(&f, "G=git; $G status"), None);
+}
+
+/// A git that sets configuration for itself, or after a line that points git at configuration,
+/// is not taken to only put files back: configuration can run a program as it does.
+#[test]
+fn a_git_that_sets_configuration_is_not_taken_to_only_put_files_back() {
+    let p = pushed_fixture();
+    assert_eq!(reset(&p, "git add README && git reset --hard HEAD~1"), None);
+    for cmd in [
+        "git -c core.fsmonitor=x add README && git reset --hard HEAD~1",
+        "git --config-env=core.fsmonitor=X add README && git reset --hard HEAD~1",
+        "GIT_CONFIG_PARAMETERS=\"'core.fsmonitor'='x'\" git add README && git reset --hard HEAD~1",
+        "export HOME=/tmp/elsewhere; git add README && git reset --hard HEAD~1",
+    ] {
+        let said = reset(&p, cmd).expect(cmd);
+        assert!(said.contains("as a command of its own"), "{cmd:?}: {said}");
+    }
+}
+
+/// A ref named in another case is read as the root's own where the volume folds case, as
+/// macOS's does by default: `refs/heads/MAIN` is `main`, and `head` is `HEAD`.
+#[test]
+fn a_ref_named_in_another_case_is_the_roots_own() {
+    let f = fixture();
+    for cmd in [
+        "git update-ref refs/heads/MAIN origin/main",
+        "git update-ref head origin/main",
+    ] {
+        assert!(reset(&f, cmd).is_some(), "{cmd:?}");
+    }
+    assert!(branch(&f, "git symbolic-ref head refs/heads/feature").is_some());
+}
