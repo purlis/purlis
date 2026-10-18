@@ -1816,7 +1816,7 @@ pub(crate) fn kept_for(
 ) -> Result<Kept, String> {
     use sandbox::grant::{self, Level, What};
     let target = what.target();
-    if session.is_none() && matches!(level, Level::Once | Level::Chat) {
+    if session.is_none() && level.one_chat() {
         return Err(
             "purlis allows a host for one chat from that chat's own Notice, not from Blocked \
              lately."

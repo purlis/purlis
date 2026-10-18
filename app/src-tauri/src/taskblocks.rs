@@ -629,8 +629,8 @@ pub struct Doing<'a> {
 }
 
 /// **The one Allow to the tasks a Notice listed** ([module](self)): [`checked`], every task
-/// judged, then kept for each task (this chat) or once (for me, for the project) with each task
-/// audited and owed its restart. Nothing is kept unless every check passed.
+/// judged, then kept for each task (once, this chat) or once (for me, for the project) with
+/// each task audited and owed its restart. Nothing is kept unless every check passed.
 pub fn answered(
     session: u32,
     seen: &[SeenBlock],
@@ -648,7 +648,9 @@ pub fn answered(
         judged.push((*task, what, level));
     }
     let count = tasks.len();
-    if Level::from(level) == Level::Chat {
+    // A one-chat Allow ("Allow once", "Allow for this chat") is kept for each task on its own
+    // (#2629): each holds it, is audited for it and owed its restart by its own keep.
+    if Level::from(level).one_chat() {
         let mut allowed = Vec::new();
         for (task, what, level) in &judged {
             if let Err(why) = (doing.keep)(*task, what, *level) {

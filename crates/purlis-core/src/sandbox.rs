@@ -4228,9 +4228,13 @@ fn compile_checked(
         return Err(refused.placed_in(root));
     }
     let form = compile(compiled).map_err(NotStarted::Uncompilable)?;
-    let denied = form
-        .denied()
-        .map_or_else(|| compiled.denied.paths.clone(), <[Denial]>::to_vec);
+    // Held again only where the compiler added denials of its own (#2570): a harness whose own
+    // sandbox holds the policy (Claude Code) denies exactly the neutral list, which the check
+    // above has just held to this ground.
+    let Some(added) = form.denied() else {
+        return Ok((form, compiled.denied.paths.clone()));
+    };
+    let denied = added.to_vec();
     if let Some(refused) = covering(&denied, &ground) {
         return Err(refused.placed_in(root));
     }
