@@ -6057,8 +6057,6 @@ pub mod tunnel;
 pub mod wrapper;
 
 #[cfg(test)]
-mod asks_tests;
-#[cfg(test)]
 mod claude_tests;
 #[cfg(test)]
 mod codex_tests;

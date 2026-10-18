@@ -7,9 +7,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use super::asks::{Answer, Asks, Heard};
-use super::hosts::Host;
-use super::reach::By;
+use super::{Answer, Asks, Heard};
+use crate::sandbox::hosts::Host;
+use crate::sandbox::reach::By;
 
 /// A board that holds for `hold` and groups for `group`, and what it told.
 fn board(hold: Duration, group: Duration) -> (Arc<Asks>, Arc<Mutex<Vec<Heard>>>) {
@@ -181,11 +181,11 @@ fn removing_an_allow_at_one_scope_leaves_the_same_host_at_another() {
 #[test]
 fn past_the_most_it_holds_a_connection_is_refused_at_once_not_held() {
     let (asks, heard) = board(Duration::from_secs(30), Duration::from_millis(10));
-    let names: Vec<&'static str> = (0..super::asks::MOST_HELD)
+    let names: Vec<&'static str> = (0..super::MOST_HELD)
         .map(|n| &*Box::leak(format!("h{n}.example.com").into_boxed_str()))
         .collect();
     let waiting: Vec<_> = names.iter().map(|name| held(&asks, name, 443)).collect();
-    until_holding(&asks, super::asks::MOST_HELD);
+    until_holding(&asks, super::MOST_HELD);
     assert_eq!(asks.hold("one-more.example.com", 443, &[443]), Answer::Busy);
     for name in &names {
         asks.keep_blocked(&host(name));
@@ -304,8 +304,8 @@ fn after_a_timeout_or_keep_blocked_the_host_is_no_longer_said_to_be_waiting() {
 
 #[test]
 fn a_host_allowed_live_reaches_a_run_started_after_and_a_removed_one_does_not() {
-    use super::reach::{Decision, Reach};
-    use super::tunnel::{Client, Route, route};
+    use crate::sandbox::reach::{Decision, Reach};
+    use crate::sandbox::tunnel::{Client, Route, route};
     let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
     let dsn = "postgres://app@db.example.com:6543/app";
     asks.allow(&host("db.example.com:6543"), By::Chat);
