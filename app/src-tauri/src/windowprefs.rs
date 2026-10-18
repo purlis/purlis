@@ -1109,14 +1109,14 @@ mod tests {
             "no face of it is registered"
         );
         // Approved for what it contributes now: its theme is drawn.
-        let mut trusted = purlis_core::machine::Store::default();
-        trusted.approve(
+        let mut approved_now = purlis_core::machine::Store::default();
+        approved_now.approve(
             &places.plane,
             1,
             purlis_core::machine::Contribution::of(&places.plane),
         );
-        window(&mut trusted);
-        let on = CreatedOn::main_of(None, || Some(trusted));
+        window(&mut approved_now);
+        let on = CreatedOn::main_of(None, || Some(approved_now));
         assert_eq!(on.as_ref().map(|on| &on.plane), Some(&places.plane));
         purlis_core::machine::update(&places.config, |store| {
             store.approve(
