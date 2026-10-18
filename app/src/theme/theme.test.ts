@@ -17,6 +17,9 @@ import {
   drawIn,
   sameTheme,
   searchDecorations,
+  syntaxFaces,
+  themeDraws,
+  xtermLook,
   xtermTheme,
   type Theme,
 } from "./theme";
@@ -93,8 +96,51 @@ describe("one theme, two consumers", () => {
     expect(object.cursorAccent).toBe(dark.tokens["terminal.cursor-accent"]);
     expect(object.selectionBackground).toBe(dark.tokens["terminal.selection"]);
     expect(object.brightMagenta).toBe(dark.tokens["terminal.ansi.bright-magenta"]);
-    // Sixteen ANSI colours plus four, and no key xterm does not know.
-    expect(Object.keys(object)).toHaveLength(21);
+    expect(object.selectionInactiveBackground).toBe(dark.tokens["terminal.selection-inactive"]);
+    expect(object.scrollbarSliderBackground).toBe(dark.tokens["terminal.scrollbar"]);
+    expect(object.scrollbarSliderHoverBackground).toBe(dark.tokens["terminal.scrollbar-hover"]);
+    expect(object.scrollbarSliderActiveBackground).toBe(dark.tokens["terminal.scrollbar-active"]);
+    // Sixteen ANSI colours plus eight, and no key xterm does not know. Classic's selected text
+    // is clear, so xterm is not told one and each cell keeps its colour, as before (#2327).
+    expect(Object.keys(object)).toHaveLength(25);
+    expect(object).not.toHaveProperty("selectionForeground");
+  });
+
+  it("tells xterm a selected text colour only when the theme gives one (#2327)", () => {
+    const theme: Theme = {
+      ...DEFAULT_THEME,
+      values: { ...DEFAULT_THEME.values, "terminal.selection-foreground": "#101010" },
+    };
+    expect(xtermTheme(theme).selectionForeground).toBe("#101010");
+  });
+
+  it("hands xterm Purlis Classic's cursor, line height and bold as xterm's own defaults (#2327)", () => {
+    for (const theme of [BUILT_IN["purlis-dark"], BUILT_IN["purlis-light"]])
+      expect(xtermLook(theme)).toEqual({
+        cursorStyle: "block",
+        cursorBlink: false,
+        lineHeight: 1,
+        drawBoldTextInBrightColors: true,
+      });
+    const theme: Theme = {
+      ...DEFAULT_THEME,
+      typed: {
+        ...DEFAULT_THEME.typed,
+        flags: {
+          ...DEFAULT_THEME.typed.flags,
+          "terminal.cursor-blink": true,
+          "terminal.bold-as-bright": false,
+        },
+        choices: { "terminal.cursor-style": "bar" },
+        numbers: { "terminal.line-height": 1.4 },
+      },
+    };
+    expect(xtermLook(theme)).toEqual({
+      cursorStyle: "bar",
+      cursorBlink: true,
+      lineHeight: 1.4,
+      drawBoldTextInBrightColors: false,
+    });
   });
 
   it("colours the find bar's matches in the pane from the theme (SI-4)", () => {
@@ -130,6 +176,29 @@ describe("one theme, two consumers", () => {
   });
 });
 
+describe("the tokens that are not the chrome (#2327)", () => {
+  it("draw each syntax role italic and bold as the theme says", () => {
+    const faces = syntaxFaces(BUILT_IN["purlis-dark"]);
+    // The editor drew comments italic, and tags and headings bold, before a theme could say.
+    expect(faces["--syntax-comment-font-style"]).toBe("italic");
+    expect(faces["--syntax-comment-font-weight"]).toBe("normal");
+    expect(faces["--syntax-tag-font-weight"]).toBe("bold");
+    expect(faces["--syntax-heading-font-weight"]).toBe("bold");
+    expect(faces["--syntax-keyword-font-style"]).toBe("normal");
+    expect(Object.keys(faces)).toHaveLength(30);
+  });
+
+  it("leave Purlis Classic's selection, caret, placeholder and scrollbars to the platform", () => {
+    expect(themeDraws(BUILT_IN["purlis-dark"])).toBe("");
+    expect(themeDraws(BUILT_IN["purlis-light"])).toBe("");
+    const theme: Theme = {
+      ...DEFAULT_THEME,
+      values: { ...DEFAULT_THEME.values, caret: "#ff0000", "scrollbar.thumb": "#80808080" },
+    };
+    expect(themeDraws(theme)).toBe("caret scrollbar.thumb");
+  });
+});
+
 describe("putting a theme on the document", () => {
   it("sets every custom property, the colour scheme and the name", () => {
     const element = document.createElement("div");
@@ -140,6 +209,9 @@ describe("putting a theme on the document", () => {
     // no custom property can do it.
     expect(element.style.colorScheme).toBe("light");
     expect(element.dataset.theme).toBe("purlis-light");
+    // The syntax roles' faces, and what the window draws instead of the platform (#2327).
+    expect(element.style.getPropertyValue("--syntax-comment-font-style")).toBe("italic");
+    expect(element.dataset.themeDraws).toBe("");
   });
 
   it("leaves nothing of the theme before it behind", () => {

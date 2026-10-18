@@ -164,7 +164,7 @@ impl Engine {
             }
             "DOM.getFrameOwner" => Ok(json!({"backendNodeId": 50, "nodeId": 0})),
             "DOM.getBoxModel" => Ok(
-                json!({"model":{"content":[100,200,300,200,300,260,100,260],"padding":[],"border":[],"margin":[],"width":200,"height":60}}),
+                json!({"model":{"content":[100,200,300,200,300,260,100,260],"padding":[100,200,300,200,300,260,100,260],"border":[100,200,300,200,300,260,100,260],"margin":[100,200,300,200,300,260,100,260],"width":200,"height":60}}),
             ),
             "DOM.getContentQuads" => {
                 let backend = p["backendNodeId"].as_i64().unwrap();

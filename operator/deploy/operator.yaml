@@ -64,14 +64,13 @@ rules:
     resources: [validatingadmissionpolicybindings]
     resourceNames: [purlis-claims-use-their-pool]
     verbs: [get, list, watch]
-  # Upstream's objects a claim becomes, applied server-side. Deleting them is the cluster's
-  # garbage collector's, through their owners: the operator holds no delete.
+  # Upstream's objects a claim becomes: watched, so a claim is looked at again when one of
+  # them changes or goes; each read by name first, since the operator changes only objects it
+  # made, then made or applied server-side. Deleting them is the cluster's garbage
+  # collector's, through their owners: the operator holds no delete.
   - apiGroups: [extensions.agents.x-k8s.io]
-    resources: [sandboxclaims]
-    verbs: [create, list, patch, watch]
-  - apiGroups: [extensions.agents.x-k8s.io]
-    resources: [sandboxtemplates, sandboxwarmpools]
-    verbs: [create, patch]
+    resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
+    verbs: [create, get, list, patch, watch]
 ---
 # Source: purlis-cluster-operator/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1

@@ -729,6 +729,11 @@ export const commands = {
 	 *  puts it away, and changes nothing else.
 	 */
 	putAwayLostChat: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_lost_chat", { plane, session })),
+	/**
+	 *  The chats of `plane` that are reconnecting now: what a pane drawn during an outage starts
+	 *  from.
+	 */
+	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
 	/**  Whether the session host is failing, and what the window says of it. */
 	sessionHostFailing: () => __TAURI_INVOKE<{
 	/**  How many unexpected exits tripped the breaker. */
@@ -2429,6 +2434,12 @@ export const commands = {
 	 *  layout's `appearance` as JSON text.
 	 */
 	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
+	/**
+	 *  **The window draws the specimen itself** (Settings › Theme's cards, and the scenario tests):
+	 *  `theme` by id and `appearance` (`dark`, `light`, or none for the theme's first), as a chat's
+	 *  `theme_preview` is drawn.
+	 */
+	themeSpecimen: (theme: string, appearance: string | null) => typedError<SpecimenPicture, string>(__TAURI_INVOKE("theme_specimen", { theme, appearance })),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
@@ -4357,6 +4368,14 @@ export type ChatWorktree = {
 	branch: string | null,
 	wired: boolean,
 	stale: boolean,
+};
+
+/**  A plane's chats that are reconnecting, or reconnected, as their panes show it. */
+export type ChatsReconnecting = {
+	plane: PlaneId,
+	/**  The chats, by their number in the plane. */
+	sessions: number[],
+	reconnection: Reconnection,
 };
 
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
@@ -8443,6 +8462,16 @@ export type Recents = {
 	forgetful: string | null,
 };
 
+/**  Where a chat's view stands while the link to the runner it runs on comes and goes. */
+export type Reconnection = 
+/**  The link is down: its last screen stays, dimmed, until it is back. */
+"reconnecting" | 
+/**
+ *  The link is back, or its view drew again, or the window cannot tell any more: it is
+ *  drawn as it comes.
+ */
+"reconnected";
+
 /**
  *  The level a referrer is changed at, when it is not the entry's own
  *  (`purlis_core::settings::collection::Elsewhere`).
@@ -9604,6 +9633,18 @@ export type SmartClosing = {
 	record: SavedRecord | null,
 };
 
+/**  What [`theme_specimen`] answers. */
+export type SpecimenPicture = {
+	/**  The picture, PNG, in base64. */
+	png: string,
+	width: number,
+	height: number,
+	/**  From asking for the window to holding the picture. */
+	millis: number,
+	/**  The appearance it was drawn in: `dark` or `light`. */
+	appearance: string,
+};
+
 export type StaleBranch = {
 	branch: string,
 	default: string,
@@ -10576,6 +10617,15 @@ export type WindowTheme = {
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */
 	fonts: WindowFonts,
+	/**  The tokens that are not colours (#2327). */
+	typed: WindowTyped,
+};
+
+/**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */
+export type WindowTyped = {
+	flags: { [key in string]: boolean },
+	choices: { [key in string]: string },
+	numbers: { [key in string]: number | null },
 };
 
 /**  A person's opt-out, as the picker sends it. */

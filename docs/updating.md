@@ -244,6 +244,11 @@ git switch main && git pull
 git tag vX.Y.Z && git push origin vX.Y.Z      # this, and only this, publishes a stable release
 # 2. afterwards, bump both version fields to the NEXT version and merge, so dev builds are
 #    X.Y.(Z+1)-dev.N
+#
+# Whenever the version fields change (step 2, the release commit, any bump), run
+#    PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema
+# in the same commit: it moves Purlis Classic's `$schema` to the new version's address, and
+# `the_classic_folder_names_the_published_schema` fails until it has.
 ```
 
 The `## [X.Y.Z]` section is the release: it becomes the GitHub release's body and the notes in

@@ -16,25 +16,31 @@
 //! image, video and embedded object, and every element drawn with an image or a paint script:
 //! what they show cannot be read, so they are painted whatever they show.
 //!
-//! An answer purlis cannot read, or a page that draws a reflection, withholds the screenshot.
+//! An answer purlis cannot read, a page that draws a reflection, or one that draws a frame or a
+//! blanked element through a filter that may draw it elsewhere, withholds the screenshot.
 
 use std::collections::HashSet;
 
 use serde_json::Value;
 
-use super::tree::holds_any;
+use super::tree::{holds_any, holds_loosely};
 
-/// The styles read for each element laid out: an image in any of them is painted over, and a
-/// reflection (the last) withholds the screenshot.
-pub(crate) const STYLES: [&str; 7] = [
+/// The styles read for each element laid out: an image in any of them is painted over, a filter
+/// (the one before last) may withhold the screenshot, and a reflection (the last) withholds it.
+pub(crate) const STYLES: [&str; 8] = [
     "background-image",
     "border-image-source",
     "mask-image",
     "-webkit-mask-box-image-source",
     "list-style-image",
     "content",
+    "filter",
     "-webkit-box-reflect",
 ];
+
+/// Filters that may draw an element away from its box: a frame or a blanked element drawn
+/// through one, itself or by an element it is in, withholds the screenshot.
+const FILTERS_THAT_MOVE: [&str; 2] = ["url(", "drop-shadow"];
 
 /// Elements that show what no read of the page can tell: painted whatever they show.
 const OPAQUE: [&str; 7] = [
@@ -69,8 +75,15 @@ pub(crate) struct Drawn {
 pub(crate) struct Unread(&'static str);
 
 /// What `answer` (of `DOMSnapshot.captureSnapshot`, with [`STYLES`]) draws that is to be painted
-/// over on a page that keeps `kept` out.
-pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
+/// over on a page that keeps `kept` out, and `loose` out also with any spaces or dashes between
+/// its characters (what a group of boxes holds together); `blanked` the engine's ids of its
+/// session's blanked elements.
+pub(crate) fn drawn(
+    answer: &Value,
+    kept: &[&str],
+    loose: &[&str],
+    blanked: &HashSet<i64>,
+) -> Result<Drawn, Unread> {
     let strings: Vec<&str> = answer
         .get("strings")
         .and_then(Value::as_array)
@@ -97,7 +110,7 @@ pub(crate) fn drawn(answer: &Value, kept: &[&str]) -> Result<Drawn, Unread> {
         out.address = at.map(|a| (*a).to_owned());
     }
     for document in documents {
-        read_document(document, &strings, &kept, &mut out)?;
+        read_document(document, &strings, (&kept, loose, blanked), &mut out)?;
     }
     Ok(out)
 }
@@ -127,7 +140,7 @@ fn collapsed(text: &str) -> String {
 fn read_document(
     document: &Value,
     strings: &[&str],
-    kept: &[&str],
+    (kept, loose, blanked): (&[&str], &[&str], &HashSet<i64>),
     out: &mut Drawn,
 ) -> Result<(), Unread> {
     let nodes = document
@@ -196,7 +209,9 @@ fn read_document(
         }
         out
     };
-    let holds = |text: &str| !text.is_empty() && holds_any(&collapsed(text), kept);
+    let holds = |text: &str| {
+        !text.is_empty() && (holds_any(&collapsed(text), kept) || holds_loosely(text, loose))
+    };
     let mut painted: HashSet<usize> = HashSet::new();
     let mut paint = |at: usize, out: &mut Drawn| {
         if painted.insert(at) {
@@ -208,6 +223,7 @@ fn read_document(
     let mut shown: HashSet<usize> = HashSet::new();
     // The text each node lays out itself.
     let mut own: Vec<String> = vec![String::new(); count];
+    let mut filtered = vec![false; count];
     for (entry, node) in laid.iter().enumerate() {
         let at = node_at(*node)?;
         shown.insert(at);
@@ -229,12 +245,13 @@ fn read_document(
             [] if kinds[at] != ELEMENT => vec![String::new(); STYLES.len()],
             _ => style,
         };
-        let [images @ .., reflected] = style.as_slice() else {
+        let [images @ .., filter, reflected] = style.as_slice() else {
             return Err(Unread("an element has no styles"));
         };
-        if images.len() + 1 != STYLES.len() {
+        if images.len() + 2 != STYLES.len() {
             return Err(Unread("an element has styles missing"));
         }
+        filtered[at] = FILTERS_THAT_MOVE.iter().any(|moves| filter.contains(moves));
         if !reflected.is_empty() && reflected != "none" {
             return Err(Unread("the page draws a reflection"));
         }
@@ -251,6 +268,20 @@ fn read_document(
         }
         if FRAMES.contains(&name.as_str()) && !contents.iter().any(|(i, _)| *i == at) {
             out.frames.push(chain(at));
+        }
+    }
+    for (at, backend) in backends.iter().enumerate() {
+        if !(FRAMES.contains(&name(at)?.as_str()) || blanked.contains(backend)) {
+            continue;
+        }
+        let mut next = Some(at);
+        let mut steps = 0;
+        while let Some(up) = next {
+            if filtered[up] {
+                return Err(Unread("the page draws through a filter"));
+            }
+            steps += 1;
+            next = parent(up).filter(|_| steps <= count);
         }
     }
     // Text laid out that holds a text kept out, whole or split over elements: the innermost

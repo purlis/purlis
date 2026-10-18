@@ -18,6 +18,7 @@ import * as bench from "./bench";
 import { commands, type PlaneId } from "./bindings";
 import { FindBar } from "./FindBar";
 import { paneDrawn } from "./paneKeyboard";
+import { RECONNECTING_SAID, useReconnecting } from "./reconnecting";
 import { draw } from "./renderer";
 import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
@@ -35,7 +36,14 @@ import {
   type TerminalRowId,
 } from "./terminalRows";
 import { onTextSizes, textSizes } from "./textSize";
-import { inForce, onDrawn, onTerminalFont, terminalFont, xtermTheme } from "./theme/theme";
+import {
+  inForce,
+  onDrawn,
+  onTerminalFont,
+  terminalFont,
+  xtermLook,
+  xtermTheme,
+} from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { useProjectShown } from "./projectShown";
@@ -57,6 +65,10 @@ import { useProjectShown } from "./projectShown";
  * the program's, a right-click too, and Shift held is the way past it, as in every terminal.
  * The menu key opens the menu under the cursor whichever it is, and Shift+F10 does while no
  * program has the mouse.
+ *
+ * **A chat on a runner whose link is down says "Reconnecting…" over its last screen** (#2496),
+ * quietly, until the core says it is reconnected: the link is back, or it drew again from a new
+ * snapshot.
  */
 export function SessionPane({
   plane,
@@ -77,6 +89,7 @@ export function SessionPane({
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
+  const reconnecting = useReconnecting(plane, session);
   /** The terminal's rows as they stood when its menu opened: whether anything was selected is
    *  read then, once, and not while the menu is up. */
   const [rows, setRows] = useState<TerminalRow[]>([]);
@@ -170,6 +183,9 @@ export function SessionPane({
       // nothing keeping them equal — and which left the other eighteen colours a terminal
       // has to the library's defaults.
       theme: xtermTheme(inForce()),
+      // The cursor's shape and blink, the line height and bold in the bright colours are the
+      // theme's too (#2327).
+      ...xtermLook(inForce()),
       // The search addon draws every match as a decoration, which xterm.js 6.0.0 still calls
       // proposed API (`registerDecoration` throws without this). Nothing else here uses it.
       allowProposedApi: true,
@@ -271,6 +287,11 @@ export function SessionPane({
     // now that xterm's stylesheet sits in a layer below charter's (M6.8).
     const unfollow = onDrawn((theme) => {
       pane.options.theme = xtermTheme(theme);
+      const look = xtermLook(theme);
+      const lineHeightChanged = look.lineHeight !== pane.options.lineHeight;
+      Object.assign(pane.options, look);
+      // A new line height is a new cell size, so the rows that fit the pane are new.
+      if (lineHeightChanged) fit.fit();
     });
     // **And so is a text size changed while it is up** (charter-app#283), then a refit: the
     // cells are a new size, so the rows and columns that fit the pane are new, and `fit` is
@@ -408,7 +429,9 @@ export function SessionPane({
         onPassKey={passTheKey}
       >
         <div
-          className={focused ? "pane focused" : "pane"}
+          className={["pane", focused && "focused", reconnecting && "reconnecting"]
+            .filter(Boolean)
+            .join(" ")}
           data-testid="pane"
           // Everything under here is a shell's keyboard, and the window's own bindings stand
           // back from the chords a terminal encodes (`actions.CHAT_KEYBOARD`, charter-app#106).
@@ -420,6 +443,15 @@ export function SessionPane({
           ref={holder}
         />
       </TerminalMenu>
+      {/* Always there, so a screen reader hears the word as it comes and goes. */}
+      <div className="pane-reconnecting">
+        <span
+          className={reconnecting ? "pane-reconnecting-said ui-text-secondary" : undefined}
+          role="status"
+        >
+          {reconnecting ? RECONNECTING_SAID : ""}
+        </span>
+      </div>
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
     </>
   );

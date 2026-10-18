@@ -611,7 +611,8 @@ _Avoid_: selector, handle, node id, ref (in prose)
 Said of an element of a page whose content no answer to the agent shows: the field purlis filled
 for a **browser login**, and every field the person typed into. A snapshot shows it by its role
 and reference only, a screenshot has it painted over, and what it held is kept out of every answer
-about its page for as long as the page is open. Once a page keeps anything out, a screenshot also
+about its page for as long as the page is open. Blanked boxes next to each other, such as a code
+typed one character a box, are kept out joined too. Once a page keeps anything out, a screenshot also
 paints over that text wherever else a page draws it, and on pages of the same site every canvas,
 image and video, which it cannot read; when what the page draws cannot be read, the screenshot
 is withheld.

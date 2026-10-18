@@ -144,9 +144,13 @@ use crate::view::{Limits, Views};
 /// launch may name the id of the confinement the host composes for it (`confinement`), which
 /// the host then names to the link the start came on, whose proxy asks that link, and whose
 /// place `program_started` answers (`confined`).
+///
+/// 1.17 added a relaying host telling its client when its link to the other host is down and
+/// when it is back (#2496, ADR 0078 as amended 2026-10-17): the pushed notices `link_down`, with
+/// why, and `link_back`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 16,
+    minor: 17,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -1033,6 +1037,17 @@ pub enum Pushed {
         project: String,
         workspace: String,
     },
+    /// The link a relaying host reaches the other host over is down, and why (1.17, #2496):
+    /// what the client has there, its chats and browsers among them, is on that other host,
+    /// which this host is linking to again. Until [`Pushed::LinkBack`] every command it would
+    /// send on is refused; nothing is sent later in its place. Pushed once for each time the
+    /// link goes down, to every subscriber of the relaying host.
+    LinkDown {
+        why: String,
+    },
+    /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
+    /// client's link stands on carried over to it: its views draw again, each from a snapshot.
+    LinkBack {},
 }
 
 wire_words!(Command {
@@ -1135,7 +1150,9 @@ impl Pushed {
             Pushed::Event(_)
             | Pushed::Missed { .. }
             | Pushed::Ended { .. }
-            | Pushed::ViewEnded { .. } => None,
+            | Pushed::ViewEnded { .. }
+            | Pushed::LinkDown { .. }
+            | Pushed::LinkBack {} => None,
         }
     }
 }
@@ -1180,6 +1197,8 @@ wire_words!(Pushed {
     Sandbox => "sandbox",
     Saving => "saving",
     WhoIsMidTurn => "who_is_mid_turn",
+    LinkDown => "link_down",
+    LinkBack => "link_back",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -2394,7 +2413,9 @@ impl Subscribed {
                 | Pushed::Heard { .. }
                 | Pushed::Sandbox { .. }
                 | Pushed::Saving { .. }
-                | Pushed::WhoIsMidTurn { .. } => {}
+                | Pushed::WhoIsMidTurn { .. }
+                | Pushed::LinkDown { .. }
+                | Pushed::LinkBack {} => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

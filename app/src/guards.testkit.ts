@@ -210,14 +210,32 @@ export function utilityOf(word: string): string {
 }
 
 /** A value a component writes out: a number, or a string with nothing interpolated. */
-const WRITTEN = String.raw`-?\d*\.?\d+(?![\w.])|"[^"]*"|'[^']*'|` + "`[^`$]*`";
-const ENTRY = new RegExp(String.raw`^\s*(\w+|"--[\w-]+"|'--[\w-]+')\s*:\s*(${WRITTEN})\s*$`);
+const WRITTEN = String.raw`-?\d*\.?\d+(?:e[+-]?\d+)?(?![\w.])|"[^"]*"|'[^']*'|` + "`[^`$]*`";
+const ENTRY = /^\s*(\w+|"--[\w-]+"|'--[\w-]+')\s*:\s*([\s\S]+?)\s*$/;
+const WRITTEN_ALONE = new RegExp(String.raw`^(?:${WRITTEN})$`);
+/** A string written out, with nothing interpolated. */
+const STRING = String.raw`"[^"]*"|'[^']*'|` + "`[^`$]*`";
+/** A `setProperty(…)` call, on `.style`, `.style?.` or any other declaration a script holds. */
 const SET_PROPERTY = new RegExp(
-  String.raw`\.style\.setProperty\(\s*("[^"]*"|'[^']*'|` +
-    "`[^`$]*`" +
-    String.raw`)\s*,\s*(${WRITTEN})\s*[,)]`,
+  String.raw`\??\.setProperty(?:\?\.)?\(\s*(${STRING})\s*,\s*(${WRITTEN})\s*[,)]`,
   "g",
 );
+/** An assignment to one property of an element's style: `el.style.padding = "7px"`,
+ *  `el.style["padding-top"] = "7px"`. */
+const ASSIGNED = /\.style\s*(?:\.\s*(\w+)|\[\s*("[^"]*"|'[^']*')\s*\])\s*=(?![=>])\s*([^;\n]+)/g;
+/** A whole style written as CSS text: `el.style.cssText = "…"`, `el.setAttribute("style", "…")`. */
+const STYLE_TEXT = new RegExp(
+  String.raw`(?:\.style\s*\.\s*(cssText)\s*=(?![=>])|\.setAttribute\(\s*["'${"`"}]style["'${"`"}]\s*,)\s*(${STRING})`,
+  "g",
+);
+/** A style held in a variable: `style={held}`, `style={held as CSSProperties}`. */
+const STYLE_HELD = /\bstyle=\{\s*([A-Za-z_$][\w$]*)\s*(?:as\s+[\w.]+\s*)?\}/g;
+/** A variable that holds an object literal, and its type if it is given one. */
+const HOLDS_OBJECT = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*([^=;]+?))?\s*=\s*\{/g;
+/** `Object.assign(el.style, { … })`. */
+const ASSIGNS_OBJECT = /\bObject\.assign\(\s*[\w$.?!]*\bstyle\s*,\s*\{/g;
+/** A spread in an object: `...held`. */
+const SPREAD = /^\s*\.\.\.\s*([A-Za-z_$][\w$]*)\s*$/;
 
 /** Where the bracket, brace or parenthesis opened at `start` closes, strings skipped whole. */
 function closingBracket(text: string, start: number): number {
@@ -260,31 +278,163 @@ function topLevel(body: string): string[] {
   return parts;
 }
 
+/** A property without a vendor's prefix: `-webkit-border-radius` is `border-radius`. */
+export const unprefixed = (property: string) => property.replace(/^-(?:webkit|moz|ms|o)-/, "");
+
+/** Where the ternary whose `?` is at `at` splits: the index of its own `:`, nested ternaries
+ *  and strings skipped. */
+function ternaryColon(text: string, at: number): number {
+  let depth = 0;
+  for (let i = at + 1; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"' || char === "'" || char === "`") i = closingString(text, i);
+    else if ("{[(".includes(char)) i = closingBracket(text, i);
+    else if (isTernary(text, i)) depth++;
+    else if (char === ":" && depth-- === 0) return i;
+  }
+  return -1;
+}
+
+/** Whether the `?` at `i` asks a ternary's question: not `?.` (unless a number follows) and not
+ *  `??`. */
+const isTernary = (text: string, i: number) =>
+  text[i] === "?" &&
+  text[i + 1] !== "?" &&
+  text[i - 1] !== "?" &&
+  !(text[i + 1] === "." && !/\d/.test(text[i + 2] ?? ""));
+
+/** An assigned expression up to its own end: the first `,`, `)`, `]` or `}` outside it. */
+function statement(text: string): string {
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"' || char === "'" || char === "`") i = closingString(text, i);
+    else if ("{[(".includes(char)) i = closingBracket(text, i);
+    else if (",)]}".includes(char)) return text.slice(0, i);
+  }
+  return text;
+}
+
+/** The values an expression can give that are written out: itself when it is one, and each
+ *  branch of a ternary (`on ? "7px" : 0`), however deep. A value worked out gives none. */
+export function writtenValues(expression: string): string[] {
+  const value = expression.trim();
+  if (WRITTEN_ALONE.test(value)) return [value];
+  if (value.startsWith("(") && closingBracket(value, 0) === value.length - 1) {
+    return writtenValues(value.slice(1, -1));
+  }
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === '"' || char === "'" || char === "`") i = closingString(value, i);
+    else if ("{[(".includes(char)) i = closingBracket(value, i);
+    else if (isTernary(value, i)) {
+      const colon = ternaryColon(value, i);
+      if (colon < 0) return [];
+      return [
+        ...writtenValues(value.slice(i + 1, colon)),
+        ...writtenValues(value.slice(colon + 1)),
+      ];
+    }
+  }
+  return [];
+}
+
 export interface StyleEntry {
-  /** How the complaint names it: `style paddingTop`, `setProperty --pad`. */
+  /** How the complaint names it: `style paddingTop`, `style held.paddingTop`, `style.padding`,
+   *  `style.cssText padding`, `style attribute padding`, `setProperty --pad`. */
   label: string;
   property: string;
   value: string;
 }
 
-/** Each property a component sets that is written out: an entry of an inline `style` object
- *  (`{{ … }}`, `{ … } as CSSProperties`, over as many lines as it takes), and a
- *  `.style.setProperty(…)` call, as the property it sets: `paddingTop` is `padding-top`, and a
- *  custom property (`"--least"`) is its own name. A spread, or a value worked out, is not
- *  read. */
+/** The property a style key sets: `paddingTop` is `padding-top`; a custom property
+ *  (`--least`) and a property already spelled as CSS (`padding-top`) are their own name. */
+const propertyOf = (key: string) =>
+  key.startsWith("--")
+    ? key
+    : key.replace(/^ms(?=[A-Z])/, "Ms").replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+
+/**
+ * Each property a component or a script sets that is written out, as the property it sets
+ * (`paddingTop` is `padding-top`, a custom property `"--least"` is its own name):
+ * - an entry of an inline `style` object (`{{ … }}`, `{ … } as CSSProperties`, over as many
+ *   lines as it takes), and of every object written in a `style={…}` expression
+ *   (`style={on ? { … } : { … }}`);
+ * - an entry of a style object held in a variable: one a `style={…}` hands over or an inline
+ *   style spreads (`const held = { … }; style={held}`), one typed or cast as `CSSProperties`,
+ *   and one `Object.assign(el.style, { … })` writes;
+ * - an assignment to an element's style (`el.style.padding = "7px"`,
+ *   `el.style["padding-top"] = "7px"`), and a whole style written as CSS text
+ *   (`el.style.cssText = "…"`, `el.setAttribute("style", "…")`), each declaration in it;
+ * - a `setProperty(…)` call (`el.style.setProperty(…)`, `el.style?.setProperty(…)`).
+ *
+ * A value is read when it is written out, or where a ternary picks between values written out
+ * (`padding: on ? "7px" : 0`, each branch). A vendor-prefixed key (`WebkitBorderRadius`,
+ * `msOverflow`) is its prefixed property (`-webkit-border-radius`), which a guard reads
+ * `unprefixed`.
+ */
 export function styleEntries(source: string): StyleEntry[] {
   const found: StyleEntry[] = [];
   const text = withoutComments(source, "ts");
-  for (const hit of text.matchAll(/\bstyle=\{\s*\{/g)) {
-    const open = hit.index + hit[0].length - 1;
+  const spread = new Set<string>();
+  /** The entries of the object literal opened at `open`, each named `<prefix><key>`. */
+  const objectAt = (open: number, prefix: string) => {
     for (const part of topLevel(text.slice(open + 1, closingBracket(text, open)))) {
-      const [, key, value] = ENTRY.exec(part) ?? [];
+      const spreading = SPREAD.exec(part)?.[1];
+      if (spreading !== undefined) spread.add(spreading);
+      const [, key, expression] = ENTRY.exec(part) ?? [];
       if (key === undefined) continue;
       const custom = /^["']/.test(key);
-      const property = custom
-        ? key.slice(1, -1)
-        : key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-      found.push({ label: `style ${custom ? property : key}`, property, value });
+      const property = propertyOf(custom ? key.slice(1, -1) : key);
+      for (const value of writtenValues(expression)) {
+        found.push({ label: `${prefix}${custom ? property : key}`, property, value });
+      }
+    }
+  };
+  for (const hit of text.matchAll(/\bstyle=\{/g)) {
+    const open = hit.index + hit[0].length - 1;
+    const end = closingBracket(text, open);
+    for (let i = open + 1; i < end; i++) {
+      const char = text[i];
+      if (char === '"' || char === "'" || char === "`") i = closingString(text, i);
+      else if (char === "{") {
+        objectAt(i, "style ");
+        i = closingBracket(text, i);
+      }
+    }
+  }
+  for (const [, name] of text.matchAll(STYLE_HELD)) spread.add(name);
+  const holders = [...text.matchAll(HOLDS_OBJECT)].map((hit) => {
+    const open = hit.index + hit[0].length - 1;
+    const after = text.slice(closingBracket(text, open) + 1);
+    const typed =
+      /\bCSSProperties\b/.test(hit[2] ?? "") ||
+      /^\s*(?:as|satisfies)\s+(?:React\.)?CSSProperties\b/.test(after);
+    return { name: hit[1], open, typed, read: false };
+  });
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const holder of holders) {
+      if (holder.read || !(holder.typed || spread.has(holder.name))) continue;
+      holder.read = true;
+      grew = true;
+      objectAt(holder.open, `style ${holder.name}.`);
+    }
+  }
+  for (const hit of text.matchAll(ASSIGNS_OBJECT)) {
+    objectAt(hit.index + hit[0].length - 1, "style ");
+  }
+  for (const [, key, quoted, expression] of text.matchAll(ASSIGNED)) {
+    if (key === "cssText") continue;
+    const named = key ?? quoted.slice(1, -1);
+    for (const value of writtenValues(statement(expression))) {
+      found.push({ label: `style.${named}`, property: propertyOf(named), value });
+    }
+  }
+  for (const [, cssText, written] of text.matchAll(STYLE_TEXT)) {
+    const quote = written[0];
+    const label = cssText ? "style.cssText" : "style attribute";
+    for (const { property, value } of declarations(`x{${written.slice(1, -1)}}`)) {
+      found.push({ label: `${label} ${property}`, property, value: quote + value + quote });
     }
   }
   for (const [, name, value] of text.matchAll(SET_PROPERTY)) {

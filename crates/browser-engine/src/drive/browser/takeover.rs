@@ -77,6 +77,10 @@ pub(crate) struct Typing {
     /// Every field the person typed into (its page's target and its element), read again at a
     /// press of the mouse and at the hand-back.
     touched: HashSet<(String, NodeKey)>,
+    /// What each field the person typed into held when last read from the field itself.
+    latest: HashMap<NodeKey, String>,
+    /// The fields the person typed into, in the order they first typed into each.
+    order: Vec<NodeKey>,
     /// The mouse buttons the person holds down, as the engine's bits.
     held: i64,
 }
@@ -315,7 +319,7 @@ impl Browser {
                 let before = field
                     .as_ref()
                     .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
-                    .map(|field| self.field_holds(field));
+                    .map(|(field, _)| self.field_holds(field));
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -327,7 +331,7 @@ impl Browser {
                 if edits {
                     lock(&self.typing).dirty.insert(target.clone());
                 }
-                if let Some(field) = field {
+                if let Some((field, read)) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
                     let after = self.field_holds(&field);
@@ -338,6 +342,13 @@ impl Browser {
                         // ends with what it replaced.
                         let [first, last] = put_in(&before, &after);
                         held.run(&[first, last, after.clone()]);
+                    }
+                    let (latest, order) = lock(&self.typing).read(&field.1, &after);
+                    // A box of a group (a code typed one character a box) is kept with the
+                    // rest of its group too, joined, each box the person typed into as they
+                    // last read it, this key in it.
+                    for (first, joined) in read.groups_holding(&latest, &order) {
+                        held.group(&first, &joined);
                     }
                     held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);
@@ -432,16 +443,28 @@ impl Browser {
         };
         let mut held = Kept::default();
         held.run(&runs);
+        let mut reads = Vec::new();
         for target in dirty {
-            let _ = self.snapshot_of(&target);
+            if let Ok(read) = self.snapshot_of(&target) {
+                reads.push(read);
+            }
             if let Some(page) = lock(&self.inner.state).page(&target) {
                 held.take_in(&page.scrubbed);
             }
         }
         // Each field is read last, from the field itself: what it holds now is the latest of
-        // its values, whatever its page's tree read before.
+        // its values, whatever its page's tree read before. So are the groups of boxes.
+        let mut latest = HashMap::new();
+        let mut order = Vec::new();
         for field in &touched {
-            held.field(&field.1, &[self.field_holds(field)]);
+            let now = self.field_holds(field);
+            held.field(&field.1, &[&now]);
+            (latest, order) = lock(&self.typing).read(&field.1, &now);
+        }
+        for read in &reads {
+            for (first, joined) in read.groups_holding(&latest, &order) {
+                held.group(&first, &joined);
+            }
         }
         lock(&self.inner.state).keep_out_everywhere(&held);
     }
@@ -508,6 +531,16 @@ impl Browser {
 }
 
 impl Typing {
+    /// The field `key` holds `now`, as read from the field itself: answers what every field
+    /// typed into held when last read, and the order they were first typed into.
+    fn read(&mut self, key: &NodeKey, now: &str) -> (HashMap<NodeKey, String>, Vec<NodeKey>) {
+        self.latest.insert(key.clone(), now.to_owned());
+        if !self.order.contains(key) {
+            self.order.push(key.clone());
+        }
+        (self.latest.clone(), self.order.clone())
+    }
+
     /// The person pressed `key` on `target`'s page, typing `text`, if it types any.
     fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
         let runs = self.runs.entry(target.to_owned()).or_default();

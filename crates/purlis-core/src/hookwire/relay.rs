@@ -483,9 +483,63 @@ pub struct Heeding {
     gone: Mutex<HashSet<u64>>,
     /// What each permission ask held here is told if the host lets it go first.
     held: Mutex<HashMap<u64, LetGo>>,
-    /// Where each running `secret exec`'s input goes.
-    inputs: Mutex<HashMap<u64, mpsc::Sender<String>>>,
+    /// The input of each `secret exec` handed on, by the number it was handed on as.
+    inputs: Mutex<HashMap<u64, Input>>,
+    /// What tells each `secret exec` run here from one run before it under the same number.
+    execs: AtomicU64,
+    /// The link to the host the lines come over now, by its number: `None` before the first
+    /// and after it ended.
+    link: Mutex<Option<u64>>,
 }
+
+/// **The input of one `secret exec`** (#2271). The window's link hears the exec on a thread of
+/// its own and its input, line by line, in order on another, so a line, and the input's end, can
+/// be heard before the exec has begun: what comes then is kept for it, or the exec would wait
+/// for an end it was never told of. Input with no reader is not kept: none outlives its exec or
+/// the link it came over ([`Heeding::linked`], [`Heeding::unlinked`]), none comes from a link
+/// other than the current one, and what waits for execs not begun is bounded
+/// ([`AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST`], [`EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST`]).
+enum Input {
+    /// The exec has not begun: the lines that came for it, their bytes, and whether its input
+    /// has ended, and why.
+    Early {
+        lines: Vec<String>,
+        bytes: usize,
+        ending: Ending,
+    },
+    /// The exec, numbered `exec`, runs and reads what is sent here.
+    Running { to: mpsc::Sender<String>, exec: u64 },
+    /// No more of the exec's input is read (it ended, will not begin, or its input passed what
+    /// is kept), and the host has not said its input ended: what still comes for it is dropped
+    /// until it does.
+    Dropped,
+}
+
+/// The `secret exec` inputs, held with the link the lines come over now.
+type InputsOn<'a> = (
+    MutexGuard<'a, Option<u64>>,
+    MutexGuard<'a, HashMap<u64, Input>>,
+);
+
+/// Whether, and why, the input kept for a `secret exec` not begun has ended.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ending {
+    /// More may come.
+    Open,
+    /// More came than is kept: the exec reads what was, then the end, and what still comes is
+    /// dropped.
+    PastTheCap,
+    /// The host said its input ended: nothing more comes.
+    Told,
+}
+
+/// The most bytes of input, newlines counted, kept for one `secret exec` that has not begun: a
+/// line past it is dropped, and the exec's input ends there.
+pub const AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST: usize = 64 * 1024;
+
+/// The most bytes of input kept for every `secret exec` not begun on a link together: a line
+/// past it is dropped, and its exec's input ends there.
+pub const EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST: usize = 4 * AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST;
 
 /// What a permission ask held in the window is told as it ends unanswered.
 type LetGo = Box<dyn FnOnce(Left) + Send + 'static>;
@@ -505,7 +559,61 @@ impl Heeding {
             gone: Mutex::default(),
             held: Mutex::default(),
             inputs: Mutex::default(),
+            execs: AtomicU64::new(1),
+            link: Mutex::default(),
         }
+    }
+
+    /// The lines come over link `link` to the host from now on. A link other than the one
+    /// they came over before is a host that may have started again, numbering its lines from
+    /// the start: nothing kept of a `secret exec`'s input from before is kept on.
+    pub fn linked(&self, link: u64) {
+        let mut on = lock(&self.link);
+        if *on != Some(link) {
+            *on = Some(link);
+            lock(&self.inputs).clear();
+        }
+    }
+
+    /// Link `link` to the host ended. Where the lines came over it, every `secret exec`'s
+    /// input ends, and nothing kept of one is kept on. A link the lines no longer come over
+    /// changes nothing.
+    pub fn unlinked(&self, link: u64) {
+        let mut on = lock(&self.link);
+        if *on == Some(link) {
+            *on = None;
+            lock(&self.inputs).clear();
+        }
+    }
+
+    /// The `secret exec` handed on as `id` over link `link` will not run here (the thread it was
+    /// to be heard on could not be had): what still comes for it is dropped, and the host is
+    /// told it ended.
+    pub fn not_begun(&self, link: u64, id: u64, reply: &Reply) {
+        if let Some((_on, mut inputs)) = self.inputs_on(link) {
+            match inputs.remove(&id) {
+                // Nothing more comes for it.
+                Some(Input::Early {
+                    ending: Ending::Told,
+                    ..
+                }) => {}
+                _ => {
+                    inputs.insert(id, Input::Dropped);
+                }
+            }
+        }
+        reply(Replied::Ended);
+    }
+
+    /// The `secret exec` inputs, where `link` is the link the lines come over now: held with
+    /// the link, so the link cannot change while they are changed.
+    fn inputs_on(&self, link: u64) -> Option<InputsOn<'_>> {
+        let on = lock(&self.link);
+        if *on != Some(link) {
+            return None;
+        }
+        let inputs = lock(&self.inputs);
+        Some((on, inputs))
     }
 
     /// Whether hearing `heard` may wait as long as a person takes, or a command runs: such a
@@ -522,9 +630,12 @@ impl Heeding {
         lock(&self.gone).contains(&connection)
     }
 
-    /// Hears the line handed on as `id`, and replies through `reply`: returns once it is heard,
-    /// which for an ask, a permission ask or a `secret exec` is once it is answered or ended.
-    pub fn hear(&self, id: u64, heard: Heard, reply: Reply) {
+    /// Hears the line handed on as `id` over link `link`, and replies through `reply`: returns
+    /// once it is heard, which for an ask, a permission ask or a `secret exec` is once it is
+    /// answered or ended. A `secret exec`, or its input, from a link other than the one the lines
+    /// come over now is of a host that went or started again: it is dropped, and the exec told
+    /// to its host as ended.
+    pub fn hear(&self, link: u64, id: u64, heard: Heard, reply: Reply) {
         // What the hearing took, with what it would have recorded carried back to the host.
         let taken = |heard: (io::Result<()>, Option<Entry>)| match heard {
             (Ok(()), Some(entry)) => Replied::Record(entry),
@@ -560,15 +671,84 @@ impl Heeding {
             Heard::AskerGone { connection } => {
                 lock(&self.gone).insert(connection);
             }
-            Heard::SecretExec(ask) => self.secret_exec(id, ask, reply),
-            Heard::Input { of, line } => {
-                if let Some(input) = lock(&self.inputs).get(&of) {
-                    let _ = input.send(line);
+            Heard::SecretExec(ask) => self.secret_exec(link, id, ask, reply),
+            Heard::Input { of, line } => self.input(link, of, line),
+            Heard::InputEnded { of } => {
+                let Some((_on, mut inputs)) = self.inputs_on(link) else {
+                    return;
+                };
+                // A running exec reads to the end once its sender goes; one not begun yet is
+                // kept what came, and that it ended.
+                match inputs.remove(&of) {
+                    Some(Input::Early { lines, bytes, .. }) => {
+                        inputs.insert(
+                            of,
+                            Input::Early {
+                                lines,
+                                bytes,
+                                ending: Ending::Told,
+                            },
+                        );
+                    }
+                    Some(Input::Running { .. } | Input::Dropped) => {}
+                    None => {
+                        inputs.insert(
+                            of,
+                            Input::Early {
+                                lines: Vec::new(),
+                                bytes: 0,
+                                ending: Ending::Told,
+                            },
+                        );
+                    }
                 }
             }
-            Heard::InputEnded { of } => {
-                lock(&self.inputs).remove(&of);
+        }
+    }
+
+    /// One line of the input to the `secret exec` handed on as `of`, over link `link`.
+    fn input(&self, link: u64, of: u64, line: String) {
+        let Some((_on, mut inputs)) = self.inputs_on(link) else {
+            return;
+        };
+        let kept: usize = inputs
+            .values()
+            .map(|input| match input {
+                Input::Early { bytes, .. } => *bytes,
+                _ => 0,
+            })
+            .sum();
+        let input = inputs.entry(of).or_insert(Input::Early {
+            lines: Vec::new(),
+            bytes: 0,
+            ending: Ending::Open,
+        });
+        match input {
+            Input::Early {
+                lines,
+                bytes,
+                ending: ending @ Ending::Open,
+            } => {
+                let more = line.len() + 1;
+                if *bytes + more > AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST
+                    || kept + more > EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST
+                {
+                    tracing::warn!(
+                        "purlis: a secret exec that has not begun was sent more input than is \
+                         kept for it ({AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST} bytes, \
+                         {EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST} for all on a link); its input ends \
+                         there"
+                    );
+                    *ending = Ending::PastTheCap;
+                } else {
+                    *bytes += more;
+                    lines.push(line);
+                }
             }
+            Input::Running { to, .. } => {
+                let _ = to.send(line);
+            }
+            Input::Early { .. } | Input::Dropped => {}
         }
     }
 
@@ -621,9 +801,35 @@ impl Heeding {
     }
 
     /// Runs a `secret exec` here, its input the lines the host hands on, its frames replied.
-    fn secret_exec(&self, id: u64, ask: brokered::Ask, reply: Reply) {
-        let (input, lines) = mpsc::channel();
-        lock(&self.inputs).insert(id, input);
+    fn secret_exec(&self, link: u64, id: u64, ask: brokered::Ask, reply: Reply) {
+        let exec = self.execs.fetch_add(1, Ordering::Relaxed);
+        let (to, lines) = mpsc::channel();
+        {
+            let Some((_on, mut inputs)) = self.inputs_on(link) else {
+                reply(Replied::Ended);
+                return;
+            };
+            let (early, ending) = match inputs.remove(&id) {
+                Some(Input::Early { lines, ending, .. }) => (lines, ending),
+                // Nothing came for it yet; a mark left for an exec of this number before is not
+                // this one's.
+                Some(Input::Running { .. } | Input::Dropped) | None => (Vec::new(), Ending::Open),
+            };
+            for line in early {
+                let _ = to.send(line);
+            }
+            // Where its input ended its sender goes, so it reads what came, then the end.
+            match ending {
+                Ending::Open => {
+                    inputs.insert(id, Input::Running { to, exec });
+                }
+                Ending::PastTheCap => {
+                    drop(to);
+                    inputs.insert(id, Input::Dropped);
+                }
+                Ending::Told => drop(to),
+            }
+        }
         let reader = Box::new(std::io::BufReader::new(Lines {
             lines,
             pending: Vec::new(),
@@ -634,7 +840,16 @@ impl Heeding {
             pending: Vec::new(),
         });
         (self.hearing.secret_exec)(ask, reader, writer);
-        lock(&self.inputs).remove(&id);
+        {
+            let mut inputs = lock(&self.inputs);
+            // Only this exec's own: a link to a host started again may have handed on another
+            // under the same number since.
+            if let Some(input) = inputs.get_mut(&id)
+                && matches!(input, Input::Running { exec: running, .. } if *running == exec)
+            {
+                *input = Input::Dropped;
+            }
+        }
         reply(Replied::Ended);
     }
 }

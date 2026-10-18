@@ -13,7 +13,7 @@ use super::*;
 use crate::extension::project::theme::Pick;
 
 /// The schema as the repo publishes it.
-const PUBLISHED_SCHEMA: &str = include_str!("../../../../docs/schema/theme.schema.json");
+const PUBLISHED_SCHEMA: &str = include_str!("../../../../docs/schema/theme.v2.schema.json");
 
 fn said(resolved: &Resolved) -> Vec<String> {
     resolved
@@ -52,10 +52,36 @@ fn classic_light() -> &'static ResolvedTheme {
     built_in("purlis-light").expect("Classic's light appearance")
 }
 
-/// Each value of `theme` in token order, as one string to digest.
+/// The tokens #2327 added after the digests below were taken: what Classic gives each is held
+/// to what the window drew before in `typed_tests.rs`.
+fn added_later(token: &str) -> bool {
+    [
+        "syntax.",
+        "markdown.",
+        "selection.",
+        "scrollbar.",
+        "chart.",
+        "window.",
+        "terminal.selection-foreground",
+        "terminal.selection-inactive",
+        "terminal.scrollbar",
+    ]
+    .iter()
+    .any(|prefix| token.starts_with(prefix))
+        || ["caret", "placeholder"].contains(&token)
+}
+
+/// Each value of `theme` in token order, as one string to digest: the tokens there were when
+/// the digests were taken.
 fn digest(theme: &ResolvedTheme) -> String {
     use sha2::Digest;
-    let sorted = serde_json::to_string(&theme.values).expect("values serialise");
+    let then: std::collections::BTreeMap<&str, &String> = theme
+        .values
+        .iter()
+        .filter(|(token, _)| !added_later(token))
+        .map(|(token, value)| (*token, value))
+        .collect();
+    let sorted = serde_json::to_string(&then).expect("values serialise");
     sha2::Sha256::digest(sorted.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -130,7 +156,11 @@ fn the_classic_folder_loads_as_itself_without_a_word() {
 #[test]
 fn the_classic_folder_names_the_published_schema() {
     let file: Value = serde_json::from_str(CLASSIC_FILE).unwrap();
-    assert_eq!(file["$schema"], SCHEMA_URL);
+    assert_eq!(
+        file["$schema"], SCHEMA_URL,
+        "Purlis Classic's folder names the schema of the purlis it ships in: after a version \
+         bump, run PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema"
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -484,7 +514,7 @@ fn a_token_or_motion_name_purlis_does_not_have_is_left_out_and_said() {
         "name": "Ahead",
         "appearances": [{
             "id": "dark", "appearance": "dark",
-            "tokens": { "syntax.keyword": "#ff00ff", "accent.base": "#123456" },
+            "tokens": { "gutter.marker": "#ff00ff", "accent.base": "#123456" },
             "motion": { "duration.linger": 400 }
         }]
     }));
@@ -493,7 +523,7 @@ fn a_token_or_motion_name_purlis_does_not_have_is_left_out_and_said() {
     assert_eq!(
         said(&loaded),
         [
-            "syntax.keyword in appearance dark is not a purlis token, so it is left out",
+            "gutter.marker in appearance dark is not a purlis token, so it is left out",
             "duration.linger is not a purlis motion token, so it is left out",
         ]
     );
@@ -689,18 +719,28 @@ fn a_folder_in_the_library_is_extended_by_its_folder_name() {
 fn the_published_schema_is_the_one_the_engine_generates() {
     let published: Value =
         serde_json::from_str(PUBLISHED_SCHEMA).expect("the published schema is JSON");
+    // Before anything is written: a format only grows (`theme::published`).
+    let narrowed = published::narrowings(&published, &schema());
+    assert!(
+        narrowed.is_empty(),
+        "format 2's schema only grows, and the engine's takes away or narrows what \
+         {SCHEMA_FILE} has; a theme valid against an earlier release would stop being valid. \
+         Keep it, or make the change a new format:\n{}",
+        narrowed.join("\n")
+    );
     if std::env::var_os("PURLIS_THEME_SCHEMA_WRITE").is_some_and(|v| v == "1") {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../docs/schema/theme.schema.json"
+            "/../../docs/schema/theme.v2.schema.json"
         );
         std::fs::write(path, schema_text()).expect("the schema is written");
+        published_tests::name_this_release_in_the_classic_folder();
         return;
     }
     assert_eq!(
         published,
         schema(),
-        "docs/schema/theme.schema.json is not what the engine generates: run \
+        "{SCHEMA_FILE} is not what the engine generates: run \
          PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p purlis-core the_published_schema"
     );
     assert_eq!(PUBLISHED_SCHEMA, schema_text());
@@ -709,7 +749,6 @@ fn the_published_schema_is_the_one_the_engine_generates() {
 #[test]
 fn the_schema_completes_every_token_and_motion_name_and_nothing_else() {
     let schema = schema();
-    assert_eq!(schema["$id"], SCHEMA_URL);
     let tokens = schema["$defs"]["tokens"]["properties"]
         .as_object()
         .expect("token names");
@@ -717,6 +756,7 @@ fn the_schema_completes_every_token_and_motion_name_and_nothing_else() {
     let expected: Vec<&str> = TOKENS
         .iter()
         .copied()
+        .chain(typed::all())
         .chain(geometry::STEPS.iter().map(|step| step.token))
         .collect();
     assert_eq!(named, expected);

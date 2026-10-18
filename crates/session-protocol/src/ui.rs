@@ -204,6 +204,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // theme folders, which the window loads its faces from. Held to the window, failing closed:
     // a link draws with the platform's fonts.
     "theme_font",
+    // The theme specimen (#2330): a hidden window this app opens on this machine, photographed
+    // and closed. Drawn for the window and for the chats this app started, on their hook
+    // socket; a link has no window of its own here to draw it for.
+    "theme_specimen",
     // Ends.
     "end_task",
     "task_ending",
@@ -746,6 +750,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_work_unlink",
     "chats_on_older_sandbox",
     "chats_plane_updated",
+    // Which chats are reconnecting to their runner (#2496): what their panes start from.
+    "chats_reconnecting",
     "chats_that_would_not_start",
     "check_for_update",
     "check_sandbox_host",
