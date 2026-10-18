@@ -153,6 +153,38 @@ fn a_call_names_its_browser_and_its_id_or_neither() {
 }
 
 #[test]
+fn an_act_on_a_page_may_ask_for_what_changed_and_a_read_may_not() {
+    // #2137.
+    let click = asked(
+        "browser_click",
+        &args(json!({ "target": "e1", "changes": true })),
+    )
+    .unwrap();
+    assert!(click.changes);
+    assert!(
+        !asked("browser_click", &args(json!({ "target": "e1" })))
+            .unwrap()
+            .changes
+    );
+    let refused = asked("browser_snapshot", &args(json!({ "changes": true }))).unwrap_err();
+    assert!(refused.contains("changes"), "{refused}");
+    for tool in TOOLS {
+        let offers = (tool.schema)()["properties"].get("changes").is_some();
+        let acts_on_a_page = !tool.read_only
+            && ![
+                "browser_open",
+                "browser_switch_page",
+                "browser_new",
+                "browser_close",
+                "browser_login",
+            ]
+            .contains(&tool.name);
+        assert_eq!(offers, acts_on_a_page, "{}", tool.name);
+    }
+    assert_eq!(super::changes_call_id("c-1"), "c-1:changes");
+}
+
+#[test]
 fn a_call_missing_what_it_needs_is_refused_in_words_that_say_what_to_give() {
     let refused = asked("browser_click", &args(json!({}))).unwrap_err();
     assert!(refused.contains("target"), "{refused}");
@@ -259,6 +291,7 @@ fn ask_operator_pointed_at_a_browser_asks_the_app_to_hand_that_browser_to_the_pe
             asked: Browsing::NeedsYou {
                 question: "The page wants a code sent to your phone".into(),
             },
+            changes: false,
         }
     );
     assert!(super::points_at_a_browser(&args(

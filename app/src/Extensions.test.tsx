@@ -6,9 +6,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { drawThemeFor, Extensions, themeTroubleSaid, troubleSaid } from "./Extensions";
+import {
+  drawThemeFor,
+  Extensions,
+  forgetExtensionThemes,
+  themeTroubleSaid,
+  troubleSaid,
+} from "./Extensions";
+import type { PlaneId } from "./bindings";
 import {
   BUILT_IN,
+  CROSSFADE,
   DEFAULT_THEME,
   drawIn,
   inForce,
@@ -684,9 +692,120 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark");
     await drawThemeFor("every");
     expect(asked.filter((call) => call.cmd === "theme_in_force").map((call) => call.args)).toEqual([
-      { pick: "solarized/Solarized Dark", on: ["solarized"], light: true, reread: false },
-      { pick: null, on: null, light: true, reread: false },
+      {
+        pick: "solarized/Solarized Dark",
+        on: ["solarized"],
+        light: true,
+        moreContrast: false,
+        reread: false,
+        at: null,
+      },
+      { pick: null, on: null, light: true, moreContrast: false, reread: false, at: null },
     ]);
+  });
+
+  it("asks the core for the project and workspace in front, whose theme levels it reads (#2323)", async () => {
+    const asked = core({});
+    system(false);
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId });
+    expect(
+      asked.filter((call) => call.cmd === "theme_in_force").map((call) => call.args.at),
+    ).toEqual([
+      { plane: "p-1", workspace: "alpha" },
+      { plane: "p-1", workspace: null },
+    ]);
+    // Today's in-plane picks are mapped into the person's choices once for each place.
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    expect(
+      asked
+        .filter((call) => call.cmd === "theme_levels_adopt")
+        .map((call) => [call.args.plane, call.args.workspace]),
+    ).toEqual([
+      ["p-1", "alpha"],
+      ["p-1", null],
+    ]);
+  });
+
+  it("crossfades a switch to another workspace's theme, and draws the first at once (#2323)", async () => {
+    core({});
+    const root = document.documentElement;
+    await drawThemeFor(new Set(), "purlis-dark", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    expect(root.classList.contains(CROSSFADE)).toBe(false);
+    await drawThemeFor(new Set(), "purlis-light", { plane: "p-1" as PlaneId, workspace: "beta" });
+    expect(inForce().name).toBe("purlis-light");
+    expect(root.classList.contains(CROSSFADE)).toBe(true);
+    await vi.waitFor(() => expect(root.classList.contains(CROSSFADE)).toBe(false));
+  });
+
+  it("asks with more contrast while the system asks for it, and again when it stops", async () => {
+    // #2328: `prefers-contrast: more` is the engine's input, and its change draws again.
+    forgetExtensionThemes();
+    let more = true;
+    const heard = new Set<() => void>();
+    const contrast = "(prefers-contrast: more)";
+    vi.stubGlobal("matchMedia", (media: string) => ({
+      get matches() {
+        return media === contrast && more;
+      },
+      addEventListener: (_: string, listen: () => void) => {
+        if (media === contrast) heard.add(listen);
+      },
+      removeEventListener: (_: string, listen: () => void) => heard.delete(listen),
+    }));
+    const asked = core({
+      inForce: (args) => ({
+        ...KEEPS,
+        theme: resolved(args.moreContrast === true ? "Sharp" : "Plain"),
+      }),
+    });
+    await drawThemeFor(new Set(["acme"]), "acme/Sharp");
+    expect(inForce().name).toBe("Sharp");
+
+    more = false;
+    for (const listen of heard) listen();
+    await expect.poll(() => inForce().name).toBe("Plain");
+    expect(
+      asked.filter((call) => call.cmd === "theme_in_force").map((call) => call.args.moreContrast),
+    ).toEqual([true, false]);
+  });
+
+  it("draws the native window in the theme drawn, once per change, and the system's while following", async () => {
+    // #2328: the traffic lights, menus and dialogs take the drawn appearance, and the window's
+    // own colour is its `window.background`.
+    forgetExtensionThemes();
+    const turn = system(false);
+    const asked = core({
+      inForce: (args) => ({
+        theme: BUILT_IN[args.light === true ? "purlis-light" : "purlis-dark"],
+        complaints: [],
+        follows_system: args.pick === "system",
+      }),
+    });
+    const native = () =>
+      asked.filter((call) => call.cmd === "draw_native_window").map((call) => call.args);
+    const light = BUILT_IN["purlis-light"];
+    const dark = BUILT_IN["purlis-dark"];
+
+    await drawThemeFor(new Set(), "purlis-light");
+    await drawThemeFor(new Set(), "purlis-light");
+    expect(native()).toEqual([
+      {
+        appearance: "light",
+        background: light.values["window.background"],
+        followsSystem: false,
+      },
+    ]);
+
+    await drawThemeFor(new Set(), "system");
+    expect(native().at(-1)).toEqual({
+      appearance: "dark",
+      background: dark.values["window.background"],
+      followsSystem: true,
+    });
+    turn(true);
+    await expect.poll(() => native().at(-1)?.appearance).toBe("light");
+    expect(native().at(-1)?.followsSystem).toBe(true);
   });
 
   it("draws a built-in pick at once, from what the window was handed, asking the core nothing", () => {

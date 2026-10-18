@@ -14,6 +14,7 @@ import { DEFAULT_THEME, drawIn, fetchFacesWith, personInForce } from "./theme/th
 import { sayAppearance } from "./appearance";
 import { fetchFace } from "./theme/faces";
 import { theirThemeOnce } from "./windowprefs";
+import { drawNatively } from "./theme/native";
 
 // The window's colours, before anything is rendered and therefore before anything is painted:
 // the operator's own `theme.json` when there is one, else the built-in. Both were resolved by the
@@ -23,7 +24,11 @@ import { theirThemeOnce } from "./windowprefs";
 // A theme's fonts are asked for by digest after the frame (`theme/faces.ts`, #2326): the first
 // frame is drawn in each family list's fallback, and nothing waits for a face.
 fetchFacesWith(fetchFace);
-drawIn(theirThemeOnce() ?? DEFAULT_THEME);
+const first = theirThemeOnce() ?? DEFAULT_THEME;
+drawIn(first);
+// The window was created in this theme's native appearance and colour (`nativewindow.rs`);
+// it is told again for the one thing only the page knows, more contrast (#2328).
+drawNatively(first);
 // The person's density and fonts were drawn with it, as the engine read them from the layout
 // file (`appearance.ts`); what it had to put right is said.
 sayAppearance(personInForce().complaints);

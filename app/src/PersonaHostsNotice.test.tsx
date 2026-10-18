@@ -89,11 +89,13 @@ describe("a persona's hosts Notice", () => {
     expect(notice).toHaveTextContent(
       "let chats as devops, and every chat that names no persona (devops is this project's default persona), reach",
     );
-    await userEvent.setup().click(
-      await screen.findByRole("button", {
-        name: "Allow for devops chats and chats that name no persona",
-      }),
-    );
+    const allow = await screen.findByRole("button", {
+      name: "Allow for devops chats and chats that name no persona",
+    });
+    // Allow is the grants style and Not now the plain one (ADR 0097 §6).
+    expect(allow).toHaveClass("ui-button-grants");
+    expect(screen.getByRole("button", { name: "Not now" })).not.toHaveClass("ui-button-grants");
+    await userEvent.setup().click(allow);
     await waitFor(() =>
       expect(asked).toContainEqual({
         cmd: "allow_persona_hosts",

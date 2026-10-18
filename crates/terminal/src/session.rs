@@ -27,6 +27,9 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 
 use crate::engine::{Engine, Screen, Size};
 
+/// The terminal type every program a session starts is given, as `TERM`.
+pub const TERM: &str = "xterm-256color";
+
 /// What to run, where, and at what size.
 #[derive(Debug, Clone)]
 pub struct Spec {
@@ -304,7 +307,7 @@ impl Session {
         if spec.env_clear {
             command.env_clear();
         }
-        command.env("TERM", "xterm-256color");
+        command.env("TERM", TERM);
         // Removed before anything is set, so a caller can always put back what it means to.
         for key in &spec.env_without {
             command.env_remove(key);
@@ -1325,6 +1328,23 @@ mod tests {
             .expect("the session starts");
 
         screen_until(&session, shows("seen<|yes|xterm-256color>"));
+    }
+
+    #[test]
+    fn a_session_told_to_start_empty_still_names_its_terminal_and_a_shell() {
+        // What a session sets on every program it starts, beside what it is given: `TERM`, and
+        // the pseudo-terminal's `SHELL`. purlis's own wrap on Linux lets exactly these be
+        // (`purlis_linux_sandbox::carried::SET_BY_THE_TERMINAL`).
+        let mut spec = Spec::new("/bin/sh", SIZE).args([
+            "-c",
+            "echo \"seen<${TERM}|${SHELL:+a shell}>\"; exec sleep 30",
+        ]);
+        spec.env_clear = true;
+
+        let session = Session::spawn(spec, Box::new(AlacrittyEngine::new(SIZE, 1000)))
+            .expect("the session starts");
+
+        screen_until(&session, shows("seen<xterm-256color|a shell>"));
     }
 
     #[test]

@@ -126,7 +126,7 @@ describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, 
 /**
  * **The count's colour is only ever on a pair the contrast suite measures.**
  *
- * `needs-you.base` is `#b85050` in purlis-dark, which is 3.61:1 on `surface.base` — under AA
+ * `needs-you.base` is `#bd5654` in purlis-dark, which is 3.88:1 on `surface.base` — under AA
  * for words. So the button's own colour is `text.primary`, and the number is
  * `needs-you.text` FILLED with `needs-you.base`, which is the pair `contrast.test.ts` holds at
  * 4.5:1. jsdom computes no colour, so this reads the rules.

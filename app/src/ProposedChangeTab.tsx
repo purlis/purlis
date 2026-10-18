@@ -6,6 +6,7 @@ import { commands, type PlaneId, type ProposedWhole } from "./bindings";
 import { asksMoved } from "./asks";
 import { DRAWING } from "./AskWrites";
 import { EmptyState } from "./EmptyState";
+import { GrantsMark } from "./primitives/Grants";
 import { FileCode, LoaderCircle } from "lucide-react";
 
 /** The merge view, from the editor's own chunk, loaded when a change is opened. */
@@ -98,11 +99,13 @@ export function ProposedChangeTab({ plane, id }: { plane: PlaneId; id: number })
         {read.applies && (
           <button
             type="button"
-            className="ui-button ui-button-primary"
+            // Apply grants what the change writes: drawn as every grant is (ADR 0097 §6).
+            className="ui-button ui-button-grants"
             tabIndex={0}
             aria-disabled={busy || !drawn}
             onClick={() => answer(true)}
           >
+            <GrantsMark />
             Apply
           </button>
         )}

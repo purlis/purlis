@@ -144,6 +144,10 @@ enum Beside {
     },
 }
 
+/// A theme folder as read: its `theme.json`, the icon set it names, parsed, or why not, and the
+/// folder itself, whose `fonts/` its fonts are read from.
+pub(crate) type FolderRead = (Value, Option<Result<Value, String>>, PathBuf);
+
 /// A theme read: the theme, and the names it gave that purlis left out.
 type Read = (Theme, Vec<Complaint>);
 
@@ -198,6 +202,21 @@ impl Library {
     pub fn with_folder(mut self, themes: &Path, name: &str) -> Self {
         self.folders
             .insert(name.to_owned(), read_folder(themes, name));
+        self
+    }
+
+    /// The library with the theme folder `name` as it was read: its `theme.json` and the icon
+    /// set it names (`None` when it names none), or why it could not be read
+    /// (`super::folders`, which reads a level's folders from handles).
+    #[must_use]
+    pub(crate) fn with_read(mut self, name: &str, read: Result<FolderRead, String>) -> Self {
+        self.folders.insert(
+            name.to_owned(),
+            read.map(|(document, icons, folder)| Held {
+                document,
+                beside: Beside::Folder { icons, folder },
+            }),
+        );
         self
     }
 

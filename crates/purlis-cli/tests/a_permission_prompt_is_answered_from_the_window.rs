@@ -430,11 +430,16 @@ fn a_hook_inside_purlis_s_linux_sandbox_asks_the_window_the_same() {
     let mut child = support::command(CHARTER)
         .args(&words)
         .env_clear()
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        .env("HOME", host.dir.path())
-        .env(SOCKET_ENV, &host.path)
-        .env(CHAT_ENV, "7")
-        .env(TOKEN_ENV, &host.token)
+        .envs(support::carrying([
+            (
+                "PATH",
+                std::ffi::OsString::from(std::env::var("PATH").unwrap_or_default()),
+            ),
+            ("HOME", host.dir.path().into()),
+            (SOCKET_ENV, host.path.clone().into()),
+            (CHAT_ENV, "7".into()),
+            (TOKEN_ENV, host.token.clone().into()),
+        ]))
         .process_group(0)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

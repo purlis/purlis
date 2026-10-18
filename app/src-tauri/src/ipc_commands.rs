@@ -359,6 +359,9 @@ macro_rules! app_commands {
                 extensions::theme_font,
                 extensions::theme_person,
                 specimen::theme_specimen,
+                extensions::theme_levels_adopt,
+                extensions::theme_move_into_a_folder,
+                extensions::theme_choose,
                 extensions::extension_icon_themes,
                 extensions::extension_panels,
                 vaults::vault_list,
@@ -460,6 +463,8 @@ macro_rules! app_commands {
                 windowprefs::seen_on_this_machine,
                 windowprefs::use_built_in_theme,
                 windowprefs::use_default_layout,
+                nativewindow::draw_native_window,
+                nativewindow::native_window_drawn,
             ],
             vault_values: [
                 vaults::vault_secret_reveal,

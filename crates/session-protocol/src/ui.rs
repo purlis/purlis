@@ -208,6 +208,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // and closed. Drawn for the window and for the chats this app started, on their hook
     // socket; a link has no window of its own here to draw it for.
     "theme_specimen",
+    // The window's own native chrome (#2328): its appearance and colour, drawn as the theme the
+    // window draws, and read back. A link has no native window of its own here.
+    "draw_native_window",
+    "native_window_drawn",
     // Ends.
     "end_task",
     "task_ending",
@@ -571,6 +575,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "size_browser",
     // A chat's browsers, listed to be watched (#2024): the window's alone, as watching is.
     "chat_browsers",
+    // The person's own theme choice, and the move of their old theme file into a theme folder
+    // (#2323): each writes how their window looks on this machine, and the move moves their
+    // file, so only their press in the window makes either.
+    "theme_choose",
+    "theme_move_into_a_folder",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -887,6 +896,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "theme_in_force",
     // The person's density and font override, read by the engine (#2326): no file, no state.
     "theme_person",
+    "theme_levels_adopt",
     "this_machine",
     "title_bar_room",
     "todo_add",

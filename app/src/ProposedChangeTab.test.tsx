@@ -53,6 +53,9 @@ describe("a proposed change's own tab", () => {
     const sent = core(whole());
     render(<ProposedChangeTab plane={PLANE} id={7} />);
     await screen.findByTestId("merge-viewer", undefined, { timeout: 5000 });
+    // Apply is a grant, never the suggested answer's style (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("ui-button-grants");
+    expect(screen.getByRole("button", { name: "Apply" })).not.toHaveClass("ui-button-primary");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() =>
       expect(sent("apply_proposed_change")).toEqual([{ plane: PLANE, id: 7, from: "tab" }]),

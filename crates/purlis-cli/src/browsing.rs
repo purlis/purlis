@@ -9,8 +9,8 @@
 
 use std::time::Duration;
 
-use purlis_core::browsertools;
-use purlis_core::hookwire::{self, Answer, Ask, BrowseAsk};
+use purlis_core::browsertools::{self, Act};
+use purlis_core::hookwire::{self, Answer, Ask, BrowseAsk, Browsing};
 
 use crate::brokered::NotTaken;
 
@@ -28,7 +28,8 @@ pub fn tool(
     };
     // A call the agent gave no id is given one of its own, so no two calls share one.
     let call_id = asked.call_id.unwrap_or_else(browsertools::fresh_call_id);
-    what_the_app_said(crate::brokered::replied(
+    let changes_id = browsertools::changes_call_id(&call_id);
+    let replied = crate::brokered::replied(
         move |chat| {
             Ask::Browse(Box::new(BrowseAsk {
                 chat,
@@ -38,7 +39,74 @@ pub fn tool(
             }))
         },
         ASKED_WITHIN,
-    ))
+    );
+    let changes_of = if asked.changes {
+        changes_of(&replied)
+    } else {
+        None
+    };
+    let said = what_the_app_said(replied);
+    let Some((browser, page)) = changes_of else {
+        return said;
+    };
+    // What changed on the page (#2137): asked of the browser that answered, about the page it
+    // acted on, under a call id of its own.
+    let changed = crate::brokered::replied(
+        move |chat| {
+            Ask::Browse(Box::new(BrowseAsk {
+                chat,
+                browser: Some(browser),
+                call_id: changes_id,
+                asked: Browsing::Act(Act::Changes { page: Some(page) }),
+            }))
+        },
+        ASKED_WITHIN,
+    );
+    with_changes(said, changed)
+}
+
+/// The browser and page an act's answer names, to ask what changed on it: none where the act
+/// was refused or left no page.
+fn changes_of(
+    replied: &Result<std::io::Result<hookwire::framed::Reply>, NotTaken>,
+) -> Option<(String, String)> {
+    let Ok(Ok(reply)) = replied else {
+        return None;
+    };
+    let Answer::Browsed { browser, browsed } = &reply.answer else {
+        return None;
+    };
+    browsed
+        .page
+        .as_ref()
+        .map(|page| (browser.clone(), page.page.clone()))
+}
+
+/// The act's answer `said`, followed by what changed on its page as `changed` says it; where
+/// that could not be read, a line that says to take a snapshot.
+fn with_changes(
+    said: (Result<String, String>, Vec<hookwire::framed::Attached>),
+    changed: Result<std::io::Result<hookwire::framed::Reply>, NotTaken>,
+) -> (Result<String, String>, Vec<hookwire::framed::Attached>) {
+    let (text, attached) = match said {
+        (Ok(text), attached) => (text, attached),
+        refused => return refused,
+    };
+    let lines = match &changed {
+        Ok(Ok(reply)) => match &reply.answer {
+            Answer::Browsed { browsed, .. } => browsed.text.clone(),
+            _ => None,
+        },
+        _ => None,
+    };
+    let lines = lines.unwrap_or_else(|| {
+        let why = what_the_app_said(changed)
+            .0
+            .err()
+            .unwrap_or_else(|| "the browser said nothing of it".to_owned());
+        format!("What changed could not be read ({why}): take a snapshot.")
+    });
+    (Ok(format!("{text}\n\n{lines}")), attached)
 }
 
 /// **`ask_operator` pointed at one of the chat's browsers** (#2015): handed to the app as one

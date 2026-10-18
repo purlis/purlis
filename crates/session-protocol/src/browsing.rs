@@ -64,6 +64,13 @@ pub enum Act {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         within: Option<String>,
     },
+    /// The lines of the page's tree new or gone since the page was last read (1.21, #2137):
+    /// each new one with its reference and the line it is read at, in [`Browsed::text`]. A
+    /// page not read before answers its first lines. Kept by its call id like an act.
+    Changes {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        page: Option<String>,
+    },
     Click {
         target: String,
     },
