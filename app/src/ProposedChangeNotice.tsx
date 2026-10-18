@@ -51,6 +51,8 @@ export function ProposedChangeNotice({
         const shownWhole = ask.writes?.kind === "whole";
         const [first, ...rest] = ask.options.map((option): NoticeAction => ({
           label: option.label,
+          // Apply is a grant, drawn as every grant is (ADR 0097 §6).
+          allows: option.allows,
           busy: busy === ask.ask || (option.allows && shownWhole && !drawn.has(ask.ask)),
           onPress: () => {
             if (busy !== undefined) return;
