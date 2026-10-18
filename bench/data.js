@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792339158819,
+  "lastUpdate": 1792340466532,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16926,6 +16926,48 @@ window.BENCHMARK_DATA = {
             "value": 105.44889749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.684, 105.096, 105.449, 105.839, 106.278 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df1cb6553aab8a4f136bd5145a1d5246e249a030",
+          "message": "Browsers: an action answers what changed, and a snapshot marks what is not shown (#2137) (#2563)\n\nA new act, changes (protocol 1.21), answers the lines of a page's tree new\nor gone since the page was last read; every tool that acts on a page takes\nchanges and follows its answer with them. A snapshot or a find marks each\nelement laid out wholly outside what the viewport shows (out of view).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T19:58:31+04:00",
+          "tree_id": "927ca6ad8128cea16eb0ac54a697489088874bcd",
+          "url": "https://github.com/purlis/purlis/commit/df1cb6553aab8a4f136bd5145a1d5246e249a030"
+        },
+        "date": 1792340464922,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4330625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.409, 0.416, 0.433, 0.434, 0.437 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3867075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.025, 16.265, 16.387, 16.421, 16.984 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.22401149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.803, 101.977, 102.224, 102.477, 103.223 ms"
           }
         ]
       }
