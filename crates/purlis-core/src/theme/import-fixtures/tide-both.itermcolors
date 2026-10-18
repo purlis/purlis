@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>Ansi 4 Color</key>
+	<dict>
+		<key>Blue Component</key>
+		<real>0.8</real>
+		<key>Color Space</key>
+		<string>sRGB</string>
+		<key>Green Component</key>
+		<real>0.4</real>
+		<key>Red Component</key>
+		<real>0.2</real>
+	</dict>
+	<key>Background Color (Dark)</key>
+	<dict>
+		<key>Blue Component</key>
+		<real>0.05</real>
+		<key>Color Space</key>
+		<string>sRGB</string>
+		<key>Green Component</key>
+		<real>0.05</real>
+		<key>Red Component</key>
+		<real>0.05</real>
+	</dict>
+	<key>Foreground Color (Dark)</key>
+	<dict>
+		<key>Blue Component</key>
+		<real>0.9</real>
+		<key>Color Space</key>
+		<string>sRGB</string>
+		<key>Green Component</key>
+		<real>0.9</real>
+		<key>Red Component</key>
+		<real>0.9</real>
+	</dict>
+	<key>Background Color (Light)</key>
+	<dict>
+		<key>Blue Component</key>
+		<real>0.98</real>
+		<key>Color Space</key>
+		<string>sRGB</string>
+		<key>Green Component</key>
+		<real>0.98</real>
+		<key>Red Component</key>
+		<real>0.98</real>
+	</dict>
+	<key>Foreground Color (Light)</key>
+	<dict>
+		<key>Blue Component</key>
+		<real>0.1</real>
+		<key>Color Space</key>
+		<string>sRGB</string>
+		<key>Green Component</key>
+		<real>0.1</real>
+		<key>Red Component</key>
+		<real>0.1</real>
+	</dict>
+</dict>
+</plist>
