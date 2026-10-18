@@ -93,7 +93,9 @@ notify = "8.2"
 objc2 = "0.6.4"
 block2 = "0.6"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+# The system's Increase contrast, read as a window is created (#2582, `syscontrast.rs`): two more
+# features of the same crate, no crate new to the tree.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSWorkspace"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
 
 # The desktop portal, asked on the session bus before GTK asks it (charter-app#24,

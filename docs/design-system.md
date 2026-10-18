@@ -103,7 +103,13 @@ defaults.
 window, the traffic lights, the menus and the dialogs, are drawn dark or light with the drawn
 appearance's tag, and the window's own colour is its `window.background`, opaque. Each window is
 created in both for the theme its first frame draws, so nothing of another colour shows before
-it, and the page hands both over again whenever it draws another theme
+it. That theme is the one the levels choose for the project and the workspace the window opens
+on, resolved once as the window is created (#2602): the creation script, the native window and
+the page's first frame take that one answer, and the window's later ask of what is in force
+answers it again, so nothing is repainted. The system's contrast is read natively at creation
+(#2582): Increase contrast on macOS, the desktop portal's `contrast` on Linux; where nothing is
+read, the page picks with `prefers-contrast` among the frames it is handed for both. The page
+hands both over again whenever it draws another theme
 (`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the
 system leaves the native parts to the system. On macOS and Linux the platform keeps one
 appearance for the app, so the focused window's is the one drawn. The tray and the app icon

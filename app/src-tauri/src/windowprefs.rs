@@ -8,7 +8,7 @@
 //! **Injected, never fetched.** A command is asynchronous, so a layout the window asked for
 //! would land after the first paint and the window would paint the default arrangement and then
 //! re-lay itself out — the flash ADR 0038 removed. So `lib.rs` builds the main window itself,
-//! from its entry in `tauri.conf.json`, with [`creation_script`] as its initialization script:
+//! from its entry in `tauri.conf.json`, with [`at_creation`]'s script as its initialization script:
 //! Tauri runs that before the page's own scripts, so `main.tsx` finds the layout, the theme
 //! already resolved and the built-in themes in the page, and the first frame is drawn from them.
 //! The built-ins are compiled into the core, so handing them over reads nothing from disk.
@@ -40,6 +40,167 @@ struct AtCreation {
     /// The person's density and font override, read by the engine from the layout file's
     /// `appearance` (#2326): what the first frame draws over the theme.
     person: PersonInForce,
+    /// What the first frame draws (#2602): the theme the levels choose for the project and the
+    /// workspace the window is created on, resolved once, the one answer the native window is
+    /// created in too.
+    first: FirstFrame,
+}
+
+/// **What the first frame draws** (#2602, #2582): each frame the levels' answer draws, for the
+/// system's appearance when it follows the system, and for the contrast the system asks for.
+/// The page draws the one for its own appearance and contrast; the native window is created in
+/// the first.
+#[derive(Debug, serde::Serialize)]
+struct FirstFrame {
+    /// Whether the theme drawn follows the system's appearance: the frames are then one for
+    /// each, and the page draws the one its `prefers-color-scheme` answers.
+    follows_system: bool,
+    /// The contrast the core read the system asks for (`syscontrast.rs`), `standard` or `more`;
+    /// `null` where the platform says nothing purlis reads, and the frames are then one for
+    /// each contrast that draws differently, which the page picks from with `prefers-contrast`.
+    contrast: Option<&'static str>,
+    frames: Vec<Frame>,
+}
+
+/// One frame of [`FirstFrame`].
+#[derive(Debug, PartialEq, serde::Serialize)]
+struct Frame {
+    /// For a light system (when the theme follows it).
+    light: bool,
+    /// For more contrast.
+    more: bool,
+    theme: WindowTheme,
+    /// The Notice that names the consent floors it breaks, when it breaks one.
+    floors: Option<String>,
+}
+
+/// **Where a window is created** (#2602): the project in front as it opens, and the workspace
+/// it is on there (`None` at the plane root), which the levels are resolved for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreatedOn {
+    pub(crate) plane: std::path::PathBuf,
+    pub(crate) workspace: Option<String>,
+}
+
+impl CreatedOn {
+    /// The project at `plane`, on the workspace the window will most likely show it on: the one
+    /// its chat in front worked in when its record was last written (`reopen.json`), else the
+    /// one its explorer was focused on, else the plane root. A guess and no more: a window that
+    /// shows another draws that one's theme once it knows, as it always did.
+    pub(crate) fn plane(plane: &Path) -> Self {
+        Self {
+            workspace: workspace_in_front(plane),
+            plane: plane.to_path_buf(),
+        }
+    }
+
+    /// **The project the main window opens on**: the launch's own (`launched`, the plane the
+    /// working directory resolved to), else the one in front in the first window the machine
+    /// remembers (`machine.json`), which the restore brings back; `None` with neither.
+    pub(crate) fn main(config_root: Option<&Path>, launched: Option<&Path>) -> Option<Self> {
+        if let Some(plane) = launched {
+            return Some(Self::plane(plane));
+        }
+        let remembered = purlis_core::machine::read(config_root?).store;
+        let first = remembered.windows.first()?;
+        first.planes.get(first.active).map(|plane| Self::plane(plane))
+    }
+}
+
+/// The workspace the chat in front of the project at `plane` worked in when its record was last
+/// written, or its explorer's focus with no chat in front; `None` outside every workspace.
+fn workspace_in_front(plane: &Path) -> Option<String> {
+    let record = purlis_core::reopen::read_or_refusal(plane).ok()?;
+    if let Some(front) = record.chats.iter().find(|chat| chat.active) {
+        let cwd = front.cwd.as_deref()?;
+        return purlis_core::active::workspace_of_tree(plane, cwd);
+    }
+    record.focus.map(|focus| focus.workspace)
+}
+
+/// **What a window is created with** (#2602): the creation script, and the native window's
+/// appearance and colour, both from one resolution of the levels.
+pub(crate) struct Created {
+    /// The initialization script ([`at_creation`]).
+    pub(crate) script: String,
+    /// The appearance and colour the window is created in: the first frame's.
+    pub(crate) native: theme::Native,
+    /// Whether the first frame follows the system: the native parts are then the system's.
+    pub(crate) follows_system: bool,
+}
+
+impl FirstFrame {
+    /// The frames the levels draw for the window created `on`, with the person's own theme
+    /// `theirs` and the system's `contrast` as read natively (`None`: not read).
+    fn of(
+        config_root: Option<&Path>,
+        on: Option<&CreatedOn>,
+        theirs: Option<&theme::Theme>,
+        contrast: Option<Contrast>,
+    ) -> (Self, theme::Native) {
+        let plane = on.map(|on| on.plane.as_path());
+        let workspace = on.and_then(|on| on.workspace.as_deref());
+        let levels = theme::Levels::read(config_root, plane, workspace);
+        let folders = theme::Folders::of(config_root, plane, workspace);
+        let drawn = |system, contrast| {
+            theme::first_frame(&theme::LevelInputs {
+                levels: &levels,
+                folders: &folders,
+                theirs,
+                on: theme::On::Every,
+                system,
+                contrast,
+            })
+        };
+        let contrasts: &[Contrast] = match contrast {
+            Some(Contrast::More) => &[Contrast::More],
+            Some(Contrast::Standard) => &[Contrast::Standard],
+            None => &[Contrast::Standard, Contrast::More],
+        };
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut follows_system = false;
+        let mut native = None;
+        for &contrast in contrasts {
+            let more = contrast == Contrast::More;
+            let dark = drawn(theme::Appearance::Dark, contrast);
+            follows_system = dark.follows_system;
+            let mut each = vec![(false, dark)];
+            if follows_system {
+                each.push((true, drawn(theme::Appearance::Light, contrast)));
+            }
+            for (light, one) in each {
+                let resolved = one.theme.as_ref().unwrap_or_else(|| theme::default_theme());
+                // The window is created in the first: for the contrast read, or the standard
+                // one where none was, and for a dark system, where nothing says which.
+                native.get_or_insert_with(|| resolved.native());
+                let frame = Frame {
+                    light,
+                    more,
+                    theme: WindowTheme::from(resolved),
+                    floors: one.held.map(|held| held.said()),
+                };
+                // A frame that more contrast draws the same as the standard one is handed once.
+                let same = frames.iter().any(|was| {
+                    was.light == frame.light && was.theme == frame.theme && was.floors == frame.floors
+                });
+                if !same {
+                    frames.push(frame);
+                }
+            }
+        }
+        let first = Self {
+            follows_system,
+            contrast: contrast.map(|contrast| match contrast {
+                Contrast::More => "more",
+                Contrast::Standard => "standard",
+            }),
+            frames,
+        };
+        (
+            first,
+            native.unwrap_or_else(|| theme::default_theme().native()),
+        )
+    }
 }
 
 /// [`Theirs`] with its theme in the window's shape.
@@ -71,13 +232,12 @@ struct TheirDrawn {
 
 impl From<Theirs> for TheirTheme {
     fn from(theirs: Theirs) -> Self {
-        // What the first frame draws: the theme's first appearance for the contrast the system
-        // asks for, which the engine draws with no pick (`purlis_core::theme::first_frame`), the
-        // consent floors held. The window knows which contrast is asked; the core does not, so
-        // both are handed.
+        // What the window draws of the person's own theme where no level chooses (`handedFor`
+        // in `Extensions.tsx`): its first appearance for each contrast, the consent floors held.
+        // The page picks with `prefers-contrast`, so both are handed.
         let drawn = |contrast| {
             theirs.theme.as_ref().and_then(|theme| {
-                let drawn = theme::first_frame(Some(theme), contrast);
+                let drawn = theme::draw(theme.first_for(contrast));
                 Some(TheirDrawn {
                     theme: WindowTheme::from(drawn.theme.as_ref()?),
                     floors: drawn.held.map(|held| held.said()),
@@ -100,28 +260,16 @@ impl From<Theirs> for TheirTheme {
     }
 }
 
-/// **The native window as the first frame draws it** (#2328): the appearance and the colour the
-/// window is created in, from the same read of the person's theme as [`creation_script`], so
-/// nothing is painted in another colour before the page's first frame. The system's contrast is
-/// the page's to know: the window is created for the standard one, and the page tells the window
-/// again as it draws (`nativewindow.rs`).
-pub(crate) fn native_at_creation(config_root: Option<&Path>) -> theme::Native {
-    native_at_creation_from(&THEIRS, config_root)
-}
-
-fn native_at_creation_from(kept: &TheirsKept, config_root: Option<&Path>) -> theme::Native {
-    let theirs = kept.get(config_root);
-    theme::first_frame(theirs.theme.as_ref(), Contrast::Standard)
-        .theme
-        .map_or_else(|| theme::default_theme().native(), |drawn| drawn.native())
-}
-
 /// **The person's own theme, read once for this process** (`purlis_core::theme::TheirsKept`):
 /// every window's creation script and every `theme_in_force` answer resolve from the same read,
 /// so a later window, or a link that never created one, draws what the first did.
 pub(crate) static THEIRS: TheirsKept = TheirsKept::new();
 
-/// The script that puts what was read on the page before any of the page's own code runs.
+/// **What a window created `on` is created with** (#2602, #2582): the levels resolved once, for
+/// the project and workspace it opens on, and the contrast the system asks for read natively
+/// (`syscontrast.rs`). The creation script hands the page that answer, which its first frame
+/// draws, and the native window is created in that frame's appearance and colour
+/// (`nativewindow.rs`), so neither is drawn again when the page asks what is in force.
 ///
 /// **What is read from disk reaches the page as JSON data, never as code.** It is serialised
 /// by `serde_json`, which escapes every quote and control character in a string, so nothing in a
@@ -131,12 +279,17 @@ pub(crate) static THEIRS: TheirsKept = TheirsKept::new();
 ///
 /// A machine with no config home hands the page an empty layout and no theme of the person's:
 /// the default arrangement and the built-in theme, which is what such a machine has always had.
-pub(crate) fn creation_script(config_root: Option<&Path>) -> String {
-    creation_script_from(&THEIRS, config_root)
+pub(crate) fn at_creation(config_root: Option<&Path>, on: Option<&CreatedOn>) -> Created {
+    at_creation_from(&THEIRS, config_root, on, crate::syscontrast::asked())
 }
 
-/// [`creation_script`], from the person's theme as `kept` holds it.
-fn creation_script_from(kept: &TheirsKept, config_root: Option<&Path>) -> String {
+/// [`at_creation`], from the person's theme as `kept` holds it and the contrast `contrast`.
+fn at_creation_from(
+    kept: &TheirsKept,
+    config_root: Option<&Path>,
+    on: Option<&CreatedOn>,
+    contrast: Option<Contrast>,
+) -> Created {
     let layout = config_root.map_or_else(Reading::default, windowprefs::read_layout);
     // A layout file purlis refused has no document: the person's settings are the defaults.
     let appearance = layout
@@ -144,17 +297,31 @@ fn creation_script_from(kept: &TheirsKept, config_root: Option<&Path>) -> String
         .as_ref()
         .and_then(|document| document.get("appearance"));
     let person = PersonInForce::of(appearance);
+    let theirs = kept.get(config_root);
+    let (first, native) = FirstFrame::of(config_root, on, theirs.theme.as_ref(), contrast);
+    let follows_system = first.follows_system;
     let at = AtCreation {
-        theme: kept.get(config_root).into(),
+        theme: theirs.into(),
         built_in: theme::built_ins().iter().map(WindowTheme::from).collect(),
         person,
         layout,
+        first,
     };
     let json = serde_json::to_string(&at).expect("a reading is plain data serde can always write");
-    format!(
-        "Object.defineProperty(window, {GLOBAL:?}, {{ value: Object.freeze({json}), \
-         writable: false, configurable: false }});"
-    )
+    Created {
+        script: format!(
+            "Object.defineProperty(window, {GLOBAL:?}, {{ value: Object.freeze({json}), \
+             writable: false, configurable: false }});"
+        ),
+        native,
+        follows_system,
+    }
+}
+
+/// [`at_creation_from`]'s script, for a window on no project and the standard contrast.
+#[cfg(test)]
+fn creation_script_from(kept: &TheirsKept, config_root: Option<&Path>) -> String {
+    at_creation_from(kept, config_root, None, Some(Contrast::Standard)).script
 }
 
 /// Keeps the window's layout, replacing what the file held.
@@ -538,24 +705,295 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dir = purlis_core::machine::dir(home.path());
         std::fs::create_dir_all(&dir).unwrap();
+        let standard = Some(Contrast::Standard);
         // No theme of the person's: Purlis's, as the page draws it.
-        let none = native_at_creation_from(&TheirsKept::new(), Some(home.path()));
-        assert_eq!(none, theme::default_theme().native());
+        let none = at_creation_from(&TheirsKept::new(), Some(home.path()), None, standard);
+        assert_eq!(none.native, theme::default_theme().native());
         std::fs::write(
             dir.join(windowprefs::THEME),
             r##"{"name":"Mine","appearance":"light","tokens":{"window.background":"#abcdef"}}"##,
         )
         .unwrap();
         let kept = TheirsKept::new();
-        let native = native_at_creation_from(&kept, Some(home.path()));
-        assert_eq!(native.appearance, theme::Appearance::Light);
-        assert_eq!(native.background, [0xab, 0xcd, 0xef]);
-        // The same read the page is handed: the theme its first frame draws.
-        let at = defined(&creation_script_from(&kept, Some(home.path())));
-        assert_eq!(at["theme"]["theme"]["appearance"], "light");
+        let created = at_creation_from(&kept, Some(home.path()), None, standard);
+        assert_eq!(created.native.appearance, theme::Appearance::Light);
+        assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
+        assert!(!created.follows_system);
+        // The same answer the page is handed: the theme its first frame draws.
+        let at = defined(&created.script);
+        assert_eq!(at["first"]["frames"][0]["theme"]["appearance"], "light");
         assert_eq!(
-            at["theme"]["theme"]["values"]["window.background"],
+            at["first"]["frames"][0]["theme"]["values"]["window.background"],
             "#abcdef"
+        );
+        assert_eq!(at["theme"]["theme"]["name"], "Mine");
+    }
+
+    /// A config home, and a plane with a stable id and a workspace `alpha`.
+    struct Places {
+        _home: tempfile::TempDir,
+        config: std::path::PathBuf,
+        plane: std::path::PathBuf,
+    }
+
+    const PROJECT: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
+
+    impl Places {
+        fn new(manifest: &str) -> Self {
+            let home = tempfile::tempdir().unwrap();
+            let config = home.path().join("config");
+            let plane = home.path().join("plane");
+            std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+            std::fs::create_dir_all(purlis_core::machine::dir(&config)).unwrap();
+            std::fs::write(
+                purlis_core::names::manifest(&plane),
+                format!("[project]\nid = \"{PROJECT}\"\n{manifest}"),
+            )
+            .unwrap();
+            Self {
+                _home: home,
+                config,
+                plane,
+            }
+        }
+
+        /// Puts the theme folder `name` holding `document` under `themes`.
+        fn put(themes: &Path, name: &str, document: &str) {
+            let dir = themes.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(theme::THEME_JSON), document).unwrap();
+        }
+
+        fn on(&self, workspace: Option<&str>) -> CreatedOn {
+            CreatedOn {
+                plane: self.plane.clone(),
+                workspace: workspace.map(str::to_owned),
+            }
+        }
+
+        fn created(&self, on: Option<&CreatedOn>, contrast: Option<Contrast>) -> Created {
+            at_creation_from(&TheirsKept::new(), Some(&self.config), on, contrast)
+        }
+    }
+
+    const TEAM: &str = r##"{"name":"Team","appearances":[{"id":"day","appearance":"light",
+        "tokens":{"window.background":"#abcdef"}}]}"##;
+
+    const SHARP: &str = r##"{"name":"Sharp","appearances":[
+        {"id":"dark","appearance":"dark","tokens":{"window.background":"#202020"}},
+        {"id":"contrast","appearance":"dark","high-contrast":true,
+         "tokens":{"window.background":"#000000"}},
+        {"id":"light","appearance":"light","tokens":{"window.background":"#f4f4f4"}}]}"##;
+
+    #[test]
+    fn a_window_on_a_project_whose_level_chooses_is_created_in_that_theme() {
+        let places = Places::new("[theme]\nuse = \"team\"\n");
+        Places::put(&places.plane.join("themes"), "team", TEAM);
+        // The person's own file is beneath the project's committed default.
+        std::fs::write(
+            purlis_core::machine::dir(&places.config).join(windowprefs::THEME),
+            r#"{"name":"Mine"}"#,
+        )
+        .unwrap();
+        let created = places.created(Some(&places.on(None)), Some(Contrast::Standard));
+        assert_eq!(created.native.appearance, theme::Appearance::Light);
+        assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
+        let at = defined(&created.script);
+        assert_eq!(at["first"]["frames"].as_array().map(Vec::len), Some(1));
+        assert_eq!(at["first"]["frames"][0]["theme"]["name"], "Team");
+        assert_eq!(at["first"]["contrast"], "standard");
+        // What the window is answered once it asks is the frame it drew: nothing is drawn again.
+        let levels =
+            theme::Levels::read(Some(&places.config), Some(&places.plane), None);
+        let folders = theme::Folders::of(Some(&places.config), Some(&places.plane), None);
+        let answered = crate::extensions::theme_in_force_of(
+            &levels,
+            &folders,
+            None,
+            None,
+            false,
+            Contrast::Standard,
+            || unreachable!("no extension is named"),
+        );
+        assert_eq!(
+            serde_json::to_value(answered.theme).unwrap(),
+            at["first"]["frames"][0]["theme"]
+        );
+        // The person's own theme is still handed, for what is drawn where no level chooses.
+        assert_eq!(at["theme"]["theme"]["name"], "Mine");
+    }
+
+    #[test]
+    fn a_window_is_created_in_the_machine_default_theme_folder() {
+        let places = Places::new("");
+        Places::put(
+            &purlis_core::machine::dir(&places.config).join("themes"),
+            "mine",
+            TEAM,
+        );
+        theme::choices::set(
+            &places.config,
+            theme::choices::Slot::Machine,
+            theme::Choice::new("mine", None),
+        )
+        .unwrap();
+        // On no project, and on one that chooses nothing of its own.
+        for on in [None, Some(places.on(None))] {
+            let created = places.created(on.as_ref(), Some(Contrast::Standard));
+            assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
+            assert_eq!(
+                defined(&created.script)["first"]["frames"][0]["theme"]["name"],
+                "Team"
+            );
+        }
+    }
+
+    #[test]
+    fn a_window_on_a_workspace_is_created_in_the_theme_its_level_chooses() {
+        let places = Places::new("[theme]\nuse = \"purlis-dark\"\n");
+        Places::put(&places.plane.join("workspaces/alpha/themes"), "team", TEAM);
+        theme::choices::set(
+            &places.config,
+            theme::choices::Slot::Workspace(PROJECT, "alpha"),
+            theme::Choice::new("team", None),
+        )
+        .unwrap();
+        let on = places.on(Some("alpha"));
+        let created = places.created(Some(&on), Some(Contrast::Standard));
+        assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
+        // At the plane root the project's own is drawn.
+        let root = places.created(Some(&places.on(None)), Some(Contrast::Standard));
+        assert_eq!(root.native, theme::default_theme().native());
+    }
+
+    #[test]
+    fn with_more_contrast_asked_a_window_is_created_in_the_high_contrast_appearance() {
+        let places = Places::new("[theme]\nuse = \"sharp\"\n");
+        Places::put(&places.plane.join("themes"), "sharp", SHARP);
+        let on = places.on(None);
+        let more = places.created(Some(&on), Some(Contrast::More));
+        assert_eq!(more.native.background, [0, 0, 0]);
+        let at = defined(&more.script);
+        assert_eq!(at["first"]["contrast"], "more");
+        assert_eq!(at["first"]["frames"].as_array().map(Vec::len), Some(1));
+        assert_eq!(at["first"]["frames"][0]["more"], true);
+        assert_eq!(
+            at["first"]["frames"][0]["theme"]["values"]["window.background"],
+            "#000000"
+        );
+        let standard = places.created(Some(&on), Some(Contrast::Standard));
+        assert_eq!(standard.native.background, [0x20, 0x20, 0x20]);
+        // Where the platform says nothing: both, for the page's `prefers-contrast`, and the
+        // window created for the standard one.
+        let unread = places.created(Some(&on), None);
+        assert_eq!(unread.native.background, [0x20, 0x20, 0x20]);
+        let at = defined(&unread.script);
+        assert_eq!(at["first"]["contrast"], serde_json::Value::Null);
+        let frames: Vec<(bool, &str)> = at["first"]["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|one| {
+                (
+                    one["more"].as_bool().unwrap(),
+                    one["theme"]["values"]["window.background"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(frames, [(false, "#202020"), (true, "#000000")]);
+    }
+
+    #[test]
+    fn a_first_frame_that_follows_the_system_is_handed_for_each_appearance() {
+        let places = Places::new("[theme]\nuse = \"sharp\"\nappearance = \"system\"\n");
+        Places::put(&places.plane.join("themes"), "sharp", SHARP);
+        let created = places.created(Some(&places.on(None)), Some(Contrast::Standard));
+        assert!(created.follows_system);
+        let at = defined(&created.script);
+        assert_eq!(at["first"]["follows_system"], true);
+        let frames: Vec<(bool, &str)> = at["first"]["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|one| {
+                (
+                    one["light"].as_bool().unwrap(),
+                    one["theme"]["appearance"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(frames, [(false, "dark"), (true, "light")]);
+    }
+
+    #[test]
+    fn the_first_frame_holds_the_consent_floors_and_names_them() {
+        let lost = theme::default_theme().value("surface.base");
+        let places = Places::new("[theme]\nuse = \"breaks\"\n");
+        Places::put(
+            &places.plane.join("themes"),
+            "breaks",
+            &format!(
+                r#"{{"name":"Breaks","appearances":[{{"id":"dark","appearance":"dark",
+                "tokens":{{"state.failed":"{lost}"}}}}]}}"#
+            ),
+        );
+        let at = defined(&places.created(Some(&places.on(None)), None).script);
+        let frame = &at["first"]["frames"][0];
+        assert_eq!(
+            frame["theme"]["values"]["state.failed"],
+            theme::default_theme().value("state.failed")
+        );
+        assert!(
+            frame["floors"]
+                .as_str()
+                .is_some_and(|said| said.starts_with("Breaks breaks the consent floors")),
+            "{frame}"
+        );
+    }
+
+    #[test]
+    fn a_window_is_created_on_the_workspace_its_chat_in_front_worked_in() {
+        let places = Places::new("");
+        let record = |cwd: &str| purlis_core::reopen::Record {
+            chats: vec![purlis_core::reopen::Chat {
+                program: "claude".to_owned(),
+                name: "one".to_owned(),
+                cwd: Some(places.plane.join(cwd)),
+                active: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_eq!(CreatedOn::plane(&places.plane).workspace, None);
+        std::fs::create_dir_all(places.plane.join("workspaces/alpha/repo")).unwrap();
+        purlis_core::reopen::write(&places.plane, &record("workspaces/alpha/repo")).unwrap();
+        assert_eq!(
+            CreatedOn::plane(&places.plane).workspace.as_deref(),
+            Some("alpha")
+        );
+        purlis_core::reopen::write(&places.plane, &record(".")).unwrap();
+        assert_eq!(CreatedOn::plane(&places.plane).workspace, None);
+    }
+
+    #[test]
+    fn the_main_window_is_created_on_the_launch_s_project_else_the_one_remembered_in_front() {
+        let places = Places::new("");
+        let other = places.plane.with_file_name("other");
+        assert_eq!(CreatedOn::main(Some(&places.config), None), None);
+        assert_eq!(
+            CreatedOn::main(Some(&places.config), Some(&places.plane)).map(|on| on.plane),
+            Some(places.plane.clone())
+        );
+        purlis_core::machine::update(&places.config, |store| {
+            store.windows = vec![purlis_core::machine::Window {
+                planes: vec![places.plane.clone(), other.clone()],
+                active: 1,
+            }];
+        })
+        .unwrap();
+        assert_eq!(
+            CreatedOn::main(Some(&places.config), None).map(|on| on.plane),
+            Some(other)
         );
     }
 
