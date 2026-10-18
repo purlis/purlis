@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792350850925,
+  "lastUpdate": 1792353758900,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5496,6 +5496,42 @@ window.BENCHMARK_DATA = {
             "value": 635.2,
             "unit": "MB",
             "extra": "median of 6 samples: 602.1, 622.4, 631.1, 639.3, 639.5, 738.6 MB; window 391.8 MB, session host 243.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "813ab9a8fe4805a34a76b7611e2a620c4362f511",
+          "message": "Skip the floor compile's second covering pass when the harness adds no denials (#2570) (#2635)\n\nFor Claude Code, Form::denied() is None, so the second covering pass\nre-checked exactly the list the first pass had just checked against the\nsame ground. It is now skipped there; Codex and opencode, whose compilers\nadd denials, are still held to the ground a second time. A test pins the\ncompiled profile, and every refusal, byte-identical to the two-pass path.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T23:11:17+04:00",
+          "tree_id": "9865547fe79974d1b8d864fc34b63e0a3a84bd59",
+          "url": "https://github.com/purlis/purlis/commit/813ab9a8fe4805a34a76b7611e2a620c4362f511"
+        },
+        "date": 1792353757038,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1447.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1278.7, 1447.1, 1493.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 630.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 592.5, 618.7, 626.7, 634.5, 634.8, 711 MB; window 390.4 MB, session host 239.2 MB"
           }
         ]
       }
