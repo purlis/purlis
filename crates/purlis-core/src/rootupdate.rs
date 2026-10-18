@@ -451,6 +451,24 @@ impl Asks for Asked<'_> {
     }
 }
 
+/// [`Asks`] where an earlier command on the line may have changed what git would say: HEAD is
+/// at nothing, an operand is unknown, and no path is a file in sight.
+struct Unmeasured;
+
+impl Asks for Unmeasured {
+    fn head_is_at(&self, _: &str) -> bool {
+        false
+    }
+
+    fn operand_kind(&self, _: &str) -> OperandKind {
+        OperandKind::Unknown
+    }
+
+    fn is_a_file(&self, _: &str) -> bool {
+        false
+    }
+}
+
 /// The refusal one `git <sub> <post…>` in the project's root folder earns, or `None`. `held`
 /// is what that folder holds that the sandbox denies, and is not empty.
 pub fn judged(
@@ -578,14 +596,7 @@ pub fn refusal_of(
         if inv.unread {
             continue; // the branch guard refuses what it could not read
         }
-        let (sub, post, end) = planeroot::resolve_git_alias_to_its_end(
-            root,
-            &inv.sub,
-            &inv.post,
-            &inv.pre,
-            &inv.env,
-            &inv.own_env,
-        );
+        let (sub, post, end) = inv.resolved(root);
         if end != AliasEnd::Resolved && end != AliasEnd::Unasked {
             continue; // refused by the branch guard, in its own words
         }
@@ -597,8 +608,16 @@ pub fn refusal_of(
         if held.is_empty() {
             return None;
         }
-        let asks = Asked { root, cwd };
-        let Some(why) = judged(&sub, &post, held, root, &asks) else {
+        let asked = Asked { root, cwd };
+        // After a command that may write, what git said before the line ran may no longer
+        // hold: nothing it would say is taken.
+        let unmeasured = Unmeasured;
+        let asks: &dyn Asks = if inv.after_a_writer {
+            &unmeasured
+        } else {
+            &asked
+        };
+        let Some(why) = judged(&sub, &post, held, root, asks) else {
             continue;
         };
         let why = if inv.unnamed {

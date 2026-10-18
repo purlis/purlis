@@ -669,3 +669,23 @@ fn putting_the_root_back_on_its_default_branch_is_refused_where_that_rewrites_th
         "the branch guard's to refuse"
     );
 }
+
+/// An earlier git command on the line that changes the repository leaves what HEAD is at, and
+/// what a word names, unknown when a later command runs: the update is refused as one that may
+/// rewrite the tree. Alone, it is measured as before.
+#[test]
+fn an_earlier_git_command_that_changes_the_repository_leaves_the_tree_unmeasured() {
+    let r = a_repository();
+    assert_eq!(asked(&r, "git checkout main"), None);
+    assert_eq!(asked(&r, "git checkout README.md"), None);
+    // Putting a file back changes nothing the next command is measured by.
+    assert_eq!(asked(&r, "git add README.md && git checkout main"), None);
+    for cmd in [
+        "git commit -q -m x && git checkout main",
+        "git commit -q -m x && git checkout README.md",
+    ] {
+        let (sub, said) = asked(&r, cmd).expect(cmd);
+        assert_eq!(sub, "checkout");
+        assert!(said.contains("half-updated"), "{cmd:?}: {said}");
+    }
+}
