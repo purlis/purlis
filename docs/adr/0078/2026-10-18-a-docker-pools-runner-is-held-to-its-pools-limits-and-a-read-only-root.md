@@ -10,8 +10,10 @@ implementation, to be confirmed* (D-2506-1 to D-2506-3).
    (`--pids-limit`) and the size of its `/tmp`. The defaults are two CPUs, 4 GiB, 1024
    processes and 1 GiB of `/tmp`. A pool's limits leave a runner room to start a chat: at least
    512 MiB and 64 processes, and a `/tmp` no larger than the memory it counts against.
-2. **Its root file system is read-only** (`--read-only`). Its only writable places are its home
-   volume and a `tmpfs` at `/tmp`, mounted `rw,nosuid,nodev,noexec` at its pool's size.
+2. **Its root file system is read-only** (`--read-only`), so its home volume is the only place
+   it can write that may hold a program it runs. `/tmp` is a `tmpfs` mounted
+   `rw,nosuid,nodev,noexec` at its pool's size, and Docker's own `/dev/shm` is memory-backed and
+   `noexec` too.
 3. **The check holds both** (item 2): what `docker inspect` says must be a read-only root, the
    one `tmpfs` at `/tmp` with exactly those options, the CPU, memory, swap and process limits the
    runner was made with, and the out-of-memory killer left on. Anything else, a field that

@@ -15,8 +15,9 @@
 //! - the image by its digest alone ([`Image`]), never by a tag;
 //! - its home on a volume of its own, and no folder, device or socket of this machine;
 //! - its own network namespace on Docker's default bridge, never the machine's;
-//! - a read-only root file system, its home volume and a `tmpfs` at `/tmp` (`nosuid`, `nodev`,
-//!   `noexec`) its only writable places;
+//! - a read-only root file system, so its home volume is the only place it can write that may
+//!   hold a program it runs: `/tmp` is a `tmpfs` (`nosuid`, `nodev`, `noexec`), and Docker's
+//!   own `/dev/shm` is memory-backed and `noexec` too;
 //! - the pool's limits ([`Limits`]): CPUs, memory with no swap beyond it, processes, and the
 //!   size of `/tmp`.
 //!
@@ -148,6 +149,8 @@ impl Limits {
     /// The fewest processes a runner may be limited to: its host, a chat, its harness and its
     /// sandbox's supervisor, with room for a build.
     pub const FEWEST_PIDS: u32 = 64;
+    /// The least CPU a runner may be limited to, in thousandths: Docker's own least, 0.01.
+    pub const FEWEST_MILLICPUS: u32 = 10;
     /// The least memory a runner may be limited to, in MiB.
     pub const LEAST_MEMORY_MIB: u64 = 512;
 
@@ -159,9 +162,9 @@ impl Limits {
         pids: u32,
         tmp_mib: u64,
     ) -> Result<Limits, Refused> {
-        if millicpus == 0 || millicpus > 1_000_000 {
+        if !(Limits::FEWEST_MILLICPUS..=1_000_000).contains(&millicpus) {
             return Err(refused(
-                "a pool's CPU limit is more than none and at most 1000 CPUs",
+                "a pool's CPU limit is at least 0.01 CPU and at most 1000 CPUs",
             ));
         }
         if !(Limits::LEAST_MEMORY_MIB..=16 * 1024 * 1024).contains(&memory_mib) {
@@ -581,11 +584,12 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         return Err(not("is not held to its pool's process limit"));
     }
     match one.pointer("/HostConfig/OomKillDisable") {
-        None | Some(serde_json::Value::Null) | Some(serde_json::Value::Bool(false)) => {}
+        // Docker writes it for every container, `null` when it was never asked for.
+        Some(serde_json::Value::Null) | Some(serde_json::Value::Bool(false)) => {}
         Some(serde_json::Value::Bool(true)) => {
             return Err(not("is never ended when it runs out of memory"));
         }
-        Some(_) => return Err(unreadable("/HostConfig/OomKillDisable")),
+        None | Some(_) => return Err(unreadable("/HostConfig/OomKillDisable")),
     }
     if !matches!(
         text("/HostConfig/Runtime")?,

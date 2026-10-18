@@ -125,8 +125,10 @@ fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
 #[test]
 fn a_pools_limits_leave_a_runner_room_to_start_a_chat() {
     assert!(Limits::new(2000, 4096, 1024, 1024).is_ok());
+    assert!(Limits::new(10, 512, 64, 512).is_ok(), "the least of each");
     for (cpus, memory, pids, tmp) in [
         (0, 4096, 1024, 1024),
+        (9, 4096, 1024, 1024),
         (2000, 256, 1024, 128),
         (2000, 4096, 8, 1024),
         (2000, 4096, 1024, 0),
@@ -522,6 +524,15 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
         (
             "the out-of-memory killer turned off",
             Box::new(|c| c["HostConfig"]["OomKillDisable"] = true.into()),
+        ),
+        (
+            "no word of the out-of-memory killer",
+            Box::new(|c| {
+                c["HostConfig"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("OomKillDisable");
+            }),
         ),
         (
             "a kernel setting",
