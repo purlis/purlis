@@ -926,12 +926,85 @@ async fn a_confinement_the_runner_plans_itself_is_not_held_to_a_plan_made_elsewh
         .expect("the runner's own window plans on this machine");
 
     assert_eq!(hosts.confines.seen().len(), 2);
-    assert!(
-        hosts
-            .confines
-            .seen()
-            .iter()
-            .all(|one| one.planned == Planned::Here)
-    );
+    assert_eq!(hosts.confines.seen()[0].planned, Planned::Composed);
+    assert_eq!(hosts.confines.seen()[1].planned, Planned::Here);
     assert!(hosts.confines.fitted().is_empty());
+}
+
+/// [`by_its_names`], with the services the person allowed the chat alone on the window's machine.
+fn by_its_names_with_alone() -> StartProgram {
+    StartProgram {
+        alone: vec![5432],
+        ..by_its_names()
+    }
+}
+
+#[tokio::test]
+async fn the_confinement_the_runner_composes_is_told_what_the_window_allowed_the_chat_alone() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+
+    window
+        .start_program(by_its_names_with_alone())
+        .await
+        .expect("composed on host B by its names");
+
+    let seen = hosts.confines.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].confine.confinement, NAMED);
+    assert_eq!(seen[0].planned, Planned::Composed);
+    assert_eq!(seen[0].alone, [5432]);
+    assert!(seen[0].confine.asks, "its proxy asks the window");
+}
+
+#[tokio::test]
+async fn what_the_window_allowed_a_chat_alone_is_taken_only_beside_its_confinement() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+
+    for start in [
+        StartProgram {
+            alone: vec![5432],
+            ..StartProgram::of(PROJECT, ProgramKind::Harness)
+        },
+        StartProgram {
+            alone: vec![5432],
+            ..a_launch(None, Some(NAMED))
+        },
+    ] {
+        let refused = window.start_program(start).await.unwrap_err();
+        assert_eq!(
+            refused.refusal().map(|r| r.code.as_str()),
+            Some(session::MALFORMED),
+            "{refused:?}"
+        );
+    }
+    assert!(hosts.confines.seen().is_empty(), "nothing was composed");
+}
+
+#[tokio::test]
+async fn host_a_relays_what_a_chat_was_allowed_alone_for_its_window_alone() {
+    let hosts = hosts();
+    let (other, _events) = another_host(&hosts).await;
+    let (terminal, _terminal_events) = a_client(&hosts, Scope::Terminal).await;
+    let dialed = hosts.dials.load(Ordering::SeqCst);
+
+    for client in [&other, &terminal] {
+        let refused = client
+            .start_program(StartProgram {
+                alone: vec![5432],
+                ..StartProgram::of(PROJECT, ProgramKind::Harness)
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.refusal().map(|r| r.code.as_str()),
+            Some(session::NOT_ALLOWED)
+        );
+    }
+    assert_eq!(
+        hosts.dials.load(Ordering::SeqCst),
+        dialed,
+        "nothing was sent on"
+    );
 }

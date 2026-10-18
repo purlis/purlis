@@ -1819,6 +1819,12 @@ impl SessionHost for HostedSessions {
             resume: named.resume.clone(),
             first_message: named.first_message.clone(),
             without_sandbox: named.without_sandbox,
+            // Asked about where the host leaves it out, so said only where it asks this window.
+            alone: if confinement.is_some() {
+                named.alone.clone()
+            } else {
+                Vec::new()
+            },
             confinement: confinement.clone(),
             ..StartProgram::of(project, ProgramKind::Harness)
         };

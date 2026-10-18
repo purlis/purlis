@@ -2909,6 +2909,13 @@ impl Chats {
             && !operator_shell
             && harness.is_some()
             && self.sessions.composes_its_harness_chats();
+        // The services of this machine the person allowed it alone, which the runner is told
+        // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
+        let alone = sandbox
+            .filter(|_| on_the_runner)
+            .and_then(purlis_core::sandbox::Applied::plan)
+            .map(|plan| plan.given_for_this_chat_alone())
+            .unwrap_or_default();
         let sandbox = sandbox.filter(|_| !on_the_runner);
         // What it is armed with, never written by it, and never where it writes. A chat
         // reattached is not started, so it is never refused here: it is compared with the
@@ -3361,6 +3368,7 @@ impl Chats {
                                     | purlis_core::sandbox::By::YourLevel(_)
                             )
                         }),
+                        alone,
                         size,
                     },
                     composed_hearing.unwrap_or_default(),

@@ -42,13 +42,19 @@ pub struct ToConfine<'a> {
     pub confine: &'a session::Confine,
     /// Where its plan was made.
     pub planned: Planned,
+    /// For one the host composed ([`Planned::Composed`]), the services of this machine the
+    /// window allowed the chat for it alone ([`session::StartProgram::alone`], #2590): those its
+    /// plan does not give are left out, and asked about. Nothing, for any other.
+    pub alone: &'a [u16],
 }
 
 /// **Where a confinement's plan was made** (#2445).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Planned {
-    /// On this machine: by its window, or by the host for a chat it composes.
+    /// On this machine, by its window.
     Here,
+    /// On this machine, by the host, for a chat it composes by its names (#2590).
+    Composed,
     /// On another machine, sent by a link other than this machine's window: it fits this one
     /// ([`Confine::fits`]), and its proxy reaches an internal address of this machine's
     /// networks only where this machine's policy lists it.

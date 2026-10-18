@@ -127,3 +127,4 @@
 {"reply":{"re":92,"ok":{"taken_back":{"confinements":["01J9CNFNMNT0000000000000002"]}}}}
 {"reply":{"re":93,"ok":{"confined":{"confinement":"01J9CNFNMNT0000000000000003","http":50815,"socks":50816,"tmp":"/tmp/purlis-chat-11","left_out":[5432],"host_name":"runner-7"}}}}
 {"call":{"id":94,"command":"unpair"}}
+{"call":{"id":95,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":11,"persona":"steward","confinement":"01J9CNFNMNT0000000000000004","alone":[5432]}}

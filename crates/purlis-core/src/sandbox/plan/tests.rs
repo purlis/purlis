@@ -493,6 +493,19 @@ mod made_elsewhere {
     }
 
     #[test]
+    fn the_services_a_plan_gives_for_this_chat_alone_are_those_listed_at_its_layer_alone() {
+        let mut planned = for_this_chat_alone(5432, vec![5432, 6379, 8080]);
+        planned.reach.listed.extend(
+            crate::sandbox::localport::reach_entries(6379)
+                .into_iter()
+                .map(|entry| (entry, By::You)),
+        );
+
+        assert_eq!(planned.given_for_this_chat_alone(), [5432]);
+        assert!(plan(vec![5432]).given_for_this_chat_alone().is_empty());
+    }
+
+    #[test]
     fn a_service_the_runner_gives_is_kept_whatever_layer_gives_it() {
         let planned = for_this_chat_alone(5432, vec![5432]);
 
