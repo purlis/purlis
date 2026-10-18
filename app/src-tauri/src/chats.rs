@@ -350,7 +350,6 @@ struct Running {
     workspace: Option<String>,
     /// What runs beside a chat charter wraps — its egress proxy and its own temp directory —
     /// for as long as the chat is open (ADR 0067 §2). Dropped with it.
-    #[allow(dead_code)]
     confinement: Option<purlis_core::sandbox::Confinement>,
     /// What its sandbox was compiled to as it started, which a command run on its behalf is
     /// held to (#1407); `None` for a chat started without one.
@@ -4347,6 +4346,44 @@ impl Chats {
 
     /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
     /// `None` for a chat that is not open or was started without a sandbox.
+    /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
+    /// sandbox at all, read under one hold of the open chats so both
+    /// come from the same run. Its persona is the one the chat was started as, as every brokered
+    /// read of a vault takes it (`crate::vaults`), never a fallback. None for a chat this app
+    /// does not have open.
+    pub fn login_asker(
+        &self,
+        root: &std::path::Path,
+        session: u32,
+    ) -> Option<(purlis_core::secrets::brokered::Asker, bool)> {
+        // Read before `open` is held: no lock here is taken under another.
+        let live = self.board_of(session).map(|board| board.allowed_live());
+        let open = lock(&self.open);
+        let running = open.get(&session)?;
+        let mut confines = running.confines.clone();
+        if let (Some(confines), Some(live)) = (confines.as_mut(), live) {
+            for (host, by) in live {
+                confines.allow_live(&host, by);
+            }
+        }
+        // No sandbox compiled for it and none holding it: a chat reattached under a sandbox
+        // that changed while no window was there (D-2006-11) has no compiled sandbox recorded
+        // but is still held, so it is not one.
+        let unconfined = running.confines.is_none() && running.confinement.is_none();
+        Some((
+            purlis_core::secrets::brokered::Asker {
+                root: root.to_path_buf(),
+                env: purlis_core::secrets::Env::from_process(),
+                chat: session,
+                persona: running.chat.persona.clone(),
+                folder: running.chat.cwd.clone(),
+                confines,
+                harness: running.harness,
+            },
+            unconfined,
+        ))
+    }
+
     pub fn confines_of(&self, session: u32) -> Option<purlis_core::sandbox::Confines> {
         lock(&self.open)
             .get(&session)

@@ -43,6 +43,10 @@
 //!   the first frame, and [`first_frame`] is what a window draws as it is created.
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
+//! - [`import`] makes a theme folder's files from a VS Code colour theme, a base16 or base24
+//!   scheme, an iTerm2 or a Ghostty palette through a fixed mapping table ([`table`]), and says
+//!   every source key no token takes; [`export`] packs a theme folder as a zip that [`unpack`]
+//!   gives back file for file (#2334).
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
 //!   vocabulary (`docs/schema/theme.v2.schema.json`, held to it by a test), and [`SCHEMA_URL`]
 //!   its address at this release, which a format only ever grows at (`published`).
@@ -66,6 +70,7 @@ use std::sync::OnceLock;
 
 use serde_json::Value;
 
+mod archive;
 mod check;
 pub mod choices;
 mod floors;
@@ -74,6 +79,7 @@ mod fonts;
 mod format;
 pub mod geometry;
 mod icons;
+mod import;
 pub mod levels;
 mod native;
 mod options;
@@ -85,6 +91,10 @@ mod tint;
 mod typed;
 pub mod vocabulary;
 
+pub use archive::{
+    MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
+    export, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage, unpack,
+};
 pub use check::{Finding, PAIRS, Pair, Report};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
@@ -94,6 +104,10 @@ pub use fonts::{
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
+pub use import::{
+    Files, Imported, LeftOut, MOST_SOURCE_BYTES, SCOPES, SourceKind, detect, folder_name, import,
+    scopes_markdown, table, table_markdown,
+};
 pub use levels::{Choice, Folders, Level, LevelInputs, Levels, resolve_levels};
 pub use native::{Native, first_frame};
 pub use options::{
@@ -122,6 +136,8 @@ mod format_tests;
 mod geometry_tests;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod levels_tests;
 #[cfg(test)]
@@ -401,6 +417,10 @@ impl Resolved {
 
 /// Purlis Classic's `theme.json`, compiled in: the one copy of it.
 const CLASSIC_FILE: &str = include_str!("theme/built-in/purlis-classic/theme.json");
+
+/// Purlis Classic's `theme.json` as its folder holds it: what `purlis theme export
+/// purlis-classic` packs.
+pub const CLASSIC_THEME_JSON: &str = CLASSIC_FILE;
 
 /// Purlis Classic's id: its folder's name, which a theme `extends` it by.
 pub const CLASSIC: &str = "purlis-classic";

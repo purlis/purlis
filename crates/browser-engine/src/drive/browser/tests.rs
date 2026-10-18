@@ -61,6 +61,18 @@ struct Model {
     opened_at: HashMap<String, String>,
     /// Whether the engine makes worlds without telling of them (#2138).
     worlds_untold: bool,
+    /// Whether what a drag presses on is a native drag source (#2136): moved with the button
+    /// held, it starts the engine's own drag, which the stand-in hands over once drags are
+    /// intercepted.
+    native_drag: bool,
+    /// Whether the engine hands its drags over rather than carrying them (#2136).
+    intercepting: bool,
+    /// Whether the engine's own drag has started.
+    dragging: bool,
+    /// What the engine's own drag carries (#2136).
+    drag_data: Value,
+    /// How long after the move that starts it the engine tells of its own drag.
+    drag_told_after: Duration,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -358,6 +370,43 @@ impl Engine {
                     .cloned()
                     .unwrap_or_else(|| drawn::nothing(session.trim_start_matches("S-"))))
             }
+            "Input.setInterceptDrags" => {
+                super::lock(&self.model).intercepting = p["enabled"] == true;
+                Ok(json!({}))
+            }
+            "Input.dispatchMouseEvent" => {
+                let starts = {
+                    let mut model = super::lock(&self.model);
+                    let starts = p["type"] == "mouseMoved"
+                        && p["buttons"] == 1
+                        && model.native_drag
+                        && model.intercepting
+                        && !model.dragging;
+                    model.dragging |= starts;
+                    starts
+                };
+                if starts {
+                    let (data, after) = {
+                        let model = super::lock(&self.model);
+                        (model.drag_data.clone(), model.drag_told_after)
+                    };
+                    if after.is_zero() {
+                        self.emit("Input.dragIntercepted", json!({ "data": data }), on);
+                    } else {
+                        let events = super::lock(&self.events).clone();
+                        let session = on.map(str::to_owned);
+                        std::thread::spawn(move || {
+                            std::thread::sleep(after);
+                            let _ = events.send(Event {
+                                method: "Input.dragIntercepted".into(),
+                                params: json!({ "data": data }),
+                                session_id: session,
+                            });
+                        });
+                    }
+                }
+                Ok(json!({}))
+            }
             "Page.getNavigationHistory" => Ok(super::lock(&self.model).history.clone()),
             "Page.navigate" => Ok(json!({"frameId":"PAGE-1","loaderId":"LOADER-9"})),
             _ => Ok(json!({})),
@@ -462,6 +511,11 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             drawn: HashMap::new(),
             opened_at: HashMap::new(),
             worlds_untold: false,
+            native_drag: false,
+            intercepting: false,
+            dragging: false,
+            drag_data: json!({"items":[{"mimeType":"text/plain","data":"card"}],"dragOperationsMask":1}),
+            drag_told_after: Duration::ZERO,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
@@ -726,6 +780,341 @@ fn a_drag_by_an_offset_ends_that_far_from_where_it_started() {
             .iter()
             .all(|s| s.params["buttons"] == 1),
         "the button is held through the moves"
+    );
+}
+
+#[test]
+fn a_drag_of_a_native_drag_source_is_carried_by_the_engines_own_drag_events() {
+    // #2136: once the engine's own drag starts, the rest of the way is its drag events, and
+    // the drop lands where the drag ends.
+    let (browser, engine) = browser();
+    super::lock(&engine.model).native_drag = true;
+    let text = snapshot(&browser, 1);
+    let volume = ref_of(&text, "- slider \"Volume\"");
+    let pay = ref_of(&text, "- link \"Read more\"");
+    let dragged = browser.call(
+        &id(2),
+        Call::Drag {
+            from: volume,
+            to: DragTo::Element(pay),
+        },
+    );
+    assert!(dragged.is_ok(), "{dragged:?}");
+    let drags: Vec<(String, f64, f64, Value)> = engine
+        .sent("Input.dispatchDragEvent")
+        .iter()
+        .map(|s| {
+            (
+                s.params["type"].as_str().unwrap().to_owned(),
+                s.params["x"].as_f64().unwrap(),
+                s.params["y"].as_f64().unwrap(),
+                s.params["data"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        drags.first().map(|d| d.0.as_str()),
+        Some("dragEnter"),
+        "{drags:?}"
+    );
+    let (kind, x, y, data) = drags.last().unwrap();
+    // The link's centre (50, 45).
+    assert_eq!((kind.as_str(), *x, *y), ("drop", 50.0, 45.0), "{drags:?}");
+    assert_eq!(data["items"][0]["data"], "card");
+    assert!(
+        drags[1..drags.len() - 1].iter().all(|d| d.0 == "dragOver"),
+        "{drags:?}"
+    );
+    // The engine is no longer handed drags: a drag of the person's is its own again.
+    let intercepts = engine.sent("Input.setInterceptDrags");
+    assert_eq!(intercepts.first().unwrap().params["enabled"], true);
+    assert_eq!(intercepts.last().unwrap().params["enabled"], false);
+    assert_eq!(
+        mouse(&engine).last().map(|m| m.0.clone()).as_deref(),
+        Some("mouseReleased")
+    );
+}
+
+#[test]
+fn a_drag_of_a_native_drag_source_by_an_offset_drops_that_far_from_where_it_started() {
+    let (browser, engine) = browser();
+    super::lock(&engine.model).native_drag = true;
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    browser
+        .call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Offset { x: 40.0, y: -5.0 },
+            },
+        )
+        .unwrap();
+    let drop = engine.sent("Input.dispatchDragEvent");
+    let drop = drop.last().unwrap();
+    assert_eq!(drop.params["type"], "drop");
+    // From the slider's centre (150, 105), 40 right and 5 up.
+    assert_eq!(
+        (drop.params["x"].as_f64(), drop.params["y"].as_f64()),
+        (Some(190.0), Some(100.0))
+    );
+}
+
+/// The kinds of the engine's own drag events sent, in order.
+fn drag_kinds(engine: &Engine) -> Vec<String> {
+    engine
+        .sent("Input.dispatchDragEvent")
+        .iter()
+        .map(|s| s.params["type"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// Whether the engine was last told to stop handing its drags over.
+fn drags_handed_back(engine: &Engine) -> bool {
+    engine
+        .sent("Input.setInterceptDrags")
+        .last()
+        .is_some_and(|s| s.params["enabled"] == false)
+}
+
+fn drag_volume_by(browser: &Browser, n: u32) -> Result<Answer, Refusal> {
+    let volume = ref_of(&snapshot(browser, n), "- slider \"Volume\"");
+    browser.call(
+        &id(n + 1),
+        Call::Drag {
+            from: volume,
+            to: DragTo::Offset { x: 40.0, y: -5.0 },
+        },
+    )
+}
+
+#[test]
+fn drags_are_handed_back_even_when_the_engine_refused_to_hand_them_over() {
+    let (browser, engine) = browser();
+    engine.on(|sent, _| {
+        (sent.method == "Input.setInterceptDrags" && sent.params["enabled"] == true)
+            .then_some(Err(CallError::TimedOut))
+    });
+    assert!(drag_volume_by(&browser, 1).is_err());
+    assert!(drags_handed_back(&engine));
+    assert!(mouse(&engine).is_empty(), "nothing was pressed");
+}
+
+#[test]
+fn a_drag_that_fails_on_the_way_is_cancelled_let_go_and_handed_back() {
+    let (browser, engine) = browser();
+    super::lock(&engine.model).native_drag = true;
+    engine.on(|sent, _| {
+        (sent.method == "Input.dispatchDragEvent" && sent.params["type"] == "drop").then_some(Err(
+            CallError::Engine {
+                code: -32000,
+                message: "no".into(),
+            },
+        ))
+    });
+    assert!(drag_volume_by(&browser, 1).is_err());
+    let kinds = drag_kinds(&engine);
+    assert_eq!(
+        kinds.last().map(String::as_str),
+        Some("dragCancel"),
+        "{kinds:?}"
+    );
+    assert_eq!(
+        mouse(&engine).last().map(|m| m.0.clone()).as_deref(),
+        Some("mouseReleased")
+    );
+    assert!(drags_handed_back(&engine));
+}
+
+#[test]
+fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
+    // The engine tells of its own drag only after the moves: the person takes over meanwhile.
+    let (browser, engine) = browser();
+    {
+        let mut model = super::lock(&engine.model);
+        model.native_drag = true;
+        model.drag_told_after = Duration::from_millis(80);
+    }
+    let browser = Arc::new(browser);
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let dragging = Arc::clone(&browser);
+    let call = std::thread::spawn(move || {
+        dragging.call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Offset { x: 40.0, y: -5.0 },
+            },
+        )
+    });
+    let started = std::time::Instant::now();
+    while engine
+        .sent("Input.dispatchMouseEvent")
+        .iter()
+        .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
+        .count()
+        < 10
+    {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the drag never moved"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    browser.take_over();
+    assert!(call.join().unwrap().is_err());
+    let kinds = drag_kinds(&engine);
+    assert_eq!(kinds, ["dragCancel"], "{kinds:?}");
+    assert_eq!(
+        mouse(&engine).last().map(|m| m.0.clone()).as_deref(),
+        Some("mouseReleased")
+    );
+    assert!(drags_handed_back(&engine));
+}
+
+#[test]
+fn a_drag_whose_browser_ends_on_the_way_is_handed_back() {
+    let (browser, engine) = browser();
+    super::lock(&engine.model).native_drag = true;
+    engine
+        .on(|sent, _| (sent.method == "Input.dispatchDragEvent").then_some(Err(CallError::Ended)));
+    assert!(drag_volume_by(&browser, 1).is_err());
+    assert!(
+        drags_handed_back(&engine),
+        "told to stop, whatever the engine answers"
+    );
+    assert_eq!(
+        drag_kinds(&engine).last().map(String::as_str),
+        Some("dragCancel")
+    );
+}
+
+#[test]
+fn a_native_drag_carries_no_files() {
+    let (browser, engine) = browser();
+    {
+        let mut model = super::lock(&engine.model);
+        model.native_drag = true;
+        model.drag_data = json!({"items":[{"mimeType":"text/plain","data":"card"}],"files":["/etc/hosts"],"dragOperationsMask":1});
+    }
+    drag_volume_by(&browser, 1).unwrap();
+    let sent = engine.sent("Input.dispatchDragEvent");
+    assert!(!sent.is_empty());
+    for event in sent {
+        assert!(event.params["data"].get("files").is_none(), "{event:?}");
+    }
+}
+
+#[test]
+fn a_native_drag_carrying_a_text_kept_out_is_cancelled_before_it_drops() {
+    let (browser, engine) = browser();
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    browser.blank(&secret).unwrap();
+    {
+        let mut model = super::lock(&engine.model);
+        model.native_drag = true;
+        model.drag_data = json!({"items":[{"mimeType":"text/plain","data":"OPEN SESAME"}],"dragOperationsMask":1});
+    }
+    let dragged = drag_volume_by(&browser, 2);
+    assert!(
+        matches!(&dragged, Err(Refusal::Partly { why, .. }) if *why == Refusal::DragKeptOut.to_string()),
+        "{dragged:?}"
+    );
+    let kinds = drag_kinds(&engine);
+    assert_eq!(
+        kinds,
+        ["dragCancel"],
+        "nothing reached the page's drop: {kinds:?}"
+    );
+    assert!(drags_handed_back(&engine));
+}
+
+#[test]
+fn a_native_drag_into_a_site_new_to_the_project_waits_on_the_person() {
+    let asked: crate::drive::Judge = Arc::new(|out: &crate::drive::Outbound| {
+        if out.address.starts_with("http://other.test") {
+            crate::drive::Gate::Ask {
+                site: "other.test:80".to_owned(),
+            }
+        } else {
+            crate::drive::Gate::Go
+        }
+    });
+    let (browser, engine) = browser_judged(asked);
+    super::lock(&engine.model).native_drag = true;
+    let text = snapshot(&browser, 1);
+    let volume = ref_of(&text, "- slider \"Volume\"");
+    let pay = ref_of(&text, "- button \"Pay now\"");
+    let dragged = browser
+        .call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Element(pay),
+            },
+        )
+        .unwrap();
+    assert!(
+        dragged
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("nothing was dropped")),
+        "{dragged:?}"
+    );
+    assert_eq!(dragged.asked, ["other.test:80"]);
+    assert_eq!(drag_kinds(&engine), ["dragCancel"]);
+    assert!(drags_handed_back(&engine));
+}
+
+#[test]
+fn a_native_drop_on_an_element_of_the_page_is_judged_for_every_site_the_page_shows() {
+    // A frame of another site may be drawn over the element the drop aims at.
+    let asked: crate::drive::Judge = Arc::new(|out: &crate::drive::Outbound| {
+        if out.address.starts_with("http://other.test") {
+            crate::drive::Gate::Ask {
+                site: "other.test:80".to_owned(),
+            }
+        } else {
+            crate::drive::Gate::Go
+        }
+    });
+    let (browser, engine) = browser_judged(asked);
+    super::lock(&engine.model).native_drag = true;
+    let text = snapshot(&browser, 1);
+    let volume = ref_of(&text, "- slider \"Volume\"");
+    let more = ref_of(&text, "- link \"Read more\"");
+    let dragged = browser
+        .call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Element(more),
+            },
+        )
+        .unwrap();
+    assert_eq!(dragged.asked, ["other.test:80"], "{dragged:?}");
+    assert_eq!(drag_kinds(&engine), ["dragCancel"]);
+}
+
+#[test]
+fn a_drag_that_starts_no_engine_drag_presses_moves_and_releases() {
+    let (browser, engine) = browser();
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    browser
+        .call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Offset { x: 40.0, y: -5.0 },
+            },
+        )
+        .unwrap();
+    assert!(engine.sent("Input.dispatchDragEvent").is_empty());
+    assert_eq!(
+        engine
+            .sent("Input.setInterceptDrags")
+            .last()
+            .map(|s| s.params["enabled"].clone()),
+        Some(json!(false))
     );
 }
 

@@ -1819,6 +1819,20 @@ pub fn the_proxy_tells_hosts(harness: Option<&str>) -> bool {
     )
 }
 
+/// **The local sockets the system's name lookup is reached through** on Linux (#2428):
+/// systemd-resolved's, nscd's (under either name of its folder), sssd's and avahi's (mDNS). No
+/// profile purlis compiles reaches one, since a chat's names are looked up by purlis's proxy,
+/// so a program's own lookup is refused there: a lookup past the proxy, not a socket to allow.
+pub const RESOLVER_SOCKETS: [&str; 7] = [
+    "/run/systemd/resolve/io.systemd.Resolve",
+    "/run/nscd/socket",
+    "/var/run/nscd/socket",
+    "/var/lib/sss/pipes/nss",
+    "/run/avahi-daemon/socket",
+    "/var/run/avahi-daemon/socket",
+    "/run/systemd/resolve/io.systemd.Resolve.Monitor",
+];
+
 /// **Whether `block` is purlis's proxy's to tell** where a harness purlis wraps runs behind it
 /// ([`the_proxy_tells_hosts`]): a refused connection to an internet host, which the proxy names
 /// by host. Neither the chat's hook nor its wrap's supervisor ([`supervised`]) tells one.
@@ -2188,13 +2202,16 @@ impl Throttle {
             }
             within
         });
+        // A lookup that names no host (one the system's name lookup was refused, #2428) is the
+        // same as any lookup of the chat's in the window: one failed lookup, one Notice.
+        let a_lookup = (block.operation, block.kind) == (Operation::Lookup, Kind::Host);
         let same = |one: &Heard| {
             one.block == *block
                 && one.read == read
                 && match (one.target.as_deref(), target) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
-                    _ => false,
+                    _ => a_lookup,
                 }
         };
         if let Some(again) = heard.iter_mut().find(|one| same(one)) {

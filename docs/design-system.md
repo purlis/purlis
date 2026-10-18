@@ -537,7 +537,13 @@ left out of it, each appearance's contrast findings with the pair and ratio as w
 consent floors the window holds in each combination with the tokens it draws as purlis's own,
 and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
-`purlis docs show themes` has the JSON's shape. **An extension's theme says what is wrong
+`purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
+makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
+preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a
+fixed table (`theme::table`, printed in `purlis docs show themes` and held to it by a test),
+lists every source key no token takes, and the folder is put in place only when the engine
+draws it, never over one that is there without `--force`. **`purlis theme export <folder>`**
+writes the folder as a zip that `import` gives back file for file. **An extension's theme says what is wrong
 with it** on its row in Extensions, beside the row's other complaints: why the engine refused
 it, or what it left out.
 

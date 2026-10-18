@@ -1136,6 +1136,26 @@ pub(crate) fn resolve_beside(
     })
 }
 
+/// **`persona`'s tools as the project at `root` declares them, and those this machine allowed
+/// now** (#2560): what a chat started without the sandbox, which no start armed, is held to at
+/// the call itself, as a sandboxed chat's start arms it. The declarations are read whether or
+/// not the project turned the sandbox on, as a persona's declared browser is
+/// ([`super::persona::declared_browser`]); what is allowed is exactly what this machine's Allow
+/// of the persona's hosts and tools covers, under policy ([`super::persona::tools_in_force_here`]).
+pub fn declared_and_allowed_here(root: &Path, persona: &str) -> (Vec<Tool>, Vec<Tool>) {
+    let said = super::Plane::read(root).said();
+    let Some(policy) = said.policy.or(said.unset) else {
+        return (Vec::new(), Vec::new());
+    };
+    let locks = super::policy::Locks::of(root);
+    let declared = super::persona::of(&policy.personas, Some(persona))
+        .map(|grants| grants.tools.clone())
+        .unwrap_or_default();
+    let allowed =
+        super::persona::tools_in_force_here(root, &policy.personas, Some(persona), &locks);
+    (declared, allowed)
+}
+
 /// **What a brokered `secret exec` from a sandboxed chat asks to run**, as [`declared`] judges
 /// it: the vault, each hand-over as `secret exec` spells it (`VAR=key`), and the program as the
 /// chat named it.
