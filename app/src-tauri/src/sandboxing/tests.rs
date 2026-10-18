@@ -2878,3 +2878,126 @@ fn a_host_allowed_for_me_is_removed_from_my_hosts_and_a_chat_named_with_it_remov
     assert!(sandbox::hosts::personal(root).is_empty());
     assert_eq!(*heard.lock().unwrap(), [(None, false, "you")]);
 }
+
+/// Every level an Allow may name, as the window names it.
+const EVERY_LEVEL: [GrantLevel; 5] = [
+    GrantLevel::Once,
+    GrantLevel::Chat,
+    GrantLevel::You,
+    GrantLevel::Machine,
+    GrantLevel::Project,
+];
+
+/// #2657: **a socket grant never names the system's name lookup**, from a block's Notice, at
+/// any level: each socket of it is refused before anything is audited or kept, in one sentence
+/// (a grant for everyone in the project is refused for every socket, as it always is).
+#[test]
+fn a_notice_never_allows_a_socket_of_the_systems_name_lookup_at_any_level() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    let audited = std::sync::Mutex::new(0);
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+        *audited.lock().unwrap() += 1;
+        Ok(())
+    };
+    for path in purlis_core::sandboxblock::RESOLVER_SOCKETS {
+        for level in EVERY_LEVEL {
+            let refused = allow(
+                root,
+                &machine(),
+                &chats,
+                3,
+                (GrantWhat::Socket, path, level),
+                &audit,
+                100,
+            )
+            .expect_err("refused")
+            .to_string();
+            if level == GrantLevel::Project {
+                assert!(refused.contains("everyone in the project"), "{refused}");
+            } else {
+                assert_eq!(refused, sandbox::services::NAME_LOOKUP, "{path} {level:?}");
+            }
+        }
+    }
+    assert_eq!(*audited.lock().unwrap(), 0, "nothing audited");
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+}
+
+/// #2657: what a project expects is never allowed for a socket of the system's name lookup
+/// from Settings or its Notice: the item is drawn as one that cannot be allowed, saying why,
+/// and an Allow keeps nothing, however the window drew it.
+#[test]
+fn settings_never_allow_an_expected_socket_of_the_systems_name_lookup() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let lookup = purlis_core::sandboxblock::RESOLVER_SOCKETS[1];
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        format!("[sandbox]\nmode = \"on\"\nexpects = [\"{lookup}\"]\n"),
+    )
+    .expect("charter.toml");
+    let awaiting = sandbox::services::awaiting(root, &sandbox::Machine::this()).expect("it waits");
+    assert_eq!(
+        awaiting
+            .items
+            .iter()
+            .map(|item| item.refused.as_deref())
+            .collect::<Vec<_>>(),
+        [Some(sandbox::services::NAME_LOOKUP)]
+    );
+    let chats = crate::chats::Chats::new();
+    let audited = std::sync::Mutex::new(0);
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+        *audited.lock().unwrap() += 1;
+        Ok(())
+    };
+    for named in [None, Some(lookup.to_owned())] {
+        let shown = [ExpectedShown {
+            target: lookup.to_owned(),
+            named,
+        }];
+        assert!(allow_expects(root, &chats, &shown, &audit, 100).is_err());
+    }
+    assert_eq!(*audited.lock().unwrap(), 0, "nothing audited");
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+    // However it comes to be kept, the one keep refuses it, at every level it keeps at.
+    for level in [
+        sandbox::grant::Level::You,
+        sandbox::grant::Level::Machine,
+        sandbox::grant::Level::Once,
+        sandbox::grant::Level::Chat,
+    ] {
+        let refused = kept_for(
+            root,
+            &chats,
+            Some(3),
+            (&sandbox::grant::What::Socket(lookup.into()), level),
+            &audit,
+            100,
+        )
+        .expect_err("refused");
+        assert_eq!(refused, sandbox::services::NAME_LOOKUP, "{level:?}");
+    }
+    assert_eq!(*audited.lock().unwrap(), 0);
+}
+
+/// #2657: the Granted list says a socket of the system's name lookup kept on this machine
+/// reaches no chat, and why, and still offers to remove it.
+#[test]
+fn the_granted_list_says_a_kept_socket_of_the_systems_name_lookup_reaches_no_chat() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let lookup = purlis_core::sandboxblock::RESOLVER_SOCKETS[0];
+    sandbox::local::grant_socket(root, std::path::Path::new(lookup)).expect("written");
+    let chats = crate::chats::Chats::new();
+    let row = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
+        .into_iter()
+        .find(|one| one.what == GrantWhat::Socket)
+        .expect("listed");
+    assert_eq!(row.target, lookup);
+    assert_eq!(row.locked.as_deref(), Some(sandbox::services::NAME_LOOKUP));
+    revoke(root, &chats, &row.id, &|_, _| Ok(())).expect("removed");
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+}

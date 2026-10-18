@@ -386,6 +386,22 @@ impl SocketGround {
     }
 }
 
+/// Why a socket grant never names the system's name lookup (#2657), in one sentence.
+pub const NAME_LOOKUP: &str = "That socket is the system's name lookup, and letting a chat \
+                               reach it would let the chat look up any name past the sandbox's \
+                               proxy, so purlis never allows it.";
+
+/// **Whether `path` is a socket of the system's name lookup**
+/// ([`crate::sandboxblock::RESOLVER_SOCKETS`], #2657), written as one or leading to one: no
+/// grant names it, at any level, so what a Notice offers for it and what a grant keeps agree.
+pub fn is_name_lookup(path: &Path) -> bool {
+    let real = super::real(path);
+    crate::sandboxblock::RESOLVER_SOCKETS.iter().any(|lookup| {
+        let lookup = Path::new(lookup);
+        path == lookup || real == lookup || real == super::real(lookup)
+    })
+}
+
 /// **`typed` as a local socket a grant names**, or why not: the path the kernel names it by,
 /// links resolved ([`super::real`]). It must be absolute, a socket now with one name alone (a
 /// second hard link could be one a chat made), outside every folder a chat may write, and
@@ -397,6 +413,9 @@ pub fn socket(typed: &str, ground: &SocketGround) -> Result<PathBuf, Refused> {
         return Err(Refused::Not(
             "purlis allows a local socket by its whole path, from /.".to_owned(),
         ));
+    }
+    if is_name_lookup(path) {
+        return Err(Refused::Outside(NAME_LOOKUP.to_owned()));
     }
     let resolved = super::real(path);
     match shape(&resolved) {
@@ -581,6 +600,7 @@ pub fn still_sockets(sockets: &[PathBuf], ground: &SocketGround) -> Vec<PathBuf>
     sockets
         .iter()
         .filter(|path| path.is_absolute() && super::real(path) == **path)
+        .filter(|path| !is_name_lookup(path))
         .filter(|path| matches!(shape(path), Shape::Socket | Shape::Gone))
         .filter(|path| !exposed(path))
         .filter(|path| ground.refuses(path).is_none())

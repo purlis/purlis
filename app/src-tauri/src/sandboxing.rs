@@ -1823,6 +1823,12 @@ pub(crate) fn kept_for(
                 .to_owned(),
         );
     }
+    // Never the system's name lookup (#2657), whichever path the grant came by.
+    if let What::Socket(socket) = what
+        && sandbox::services::is_name_lookup(socket)
+    {
+        return Err(sandbox::services::NAME_LOOKUP.to_owned());
+    }
     // Every project on this machine is a socket's or a service's alone (R2), whoever asks.
     if level == Level::Machine && !what.machine_wide() {
         return Err(
@@ -2506,6 +2512,13 @@ fn grants_of(
             GrantWhat::Vault | GrantWhat::Browser | GrantWhat::BrowserSite => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
+            // A socket of the system's name lookup is never granted (#2657): one kept for it
+            // reaches no chat, and says why.
+            GrantWhat::Socket
+                if sandbox::services::is_name_lookup(std::path::Path::new(&one.target)) =>
+            {
+                Some(sandbox::services::NAME_LOOKUP.to_owned())
+            }
             GrantWhat::Socket => locks.holds_kept(
                 &sandbox::grant::What::Socket(one.target.clone().into()),
                 level,

@@ -710,6 +710,62 @@ fn allowing_a_tasks_dispatch_for_this_chat_allows_nothing_for_its_session_or_sib
     );
 }
 
+/// #2657: the centralized Ask never allows a socket of the system's name lookup for the
+/// tasks it lists, at any level: every task is judged as a Notice judges it, so nothing is kept
+/// and the answer says why.
+#[test]
+fn the_ask_never_allows_a_socket_of_the_systems_name_lookup_for_its_tasks_at_any_level() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let machine = purlis_core::sandbox::Machine::this();
+    for lookup in purlis_core::sandboxblock::RESOLVER_SOCKETS {
+        let seen: Vec<SeenBlock> = [4, 5]
+            .map(|task| SeenBlock {
+                task,
+                operation: "connect".to_owned(),
+                kind: "local-socket".to_owned(),
+                what: GrantWhat::Socket,
+                target: lookup.to_owned(),
+            })
+            .to_vec();
+        for level in [
+            GrantLevel::Once,
+            GrantLevel::Chat,
+            GrantLevel::You,
+            GrantLevel::Machine,
+            GrantLevel::Project,
+        ] {
+            let app = App::default();
+            for one in &seen {
+                app.blocks.heard(one.task, held(one));
+            }
+            let judge = |task: u32, block: &HeldBlock| {
+                crate::sandboxing::judged(
+                    root,
+                    &machine,
+                    None,
+                    task,
+                    (block.what, &block.target, level),
+                )
+            };
+            let refused = app
+                .answer(1, &seen, level, &judge, &[])
+                .expect_err("refused");
+            assert!(
+                refused.starts_with("Nothing was allowed: for chat 4,"),
+                "{lookup} {level:?}: {refused}"
+            );
+            if level != GrantLevel::Project {
+                assert!(
+                    refused.ends_with(purlis_core::sandbox::services::NAME_LOOKUP),
+                    "{lookup} {level:?}: {refused}"
+                );
+            }
+            assert!(app.kept().is_empty());
+        }
+    }
+}
+
 // ---- real chats: these need a terminal ------------------------------------------------------
 
 /// A session (steward 1), and `names` started as its tasks, on `chats`, each in its own folder

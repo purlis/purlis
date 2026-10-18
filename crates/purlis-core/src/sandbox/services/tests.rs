@@ -1419,3 +1419,32 @@ fn the_services_offered_to_choose_are_the_ones_a_grant_may_name() {
     assert_eq!(Known::CertificateCheck.named(), "Certificate check");
     assert_eq!(Known::Containers.named(), "Container engine");
 }
+
+// ---- the system's name lookup (#2657) -------------------------------------------------------
+
+/// #2657: **a socket grant never names the system's name-lookup sockets**: each path of
+/// [`crate::sandboxblock::RESOLVER_SOCKETS`], written whole or as a `unix://` address, is
+/// refused in one sentence, whether or not a socket is there, and one kept for it is never
+/// compiled in.
+#[test]
+fn a_socket_grant_never_names_the_systems_name_lookup() {
+    let (_dir, root) = project();
+    let ground = SocketGround::of(&root, &machine_at(&root), &[]);
+    for path in crate::sandboxblock::RESOLVER_SOCKETS {
+        for typed in [path.to_owned(), format!("unix://{path}")] {
+            assert_eq!(
+                socket(&typed, &ground),
+                Err(Refused::Outside(NAME_LOOKUP.to_owned())),
+                "{typed}"
+            );
+        }
+        assert!(is_name_lookup(Path::new(path)), "{path}");
+    }
+    assert!(!is_name_lookup(Path::new("/var/run/docker.sock")));
+    assert_eq!(NAME_LOOKUP.matches(". ").count(), 0, "one sentence");
+    let kept: Vec<PathBuf> = crate::sandboxblock::RESOLVER_SOCKETS
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+    assert!(still_sockets(&kept, &ground).is_empty());
+}

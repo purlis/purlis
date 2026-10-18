@@ -2779,3 +2779,40 @@ fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
     assert_eq!(service.target.as_deref(), Some("5432"));
     assert!(!service.levels.is_empty(), "{:?}", service.levels);
 }
+
+/// #2657: a block's Notice for a socket of the system's name lookup offers no Allow, only the
+/// chat without the sandbox, and on macOS says why in the grant's own sentence.
+#[test]
+fn a_notice_for_a_socket_of_the_systems_name_lookup_offers_no_allow() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    for lookup in purlis_core::sandboxblock::RESOLVER_SOCKETS {
+        let said = blocked(
+            &plane,
+            &purlis_core::hookwire::SandboxBlocked {
+                chat: 3,
+                sandbox_blocked: Block {
+                    operation: Operation::Connect,
+                    kind: Kind::LocalSocket,
+                    ours: false,
+                },
+                harness: None,
+                target: Some(lookup.to_owned()),
+                read_back: false,
+                suggested: None,
+            }
+            .into(),
+        );
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                said.route.as_deref(),
+                Some(purlis_core::sandbox::services::NAME_LOOKUP),
+                "{lookup}"
+            );
+        }
+    }
+}
