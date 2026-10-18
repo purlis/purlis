@@ -69,7 +69,7 @@ afterEach(() => {
 
 describe("what the window was handed as it was created", () => {
   it("is nothing at all when it was handed nothing", () => {
-    expect(atCreation()).toEqual({ layout: NONE, theme: NO_THEME });
+    expect(atCreation()).toEqual({ layout: NONE, theme: NO_THEME, first: null });
   });
 
   it("costs the preference and never the window when it is not what the Rust side writes", () => {

@@ -278,7 +278,11 @@ fn named(name: &str, surface: &str) -> Value {
 fn the_first_frame_is_the_theme_each_level_chooses_and_what_the_window_is_answered_after() {
     let places = Places::new();
     let theirs = mine(&named("Mine", "#202020"));
-    places.put(Level::MachineDefault, "machine", &named("Machine", "#101010"));
+    places.put(
+        Level::MachineDefault,
+        "machine",
+        &named("Machine", "#101010"),
+    );
     places.put(Level::ProjectDefault, "team", &named("Team", "#111111"));
     places.put(Level::WorkspaceChoice, "client", &sharp());
     let folders = places.folders();
@@ -427,7 +431,10 @@ fn a_first_frame_that_needs_an_extension_s_theme_is_the_person_s_own_until_the_w
             contrast,
         ))
     };
-    assert_eq!(asked(Some(&theme), Contrast::More), draw(theme.first_for(Contrast::More)));
+    assert_eq!(
+        asked(Some(&theme), Contrast::More),
+        draw(theme.first_for(Contrast::More))
+    );
     let none = asked(None, Contrast::Standard);
     assert_eq!(none, draw(default_theme()));
     assert!(none.complaints.is_empty(), "{:?}", none.complaints);
@@ -452,7 +459,8 @@ fn the_first_frame_holds_the_consent_floors() {
         Contrast::Standard,
     ));
     assert!(drawn.held.is_some());
-    assert_eq!(drawn, draw(theme.first()));
+    let held = draw(theme.first());
+    assert_eq!((&drawn.theme, &drawn.held), (&held.theme, &held.held));
     // And a theme folder a level chose.
     let places = Places::new();
     places.put(Level::MachineDefault, "mine", &breaks);

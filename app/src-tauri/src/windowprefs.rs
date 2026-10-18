@@ -98,12 +98,26 @@ impl CreatedOn {
     /// working directory resolved to), else the one in front in the first window the machine
     /// remembers (`machine.json`), which the restore brings back; `None` with neither.
     pub(crate) fn main(config_root: Option<&Path>, launched: Option<&Path>) -> Option<Self> {
+        Self::main_of(launched, || {
+            config_root.map(|root| purlis_core::machine::read(root).store)
+        })
+    }
+
+    /// [`Self::main`], with what the machine remembers read by `remembered`, only when the
+    /// launch named no project.
+    fn main_of(
+        launched: Option<&Path>,
+        remembered: impl FnOnce() -> Option<purlis_core::machine::Store>,
+    ) -> Option<Self> {
         if let Some(plane) = launched {
             return Some(Self::plane(plane));
         }
-        let remembered = purlis_core::machine::read(config_root?).store;
+        let remembered = remembered()?;
         let first = remembered.windows.first()?;
-        first.planes.get(first.active).map(|plane| Self::plane(plane))
+        first
+            .planes
+            .get(first.active)
+            .map(|plane| Self::plane(plane))
     }
 }
 
@@ -181,7 +195,9 @@ impl FirstFrame {
                 };
                 // A frame that more contrast draws the same as the standard one is handed once.
                 let same = frames.iter().any(|was| {
-                    was.light == frame.light && was.theme == frame.theme && was.floors == frame.floors
+                    was.light == frame.light
+                        && was.theme == frame.theme
+                        && was.floors == frame.floors
                 });
                 if !same {
                     frames.push(frame);
@@ -803,8 +819,7 @@ mod tests {
         assert_eq!(at["first"]["frames"][0]["theme"]["name"], "Team");
         assert_eq!(at["first"]["contrast"], "standard");
         // What the window is answered once it asks is the frame it drew: nothing is drawn again.
-        let levels =
-            theme::Levels::read(Some(&places.config), Some(&places.plane), None);
+        let levels = theme::Levels::read(Some(&places.config), Some(&places.plane), None);
         let folders = theme::Folders::of(Some(&places.config), Some(&places.plane), None);
         let answered = crate::extensions::theme_in_force_of(
             &levels,
@@ -896,7 +911,9 @@ mod tests {
             .map(|one| {
                 (
                     one["more"].as_bool().unwrap(),
-                    one["theme"]["values"]["window.background"].as_str().unwrap(),
+                    one["theme"]["values"]["window.background"]
+                        .as_str()
+                        .unwrap(),
                 )
             })
             .collect();
@@ -979,21 +996,24 @@ mod tests {
     fn the_main_window_is_created_on_the_launch_s_project_else_the_one_remembered_in_front() {
         let places = Places::new("");
         let other = places.plane.with_file_name("other");
+        std::fs::create_dir_all(&other).unwrap();
         assert_eq!(CreatedOn::main(Some(&places.config), None), None);
+        let remembered = || {
+            Some(purlis_core::machine::Store {
+                windows: vec![purlis_core::machine::Window {
+                    planes: vec![places.plane.clone(), other.clone()],
+                    active: 1,
+                }],
+                ..purlis_core::machine::Store::default()
+            })
+        };
         assert_eq!(
-            CreatedOn::main(Some(&places.config), Some(&places.plane)).map(|on| on.plane),
+            CreatedOn::main_of(Some(&places.plane), remembered).map(|on| on.plane),
             Some(places.plane.clone())
         );
-        purlis_core::machine::update(&places.config, |store| {
-            store.windows = vec![purlis_core::machine::Window {
-                planes: vec![places.plane.clone(), other.clone()],
-                active: 1,
-            }];
-        })
-        .unwrap();
         assert_eq!(
-            CreatedOn::main(Some(&places.config), None).map(|on| on.plane),
-            Some(other)
+            CreatedOn::main_of(None, remembered).map(|on| on.plane),
+            Some(other.clone())
         );
     }
 
