@@ -580,9 +580,10 @@ pub struct Serving {
     /// policy lists, the only internal addresses its connections are carried to
     /// ([`super::internal`]). None holds no address to it.
     pub internal: Option<Internal>,
-    /// For a chat planned on another machine (#2510, ruled 2026-10-18): the services of this
-    /// machine, by port, its plan gave it for it alone and this machine's sandbox does not
-    /// give, so it was started without them ([`super::plan::Plan::as_the_runner_starts_it`]).
+    /// For a chat planned on another machine (#2510, ruled 2026-10-18), or composed here by its
+    /// names (#2590): the services of this machine, by port, the window allowed it alone and
+    /// this machine's sandbox does not give, so it was started without them
+    /// ([`super::plan::Plan::as_the_runner_starts_it`], [`super::plan::Plan::start_leaving_out`]).
     /// Where the proxy asks live, a connection to one on the loopback interface is held while
     /// the person is asked, by its loopback address, and carried once they allow it for this
     /// chat. Any other port of this machine is refused as before.
@@ -994,9 +995,10 @@ impl Allowed {
     /// not withdrawn, and never a port purlis's own proxies listen on.
     ///
     /// **The one way a proxy asks about a port of its machine's loopback.** `left_out` is
-    /// filled only for a plan made on another machine, on the runner that starts it
-    /// ([`super::hosted::start`], [`super::plan::Plan::start_held`]); a proxy planned here never
-    /// asks about one. The window relies on that: it raises every loopback ask as the runner's
+    /// filled only on a runner, for a plan made on another machine or one it composed for a
+    /// chat started by its names ([`super::hosted::start`], [`super::plan::Plan::start_held`],
+    /// [`super::plan::Plan::start_leaving_out`]); a proxy the window planned here never asks
+    /// about one. The window relies on that: it raises every loopback ask as the runner's
     /// service (`chats::asked_as` in the app), never as one on the person's own machine.
     fn left_out_at(&self, host: &str, port: u16) -> bool {
         self.left_out.contains(&port)

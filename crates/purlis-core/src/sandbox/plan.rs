@@ -329,13 +329,10 @@ impl Plan {
         internal: Option<Internal>,
         left_out: Vec<u16>,
     ) -> std::io::Result<Confinement> {
-        // Only a plan made on another machine leaves a service out, to be asked about there
-        // ([`egress::Serving::left_out`]): a proxy planned here never asks about a port of
-        // its machine.
-        debug_assert!(
-            left_out.is_empty() || internal.is_some(),
-            "a service is left out only of a plan made on another machine"
-        );
+        // Only a plan made on another machine, or one the host composed for a chat it starts
+        // by its names, leaves a service out, to be asked about there
+        // ([`egress::Serving::left_out`]): [`Self::start`], a plan the window made here, never
+        // does, so its proxy never asks about a port of its machine.
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
             return Err(std::io::Error::other(
