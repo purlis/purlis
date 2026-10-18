@@ -3098,3 +3098,49 @@ fn the_granted_list_says_a_kept_name_lookup_reaches_no_chat() {
     assert!(sandbox::local::services_everywhere().is_empty());
     sandbox::local::everywhere_for_this_test(None);
 }
+
+/// #2657: every name of the Mac's lookup socket is refused: one kept under its name on the
+/// data volume is listed as reaching no chat, and a Notice refuses it.
+#[cfg(target_os = "macos")]
+#[test]
+fn every_name_of_the_macs_lookup_socket_is_refused_and_listed_as_reaching_no_chat() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    for spelling in [
+        "/System/Volumes/Data/private/var/run/mDNSResponder",
+        "/private/var/run/mDNSResponder",
+    ] {
+        let refused = allow(
+            root,
+            &machine(),
+            &chats,
+            3,
+            (GrantWhat::Socket, spelling, GrantLevel::You),
+            &|_, _| Ok(()),
+            100,
+        )
+        .expect_err("refused")
+        .to_string();
+        assert_eq!(
+            refused,
+            sandbox::services::NAME_LOOKUP_REFUSED,
+            "{spelling}"
+        );
+        sandbox::local::grant_socket(root, std::path::Path::new(spelling)).expect("written");
+    }
+    let rows: Vec<SandboxGrant> =
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
+            .into_iter()
+            .filter(|one| one.what == GrantWhat::Socket)
+            .collect();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert_eq!(
+            row.locked.as_deref(),
+            Some(sandbox::services::NAME_LOOKUP_REFUSED),
+            "{}",
+            row.target
+        );
+    }
+}

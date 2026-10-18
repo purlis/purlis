@@ -409,15 +409,41 @@ pub const NAME_LOOKUP_REFUSED: &str = "purlis never allows the system's name loo
                                        a chat look up names its sandbox does not let it reach.";
 
 /// **Whether `path` is a socket of the system's name lookup** ([`NAME_LOOKUP_SOCKETS`], #2657),
-/// written as one, with `.` and `..` read as written, or leading to one: no grant names it, at
-/// any level, so what a Notice offers for it and what a grant keeps agree.
+/// by any of its names: as written, with `.` and `..` read as written, as the path it leads to,
+/// across a firmlink, or as the same file: no grant names it, at any level, so what a Notice
+/// offers for it and what a grant keeps agree.
 pub fn is_name_lookup(path: &Path) -> bool {
     let lexical = lexically(path);
-    let real = super::real(&lexical);
+    let names = names_of(&lexical);
+    let file = same_file_key(&lexical);
     NAME_LOOKUP_SOCKETS.iter().any(|lookup| {
         let lookup = Path::new(lookup);
-        lexical == lookup || real == lookup || real == super::real(lookup)
+        names_of(lookup).iter().any(|name| names.contains(name))
+            || file.is_some() && file == same_file_key(lookup)
     })
+}
+
+/// Every name `path` goes by: as written, as the kernel names it, and across a firmlink
+/// ([`super::kernel_names`]).
+fn names_of(path: &Path) -> Vec<PathBuf> {
+    let mut names = super::kernel_names(path);
+    names.push(path.to_path_buf());
+    names
+}
+
+/// The device and file `path` is, where something is there: two names of one file share it.
+#[cfg(unix)]
+fn same_file_key(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|meta| (meta.dev(), meta.ino()))
+}
+
+/// No file key where there is no unix: the names alone are compared.
+#[cfg(not(unix))]
+fn same_file_key(_: &Path) -> Option<(u64, u64)> {
+    None
 }
 
 /// **Whether `name` is a service of the system's name lookup** ([`NAME_LOOKUP_SERVICES`],

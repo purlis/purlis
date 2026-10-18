@@ -1537,3 +1537,27 @@ fn doctor_counts_a_kept_name_lookup_as_held() {
     );
     local::everywhere_for_this_test(None);
 }
+
+/// #2657: every name of the Mac's lookup socket is refused: its spellings on the data volume
+/// too, by a grant and by a start.
+#[cfg(target_os = "macos")]
+#[test]
+fn every_name_of_the_macs_lookup_socket_is_refused() {
+    let (_dir, root) = project();
+    let ground = SocketGround::of(&root, &machine_at(&root), &[]);
+    let spellings = [
+        "/System/Volumes/Data/private/var/run/mDNSResponder",
+        "/System/Volumes/Data/private/var/run/../run/mDNSResponder",
+        "/private/var/run/mDNSResponder",
+    ];
+    for typed in spellings {
+        assert!(is_name_lookup(Path::new(typed)), "{typed}");
+        assert_eq!(
+            socket(typed, &ground),
+            Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned())),
+            "{typed}"
+        );
+    }
+    let kept: Vec<PathBuf> = spellings.iter().map(PathBuf::from).collect();
+    assert!(still_sockets(&kept, &ground).is_empty());
+}
