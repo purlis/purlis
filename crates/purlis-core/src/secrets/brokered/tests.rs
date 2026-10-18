@@ -1227,9 +1227,8 @@ fn a_runs_named_link_is_given_back_by_its_own_name_and_not_what_it_points_at() {
         )
         .expect("a profile");
         let read = Profile::parse(&profile).expect("it reads");
-        let may = |what: FileOp, path: &Path, kind: Kind| {
-            read.allows(&Op::File { what, path, kind })
-        };
+        let may =
+            |what: FileOp, path: &Path, kind: Kind| read.allows(&Op::File { what, path, kind });
         for name in crate::sandbox::both_firmlink_names(link.clone()) {
             assert!(
                 may(FileOp::ReadData, &name, Kind::Symlink),
