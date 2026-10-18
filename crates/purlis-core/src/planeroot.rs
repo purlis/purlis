@@ -1159,6 +1159,7 @@ fn walked(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -
         out: Vec::new(),
         elsewhere,
         wrote: false,
+        changed: false,
         git_wrote: false,
         too_deep: false,
         budget: STRING_BUDGET_PER_BYTE
@@ -1370,6 +1371,10 @@ struct Walk {
     elsewhere: Option<Vec<Elsewhere>>,
     /// A command that may write has been met ([`Elsewhere::after_a_writer`]).
     wrote: bool,
+    /// A command that may change what the guards read of the repository — a ref, a commit,
+    /// configuration — has been met ([`RootInvocation::after_a_writer`]): [`Self::wrote`] less
+    /// the gits in the root that only put files back ([`touches_only_files`]).
+    changed: bool,
     /// A git that may write has been met, or a program that may be git told to `config`: a
     /// word after a program only the shell can name may then be an alias it defined.
     git_wrote: bool,
@@ -1518,8 +1523,12 @@ fn walk_line(
         }
         let before = &exported[..];
         let (out, made) = (&mut walk.out, &mut walk.made);
-        let (elsewhere, wrote, git_wrote) =
-            (&mut walk.elsewhere, &mut walk.wrote, &mut walk.git_wrote);
+        let (elsewhere, wrote, changed, git_wrote) = (
+            &mut walk.elsewhere,
+            &mut walk.wrote,
+            &mut walk.changed,
+            &mut walk.git_wrote,
+        );
         // Whether the segment is one of git's, which answers for itself below.
         let mut gits = false;
         let call = shellwrap::split_env_chdir(&seg.argv);
@@ -1586,7 +1595,7 @@ fn walk_line(
                 (config_env(), own_env_of())
             };
             // After a git that may write, any word may be an alias it defined.
-            let after_a_writer = *wrote;
+            let after_a_writer = *changed;
             let configured = *git_wrote;
             let found = match literal_mover_after(words) {
                 Some((sub, post)) => Some((sub, post, Vec::new(), false)),
@@ -1601,6 +1610,7 @@ fn walk_line(
             };
             gits = true;
             *wrote |= !words.is_empty();
+            *changed |= !words.is_empty();
             // It may be no git at all: only a word that sets configuration makes the words
             // after the next such program read as aliases.
             *git_wrote |= words.iter().any(|w| w == "config");
@@ -1625,8 +1635,9 @@ fn walk_line(
             let (pre, rest) = shellwrap::git_globals(&seg.argv[at..]);
             let (env, own_env) = (config_env(), own_env_of());
             gits = true;
-            let after_a_writer = *wrote;
+            let after_a_writer = *changed;
             *wrote = true;
+            *changed = true;
             *git_wrote = true;
             if let Some((sub, post, unread)) =
                 subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, true, after_a_writer)
@@ -1657,7 +1668,8 @@ fn walk_line(
             let filled = shell_fills_the_command(&pre, &rest);
             let spliced = filled || pre.iter().any(|t| t.ends_with('$'));
             let (env, own_env) = (config_env(), own_env_of());
-            let after_a_writer = *wrote;
+            let after_wrote = *wrote;
+            let after_a_writer = *changed;
             let first = || {
                 rest.split_first()
                     .map(|(sub, post)| (sub.clone(), post.to_vec(), false))
@@ -1717,7 +1729,6 @@ fn walk_line(
             if let Some((sub, post, unread)) = words {
                 let writes = spliced || !GIT_READS.contains(&sub.as_str());
                 *wrote |= writes;
-                *git_wrote |= writes;
                 // `before + env`, in that order: an assignment on THIS invocation overrides an
                 // export.
                 // `env -C ~/x` hands the shell a word of its own; `env --chdir=~/x` does not.
@@ -1750,6 +1761,14 @@ fn walk_line(
                     (Some(readings), true) => Some((dirs, more_dirs, pointed_by_name(readings))),
                     _ => None,
                 };
+                // One in the root that only puts files back changes nothing the guards read of
+                // the repository after it.
+                let changes = writes
+                    && !((named || unnamed)
+                        && !spliced
+                        && touches_only_files(&sub, &post, shared.root));
+                *changed |= changes;
+                *git_wrote |= changes;
                 let inv = RootInvocation {
                     sub,
                     post,
@@ -1771,7 +1790,7 @@ fn walk_line(
                         dirs,
                         more_dirs,
                         pointed,
-                        after_a_writer,
+                        after_a_writer: after_wrote,
                     });
                 }
             }
@@ -1812,8 +1831,10 @@ fn walk_line(
         // what they run answers for itself.
         let moves_the_shell = cd_call(&seg.argv, &prog, &args).is_some();
         let read_through = gits || moves_the_shell || handed.is_some() || evals;
-        walk.wrote |=
+        let writes =
             writes_a_file(&seg.argv) || (!read_through && may_write(&seg.argv, &prog, &args));
+        walk.wrote |= writes;
+        walk.changed |= writes;
         // Each string is read now, so what it makes reaches the segments after it, and where an
         // `eval` leaves this shell is where they run.
         let mut evaled = Left::at(Whereabouts::default());
@@ -1951,6 +1972,38 @@ fn words_after_a_substitution<'a>(
         }
     }
     None
+}
+
+/// Whether `git <sub> <post…>` run in the root only puts files back in the index or the working
+/// tree, changing no ref, commit or configuration: `add`, `rm`, `mv`, `restore`, a `reset` to
+/// the commit HEAD is at, and a `checkout` the branch guard reads as a file restore (every
+/// option restore-only, and paths after a `--` or every operand a tracked path git cannot
+/// read as a commit). Asked of git in `root` as the branch guard asks it.
+fn touches_only_files(sub: &str, post: &[String], root: &str) -> bool {
+    let cut = post.iter().position(|a| a == "--");
+    let before = &post[..cut.unwrap_or(post.len())];
+    let operands: Vec<&String> = before.iter().filter(|a| !a.starts_with('-')).collect();
+    match sub {
+        "add" | "rm" | "mv" | "restore" => true,
+        "reset" => operands
+            .first()
+            .is_none_or(|target| matches!(target.as_str(), "HEAD" | "@")),
+        "checkout" => {
+            let restore_only = before
+                .iter()
+                .filter(|a| a.starts_with('-') && *a != "-")
+                .all(|a| checkout_opt_kind(a) == OptKind::Restore);
+            let paths_follow = cut.is_some_and(|at| at + 1 < post.len());
+            restore_only
+                && (paths_follow
+                    || (!operands.is_empty()
+                        && operands.len() <= MAX_CHECKOUT_OPERANDS
+                        && operands
+                            .iter()
+                            .all(|w| checkout_operand_kind(root, w) == OperandKind::Path)))
+        }
+        _ => false,
+    }
 }
 
 /// The first command of a function's body, where `argv` defines one (`f() { …`, `f() ( …`,
@@ -2281,13 +2334,87 @@ pub fn plane_root(root: &str) -> String {
 struct Unasked;
 
 /// What one git question answered, as Python's `CompletedProcess` would hold it.
+#[derive(Clone)]
 struct Answer {
     ok: bool,
     out: String,
 }
 
-/// One read-only git question about `root` — `doctor._git_in`, through the session-aware runner.
+/// The most answers one guard's call keeps ([`Remembered`]). Past it git is asked again, so a
+/// line that puts thousands of different questions costs time and not memory.
+const MAX_REMEMBERED_ANSWERS: usize = 1024;
+
+/// What git answered, by the root it was asked in and the arguments it was asked with.
+type Answers = std::collections::HashMap<(String, Vec<String>), Answer>;
+
+thread_local! {
+    /// What git answered during the guard call running on this thread: `None` outside one
+    /// ([`remembering`]).
+    static REMEMBERED: std::cell::RefCell<Option<Answers>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Ends the memory [`remembering`] began, however the call it wraps ends.
+struct Remembered {
+    began: bool,
+}
+
+impl Drop for Remembered {
+    fn drop(&mut self) {
+        if self.began {
+            REMEMBERED.with(|r| *r.borrow_mut() = None);
+        }
+    }
+}
+
+/// `then`, with every git question it puts asked of git once (#2619).
+///
+/// A line repeats the same few questions — whether `HEAD` would lose commits, what the default
+/// branch is, whether a word is a tracked path — once for each git on it, and each is a git
+/// process: tens of milliseconds on a macOS runner, so 124 KB of the restores and ended
+/// operations the linear-time test reads took the branch and reset guards 40 s there, in a
+/// release build as in a debug one. Nothing runs between two questions of one guard call, so the
+/// second is answered what the first was; that is all that changes. Only an answer git gave is
+/// kept: a question that could not be asked is asked again, as before, so no refusal a later
+/// attempt would have made is lost. The memory ends with the call, so the next command is read
+/// against the repository as it is then.
+fn remembering<T>(then: impl FnOnce() -> T) -> T {
+    let began = REMEMBERED.with(|r| {
+        let mut r = r.borrow_mut();
+        let began = r.is_none();
+        if began {
+            *r = Some(std::collections::HashMap::new());
+        }
+        began
+    });
+    let _ends = Remembered { began };
+    then()
+}
+
+/// One read-only git question about `root` — `doctor._git_in`, through the session-aware runner,
+/// answered from what the guard call already asked where it can ([`remembering`]).
 fn git_in(root: &str, args: &[&str]) -> Result<Answer, Unasked> {
+    let key = (
+        root.to_string(),
+        args.iter().map(|a| (*a).to_string()).collect::<Vec<_>>(),
+    );
+    let known = REMEMBERED.with(|r| r.borrow().as_ref().and_then(|m| m.get(&key).cloned()));
+    if let Some(known) = known {
+        return Ok(known);
+    }
+    let answer = git_asked(root, args)?;
+    REMEMBERED.with(|r| {
+        if let Some(m) = r.borrow_mut().as_mut()
+            && m.len() < MAX_REMEMBERED_ANSWERS
+        {
+            m.insert(key, answer.clone());
+        }
+    });
+    Ok(answer)
+}
+
+/// [`git_in`]'s question, put to git.
+fn git_asked(root: &str, args: &[&str]) -> Result<Answer, Unasked> {
     let raw = runner::run_as_session(
         std::path::Path::new(root),
         args,
@@ -2944,6 +3071,11 @@ pub fn default_branch(root: &str) -> Option<String> {
 /// only an affirmative "a tracked path and not a revision", with every option one charter can
 /// place as restore-only, opens the gate.
 pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
+    remembering(|| branch_reason(cmd, cwd, root))
+}
+
+/// [`plane_root_branch_reason`], each git question asked once.
+fn branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
     let (invocations, too_deep) = read_line(cmd, cwd, &root);
     if too_deep {
@@ -3343,6 +3475,11 @@ pub fn plane_root_reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<Strin
     if !shellwrap::may_name(cmd, "git") {
         return None;
     }
+    remembering(|| reset_reason(cmd, cwd, root))
+}
+
+/// [`plane_root_reset_reason`], each git question asked once.
+fn reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
     let on = std::cell::OnceCell::new();
     let branch_on = || on.get_or_init(|| current_branch(&root)).clone();

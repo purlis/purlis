@@ -2414,3 +2414,142 @@ fn pointing_head_at_another_branch_is_a_branch_move() {
         assert_eq!(branch(&f, cmd), None, "{cmd:?}");
     }
 }
+
+/// How many times git was asked exactly `question` in `root` since `before` questions there.
+fn times_asked(root: &str, before: usize, question: &[&str]) -> usize {
+    crate::worktree::git::tally::asked(std::path::Path::new(root))[before..]
+        .iter()
+        .filter(|asked| *asked == question)
+        .count()
+}
+
+/// How many questions git was asked in `root` so far.
+fn asked_so_far(root: &str) -> usize {
+    crate::worktree::git::tally::asked(std::path::Path::new(root)).len()
+}
+
+/// Every git on a line puts the same few questions, and each is a git process: one guard call
+/// asks each once, and answers every git what it would have been answered (#2619).
+#[test]
+fn a_question_every_git_on_a_line_repeats_is_asked_of_git_once() {
+    let f = fixture();
+    let unpushed = [
+        "rev-list",
+        "--count",
+        "HEAD",
+        "--not",
+        "HEAD",
+        "@{upstream}",
+        "--",
+    ];
+    let before = asked_so_far(&f.root);
+    assert_eq!(reset(&f, &"git reset --hard HEAD; ".repeat(50)), None);
+    assert_eq!(times_asked(&f.root, before, &unpushed), 1);
+
+    let before = asked_so_far(&f.root);
+    assert_eq!(branch(&f, &"git checkout README; ".repeat(50)), None);
+    for question in [
+        &["rev-parse", "--verify", "--quiet", "README^{commit}"][..],
+        &["ls-files", "--error-unmatch", "--", "README"],
+        &[
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ],
+    ] {
+        assert_eq!(times_asked(&f.root, before, question), 1, "{question:?}");
+    }
+}
+
+/// What one call remembers changes no verdict: a refusal behind any number of gits that pass is
+/// still made, a different question is still asked, and the next call asks git again, so a push
+/// between two commands is seen (#2619).
+#[test]
+fn what_git_answered_is_kept_for_one_call_and_refuses_as_it_did() {
+    let f = fixture();
+    let wipe = "git reset --hard HEAD~1";
+    let alone = reset(&f, wipe).expect("the unpushed commit is at risk");
+    let behind = format!("{}{wipe}", "git reset --hard HEAD; ".repeat(50));
+    assert_eq!(reset(&f, &behind).as_deref(), Some(alone.as_str()));
+    let twice = format!("{wipe}; {wipe}");
+    assert_eq!(reset(&f, &twice).as_deref(), Some(alone.as_str()));
+    // The branch guard: a restore repeated, then a move.
+    let restores = "git checkout README; ".repeat(50);
+    let moved = branch(&f, "git checkout feature").expect("a branch move");
+    assert_eq!(
+        branch(&f, &format!("{restores}git checkout feature")).as_deref(),
+        Some(moved.as_str())
+    );
+    // Once the commit is pushed, the next call reads the repository as it is then.
+    git(
+        std::path::Path::new(&f.root),
+        &["push", "-q", "origin", "main"],
+    );
+    assert_eq!(reset(&f, wipe), None);
+    assert_eq!(reset(&f, &behind), None);
+}
+
+/// A question about the fixture's `HEAD`, and what git answers it.
+const HEAD_COMMIT: [&str; 4] = ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"];
+
+/// The memory keeps at most [`MAX_REMEMBERED_ANSWERS`] answers: one more is asked of git each
+/// time and answered as git answers it, and the last one that fits is kept (#2619).
+#[test]
+fn past_the_most_answers_kept_git_is_asked_again_and_answers_the_same() {
+    let f = fixture();
+    let head = |a: Answer| (a.ok, a.out);
+    let truth = head(git_asked(&f.root, &HEAD_COMMIT).expect("git answers"));
+    assert!(truth.0 && !truth.1.is_empty());
+    for (kept_before, asked) in [(MAX_REMEMBERED_ANSWERS - 1, 1), (MAX_REMEMBERED_ANSWERS, 2)] {
+        remembering(|| {
+            REMEMBERED.with(|r| {
+                let mut r = r.borrow_mut();
+                let m = r.as_mut().expect("inside a call");
+                for n in 0..kept_before {
+                    let answer = Answer {
+                        ok: true,
+                        out: String::new(),
+                    };
+                    m.insert(("elsewhere".to_string(), vec![n.to_string()]), answer);
+                }
+            });
+            let before = asked_so_far(&f.root);
+            for _ in 0..2 {
+                let answer = git_in(&f.root, &HEAD_COMMIT).expect("git answers");
+                assert_eq!(head(answer), truth);
+            }
+            assert_eq!(
+                times_asked(&f.root, before, &HEAD_COMMIT),
+                asked,
+                "with {kept_before} answers kept"
+            );
+        });
+    }
+}
+
+/// A guard call inside another shares the outer's memory and leaves it standing; the outer's
+/// end clears it, and the next call asks git again (#2619).
+#[test]
+fn a_call_inside_another_shares_its_memory_and_only_the_outer_ends_it() {
+    let f = fixture();
+    let before = asked_so_far(&f.root);
+    let ask = || git_in(&f.root, &HEAD_COMMIT).expect("git answers").out;
+    remembering(|| {
+        let first = ask();
+        let inner = remembering(ask);
+        assert_eq!(inner, first);
+        assert!(
+            REMEMBERED.with(|r| r.borrow().is_some()),
+            "the inner call ended the memory"
+        );
+        assert_eq!(ask(), first);
+    });
+    assert_eq!(times_asked(&f.root, before, &HEAD_COMMIT), 1);
+    assert!(
+        REMEMBERED.with(|r| r.borrow().is_none()),
+        "the outer call left its memory"
+    );
+    remembering(ask);
+    assert_eq!(times_asked(&f.root, before, &HEAD_COMMIT), 2);
+}

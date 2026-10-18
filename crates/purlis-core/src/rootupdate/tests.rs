@@ -678,9 +678,11 @@ fn an_earlier_git_command_that_changes_the_repository_leaves_the_tree_unmeasured
     let r = a_repository();
     assert_eq!(asked(&r, "git checkout main"), None);
     assert_eq!(asked(&r, "git checkout README.md"), None);
+    // Putting a file back changes nothing the next command is measured by.
+    assert_eq!(asked(&r, "git add README.md && git checkout main"), None);
     for cmd in [
-        "git add README.md && git checkout main",
-        "git add README.md && git checkout README.md",
+        "git commit -q -m x && git checkout main",
+        "git commit -q -m x && git checkout README.md",
     ] {
         let (sub, said) = asked(&r, cmd).expect(cmd);
         assert_eq!(sub, "checkout");
