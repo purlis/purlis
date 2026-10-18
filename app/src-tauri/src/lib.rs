@@ -1389,12 +1389,17 @@ async fn harness_cards(
 }
 
 /// What [`start_options`] answers for the project at `root`.
+///
+/// git is asked once about the project's local file for the whole picker (#2179): every row's
+/// gate and every read of the Local layer here take that one answer.
 fn start_options_in(root: &std::path::Path) -> Result<StartOptions, String> {
-    start_options_on(
-        root,
-        &purlis_core::sandbox::Machine::this(),
-        &purlis_core::sandbox::backend::installed,
-    )
+    purlis_core::profiles::git_asked_once(|| {
+        start_options_on(
+            root,
+            &purlis_core::sandbox::Machine::this(),
+            &purlis_core::sandbox::backend::installed,
+        )
+    })
 }
 
 /// [`start_options_in`] on `machine`, with `has` saying what is installed.
@@ -1591,29 +1596,32 @@ async fn start_chat(
             .map(|asked| purlis_core::sandbox::OptOut {
                 reason: asked.reason,
             });
-        let (mut started, said) = worktrees::on_a_branch(
-            held.root(),
-            config.as_deref(),
-            cwd.as_deref().map(std::path::Path::new),
-            named.as_deref(),
-            boxes.new_branch,
-            |cwd| {
-                start_chat_in(
-                    &held,
-                    profile,
-                    persona,
-                    cwd,
-                    name,
-                    label,
-                    Picked {
-                        show_footer,
-                        without_sandbox,
-                    },
-                    columns,
-                    rows,
-                )
-            },
-        )?;
+        // git is asked once about the local file for the whole start (#2179).
+        let (mut started, said) = purlis_core::profiles::git_asked_once(|| {
+            worktrees::on_a_branch(
+                held.root(),
+                config.as_deref(),
+                cwd.as_deref().map(std::path::Path::new),
+                named.as_deref(),
+                boxes.new_branch,
+                |cwd| {
+                    start_chat_in(
+                        &held,
+                        profile,
+                        persona,
+                        cwd,
+                        name,
+                        label,
+                        Picked {
+                            show_footer,
+                            without_sandbox,
+                        },
+                        columns,
+                        rows,
+                    )
+                },
+            )
+        })?;
         started.notices.splice(0..0, said);
         Ok(started)
     })

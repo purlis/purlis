@@ -299,6 +299,7 @@ export const commands = {
 	sandboxState: (plane: PlaneId) => typedError<SandboxState, string>(__TAURI_INVOKE("sandbox_state", { plane })),
 	answerSandboxOffer: __WINDOW_ONLY_RESULT,
 	acknowledgeProjectHosts: __WINDOW_ONLY_RESULT,
+	acknowledgeProjectBrowserSites: __WINDOW_ONLY_RESULT,
 	acknowledgeProjectPresets: __WINDOW_ONLY_RESULT,
 	allowPersonaHosts: __WINDOW_ONLY_RESULT,
 	allowProjectExpects: __WINDOW_ONLY_RESULT,
@@ -1226,8 +1227,6 @@ export const commands = {
 	/**  Which channel this machine takes charter from: `stable` or `dev`. */
 	updateChannel: () => __TAURI_INVOKE<string>("update_channel"),
 	setUpdateChannel: __WINDOW_ONLY_RESULT,
-	browserLimits: __WINDOW_ONLY_RESULT,
-	setBrowserLimit: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -2565,10 +2564,19 @@ export type BriefOf =
  *  One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
  *  page and its document), which the person's input names back, and the JPEG in base64. An
  *  empty `jpeg` says the view has ended for good.
+ * 
+ *  Or, with `reconnection` and no image, where the view stands while the link to the runner it
+ *  is drawn from is down and back (#2542): its last frame stays, dimmed, until it is
+ *  reconnected.
  */
 export type BrowserFrame = {
 	aim: string,
 	jpeg: string,
+	/**
+	 *  Where the view stands while its runner's link is down and back (#2542): said on its
+	 *  own, with no image; `null` on every frame.
+	 */
+	reconnection: Reconnection | null,
 };
 
 /**
@@ -2578,27 +2586,14 @@ export type BrowserFrame = {
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
 
-/**  Which limit a row sets. */
-export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
-
-/**  One limit, as its row draws it. */
-export type BrowserLimitShown = {
-	/**  What is in force now. */
-	value: number,
-	/**  What purlis's default is here: for the device's budget, what its memory gives. */
-	default: number,
-	/**  Whether the person set it, so a reset is on offer. */
-	set: boolean,
-	least: number,
-	most: number,
-};
-
-/**  What the Browsers group draws. */
-export type BrowserLimitsShown = {
-	per_project: BrowserLimitShown,
-	on_this_device: BrowserLimitShown,
-	/**  `0` is never. */
-	idle_minutes: BrowserLimitShown,
+/**
+ *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
+ *  spelled as the sandbox writes a host.
+ */
+export type BrowserSitesChanged = {
+	/**  Listed and never shown here: what the Notice sends back once it is read. */
+	added: string[],
+	removed: string[],
 };
 
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
@@ -7607,6 +7602,12 @@ export type SandboxState = {
 	 */
 	hosts_changed: HostsChanged | null,
 	/**
+	 *  How the project's browser sites for everyone in it changed since this machine last
+	 *  showed them (#2443): one each reaches no browser here until it was shown. `null` when
+	 *  nothing did.
+	 */
+	browser_sites_changed?: BrowserSitesChanged | null,
+	/**
 	 *  How the project's Internet access presets changed since this machine last told the
 	 *  person (#1385): the one-time Notice each teammate sees, so a preset that widens never
 	 *  widens unseen. `null` when nothing did.
@@ -9145,6 +9146,16 @@ export type WhatChanged = {
 	diff: FileDiff,
 };
 
+/**
+ *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint
+ *  draws it (`purlis_core::theme::apart_chroma`), giving less colour at that hue when it must.
+ */
+export type WindowApart = {
+	token: string,
+	from: string,
+	distance: number | null,
+};
+
 /**  One face of a font. */
 export type WindowFace = {
 	/**  The sha-256 of its bytes, which `theme_font` answers. */
@@ -9179,6 +9190,12 @@ export type WindowFonts = {
 export type WindowGeometry = {
 	comfortable: { [key in string]: string },
 	compact: { [key in string]: string },
+};
+
+/**  One workspace colour's hue in a theme, in degrees. */
+export type WindowHue = {
+	name: string,
+	hue: number | null,
 };
 
 /**  One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes. */
@@ -9257,6 +9274,23 @@ export type WindowTheme = {
 	fonts: WindowFonts,
 	/**  The tokens that are not colours (#2327). */
 	typed: WindowTyped,
+	/**  How a workspace's colour tints it (#2329, #2393): the window keeps only the arithmetic. */
+	tint: WindowTint,
+};
+
+/**
+ *  A theme's tint recipe as the window draws it (`purlis_core::theme::Tint`): both lists are
+ *  empty for a theme a workspace's colour does not tint.
+ */
+export type WindowTint = {
+	/**  The tokens the colour of the workspace in front turns on the whole window. */
+	window: string[],
+	/**  The tokens a workspace's colour turns on its own tab and its chat strip. */
+	tabs: string[],
+	/**  Each workspace colour's name and the OKLCH hue it gives, in the palette's order. */
+	hues: WindowHue[],
+	/**  The rules every tint holds, whatever the hue. */
+	apart: WindowApart[],
 };
 
 /**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */

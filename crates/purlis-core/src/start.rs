@@ -289,9 +289,12 @@ pub fn ready_on(
     has: &dyn Fn(&str) -> bool,
 ) -> Result<Ready, String> {
     // The launch read, which has already asked git whether this plane's `charter.local.toml`
-    // would reach every clone of it.
-    let launch = profiles::for_launch_in(root, declared);
-    ready_given(start, root, declared, machine, has, &launch)
+    // would reach every clone of it; every later read of that file in this start takes the
+    // same answer (#2179).
+    profiles::git_asked_once(|| {
+        let launch = profiles::for_launch_in(root, declared);
+        ready_given(start, root, declared, machine, has, &launch)
+    })
 }
 
 /// [`ready_in`] from a launch read the caller already made ([`profiles::for_launch_in`] of

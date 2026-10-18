@@ -160,11 +160,12 @@ export function RepoInstructionsTab({
         ))}
       </ul>
 
-      {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). */}
+      {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). Add to
+          memory trusts the repository's text, so it is as plain as Not now (D-2591-1). */}
       <SettingActions>
         <button
           type="button"
-          className="ui-button ui-button-primary"
+          className="ui-button"
           tabIndex={0}
           disabled={ticked.length === 0 || adding}
           onClick={add}

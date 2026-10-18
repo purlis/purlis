@@ -55,7 +55,7 @@ const PLANE = "/home/dev/plane";
 function core(
   open: () => unknown = () => "B1",
   personDrives = false,
-  input: () => unknown = () => ({ outcome: "taken" }),
+  input: (args: Record<string, unknown>) => unknown = () => ({ outcome: "taken" }),
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   let frames: Channel<BrowserFrame> | undefined;
@@ -74,14 +74,16 @@ function core(
         frames = (args as { frames: Channel<BrowserFrame> }).frames;
         return { view: 4, width: 1280, height: 800, person_drives: personDrives };
       }
-      if (cmd === "browser_input") return input();
+      if (cmd === "browser_input") return input((args ?? {}) as Record<string, unknown>);
       return null;
     },
     { shouldMockEvents: true },
   );
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
-    send: (jpeg: string, aim = "p1:1") => frames?.onmessage({ aim, jpeg }),
+    send: (jpeg: string, aim = "p1:1") => frames?.onmessage({ aim, jpeg, reconnection: null }),
+    reconnection: (reconnection: "reconnecting" | "reconnected") =>
+      frames?.onmessage({ aim: "", jpeg: "", reconnection }),
     order: () => asked.map(({ cmd }) => cmd),
   };
 }
@@ -92,6 +94,9 @@ async function fromThePalette(row: string) {
   await userEvent.keyboard(row);
   await userEvent.keyboard("{Enter}");
 }
+
+/** What the bar above the page says: who drives it. */
+const barSaid = () => screen.getByRole("status");
 
 const tabNames = () =>
   within(stripNamed("Tabs"))
@@ -160,6 +165,37 @@ describe("a browser's view tab", () => {
   });
 });
 
+describe("a browser's view on a runner whose link is down (#2542)", () => {
+  it("says Reconnecting over its last frame until it is reconnected, and has not ended", async () => {
+    const { BrowserView } = await import("./BrowserView");
+    const host = core();
+    render(<BrowserView program="B1" />);
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
+    host.send("/9j/AA==");
+    await waitFor(() => expect(painted).toEqual([[0xff, 0xd8, 0xff, 0x00]]));
+    const surface = screen.getByTestId("browser-surface");
+
+    host.reconnection("reconnecting");
+
+    await waitFor(() => expect(barSaid()).toHaveTextContent(/^Reconnecting…$/));
+    expect(within(surface).getByText("Reconnecting…")).toBeInTheDocument();
+    expect(surface).toHaveClass("reconnecting");
+    expect(screen.queryByText("This browser has ended")).toBeNull();
+    expect(painted).toHaveLength(1);
+
+    host.reconnection("reconnected");
+    host.send("/9j/AQ==");
+
+    await waitFor(() =>
+      expect(barSaid()).toHaveTextContent("Click or type in the page to take it over."),
+    );
+    expect(barSaid()).not.toHaveTextContent("Reconnecting…");
+    expect(within(surface).queryByText("Reconnecting…")).toBeNull();
+    expect(surface).not.toHaveClass("reconnecting");
+    await waitFor(() => expect(painted).toHaveLength(2));
+  });
+});
+
 describe("a browser's view nobody can see", () => {
   it("is closed while its project is not in front or the window is hidden, and opened again when seen", async () => {
     const { BrowserView } = await import("./BrowserView");
@@ -205,7 +241,7 @@ describe("taking a browser over from its view (#2014)", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  async function drawn(personDrives = false, input?: () => unknown) {
+  async function drawn(personDrives = false, input?: (args: Record<string, unknown>) => unknown) {
     const { BrowserView } = await import("./BrowserView");
     const { ProjectShownProvider } = await import("./projectShown");
     const host = core(undefined, personDrives, input);
@@ -231,9 +267,7 @@ describe("taking a browser over from its view (#2014)", () => {
 
   it("takes the browser over with a click, which then reaches the page where it was aimed", async () => {
     const host = await drawn();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Click or type in the page to take it over.",
-    );
+    expect(barSaid()).toHaveTextContent("Click or type in the page to take it over.");
 
     fireEvent.pointerDown(screen.getByTestId("browser-surface"), {
       clientX: 640,
@@ -257,7 +291,7 @@ describe("taking a browser over from its view (#2014)", () => {
         button: "left",
       }),
     });
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(barSaid()).toHaveTextContent(
       "You are driving this browser. The agent is paused until you press Done.",
     );
   });
@@ -296,9 +330,7 @@ describe("taking a browser over from its view (#2014)", () => {
 
     await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Click or type in the page to take it over.",
-      ),
+      expect(barSaid()).toHaveTextContent("Click or type in the page to take it over."),
     );
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
   });
@@ -323,9 +355,7 @@ describe("taking a browser over from its view (#2014)", () => {
     const host = await drawn(true);
 
     expect(await screen.findByRole("button", { name: "Done" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "The agent is paused until you press Done.",
-    );
+    expect(barSaid()).toHaveTextContent("The agent is paused until you press Done.");
     expect(host.asked("take_over_browser")).toEqual([]);
   });
 
@@ -401,5 +431,117 @@ describe("taking a browser over from its view (#2014)", () => {
       "a",
       "c",
     ]);
+  });
+
+  /** The bar's words for input the page moved on from before it arrived. */
+  const DROPPED = "The page changed before your key or click reached it, so purlis dropped it.";
+
+  /** A host that takes input aimed at what `showing()` names, and drops the rest as missed. */
+  const onlyAt =
+    (showing: () => string) =>
+    ({ input }: Record<string, unknown>) =>
+      (input as { aim: string }).aim === showing() ? { outcome: "taken" } : { outcome: "missed" };
+
+  const typed = (surface: HTMLElement, key: string) =>
+    fireEvent.keyDown(surface, {
+      key,
+      code: `Key${key.toUpperCase()}`,
+      keyCode: key.toUpperCase().charCodeAt(0),
+    });
+
+  it("says once in the bar that keys typed while a frame inside the page reloaded were dropped, and to type them again", async () => {
+    let showing = "p1:7";
+    const host = await drawn(
+      true,
+      onlyAt(() => showing),
+    );
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
+
+    // A frame inside the page loads another document before the window draws a frame of it:
+    // the next keys are aimed at what the page no longer shows.
+    showing = "p1:8";
+    typed(surface, "b");
+    typed(surface, "c");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(3));
+
+    const status = screen.getByRole("status");
+    await waitFor(() => expect(status).toHaveTextContent(`${DROPPED} Type or click again.`));
+    expect(status.textContent?.split(DROPPED)).toHaveLength(2);
+
+    // The window draws the new document, and the person types again: it reaches the page, and
+    // the bar no longer says anything was dropped.
+    host.send("/9j/AA==", "p1:8");
+    typed(surface, "b");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(4));
+    expect(host.asked("browser_input")[3].input).toMatchObject({ key: "b", aim: "p1:8" });
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED));
+  });
+
+  it("says nothing of a mouse move the page moved on from", async () => {
+    const host = await drawn(true, () => ({ outcome: "missed" }));
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+
+    fireEvent.pointerMove(surface, { clientX: 10, clientY: 10 });
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+
+    expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
+  });
+
+  it("stops saying input was dropped once the person hands the browser back", async () => {
+    const host = await drawn(true, () => ({ outcome: "missed" }));
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
+
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED));
+  });
+
+  it("stops saying input was dropped once its view is watched again", async () => {
+    const host = await drawn(true, () => ({ outcome: "missed" }));
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
+
+    host.seen(false);
+    host.seen(true);
+
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(2));
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED));
+  });
+
+  it("says nothing of a key dropped from the watch before, whose answer comes after the view is watched again", async () => {
+    const lets: (() => void)[] = [];
+    const host = await drawn(
+      true,
+      () => new Promise((answer) => lets.push(() => answer({ outcome: "missed" }))),
+    );
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+
+    host.seen(false);
+    host.seen(true);
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(2));
+    lets.splice(0).forEach((go) => go());
+    await waitFor(() => expect(host.asked("unwatch_browser").length).toBeGreaterThan(0));
+
+    // The next key, of the new watch, is sent only once the old answer has been heard, and
+    // that answer said nothing.
+    typed(screen.getByTestId("browser-surface"), "b");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(2));
+    expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
+    lets.splice(0).forEach((go) => go());
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
   });
 });

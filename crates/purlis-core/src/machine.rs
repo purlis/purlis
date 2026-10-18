@@ -378,6 +378,10 @@ pub fn dirs_spelled(config_root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// A runner's one peer, the desktop it is paired with, inside [`dir`]
+/// (`crate::runnerlink`, ADR 0078 §8).
+pub const PEERS_FILE: &str = "peers.json";
+
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";
 

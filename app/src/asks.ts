@@ -312,10 +312,11 @@ export async function answerTaken(
       }
       case "browser-sites":
         // Sites new to the project a chat's browser held back (#2018): an Allow is a browser
-        // site, for this chat or always here, for the browser alone; Keep blocked tells the chat
-        // not to retry, with the reason the person typed. An Allow is told to what reads a
-        // chat's network, so its Network view lists the site apart from then on (#2364).
-        if (option === "chat" || option === "you") {
+        // site, for this chat, always here, or for everyone in the project (#2443), for the
+        // browser alone; Keep blocked tells the chat not to retry, with the reason the person
+        // typed. An Allow is told to what reads a chat's network, so its Network view lists the
+        // site apart from then on (#2364).
+        if (option === "chat" || option === "you" || option === "project") {
           const allowed = await commands.allowBrowserSites(plane, ask.session, path.sites, option);
           if (allowed.status === "ok") sandboxCommandReturned();
           return allowed;

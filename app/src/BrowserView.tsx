@@ -23,6 +23,7 @@ import { useWindowSeen } from "./browserWatch";
 import { EmptyState } from "./EmptyState";
 import { Select } from "./primitives/Select";
 import { useProjectShown } from "./projectShown";
+import { RECONNECTING_SAID } from "./reconnecting";
 import { onAMac } from "./tabKeys";
 
 /** The keys that are only held with another. */
@@ -35,6 +36,19 @@ type Shown =
   | { kind: "ended" }
   | { kind: "refused"; why: string };
 
+/** What the bar says when the person's key or click was dropped because the page moved on
+ *  (#2304): the page, or a frame inside it, loaded another document after the frame they acted
+ *  on was drawn, so the input never reached something they did not see. */
+const DROPPED =
+  "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
+
+/** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
+ *  button pressed or let go. A move or a wheel is followed by the next one. */
+function anAct(input: BrowserInput) {
+  if (input.kind === "key") return input.action === "down";
+  return input.kind === "mouse" && (input.action === "pressed" || input.action === "released");
+}
+
 /** What waits to be sent: one event of the person's, or their hand-back, after every event
  *  before it. */
 type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
@@ -44,11 +58,19 @@ type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
  * before its up, a press before its release, and the hand-back after every key typed before it.
  * A move waiting behind another is replaced by the newer one, so a quick mouse never queues a
  * backlog. `clear` drops whatever waits: a view watched again starts with nothing queued, so
- * nothing aimed at an earlier frame is sent after it.
+ * nothing aimed at an earlier frame is sent after it. A key or click the page moved on from is
+ * told to `dropped`, and the next one that reaches the page clears it (#2304). An answer that
+ * comes back after `clear` belongs to the watch before, so it says nothing.
  */
-function useSender(program: string, said: (why: string | undefined) => void) {
+function useSender(
+  program: string,
+  said: (why: string | undefined) => void,
+  dropped: (now: boolean) => void,
+) {
   const waiting = useRef<Queued[]>([]);
   const sending = useRef(false);
+  /** Counts the clears: an answer is heard only if no clear came while it was asked. */
+  const watch = useRef(0);
   const next = useCallback(async () => {
     if (sending.current) return;
     sending.current = true;
@@ -58,15 +80,19 @@ function useSender(program: string, said: (why: string | undefined) => void) {
           await one.handBack();
           continue;
         }
+        const asked = watch.current;
         const sent = await commands.browserInput(program, one.input);
+        if (asked !== watch.current) continue;
         if (sent.status === "error") said(sent.error);
         else if (sent.data.outcome === "refused") said(sent.data.why);
-        // A missed one was aimed at a page that has moved on: it is dropped, as it should be.
+        // A missed one was aimed at a page that has moved on: it is dropped, as it should be,
+        // and the bar says so until the person's next key or click reaches the page.
+        else if (anAct(one.input)) dropped(sent.data.outcome === "missed");
       }
     } finally {
       sending.current = false;
     }
-  }, [program, said]);
+  }, [program, said, dropped]);
   const send = useCallback(
     (input: BrowserInput) => {
       const queue = waiting.current;
@@ -91,7 +117,9 @@ function useSender(program: string, said: (why: string | undefined) => void) {
   );
   const clear = useCallback(() => {
     waiting.current = [];
-  }, []);
+    watch.current += 1;
+    dropped(false);
+  }, [dropped]);
   return { send, after, clear };
 }
 
@@ -109,12 +137,18 @@ function useSender(program: string, said: (why: string | undefined) => void) {
  * ({@link handsBack}), hands it back; the session host keeps the browser theirs until then,
  * across a crash of the window too. A size preset is the person's too, so picking one takes the
  * browser over.
+ *
+ * **A browser on a runner whose link is down says "Reconnecting…" over its last frame**
+ * (#2542), quietly, as a runner's chat does (#2496), until the core says it is reconnected: the
+ * link is back, or the view drew again from a new snapshot.
  */
 export function BrowserView({ program }: { program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [shown, setShown] = useState<Shown>({ kind: "opening" });
   const [driving, setDriving] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
+  const [dropped, setDropped] = useState(false);
   const [size, setSize] = useState<string>(SIZE_PRESETS[0].id);
   const drives = useRef(false);
   const taking = useRef<Promise<boolean> | null>(null);
@@ -126,7 +160,7 @@ export function BrowserView({ program }: { program: string }) {
   const windowSeen = useWindowSeen();
   const seen = inFront && windowSeen;
   const mac = onAMac();
-  const { send, after, clear } = useSender(program, setSaid);
+  const { send, after, clear } = useSender(program, setSaid, setDropped);
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -144,11 +178,19 @@ export function BrowserView({ program }: { program: string }) {
     const frames = new Channel<BrowserFrame>();
     frames.onmessage = (frame) => {
       if (gone) return;
+      // Where the view stands while its runner's link is down and back: no image of its own.
+      if (frame.reconnection !== null) {
+        setReconnecting(frame.reconnection === "reconnecting");
+        return;
+      }
       // An empty frame is the host's word that the view has ended for good.
       if (frame.jpeg === "") {
         setShown({ kind: "ended" });
         return;
       }
+      // A frame comes only over a link that is up: a view watched again after its runner's
+      // link came back is drawn as it comes.
+      setReconnecting(false);
       aim.current = frame.aim;
       draw(frameBytes(frame.jpeg));
     };
@@ -201,6 +243,7 @@ export function BrowserView({ program }: { program: string }) {
         return;
       }
       setSaid(undefined);
+      setDropped(false);
       drivingNow(false);
     });
   }, [after, program, drivingNow]);
@@ -324,9 +367,13 @@ export function BrowserView({ program }: { program: string }) {
             page, so a page cannot fake it. */}
         <BrowserChip mac={mac} />
         <p className="browser-bar-said" role="status">
+          {/* The bar is the view's one status: what is said over the page is said here too. */}
+          {reconnecting && `${RECONNECTING_SAID} `}
           {driving
             ? "You are driving this browser. The agent is paused until you press Done."
-            : "Click or type in the page to take it over."}
+            : // Nothing reaches the page while its runner's link is down: no hint to try.
+              !reconnecting && "Click or type in the page to take it over."}
+          {dropped && <span className="browser-bar-dropped"> {DROPPED}</span>}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
         <Select
@@ -351,7 +398,7 @@ export function BrowserView({ program }: { program: string }) {
         )}
       </div>
       <div
-        className="browser-surface"
+        className={reconnecting ? "browser-surface reconnecting" : "browser-surface"}
         data-testid="browser-surface"
         tabIndex={0}
         aria-label="The browser's page: click or type to take it over"
@@ -371,6 +418,12 @@ export function BrowserView({ program }: { program: string }) {
           width={shown.kind === "live" ? shown.width : undefined}
           height={shown.kind === "live" ? shown.height : undefined}
         />
+        {/* Seen over the page; a screen reader hears it in the bar's status above. */}
+        {reconnecting && (
+          <div className="pane-reconnecting" aria-hidden="true">
+            <span className="pane-reconnecting-said ui-text-secondary">{RECONNECTING_SAID}</span>
+          </div>
+        )}
       </div>
     </div>
   );

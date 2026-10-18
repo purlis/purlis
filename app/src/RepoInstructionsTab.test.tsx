@@ -68,3 +68,26 @@ describe("a workspace whose repos hold no agent instructions", () => {
     expect(screen.queryByTestId("repo-instructions-empty")).toBeNull();
   });
 });
+
+/**
+ * **Add to memory carries no emphasis** (#2591, D-2591-1): it saves a repository's own text into
+ * memory, so the press is a trust decision. It is drawn as plainly as Not now beside it, and,
+ * being no grant, it is not `.ui-button-grants` either.
+ */
+describe("the answers under a repository's instruction files", () => {
+  it("draws Add to memory and Not now with equal weight, in their order", async () => {
+    core([[AGENTS]]);
+    render(<RepoInstructionsTab plane={PLANE} workspace="alpha" onClose={vi.fn()} />);
+
+    const add = await screen.findByRole("button", { name: "Add to memory" });
+    const notNow = screen.getByRole("button", { name: "Not now" });
+
+    for (const answer of [add, notNow]) {
+      expect(answer).toHaveClass("ui-button");
+      expect(answer).not.toHaveClass("ui-button-primary");
+      expect(answer).not.toHaveClass("ui-button-grants");
+    }
+    expect(add.className).toBe(notNow.className);
+    expect(add.compareDocumentPosition(notNow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
