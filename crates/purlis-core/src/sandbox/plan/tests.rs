@@ -249,7 +249,7 @@ mod made_elsewhere {
 
     use super::super::{Beside, Here, Plan};
     use super::plan;
-    use crate::sandbox::hosts::{Host, Network};
+    use crate::sandbox::hosts::Network;
     use crate::sandbox::internal::Internal;
     use crate::sandbox::reach::{By, Reach};
 
@@ -274,7 +274,7 @@ mod made_elsewhere {
         Internal::listing(
             hosts
                 .iter()
-                .map(|host| Host::parse(host).expect("a host"))
+                .map(|host| crate::sandbox::internal::Entry::parse(host).expect("an entry"))
                 .collect(),
         )
     }

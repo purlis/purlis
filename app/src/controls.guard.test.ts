@@ -15,6 +15,9 @@ import {
   ratchet,
   SRC,
   sourceFiles,
+  type StyleSource,
+  tagStyleKeys,
+  windowFiles,
   withoutComments,
   RADIX_FROM,
 } from "./guards.testkit";
@@ -428,18 +431,17 @@ const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "sel
 /** Each class a component gives a control it draws (`HELD_KINDS`), rows and segments aside. */
 export function controlClasses(source: string): string[] {
   const radix = radixNames(withoutComments(source, "ts"));
-  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap(
-    ({ name, text }) => {
-      const kind = kindOf(name, text, radix);
-      if (!kind || !HELD_KINDS.has(kind)) return [];
-      const className = classNameOf(text) ?? "";
-      const strings = /\sclassName=\{/.test(text)
-        ? [...className.matchAll(/["'`]([^"'`]*)["'`]/g)].map(([, words]) => words)
-        : [className];
-      const words = strings.flatMap((words) => words.split(/\s+/)).filter(Boolean);
-      return words.some((word) => NOT_ON_ITS_OWN.includes(word)) ? [] : words;
-    },
-  );
+  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap((tag) => {
+    const { name, text } = tag;
+    const kind = kindOf(name, text, radix);
+    if (!kind || !HELD_KINDS.has(kind)) return [];
+    const className = classNameOf(text) ?? "";
+    const strings = /\sclassName=\{/.test(text)
+      ? [...className.matchAll(/["'`]([^"'`]*)["'`]/g)].map(([, words]) => words)
+      : [className];
+    const words = strings.flatMap((words) => words.split(/\s+/)).filter(Boolean);
+    return words.some((word) => NOT_ON_ITS_OWN.includes(word)) ? [] : words;
+  });
 }
 
 /** A strip or a pane header, by its class's name: a bar, a strip, a head or a row of tabs, the
@@ -685,27 +687,25 @@ export function cssHeights(
 const HEIGHT_UTILITY = /^(?:min-)?(?:h|size)-(?!auto$|full$)\S+$/;
 const HEIGHT_KEY = /^(?:height|minHeight|blockSize|minBlockSize)$/;
 
-/** Each height a component sets on a control it draws, in an inline style or a Tailwind class.
- *  The tokens are the primitives' classes; a component writes none of its own. */
-export function componentHeights(source: string): string[] {
+/** Each height a component sets on a control it draws, in a Tailwind class or in its `style`,
+ *  followed as the geometry guard follows one (`tagStyleKeys`: written inline, held in a
+ *  variable, a member of a local object, a branch of a ternary, a local function's return, an
+ *  import). The tokens are the primitives' classes; a component writes none of its own. */
+export function componentHeights(source: string, from: StyleSource = {}): string[] {
   const radix = radixNames(withoutComments(source, "ts"));
-  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap(
-    ({ name, text }) => {
-      const kind = kindOf(name, text, radix);
-      if (!kind || !HELD_KINDS.has(kind)) return [];
-      const found: string[] = [];
-      for (const word of classWords(classNameOf(text))) {
-        if (HEIGHT_UTILITY.test(word.split(":").pop() ?? word))
-          found.push(`<${name}> class ${word}`);
-      }
-      for (const style of text.matchAll(/\bstyle=\{\{([\s\S]*?)\}\}/g)) {
-        for (const [, key] of style[1].matchAll(/(?<![\w$.])(\w+)\s*:/g)) {
-          if (HEIGHT_KEY.test(key)) found.push(`<${name}> style ${key}`);
-        }
-      }
-      return found;
-    },
-  );
+  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap((tag) => {
+    const { name, text } = tag;
+    const kind = kindOf(name, text, radix);
+    if (!kind || !HELD_KINDS.has(kind)) return [];
+    const found: string[] = [];
+    for (const word of classWords(classNameOf(text))) {
+      if (HEIGHT_UTILITY.test(word.split(":").pop() ?? word)) found.push(`<${name}> class ${word}`);
+    }
+    for (const { label, key } of tagStyleKeys(source, tag, from)) {
+      if (HEIGHT_KEY.test(key)) found.push(`<${name}> ${label}`);
+    }
+    return found;
+  });
 }
 
 /**
@@ -731,19 +731,18 @@ const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
 
 /** Every height off the tokens in the window today, by file: its stylesheets (the core aside)
  *  and its components. */
-function heightsByFile(): Map<string, string[]> {
+function heightsByFile(planted: Readonly<Record<string, string>> = {}): Map<string, string[]> {
+  const text = (file: string) => planted[file] ?? readFileSync(join(SRC, file), "utf8");
+  const others = windowFiles(planted);
   const views = sourceFiles(isView);
-  const controls = new Set(
-    views.flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
-  );
+  const controls = new Set(views.flatMap((file) => controlClasses(text(file))));
   const sheets = sourceFiles((name) => name.endsWith(".css"))
     .filter((file) => file !== "theme/geometry.css")
     .map((file) => [file, readFileSync(join(SRC, file), "utf8")] as const);
   const held = heightCustoms(sheets.map(([, text]) => text));
   const byFile = new Map<string, string[]>();
   for (const [file, text] of sheets) byFile.set(file, cssHeights(text, controls, held));
-  for (const file of views)
-    byFile.set(file, componentHeights(readFileSync(join(SRC, file), "utf8")));
+  for (const file of views) byFile.set(file, componentHeights(text(file), { file, read: others }));
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
@@ -863,6 +862,36 @@ export function offTheHeights(
 describe("the control and chrome heights (#2449)", () => {
   it("finds every control a control tall and every strip a strip tall, or a named exception", () => {
     expect(offTheHeights(heightsByFile())).toEqual([]);
+  });
+
+  it("follows a control's style wherever the file hands it on, in the real tree (#2566)", () => {
+    const tsx = `${readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8")}
+import { plantedTall } from "./theme/theme";
+const plantedSizes = { row: { minHeight: 30 } };
+const plantedHeld = { height: "1.9rem" };
+const plantedBox = () => ({ blockSize: 31 });
+export const PlantedMember = () => <button className="ui-button" style={plantedSizes.row} />;
+export const PlantedEither = ({ on }: { on: boolean }) => (
+  <button className="ui-button" style={on ? plantedHeld : undefined} />
+);
+export const PlantedCall = () => <button className="ui-button" style={plantedBox()} />;
+export const PlantedImported = () => <button className="ui-button" style={plantedTall} />;
+`;
+    const script = `${readFileSync(join(SRC, "theme/theme.ts"), "utf8")}
+export const plantedTall = { minBlockSize: 32 };
+`;
+    const found = heightsByFile({ "LayoutPanes.tsx": tsx, "theme/theme.ts": script });
+    expect(offTheHeights(found)).toEqual(
+      [
+        "<button> style plantedSizes.row.minHeight",
+        "<button> style plantedHeld.height",
+        "<button> style plantedBox().blockSize",
+        "<button> style plantedTall.minBlockSize",
+      ].map(
+        (entry) =>
+          `LayoutPanes.tsx: take the height from --size-control or --size-chrome, or name the exception: ${entry}`,
+      ),
+    );
   });
 
   it("fails a control's hand-written height planted in the window's own stylesheet", () => {
