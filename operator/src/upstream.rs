@@ -24,6 +24,16 @@ use serde::{Deserialize, Serialize};
 /// The upstream release the operator is tested against and the vendored definitions are from.
 pub const VERSION: &str = "v1.0.6";
 
+/// The image of upstream's controller, without a tag or digest, as the vendored manifest names it.
+pub const CONTROLLER_IMAGE: &str = "registry.k8s.io/agent-sandbox/agent-sandbox-controller";
+
+/// The digest of [`CONTROLLER_IMAGE`] at [`VERSION`], as Kubernetes' image promoter published it
+/// (kubernetes/k8s.io, `registry.k8s.io/images/k8s-staging-agent-sandbox/images.yaml`). The
+/// install names the controller by it: `vendor/agent-sandbox/<version>/kustomization.yaml`
+/// records it beside the vendored manifest, and a test holds the two equal.
+pub const CONTROLLER_DIGEST: &str =
+    "sha256:14c479c9e89ca87d05dfcf597840473c0196d6e6eec622a7959e72108d75b24e";
+
 /// The name of the container that runs `purlis serve` in a runner's pod.
 pub const RUNNER_CONTAINER: &str = "runner";
 
