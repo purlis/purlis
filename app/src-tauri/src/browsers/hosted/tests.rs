@@ -175,6 +175,25 @@ fn letting_go_of_a_project_ends_the_browsers_the_window_started_in_it_and_its_ho
     );
 }
 
+#[test]
+fn past_the_devices_budget_the_next_browser_is_refused_in_words_and_one_closed_makes_room() {
+    // #2023: the budget is the device's, whichever project or window started the others.
+    let window = window();
+    let browsers = WindowBrowsers::new(Arc::clone(&window.browsers.connection)).budgeted(2);
+    let one = browsers.open(&window.root).unwrap();
+    window.browsers.open(&window.root).unwrap();
+
+    let refused = browsers.open(&window.root).unwrap_err();
+
+    assert!(refused.contains("This device"), "{refused}");
+    assert!(refused.contains("2 browsers"), "{refused}");
+    assert_eq!(window.started.started().len(), 2, "nothing more started");
+    browsers.close(&one).unwrap();
+    until("the closed one has left the host", || {
+        browsers.open(&window.root).is_ok()
+    });
+}
+
 /// A key the person pressed, aimed at what a frame said it showed.
 fn a_key(aim: &str) -> BrowserInput {
     BrowserInput::Key {

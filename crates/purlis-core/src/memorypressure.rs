@@ -75,6 +75,46 @@ pub fn read() -> Memory {
     }
 }
 
+/// **How much memory this machine has**, in bytes, as its operating system says (#2023): on
+/// macOS `hw.memsize`, read as [`read`] reads its level; on Linux `MemTotal` of `/proc/meminfo`.
+/// `None` where it could not be read, or purlis has no reader for it here.
+pub fn total() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut sysctl = std::process::Command::new("/usr/sbin/sysctl");
+        sysctl.args(["-n", "hw.memsize"]);
+        bounded_output(&mut sysctl, READ_DEADLINE, READ_MOST).and_then(|said| memsize(&said))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/meminfo")
+            .ok()
+            .and_then(|text| meminfo_total(&text))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
+/// What `sysctl -n hw.memsize` printed, in bytes; `None` where it is no number.
+pub fn memsize(said: &str) -> Option<u64> {
+    said.trim().parse().ok()
+}
+
+/// `MemTotal` of `/proc/meminfo`, in bytes; `None` where the file has none.
+pub fn meminfo_total(text: &str) -> Option<u64> {
+    meminfo_kib(text, "MemTotal")
+}
+
+fn meminfo_kib(text: &str, key: &str) -> Option<u64> {
+    text.lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix(':'))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|n| n.parse::<u64>().ok())
+        .map(|n| n.saturating_mul(1024))
+}
+
 #[cfg(target_os = "macos")]
 fn macos() -> Memory {
     let mut sysctl = std::process::Command::new("/usr/sbin/sysctl");
@@ -179,13 +219,7 @@ pub fn psi(text: &str) -> Memory {
 /// What `/proc/meminfo` holds: short where `MemAvailable` is under the smaller of
 /// [`AVAILABLE_FLOOR`] and [`AVAILABLE_SHARE`] of `MemTotal`. A file without both is unread.
 pub fn meminfo(text: &str) -> Memory {
-    let kib = |key: &str| {
-        text.lines()
-            .find_map(|line| line.strip_prefix(key)?.strip_prefix(':'))
-            .and_then(|rest| rest.split_whitespace().next())
-            .and_then(|n| n.parse::<u64>().ok())
-            .map(|n| n.saturating_mul(1024))
-    };
+    let kib = |key: &str| meminfo_kib(text, key);
     let (Some(total), Some(available)) = (kib("MemTotal"), kib("MemAvailable")) else {
         return Memory::Unread;
     };
@@ -267,6 +301,18 @@ mod tests {
             READ_MOST,
         );
         assert_eq!(long.map(|s| s.len()), Some(READ_MOST as usize));
+    }
+
+    #[test]
+    fn the_machines_memory_is_read_from_what_its_system_says() {
+        assert_eq!(memsize("17179869184\n"), Some(17_179_869_184));
+        assert_eq!(memsize("unknown oid"), None);
+        assert_eq!(memsize(""), None);
+        assert_eq!(
+            meminfo_total("MemTotal:       16303500 kB\nMemFree:  1000 kB\n"),
+            Some(16_303_500 * 1024)
+        );
+        assert_eq!(meminfo_total("MemFree:  1000 kB\n"), None);
     }
 
     #[test]

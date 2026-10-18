@@ -21,7 +21,11 @@ struct Host {
 }
 
 impl Driver for Host {
-    fn start(&self, _root: &Path, _reach: BrowserReach) -> Result<String, String> {
+    fn start(
+        &self,
+        _root: &Path,
+        _reach: BrowserReach,
+    ) -> Result<String, crate::chatbrowsers::NotStarted> {
         let mut started = self.started.lock().unwrap();
         *started += 1;
         Ok(format!("program-{started}"))

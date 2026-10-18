@@ -3404,8 +3404,9 @@ pub fn run() {
                 // about it (#2385).
                 let window = app.handle().clone();
                 app.manage(std::sync::Arc::new(
-                    browsers::WindowBrowsers::new(host.connection()).telling_ended(
-                        std::sync::Arc::new(move |program: String| {
+                    browsers::WindowBrowsers::new(host.connection())
+                        .budgeted(purlis_core::browserlimits::Limits::here().on_this_device)
+                        .telling_ended(std::sync::Arc::new(move |program: String| {
                             let window = window.clone();
                             // The link's thread tells it: what follows is done off it.
                             tauri::async_runtime::spawn_blocking(move || {
@@ -3413,8 +3414,7 @@ pub fn run() {
                                     chatbrowsers::engine_ended(&planes.every_held(), &program);
                                 }
                             });
-                        }),
-                    ),
+                        })),
                 ));
                 app.manage(host);
             }
