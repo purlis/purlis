@@ -766,6 +766,137 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
     }
 }
 
+/// After the policy's binding is made again, a Claim made before it is refused but its runner
+/// runs on. Its pool's template, and the network policy upstream makes of it, stay as long as
+/// that Claim does: a Claim made under the new binding never takes them over or away.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy() {
+    use futures::FutureExt;
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use purlis_cluster_operator::POLICY;
+    use purlis_cluster_operator::upstream::{SandboxTemplate, name_for};
+
+    let client = Client::try_default().await.expect("the cluster");
+    let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
+    let installed = bindings.get(POLICY).await.expect("the installed binding");
+    let scratch = Scratch::new(&client, "e2e-refused-runs").await;
+    let pools = Api::<Pool>::all(client.clone());
+
+    let outcome = std::panic::AssertUnwindSafe(async {
+        let pool = Pool::new(
+            "e2e-refused-runs",
+            PoolSpec {
+                image: runner_image(),
+            },
+        );
+        pools
+            .patch(
+                "e2e-refused-runs",
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&pool),
+            )
+            .await
+            .expect("the pool");
+        let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+        claims
+            .create(&PostParams::default(), &claim("ada-1", "e2e-refused-runs"))
+            .await
+            .expect("the first claim");
+        eventually(
+            "the first claim is ready",
+            Duration::from_secs(300),
+            || async {
+                let claim = claims.get("ada-1").await.ok()?;
+                (ready_of(&claim)?.0 == "True").then_some(())
+            },
+        )
+        .await;
+        let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+        let running = pods.list(&ListParams::default()).await.expect("pods");
+        assert_eq!(running.items.len(), 1);
+        let runner = running.items[0].clone();
+
+        // The binding made again: the first claim was made before it.
+        bindings
+            .delete(POLICY, &DeleteParams::default())
+            .await
+            .expect("the binding deleted");
+        eventually("the binding is gone", Duration::from_secs(30), || async {
+            bindings.get_opt(POLICY).await.ok()?.is_none().then_some(())
+        })
+        .await;
+        restore_binding(&bindings, &installed).await;
+        eventually(
+            "the first claim is refused",
+            Duration::from_secs(60),
+            || async {
+                let claim = claims.get("ada-1").await.ok()?;
+                (ready_of(&claim)? == ("False".into(), "MadeBeforePolicy".into())).then_some(())
+            },
+        )
+        .await;
+        tokio::time::sleep(settled()).await;
+
+        // A claim made under the new binding: the template is owned only by a claim the
+        // operator refused, so it is not taken for the operator's, and nothing is written.
+        claims
+            .create(&PostParams::default(), &claim("ada-2", "e2e-refused-runs"))
+            .await
+            .expect("a claim made under the new binding");
+        eventually(
+            "the new claim leaves the refused claim's template as it is",
+            Duration::from_secs(60),
+            || async {
+                let claim = claims.get("ada-2").await.ok()?;
+                (ready_of(&claim)?.1 == "UpstreamObjectInTheWay").then_some(())
+            },
+        )
+        .await;
+        claims
+            .delete("ada-2", &DeleteParams::foreground())
+            .await
+            .expect("the new claim deleted");
+        eventually("the new claim is gone", Duration::from_secs(60), || async {
+            claims.get_opt("ada-2").await.ok()?.is_none().then_some(())
+        })
+        .await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        let template = name_for("e2e-refused-runs");
+        let held = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name)
+            .get(&template)
+            .await
+            .expect("the refused claim's runner keeps its template");
+        assert!(
+            held.owner_references()
+                .iter()
+                .any(|owner| owner.kind == "Claim" && owner.name == "ada-1"),
+            "{held:?}"
+        );
+        Api::<NetworkPolicy>::namespaced(client.clone(), &scratch.name)
+            .get(&format!("{template}-network-policy"))
+            .await
+            .expect("and the network policy upstream makes of it");
+        let still = pods.get(&runner.name_any()).await.expect("the runner");
+        assert_eq!(still.uid(), runner.uid());
+
+        let _ = pools
+            .delete("e2e-refused-runs", &DeleteParams::default())
+            .await;
+    })
+    .catch_unwind()
+    .await;
+    scratch.end().await;
+    restore_binding(&bindings, &installed).await;
+    // The tests after this one make claims at once: past the binding's settling time.
+    tokio::time::sleep(settled()).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 /// Doctor (#2236) run by someone who may only read what it reads: it still answers every check,
 /// so it needs no right to change anything, and it says they may not apply the install.
 #[tokio::test]

@@ -242,7 +242,10 @@ So wait 30 seconds after installing before making the first Claims.
 
 Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses
 every Claim that already exists: each says `MadeBeforePolicy` and has to be deleted and made
-again.
+again. A runner such a Claim already has keeps running, with the template and warm pool it was
+made from, until the Claim is deleted. Only a Claim the operator acts on makes those objects
+count as the operator's, so a Claim made since, on that pool in that namespace, says
+`UpstreamObjectInTheWay` and waits until the older Claims there are deleted.
 
 ## What it makes
 

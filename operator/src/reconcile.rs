@@ -201,10 +201,14 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let template_held = templates.get_opt(&pool_object).await?.map(meta);
             let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
             let claim_held = upstream_claims.get_opt(&name).await?.map(meta);
-            let known = claims_that_may_own(context.claims.state(), &claim, binding.as_ref());
-            let known: Vec<&Claim> = known.iter().map(|known| &**known).collect();
-            let template_found = made_for_pool(template_held.as_ref(), &pool, &known);
-            let warm_found = made_for_pool(warm_held.as_ref(), &pool, &known);
+            // Only a Claim it acts on proves an object is the operator's; once it is, every
+            // Claim on the pool there that already owns it stays an owner.
+            let vouch = claims_that_vouch(context.claims.state(), &claim, binding.as_ref());
+            let vouch: Vec<&Claim> = vouch.iter().map(|known| &**known).collect();
+            let kept = claims_kept_as_owners(context.claims.state(), &claim);
+            let kept: Vec<&Claim> = kept.iter().map(|known| &**known).collect();
+            let template_found = made_for_pool(template_held.as_ref(), &pool, &vouch);
+            let warm_found = made_for_pool(warm_held.as_ref(), &pool, &vouch);
             let claim_found = made_for(claim_held.as_ref(), &*claim);
             // The pool's two objects are shared by its Claims in the namespace, each adding
             // itself as an owner: each is applied only to the version read, so a Claim that
@@ -212,14 +216,14 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let mut template = template_for(
                 &pool,
                 &namespace,
-                owners_with(template_held.as_ref(), &claim, &known),
+                owners_with(template_held.as_ref(), &claim, &kept),
             );
             template.metadata.resource_version =
                 template_held.and_then(|held| held.resource_version);
             let mut warm = warm_pool_for(
                 &pool,
                 &namespace,
-                owners_with(warm_held.as_ref(), &claim, &known),
+                owners_with(warm_held.as_ref(), &claim, &kept),
             );
             warm.metadata.resource_version = warm_held.and_then(|held| held.resource_version);
             let in_the_way = [
@@ -297,14 +301,30 @@ where
     }
 }
 
-/// The Claims among `watched`, the ones the operator's watch holds, that may own `claim`'s
-/// pool's template and warm pool: those in its namespace on its pool that the operator acts on
-/// under the policy's `binding`, and `claim` itself. A Claim the operator refused never vouches
-/// for an object.
-pub fn claims_that_may_own(
+/// The Claims among `watched`, the ones the operator's watch holds, whose owner reference makes
+/// `claim`'s pool's template or warm pool count as the operator's: those in its namespace on its
+/// pool that the operator acts on under the policy's `binding`, and `claim` itself. A Claim the
+/// operator refused never vouches for an object.
+pub fn claims_that_vouch(
     watched: impl IntoIterator<Item = Arc<Claim>>,
     claim: &Arc<Claim>,
     binding: Option<&ValidatingAdmissionPolicyBinding>,
+) -> Vec<Arc<Claim>> {
+    claims_kept_as_owners(watched, claim)
+        .into_iter()
+        .filter(|other| {
+            other.uid() == claim.uid() || admission(other, binding) == Admission::UnderPolicy
+        })
+        .collect()
+}
+
+/// The Claims among `watched` that stay owners of `claim`'s pool's template and warm pool once
+/// it is the operator's: every one in its namespace on its pool, refused ones too, and `claim`
+/// itself. A refused Claim's runner may still run, so the object, and what upstream makes of it
+/// for that runner's pod, stays while the Claim does.
+pub fn claims_kept_as_owners(
+    watched: impl IntoIterator<Item = Arc<Claim>>,
+    claim: &Arc<Claim>,
 ) -> Vec<Arc<Claim>> {
     watched
         .into_iter()
@@ -312,7 +332,6 @@ pub fn claims_that_may_own(
             other.namespace() == claim.namespace()
                 && other.spec.pool == claim.spec.pool
                 && other.uid() != claim.uid()
-                && admission(other, binding) == Admission::UnderPolicy
         })
         .chain([claim.clone()])
         .collect()

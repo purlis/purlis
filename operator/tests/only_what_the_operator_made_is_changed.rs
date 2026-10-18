@@ -278,12 +278,12 @@ fn a_claim_names_the_object_in_its_way_and_what_frees_it() {
 }
 
 #[test]
-fn only_claims_on_the_pool_there_that_the_operator_acts_on_can_own_its_objects() {
+fn only_claims_the_operator_acts_on_vouch_and_every_claim_on_the_pool_there_stays_an_owner() {
     use k8s_openapi::api::admissionregistration::v1::{
         ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
     };
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
-    use purlis_cluster_operator::{POLICY, claims_that_may_own};
+    use purlis_cluster_operator::{POLICY, claims_kept_as_owners, claims_that_vouch};
     use std::sync::Arc;
     let at = |time: &str| Time(time.parse().expect("a timestamp"));
     let binding = ValidatingAdmissionPolicyBinding {
@@ -331,16 +331,24 @@ fn only_claims_on_the_pool_there_that_the_operator_acts_on_can_own_its_objects()
             "2026-10-17T11:00:00Z",
         ),
     ];
-    let mut uids: Vec<String> = claims_that_may_own(watched, &this, Some(&binding))
+    let mut uids: Vec<String> = claims_that_vouch(watched.clone(), &this, Some(&binding))
         .iter()
         .map(|claim| claim.metadata.uid.clone().unwrap_or_default())
         .collect();
     uids.sort();
     assert_eq!(uids, ["claim-uid", "under-uid"]);
     // With no binding in force, only the claim at hand, which reconcile acts on only under it.
-    let alone: Vec<_> = claims_that_may_own(vec![this.clone()], &this, None)
+    let alone: Vec<_> = claims_that_vouch(vec![this.clone()], &this, None)
         .iter()
         .map(|claim| claim.metadata.uid.clone().unwrap_or_default())
         .collect();
     assert_eq!(alone, ["claim-uid"]);
+    // Once an object is the operator's, a refused Claim on the pool there stays among its
+    // owners: its runner may still run, and the object and what upstream makes of it with it.
+    let mut kept: Vec<String> = claims_kept_as_owners(watched, &this)
+        .iter()
+        .map(|claim| claim.metadata.uid.clone().unwrap_or_default())
+        .collect();
+    kept.sort();
+    assert_eq!(kept, ["claim-uid", "refused-uid", "under-uid"]);
 }
