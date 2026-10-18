@@ -2582,9 +2582,6 @@ fn a_runners_service_is_offered_once_or_for_this_chat_and_named_by_its_runner() 
 
     let named = on_its_runner(told, Some("runner-7"));
     let route = named.route.expect("what allowing it means");
-    assert!(
-        route.contains("port 5432 of the runner runner-7"),
-        "{route}"
-    );
-    assert!(route.contains("nothing on this Mac"), "{route}");
+    assert!(route.contains("port 5432 of the runner runner-7"));
+    assert!(route.contains("nothing on this Mac"));
 }
