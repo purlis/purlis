@@ -169,7 +169,7 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
   it("says Reconnecting over its last frame until it is reconnected, and has not ended", async () => {
     const { BrowserView } = await import("./BrowserView");
     const host = core();
-    render(<BrowserView program="B1" />);
+    render(<BrowserView plane={PLANE} program="B1" />);
     await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
     host.send("/9j/AA==");
     await waitFor(() => expect(painted).toEqual([[0xff, 0xd8, 0xff, 0x00]]));
