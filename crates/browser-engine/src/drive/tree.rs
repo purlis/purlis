@@ -115,6 +115,10 @@ struct Line {
     end: usize,
 }
 
+/// One line of a tree as a later read compares it (#2137): its element, and its words without
+/// its reference.
+pub(crate) type Seen = (Option<NodeKey>, String);
+
 /// A page's tree, built once and read in pages.
 #[derive(Debug, Clone)]
 pub(crate) struct Snapshot {
@@ -128,6 +132,8 @@ pub(crate) struct Snapshot {
     echoes: Vec<NodeKey>,
     /// The groups of blanked boxes, each in its order on the page.
     groups: Vec<Group>,
+    /// Every element the page lays out wholly outside what it shows (#2137): marked so.
+    out_of_view: HashSet<NodeKey>,
 }
 
 /// Blanked elements next to each other on the page, with nothing between them but separators:
@@ -380,6 +386,7 @@ pub(crate) fn build_kept(
             focused: Vec::new(),
             echoes: Vec::new(),
             groups: Vec::new(),
+            out_of_view: HashSet::new(),
         };
     };
     let mut builder = Builder {
@@ -443,6 +450,7 @@ pub(crate) fn build_kept(
         focused: builder.focused,
         echoes,
         groups,
+        out_of_view: HashSet::new(),
     }
 }
 
@@ -586,6 +594,39 @@ impl Snapshot {
         &self.focused
     }
 
+    /// Marks each of `keys` as laid out wholly outside what the page shows (#2137).
+    pub(crate) fn mark_out_of_view(&mut self, keys: impl IntoIterator<Item = NodeKey>) {
+        self.out_of_view.extend(keys);
+    }
+
+    /// The elements of the lines `view` asks for.
+    pub(crate) fn keys_in(&self, view: &View) -> Result<Vec<NodeKey>, NotOnPage> {
+        let (start, end) = self.scope(view.within.as_ref())?;
+        let first = start + view.from.max(1) - 1;
+        let last = (first + view.lines.max(1)).min(end);
+        Ok(self
+            .lines
+            .get(first..last)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|line| line.key.clone())
+            .collect())
+    }
+
+    /// The elements `query` matches inside `within`, as [`Snapshot::find`] lists them.
+    pub(crate) fn keys_found(
+        &self,
+        query: &Query,
+        within: Option<&NodeKey>,
+    ) -> Result<Vec<NodeKey>, NotOnPage> {
+        Ok(self
+            .matches(query, within)?
+            .into_iter()
+            .take(MOST_FOUND)
+            .filter_map(|(_, line)| line.key.clone())
+            .collect())
+    }
+
     /// The lines `view` asks for, each element with the reference `refer` deals it, and a last
     /// line that says where the next page starts when more is left.
     pub(crate) fn page(
@@ -605,7 +646,7 @@ impl Snapshot {
         let first = start + from - 1;
         let last = (first + view.lines.max(1)).min(end);
         for line in &self.lines[first..last] {
-            out.push_str(&render(line, line.depth - base, refer));
+            out.push_str(&self.render(line, line.depth - base, refer));
             out.push('\n');
         }
         let shown_to = last - start;
@@ -632,25 +673,14 @@ impl Snapshot {
         within: Option<&NodeKey>,
         refer: &mut dyn FnMut(&NodeKey) -> String,
     ) -> Result<String, NotOnPage> {
-        let (start, end) = self.scope(within)?;
-        let text = query.text.as_deref().map(str::to_lowercase);
-        let role = query.role.as_deref().map(str::to_lowercase);
-        let matches: Vec<(usize, &Line)> = self.lines[start..end]
-            .iter()
-            .enumerate()
-            .filter(|(_, line)| {
-                role.as_ref()
-                    .is_none_or(|role| line.role.to_lowercase() == *role)
-                    && text.as_ref().is_none_or(|text| shows(line, text))
-            })
-            .collect();
+        let matches = self.matches(query, within)?;
         let mut out = String::new();
         if matches.is_empty() {
             out.push_str("Nothing on the page matches.\n");
             return Ok(out);
         }
         for (at, line) in matches.iter().take(MOST_FOUND) {
-            out.push_str(&render(line, 0, refer));
+            out.push_str(&self.render(line, 0, refer));
             let _ = write!(out, " (line {}", at + 1);
             if let Some(frame) = &line.frame {
                 let _ = write!(out, ", in frame \"{}\"", quoted(frame));
@@ -672,6 +702,141 @@ impl Snapshot {
     pub(crate) fn shows_text(&self, text: &str) -> bool {
         let text = text.to_lowercase();
         self.lines.iter().any(|line| shows(line, &text))
+    }
+
+    /// Every line as a later read compares it (#2137): its element and its words, without its
+    /// reference or its place in view.
+    pub(crate) fn seen(&self) -> Vec<Seen> {
+        self.lines
+            .iter()
+            .map(|line| (line.key.clone(), rendered(line, 0, None)))
+            .collect()
+    }
+
+    /// The lines of this tree that `before` did not have, by their index.
+    fn new_since(&self, before: &[Seen]) -> (Vec<usize>, Vec<String>) {
+        let mut left: HashMap<&Seen, usize> = HashMap::new();
+        for seen in before {
+            *left.entry(seen).or_default() += 1;
+        }
+        let now = self.seen();
+        let mut new = Vec::new();
+        for (at, seen) in now.iter().enumerate() {
+            match left.get_mut(seen) {
+                Some(count) if *count > 0 => *count -= 1,
+                _ => new.push(at),
+            }
+        }
+        let mut gone = Vec::new();
+        for seen in before {
+            if let Some(count) = left.get_mut(seen)
+                && *count > 0
+            {
+                *count -= 1;
+                gone.push(seen.1.clone());
+            }
+        }
+        (new, gone)
+    }
+
+    /// The elements of the lines new since `before`, as [`Snapshot::changes`] lists them.
+    pub(crate) fn keys_new_since(&self, before: &[Seen], most: usize) -> Vec<NodeKey> {
+        self.new_since(before)
+            .0
+            .into_iter()
+            .take(most)
+            .filter_map(|at| self.lines[at].key.clone())
+            .collect()
+    }
+
+    /// **The lines new and gone since `before`**, an earlier read of the same document (#2137):
+    /// each new one with the reference `refer` deals it and the line it is read at, then each
+    /// gone one, at most `most` in all; what `scrub` holds is taken out of every gone one,
+    /// plainly and as an address on it reads.
+    pub(crate) fn changes(
+        &self,
+        before: &[Seen],
+        most: usize,
+        scrub: &Kept,
+        refer: &mut dyn FnMut(&NodeKey) -> String,
+    ) -> String {
+        let scrub = Scrub::of(scrub);
+        let (new, gone) = self.new_since(before);
+        let mut out = String::new();
+        if new.is_empty() && gone.is_empty() {
+            out.push_str("Nothing changed since the page was last read.\n");
+            return out;
+        }
+        let _ = writeln!(
+            out,
+            "Changed since the page was last read: {} new, {} gone.",
+            new.len(),
+            gone.len()
+        );
+        let mut told = 0;
+        for at in &new {
+            if told == most {
+                break;
+            }
+            let _ = writeln!(
+                out,
+                "new: {} (line {})",
+                self.render(&self.lines[*at], 0, refer),
+                at + 1
+            );
+            told += 1;
+        }
+        for words in &gone {
+            if told == most {
+                break;
+            }
+            // Taken out as a reader of an address on the line would read it, too.
+            let _ = writeln!(out, "gone: {}", cut(&scrub.address(words)));
+            told += 1;
+        }
+        let all = new.len() + gone.len();
+        if all > told {
+            let _ = writeln!(out, "(and {} more: take a snapshot)", all - told);
+        }
+        out
+    }
+
+    /// Every line `query` matches inside `within`, each with its line number in the scope.
+    fn matches(
+        &self,
+        query: &Query,
+        within: Option<&NodeKey>,
+    ) -> Result<Vec<(usize, &Line)>, NotOnPage> {
+        let (start, end) = self.scope(within)?;
+        let text = query.text.as_deref().map(str::to_lowercase);
+        let role = query.role.as_deref().map(str::to_lowercase);
+        Ok(self.lines[start..end]
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| {
+                role.as_ref()
+                    .is_none_or(|role| line.role.to_lowercase() == *role)
+                    && text.as_ref().is_none_or(|text| shows(line, text))
+            })
+            .collect())
+    }
+
+    /// `line` as an answer shows it, `depth` deep.
+    fn render(
+        &self,
+        line: &Line,
+        depth: usize,
+        refer: &mut dyn FnMut(&NodeKey) -> String,
+    ) -> String {
+        let mut out = render(line, depth, refer);
+        if line
+            .key
+            .as_ref()
+            .is_some_and(|key| self.out_of_view.contains(key))
+        {
+            out.push_str(" (out of view)");
+        }
+        out
     }
 
     fn scope(&self, within: Option<&NodeKey>) -> Result<(usize, usize), NotOnPage> {
@@ -696,6 +861,15 @@ fn shows(line: &Line, lowered: &str) -> bool {
 }
 
 fn render(line: &Line, depth: usize, refer: &mut dyn FnMut(&NodeKey) -> String) -> String {
+    rendered(line, depth, Some(refer))
+}
+
+/// `line`, `depth` deep, its element's reference dealt by `refer`, or none shown without it.
+fn rendered(
+    line: &Line,
+    depth: usize,
+    refer: Option<&mut dyn FnMut(&NodeKey) -> String>,
+) -> String {
     let mut out = String::new();
     for _ in 0..depth {
         out.push_str("  ");
@@ -705,7 +879,7 @@ fn render(line: &Line, depth: usize, refer: &mut dyn FnMut(&NodeKey) -> String) 
     if !line.name.is_empty() {
         let _ = write!(out, " \"{}\"", quoted(&line.name));
     }
-    if let Some(key) = &line.key {
+    if let (Some(key), Some(refer)) = (&line.key, refer) {
         let _ = write!(out, " [{}]", refer(key));
     }
     if let Some(value) = &line.value {
