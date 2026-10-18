@@ -55,7 +55,7 @@ const PLANE = "/home/dev/plane";
 function core(
   open: () => unknown = () => "B1",
   personDrives = false,
-  input: () => unknown = () => ({ outcome: "taken" }),
+  input: (args: Record<string, unknown>) => unknown = () => ({ outcome: "taken" }),
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   let frames: Channel<BrowserFrame> | undefined;
@@ -74,7 +74,7 @@ function core(
         frames = (args as { frames: Channel<BrowserFrame> }).frames;
         return { view: 4, width: 1280, height: 800, person_drives: personDrives };
       }
-      if (cmd === "browser_input") return input();
+      if (cmd === "browser_input") return input((args ?? {}) as Record<string, unknown>);
       return null;
     },
     { shouldMockEvents: true },
@@ -241,7 +241,7 @@ describe("taking a browser over from its view (#2014)", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  async function drawn(personDrives = false, input?: () => unknown) {
+  async function drawn(personDrives = false, input?: (args: Record<string, unknown>) => unknown) {
     const { BrowserView } = await import("./BrowserView");
     const { ProjectShownProvider } = await import("./projectShown");
     const host = core(undefined, personDrives, input);
@@ -431,5 +431,64 @@ describe("taking a browser over from its view (#2014)", () => {
       "a",
       "c",
     ]);
+  });
+
+  /** The bar's words for input the page moved on from before it arrived. */
+  const DROPPED = "The page changed before your key or click reached it, so it was dropped.";
+
+  /** A host that takes input aimed at what `showing()` names, and drops the rest as missed. */
+  const onlyAt =
+    (showing: () => string) =>
+    ({ input }: Record<string, unknown>) =>
+      (input as { aim: string }).aim === showing() ? { outcome: "taken" } : { outcome: "missed" };
+
+  const typed = (surface: HTMLElement, key: string) =>
+    fireEvent.keyDown(surface, {
+      key,
+      code: `Key${key.toUpperCase()}`,
+      keyCode: key.toUpperCase().charCodeAt(0),
+    });
+
+  it("says once in the bar that keys typed while a frame inside the page reloaded were dropped, and to type them again", async () => {
+    let showing = "p1:7";
+    const host = await drawn(
+      true,
+      onlyAt(() => showing),
+    );
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+    expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
+
+    // A frame inside the page loads another document before the window draws a frame of it:
+    // the next keys are aimed at what the page no longer shows.
+    showing = "p1:8";
+    typed(surface, "b");
+    typed(surface, "c");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(3));
+
+    const status = screen.getByRole("status");
+    await waitFor(() => expect(status).toHaveTextContent(`${DROPPED} Type or click again.`));
+    expect(status.textContent?.split(DROPPED)).toHaveLength(2);
+
+    // The window draws the new document, and the person types again: it reaches the page, and
+    // the bar no longer says anything was dropped.
+    host.send("/9j/AA==", "p1:8");
+    typed(surface, "b");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(4));
+    expect(host.asked("browser_input")[3].input).toMatchObject({ key: "b", aim: "p1:8" });
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED));
+  });
+
+  it("says nothing of a mouse move the page moved on from", async () => {
+    const host = await drawn(true, () => ({ outcome: "missed" }));
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+
+    fireEvent.pointerMove(surface, { clientX: 10, clientY: 10 });
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+
+    expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
   });
 });
