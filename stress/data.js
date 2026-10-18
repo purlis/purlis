@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792347876521,
+  "lastUpdate": 1792350834211,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2658,6 +2658,42 @@ window.BENCHMARK_DATA = {
             "value": 372.9,
             "unit": "MB",
             "extra": "median of 6 samples: 326, 379.5, 366.3, 380.3, 381.2, 284.3 MB; window 196.3 MB, session host 174.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c95fe5420c56d2e3cf037a3f0228292bd964a76",
+          "message": "fix(sandbox): give a run's named link back by its own name (#2617) (#2632)\n\n* fix(sandbox): give a run's named link back by its own name (#2617)\n\nOn macOS a vault tool declared under another name than its program's file\n(#1977) failed to start through the run's sandbox: `sandbox-exec` could not\nexec the run's named link (\"Operation not permitted\").\n\nCause: `profile_on` gave each of the run's files back under\n`seatbelt::kernel_strings`, which resolves the path whole. For the named link\nthat resolved to the program it points at, so the allow named the program and\nthe link itself stayed under the vaults denial. The run's files are now given\nback by their own name, the folder resolved and the last part never followed\n(`sandbox::kernel_names_itself`), under both firmlink names as before (#2489).\nA credential file is a plain file, so its grant is unchanged; a link is\ngranted as itself and nothing it points at is.\n\nThe macOS test also declared `zcat`, which macOS's gzip treats as\n`compress`'s zcat (it reads only `<file>.Z`); it now declares `gzcat`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* style: rustfmt the named-link test (#2617)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* docs: plainer changelog wording (#2617)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T22:24:09+04:00",
+          "tree_id": "67d88b07311f9351408b1c55483831f07a6e4520",
+          "url": "https://github.com/purlis/purlis/commit/0c95fe5420c56d2e3cf037a3f0228292bd964a76"
+        },
+        "date": 1792350832535,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 873,
+            "unit": "MB",
+            "extra": "median of 3 samples: 654, 873, 1028 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 331.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 405.1, 407.3, 335, 327, 327.9, 270.1 MB; window 156.6 MB, session host 174.9 MB"
           }
         ]
       }
