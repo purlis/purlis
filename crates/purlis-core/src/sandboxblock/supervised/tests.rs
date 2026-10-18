@@ -147,6 +147,34 @@ fn a_refused_protected_file_no_longer_linked_is_sorted_by_the_name_it_had() {
     }
 }
 
+/// The system's name lookup is told as a lookup with nothing to allow (#2428), under the name
+/// a resolver socket had as well (#2574).
+#[test]
+fn a_refused_resolver_socket_no_longer_linked_is_a_lookup_with_nothing_to_allow() {
+    for socket in [
+        "/run/nscd/socket",
+        "/run/systemd/resolve/io.systemd.Resolve",
+    ] {
+        let told = block_of(
+            &refused("network-outbound", &format!("{socket} (deleted)"), "curl"),
+            &place(),
+        );
+
+        assert_eq!(
+            told,
+            Some((
+                Block {
+                    operation: Operation::Lookup,
+                    kind: Kind::Host,
+                    ours: false,
+                },
+                None,
+            )),
+            "{socket}"
+        );
+    }
+}
+
 #[test]
 fn a_refused_socket_no_longer_linked_is_named_by_the_path_it_had() {
     let told = block_of(

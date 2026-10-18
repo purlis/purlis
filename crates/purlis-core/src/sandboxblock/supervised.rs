@@ -51,7 +51,7 @@ pub fn block_of_in(
     // A file no longer linked is named by the kernel with " (deleted)" after its last name
     // (#2425, #2574): it is sorted, and Allow would name it, by the name it had, so a protected
     // file that was unlinked is still a protected file.
-    let target = match refusal.target.strip_suffix(UNLINKED) {
+    let named = match refusal.target.strip_suffix(UNLINKED) {
         Some(had) if had.starts_with('/') => had,
         _ => refusal.target.as_str(),
     };
@@ -59,14 +59,12 @@ pub fn block_of_in(
         witness: Witness::Kernel,
         process: refusal.process.as_deref(),
         operation: refusal.operation,
-        target,
+        target: named,
     };
     let (block, target) = denial.block_in(place, temp);
     // The system's name lookup, refused at its socket (#2428): a program's own lookup, past the
     // proxy. The name it looked up is never seen here, so none is named.
-    if block.operation == Operation::Connect
-        && super::RESOLVER_SOCKETS.contains(&refusal.target.as_str())
-    {
+    if block.operation == Operation::Connect && super::RESOLVER_SOCKETS.contains(&named) {
         let block = Block {
             operation: Operation::Lookup,
             kind: Kind::Host,
