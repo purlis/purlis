@@ -750,6 +750,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_work_unlink",
     "chats_on_older_sandbox",
     "chats_plane_updated",
+    // Which chats are reconnecting to their runner (#2496): what their panes start from.
+    "chats_reconnecting",
     "chats_that_would_not_start",
     "check_for_update",
     "check_sandbox_host",
