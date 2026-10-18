@@ -19,8 +19,8 @@ import {
 } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
 import { ReadOnlySaid } from "./ReadOnlyLine";
-import { DEFAULT_THEME, property } from "./theme/theme";
-import { PALETTE, tintHex } from "./theme/tint";
+import { DEFAULT_THEME, hueIn, property, WORKSPACE_COLOURS } from "./theme/theme";
+import { tintHex } from "./theme/tint";
 
 /**
  * **A persona's mark** (#1449): the one component, held to what it draws for each thing a
@@ -83,7 +83,7 @@ describe("a persona that declares nothing", () => {
     const it = drawn("docs-writer");
     expect(it).toHaveAttribute("data-mark", "initials");
     expect(it).toHaveAttribute("data-initials", "DW");
-    expect(Object.keys(PALETTE)).toContain(it?.getAttribute("data-colour"));
+    expect(WORKSPACE_COLOURS).toContain(it?.getAttribute("data-colour"));
     // Not text of the page: a tab's words stay its name.
     expect(it).toHaveTextContent("");
     expect(it).toHaveAttribute("aria-hidden", "true");
@@ -115,7 +115,7 @@ describe("a persona with an icon and a colour", () => {
     expect(it?.querySelector("svg.lucide-rocket")).not.toBeNull();
     expect(it).not.toHaveAttribute("data-initials");
     expect(it?.style.getPropertyValue(property("accent.base"))).toBe(
-      tintHex(DEFAULT_THEME.values["accent.base"], PALETTE.teal),
+      tintHex(DEFAULT_THEME.values["accent.base"], hueIn(DEFAULT_THEME, "teal") ?? Number.NaN),
     );
   });
 
@@ -262,7 +262,7 @@ describe("picking a persona's icon and colour, in its view", () => {
       within(colours)
         .getAllByRole("radio")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["From its name", ...Object.keys(PALETTE)]);
+    ).toEqual(["From its name", ...WORKSPACE_COLOURS]);
   });
 
   it("writes a picked icon to the persona's definition, keeps its colour, and reads the marks again", async () => {

@@ -16,7 +16,7 @@ publish = false
 # (`tests/the_host_links_no_git_http_or_keyring_code.rs`).
 [dependencies]
 thiserror.workspace = true
-tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 
 [target."cfg(unix)".dependencies]
 purlis-session-protocol = { path = "../session-protocol" }

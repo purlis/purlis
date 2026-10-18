@@ -69,8 +69,22 @@ function resolved(from: Appearance, at: number) {
     motion: { durations, easings },
     // Classic names no icon set, so the rails draw the window's own marks (#2337).
     icons: {},
+    tint,
   };
 }
+
+/** The recipe the core resolves for Classic (`purlis_core::theme::Tint`), as the shared tint
+ *  fixture holds it and the core's tests hold the fixture to the engine. */
+const TINT_CASES = join(
+  process.cwd(),
+  "..",
+  "crates",
+  "purlis-core",
+  "src",
+  "theme",
+  "tint-cases.json",
+);
+const tint = (JSON.parse(readFileSync(TINT_CASES, "utf8")) as { classic: unknown }).classic;
 
 const GLOBAL = "__CHARTER_AT_CREATION__";
 const held = globalThis as Record<string, unknown>;

@@ -18,8 +18,16 @@
 //   reads far low there. On Linux it is `webContentKb`, resident memory, since Linux has no
 //   `footprint`. Two measures, so each OS is its own series and they are never compared (#818).
 //   A macOS sample whose `footprintError` is set has no value, and is skipped, never read as 0.
-// - **M3**, the native side with no chats: the app's resident memory in every look with no
-//   harness running.
+// - **M3**, the native side with no chats: in every look with no harness running, the app's
+//   resident memory as the window plus the session host it starts (`host` in each look since
+//   #2597), the app as Activity Monitor shows it. ADR 0086 has M3 count the app and its daemon
+//   together, and since #2085 the chats' terminals, threads and descriptors live in the host,
+//   so the window alone no longer prices them (#2605). A look whose app runs no host
+//   (`host: null`, or a record from before #2597) counts the window alone; a look whose host
+//   has no reading is skipped, never read as the window alone. The row's name says "window +
+//   session host", so the record starts a new series there rather than carrying on the
+//   window-only one as if nothing had changed; the series up to then is "M3 native side with
+//   no chats (resident)", the window alone. Each process's own median stays in `extra`.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
@@ -72,19 +80,34 @@ function rowsOf(samples, os) {
         .filter((s) => s.footprintError == null)
         .map((s) => kilobytes(s.webContentFootprintPeakKb))
     : fifty.map((s) => kilobytes(s.webContentKb));
-  const noChats = samples
-    .filter((s) => s.harnesses === 0)
-    .map((s) => kilobytes(s.rssKb));
+  const noChats = samples.filter((s) => s.harnesses === 0).flatMap(theApp);
   return [
     {
       name: `M2 web content at fifty hot chats (${mac ? "footprint peak" : "resident"})`,
       values: webContent.filter((v) => v !== null),
     },
     {
-      name: "M3 native side with no chats (resident)",
-      values: noChats.filter((v) => v !== null),
+      name: "M3 native side with no chats (window + session host, resident)",
+      values: noChats.map((app) => app.total),
+      parts: [
+        ["window", noChats.map((app) => app.window)],
+        ["session host", noChats.flatMap((app) => (app.host === null ? [] : [app.host]))],
+      ],
     },
   ];
+}
+
+/**
+ * The app in one look, in kilobytes: the window, its session host (`null` when it runs none),
+ * and the two together. No entry when either process has no reading.
+ */
+function theApp(look) {
+  const window = kilobytes(look.rssKb);
+  if (window === null) return [];
+  if (look.host == null) return [{ window, host: null, total: window }];
+  const host = kilobytes(look.host.rssKb);
+  if (host === null) return [];
+  return [{ window, host, total: window + host }];
 }
 
 const megabytes = (kb) => Math.round((kb / 1024) * 10) / 10;
@@ -107,10 +130,19 @@ export function benchmarks(samples, os) {
       name: row.name,
       unit: "MB",
       value: megabytes(median(row.values)),
-      extra: `median of ${row.values.length} samples: ${row.values.map(megabytes).join(", ")} MB`,
+      extra: `median of ${row.values.length} samples: ${row.values.map(megabytes).join(", ")} MB${partsOf(row)}`,
     });
   }
   return { entries, warnings };
+}
+
+/** Each process's own median beside a row that sums them, such as `; window 197.3 MB, session host 58.6 MB`. */
+function partsOf(row) {
+  if (!row.parts) return "";
+  const each = row.parts.map(([name, values]) =>
+    values.length === 0 ? `${name} none` : `${name} ${megabytes(median(values))} MB`,
+  );
+  return `; ${each.join(", ")}`;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

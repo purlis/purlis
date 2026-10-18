@@ -284,13 +284,103 @@ fn a_head_that_comes_too_slowly_is_given_up_on() {
     );
 }
 
+/// What is left on a port a proxy listened on.
+#[derive(Debug, PartialEq, Eq)]
+enum Left {
+    /// Nothing listens there: this test could take the port itself.
+    Free,
+    /// The proxy: it answered a request with a refusal it keeps.
+    TheProxy,
+    /// Another listener, which took the port once the proxy let it go (#2609).
+    Another,
+}
+
+/// Whether `port` is free, by binding it: never while any socket still listens there. A moment
+/// is allowed for the proxy's accept to see the stop and close its listener.
+fn free(port: u16) -> bool {
+    let until = std::time::Instant::now() + Duration::from_secs(1);
+    loop {
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return true;
+        }
+        if std::time::Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// What is left on `port`, the HTTP port of a proxy keeping `refusals`. Where something still
+/// listens, it is asked to tunnel to a host nothing lists: the proxy would keep that refusal in
+/// `refusals` before it answered, and any other listener never could.
+fn left_on(port: u16, refusals: &Refusals) -> Left {
+    if free(port) {
+        return Left::Free;
+    }
+    if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+        let _ = stream.write_all(b"CONNECT left-behind.example:443 HTTP/1.1\r\n\r\n");
+        let _ = stream.read(&mut [0u8; 64]);
+    }
+    if refusals.refused().is_empty() {
+        Left::Another
+    } else {
+        Left::TheProxy
+    }
+}
+
+/// A proxy is dropped, `after_drop` is given its HTTP port, and both its ports must be left
+/// free. A port another listener took first proves nothing either way, so a new proxy is tried,
+/// a few times at most; a port the dropped proxy still answers on fails at once.
+fn a_dropped_proxy_leaves_its_ports_free(mut after_drop: impl FnMut(u16)) {
+    for _ in 0..5 {
+        let refusals = Refusals::default();
+        let proxy = Proxy::start_keeping(vec![], refusals.clone()).expect("a proxy");
+        let (http, socks) = (proxy.port(), proxy.socks_port());
+        drop(proxy);
+        after_drop(http);
+        match left_on(http, &refusals) {
+            Left::TheProxy => panic!("a dropped proxy still answers on {http}"),
+            Left::Another => continue,
+            Left::Free if free(socks) => return,
+            Left::Free => continue,
+        }
+    }
+    panic!("no dropped proxy left both its ports free, in five tries");
+}
+
 #[test]
 fn a_proxy_stops_listening_when_it_is_dropped() {
-    let proxy = Proxy::allowing(vec![], vec![443]).expect("a proxy");
-    let port = proxy.port();
-    drop(proxy);
-    std::thread::sleep(Duration::from_millis(100));
-    assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+    a_dropped_proxy_leaves_its_ports_free(|_| {});
+}
+
+/// Another listener taking a dropped proxy's port the moment it is free is never the proxy
+/// still listening (#2609): the check is not fooled by it, and still passes.
+#[test]
+fn a_port_another_listener_takes_after_the_drop_is_not_taken_for_the_proxy() {
+    let mut taken: Option<TcpListener> = None;
+    let mut tries = 0;
+    a_dropped_proxy_leaves_its_ports_free(|port| {
+        tries += 1;
+        if taken.is_some() {
+            return;
+        }
+        let until = std::time::Instant::now() + Duration::from_secs(1);
+        while taken.is_none() && std::time::Instant::now() < until {
+            taken = TcpListener::bind(("127.0.0.1", port)).ok();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    });
+    assert!(taken.is_some(), "the freed port was never taken");
+    assert!(tries >= 2, "the taken port passed as free");
+}
+
+/// The check tells a proxy still listening from another listener: what it proves is not empty.
+#[test]
+fn a_proxy_still_listening_is_told_from_another_listener() {
+    let refusals = Refusals::default();
+    let proxy = Proxy::start_keeping(vec![], refusals.clone()).expect("a proxy");
+    assert_eq!(left_on(proxy.port(), &refusals), Left::TheProxy);
 }
 
 #[test]

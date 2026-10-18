@@ -155,11 +155,11 @@ pub const EASINGS: &[&str] = &[
 /// motion off.
 pub const LONGEST: u32 = 10_000;
 
-/// **The tokens a workspace's colour turns** on its own tab and its chat strip (charter-app#281):
+/// **The tokens a workspace's colour turns when a theme says nothing about it** (charter-app#281):
 /// the accent, the focus ring, the active-tab wash, the selected row, what is drawn in the accent
 /// (a markdown link, a chart's first series, #2327), and the layer shades. Never the text and
-/// never the terminal, so every contrast a theme clears still holds. The window's
-/// `TINTED_TABS`; the window's own accent tint is the first eight.
+/// never the terminal, so every contrast a theme clears still holds. Purlis Classic's recipe,
+/// and the one a theme starts from ([`super::Tint`]).
 pub const TINTED: &[&str] = &[
     "accent.base",
     "accent.surface",
@@ -172,6 +172,60 @@ pub const TINTED: &[&str] = &[
     "layer.workspace",
     "layer.chat",
     "layer.selected",
+];
+
+/// **Every token a theme may have a workspace's colour tint** (#2329): the window's surfaces,
+/// controls, words, rules, the accent and its kin, the selected row, what is drawn in the accent
+/// (`markdown.link`, `chart.1`), the tree's guides and the workspace's own strip shades. A tint
+/// keeps each colour's luminance, so a pair these draw keeps its contrast at every hue.
+///
+/// The rest are never a tint's: the consent and state colours (`needs-you.*`, `danger.*`,
+/// `state.*`) are purlis's to hold (ADR 0097 §6); the diff washes, the icon colours, the syntax
+/// roles and the other markdown and chart colours carry their meaning in their hue; the terminal
+/// is handed its colours once, as an object, and a workspace switch does not redraw it; the
+/// selection, caret, placeholder and scrollbar may be left to the platform; the window's
+/// background is drawn before any workspace is; the project strip (`layer.project`) is not a
+/// workspace's; and the overlay's scrim and shadow (`overlay.*`) lie over every workspace at
+/// once.
+pub const TINTABLE: &[&str] = &[
+    "surface.base",
+    "surface.sunken",
+    "surface.deep",
+    "surface.raised",
+    "surface.overlay",
+    "surface.hover",
+    "control.base",
+    "control.hover",
+    "control.aimed",
+    "control.count",
+    "text.primary",
+    "text.secondary",
+    "text.muted",
+    "border.subtle",
+    "border.strong",
+    "accent.base",
+    "accent.surface",
+    "focus.ring",
+    "tab.active",
+    "list.selected",
+    "list.selected-edge",
+    "markdown.link",
+    "chart.1",
+    "tree.guide",
+    "layer.workspace",
+    "layer.chat",
+    "layer.selected",
+    "layer.divider",
+];
+
+/// **The tokens a tint draws only on a workspace's own tab and its chat strip**, never on the
+/// whole window: the strip shades, which every workspace's tab draws in its own colour whether
+/// or not it is in front (ADR 0036).
+pub const TAB_ONLY: &[&str] = &[
+    "layer.workspace",
+    "layer.chat",
+    "layer.selected",
+    "layer.divider",
 ];
 
 /// Every core geometry custom property, each written by the engine from a theme's numbers
