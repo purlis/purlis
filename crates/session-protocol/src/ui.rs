@@ -567,6 +567,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "watch_browser",
     "unwatch_browser",
     "close_browser",
+    // This machine's browser limits (#2023): the person's to read and set, in their window.
+    "browser_limits",
+    "set_browser_limit",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",

@@ -2767,6 +2767,18 @@ impl Planes {
                 }
             });
         }
+        // Its chats' browsers gone unused stop (#2023): looked at on a thread of the project's
+        // own, which ends with the project. Weak for the handoff's reason.
+        {
+            let held = Arc::downgrade(&held);
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(crate::chatbrowsers::IDLE_LOOKED_AT_EVERY);
+                    let Some(held) = held.upgrade() else { break };
+                    crate::chatbrowsers::idle_swept(&held, crate::sandboxing::now_secs());
+                }
+            });
+        }
         // A brokered `secret exec` from one of this plane's chats is run by this plane, which
         // holds the chat's record: its persona and its folder (#1407). Weak for the handoff's
         // reason.
@@ -4096,7 +4108,8 @@ impl Planes {
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
-                .telling(Arc::clone(&browsers_listed)),
+                .telling(Arc::clone(&browsers_listed))
+                .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
             browsers_listed,
             proposals: crate::proposals::Proposals::default(),

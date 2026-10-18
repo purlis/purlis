@@ -32,6 +32,7 @@ const BUILDERS = [
   "GrantedList.tsx",
   "you.tsx",
   "thisMachine.tsx",
+  "browserLimits.tsx",
   "notifications.tsx",
   "accounts.tsx",
   "profiles.tsx",

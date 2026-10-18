@@ -166,6 +166,9 @@ impl NeedsYou {
     /// raise ends the Ask at once, with an Update, as any browser's end does.
     pub(crate) fn raise_on(&self, browsers: &ChatBrowsers, one: Waiting, now: u64) -> Raised {
         let (session, program) = (one.session, one.program.clone());
+        // Asking the person about a browser is a use of it (#2023): it does not stop unused
+        // while the Ask is raised.
+        browsers.touched(&program, now);
         let raised = self.raise(one);
         self.settle(browsers, now);
         if !browsers.holds(session, &program) {
