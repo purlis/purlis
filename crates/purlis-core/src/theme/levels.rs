@@ -50,7 +50,7 @@ use std::sync::Arc;
 use super::choices::{self, Choices};
 pub use super::folders::{Folders, Found, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
-use super::{Appearance, Complaint, Theme, built_in, classic, default_theme};
+use super::{Appearance, Complaint, Contrast, Theme, built_in, classic, default_theme};
 use crate::extension::project::theme::{Pick, SYSTEM, Said, is_appearance};
 use crate::settings::Source;
 
@@ -257,6 +257,10 @@ pub struct LevelInputs<'a> {
     pub on: On<'a>,
     /// The operating system's appearance right now.
     pub system: Appearance,
+    /// The contrast the operating system asks for right now (#2328): more draws a theme's
+    /// appearance tagged high contrast of the tag drawn, when it has one, wherever no appearance
+    /// was chosen by its id.
+    pub contrast: Contrast,
 }
 
 /// **Resolves the theme the window draws** from the six levels. `offered` is every theme
@@ -294,7 +298,7 @@ pub fn resolve_levels(inputs: &LevelInputs<'_>, offered: impl FnOnce() -> Arc<[O
     let drawn = if let Some(theirs) = inputs.theirs {
         Drawn {
             level: Some(Level::MachineDefault),
-            ..Drawn::of(theirs.first())
+            ..Drawn::of(theirs.first_for(inputs.contrast))
         }
     } else {
         // Nothing chose: the first theme in force from an extension the project has on, as
@@ -307,7 +311,7 @@ pub fn resolve_levels(inputs: &LevelInputs<'_>, offered: impl FnOnce() -> Arc<[O
         let drawn = match first {
             Some(one) => Drawn {
                 complaints: one.theme.complaints.clone(),
-                ..Drawn::of(one.theme.theme.first())
+                ..Drawn::of(one.theme.theme.first_for(inputs.contrast))
             },
             None => Drawn::of(default_theme()),
         };
@@ -340,11 +344,11 @@ fn drawn_for(
                 theme.of(Appearance::Dark).is_some() && theme.of(Appearance::Light).is_some()
             };
             let theme = inputs.theirs.filter(two).unwrap_or_else(|| classic());
-            follow(theme, inputs.system)
+            follow(theme, inputs.system, inputs.contrast)
         }
         Some(Pick::BuiltIn(id)) => match appearance {
             None => Drawn::of(built_in(id).unwrap_or_else(default_theme)),
-            Some(_) => appear(classic(), appearance, inputs.system),
+            Some(_) => appear(classic(), appearance, inputs.system, inputs.contrast),
         },
         Some(Pick::Extension { id, name }) => {
             let offered = offered();
@@ -361,7 +365,8 @@ fn drawn_for(
                     ..Drawn::of(default_theme())
                 },
                 Some(one) => {
-                    let drawn = appear(&one.theme.theme, appearance, inputs.system);
+                    let drawn =
+                        appear(&one.theme.theme, appearance, inputs.system, inputs.contrast);
                     Drawn {
                         complaints: [one.theme.complaints.clone(), drawn.complaints.clone()]
                             .concat(),
@@ -377,7 +382,7 @@ fn drawn_for(
                 ..Drawn::of(default_theme())
             },
             Found::Read(resolved) => {
-                let drawn = appear(&resolved.theme, appearance, inputs.system);
+                let drawn = appear(&resolved.theme, appearance, inputs.system, inputs.contrast);
                 Drawn {
                     complaints: [resolved.complaints, drawn.complaints.clone()].concat(),
                     ..drawn
@@ -397,11 +402,18 @@ fn cannot(why: String) -> Drawn {
 }
 
 /// `theme` in `appearance`: its first with none, following the system with `system`, else the
-/// appearance of that id; one it does not have draws its first, and says so.
-fn appear(theme: &Theme, appearance: Option<&str>, system: Appearance) -> Drawn {
+/// appearance of that id; one it does not have draws its first, and says so. With more
+/// `contrast` asked for, its first and following the system draw the appearance of their tag
+/// tagged high contrast, when it has one; an appearance chosen by its id is drawn as chosen.
+fn appear(
+    theme: &Theme,
+    appearance: Option<&str>,
+    system: Appearance,
+    contrast: Contrast,
+) -> Drawn {
     match appearance {
-        None => Drawn::of(theme.first()),
-        Some(SYSTEM) => follow(theme, system),
+        None => Drawn::of(theme.first_for(contrast)),
+        Some(SYSTEM) => follow(theme, system, contrast),
         Some(id) => match theme.appearances.iter().find(|one| one.id == id) {
             Some(one) => Drawn::of(one),
             None => Drawn {

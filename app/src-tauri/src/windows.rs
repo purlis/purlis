@@ -144,7 +144,8 @@ pub fn raise<R: Runtime>(app: &AppHandle<R>, label: &str) {
 
 /// Makes a split window, from the main window's own entry in `tauri.conf.json` so it has the
 /// same size, minimum width, title bar and page — and the same creation script, so it draws
-/// the operator's layout and theme from its first frame (`windowprefs.rs`).
+/// the operator's layout and theme from its first frame (`windowprefs.rs`), in the native
+/// appearance and colour of that theme (`nativewindow.rs`).
 fn make_split<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> {
     let mut config = app
         .config()
@@ -155,15 +156,17 @@ fn make_split<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String>
         .cloned()
         .ok_or("tauri.conf.json declares no main window")?;
     config.label = label.to_owned();
-    tauri::WebviewWindowBuilder::from_config(app, &config)
-        .map_err(|err| format!("purlis could not make a window: {err}"))?
-        .initialization_script(crate::windowprefs::creation_script(
-            purlis_core::machine::config_root().as_deref(),
-        ))
-        .on_new_window(crate::navguard::no_new_window)
-        .build()
-        .map(|_| ())
-        .map_err(|err| format!("purlis could not make a window: {err}"))
+    let config_root = purlis_core::machine::config_root();
+    crate::nativewindow::dressed(
+        tauri::WebviewWindowBuilder::from_config(app, &config)
+            .map_err(|err| format!("purlis could not make a window: {err}"))?,
+        crate::windowprefs::native_at_creation(config_root.as_deref()),
+    )
+    .initialization_script(crate::windowprefs::creation_script(config_root.as_deref()))
+    .on_new_window(crate::navguard::no_new_window)
+    .build()
+    .map(|_| ())
+    .map_err(|err| format!("purlis could not make a window: {err}"))
 }
 
 /// Moves projects into another window — **a new one when `to` is null** — and answers the

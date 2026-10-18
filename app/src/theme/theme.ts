@@ -484,6 +484,17 @@ export function systemIsLight(): boolean {
   return typeof matchMedia === "function" && matchMedia(PREFERS_LIGHT).matches;
 }
 
+/** The media query the operating system answers when it asks for more contrast (#2328): true
+ *  with Increase contrast on (macOS), a high-contrast theme (Linux), or contrast themes
+ *  (Windows). */
+export const PREFERS_MORE_CONTRAST = "(prefers-contrast: more)";
+
+/** Whether the operating system asks for more contrast right now: what the core is told, so a
+ *  theme with an appearance tagged high contrast draws it. No where the platform cannot say. */
+export function systemAsksMoreContrast(): boolean {
+  return typeof matchMedia === "function" && matchMedia(PREFERS_MORE_CONTRAST).matches;
+}
+
 /** Whether two resolved themes draw the same, so a theme the core answers again is not drawn
  *  again: the terminal is told only of a change. */
 export function sameTheme(a: Theme, b: Theme): boolean {

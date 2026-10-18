@@ -68,6 +68,11 @@
  * border, corner and elevation, and the scrim behind a modal question; a view only places and
  * sizes its overlay.
  *
+ * **Forced colours are drawn over all of it** (#2328). `theme/forced-colors.css` says again, in
+ * the system's palette and with a shape, what the window says with a background or a shadow
+ * alone, for a platform that forces its contrast colours. It is the last layer, `forced`, so it is
+ * drawn over every view, control and utility, and it holds only system colours.
+ *
  * **A word's rank is one class too** (#1920). `primitives/text.css`, last in the same layer,
  * gives each text role (title, heading, body, secondary, meta, label, code) its size, weight
  * and colour from the tokens; a surface wears the role and `type.guard.test.ts` refuses a size,
@@ -78,7 +83,7 @@
  * vocabulary is the defect this whole layer exists to remove.
  */
 
-@layer theme, base, vendor, charter, components, utilities;
+@layer theme, base, vendor, charter, components, utilities, forced;
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme/geometry.css" layer(theme);
@@ -90,6 +95,7 @@
 @import "./primitives/controls.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./primitives/text.css" layer(components);
+@import "./theme/forced-colors.css" layer(forced);
 
 @theme {
   --color-*: initial;

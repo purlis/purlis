@@ -55,6 +55,7 @@ fn the_built_in_themes_clear_every_consent_floor_and_are_drawn_unchanged() {
                 theirs: None,
                 on: On::Every,
                 system: Appearance::Light,
+                contrast: Contrast::Standard,
             },
             || unreachable!("no survey for a built-in"),
         );
@@ -201,12 +202,17 @@ fn every_source_is_drawn_with_the_floors_held() {
             theirs: Some(&mine),
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || unreachable!("no survey when the person has a theme"),
     );
     assert_eq!(it.held.expect("theirs is held").theme, "Mine");
     // Following the system, a theme of one appearance.
-    assert!(follow(&mine, Appearance::Light).held.is_some());
+    assert!(
+        follow(&mine, Appearance::Light, Contrast::Standard)
+            .held
+            .is_some()
+    );
     // An extension's, picked and with no pick.
     let text = json!({ "name": "Night", "appearance": "dark", "tokens": breaks }).to_string();
     let offered =
@@ -219,6 +225,7 @@ fn every_source_is_drawn_with_the_floors_held() {
                 theirs: None,
                 on: On::Every,
                 system: Appearance::Dark,
+                contrast: Contrast::Standard,
             },
             offered,
         );
@@ -243,7 +250,7 @@ fn a_theme_folder_s_appearances_are_each_held_against_purlis_s_of_their_own_tag(
         (Appearance::Dark, Appearance::Dark),
         (Appearance::Light, Appearance::Light),
     ] {
-        let it = follow(&duo.theme, system);
+        let it = follow(&duo.theme, system, Contrast::Standard);
         let drawn = it.theme.expect("drawn");
         assert_eq!(
             drawn.value("state.failed"),
@@ -295,6 +302,7 @@ fn a_source_s_floors_notice_is_gone_once_what_it_draws_clears_them() {
                 theirs: Some(mine),
                 on: On::Every,
                 system: Appearance::Dark,
+                contrast: Contrast::Standard,
             },
             || unreachable!("no survey when the person has a theme"),
         )

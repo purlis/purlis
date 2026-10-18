@@ -95,6 +95,7 @@ fn drawn(levels: &Levels, folders: &Folders, theirs: Option<&Theme>) -> Drawn {
             theirs,
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         no_survey,
     )
@@ -420,6 +421,7 @@ fn a_choice_names_an_appearance_by_its_id_or_follows_the_system() {
                 theirs: None,
                 on: On::Every,
                 system,
+                contrast: Contrast::Standard,
             },
             no_survey,
         )
@@ -511,6 +513,7 @@ fn an_extension_theme_chosen_while_its_extension_is_off_draws_purlis_and_says_wh
             theirs: None,
             on: On::Only(&only),
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || {
             Arc::from(vec![Offered::of(

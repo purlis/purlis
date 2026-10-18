@@ -104,8 +104,16 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     // Unlayered CSS beats layered CSS, so `App.css` had to be imported INTO a layer or no
     // utility could ever override a rule in it without `!important`.
     const css = await stylesheet();
-    expect(css).toContain("@layer theme, base, vendor, charter, components, utilities;");
+    expect(css).toContain("@layer theme, base, vendor, charter, components, utilities, forced;");
     expect(css).toMatch(/@layer charter\s*\{/);
+  });
+
+  it("draws forced colours over everything, in the last layer, through the build (#2328)", async () => {
+    const css = await stylesheet("p-1");
+    const forced = /@layer forced\s*\{([\s\S]*)/.exec(css)?.[1] ?? "";
+    expect(forced).toMatch(/@media \(forced-colors: active\)/);
+    expect(forced).toMatch(/:focus-visible\s*\{[^}]*outline-color:\s*Highlight/);
+    expect(css.indexOf("@layer utilities {")).toBeLessThan(css.indexOf("@layer forced {"));
   });
 
   it("puts xterm's stylesheet in a layer below charter's, so a token can beat its black", async () => {

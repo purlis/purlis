@@ -210,6 +210,7 @@ pub async fn theme_in_force(
     pick: Option<String>,
     on: Option<Vec<String>>,
     light: bool,
+    more_contrast: bool,
     reread: bool,
     at: Option<ThemeAt>,
 ) -> Result<ThemeInForce, String> {
@@ -237,6 +238,7 @@ pub async fn theme_in_force(
             on.as_deref(),
             crate::windowprefs::THEIRS.get(Some(&root)).theme.as_ref(),
             light,
+            contrast_of(more_contrast),
             || {
                 offered_kept()
                     .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
@@ -378,6 +380,16 @@ fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
         .collect()
 }
 
+/// What the window says the operating system asks for: more contrast when
+/// `prefers-contrast: more` matches (#2328).
+pub(crate) fn contrast_of(more: bool) -> purlis_core::theme::Contrast {
+    if more {
+        purlis_core::theme::Contrast::More
+    } else {
+        purlis_core::theme::Contrast::Standard
+    }
+}
+
 /// [`theme_in_force`] without a runtime.
 fn theme_in_force_of(
     levels: &purlis_core::theme::Levels,
@@ -385,6 +397,7 @@ fn theme_in_force_of(
     on: Option<&[String]>,
     theirs: Option<&purlis_core::theme::Theme>,
     light: bool,
+    contrast: purlis_core::theme::Contrast,
     offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
 ) -> ThemeInForce {
     use purlis_core::theme;
@@ -399,6 +412,7 @@ fn theme_in_force_of(
             } else {
                 theme::Appearance::Dark
             },
+            contrast,
         },
         offered,
     );
@@ -1517,6 +1531,8 @@ fn with_levels(
             theirs,
             on: theme::On::Only(on),
             system: theme::Appearance::Dark,
+            // Which level chose, for Settings: the same whatever contrast is asked.
+            contrast: theme::Contrast::Standard,
         },
         || offered,
     );
@@ -1735,6 +1751,7 @@ fn project_icons_drawn_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use purlis_core::theme::Contrast;
 
     fn made() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
         let dir = tempfile::tempdir().expect("a directory");
@@ -2136,6 +2153,7 @@ mod tests {
             None,
             theirs.as_ref(),
             false,
+            Contrast::Standard,
             || unreachable!(),
         );
         let theme = drawn.theme.expect("the person's theme");
@@ -2143,6 +2161,33 @@ mod tests {
             (theme.name.as_str(), theme.appearance.as_str()),
             ("Mine", "light")
         );
+    }
+
+    #[test]
+    fn more_contrast_asked_for_draws_the_person_s_appearance_tagged_high_contrast() {
+        // #2328: the window says `prefers-contrast: more`, and the engine draws the appearance of
+        // the drawn tag tagged high contrast.
+        let mine = purlis_core::theme::load_text(
+            r##"{"name":"Mine","appearances":[{"id":"dark","appearance":"dark"},
+                {"id":"sharp","appearance":"dark","high-contrast":true,
+                 "tokens":{"surface.base":"#000000"}}]}"##,
+        );
+        assert!(!mine.refused, "{:?}", mine.complaints);
+        let asked = |more| {
+            theme_in_force_of(
+                &picked(None),
+                &Default::default(),
+                None,
+                Some(&mine.theme),
+                false,
+                contrast_of(more),
+                || unreachable!(),
+            )
+            .theme
+            .expect("drawn")
+        };
+        assert_eq!(asked(true).values["surface.base"], "#000000");
+        assert_ne!(asked(false).values["surface.base"], "#000000");
     }
 
     #[test]
@@ -2160,6 +2205,7 @@ mod tests {
             None,
             Some(&mine.theme),
             false,
+            Contrast::Standard,
             || unreachable!(),
         );
         assert_eq!(
@@ -2193,6 +2239,7 @@ mod tests {
             None,
             None,
             false,
+            Contrast::Standard,
             || unreachable!(),
         );
         assert!(classic.options.is_empty());
@@ -2244,6 +2291,7 @@ mod tests {
             None,
             None,
             false,
+            Contrast::Standard,
             offered,
         );
         let theme = drawn.theme.expect("a theme");
@@ -2264,6 +2312,7 @@ mod tests {
             Some(&[]),
             None,
             false,
+            Contrast::Standard,
             offered,
         );
         assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("purlis-dark"));
@@ -2273,6 +2322,7 @@ mod tests {
             None,
             None,
             true,
+            Contrast::Standard,
             || unreachable!(),
         );
         assert_eq!(

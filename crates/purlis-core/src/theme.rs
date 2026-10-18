@@ -36,6 +36,11 @@
 //! - **The consent floors hold whenever a theme is drawn** ([`Floor`], ADR 0097 §6): every
 //!   answer [`resolve`], [`follow`] and [`draw`] give draws purlis's own values for the tokens of
 //!   a floor the theme breaks, and says so in [`Drawn::held`].
+//! - **The system's contrast is an input** ([`Contrast`], #2328): asking for more draws a
+//!   theme's appearance tagged high contrast, of the tag that would be drawn, when it has one.
+//! - **The native window follows the theme** ([`Native`], #2328): [`ResolvedTheme::native`] is
+//!   the appearance the operating system draws the window's own parts in and its colour before
+//!   the first frame, and [`first_frame`] is what a window draws as it is created.
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
@@ -70,6 +75,7 @@ mod format;
 pub mod geometry;
 mod icons;
 pub mod levels;
+mod native;
 mod options;
 mod person;
 mod published;
@@ -89,6 +95,7 @@ pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use levels::{Choice, Folders, Level, LevelInputs, Levels, resolve_levels};
+pub use native::{Native, first_frame};
 pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
 };
@@ -113,6 +120,8 @@ mod icons_tests;
 #[cfg(test)]
 mod levels_tests;
 #[cfg(test)]
+mod native_tests;
+#[cfg(test)]
 mod options_tests;
 #[cfg(test)]
 mod published_tests;
@@ -127,6 +136,19 @@ mod typed_tests;
 pub enum Appearance {
     Dark,
     Light,
+}
+
+/// **What contrast the operating system asks for** (#2328): more when the person turned on
+/// Increase contrast, or `prefers-contrast: more` says so. Asking for more draws a theme's
+/// appearance tagged high contrast, of the tag that would be drawn anyway, when it has one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Contrast {
+    /// Nothing asked: an appearance tagged high contrast is drawn only when it is the one chosen.
+    #[default]
+    Standard,
+    /// More contrast asked for.
+    More,
 }
 
 /// A theme's motion, complete: every duration and every easing has a value.
@@ -230,6 +252,34 @@ impl Theme {
         tagged()
             .find(|one| !one.high_contrast)
             .or_else(|| tagged().next())
+    }
+
+    /// Its appearance tagged `appearance` for `contrast`: with more contrast asked for, the first
+    /// such tagged high contrast when it has one; otherwise, and with none asked, [`Self::of`].
+    pub fn of_for(&self, appearance: Appearance, contrast: Contrast) -> Option<&ResolvedTheme> {
+        let sharp = || {
+            self.appearances
+                .iter()
+                .find(|one| one.appearance == appearance && one.high_contrast)
+        };
+        match contrast {
+            Contrast::More => sharp().or_else(|| self.of(appearance)),
+            Contrast::Standard => self.of(appearance),
+        }
+    }
+
+    /// What the theme draws when nothing chose an appearance, for `contrast`: its first, or, with
+    /// more contrast asked for, its appearance of the first's tag that is tagged high contrast,
+    /// when it has one.
+    pub fn first_for(&self, contrast: Contrast) -> &ResolvedTheme {
+        let first = self.first();
+        match contrast {
+            Contrast::More if !first.high_contrast => self
+                .of_for(first.appearance, contrast)
+                .filter(|one| one.high_contrast)
+                .unwrap_or(first),
+            _ => first,
+        }
     }
 
     /// The theme as one appearance: what a format 1 file is.

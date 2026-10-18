@@ -1264,10 +1264,10 @@ export const commands = {
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 	 */
-	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean, at: {
+	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread, at })),
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at })),
 	themeFont: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
@@ -1766,6 +1766,8 @@ export const commands = {
 	 *  file keeps goes with it: text sizes, editor, Notices dismissed. Answers where it went.
 	 */
 	useDefaultLayout: () => typedError<string, string>(__TAURI_INVOKE("use_default_layout")),
+	drawNativeWindow: __WINDOW_ONLY_RESULT,
+	nativeWindowDrawn: __WINDOW_ONLY_RESULT,
 	vaultSecretReveal: __WINDOW_ONLY_RESULT,
 	vaultSecretCopy: __WINDOW_ONLY_RESULT,
 	vaultSetupAccounts: __WINDOW_ONLY_RESULT,
