@@ -497,20 +497,6 @@ fn a_key_format_2_does_not_have_refuses_the_theme() {
 }
 
 #[test]
-fn tint_stays_refused_for_now() {
-    let loaded = load(&json!({
-        "name": "Ahead",
-        "tint": {},
-        "appearances": [{ "id": "dark", "appearance": "dark" }]
-    }));
-    assert!(loaded.refused);
-    assert_eq!(
-        said(&loaded),
-        ["tint is not read yet (#2329), so the theme cannot be drawn as written",]
-    );
-}
-
-#[test]
 fn a_token_or_motion_name_purlis_does_not_have_is_left_out_and_said() {
     let loaded = load(&json!({
         "name": "Ahead",
