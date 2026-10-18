@@ -50,6 +50,10 @@ const SECRET =
 /** Native form controls that are the surface itself, not a row of a form. */
 const STANDS: Record<string, { count: number; why: string }> = {
   "AnswerQuestion.tsx": { count: 1, why: "the reply box a chat's question is answered in" },
+  "BrowserView.tsx": {
+    count: 1,
+    why: "a browser's address box, its own bar above the page it sends somewhere (#2176)",
+  },
   "ChatsSection.tsx": { count: 1, why: FILTER },
   "Explorer.tsx": { count: 1, why: FILTER },
   "ForgeTokenSignIn.tsx": { count: 1, why: `the token box: ${SECRET}` },
