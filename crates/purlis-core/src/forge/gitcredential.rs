@@ -501,7 +501,9 @@ impl Asked {
 /// account's host and its token is in the keyring.
 fn answer(_host: &HostScope, named: &Named, asked: &Asked) -> Option<String> {
     let keyring = accounts::keyring_at(&named.config_root);
-    let account = accounts::list(&named.config_root, keyring.as_ref())
+    // From the file alone: the read below says whether the item is there, so asking the
+    // keychain that first would be a second question for one answer (#2656).
+    let account = accounts::listed(&named.config_root)
         .ok()?
         .into_iter()
         .find(|account| account.id == named.account && account.state == State::SignedIn)?;

@@ -348,9 +348,10 @@ rewrites the file; the next pick made in Settings writes the new id.
   `high-contrast`, with their `tokens` and `motion`. One whose id its parent has layers over
   that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
   first appearance is what a theme draws when nothing chose another; following the system works
-  with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
-  follows with Purlis Classic until Settings › Theme can say that following would stay in it
-  (#2331). **When the system asks for more contrast** (`prefers-contrast: more`: Increase
+  with any theme that has a dark and a light one, and following a theme of one appearance stays
+  in it, which Settings › Theme says on its Follow the system (#2331). The old `system` id, with
+  the person's own `theme.json` of one appearance, follows with Purlis Classic, as it did before
+  format 2. **When the system asks for more contrast** (`prefers-contrast: more`: Increase
   contrast on macOS, a high-contrast theme elsewhere), whatever draws an appearance of a tag
   draws the theme's appearance of that tag tagged `high-contrast` instead, when it has one, and
   the window draws again when the setting changes (#2328). A built-in pick names its appearance.
@@ -376,8 +377,8 @@ rewrites the file; the next pick made in Settings writes the new id.
   parent's id takes that one's place. The theme check covers every appearance × option
   combination, so a theme has at most 64, and one past that is refused with its count. The
   theme engine takes the option values as an input (`Theme::with`), by the same precedence as
-  the appearance, and Settings › Appearance shows the drawn theme's options with where each
-  value comes from.
+  the appearance, and Settings › Theme shows the chosen theme's options with where each value
+  comes from.
 - **`tint`** says how a workspace's colour tints the theme (#2329), the same in each of its
   appearances: `"tint": { "on": true, "tokens": ["accent.base", "surface.raised"], "hues":
   { "red": "#c0392b" } }`. `on: false` and a workspace's colour tints nothing in it. `tokens`
@@ -591,8 +592,9 @@ other theme is passed over with a sentence, and the next level's is used. A choi
 that is there and cannot be drawn (a refused folder, an extension's theme that is off) draws
 Purlis with a sentence saying why.
 
-**The person's choices** are made in Settings › Appearance › Your theme (and Your appearance),
-at the Project level and at each Workspace level, and kept in `theme-choices.json` beside
+**The person's choices** are made in Settings › Theme ([the gallery](#settings--theme-the-gallery)),
+at the You level (the machine default), the Project level and each Workspace level, and kept in
+`theme-choices.json` beside
 `machine.json`, keyed by the project's id (`[project] id` where the manifest keeps one, so a
 re-clone finds them; otherwise the id purlis holds the project by, which a re-clone elsewhere
 does not find), never committed. Each project's entry keeps when it was last changed, and at the
@@ -625,6 +627,56 @@ transition of its own keeps it; reduced motion makes it immediate.
 a theme folder of the person's own (`themes/<name>/theme.json`), chosen as the machine default
 where none is chosen, so the window draws what it drew. The move is all or nothing, and only the
 person's press in the window makes it.
+
+### Settings › Theme, the gallery
+
+**A card per theme a choice at the level may name** (spec #2313, #2331,
+`purlis_core::theme::gallery`): Purlis Classic, the theme folders within the level's reach
+(nearest level first, a nearer level's folder of a name in a farther one's place, as a choice
+reads them), and the themes of the extensions in force there. You is the machine's level (its
+choice is the machine default), Project the project's and Workspace the workspace's. The
+person's own single-file `theme.json` is no card, since no choice names it; when it is what is
+drawn, the gallery says so.
+
+- **Each card shows the theme specimen in each of its appearances** (up to three, then a
+  count): the specimen #2330 draws for a chat's `theme_preview`, asked by the window with
+  `theme_specimen` and the level, one at a time, and kept for the window's life by the card's
+  `stamp`, which changes whenever anything the theme draws does. While a chat's
+  `theme_preview` holds the painter, the app answers `SPECIMEN_BUSY`, and the window asks again
+  after a wait longer than one specimen's budget, a few times; a picture that could not be
+  drawn is never kept.
+- **Pointing at a card, or moving to it with the arrow keys, draws its theme in the window**,
+  and leaving puts the person's theme back (`theme/hoverPreview.ts`). The engine resolves the
+  card in the appearance a choice of it would draw (`theme_card_drawn`), with the consent floors
+  held, and nothing is written. A theme the window draws while a card is shown is what goes
+  back; a move from one card to the next never shows the person's theme between them. The
+  pointer and the keyboard share one preview: it goes back when neither is on a card, when the
+  window is hidden or loses the focus, on Escape, and once the cards are out of the document (a
+  project switch). An answer that arrives after its card was left, pressed or closed draws
+  nothing, and a card whose theme is the one drawn draws nothing either.
+- **Pressing a card, or Enter or Space on it, writes the person's choice at the level**, and
+  the row offers Undo. **Use the default** takes the choice at the level away, so the levels
+  underneath decide again. A line over the cards says what is drawn here, with the source badge
+  the rest of Settings uses: the person's choice, or the level that decided. Appearance is
+  offered only for a choice made at the level, so picking one never quietly makes a choice. A
+  refused card chooses nothing and says why as its description.
+- **Under the cards**: the chosen theme's appearances (one by id, its first, or Follow the
+  system, which says when a theme of one tag stays in it); its options, each value with its
+  badge; the theme check's findings, in the words `purlis theme check` prints
+  (`theme::warnings_said`), with what was left out of the theme and the consent floors it
+  breaks; and **Duplicate as my theme** and **Open folder**.
+- **Duplicate as my theme** makes a theme folder of the person's own whose `theme.json`
+  `extends` the card's theme and is called "<name> (mine)", under the first of `<id>-mine`,
+  `<id>-mine-2`, … that no folder has. A folder of the person's own reaches Purlis Classic and
+  their other folders, so those are the cards it is offered on. Every step to the new folder is
+  opened refusing a link, and nothing is written over.
+- **Open folder** opens the card's theme folder in the file manager: the folder the engine
+  places for the card, never a path the window sent.
+- **The keyboard and a screen reader**: the cards are a listbox, one Tab stop, the chosen card
+  the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
+  cards writes nothing. Nothing in the group takes the focus by itself.
+- The machine default, a duplicate and Open folder are the window's alone (`WINDOW_ONLY`); the
+  gallery's reads are served as `theme_in_force` is.
 
 ### Where a user's theme lives
 

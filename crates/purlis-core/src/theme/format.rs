@@ -124,6 +124,8 @@ pub struct Library {
     /// Whether [`Self::with_folder`] and [`Self::load_folder`] read the fonts of the folders they
     /// name ([`Self::reading_named_fonts`]).
     named_fonts: bool,
+    /// Whether it reads only to check: a theme it accepts registers no face to serve.
+    checking: bool,
 }
 
 /// A theme the library holds: its `theme.json`, and what was read beside it.
@@ -183,6 +185,15 @@ impl Library {
     /// Purlis Classic, and no folder.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// **The library, reading only to check** (#2587): a theme it accepts is drawn and checked
+    /// as any other, but registers none of its faces for [`super::served`], so a theme folder
+    /// that is about to move or be removed (a staged import) leaves nothing served behind.
+    #[must_use]
+    pub fn checking(mut self) -> Self {
+        self.checking = true;
+        self
     }
 
     /// The library with `document` as the theme `id`.
@@ -272,8 +283,11 @@ impl Library {
         let mut path: Vec<String> = id.into_iter().map(str::to_owned).collect();
         match self.format_2(from, beside, &mut path) {
             Ok((theme, notes)) => {
-                // A face is served only once the theme that brings it is accepted.
-                super::fonts::register(&theme.first().fonts);
+                // A face is served only once the theme that brings it is accepted, and never
+                // for a theme read only to check.
+                if !self.checking {
+                    super::fonts::register(&theme.first().fonts);
+                }
                 Resolved {
                     theme,
                     complaints: notes,
@@ -557,6 +571,9 @@ fn read_folder(themes: &Path, name: &str, fonts: bool) -> Result<Held, String> {
             stringify(&Value::String(name.to_owned()))
         ));
     }
+    if let Some(why) = super::portable::refusal(name, name) {
+        return Err(why);
+    }
     let folder = themes.join(name);
     // Held before `theme.json` is read: its fonts are read from this handle.
     let held = if fonts {
@@ -617,6 +634,9 @@ fn read_icons(themes: &Path, folder: &Path, named: &str) -> Result<Value, String
             "icons is {}, which is not a path inside the theme's folder",
             stringify(&Value::String(named.to_owned()))
         ));
+    }
+    if let Some(why) = super::portable::path_refusal(named, named) {
+        return Err(format!("icons: {why}"));
     }
     let file = folder.join(named);
     let text = read_capped(themes, &file, || {
