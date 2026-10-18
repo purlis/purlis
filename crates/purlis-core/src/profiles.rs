@@ -1244,7 +1244,58 @@ fn checked_within(root: &Path, git: Option<&Path>, timeout: std::time::Duration)
     if !crate::names::local_settings(root).exists() {
         return IgnoreCheck::default();
     }
-    check_of(root, git_path_state(root, git, timeout))
+    let key = (root.to_path_buf(), git.map(Path::to_path_buf));
+    if let Some(kept) = ASKED_ONCE.with_borrow(|kept| kept.as_ref()?.get(&key).cloned()) {
+        return kept;
+    }
+    let check = check_of(root, git_path_state(root, git, timeout));
+    ASKED_ONCE.with_borrow_mut(|kept| {
+        if let Some(kept) = kept {
+            kept.insert(key, check.clone());
+        }
+    });
+    check
+}
+
+/// What git answered about each plane's local file in the start this thread is making, by the
+/// plane and the git asked; `None` outside one ([`git_asked_once`]).
+type AskedOnce = Option<std::collections::HashMap<(PathBuf, Option<PathBuf>), IgnoreCheck>>;
+
+thread_local! {
+    static ASKED_ONCE: std::cell::RefCell<AskedOnce> = const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with git asked once about each plane's local file** (#2179): every
+/// [`ignore_check`] in it, and so every read of the Local layer, gets the answer the first
+/// one had, for that plane. One start, or one look at the picker, read the file's git state
+/// seven times or so, each a `git status` (about 140 ms on a macOS CI runner, most of a New
+/// tab's cost).
+///
+/// **For one start, never longer.** What git answers changes when the person runs
+/// `git add -f` or `git rm --cached`, so the answer is dropped when `work` returns and the
+/// next start asks again. Within one start it is the answer the start's own profile read
+/// already decides by ([`crate::start::ready_read`], #1445). A file that is absent is still
+/// looked for at every check, as [`ignore_check`] does, and git is asked once it appears.
+/// The answers are this thread's: a start runs on one. A start inside another shares its
+/// answers.
+pub fn git_asked_once<T>(work: impl FnOnce() -> T) -> T {
+    /// Drops the answers when the outermost start ends, however it ends.
+    struct Started(bool);
+    impl Drop for Started {
+        fn drop(&mut self) {
+            if self.0 {
+                ASKED_ONCE.with_borrow_mut(|kept| *kept = None);
+            }
+        }
+    }
+    let _started = Started(ASKED_ONCE.with_borrow_mut(|kept| {
+        let outermost = kept.is_none();
+        if outermost {
+            *kept = Some(std::collections::HashMap::new());
+        }
+        outermost
+    }));
+    work()
 }
 
 /// Whether git would carry the local file **once it is written** — [`ignore_check`] for a

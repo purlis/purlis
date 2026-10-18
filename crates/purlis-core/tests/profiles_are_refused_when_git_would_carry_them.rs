@@ -338,3 +338,94 @@ fn a_git_that_never_answers_refuses_too_because_a_hang_is_not_a_pass() {
         check.reason
     );
 }
+
+/// A git that answers `answer` and writes one line to `asked` each time it is run.
+fn a_git_that_counts(dir: &Path, asked: &Path, answer: &str) -> std::path::PathBuf {
+    a_git_that(
+        dir,
+        "git-that-counts",
+        &format!("echo asked >> '{}'\necho '{answer}'", asked.display()),
+    )
+}
+
+/// A plane with a local file, for a stand-in git that answers without a repository.
+fn a_plane() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("charter.toml"), "").unwrap();
+    fs::write(dir.path().join(profiles::LOCAL_FILE), "").unwrap();
+    dir
+}
+
+fn times_asked(asked: &Path) -> usize {
+    fs::read_to_string(asked).map_or(0, |text| text.lines().count())
+}
+
+#[test]
+fn one_start_asks_git_once_and_every_reader_in_it_gets_that_answer() {
+    purlis_core::unsteered!();
+    // #2179: a New tab read the Local file's git state seven times or so, each a `git status`
+    // of 140 ms on the macOS runner. Inside one start the answer is asked once and given to
+    // every reader, so each reader decides as before, on the same answer.
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let git = a_git_that_counts(dir.path(), &asked, "?? charter.local.toml");
+
+    let alone = profiles::ignore_check_with(dir.path(), &git);
+    let (first, second, third) = profiles::git_asked_once(|| {
+        (
+            profiles::ignore_check_with(dir.path(), &git),
+            profiles::ignore_check_with(dir.path(), &git),
+            profiles::ignore_check_with(dir.path(), &git),
+        )
+    });
+
+    assert!(!alone.passes(), "a file git would commit still refuses");
+    assert_eq!([&first, &second, &third], [&alone, &alone, &alone]);
+    assert_eq!(
+        times_asked(&asked),
+        2,
+        "once alone, once for the three inside"
+    );
+}
+
+#[test]
+fn an_answer_is_kept_for_its_start_alone_and_never_for_the_next() {
+    purlis_core::unsteered!();
+    // Kept for one start, never for the run: git's answer changes when the person runs
+    // `git add -f` or `git rm --cached`, and the next start asks again.
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let git = a_git_that_counts(dir.path(), &asked, "?? charter.local.toml");
+
+    profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
+    profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
+    profiles::ignore_check_with(dir.path(), &git);
+    profiles::ignore_check_with(dir.path(), &git);
+
+    assert_eq!(times_asked(&asked), 4);
+}
+
+#[test]
+fn a_start_asks_again_for_a_file_that_appeared_during_it_or_another_plane() {
+    purlis_core::unsteered!();
+    // An absent file passes without asking git; one written during the start is asked about,
+    // and another plane's answer is its own.
+    let one = a_plane();
+    let other = a_plane();
+    fs::remove_file(one.path().join(profiles::LOCAL_FILE)).unwrap();
+    let asked = other.path().join("asked");
+    let git = a_git_that_counts(other.path(), &asked, "?? charter.local.toml");
+
+    let (absent, written, elsewhere) = profiles::git_asked_once(|| {
+        let absent = profiles::ignore_check_with(one.path(), &git);
+        fs::write(one.path().join(profiles::LOCAL_FILE), "").unwrap();
+        let written = profiles::ignore_check_with(one.path(), &git);
+        let elsewhere = profiles::ignore_check_with(other.path(), &git);
+        (absent, written, elsewhere)
+    });
+
+    assert!(absent.passes());
+    assert!(!written.passes());
+    assert!(!elsewhere.passes());
+    assert_eq!(times_asked(&asked), 2);
+}
