@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792296224047,
+  "lastUpdate": 1792297414717,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16380,6 +16380,48 @@ window.BENCHMARK_DATA = {
             "value": 103.5033115,
             "unit": "ms",
             "extra": "median of 5 runs: 102.194, 103.437, 103.503, 103.810, 106.181 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d6d254dac27e1b24d418b58f58b505681e0109ad",
+          "message": "Browsers: a code typed across several boxes stays out of later answers as a whole (#2546)\n\n* Browsers: a code typed across several boxes stays out of later answers as a whole (#2144)\n\nBlanked boxes next to each other on a page, with nothing but short\nseparators between them, are a group: what they hold, joined in their\norder on the page, is kept out as one more value. A group's reads drop\nits short earlier joins like a field's. While the person drives, each\nkey in a box keeps its group joined on every page of the browser.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a group's held texts are read by the group they came from (#2144)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a code across boxes is kept as each box was last read, in typed order, across separators (#2144)\n\nA group read from a page's tree drops nothing, and a blanked element\nholding a value of its own ends a group. While the person drives, each\nbox joins as last read from the box itself, in page order and in the\norder the boxes were typed. A group's code is taken out also across\nspaces and dashes between its characters, in answers and screenshots.\nA Type into a page with a blanked element reads the page again once\nit settles.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T08:07:42+04:00",
+          "tree_id": "ca5a7ef953f9a2f2798828f93c89a6157e000070",
+          "url": "https://github.com/purlis/purlis/commit/d6d254dac27e1b24d418b58f58b505681e0109ad"
+        },
+        "date": 1792297413509,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5234465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.519, 0.521, 0.523, 0.530, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.949855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.334, 16.532, 16.950, 17.189, 17.205 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.0788135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.606, 103.596, 104.079, 104.158, 106.490 ms"
           }
         ]
       }
