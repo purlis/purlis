@@ -2357,7 +2357,7 @@ fn a_call_inside_another_shares_its_memory_and_only_the_outer_ends_it() {
     let ask = || git_in(&f.root, &HEAD_COMMIT).expect("git answers").out;
     remembering(|| {
         let first = ask();
-        let inner = remembering(&ask);
+        let inner = remembering(ask);
         assert_eq!(inner, first);
         assert!(
             REMEMBERED.with(|r| r.borrow().is_some()),
@@ -2370,6 +2370,6 @@ fn a_call_inside_another_shares_its_memory_and_only_the_outer_ends_it() {
         REMEMBERED.with(|r| r.borrow().is_none()),
         "the outer call left its memory"
     );
-    remembering(&ask);
+    remembering(ask);
     assert_eq!(times_asked(&f.root, before, &HEAD_COMMIT), 2);
 }
