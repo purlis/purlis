@@ -291,10 +291,7 @@ describe("a chat's browser view, opened from its row", () => {
       ),
     );
     const view = await screen.findByTestId("browser-view");
-    // The bar's word, not the one over the page while a runner's link is down (#2542).
-    const bar = within(view)
-      .getAllByRole("status")
-      .find((one) => one.classList.contains("browser-bar-said"));
+    const bar = within(view).getByRole("status");
     await screen.findByLabelText("The browser's page");
     expect(bar).toHaveTextContent("Click or type in the page to take it over.");
     host.frame("B7", "focused", "/9j/AA==");

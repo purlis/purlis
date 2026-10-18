@@ -338,6 +338,8 @@ export function BrowserView({ program }: { program: string }) {
             page, so a page cannot fake it. */}
         <BrowserChip mac={mac} />
         <p className="browser-bar-said" role="status">
+          {/* The bar is the view's one status: what is said over the page is said here too. */}
+          {reconnecting && `${RECONNECTING_SAID} `}
           {driving
             ? "You are driving this browser. The agent is paused until you press Done."
             : "Click or type in the page to take it over."}
@@ -385,15 +387,12 @@ export function BrowserView({ program }: { program: string }) {
           width={shown.kind === "live" ? shown.width : undefined}
           height={shown.kind === "live" ? shown.height : undefined}
         />
-        {/* Always there, so a screen reader hears the word as it comes and goes. */}
-        <div className="pane-reconnecting">
-          <span
-            className={reconnecting ? "pane-reconnecting-said ui-text-secondary" : undefined}
-            role="status"
-          >
-            {reconnecting ? RECONNECTING_SAID : ""}
-          </span>
-        </div>
+        {/* Seen over the page; a screen reader hears it in the bar's status above. */}
+        {reconnecting && (
+          <div className="pane-reconnecting" aria-hidden="true">
+            <span className="pane-reconnecting-said ui-text-secondary">{RECONNECTING_SAID}</span>
+          </div>
+        )}
       </div>
     </div>
   );

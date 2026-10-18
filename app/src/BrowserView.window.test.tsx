@@ -96,12 +96,7 @@ async function fromThePalette(row: string) {
 }
 
 /** What the bar above the page says: who drives it. */
-const barSaid = () =>
-  screen.getAllByRole("status").find((one) => one.classList.contains("browser-bar-said"));
-
-/** What is said over the page while its runner's link is down (#2542). */
-const overThePage = () =>
-  screen.getAllByRole("status").find((one) => !one.classList.contains("browser-bar-said"));
+const barSaid = () => screen.getByRole("status");
 
 const tabNames = () =>
   within(stripNamed("Tabs"))
@@ -182,7 +177,8 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
 
     host.reconnection("reconnecting");
 
-    await waitFor(() => expect(overThePage()).toHaveTextContent("Reconnecting…"));
+    await waitFor(() => expect(barSaid()).toHaveTextContent(/^Reconnecting…/));
+    expect(within(surface).getByText("Reconnecting…")).toBeInTheDocument();
     expect(surface).toHaveClass("reconnecting");
     expect(screen.queryByText("This browser has ended")).toBeNull();
     expect(painted).toHaveLength(1);
@@ -190,7 +186,8 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
     host.reconnection("reconnected");
     host.send("/9j/AQ==");
 
-    await waitFor(() => expect(overThePage()).toHaveTextContent(""));
+    await waitFor(() => expect(barSaid()).not.toHaveTextContent("Reconnecting…"));
+    expect(within(surface).queryByText("Reconnecting…")).toBeNull();
     expect(surface).not.toHaveClass("reconnecting");
     await waitFor(() => expect(painted).toHaveLength(2));
   });

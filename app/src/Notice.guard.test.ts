@@ -102,14 +102,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "BrowserView.tsx": {
-    count: 2,
+    count: 1,
     why:
       "a browser view's bar (#2014): who drives the page under it, drawn by purlis outside the " +
       "frame, said to a screen reader as it changes. Done beside it hands the browser back, and " +
-      "a refusal of the person's input is said in it, replaced by the next. And a runner's " +
-      "browser reconnecting while the runner's link is down (#2542), one quiet state over its " +
-      "last frame, as a runner's chat says it (#2496): it asks and offers nothing, and empties " +
-      "once the view is reconnected",
+      "a refusal of the person's input is said in it, replaced by the next",
   },
   "Brief.tsx": {
     count: 3,
