@@ -644,3 +644,27 @@ fn composed_with(
         host,
     )
 }
+
+/// #2636: the line a sandboxed Claude Code start is composed with is read as Claude Code's own
+/// sandbox, by the line alone, with no confinement counted.
+#[test]
+fn a_composed_claude_code_line_is_read_as_running_in_its_own_sandbox() {
+    purlis_core::unsteered!();
+    let project = Project::on("claude");
+    let host = Host::default();
+
+    let launch = composed(&project, &asking(|_| {}), &host).expect("composed");
+
+    let os = purlis_core::sandbox::Os::this();
+    let args: Vec<std::ffi::OsString> = launch.args.iter().map(Into::into).collect();
+    assert_eq!(
+        purlis_core::sandbox::ran::applied_to(launch.program.as_ref(), &args, false, os),
+        session::RunSandbox::By(
+            os.backend_word(Some(purlis_core::harness::Harness::ClaudeCode))
+                .expect("a backend here")
+                .to_owned()
+        ),
+        "{:?}",
+        words(&launch)
+    );
+}

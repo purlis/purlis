@@ -3111,10 +3111,10 @@ impl Chats {
         // before it is taken back; by this window's own of one it starts. A run the host has no
         // record of is taken as sandboxed, with no sandbox of now standing in for it, so it is
         // offered a restart (#1428); a run that started without the sandbox has none.
-        let ran = match (reattaching, chat.number) {
+        let mut ran = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.ran_in(number),
             // The runner composes it, with the sandbox it compiles there: its record is the
-            // runner's.
+            // runner's, taken as sandboxed until the start says otherwise, below.
             _ if on_the_runner => None,
             _ => Some(ran_as_started(sandbox, harness)),
         };
@@ -3272,6 +3272,13 @@ impl Chats {
                 );
             }
         };
+        // A person's own opt-out of a chat the runner composes (#2446).
+        let runner_without_sandbox = unsandboxed.is_some_and(|lifted| {
+            matches!(
+                lifted.by,
+                purlis_core::sandbox::By::Person | purlis_core::sandbox::By::YourLevel(_)
+            )
+        });
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
             _ if on_the_runner => self
@@ -3288,19 +3295,19 @@ impl Chats {
                         first_message: first_message.map(str::to_owned),
                         // A person's own opt-out, which a runner takes from no link but its own
                         // window's: such a start is refused there, never run sandboxed silently.
-                        without_sandbox: unsandboxed.is_some_and(|lifted| {
-                            matches!(
-                                lifted.by,
-                                purlis_core::sandbox::By::Person
-                                    | purlis_core::sandbox::By::YourLevel(_)
-                            )
-                        }),
+                        without_sandbox: runner_without_sandbox,
                         size,
                     },
                     composed_hearing.unwrap_or_default(),
                     &announce,
                 )
                 .map(|(session, composed)| {
+                    // Started without the sandbox, as asked, where the runner composed no
+                    // confinement for it (#2636): the one start on a runner this window knows
+                    // to be off, since the runner refuses that start rather than sandbox it.
+                    if runner_without_sandbox && composed.is_none() {
+                        ran = Some(purlis_session_protocol::session::RunSandbox::Off);
+                    }
                     confinement = composed;
                     session
                 }),

@@ -7136,6 +7136,52 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
     assert_eq!(host.named().len(), 1);
 }
 
+/// #2636: a harness chat on a runner that the person started without the sandbox, which the
+/// runner composed with no confinement, is judged unconfined, so its browser logins are its
+/// persona's as an unsandboxed local chat's are; one started in the runner's sandbox is judged
+/// sandboxed.
+#[test]
+fn a_runner_chat_started_without_the_sandbox_is_judged_unconfined_and_one_in_it_is_not() {
+    let host = Pretend::default();
+    host.on_a_runner();
+    let project = tempfile::tempdir().expect("a project");
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        project.path().to_path_buf(),
+    );
+    let unsandboxed = chats
+        .start_ready(
+            &on_the_profile_work(),
+            &purlis_core::start::Ready {
+                unsandboxed: Some(a_person_lifted_it()),
+                ..a_harness_ready(None)
+            },
+            SIZE,
+        )
+        .expect("it starts on the runner");
+    let sandboxed = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert!(host.named()[0].1.without_sandbox);
+
+    let unconfined = |session| {
+        chats
+            .login_asker(project.path(), session)
+            .map(|(_, free)| free)
+    };
+    assert_eq!(
+        unconfined(unsandboxed),
+        Some(true),
+        "started without the sandbox"
+    );
+    assert_eq!(
+        unconfined(sandboxed),
+        Some(false),
+        "the runner's to record: sandboxed"
+    );
+}
+
 /// A chat on a runner put back on its conversation carries that conversation on there, and
 /// one the runner refuses is a start that did not start (#2446).
 #[test]
