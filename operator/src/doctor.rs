@@ -10,7 +10,7 @@
 //!
 //! The checks run against a [`Cluster`]: [`Kube`] is the real one, and tests hand in their own.
 
-use crate::upstream::VERSION;
+use crate::upstream::{CONTROLLER_DIGEST, VERSION};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SelfSubjectAccessReview, SelfSubjectAccessReviewSpec,
@@ -179,10 +179,17 @@ impl fmt::Display for Report {
     }
 }
 
-/// The one command that applies the pinned upstream release.
+/// Step 1 of the install, the one command that applies the pinned upstream release, its
+/// controller named by digest.
 fn apply_upstream() -> String {
+    format!("kubectl apply --server-side -k operator/vendor/agent-sandbox/{VERSION}")
+}
+
+/// The next step when the controller is not the pinned release by its digest.
+fn apply_by_digest() -> String {
     format!(
-        "kubectl apply --server-side -f operator/vendor/agent-sandbox/{VERSION}/sandbox-with-extensions.yaml"
+        "apply the pinned release, which names its controller by digest: {}",
+        apply_upstream()
     )
 }
 
@@ -312,32 +319,40 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
         .iter()
         .find(|image| image.contains(name))
         .or(controller.images.first());
-    let release = match image.map(|image| (image, tag_of(image))) {
-        Some((_, Some(tag))) => tag,
-        Some((image, None)) => {
-            report.lacks(
-                format!("{wanted}: doctor cannot tell which release runs, since the controller's image \"{image}\" names no tag"),
-                format!("apply the pinned release, whose controller image is tagged {VERSION}: {}", apply_upstream()),
-            );
-            return;
-        }
-        None => {
-            report.lacks(
-                format!("{wanted}: doctor cannot tell which release runs, since deployment {namespace}/{name} names no image"),
-                format!("apply the pinned release, whose controller image is tagged {VERSION}: {}", apply_upstream()),
-            );
-            return;
-        }
-    };
-    if release != VERSION {
+    let Some(image) = image else {
         report.lacks(
-            format!("{wanted}: the cluster runs {release}, and purlis is tested against {VERSION} only"),
-            format!(
-                "check with whoever installed {release} that nothing else needs it, then apply the pinned release over it: {}",
-                apply_upstream()
-            ),
+            format!("{wanted}: doctor cannot tell which release runs, since deployment {namespace}/{name} names no image"),
+            apply_by_digest(),
         );
-    } else if controller.ready < 1 {
+        return;
+    };
+    let digest = digest_of(image);
+    if digest != Some(CONTROLLER_DIGEST) {
+        let next = apply_by_digest();
+        match (tag_of(image), digest) {
+            (Some(VERSION), None) => report.lacks(
+                format!("{wanted}: its controller runs {VERSION} by its tag, not by the pinned release's digest"),
+                next,
+            ),
+            (Some(VERSION), Some(digest)) => report.lacks(
+                format!("{wanted}: its controller's image names {VERSION} at {digest}, which is not the pinned release's {CONTROLLER_DIGEST}"),
+                next,
+            ),
+            (Some(release), _) => report.lacks(
+                format!("{wanted}: the cluster runs {release}, and purlis is tested against {VERSION} only"),
+                format!(
+                    "check with whoever installed {release} that nothing else needs it, then apply the pinned release over it: {}",
+                    apply_upstream()
+                ),
+            ),
+            (None, _) => report.lacks(
+                format!("{wanted}: doctor cannot tell which release runs, since the controller's image \"{image}\" names no tag and not the pinned digest"),
+                next,
+            ),
+        }
+        return;
+    }
+    if controller.ready < 1 {
         report.lacks(
             format!("{wanted}: its controller, deployment {namespace}/{name}, has no ready replica"),
             format!("see why with kubectl -n {namespace} describe deployment {name}, and run doctor again once it is ready"),
@@ -345,6 +360,11 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
     } else {
         report.holds(wanted);
     }
+}
+
+/// The digest of an image reference, `registry/repo@sha256:…` or `registry/repo:tag@sha256:…`.
+fn digest_of(image: &str) -> Option<&str> {
+    image.split_once('@').map(|(_, digest)| digest)
 }
 
 /// The tag of an image reference, `registry/repo:tag` or `registry/repo:tag@sha256:…`.

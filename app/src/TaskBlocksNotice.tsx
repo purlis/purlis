@@ -7,14 +7,12 @@ import { Notice, type NoticeAction } from "./Notice";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { RestartEndsLine } from "./RestartEnds";
 import { asksOf, inertly } from "./sandboxBlocks";
+import { SETTLE_MS } from "./noticeSettle";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
 
-/**
- * How long after a question formed, or after the tasks it lists changed, a press on it does
- * nothing: a guard against a press aimed at what was there before. It only blunts a misclick;
- * what binds an answer to what was shown is the core's check of each task's block (D-1508-9).
- */
-export const SETTLE_MS = 1500;
+// How long a press on a question just formed or changed does nothing: `noticeSettle.ts` holds
+// it, beside the Notice's own settle, so a Notice imports nothing of this file's.
+export { SETTLE_MS };
 
 /**
  * The time a list is drawn at. Read in the render that draws a changed list, once per change

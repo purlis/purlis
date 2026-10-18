@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Three `unsafe` blocks in the whole workspace, each one the operator allowed by name.**
+//! **Four `unsafe` blocks in the whole workspace, each one the operator allowed by name.**
 //!
-//! `unsafe_code` is `deny` rather than `forbid` for exactly three functions:
+//! `unsafe_code` is `deny` rather than `forbid` for exactly four functions:
 //!
 //! 1. `purlis_core::executor::inherit_nothing_else`, the `pre_exec` that closes every
 //!    descriptor an extension's program would otherwise inherit (the operator, 2026-09-23:
@@ -15,10 +15,13 @@
 //! 3. `purlis_linux_sandbox`'s `linux::notify::raw`, the seccomp notification calls the Linux
 //!    sandbox's supervisor makes (the operator's ruling of 2026-10-16, #1040: one more small,
 //!    isolated, audited `unsafe` module, with no new C dependency).
+//! 4. `purlis-app`'s `specimen::photograph::snapshot`, WebKit's snapshot of the theme
+//!    specimen's webview on macOS, which only `unsafe` reaches (the operator's ruling of
+//!    2026-10-17, #2330: a fourth audited block, for the specimen snapshot).
 //!
-//! `deny` can be allowed anywhere, so this is what stops a fourth allow from arriving unnoticed:
+//! `deny` can be allowed anywhere, so this is what stops a fifth allow from arriving unnoticed:
 //! it reads every Rust file in the workspace and fails on any `unsafe` block, function, impl,
-//! trait or extern, and any mention of the lint, outside those three functions. A fourth block
+//! trait or extern, and any mention of the lint, outside those four functions. A fifth block
 //! is a new ruling, not an edit to [`AUDITED`].
 
 use std::path::{Path, PathBuf};
@@ -31,8 +34,8 @@ struct Audited {
     lines: [&'static str; 2],
 }
 
-/// The three, each named. Each is the allow on its function and that function's one block.
-const AUDITED: [Audited; 3] = [
+/// The four, each named. Each is the allow on its function and that function's one block.
+const AUDITED: [Audited; 4] = [
     Audited {
         file: "crates/purlis-core/src/executor.rs",
         function: "fn inherit_nothing_else(",
@@ -50,6 +53,11 @@ const AUDITED: [Audited; 3] = [
         file: "crates/linux-sandbox/src/linux/notify.rs",
         function: "fn raw(",
         lines: ["unsafe_code,", "let got: i64 = unsafe {"],
+    },
+    Audited {
+        file: "app/src-tauri/src/specimen.rs",
+        function: "fn snapshot(",
+        lines: ["unsafe_code,", "unsafe {"],
     },
 ];
 
@@ -91,7 +99,7 @@ fn rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn unsafe_code_appears_only_in_the_three_audited_functions() {
+fn unsafe_code_appears_only_in_the_four_audited_functions() {
     purlis_core::unsteered!();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
@@ -101,8 +109,8 @@ fn unsafe_code_appears_only_in_the_three_audited_functions() {
 
     let this = Path::new(file!()).file_name().expect("this file's name");
     let mut found = Vec::new();
-    let mut allowed: [Vec<(usize, String)>; 3] = Default::default();
-    let mut named: [Vec<usize>; 3] = Default::default();
+    let mut allowed: [Vec<(usize, String)>; 4] = Default::default();
+    let mut named: [Vec<usize>; 4] = Default::default();
     for file in &files {
         if file.file_name() == Some(this) {
             continue;
@@ -134,7 +142,7 @@ fn unsafe_code_appears_only_in_the_three_audited_functions() {
 
     assert!(
         found.is_empty(),
-        "unsafe code outside the three audited blocks (see the workspace Cargo.toml):\n{}",
+        "unsafe code outside the four audited blocks (see the workspace Cargo.toml):\n{}",
         found.join("\n")
     );
     for (which, audited) in AUDITED.iter().enumerate() {

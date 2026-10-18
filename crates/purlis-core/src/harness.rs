@@ -996,6 +996,7 @@ mod tests {
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
+                "mcp__purlis__theme_preview",
                 // And the browser tools, on the chat's browser Ask (#2245).
                 "mcp__purlis__browser_open",
                 "mcp__purlis__browser_navigate",
@@ -1507,6 +1508,7 @@ mod tests {
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
+                "mcp__purlis__theme_preview",
                 "mcp__purlis__browser_open",
                 "mcp__purlis__browser_navigate",
                 "mcp__purlis__browser_snapshot",
