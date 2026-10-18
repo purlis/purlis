@@ -553,14 +553,16 @@ let following = false;
 
 /**
  * **What a project switch draws without asking**: a built-in the project picked (by its id or
- * an id it had before), or, with no pick, the person's own theme — both resolved by the core and
- * handed to the window as it was created, and both what the engine answers for those picks
- * (`purlis_core::theme::resolve`). So the switch repaints in the frame it happens in, with no
- * frame of the last project's theme while the core is asked. Anything else is the core's to say.
+ * an id it had before), or the person's own theme where the core said no level of the project in
+ * front chooses — both resolved by the core and handed to the window as it was created, and both
+ * what the engine answers for those picks (`purlis_core::theme::resolve_levels`). So the switch
+ * repaints in the frame it happens in, with no frame of the last project's theme while the core
+ * is asked. Anything else is the core's to say: with no project in front, the person's machine
+ * default may choose a theme folder (#2602), so the core is asked.
  */
 function handedFor(pick: string | null): Theme | undefined {
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
-  if (pick === null) return theirThemeOnce();
+  if (pick === null) return where === null ? undefined : theirThemeOnce();
   if (pick === CLASSIC) return DEFAULT_THEME;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
@@ -636,7 +638,12 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   following = given.follows_system === true;
   if (following) followSystem();
   if (given.theme) {
-    sayTheFloors(typeof given.floors === "string" ? given.floors : null);
-    draw(given.theme as unknown as Theme);
+    const theme = given.theme as unknown as Theme;
+    // The person's own theme file, drawn (no level chose): its way out is Use built-in.
+    const mine = theirThemeOnce();
+    const path = atCreation().theme.path;
+    const theirs = mine !== undefined && sameTheme(theme, mine) && path ? path : undefined;
+    sayTheFloors(typeof given.floors === "string" ? given.floors : null, { theirs });
+    draw(theme);
   }
 }
