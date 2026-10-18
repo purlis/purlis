@@ -8564,6 +8564,7 @@ textarea.ui-field {
 }
 
 .browser-surface {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -8571,6 +8572,12 @@ textarea.ui-field {
   min-width: 0;
   min-height: 0;
   outline: none;
+}
+
+/* **A runner's browser while its link is down** (#2542): its last frame dimmed under the same
+   quiet word as a runner's chat (`.pane-reconnecting`), over the surface and taking no pointer. */
+.browser-surface.reconnecting > .browser-frame {
+  opacity: 0.45;
 }
 
 .browser-surface:focus-visible {

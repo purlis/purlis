@@ -14,9 +14,9 @@
 //! floor, not a target: it does not say a theme is nice; it says no word vanishes into its own
 //! background.
 //!
-//! A theme is checked as it is and **tinted by every colour a workspace can name**: the tint
-//! turns the accent and the tab shades, so every pair with one of them in it is held again at
-//! every hue. The tint keeps each shade's luminance to make that hold by construction; this is the
+//! A theme is checked as it is and **tinted by every colour a workspace can name**, by its own
+//! recipe (#2329): the tint turns the tokens the theme names, at the hues it gives, so every
+//! pair with one of them in it is held again at every hue. The tint keeps each shade's luminance to make that hold by construction; this is the
 //! check that the construction did.
 //!
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
@@ -430,8 +430,15 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
     if platform("selection.background") && !platform("selection.text") {
         findings.push(Finding::SelectionTextAlone);
     }
-    for (colour, _) in tint::PALETTE {
-        check_one(&tint::tinted(theme, colour), Some(colour), &mut findings);
+    // A theme a workspace's colour does not tint is only ever drawn as it is.
+    if !theme.tint.tabs().is_empty() {
+        for one in &theme.tint.hues {
+            check_one(
+                &tint::tinted(theme, one.name),
+                Some(one.name),
+                &mut findings,
+            );
+        }
     }
     Report { findings }
 }

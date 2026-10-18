@@ -350,7 +350,6 @@ struct Running {
     workspace: Option<String>,
     /// What runs beside a chat charter wraps — its egress proxy and its own temp directory —
     /// for as long as the chat is open (ADR 0067 §2). Dropped with it.
-    #[allow(dead_code)]
     confinement: Option<purlis_core::sandbox::Confinement>,
     /// What its sandbox was compiled to as it started, which a command run on its behalf is
     /// held to (#1407); `None` for a chat started without one.
@@ -2005,7 +2004,8 @@ impl Chats {
 
     /// **The person allowed `host` at `level`, from the window** (#1666): every open chat whose
     /// proxy asks live and whom it reaches takes it now, with nothing restarting: chat
-    /// `session` alone for this chat, every chat of the project for the other two. Each chat a
+    /// `session` alone at a one-chat level (once, this chat), and no chat where none is named;
+    /// every chat of the project at the others. Each chat a
     /// held connection of had given up on it is told, in purlis's fixed words, to retry.
     pub fn allow_live(
         &self,
@@ -2013,11 +2013,11 @@ impl Chats {
         host: &purlis_core::sandbox::hosts::Host,
         level: purlis_core::sandbox::grant::Level,
     ) -> Live {
-        use purlis_core::sandbox::grant::Level;
+        // A one-chat Allow reaches only its chat (#2629): with no chat named, none.
         let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
             let open = lock(&self.open);
             open.iter()
-                .filter(|(number, _)| level != Level::Chat || Some(**number) == session)
+                .filter(|(number, _)| !level.one_chat() || Some(**number) == session)
                 .filter_map(|(number, running)| {
                     Some((*number, running.confinement.as_ref()?.asks()?.clone()))
                 })
@@ -2046,8 +2046,9 @@ impl Chats {
     }
 
     /// **An Allow of `host` at `level` was removed**, from the window (#1666): what it allowed
-    /// live reaches nothing again in the chats it reached: the chat whose id is `chat` for this
-    /// chat, every open chat for the other two.
+    /// live reaches nothing again in the chats it reached: the chat whose id is `chat`, and at a
+    /// one-chat level (once, this chat) no chat where none is named; every open chat at the
+    /// others.
     pub fn forget_live(
         &self,
         chat: Option<&str>,
@@ -2058,8 +2059,10 @@ impl Chats {
             let open = lock(&self.open);
             let reached: Vec<(&u32, &Running)> = open
                 .iter()
-                .filter(|(_, running)| {
-                    chat.is_none() || running.chat.identity.id.as_deref() == chat
+                .filter(|(_, running)| match chat {
+                    Some(chat) => running.chat.identity.id.as_deref() == Some(chat),
+                    // A one-chat Allow reaches only its chat (#2629): with no chat named, none.
+                    None => !level.one_chat(),
                 })
                 .collect();
             (
@@ -4269,6 +4272,44 @@ impl Chats {
 
     /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
     /// `None` for a chat that is not open or was started without a sandbox.
+    /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
+    /// sandbox at all, read under one hold of the open chats so both
+    /// come from the same run. Its persona is the one the chat was started as, as every brokered
+    /// read of a vault takes it (`crate::vaults`), never a fallback. None for a chat this app
+    /// does not have open.
+    pub fn login_asker(
+        &self,
+        root: &std::path::Path,
+        session: u32,
+    ) -> Option<(purlis_core::secrets::brokered::Asker, bool)> {
+        // Read before `open` is held: no lock here is taken under another.
+        let live = self.board_of(session).map(|board| board.allowed_live());
+        let open = lock(&self.open);
+        let running = open.get(&session)?;
+        let mut confines = running.confines.clone();
+        if let (Some(confines), Some(live)) = (confines.as_mut(), live) {
+            for (host, by) in live {
+                confines.allow_live(&host, by);
+            }
+        }
+        // No sandbox compiled for it and none holding it: a chat reattached under a sandbox
+        // that changed while no window was there (D-2006-11) has no compiled sandbox recorded
+        // but is still held, so it is not one.
+        let unconfined = running.confines.is_none() && running.confinement.is_none();
+        Some((
+            purlis_core::secrets::brokered::Asker {
+                root: root.to_path_buf(),
+                env: purlis_core::secrets::Env::from_process(),
+                chat: session,
+                persona: running.chat.persona.clone(),
+                folder: running.chat.cwd.clone(),
+                confines,
+                harness: running.harness,
+            },
+            unconfined,
+        ))
+    }
+
     pub fn confines_of(&self, session: u32) -> Option<purlis_core::sandbox::Confines> {
         lock(&self.open)
             .get(&session)

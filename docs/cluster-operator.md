@@ -207,8 +207,9 @@ spec:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the
   runner was asked for (below), `UpstreamObjectInTheWay` when an upstream object the operator
   did not make has the name it would use (below), `HeldByClaimsMadeBeforePolicy` when the
-  pool's objects there belong to Claims made before the policy on Claims was in force
-  (below), `Starting` until upstream reports, and upstream's own reason after that. `kubectl get claims` shows it.
+  pool's objects there belong only to Claims made before the policy on Claims was in force
+  (below), `Starting` until upstream reports, and upstream's own reason after that.
+  `kubectl get claims` shows it.
 - **Deleting a Claim** deletes its runner.
 - **Deleting a Pool stops nothing that runs.** A Claim whose runner was asked for keeps it,
   running as the pool last defined it, until the Claim is deleted: its `Ready` is still what

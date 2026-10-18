@@ -1,0 +1,961 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! Import and export at the engine's interface (#2334): each source kind through its mapping
+//! table into a theme the engine draws, every key nothing took listed, and a theme folder's zip
+//! giving the folder back.
+
+use std::path::Path;
+
+use serde_json::Value;
+
+use super::*;
+
+const EMBER: &[u8] = include_bytes!("import-fixtures/ember.jsonc");
+const HARBOR: &[u8] = include_bytes!("import-fixtures/harbor.yaml");
+const HARBOR_TINTED: &[u8] = include_bytes!("import-fixtures/harbor-tinted.yaml");
+const DUNE: &[u8] = include_bytes!("import-fixtures/dune.json");
+const MOSS: &[u8] = include_bytes!("import-fixtures/moss");
+const TIDE: &[u8] = include_bytes!("import-fixtures/tide.itermcolors");
+const TIDE_BOTH: &[u8] = include_bytes!("import-fixtures/tide-both.itermcolors");
+
+/// The theme an import wrote, as the engine reads it: drawn, with nothing left out.
+fn drawn(imported: &Imported) -> Theme {
+    let document: Value = serde_json::from_slice(&imported.files[THEME_JSON]).expect("JSON");
+    assert_eq!(
+        document["$schema"], SCHEMA_URL,
+        "it names the published schema"
+    );
+    let resolved = Library::new().load(None, &document);
+    assert!(!resolved.refused, "refused: {:?}", resolved.complaints);
+    assert!(
+        resolved.complaints.is_empty(),
+        "the engine left out: {:?}",
+        resolved.complaints
+    );
+    resolved.theme
+}
+
+fn keys(imported: &Imported) -> Vec<&str> {
+    imported.left_out.iter().map(|it| it.key.as_str()).collect()
+}
+
+#[test]
+fn a_vs_code_theme_with_comments_and_trailing_commas_imports_through_its_table() {
+    let imported = import(SourceKind::Vscode, "ember.jsonc", EMBER).expect("imported");
+
+    let theme = drawn(&imported);
+    assert_eq!(imported.name, "Ember");
+    assert_eq!(imported.folder, "ember");
+    assert_eq!(theme.appearances.len(), 1);
+    let dark = theme.first();
+    assert_eq!(dark.appearance, Appearance::Dark);
+    assert_eq!(dark.value("surface.base"), "#1c1a19");
+    assert_eq!(dark.value("window.background"), "#1c1a19");
+    assert_eq!(
+        dark.value("terminal.background"),
+        "#1c1a19",
+        "falls to the editor's"
+    );
+    assert_eq!(dark.value("text.primary"), "#e8e2d9");
+    assert_eq!(dark.value("accent.base"), "#e0814b");
+    assert_eq!(dark.value("terminal.ansi.red"), "#d9594c");
+    assert_eq!(dark.value("selection.background"), "#3a332e");
+    assert_eq!(dark.value("syntax.comment"), "#7a716a");
+    assert!(dark.typed.flag("syntax.comment.italic"));
+    assert_eq!(
+        dark.value("syntax.keyword"),
+        "#e0814b",
+        "keyword.control is keyword's"
+    );
+    assert!(dark.typed.flag("syntax.keyword.bold"));
+    assert_eq!(
+        dark.value("syntax.operator"),
+        "#d0c8bd",
+        "its own scope is nearer"
+    );
+    assert_eq!(dark.value("syntax.string"), "#a8c97f");
+    assert_eq!(dark.value("markdown.heading"), "#f0b35c");
+    // A token the source does not fill is Purlis Classic's.
+    let classic = built_in("purlis-dark").expect("Classic dark");
+    assert_eq!(dark.value("danger.base"), classic.value("danger.base"));
+}
+
+#[test]
+fn every_key_of_a_vs_code_theme_nothing_took_is_listed_with_why() {
+    let imported = import(SourceKind::Vscode, "ember.jsonc", EMBER).expect("imported");
+
+    assert_eq!(
+        imported.left_out,
+        vec![
+            LeftOut::new("semanticHighlighting", "theme.json has no place for it"),
+            LeftOut::new("colors.editorBracketMatch.border", "is not a hex colour"),
+            LeftOut::new(
+                "tokenColors meta.embedded string",
+                "no token takes its scopes"
+            ),
+            LeftOut::new("colors.editorRuler.foreground", "no token takes it"),
+        ]
+    );
+}
+
+#[test]
+fn a_vs_code_theme_s_type_says_its_appearance_and_high_contrast() {
+    let light =
+        br##"{ "name": "Day", "type": "light", "colors": { "editor.background": "#101010" } }"##;
+    let hc = br##"{ "name": "Loud", "type": "hc", "colors": {} }"##;
+
+    let day = drawn(&import(SourceKind::Vscode, "day.json", light).expect("imported"));
+    let loud = drawn(&import(SourceKind::Vscode, "loud.json", hc).expect("imported"));
+
+    assert_eq!(
+        day.first().appearance,
+        Appearance::Light,
+        "its type wins over the background"
+    );
+    assert_eq!(loud.first().appearance, Appearance::Dark);
+    assert!(loud.first().high_contrast);
+}
+
+#[test]
+fn a_vs_code_theme_that_names_other_files_says_import_does_not_read_them() {
+    let source =
+        br#"{ "name": "Half", "include": "./base.json", "tokenColors": "./syntax.tmTheme" }"#;
+
+    let imported = import(SourceKind::Vscode, "half.json", source).expect("imported");
+
+    drawn(&imported);
+    assert_eq!(keys(&imported), ["include", "tokenColors"]);
+    assert!(imported.left_out[0].why.contains("does not read"));
+}
+
+#[test]
+fn a_base16_scheme_keeps_its_colours_as_the_palette() {
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+
+    let theme = drawn(&imported);
+    let document: Value = serde_json::from_slice(&imported.files[THEME_JSON]).expect("JSON");
+    assert_eq!(document["palette"]["base0d"], "#61afef");
+    assert_eq!(
+        document["appearances"][0]["tokens"]["accent.base"],
+        "base0d"
+    );
+    let dark = theme.first();
+    assert_eq!(dark.appearance, Appearance::Dark, "from its background");
+    assert_eq!(dark.value("surface.base"), "#1b2024");
+    assert_eq!(dark.value("text.primary"), "#c7d3da");
+    assert_eq!(
+        dark.value("terminal.ansi.bright-red"),
+        "#e06c75",
+        "base16 repeats the normal"
+    );
+    assert_eq!(dark.value("syntax.keyword"), "#c678dd");
+    assert_eq!(imported.name, "Harbor");
+}
+
+#[test]
+fn a_base16_scheme_s_unused_colour_and_its_author_are_listed() {
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+
+    assert_eq!(
+        imported.left_out,
+        vec![
+            LeftOut::new("author", "theme.json has no place for it"),
+            LeftOut::new("base06", "no token takes it"),
+        ]
+    );
+}
+
+#[test]
+fn the_tinted_form_of_a_scheme_imports_as_the_classic_one_does() {
+    let classic = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+    let tinted = import(SourceKind::Base16, "harbor-tinted.yaml", HARBOR_TINTED).expect("imported");
+
+    assert_eq!(tinted.files, classic.files);
+}
+
+#[test]
+fn a_base24_scheme_takes_its_own_bright_colours_and_deeper_backgrounds() {
+    let imported = import(SourceKind::Base24, "dune.json", DUNE).expect("imported");
+
+    let theme = drawn(&imported);
+    let light = theme.first();
+    assert_eq!(light.appearance, Appearance::Light, "its variant says");
+    assert_eq!(light.value("terminal.ansi.red"), "#b5473a");
+    assert_eq!(light.value("terminal.ansi.bright-red"), "#c9554a");
+    assert_eq!(light.value("surface.deep"), "#fffcf6");
+    assert_eq!(keys(&imported), ["base06"]);
+}
+
+#[test]
+fn a_base24_scheme_read_as_base16_lists_its_extra_colours() {
+    let imported = import(SourceKind::Base16, "dune.json", DUNE).expect("imported");
+
+    drawn(&imported);
+    let extra: Vec<&str> = keys(&imported)
+        .into_iter()
+        .filter(|it| it.starts_with("palette.base1"))
+        .collect();
+    assert_eq!(extra.len(), 8, "{:?}", imported.left_out);
+    assert!(keys(&imported).contains(&"system"));
+}
+
+#[test]
+fn an_iterm_preset_imports_its_components_and_alpha() {
+    let imported = import(SourceKind::Iterm, "Tide.itermcolors", TIDE).expect("imported");
+
+    let theme = drawn(&imported);
+    assert_eq!(imported.name, "Tide");
+    let dark = theme.first();
+    assert_eq!(dark.appearance, Appearance::Dark);
+    assert_eq!(dark.value("terminal.background"), "#10141e");
+    assert_eq!(dark.value("terminal.ansi.blue"), "#3366cc");
+    assert_eq!(
+        dark.value("markdown.link"),
+        "#3366cc",
+        "no link colour: its blue"
+    );
+    assert_eq!(dark.value("terminal.selection"), "#33406680");
+    assert_eq!(
+        imported.left_out,
+        vec![
+            LeftOut::new("Name", "is not a colour"),
+            LeftOut::new("Badge Color", "no token takes it"),
+        ]
+    );
+}
+
+#[test]
+fn an_iterm_preset_with_dark_and_light_colours_has_both_appearances() {
+    let imported = import(SourceKind::Iterm, "both.itermcolors", TIDE_BOTH).expect("imported");
+
+    let theme = drawn(&imported);
+    let ids: Vec<(&str, Appearance)> = theme
+        .appearances
+        .iter()
+        .map(|one| (one.id.as_str(), one.appearance))
+        .collect();
+    assert_eq!(
+        ids,
+        [("dark", Appearance::Dark), ("light", Appearance::Light)]
+    );
+    assert_eq!(theme.appearances[0].value("surface.base"), "#0d0d0d");
+    assert_eq!(theme.appearances[1].value("surface.base"), "#fafafa");
+    assert_eq!(
+        theme.appearances[1].value("accent.base"),
+        "#3366cc",
+        "a plain colour is in both"
+    );
+    assert!(imported.left_out.is_empty(), "{:?}", imported.left_out);
+}
+
+#[test]
+fn a_ghostty_theme_imports_its_palette_and_lists_the_rest() {
+    let imported = import(SourceKind::Ghostty, "moss", MOSS).expect("imported");
+
+    let theme = drawn(&imported);
+    assert_eq!(imported.name, "moss");
+    let dark = theme.first();
+    assert_eq!(dark.value("terminal.background"), "#1a201c");
+    assert_eq!(dark.value("terminal.ansi.bright-cyan"), "#72cbbb");
+    assert_eq!(dark.value("selection.text"), "#e8eee8");
+    let document: Value = serde_json::from_slice(&imported.files[THEME_JSON]).expect("JSON");
+    assert_eq!(document["palette"]["palette-4"], "#6fa3c8");
+    assert_eq!(
+        imported.left_out,
+        vec![
+            LeftOut::new("font-family", "is not a colour a theme takes"),
+            LeftOut::new("palette 16", "no token takes it"),
+        ]
+    );
+}
+
+#[test]
+fn each_fixture_s_kind_is_told_from_its_name_and_its_words() {
+    assert_eq!(detect("ember.jsonc", EMBER), Some(SourceKind::Vscode));
+    assert_eq!(detect("harbor.yaml", HARBOR), Some(SourceKind::Base16));
+    assert_eq!(detect("dune.json", DUNE), Some(SourceKind::Base24));
+    assert_eq!(detect("moss", MOSS), Some(SourceKind::Ghostty));
+    assert_eq!(detect("Tide.itermcolors", TIDE), Some(SourceKind::Iterm));
+    assert_eq!(
+        detect("tide", TIDE),
+        Some(SourceKind::Iterm),
+        "from its words alone"
+    );
+    assert_eq!(detect("harbor", HARBOR), Some(SourceKind::Base16));
+    assert_eq!(detect("a.zip", b"PK\x03\x04"), Some(SourceKind::Zip));
+    assert_eq!(detect("notes.txt", b"nothing a theme says"), None);
+}
+
+#[test]
+fn a_source_that_breaks_its_grammar_is_refused_with_where() {
+    let list = b"scheme: \"Odd\"\nbase00:\n  - \"101010\"\n";
+    let ghostty = b"background = 101010\njust words\n";
+
+    let yaml = import(SourceKind::Base16, "odd.yaml", list).expect_err("refused");
+    let words = import(SourceKind::Ghostty, "odd", ghostty).expect_err("refused");
+    let json = import(SourceKind::Vscode, "odd.json", b"{ nope").expect_err("refused");
+
+    assert!(yaml.contains("line 3"), "{yaml}");
+    assert!(words.contains("line 2"), "{words}");
+    assert!(json.contains("JSON with comments"), "{json}");
+}
+
+#[test]
+fn a_source_past_the_cap_is_refused_before_it_is_read() {
+    let big = vec![b' '; MOST_SOURCE_BYTES as usize + 1];
+
+    let refused = import(SourceKind::Vscode, "big.json", &big).expect_err("refused");
+
+    assert!(refused.contains("larger than"), "{refused}");
+}
+
+#[test]
+fn a_theme_s_folder_is_named_from_its_name() {
+    assert_eq!(
+        folder_name("Solarized Dark (Patched)"),
+        "solarized-dark-patched"
+    );
+    assert_eq!(folder_name("1984"), "theme-1984");
+    assert_eq!(folder_name("✨"), "imported-theme");
+    assert!(folder_name(&"a".repeat(80)).len() <= 32);
+}
+
+#[test]
+fn every_table_names_only_purlis_tokens_and_the_docs_print_each() {
+    let docs = include_str!("../../docs/themes.md");
+    for kind in SourceKind::ALL.iter().filter(|it| **it != SourceKind::Zip) {
+        for (token, keys) in table(*kind) {
+            assert!(vocabulary::is_token(token), "{token} in {kind:?}");
+            assert!(!keys.is_empty());
+        }
+        assert!(
+            docs.contains(&table_markdown(*kind)),
+            "docs/themes.md does not print the {} table as the engine has it:\n{}",
+            kind.name(),
+            table_markdown(*kind)
+        );
+    }
+    assert!(docs.contains(&scopes_markdown()), "{}", scopes_markdown());
+    for (token, _) in SCOPES {
+        assert!(vocabulary::is_token(token), "{token}");
+    }
+}
+
+// ------------------------------------------------------------------------------------------
+// Export and the zip
+// ------------------------------------------------------------------------------------------
+
+/// A theme folder `name` in `dir` with a theme, a licence, a font and an icon set.
+fn a_folder(dir: &Path, name: &str) -> std::path::PathBuf {
+    let folder = dir.join(name);
+    std::fs::create_dir_all(folder.join("fonts")).expect("fonts");
+    std::fs::create_dir_all(folder.join("icons")).expect("icons");
+    std::fs::write(
+        folder.join(THEME_JSON),
+        r##"{ "name": "Kept", "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {} }] }"##,
+    )
+    .expect("theme.json");
+    std::fs::write(folder.join("LICENSE"), "made up for a test\n").expect("licence");
+    std::fs::write(folder.join("fonts/ui.woff2"), b"wOF2 and some bytes").expect("font");
+    std::fs::write(folder.join("icons/set.json"), "{}").expect("icons");
+    folder
+}
+
+#[test]
+fn an_exported_folder_unpacks_to_the_same_files_under_its_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let folder = a_folder(dir.path(), "kept");
+
+    let packed = export(&folder).expect("exported");
+    let (name, files) = unpack(&packed.bytes).expect("unpacked");
+
+    assert_eq!(name, "kept");
+    assert_eq!(packed.files, 4);
+    let (on_disk, left_out) = gather(&folder).expect("gathered");
+    assert_eq!(files, on_disk);
+    assert!(left_out.is_empty());
+    assert_eq!(
+        files.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["LICENSE", "fonts/ui.woff2", "icons/set.json", "theme.json"]
+    );
+}
+
+#[test]
+fn an_import_of_an_exported_zip_is_the_folder_it_was() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let folder = a_folder(dir.path(), "kept");
+    let packed = export(&folder).expect("exported");
+
+    let imported = import(SourceKind::Zip, "kept.zip", &packed.bytes).expect("imported");
+
+    assert_eq!(imported.folder, "kept");
+    assert_eq!(imported.name, "Kept");
+    assert_eq!(imported.files, gather(&folder).expect("gathered").0);
+    assert!(imported.left_out.is_empty());
+}
+
+#[test]
+fn the_same_folder_is_the_same_zip_every_time() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let folder = a_folder(dir.path(), "kept");
+
+    assert_eq!(
+        export(&folder).expect("once").bytes,
+        export(&folder).expect("twice").bytes
+    );
+}
+
+#[test]
+fn what_a_theme_folder_does_not_keep_is_listed_and_not_packed() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let folder = a_folder(dir.path(), "kept");
+    std::fs::write(folder.join(".DS_Store"), "x").expect("hidden");
+    std::fs::create_dir_all(folder.join("drafts")).expect("another folder");
+    std::fs::write(folder.join("drafts/old.json"), "{}").expect("a draft");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(dir.path(), folder.join("elsewhere")).expect("a link");
+
+    let packed = export(&folder).expect("exported");
+
+    let left: Vec<&str> = packed.left_out.iter().map(|it| it.key.as_str()).collect();
+    let mut expected = vec![".DS_Store", "drafts"];
+    if cfg!(unix) {
+        expected.push("elsewhere");
+    }
+    assert_eq!(left, expected);
+    assert_eq!(packed.files, 4);
+}
+
+#[test]
+fn a_folder_without_a_theme_json_is_not_exported() {
+    let dir = tempfile::tempdir().expect("a directory");
+    std::fs::create_dir_all(dir.path().join("empty")).expect("a folder");
+
+    let refused = export(&dir.path().join("empty")).expect_err("refused");
+
+    assert!(refused.contains("no theme.json"), "{refused}");
+}
+
+/// A zip holding `entries`, each a name and its bytes, written as the zip crate writes any.
+fn a_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, bytes) in entries {
+        writer.start_file(*name, options).expect("an entry");
+        writer.write_all(bytes).expect("its bytes");
+    }
+    writer.finish().expect("a zip").into_inner()
+}
+
+#[test]
+fn a_zip_whose_entries_climb_out_or_start_at_the_root_is_refused_whole() {
+    let theme: &[u8] = b"{}";
+    for bad in [
+        "kept/../escape.json",
+        "/etc/kept/theme.json",
+        "kept/fonts/../../x",
+        "C:/kept/theme.json",
+        "kept\\theme.json",
+    ] {
+        let zip = a_zip(&[("kept/theme.json", theme), (bad, b"x")]);
+
+        let refused = unpack(&zip).expect_err(bad);
+
+        assert!(refused.contains("in the zip"), "{bad}: {refused}");
+    }
+}
+
+#[test]
+fn a_zip_holding_a_link_is_refused() {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer
+        .start_file("kept/theme.json", options)
+        .expect("an entry");
+    writer.write_all(b"{}").expect("its bytes");
+    writer
+        .add_symlink("kept/LICENSE", "/etc/passwd", options)
+        .expect("a link");
+    let zip = writer.finish().expect("a zip").into_inner();
+
+    let refused = unpack(&zip).expect_err("refused");
+
+    assert!(refused.contains("is a link"), "{refused}");
+}
+
+#[test]
+fn a_zip_with_two_folders_a_stray_file_or_no_theme_json_is_refused() {
+    let theme: &[u8] = b"{}";
+    let two = a_zip(&[("kept/theme.json", theme), ("other/theme.json", theme)]);
+    let deep = a_zip(&[
+        ("kept/theme.json", theme),
+        ("kept/fonts/more/x.woff2", b"x"),
+    ]);
+    let none = a_zip(&[("kept/LICENSE", b"x")]);
+
+    assert!(unpack(&two).expect_err("two").contains("one folder"));
+    assert!(unpack(&deep).expect_err("deep").contains("keeps a file"));
+    assert!(unpack(&none).expect_err("none").contains("no theme.json"));
+}
+
+#[test]
+fn a_zip_entry_past_the_cap_is_refused() {
+    let big = vec![b'a'; MOST_FILE_BYTES as usize + 1];
+    let zip = a_zip(&[("kept/theme.json", b"{}"), ("kept/fonts/big.woff2", &big)]);
+
+    let refused = unpack(&zip).expect_err("refused");
+
+    assert!(refused.contains("larger than"), "{refused}");
+}
+
+#[test]
+fn a_zip_with_too_many_files_is_refused() {
+    let names: Vec<String> = (0..=MOST_FILES)
+        .map(|at| format!("kept/icons/{at}.json"))
+        .collect();
+    let mut entries: Vec<(&str, &[u8])> = vec![("kept/theme.json", b"{}")];
+    entries.extend(names.iter().map(|it| (it.as_str(), &b"{}"[..])));
+
+    let refused = unpack(&a_zip(&entries)).expect_err("refused");
+
+    assert!(refused.contains("more than"), "{refused}");
+}
+
+#[test]
+fn a_staged_folder_goes_in_place_and_never_over_one_unless_asked() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let themes = dir.path().join("themes");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{\"name\":\"One\"}".to_vec())]);
+
+    let first = stage(&themes, "one", &files, false)
+        .expect("staged")
+        .commit()
+        .expect("in place");
+    let again = stage(&themes, "one", &files, false).expect_err("there already");
+    let newer = Files::from([(THEME_JSON.to_owned(), b"{\"name\":\"Two\"}".to_vec())]);
+    stage(&themes, "one", &newer, true)
+        .expect("staged")
+        .commit()
+        .expect("replaced");
+
+    assert_eq!(first, themes.join("one"));
+    assert_eq!(again, NotWritten::Exists(themes.join("one")));
+    assert_eq!(
+        std::fs::read(themes.join("one").join(THEME_JSON)).expect("read"),
+        b"{\"name\":\"Two\"}"
+    );
+    let left: Vec<_> = std::fs::read_dir(&themes)
+        .expect("listed")
+        .flatten()
+        .collect();
+    assert_eq!(left.len(), 1, "nothing staged or moved aside is left");
+}
+
+#[test]
+fn a_staged_folder_dropped_leaves_nothing() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+
+    let staged = stage(dir.path(), "one", &files, false).expect("staged");
+    let path = staged.path.clone();
+    assert!(path.join(THEME_JSON).is_file());
+    drop(staged);
+
+    assert!(!path.exists());
+    assert!(!dir.path().join("one").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_where_the_folder_goes_is_never_replaced() {
+    let dir = tempfile::tempdir().expect("a directory");
+    std::fs::create_dir_all(dir.path().join("real")).expect("a folder");
+    std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("one")).expect("a link");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+
+    let refused = stage(dir.path(), "one", &files, true).expect_err("refused");
+
+    assert!(matches!(refused, NotWritten::Failed(why) if why.contains("is a link")));
+}
+
+// ------------------------------------------------------------------------------------------
+// Review round: the move in, nesting, ids, and what a zip can claim
+// ------------------------------------------------------------------------------------------
+
+#[test]
+fn a_folder_that_appears_after_the_stage_is_never_replaced_without_force() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+    let staged = stage(dir.path(), "one", &files, false).expect("staged");
+    std::fs::create_dir(dir.path().join("one")).expect("an empty folder meanwhile");
+
+    let refused = staged.commit().expect_err("refused");
+
+    assert_eq!(refused, NotWritten::Exists(dir.path().join("one")));
+    assert_eq!(
+        std::fs::read_dir(dir.path().join("one"))
+            .expect("listed")
+            .count(),
+        0,
+        "the folder there is as it was"
+    );
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .expect("listed")
+        .flatten()
+        .collect();
+    assert_eq!(names.len(), 1, "the stage is gone");
+}
+
+#[test]
+fn with_force_a_folder_that_appears_after_the_stage_is_exchanged_and_removed() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{\"name\":\"New\"}".to_vec())]);
+    let staged = stage(dir.path(), "one", &files, true).expect("staged");
+    std::fs::create_dir(dir.path().join("one")).expect("a folder meanwhile");
+    std::fs::write(dir.path().join("one/old.json"), "{}").expect("an old file");
+
+    let put = staged.commit().expect("in place");
+
+    assert_eq!(put, dir.path().join("one"));
+    assert_eq!(
+        std::fs::read(put.join(THEME_JSON)).expect("read"),
+        b"{\"name\":\"New\"}"
+    );
+    assert!(!put.join("old.json").exists());
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .expect("listed")
+        .flatten()
+        .collect();
+    assert_eq!(names.len(), 1, "nothing is left beside it");
+}
+
+#[test]
+fn a_stage_an_import_left_behind_an_hour_ago_is_swept() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let left = dir.path().join(".gone.importing-1");
+    let fresh = dir.path().join(".busy.importing-2");
+    std::fs::create_dir(&left).expect("a stale stage");
+    std::fs::create_dir(&fresh).expect("a fresh stage");
+    let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
+    std::fs::File::open(&left)
+        .and_then(|it| it.set_modified(long_ago))
+        .expect("aged");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+
+    drop(stage(dir.path(), "one", &files, false).expect("staged"));
+
+    assert!(!left.exists(), "the stale one is swept");
+    assert!(fresh.exists(), "one another import may be writing is not");
+}
+
+/// A property list nesting `depth` dictionaries.
+fn nested_plist(depth: usize) -> Vec<u8> {
+    let mut xml = String::from("<?xml version=\"1.0\"?>\n<plist version=\"1.0\">\n");
+    for _ in 0..depth {
+        xml.push_str("<dict><key>k</key>");
+    }
+    xml.push_str("<string>x</string>");
+    for _ in 0..depth {
+        xml.push_str("</dict>");
+    }
+    xml.push_str("</plist>\n");
+    xml.into_bytes()
+}
+
+#[test]
+fn a_property_list_nested_deeper_than_a_preset_is_refused_before_it_is_parsed() {
+    let deep = nested_plist(9);
+    let very_deep = nested_plist(30_000);
+
+    let refused = import(SourceKind::Iterm, "deep.itermcolors", &deep).expect_err("refused");
+    let very = import(SourceKind::Iterm, "deeper.itermcolors", &very_deep);
+
+    assert!(refused.contains("deep"), "{refused}");
+    assert!(very_deep.len() as u64 <= MOST_SOURCE_BYTES);
+    assert!(very.expect_err("refused").contains("deep"));
+    assert!(
+        import(SourceKind::Iterm, "tide.itermcolors", TIDE).is_ok(),
+        "a preset nests two"
+    );
+}
+
+#[test]
+fn a_reserved_or_ungrammatical_id_is_never_a_theme_folder() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+    for id in [
+        "purlis-classic",
+        "purlis-dark",
+        "purlis-light",
+        "charter-dark",
+        "mine",
+        "system",
+    ] {
+        assert!(is_reserved(id), "{id}");
+        assert!(
+            matches!(
+                stage(dir.path(), id, &files, true),
+                Err(NotWritten::Failed(_))
+            ),
+            "{id}"
+        );
+        let zip = a_zip(&[(&format!("{id}/theme.json"), b"{}")]);
+        assert!(
+            unpack(&zip).expect_err(id).contains("keeps for its own"),
+            "{id}"
+        );
+    }
+    for id in ["Kept", "kept theme", "9lives", &"a".repeat(33)] {
+        assert!(!is_folder_id(id), "{id}");
+        let zip = a_zip(&[(&format!("{id}/theme.json"), b"{}")]);
+        assert!(
+            unpack(&zip)
+                .expect_err(id)
+                .contains("not a theme folder's id"),
+            "{id}"
+        );
+    }
+    let named = br#"{ "name": "Purlis Classic", "colors": {} }"#;
+    let refused = import(SourceKind::Vscode, "classic.json", named).expect_err("reserved");
+    assert!(refused.contains("keeps for its own"), "{refused}");
+    std::fs::create_dir_all(dir.path().join("mine")).expect("a folder");
+    std::fs::write(dir.path().join("mine").join(THEME_JSON), "{}").expect("a theme");
+    assert!(export(&dir.path().join("mine")).is_err());
+}
+
+/// Every offset of `signature` in `bytes`.
+fn offsets(bytes: &[u8], signature: &[u8; 4]) -> Vec<usize> {
+    bytes
+        .windows(4)
+        .enumerate()
+        .filter(|(_, it)| *it == signature)
+        .map(|(at, _)| at)
+        .collect()
+}
+
+#[test]
+fn an_entry_that_declares_less_than_it_holds_is_refused() {
+    let big = vec![b'a'; MOST_FILE_BYTES as usize + 10];
+    let mut zip = a_zip(&[("kept/theme.json", b"{}"), ("kept/fonts/big.woff2", &big)]);
+    // The second entry's uncompressed size, in its local header and its central one.
+    let local = offsets(&zip, b"PK\x03\x04")[1];
+    let central = offsets(&zip, b"PK\x01\x02")[1];
+    zip[local + 22..local + 26].copy_from_slice(&100u32.to_le_bytes());
+    zip[central + 24..central + 28].copy_from_slice(&100u32.to_le_bytes());
+
+    let refused = unpack(&zip).expect_err("refused");
+
+    assert!(refused.contains("larger than"), "{refused}");
+}
+
+#[test]
+fn a_zip_past_the_folder_s_total_is_refused() {
+    let one = vec![0u8; MOST_FILE_BYTES as usize];
+    let names: Vec<String> = (0..9).map(|at| format!("kept/fonts/{at}.woff2")).collect();
+    let mut entries: Vec<(&str, &[u8])> = vec![("kept/theme.json", b"{}")];
+    entries.extend(names.iter().map(|it| (it.as_str(), one.as_slice())));
+
+    let refused = unpack(&a_zip(&entries)).expect_err("refused");
+
+    assert!(refused.contains("MiB together"), "{refused}");
+}
+
+#[test]
+fn two_names_one_filesystem_writes_as_one_file_are_refused() {
+    let theme: &[u8] = b"{}";
+    let case = a_zip(&[
+        ("kept/theme.json", theme),
+        ("kept/LICENSE", b"a"),
+        ("kept/license", b"b"),
+    ]);
+    let accents = a_zip(&[
+        ("kept/theme.json", theme),
+        ("kept/caf\u{e9}", b"a"),
+        ("kept/cafe\u{301}", b"b"),
+    ]);
+    let mut twice = a_zip(&[
+        ("kept/theme.json", theme),
+        ("kept/aaaa", b"a"),
+        ("kept/bbbb", b"b"),
+    ]);
+    for at in offsets(&twice, b"PK\x03\x04")
+        .into_iter()
+        .chain(offsets(&twice, b"PK\x01\x02"))
+    {
+        let name = twice
+            .windows(4)
+            .skip(at)
+            .position(|it| it == b"bbbb")
+            .map(|it| it + at);
+        if let Some(name) = name.filter(|it| it - at < 64) {
+            twice[name..name + 4].copy_from_slice(b"aaaa");
+        }
+    }
+
+    assert!(unpack(&case).expect_err("case").contains("other case"));
+    assert!(
+        unpack(&accents)
+            .expect_err("accents")
+            .contains("other case")
+    );
+    assert!(unpack(&twice).is_err(), "an entry named twice");
+}
+
+#[test]
+fn an_encrypted_entry_is_refused() {
+    let mut zip = a_zip(&[("kept/theme.json", b"{}")]);
+    let local = offsets(&zip, b"PK\x03\x04")[0];
+    let central = offsets(&zip, b"PK\x01\x02")[0];
+    zip[local + 6] |= 1;
+    zip[central + 8] |= 1;
+
+    let refused = unpack(&zip).expect_err("refused");
+
+    assert!(refused.contains("encrypted"), "{refused}");
+}
+
+#[test]
+fn a_zip_whose_end_lists_too_many_entries_is_refused_before_it_is_read() {
+    let mut zip = a_zip(&[("kept/theme.json", b"{}")]);
+    let end = *offsets(&zip, b"PK\x05\x06").last().expect("an end");
+    zip[end + 8..end + 10].copy_from_slice(&1000u16.to_le_bytes());
+    zip[end + 10..end + 12].copy_from_slice(&1000u16.to_le_bytes());
+
+    let refused = unpack(&zip).expect_err("refused");
+
+    assert!(refused.contains("lists 1000 entries"), "{refused}");
+}
+
+#[test]
+fn a_key_a_nearer_key_shadowed_says_which_token_it_lost() {
+    let source = br##"{ "name": "Near", "colors": { "input.background": "#101010", "dropdown.background": "#202020" } }"##;
+
+    let imported = import(SourceKind::Vscode, "near.json", source).expect("imported");
+
+    assert_eq!(
+        imported.left_out,
+        vec![LeftOut::new(
+            "colors.dropdown.background",
+            "a nearer key gave control.base its value"
+        )]
+    );
+}
+
+/// A property list that nests `depth` lists, each opened as `open` and closed as `close`.
+fn nested_with(depth: usize, open: &str, close: &str) -> Vec<u8> {
+    let mut xml = String::from("<?xml version=\"1.0\"?>\n<plist version=\"1.0\">\n");
+    xml.push_str(&open.repeat(depth));
+    xml.push_str(&close.repeat(depth));
+    xml.push_str("</plist>\n");
+    xml.into_bytes()
+}
+
+#[test]
+fn nesting_hidden_by_a_prefix_or_a_comment_is_counted_as_the_reader_reads_it() {
+    let prefixed = nested_with(40_000, "<a:array>", "</a:array>");
+    let commented = nested_with(30_000, "<array><!--</array>-->", "</array>");
+    let in_cdata = nested_with(9, "<array><![CDATA[</array>]]>", "</array>");
+
+    for (what, xml) in [
+        ("prefixed", prefixed),
+        ("commented", commented),
+        ("cdata", in_cdata),
+    ] {
+        assert!(xml.len() as u64 <= MOST_SOURCE_BYTES, "{what}");
+        let refused = import(SourceKind::Iterm, "deep.itermcolors", &xml).expect_err(what);
+        assert!(!refused.is_empty(), "{what}");
+    }
+}
+
+#[test]
+fn what_the_macos_finder_adds_to_a_zip_is_passed_over() {
+    let zip = a_zip(&[
+        ("kept/theme.json", b"{}"),
+        ("kept/.DS_Store", b"x"),
+        ("__MACOSX/kept/._theme.json", b"x"),
+    ]);
+
+    let (name, files) = unpack(&zip).expect("unpacked");
+
+    assert_eq!(name, "kept");
+    assert_eq!(
+        files.keys().map(String::as_str).collect::<Vec<_>>(),
+        [THEME_JSON]
+    );
+}
+
+#[test]
+fn an_end_record_inside_a_comment_is_not_the_zip_s_end() {
+    let zip = a_zip(&[("kept/theme.json", b"{}")]);
+    // A comment that holds a record listing 1000 entries: the real end is the one before it.
+    let mut fake = b"PK\x05\x06".to_vec();
+    fake.extend_from_slice(&[0, 0, 0, 0]);
+    fake.extend_from_slice(&1000u16.to_le_bytes());
+    fake.extend_from_slice(&1000u16.to_le_bytes());
+    // Its own comment's length runs past the end of the file, so it is no end record.
+    fake.extend_from_slice(&[0; 8]);
+    fake.extend_from_slice(&5u16.to_le_bytes());
+    let mut with_comment = zip.clone();
+    let end = *offsets(&zip, b"PK\x05\x06").last().expect("an end");
+    with_comment[end + 20..end + 22].copy_from_slice(&(fake.len() as u16).to_le_bytes());
+    with_comment.extend_from_slice(&fake);
+
+    let (name, _) = unpack(&with_comment).expect("unpacked");
+
+    assert_eq!(name, "kept");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_swapped_in_at_the_target_under_force_is_put_back_and_refused() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).expect("a folder");
+    std::fs::write(elsewhere.join("kept.txt"), "mine").expect("a file");
+    let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+    let staged = stage(dir.path(), "one", &files, true).expect("staged");
+    let stage_path = staged.path.clone();
+    std::os::unix::fs::symlink(&elsewhere, dir.path().join("one")).expect("a link meanwhile");
+
+    let refused = staged.commit().expect_err("refused");
+
+    assert!(matches!(refused, NotWritten::Failed(why) if why.contains("not a folder")));
+    let link = std::fs::symlink_metadata(dir.path().join("one")).expect("still there");
+    assert!(link.file_type().is_symlink(), "the link is put back");
+    assert_eq!(
+        std::fs::read_to_string(elsewhere.join("kept.txt")).expect("read"),
+        "mine"
+    );
+    assert!(!stage_path.exists(), "the stage is gone");
+}
+
+#[test]
+fn bytes_after_a_zip_s_end_refuse_it() {
+    let mut zip = a_zip(&[("kept/theme.json", b"{}")]);
+    zip.extend_from_slice(b"trailing bytes");
+
+    let refused = unpack(&zip).expect_err("refused");
+
+    assert!(refused.contains("does not end"), "{refused}");
+}
+
+#[test]
+fn what_the_finder_adds_is_not_counted_against_the_entries_a_theme_folder_may_have() {
+    // 64 files, a Finder shadow entry for each, and its folder file: past the theme's own cap
+    // only when the Finder's entries are counted.
+    let names: Vec<String> = (0..MOST_FILES - 1)
+        .map(|at| format!("kept/icons/{at}.json"))
+        .collect();
+    let shadows: Vec<String> = names.iter().map(|it| format!("__MACOSX/{it}")).collect();
+    let mut entries: Vec<(&str, &[u8])> =
+        vec![("kept/theme.json", b"{}"), ("kept/.DS_Store", b"x")];
+    entries.extend(names.iter().map(|it| (it.as_str(), &b"{}"[..])));
+    entries.extend(shadows.iter().map(|it| (it.as_str(), &b"x"[..])));
+
+    let (_, files) = unpack(&a_zip(&entries)).expect("unpacked");
+
+    assert_eq!(files.len(), MOST_FILES);
+}

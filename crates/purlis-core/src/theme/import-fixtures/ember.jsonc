@@ -1,0 +1,28 @@
+// A small VS Code colour theme, made up for purlis's import tests.
+{
+  "$schema": "vscode://schemas/color-theme",
+  "name": "Ember",
+  "type": "dark",
+  "semanticHighlighting": true,
+  "colors": {
+    "editor.background": "#1c1a19",
+    "editor.foreground": "#e8e2d9",
+    "focusBorder": "#e0814b",
+    "button.background": "#e0814b",
+    "sideBar.background": "#161413",
+    "editor.selectionBackground": "#3a332e",
+    "terminal.ansiRed": "#d9594c",
+    "terminal.ansiBlue": "#6c9be0",
+    /* a key no purlis token takes */
+    "editorRuler.foreground": "#2a2624",
+    "editorBracketMatch.border": "not a colour",
+  },
+  "tokenColors": [
+    { "scope": "comment", "settings": { "foreground": "#7a716a", "fontStyle": "italic" } },
+    { "scope": ["string", "string.quoted"], "settings": { "foreground": "#a8c97f" } },
+    { "scope": "keyword.control", "settings": { "foreground": "#e0814b", "fontStyle": "bold" } },
+    { "scope": "keyword.operator", "settings": { "foreground": "#d0c8bd" } },
+    { "scope": "meta.embedded string", "settings": { "foreground": "#ffffff" } },
+    { "scope": "markup.heading", "settings": { "foreground": "#f0b35c" } },
+  ],
+}

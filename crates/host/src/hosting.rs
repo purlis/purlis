@@ -502,6 +502,9 @@ struct State {
     subscribers: Vec<Subscriber>,
     /// The chats' confinements (#1999), by the id the window gave each.
     confinements: HashMap<String, Confinement>,
+    /// The window each link between hosts is for, by the link's number, as the relaying host
+    /// named it ([`Command::TakeBack`], #2511). A link's name ends with it.
+    relayed_for: HashMap<u64, String>,
     /// Each question to the window waiting for its answer, by its number.
     questions: HashMap<u64, std::sync::mpsc::Sender<Option<Vec<String>>>>,
     /// The last question's number.
@@ -539,12 +542,17 @@ struct Confinement {
     project: String,
     owner: Owner,
     /// The links the host named it to ([`may_act_on`]): the link that made it, from the first;
-    /// none, for one the host made for a chat it composed; and each window that took its chat
-    /// back. A link's names end with it.
+    /// none, for one the host made for a chat it composed; each window that took its chat
+    /// back; and, for a chat of a relayed window, each link that named that window (#2511). A
+    /// link's names end with it.
     named_to: HashSet<u64>,
     confining: Arc<dyn Confining>,
     /// The plan it was started from, as the window sent it (#2006).
     plan: session::ConfinePlan,
+    /// The relayed window that made it or started its chat, by its relaying host's name for
+    /// it (#2511): what takes it back after a re-link. None for any other: the host's own
+    /// window's, or one made or composed for a link that named no window.
+    window: Option<String>,
 }
 
 /// Whose a confinement is: the link that made it, until a start names it, then that program's.
@@ -573,6 +581,31 @@ fn may_act_on(state: &State, held: &Confinement, link: u64) -> bool {
 /// who a proxy holds a connection for an ask while.
 fn hears_its_proxy(state: &State, held: &Confinement, subscriber: &Subscriber) -> bool {
     subscriber.confines && may_act_on(state, held, subscriber.link)
+}
+
+/// **The relayed window `peer`'s link is for** (#2511): the name its relaying host gave it, on a
+/// link between hosts that named one. A confinement made or composed for that link is that
+/// window's, to take back after a re-link; one made or composed for any other link is no
+/// relayed window's.
+fn relayed_for(state: &State, peer: &Peer) -> Option<String> {
+    if peer.scope() != Scope::RemoteLink {
+        return None;
+    }
+    state.relayed_for.get(&link_of(peer)).cloned()
+}
+
+/// **Each link between hosts that named `window`** (#2511): a link a renewal replaces and the
+/// one that replaces it, while both last. None for no window.
+fn links_of_window(state: &State, window: Option<&str>) -> Vec<u64> {
+    let Some(window) = window else {
+        return Vec::new();
+    };
+    state
+        .relayed_for
+        .iter()
+        .filter(|(_, named)| named.as_str() == window)
+        .map(|(link, _)| *link)
+        .collect()
 }
 
 /// A place: a project, by its stable id, at the folder it is held at on this machine, by the
@@ -1291,12 +1324,15 @@ impl Hosting {
             // programs run in one. Only one this link made for this project, and nothing runs in
             // yet.
             if let Some(confinement) = start.launch.as_ref().and_then(|l| l.confinement.as_ref()) {
+                let links = links_of_window(&state, relayed_for(&state, peer).as_deref());
                 match state.confinements.get_mut(confinement) {
                     Some(held)
                         if held.project == start.project
                             && held.owner == Owner::Link(link_of(peer)) =>
                     {
                         held.owner = Owner::Program(program.clone());
+                        // A chat is its window's on each of that window's links (#2511).
+                        held.named_to.extend(links);
                     }
                     _ => {
                         return Err(not_started(format!(
@@ -1350,6 +1386,7 @@ impl Hosting {
             let hosting = self.clone();
             let start = start.clone();
             let link = link_of(peer);
+            let window = relayed_for(&self.state(), peer);
             let at = at.clone();
             let program = program.clone();
             tokio::task::spawn_blocking(move || {
@@ -1357,12 +1394,11 @@ impl Hosting {
                     hosting: hosting.clone(),
                     program,
                     at: at.clone(),
-                    named: Mutex::new(
-                        start
-                            .confinement
-                            .clone()
-                            .map(|confinement| NamedTo { confinement, link }),
-                    ),
+                    named: Mutex::new(start.confinement.clone().map(|confinement| NamedTo {
+                        confinement,
+                        link,
+                        window,
+                    })),
                 };
                 hosting.inner.compose.compose(&ToCompose {
                     project: &at.project,
@@ -1763,6 +1799,42 @@ impl Hosting {
         Ok(Answer::Programs(programs))
     }
 
+    /// **`peer`'s link is `window`'s** (#2511, ruled 2026-10-17): the relaying host names the
+    /// window on each link it makes for it, and the host names this link each confinement of a
+    /// chat that window started here over the links before, made or composed for them, and
+    /// answers with their ids. It names no other: not one the host's own window made, nor one
+    /// made or composed for another window's link, nor one nothing runs in yet, which goes
+    /// with the link that made it. A link that named another window is refused.
+    fn take_back(&self, window: String, peer: &Peer) -> Result<Answer, Refusal> {
+        let link = link_of(peer);
+        let mut state = self.state();
+        match state.relayed_for.get(&link) {
+            Some(named) if *named != window => {
+                return Err(Refusal {
+                    code: session::MALFORMED.into(),
+                    why: format!("this link is window {named}'s, so it is not window {window}'s"),
+                });
+            }
+            Some(_) => {}
+            None => {
+                state.relayed_for.insert(link, window.clone());
+            }
+        }
+        let mut taken: Vec<String> = Vec::new();
+        for (id, held) in &mut state.confinements {
+            if held.window.as_deref() == Some(window.as_str())
+                && matches!(held.owner, Owner::Program(_))
+            {
+                held.named_to.insert(link);
+                taken.push(id.clone());
+            }
+        }
+        taken.sort();
+        Ok(Answer::TakenBack {
+            confinements: taken,
+        })
+    }
+
     /// The window quit (#2006, ADR 0068 §2): every program ends as a quit would, all at once,
     /// and the answer comes once they are gone; then whoever serves this host stops
     /// ([`Self::until_it_quits`]).
@@ -1947,6 +2019,7 @@ impl Hosting {
                 end_off_the_runtime(vec![confining]);
                 return Err(already_confined(&id));
             }
+            let window = relayed_for(&state, peer);
             state.confinements.insert(
                 id.clone(),
                 Confinement {
@@ -1955,6 +2028,7 @@ impl Hosting {
                     named_to: std::iter::once(link_of(peer)).collect(),
                     confining,
                     plan,
+                    window,
                 },
             );
         }
@@ -2105,10 +2179,12 @@ struct ForTheProgram {
     named: Mutex<Option<NamedTo>>,
 }
 
-/// The id a start gave the confinement composed for it, and the link it is named to (#2407).
+/// The id a start gave the confinement composed for it, the link it is named to (#2407), and
+/// the relayed window that link is for (#2511).
 struct NamedTo {
     confinement: String,
     link: u64,
+    window: Option<String>,
 }
 
 impl Beside for ForTheProgram {
@@ -2118,10 +2194,14 @@ impl Beside for ForTheProgram {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        let (id, named_to) = match taken {
-            Some(NamedTo { confinement, link }) => (confinement, HashSet::from([link])),
+        let (id, mut named_to, window) = match taken {
+            Some(NamedTo {
+                confinement,
+                link,
+                window,
+            }) => (confinement, HashSet::from([link]), window),
             // Named to no link: the host made it, for a chat it composed (#2444).
-            None => (ulid::Ulid::generate().to_string(), HashSet::new()),
+            None => (ulid::Ulid::generate().to_string(), HashSet::new(), None),
         };
         let (tell, askable) = self.hosting.heard_as(&id);
         let confining = self.hosting.inner.confine.confine(
@@ -2150,6 +2230,8 @@ impl Beside for ForTheProgram {
                 end_off_the_runtime(vec![confining]);
                 return Err(already_confined(&id).why);
             }
+            // A chat is its window's on each of that window's links (#2511).
+            named_to.extend(links_of_window(&state, window.as_deref()));
             state.confinements.insert(
                 id,
                 Confinement {
@@ -2158,6 +2240,7 @@ impl Beside for ForTheProgram {
                     named_to,
                     confining,
                     plan: plan.clone(),
+                    window,
                 },
             );
         }
@@ -2521,6 +2604,7 @@ impl session::Host for Hosting {
                 })
                 .await
             }
+            Command::TakeBack { window } => self.take_back(window, peer),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -2554,6 +2638,7 @@ impl session::Host for Hosting {
             let mut state = self.state();
             let unheld = unname(&mut state, peer, |_| true);
             let ending = take_confinements(&mut state, |owner| *owner == Owner::Link(link));
+            state.relayed_for.remove(&link);
             (ending, unheld)
         };
         // Its chats' ports are withdrawn before what it confined ends, on one blocking thread.

@@ -277,7 +277,9 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
 
   The chat calls the `browser_login` tool with `login = "shop-login"`, and purlis performs the
   login in the chat's own browser (#2016): the app reads the user name and password from the
-  vault for exactly the login the chat's start armed, and hands them to the session host, whose
+  vault for exactly the login the chat's start armed (for a chat started without the sandbox,
+  the login its persona declares and this machine allowed, read at the call, #2560), and hands
+  them to the session host, whose
   browser goes to the declared page, fills them only while the page's document is on that
   page's origin, submits, waits for the password field to go, and hands the browser back. A
   login that does not go through has what it filled cleared, and the chat is told why. The chat

@@ -1095,3 +1095,72 @@ fn every_level_s_theme_is_drawn_with_the_consent_floors_held() {
     let got = drawn(&Levels::default(), &places.folders(None), Some(&theirs));
     assert!(got.held.is_some());
 }
+
+#[test]
+fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
+    // The same folder at the machine, the project and the workspace, its tint turned off: each
+    // level's choice draws it untinted. With Keep blocked's edge one colour with Allow's under
+    // its own tint, each level's is drawn with them apart at every hue of that tint (#2329).
+    let accent = default_theme().value("accent.base").to_owned();
+    let edges = json!({
+        "name": "Edges",
+        "tint": { "tokens": ["accent.base", "border.strong"] },
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": { "border.strong": tint_hex(&accent, 25.0) }
+        }]
+    });
+    let off = json!({
+        "name": "Off",
+        "tint": { "on": false },
+        "appearances": [{ "id": "dark", "appearance": "dark" }]
+    });
+    let places = Places::new();
+    for themes in [
+        places.machine_themes(),
+        places.project_themes(),
+        places.workspace_themes(),
+    ] {
+        put(&themes, "off", &off);
+        put(&themes, "edges", &edges);
+    }
+    let at = |theme: &str| {
+        [
+            Levels {
+                machine_default: pick(theme),
+                ..Levels::default()
+            },
+            Levels {
+                project_choice: pick(theme),
+                ..Levels::default()
+            },
+            Levels {
+                workspace_choice: pick(theme),
+                ..Levels::default()
+            },
+        ]
+    };
+    for levels in at("off") {
+        let shown = drawn(&levels, &places.folders(Some("alpha")), None);
+        let theme = shown.theme.expect("a theme is drawn");
+        assert_eq!(theme.name, "Off");
+        assert!(theme.tint.tabs().is_empty(), "{:?}", shown.level);
+    }
+    for levels in at("edges") {
+        let shown = drawn(&levels, &places.folders(Some("alpha")), None);
+        let theme = shown.theme.expect("a theme is drawn");
+        assert_eq!(theme.name, "Edges");
+        assert_eq!(theme.tint.tabs(), ["border.strong", "accent.base"]);
+        for one in &theme.tint.hues {
+            let tint = tinted(&theme, one.name);
+            let apart = [tint.value("accent.base"), tint.value("border.strong")]
+                .map(|hex| tint::oklab_of(hex).expect("a colour"));
+            assert!(
+                tint::distance(apart[0], apart[1]) >= ALLOW_APART,
+                "{:?} {}",
+                shown.level,
+                one.name
+            );
+        }
+    }
+}

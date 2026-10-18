@@ -2591,7 +2591,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
     chats.forget_live(
         None,
         &purlis_core::sandbox::grant::host("docs.example.com").expect("a host"),
-        purlis_core::sandbox::grant::Level::Chat,
+        purlis_core::sandbox::grant::Level::You,
     );
     assert_eq!(*narrowed.lock().unwrap(), [1, 1]);
 }
@@ -7391,4 +7391,290 @@ fn only_a_shell_tab_at_the_project_root_is_a_place_to_type_an_install_command() 
     assert!(!chats.is_shell_at(there, root.path()), "another directory");
     assert!(!chats.is_shell_at(agent, root.path()), "an agent's pane");
     assert!(!chats.is_shell_at(9999, root.path()), "no such session");
+}
+
+/// A chat is taken for one started without the sandbox only where no sandbox was compiled
+/// for it and none holds it (#2560); a sandboxed one never is, nor one the app does not
+/// have open.
+#[test]
+fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let decided = purlis_core::sandbox::decide_granted(
+        Harness::ClaudeCode,
+        plane.path(),
+        &a_machine(),
+        &|_| true,
+        &purlis_core::sandbox::Person {
+            opt_out: None,
+            level_as: None,
+            made: &purlis_core::sandbox::Made::Relaunch,
+        },
+        None,
+        &purlis_core::sandbox::grant::Grants::default(),
+    )
+    .expect("compiles");
+    let Some(purlis_core::sandbox::Decided::Sandboxed(applied)) = decided else {
+        panic!("not sandboxed");
+    };
+    let open_with = |session: u32, confines: Option<purlis_core::sandbox::Confines>| {
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines,
+                started_with: StartedWith::default(),
+            },
+        );
+    };
+    open_with(1, Some(applied.confines().clone()));
+    open_with(2, None);
+    let unconfined = |session| {
+        chats
+            .login_asker(plane.path(), session)
+            .map(|(_, free)| free)
+    };
+    assert_eq!(unconfined(1), Some(false), "a sandboxed chat");
+    assert_eq!(
+        unconfined(2),
+        Some(true),
+        "a chat started without the sandbox"
+    );
+    assert_eq!(unconfined(3), None, "a chat this app does not have open");
+}
+
+/// A login is read for the persona a chat was started as, as every brokered read of a vault is
+/// (#2560): never the project's default for a chat on no persona, nor the persona a handoff
+/// left it holding.
+#[test]
+fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
+    let plane = a_sandboxed_plane();
+    std::fs::write(
+        plane.path().join(purlis_core::plane::MANIFEST),
+        "[persona]\ndefault = \"devops\"\n\n[sandbox]\nmode = \"on\"\n",
+    )
+    .expect("charter.toml");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let open_as = |session: u32, persona: Option<&str>, held: Option<&str>| {
+        let mut chat = a_resumable_chat_in(plane.path());
+        chat.persona = persona.map(str::to_owned);
+        chat.held = held.map(|held| purlis_core::reopen::HeldGrants {
+            persona: Some(held.to_owned()),
+        });
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat,
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: None,
+                started_with: StartedWith::default(),
+            },
+        );
+    };
+    open_as(1, None, None);
+    open_as(2, Some("qa"), Some("devops"));
+    let (on_none, unconfined) = chats.login_asker(plane.path(), 1).expect("open");
+    assert_eq!(on_none.persona, None, "no default stands in");
+    assert!(unconfined);
+    let (handed, _) = chats.login_asker(plane.path(), 2).expect("open");
+    assert_eq!(handed.persona.as_deref(), Some("qa"), "its own persona");
+    assert!(chats.login_asker(plane.path(), 3).is_none());
+}
+
+/// A board of live asks that writes down what it was told (#2629), standing in for a chat's
+/// proxy that asks live.
+#[derive(Debug, Default)]
+struct Told {
+    allowed: Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>,
+    forgot: Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>,
+}
+
+impl purlis_core::sandbox::Board for Told {
+    fn asks_about(&self, _: &purlis_core::sandbox::hosts::Host) -> bool {
+        false
+    }
+
+    fn allow(
+        &self,
+        host: &purlis_core::sandbox::hosts::Host,
+        by: purlis_core::sandbox::reach::By,
+    ) -> Vec<String> {
+        lock(&self.allowed).push((host.to_string(), by));
+        Vec::new()
+    }
+
+    fn keep_blocked(&self, _: &purlis_core::sandbox::hosts::Host) {}
+
+    fn forget(
+        &self,
+        host: &purlis_core::sandbox::hosts::Host,
+        by: purlis_core::sandbox::reach::By,
+    ) {
+        lock(&self.forgot).push((host.to_string(), by));
+    }
+
+    fn allowed_live(&self) -> Vec<(String, purlis_core::sandbox::reach::By)> {
+        lock(&self.allowed).clone()
+    }
+}
+
+/// What holds a [`Told`] board, as the session host holds a chat's proxy.
+#[derive(Debug)]
+struct HeldWith(Arc<Told>);
+
+impl purlis_core::sandbox::HeldElsewhere for HeldWith {
+    fn id(&self) -> &str {
+        "told"
+    }
+
+    fn withdraw_port(&self, _: u16) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn board(&self) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
+        Some(Arc::clone(&self.0) as Arc<dyn purlis_core::sandbox::Board>)
+    }
+}
+
+/// Chats 1 and 2 open in `plane`, each with its id and a proxy that asks live on a [`Told`]
+/// board.
+fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
+    let chats = restartable_chats_of(plane, Pretend::default());
+    let boards = [Arc::new(Told::default()), Arc::new(Told::default())];
+    for (number, board) in (1..).zip(&boards) {
+        let mut chat = a_resumable_chat_in(plane);
+        chat.identity.id = Some(format!("chat-{number}"));
+        let confinement = purlis_core::sandbox::Confinement::held_on_another_machine(
+            purlis_core::sandbox::Placed {
+                http: 1,
+                socks: 2,
+                tmp: None,
+                routed: None,
+                ssh: None,
+            },
+            Box::new(HeldWith(Arc::clone(board))),
+        );
+        lock(&chats.open).insert(
+            number,
+            Running {
+                chat,
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: Some(confinement),
+                confines: None,
+                started_with: StartedWith::default(),
+            },
+        );
+    }
+    (chats, boards)
+}
+
+fn hosts_of(told: &Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>) -> Vec<String> {
+    lock(told).iter().map(|(host, _)| host.clone()).collect()
+}
+
+/// #2629: **a one-chat Allow reaches only its chat**, applied live: "Allow once" and "Allow
+/// for this chat" each reach the chat they were given for and no other open chat, and with no
+/// chat named they change none. An Allow for every chat of the project reaches each.
+#[test]
+fn a_one_chat_allow_applied_live_reaches_only_its_chat() {
+    use purlis_core::sandbox::grant::Level;
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    for level in [Level::Once, Level::Chat] {
+        let plane = a_sandboxed_plane();
+        let (chats, [one, two]) = two_chats_asking_live(plane.path());
+        let live = chats.allow_live(Some(1), &host, level);
+        assert_eq!(live.reached, [1], "{level:?}");
+        assert_eq!(hosts_of(&one.allowed), ["live.example.com"], "{level:?}");
+        assert!(hosts_of(&two.allowed).is_empty(), "{level:?}: not chat 2");
+
+        let live = chats.allow_live(None, &host, level);
+        assert!(live.reached.is_empty(), "{level:?}: no chat named");
+        assert_eq!(hosts_of(&one.allowed).len(), 1, "{level:?}");
+        assert!(hosts_of(&two.allowed).is_empty(), "{level:?}");
+    }
+    let plane = a_sandboxed_plane();
+    let (chats, [one, two]) = two_chats_asking_live(plane.path());
+    let mut reached = chats.allow_live(None, &host, Level::You).reached;
+    reached.sort_unstable();
+    assert_eq!(reached, [1, 2]);
+    assert_eq!(hosts_of(&one.allowed), ["live.example.com"]);
+    assert_eq!(hosts_of(&two.allowed), ["live.example.com"]);
+}
+
+/// #2629: **a one-chat Allow taken back reaches only its chat**: forgetting "Allow once" or
+/// "Allow for this chat" live reaches the chat it was given for, and with no chat named
+/// changes none, while one for every chat of the project is forgotten by each.
+#[test]
+fn a_one_chat_allow_forgotten_live_reaches_only_its_chat() {
+    use purlis_core::sandbox::grant::Level;
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    for level in [Level::Once, Level::Chat] {
+        let plane = a_sandboxed_plane();
+        let (chats, [one, two]) = two_chats_asking_live(plane.path());
+        let narrowed = Arc::new(Mutex::new(Vec::new()));
+        chats.tell_narrowed_to({
+            let narrowed = Arc::clone(&narrowed);
+            Arc::new(move |session| lock(&narrowed).push(session))
+        });
+        chats.forget_live(Some("chat-1"), &host, level);
+        assert_eq!(hosts_of(&one.forgot), ["live.example.com"], "{level:?}");
+        assert!(hosts_of(&two.forgot).is_empty(), "{level:?}: not chat 2");
+        assert_eq!(*lock(&narrowed), [1], "{level:?}");
+
+        chats.forget_live(None, &host, level);
+        assert_eq!(hosts_of(&one.forgot).len(), 1, "{level:?}: no chat named");
+        assert!(hosts_of(&two.forgot).is_empty(), "{level:?}");
+        assert_eq!(*lock(&narrowed), [1], "{level:?}");
+    }
+    let plane = a_sandboxed_plane();
+    let (chats, [one, two]) = two_chats_asking_live(plane.path());
+    chats.forget_live(None, &host, Level::You);
+    assert_eq!(hosts_of(&one.forgot), ["live.example.com"]);
+    assert_eq!(hosts_of(&two.forgot), ["live.example.com"]);
+}
+
+/// #2629: **a host is never allowed once**, from a chat's Notice: the Allow is refused before
+/// anything is kept, and no open chat's proxy is told of it.
+#[test]
+fn allowing_a_host_once_from_a_notice_is_refused_and_reaches_no_chat() {
+    let plane = a_sandboxed_plane();
+    let (chats, [one, two]) = two_chats_asking_live(plane.path());
+    let audited = Mutex::new(0);
+    let refused = crate::sandboxing::judged_and_kept(
+        plane.path(),
+        &purlis_core::sandbox::Machine::this(),
+        &chats,
+        Some(1),
+        (
+            crate::sandboxing::GrantWhat::Host,
+            "live.example.com",
+            crate::sandboxing::GrantLevel::Once,
+        ),
+        &|_, _| {
+            *lock(&audited) += 1;
+            Ok(())
+        },
+        1,
+    )
+    .expect_err("refused")
+    .to_string();
+    assert_eq!(
+        refused,
+        "purlis allows a host or a folder for this chat, or for longer, not once."
+    );
+    assert_eq!(*lock(&audited), 0);
+    assert!(hosts_of(&one.allowed).is_empty());
+    assert!(hosts_of(&two.allowed).is_empty());
 }

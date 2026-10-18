@@ -46,7 +46,7 @@
  */
 
 import { motionReduced, motionVariables, REDUCE, type Motion } from "./motion";
-import { hueOf, tintHex } from "./tint";
+import { apartChroma, hueOf, tintHex, type Apart } from "./tint";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -381,6 +381,9 @@ export type Theme = {
   /** The tokens that are not colours (#2327), every one present: {@link FLAGS}, the
    *  {@link CURSOR_STYLE} and the {@link LINE_HEIGHT}. */
   typed: Typed;
+  /** How a workspace's colour tints it (#2329, #2393): the recipe the core's theme engine
+   *  resolved for it. The window keeps no list of its own and only does the arithmetic. */
+  tint: TintRecipe;
 };
 
 /** A resolved theme's tokens that are not colours, by token (`purlis_core::theme::Typed`). */
@@ -388,6 +391,20 @@ export type Typed = {
   flags: Readonly<Record<string, boolean>>;
   choices: Readonly<Record<string, string>>;
   numbers: Readonly<Record<string, number>>;
+};
+
+/**
+ * A theme's tint recipe, as the engine hands it (`purlis_core::theme::Tint`): the tokens the
+ * colour of the workspace in front turns on the whole window, the tokens a workspace's colour
+ * turns on its own tab and its chat strip, each workspace colour's hue in this theme, in the
+ * order Settings offers them, and the rules every tint holds. Both lists are empty
+ * for a theme a workspace's colour does not tint.
+ */
+export type TintRecipe = {
+  readonly window: readonly string[];
+  readonly tabs: readonly string[];
+  readonly hues: readonly { readonly name: string; readonly hue: number }[];
+  readonly apart: readonly Apart[];
 };
 
 /** One icon of a theme's set: path data on a 24 grid. */
@@ -502,6 +519,7 @@ export function sameTheme(a: Theme, b: Theme): boolean {
   if (a.name !== b.name || a.appearance !== b.appearance) return false;
   if (TOKENS.some((token) => a.values[token] !== b.values[token])) return false;
   if (JSON.stringify(a.icons ?? {}) !== JSON.stringify(b.icons ?? {})) return false;
+  if (JSON.stringify(a.tint) !== JSON.stringify(b.tint)) return false;
   return (
     JSON.stringify(a.typed) === JSON.stringify(b.typed) &&
     JSON.stringify(a.motion) === JSON.stringify(b.motion) &&
@@ -511,85 +529,114 @@ export function sameTheme(a: Theme, b: Theme): boolean {
 }
 
 /**
- * **What a workspace's colour tints on the whole window** (charter-app#281): the accent, the
- * focus ring and the active-tab wash, from the workspace in front ({@link drawTint}). The
- * operator's *"make same theme but with different collor"* — and not the text, and not the
- * terminal, so every contrast the theme cleared still holds (`contrast.test.ts`).
+ * **The colours a workspace may name** (charter-app#281), in the order Settings offers them: the
+ * names the engine hands each theme's hues by (`purlis_core::extension::project::theme::PALETTE`).
+ * A workspace may also name a `#rrggbb`, whose own hue it tints with.
  */
-export const TINTED_WINDOW: readonly Token[] = [
-  "accent.base",
-  "accent.surface",
-  "focus.ring",
-  "tab.active",
-  // A selected row is drawn in the accent's hue, so it turns with the accent (#1672).
-  "list.selected",
-  "list.selected-edge",
-  // A markdown link and a chart's first series are drawn in the accent in Purlis Classic, and
-  // turn with it as they did when they were the accent (#2327).
-  "markdown.link",
-  "chart.1",
-];
+export const WORKSPACE_COLOURS: readonly string[] = DEFAULT_THEME.tint.hues.map((one) => one.name);
 
-/**
- * **And on a workspace's own tab and its chat strip**: the same, and the layer shades. Set on
- * those elements rather than on the window, because the project strip is not a workspace's and
- * every workspace tab shows its own colour whether or not it is in front
- * ({@link tintVariables}).
- */
-export const TINTED_TABS: readonly Token[] = [
-  ...TINTED_WINDOW,
-  "layer.workspace",
-  "layer.chat",
-  "layer.selected",
-];
+/** The hue a workspace's colour gives in `theme`: a palette name's is the theme's own, a
+ *  `#rrggbb`'s is its own. `undefined` for no colour, one purlis does not read, and a grey. */
+export function hueIn(theme: Theme, colour: string | null | undefined): number | undefined {
+  const named = theme.tint.hues.find((one) => one.name === colour);
+  return named !== undefined ? named.hue : hueOf(colour);
+}
 
-/** Each theme's tints, made once per colour: so a redraw with the same colour is the same
- *  object, and a strip of fifty tabs does the arithmetic once. */
+/** Whether `colour` is one a workspace can be tinted by: a palette name, or a `#rrggbb` with a
+ *  hue. */
+export function isWorkspaceColour(colour: string | null | undefined): boolean {
+  return hueIn(DEFAULT_THEME, colour) !== undefined;
+}
+
+/** Each theme's tints, made once per colour and token list: so a redraw with the same colour is
+ *  the same object, and a strip of fifty tabs does the arithmetic once. */
 const tints = new WeakMap<Theme, Map<string, Theme>>();
 
 /**
- * `theme` with a workspace's colour — a `tint.PALETTE` name or `#rrggbb` — turning
- * {@link TINTED_TABS} to its hue (`tint.ts` has the arithmetic and why the luminance is kept).
- * The theme itself for no colour, or one with no hue.
+ * `theme` with `tokens` turned to the hue `colour` gives in it, every rule the engine hands it
+ * held (`tint.apartChroma`): the accent apart from danger, and Allow's edge from Keep blocked's. The theme itself for no colour, one with no hue, no
+ * hue held apart, or no tokens.
  */
-export function tinted(theme: Theme, colour: string | null | undefined): Theme {
-  const hue = hueOf(colour);
-  if (hue === undefined || colour == null) return theme;
+function tintedAs(
+  theme: Theme,
+  colour: string | null | undefined,
+  tokens: readonly string[],
+): Theme {
+  if (colour == null || tokens.length === 0) return theme;
   let made = tints.get(theme);
   if (made === undefined) {
     made = new Map();
     tints.set(theme, made);
   }
-  const known = made.get(colour);
+  const key = `${colour} ${tokens.join(" ")}`;
+  const known = made.get(key);
   if (known !== undefined) return known;
+  const hue = hueIn(theme, colour);
+  if (hue === undefined) return theme;
+  const rules = theme.tint.apart
+    .map((rule) => ({
+      token: theme.values[rule.token as Token],
+      tokenTinted: tokens.includes(rule.token),
+      from: theme.values[rule.from as Token],
+      fromTinted: tokens.includes(rule.from),
+      distance: rule.distance,
+    }))
+    .filter((rule) => rule.tokenTinted || rule.fromTinted);
+  const most = apartChroma(rules, hue);
+  if (most === undefined) return theme;
   const values = { ...theme.values };
-  for (const token of TINTED_TABS) values[token] = tintHex(theme.values[token], hue);
+  for (const one of tokens) {
+    const value = theme.values[one as Token];
+    // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
+    if (typeof value === "string" && value.startsWith("#"))
+      values[one as Token] = tintHex(value, hue, most);
+  }
   const tint = { ...theme, values };
-  made.set(colour, tint);
+  made.set(key, tint);
   return tint;
 }
 
 /**
- * The custom properties that draw `tokens` of `theme` in a workspace's colour — what a
- * workspace tab and its chat strip put on themselves as a `style`. Empty with no colour, so an
- * element of a workspace without one reads the window's own.
+ * `theme` with a workspace's colour — a palette name or `#rrggbb` — turning the tokens the
+ * theme's recipe tints on a workspace's tab (`theme.tint.tabs`), as the engine's `tinted` does
+ * (`tint.ts` has the arithmetic and why the luminance is kept). The theme itself for no colour,
+ * one with no hue, or a theme a workspace's colour does not tint.
+ */
+export function tinted(theme: Theme, colour: string | null | undefined): Theme {
+  return tintedAs(theme, colour, theme.tint.tabs);
+}
+
+/**
+ * The custom properties that draw `tokens` of `theme` in a colour, whatever the theme's recipe
+ * says — what a persona's mark puts on itself as a `style` (`MARK_TOKENS`): a persona's colour
+ * marks who it is, which a theme that turns the workspace tint off does not take away. Empty with
+ * no colour, so an element without one reads the window's own.
  */
 export function tintVariables(
   theme: Theme,
   colour: string | null | undefined,
   tokens: readonly Token[],
 ): Record<string, string> {
-  const tint = tinted(theme, colour);
+  const tint = tintedAs(theme, colour, tokens);
   if (tint === theme) return {};
   return Object.fromEntries(tokens.map((token) => [property(token), tint.values[token]]));
+}
+
+/**
+ * The custom properties a workspace's tab and its chat strip put on themselves as a `style`:
+ * the tokens the theme's recipe tints there, in the workspace's colour. Empty with no colour, or
+ * in a theme a workspace's colour does not tint, so the element reads the window's own.
+ */
+export function tabTint(theme: Theme, colour: string | null | undefined): Record<string, string> {
+  return tintVariables(theme, colour, theme.tint.tabs as readonly Token[]);
 }
 
 /** The colour of the workspace in front, which the window's accent is drawn in. */
 let tint: string | null = null;
 
 /**
- * Tints the window's accent and focus ring with the colour of the workspace in front
- * (charter-app#281), or takes the tint off with `null`. The theme is not redrawn and the
+ * Tints the tokens the theme's recipe tints on the whole window with the colour of the workspace
+ * in front (charter-app#281), or takes the tint off with `null`. The theme is not redrawn and the
  * terminal is not told: nothing it draws is tinted.
  */
 export function drawTint(colour: string | null): void {
@@ -915,10 +962,12 @@ export function onTerminalFont(follow: (family: string, arrived: boolean) => voi
   };
 }
 
-/** Writes {@link TINTED_WINDOW} of `theme` in `colour` onto `to`, or as the theme has them. */
+/** Writes the tokens `theme`'s recipe tints on the whole window (`theme.tint.window`) in
+ *  `colour` onto `to`, or as the theme has them. */
 function paint(theme: Theme, to: HTMLElement, colour: string | null): void {
   const tint = tinted(theme, colour);
-  for (const token of TINTED_WINDOW) to.style.setProperty(property(token), tint.values[token]);
+  for (const token of theme.tint.window as readonly Token[])
+    to.style.setProperty(property(token), tint.values[token]);
 }
 
 /** The class the crossfade between two workspaces' themes puts on the root (`App.css`). */
