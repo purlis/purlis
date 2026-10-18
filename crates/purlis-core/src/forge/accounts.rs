@@ -52,6 +52,9 @@ use super::{Forge, ForgeError, Kind, host_ok};
 use crate::names::KEYCHAIN_PREFIX;
 use crate::secrets::keyring::{FileStore, OsStore, Presence, STUB_FILE, Store};
 
+mod memory;
+use memory::Remembering;
+
 /// The accounts file, in purlis's directory of the config home (ADR 0077 §8).
 pub const FILE: &str = "forge-accounts.json";
 
@@ -63,7 +66,7 @@ const MOST_BYTES: u64 = 1 << 20;
 
 /// The keyring item's account field: the token. A browser sign-in keeps its pair under the same
 /// item (ADR 0077 §3, one write): see [`Pair`].
-const ITEM_ACCOUNT: &str = "token";
+pub(super) const ITEM_ACCOUNT: &str = "token";
 
 /// Where [`FILE`] is under the config home `config_root`.
 pub fn path(config_root: &Path) -> PathBuf {
@@ -117,14 +120,18 @@ fn service_of(host: &str, id: &str) -> String {
 /// The keyring this build keeps forge tokens in: the system's, or, in a fenced build (every test
 /// build and the app's e2e build), a stub file in purlis's directory of the config home, so no
 /// test reaches the person's keychain.
+///
+/// **Each process asks it about an item once** (#2656): every store this hands out in one
+/// process shares that process's memory of what it read and wrote ([`memory`]), so a listing
+/// or a request answered once is answered from memory for as long as the process runs.
 pub fn keyring_at(config_root: &Path) -> Box<dyn Store> {
-    if crate::fence::FENCED {
-        Box::new(FileStore::at(
-            crate::machine::dir(config_root).join(STUB_FILE),
-        ))
+    let remembering = if crate::fence::FENCED {
+        let stub = crate::machine::dir(config_root).join(STUB_FILE);
+        Remembering::of(&stub, || Box::new(FileStore::at(stub.clone())))
     } else {
-        Box::new(OsStore)
-    }
+        Remembering::of(Path::new(""), || Box::new(OsStore))
+    };
+    Box::new(remembering)
 }
 
 // ---------------------------------------------------------------------------------------
@@ -693,6 +700,17 @@ pub fn list(config_root: &Path, keyring: &dyn Store) -> Result<Vec<ForgeAccount>
         .collect())
 }
 
+/// This machine's accounts as the accounts file lists them, without asking the keyring whether
+/// each item is there: for a caller about to read the token anyway, whose read says that itself
+/// (#2656). An account whose item is gone is listed as the file says.
+pub fn listed(config_root: &Path) -> Result<Vec<ForgeAccount>, String> {
+    Ok(read(config_root)?
+        .accounts
+        .iter()
+        .filter_map(account_of)
+        .collect())
+}
+
 /// The account the person in the window is signed in to `kind` on `host` as: the first signed-in
 /// account on that host, in the order they were added. Several accounts on one host are told
 /// apart by repo bindings (ADR 0077 §6), which are not written yet; until they are, the first
@@ -739,7 +757,8 @@ pub fn imported_on(config_root: &Path, kind: Kind, host: &str) -> bool {
     })
 }
 
-/// `account`'s token, read from its own keyring item for one request (ADR 0077 §7), or `None`
+/// `account`'s token, read from its own keyring item once per process (ADR 0070 §4 as amended
+/// 2026-10-18, [`keyring_at`]) and handed out for one request, or `None`
 /// when the item is provably gone: the access token, whichever way the account was signed in.
 /// The `String` the keyring answered with is wiped before this returns, so the only copy left
 /// is the `SecretString`, and the value is registered with [`crate::applog::keep_out`] so no log

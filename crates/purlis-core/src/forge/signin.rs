@@ -18,9 +18,12 @@
 //! as the host's signed-in account; every other caller is passed on unchanged, so a chat, an
 //! MCP call, a trigger and a `purlis` command keep the CLI route.
 //!
-//! **The token is read per request.** [`KeyringToken`] reads it from the account's own keyring
-//! item each time a request is sent, wipes the `String` the keyring answered with, and registers
-//! the value with [`crate::applog::keep_out`]. Nothing here keeps it between requests.
+//! **The token is handed out per request, and read from the keyring once per process.**
+//! [`KeyringToken`] takes it from the account's own keyring item each time a request is sent,
+//! wipes the `String` it was answered with, and registers the value with
+//! [`crate::applog::keep_out`]. The keyring itself is asked once per process: the store
+//! [`accounts::keyring_at`] hands out remembers the item for as long as this process runs, so
+//! the Keychain asks the person at most once (ADR 0070 §4 as amended 2026-10-18, #2656).
 //!
 //! **With no account for a host**, the window's calls fall back to `gh`/`glab`, and [`ready`]'s
 //! refusal names the purlis sign-in as the fix, so a machine without either CLI is told where to
@@ -43,7 +46,8 @@ use super::{Failure, Forge, ForgeError};
 /// Where the person signs in, in the window's words.
 pub const SIGN_IN_AT: &str = "Settings › You › Accounts";
 
-/// One account's token, read from its own keyring item each time a request is sent, and
+/// One account's token, taken from its own keyring item (read once per process) each time a
+/// request is sent, and
 /// renewed first when a browser sign-in's token is about to expire ([`Refresher`], ADR 0077
 /// §3).
 pub struct KeyringToken {
