@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792345833288,
+  "lastUpdate": 1792347053049,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17136,6 +17136,48 @@ window.BENCHMARK_DATA = {
             "value": 102.364809,
             "unit": "ms",
             "extra": "median of 5 runs: 100.287, 102.042, 102.365, 102.552, 102.935 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "945484097c71947c8fcc3549ed55a242433067da",
+          "message": "purlis theme import and purlis theme export (#2584)\n\n`purlis theme import <file>` makes a theme folder from a VS Code colour\ntheme, a base16 or base24 scheme, an iTerm2 colour preset, a Ghostty theme\nor a theme folder's zip, through a fixed mapping table per kind. Every\nsource key no token takes is listed with why, the new theme's check is\nshown, and the folder is put in place only when the engine draws it. The\ntarget is never replaced without --force; with it, a folder there is\nexchanged in one step. A theme folder's id has one grammar and is never\none purlis keeps for its own themes. `purlis theme export <folder>` writes\na theme folder as a zip that import, or unzip, gives back file for file.\nSources, nesting and zips are bounded; a zip entry outside one theme\nfolder, a link and an encrypted entry refuse the zip. The tables are\nprinted in `purlis docs show themes`, held to the engine's by a test.\n\nCloses #2334. Part of #2313.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T22:04:55+04:00",
+          "tree_id": "3088da1ec084c80dbd870f4dad12637f81beba4e",
+          "url": "https://github.com/purlis/purlis/commit/945484097c71947c8fcc3549ed55a242433067da"
+        },
+        "date": 1792347051952,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2961585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.270, 0.289, 0.296, 0.301, 0.307 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6479175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.551, 16.597, 16.648, 16.652, 16.662 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7645985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.397, 101.645, 101.765, 102.379, 102.477 ms"
           }
         ]
       }
