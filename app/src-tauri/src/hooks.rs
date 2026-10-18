@@ -730,7 +730,10 @@ fn choosable(
         }
         // No service is chosen: purlis lists none it can allow
         // (`services::GRANTABLE_SERVICES`). The certificate check, the one it listed, is the
-        // project's setting and never a grant (R1), and its Notice says what stands.
+        // project's setting and never a grant (R1), and its Notice says what stands. The
+        // chooser's service half is kept for the next service listed there (#1927): listing
+        // one also needs an arm here, `(Operation::Lookup, Kind::SystemService)` to
+        // `GrantWhat::Service`, and a sentence for its Notice beside `CHOOSE_SOCKET_SAID`.
         _ => None,
     }
 }

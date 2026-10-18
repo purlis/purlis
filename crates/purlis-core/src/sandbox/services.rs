@@ -271,6 +271,12 @@ fn discovered_by(
 /// 2026-10-13): every sandboxed chat has it unless the project or policy turns it off, so
 /// there is nothing of it to choose or allow. A service is listed here only once purlis can
 /// say what allowing it means.
+///
+/// **The window's service chooser is kept for that service** (#1927), not removed: the list,
+/// the commands and the form (`sandboxchoose`, `SandboxChoose.tsx`) serve sockets and services
+/// alike, and their service half is tested. Listing one here is not enough to offer it: the
+/// app's `hooks::choosable` offers a service to choose only once it is given back its arm,
+/// with the sentence its Notice says in place of "nothing to allow".
 pub const GRANTABLE_SERVICES: &[&str] = &[];
 
 impl Known {
