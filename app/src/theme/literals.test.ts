@@ -401,11 +401,17 @@ describe("the stylesheet and the vocabulary agree", () => {
    *  in (ADR 0094). A sheet that lifts a surface draws with it through the elevation token, and
    *  since every overlay is one surface at one lift (#1845) none names it directly. */
   const geometry = nonEmpty("src/theme/geometry.css");
-  const used = new Set(
-    [css, editor, geometry].flatMap((text) =>
+  /** The native window's drawer (#2328): what the operating system draws of the window is
+   *  handed a token's value by name, `values["window.background"]`, rather than read by a sheet. */
+  const native = [...nonEmpty("src/theme/native.ts").matchAll(/values\["([a-z0-9.-]+)"\]/g)].map(
+    (hit) => property(hit[1] as Token),
+  );
+  const used = new Set([
+    ...[css, editor, geometry].flatMap((text) =>
       [...text.matchAll(/var\((--[a-z0-9-]+)/g)].map((hit) => hit[1]),
     ),
-  );
+    ...native,
+  ]);
   /** A theme's colour and motion tokens, and the core geometry (ADR 0094), which
    *  `geometry.css` declares and `geometry.test.ts` holds to exactly this list. */
   const declared = new Set([
@@ -490,19 +496,12 @@ describe("the stylesheet and the vocabulary agree", () => {
       "chart.7",
       "chart.8",
     ];
-    /** The native window's colour before the first frame (#2327), which the window is
-     *  created with rather than any stylesheet drawing it (#2328, #2331). */
-    const native: readonly Token[] = ["window.background"];
     const unread = TOKENS.filter(
-      (token) =>
-        !terminal(token) &&
-        !further.includes(token) &&
-        !native.includes(token) &&
-        !used.has(property(token)),
+      (token) => !terminal(token) && !further.includes(token) && !used.has(property(token)),
     );
     expect(unread).toEqual([]);
     expect(
-      [...further, ...native].filter((token) => used.has(property(token))),
+      further.filter((token) => used.has(property(token))),
       "drawn now: not exempt",
     ).toEqual([]);
   });

@@ -408,6 +408,7 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
             role,
             within: target(within),
         },
+        Act::Changes { page: on } => Call::Changes { page: page(on) },
         Act::Click { target: t } => Call::Click {
             target: Ref::new(t),
         },

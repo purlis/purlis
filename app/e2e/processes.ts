@@ -75,17 +75,53 @@ export function harnessesRunning(): number {
   return processes().filter((row) => runs(row.program, HARNESS)).length;
 }
 
-/** The processes running `binary`, by pid. The app under test is one of them. */
+/**
+ * The first argument the window gives its own binary when it starts it as the session host
+ * (`purlis_host::SERVE_FOR_THE_WINDOW`, #2085). Spelled here rather than read from the Rust
+ * side; `sessionhost/tests.rs` pins the same word.
+ */
+export const SESSION_HOST_ARGUMENT = "purlis-serve-for-the-window";
+
+/** The app's processes, by pid: its windows, and the session hosts they started. */
+export interface AppProcesses {
+  windows: number[];
+  sessionHosts: number[];
+}
+
+/**
+ * The processes in `listing` (`ps -A -o pid=,command=`) that run `binary`, split into the app's
+ * windows and its session hosts.
+ *
+ * By the command line, not the parent: the host is the window's own binary started again with
+ * {@link SESSION_HOST_ARGUMENT} as its first argument, and a window is that binary started with
+ * anything else. Counting by the binary alone found every run's host as a second app (#2384).
+ */
+export function appProcessesIn(listing: string, binary: string): AppProcesses {
+  const found: AppProcesses = { windows: [], sessionHosts: [] };
+  for (const raw of listing.split("\n")) {
+    const line = raw.trim();
+    const pid = Number.parseInt(line, 10);
+    const command = line.slice(line.indexOf(" ") + 1).trimStart();
+    if (!Number.isInteger(pid) || !(command === binary || command.startsWith(`${binary} `))) {
+      continue;
+    }
+    const first = command.slice(binary.length).trimStart().split(/\s+/)[0];
+    (first === SESSION_HOST_ARGUMENT ? found.sessionHosts : found.windows).push(pid);
+  }
+  return found;
+}
+
+/** The app's processes running `binary`, asked of the operating system. */
+export function appProcesses(binary: string): AppProcesses {
+  return appProcessesIn(ps(["-A", "-o", "pid=,command="]), binary);
+}
+
+/**
+ * The app's windows running `binary`, by pid: the app under test is one of them. Its session
+ * host runs the same binary and is left out (#2384).
+ */
 export function running(binary: string): number[] {
-  return ps(["-A", "-o", "pid=,command="])
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => {
-      const command = line.slice(line.indexOf(" ") + 1).trimStart();
-      return command === binary || command.startsWith(`${binary} `);
-    })
-    .map((line) => Number.parseInt(line, 10))
-    .filter((pid) => Number.isInteger(pid));
+  return appProcesses(binary).windows;
 }
 
 /** One look at a process: how much memory it holds, how many threads and files it has open. */
@@ -274,13 +310,19 @@ export function collectEvidence(app: string, why: string): string {
   const report = join(LOGS, `evidence-${stamp}.txt`);
   const lines: string[] = [`what failed: ${why}`, `app: ${app}`];
 
-  const pids = running(app);
+  const { windows: pids, sessionHosts } = appProcesses(app);
   if (pids.length === 0) {
     lines.push("the app is NOT running: the process is gone, not only its WebDriver server");
   }
   for (const pid of pids) {
     lines.push(`the app is running as pid ${pid}: ${JSON.stringify(sample(pid))}`);
     lines.push("  so what stopped answering was inside the process, not the process itself");
+  }
+  for (const pid of sessionHosts) {
+    lines.push(`its session host is running as pid ${pid}: ${JSON.stringify(sample(pid))}`);
+  }
+  if (sessionHosts.length === 0) {
+    lines.push("no session host is running (chats ran in the window, or the host is gone)");
   }
   lines.push(`fake harnesses running: ${harnessesRunning()}`);
 

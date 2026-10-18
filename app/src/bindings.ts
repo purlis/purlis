@@ -2421,10 +2421,10 @@ export const commands = {
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 	 */
-	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean, at: {
+	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread, at })),
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
@@ -3168,6 +3168,19 @@ export const commands = {
 	 *  file keeps goes with it: text sizes, editor, Notices dismissed. Answers where it went.
 	 */
 	useDefaultLayout: () => typedError<string, string>(__TAURI_INVOKE("use_default_layout")),
+	/**
+	 *  **Draws this window natively as the theme the page just drew**: `appearance` is the drawn
+	 *  appearance's tag (`dark` or `light`) and `background` its `window.background`, both read in
+	 *  the engine's grammar and refused otherwise. `follows_system` leaves the native parts to the
+	 *  operating system, whose appearance the theme is drawn in already. Only the focused window
+	 *  sets the appearance; every window sets its own colour.
+	 */
+	drawNativeWindow: (appearance: string, background: string, followsSystem: boolean) => typedError<null, string>(__TAURI_INVOKE("draw_native_window", { appearance, background, followsSystem })),
+	/**
+	 *  **The appearance the operating system draws this window's native parts in**: `dark` or
+	 *  `light`. The scenario tests ask; nothing in the UI does.
+	 */
+	nativeWindowDrawn: () => typedError<string, string>(__TAURI_INVOKE("native_window_drawn")),
 	/**  One secret's value, to show in the window for a while ([`reveal`]). */
 	vaultSecretReveal: (plane: PlaneId, vault: string, key: string) => typedError<SecretValue, string>(__TAURI_INVOKE("vault_secret_reveal", { plane, vault, key })),
 	/**

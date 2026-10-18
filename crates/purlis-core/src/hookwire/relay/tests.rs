@@ -42,6 +42,8 @@ const ECHOES: u32 = 3;
 
 /// A chat whose `secret exec`, in a hearing that has one, waits for a test to let it end.
 const WAITS_FOR_THE_GATE: u32 = 5;
+/// The chat whose secret exec's run panics.
+const GOES_WRONG: u32 = 6;
 
 fn report(chat: u32) -> Report {
     Report {
@@ -137,6 +139,7 @@ fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
             if ask.chat == ENDS_UNREAD {
                 return;
             }
+            assert_ne!(ask.chat, GOES_WRONG, "the command's run went wrong");
             for line in reader.lines() {
                 let line = line.unwrap();
                 writeln!(writer, "ran {line}").unwrap();
@@ -164,10 +167,13 @@ fn relayed(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
                 relaying.replied(id, replied);
             });
             let heeding = Arc::clone(&heeding);
-            if Heeding::waits(&heard) {
-                std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
-            } else {
-                heeding.hear(LINK, id, heard, reply);
+            // One not taken is answered already.
+            if heeding.admit(LINK, id, &heard, &reply) {
+                if Heeding::waits(&heard) {
+                    std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
+                } else {
+                    heeding.hear(LINK, id, heard, reply);
+                }
             }
             true
         })
@@ -345,12 +351,26 @@ fn input(of: u64, line: &str) -> Heard {
     }
 }
 
+fn an_exec(chat: u32) -> Heard {
+    Heard::SecretExec(brokered::Ask {
+        chat,
+        secret_exec: Default::default(),
+    })
+}
+
+/// Takes the `secret exec` handed on as `id`, of chat `chat`, over link `link`, as the window's
+/// link does in the order the lines came, before it is heard: whether it was taken.
+fn admitted(heeding: &Heeding, link: u64, id: u64, chat: u32) -> bool {
+    heeding.admit(link, id, &an_exec(chat), &nothing())
+}
+
 /// The window's link hears a `secret exec` on a thread of its own and its input in order on
 /// another, so the input, and its end, can come before the exec has begun (#2271): the exec
 /// still reads every line, then the end, and ends.
 #[test]
 fn a_secret_execs_input_heard_before_it_began_is_still_read_to_its_end() {
     let heeding = a_heeding();
+    assert!(admitted(&heeding, LINK, 7, ECHOES));
 
     heeding.hear(LINK, 8, input(7, "one"), nothing());
     heeding.hear(LINK, 9, Heard::InputEnded { of: 7 }, nothing());
@@ -389,6 +409,7 @@ fn a_secret_execs_input_heard_after_it_ended_is_not_kept() {
     assert_eq!(an_exec_heard(&heeding, 1, ENDS_UNREAD), [Replied::Ended]);
     heeding.hear(LINK, 2, input(1, "late"), nothing());
     heeding.hear(LINK, 3, Heard::InputEnded { of: 1 }, nothing());
+    assert!(admitted(&heeding, LINK, 1, ECHOES));
     heeding.hear(LINK, 4, input(1, "own"), nothing());
     heeding.hear(LINK, 5, Heard::InputEnded { of: 1 }, nothing());
 
@@ -401,8 +422,10 @@ fn a_secret_execs_input_heard_after_it_ended_is_not_kept() {
 fn when_the_link_ends_no_secret_execs_input_is_kept() {
     let heeding = a_heeding();
     heeding.linked(LINK);
+    assert!(admitted(&heeding, LINK, 5, ECHOES));
     heeding.hear(LINK, 2, input(5, "typed"), nothing());
 
+    assert!(admitted(&heeding, LINK, 6, ECHOES));
     let (replies, replied) = mpsc::channel();
     std::thread::spawn({
         let heeding = Arc::clone(&heeding);
@@ -434,6 +457,7 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
         "the running exec's input did not end with the link"
     );
     heeding.linked(AGAIN);
+    assert!(admitted(&heeding, AGAIN, 5, ECHOES));
     heeding.hear(AGAIN, 4, Heard::InputEnded { of: 5 }, nothing());
     assert_eq!(
         an_exec_heard_on(&heeding, AGAIN, 5, ECHOES),
@@ -448,11 +472,14 @@ fn after_the_window_links_again_a_reused_number_reads_only_its_own_input() {
     let heeding = a_heeding();
     heeding.linked(LINK);
     assert_eq!(an_exec_heard(&heeding, 1, ENDS_UNREAD), [Replied::Ended]);
+    assert!(admitted(&heeding, LINK, 2, ECHOES));
     heeding.hear(LINK, 2, input(2, "before"), nothing());
 
     heeding.linked(AGAIN);
     // The end of the link before, told late, is not this link's.
     heeding.unlinked(LINK);
+    assert!(admitted(&heeding, AGAIN, 1, ECHOES));
+    assert!(admitted(&heeding, AGAIN, 2, ECHOES));
     heeding.hear(AGAIN, 3, input(1, "own"), nothing());
     heeding.hear(AGAIN, 4, Heard::InputEnded { of: 1 }, nothing());
     heeding.hear(AGAIN, 5, Heard::InputEnded { of: 2 }, nothing());
@@ -493,6 +520,7 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
         .expect("the exec before began");
 
     heeding.linked(AGAIN);
+    assert!(admitted(&heeding, AGAIN, 1, ECHOES));
     let (replies, replied) = mpsc::channel();
     std::thread::spawn({
         let heeding = Arc::clone(&heeding);
@@ -538,6 +566,7 @@ fn a_secret_exec_that_could_not_begin_ends_and_keeps_no_input() {
     let reply: Reply = Arc::new(move |r| {
         let _ = replies.send(r);
     });
+    assert!(admitted(&heeding, LINK, 3, ECHOES));
     heeding.hear(LINK, 2, input(3, "typed"), nothing());
 
     heeding.not_begun(LINK, 3, &reply);
@@ -545,6 +574,7 @@ fn a_secret_exec_that_could_not_begin_ends_and_keeps_no_input() {
     heeding.hear(LINK, 5, Heard::InputEnded { of: 3 }, nothing());
 
     assert_eq!(replied.try_iter().collect::<Vec<_>>(), [Replied::Ended]);
+    assert!(admitted(&heeding, LINK, 3, ECHOES));
     heeding.hear(LINK, 6, input(3, "own"), nothing());
     heeding.hear(LINK, 7, Heard::InputEnded { of: 3 }, nothing());
     assert_eq!(an_exec_heard(&heeding, 3, ECHOES), ran(&["own"]));
@@ -560,6 +590,8 @@ fn a_line_from_a_link_that_is_not_the_current_one_is_dropped() {
 
     heeding.hear(LINK, 2, input(1, "old"), nothing());
     heeding.hear(LINK, 3, Heard::InputEnded { of: 1 }, nothing());
+    assert!(!admitted(&heeding, LINK, 9, ECHOES));
+    assert!(admitted(&heeding, AGAIN, 1, ECHOES));
     heeding.hear(AGAIN, 4, input(1, "own"), nothing());
     heeding.hear(AGAIN, 5, Heard::InputEnded { of: 1 }, nothing());
 
@@ -582,6 +614,8 @@ fn a_secret_exec_not_begun_is_kept_at_most_so_much_input() {
     let heeding = a_heeding();
     let all = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST);
     let one_more = bytes('b', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST + 1);
+    assert!(admitted(&heeding, LINK, 7, ECHOES));
+    assert!(admitted(&heeding, LINK, 8, ECHOES));
 
     heeding.hear(LINK, 2, input(7, &all), nothing());
     heeding.hear(LINK, 3, input(7, "after"), nothing());
@@ -598,6 +632,7 @@ fn a_secret_exec_not_begun_is_kept_at_most_so_much_input() {
 fn input_after_the_cap_is_not_kept() {
     let heeding = a_heeding();
     let half = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST / 2);
+    assert!(admitted(&heeding, LINK, 7, ECHOES));
     heeding.hear(LINK, 2, input(7, &half), nothing());
     heeding.hear(LINK, 3, input(7, &half), nothing());
     heeding.hear(LINK, 4, input(7, "past"), nothing());
@@ -605,6 +640,7 @@ fn input_after_the_cap_is_not_kept() {
 
     heeding.hear(LINK, 5, input(7, "late"), nothing());
     heeding.hear(LINK, 6, Heard::InputEnded { of: 7 }, nothing());
+    assert!(admitted(&heeding, LINK, 7, ECHOES));
     heeding.hear(LINK, 7, input(7, "own"), nothing());
     heeding.hear(LINK, 8, Heard::InputEnded { of: 7 }, nothing());
 
@@ -616,11 +652,13 @@ fn input_after_the_cap_is_not_kept() {
 fn input_after_the_cap_for_an_exec_that_could_not_begin_is_not_kept() {
     let heeding = a_heeding();
     let past = bytes('b', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST + 1);
+    assert!(admitted(&heeding, LINK, 3, ECHOES));
     heeding.hear(LINK, 2, input(3, &past), nothing());
 
     heeding.not_begun(LINK, 3, &nothing());
     heeding.hear(LINK, 3, input(3, "late"), nothing());
     heeding.hear(LINK, 4, Heard::InputEnded { of: 3 }, nothing());
+    assert!(admitted(&heeding, LINK, 3, ECHOES));
     heeding.hear(LINK, 5, input(3, "own"), nothing());
     heeding.hear(LINK, 6, Heard::InputEnded { of: 3 }, nothing());
 
@@ -635,6 +673,9 @@ fn every_secret_exec_not_begun_on_a_link_is_kept_at_most_so_much_input_together(
     let heeding = a_heeding();
     let each = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST);
     let execs = (EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST / AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST) as u64;
+    for exec in 1..=execs + 1 {
+        assert!(admitted(&heeding, LINK, exec, ECHOES));
+    }
     for exec in 1..=execs {
         heeding.hear(LINK, 100 + exec, input(exec, &each), nothing());
     }
@@ -647,6 +688,206 @@ fn every_secret_exec_not_begun_on_a_link_is_kept_at_most_so_much_input_together(
     for exec in 1..=execs {
         assert_eq!(an_exec_heard(&heeding, exec, ECHOES), ran(&[&each]));
     }
+}
+
+/// How many `secret exec`s the current link tracks in `heeding` now.
+fn tracked(heeding: &Heeding) -> usize {
+    lock(&heeding.inputs).by_exec.len()
+}
+
+/// A chat other than the ones the window's hearing knows, for exec `exec` of many: no more
+/// than [`EXECS_A_CHAT_HAS_TRACKED_AT_MOST`] numbers in a row share one.
+fn a_chat_of_many(exec: u64) -> u32 {
+    1000 + (exec / EXECS_A_CHAT_HAS_TRACKED_AT_MOST as u64) as u32
+}
+
+/// How many `secret exec`s a link tracks is bounded (#2571): the exec that brings it to exactly
+/// [`EXECS_A_LINK_TRACKS_AT_MOST`] is taken, and still reads its input to its end; one past it
+/// is not taken, until one ends.
+#[test]
+fn a_link_tracks_at_most_so_many_secret_execs() {
+    let heeding = a_heeding();
+    let last = EXECS_A_LINK_TRACKS_AT_MOST as u64;
+    for exec in 1..last {
+        assert!(admitted(&heeding, LINK, exec, a_chat_of_many(exec)));
+    }
+
+    assert!(admitted(&heeding, LINK, last, ECHOES));
+    assert!(!admitted(&heeding, LINK, last + 1, ECHOES));
+    assert_eq!(tracked(&heeding), EXECS_A_LINK_TRACKS_AT_MOST);
+
+    heeding.hear(LINK, 1, input(last, "kept"), nothing());
+    heeding.hear(LINK, 2, Heard::InputEnded { of: last }, nothing());
+    assert_eq!(an_exec_heard(&heeding, last, ECHOES), ran(&["kept"]));
+    assert!(admitted(&heeding, LINK, last + 1, ECHOES));
+}
+
+/// One chat's `secret exec`s cannot crowd out another's (#2571): a chat has at most
+/// [`EXECS_A_CHAT_HAS_TRACKED_AT_MOST`] tracked on a link, another chat's are still taken, and
+/// the chat has room again once one of its own ends.
+#[test]
+fn one_chats_secret_execs_cannot_crowd_out_anothers() {
+    let heeding = a_heeding();
+    let most = EXECS_A_CHAT_HAS_TRACKED_AT_MOST as u64;
+    for exec in 1..=most {
+        assert!(admitted(&heeding, LINK, exec, ECHOES));
+    }
+
+    assert!(!admitted(&heeding, LINK, most + 1, ECHOES));
+    assert!(admitted(&heeding, LINK, most + 2, ENDS_UNREAD));
+
+    heeding.hear(LINK, 1, Heard::InputEnded { of: 1 }, nothing());
+    assert_eq!(an_exec_heard(&heeding, 1, ECHOES), [Replied::Ended]);
+    assert!(admitted(&heeding, LINK, most + 3, ECHOES));
+}
+
+/// An exec taken while its link tracks as many as it may is still told its input ended, and
+/// ends: lines for numbers not taken neither crowd it out nor are kept (#2571).
+#[test]
+fn an_exec_taken_at_the_cap_is_still_told_its_input_ended() {
+    let heeding = a_heeding();
+    let last = EXECS_A_LINK_TRACKS_AT_MOST as u64;
+    for exec in 1..last {
+        assert!(admitted(&heeding, LINK, exec, a_chat_of_many(exec)));
+    }
+    assert!(admitted(&heeding, LINK, last, ECHOES));
+
+    for stray in last + 1..last + 1000 {
+        heeding.hear(LINK, stray, input(stray, "stray"), nothing());
+        heeding.hear(LINK, stray, Heard::InputEnded { of: stray }, nothing());
+    }
+    heeding.hear(LINK, 2, Heard::InputEnded { of: last }, nothing());
+
+    assert_eq!(tracked(&heeding), EXECS_A_LINK_TRACKS_AT_MOST);
+    assert_eq!(an_exec_heard(&heeding, last, ECHOES), [Replied::Ended]);
+}
+
+/// A `secret exec` heard with no room for it on its link is not run and is told ended at once,
+/// never left waiting for input that is not kept, and nothing more is tracked (#2571).
+#[test]
+fn a_secret_exec_with_no_room_ends_at_once_and_keeps_nothing() {
+    let heeding = a_heeding();
+    for exec in 1..=EXECS_A_LINK_TRACKS_AT_MOST as u64 {
+        assert!(admitted(&heeding, LINK, exec, a_chat_of_many(exec)));
+    }
+
+    let past = EXECS_A_LINK_TRACKS_AT_MOST as u64 + 1;
+    assert_eq!(an_exec_heard(&heeding, past, ECHOES), [Replied::Ended]);
+    assert_eq!(tracked(&heeding), EXECS_A_LINK_TRACKS_AT_MOST);
+}
+
+/// A link that sends execs, their input and its end, execs that could not begin, and lines for
+/// numbers it never took keeps a bounded number of entries (#2571).
+#[test]
+fn a_link_sending_many_numbers_keeps_a_bounded_number_of_entries() {
+    let heeding = a_heeding();
+    let many = 10 * EXECS_A_LINK_TRACKS_AT_MOST as u64;
+    for exec in 1..=many {
+        admitted(&heeding, LINK, exec, 1000 + (exec % 16) as u32);
+        heeding.hear(LINK, exec, input(exec, "x"), nothing());
+        heeding.hear(LINK, exec, Heard::InputEnded { of: exec }, nothing());
+        heeding.hear(LINK, exec, input(many + exec, "y"), nothing());
+        heeding.hear(LINK, exec, Heard::InputEnded { of: many + exec }, nothing());
+        heeding.not_begun(LINK, 2 * many + exec, &nothing());
+    }
+
+    assert_eq!(tracked(&heeding), EXECS_A_LINK_TRACKS_AT_MOST);
+}
+
+/// The bytes kept for execs not begun are counted as they come and go: an exec that begins, or
+/// could not, gives its bytes back, and the end of an exec's input does not count them twice
+/// (#2571).
+#[test]
+fn the_bytes_of_an_exec_that_began_or_could_not_are_room_again() {
+    let heeding = a_heeding();
+    let each = bytes('a', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST);
+    let execs = (EXECS_NOT_BEGUN_ARE_KEPT_AT_MOST / AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST) as u64;
+    for exec in 1..=execs + 2 {
+        assert!(admitted(&heeding, LINK, exec, ECHOES));
+    }
+    for exec in 1..=execs {
+        heeding.hear(LINK, 100 + exec, input(exec, &each), nothing());
+        heeding.hear(LINK, 200 + exec, Heard::InputEnded { of: exec }, nothing());
+    }
+
+    assert_eq!(an_exec_heard(&heeding, 1, ECHOES), ran(&[&each]));
+    heeding.not_begun(LINK, 2, &nothing());
+    for exec in [execs + 1, execs + 2] {
+        heeding.hear(LINK, 300 + exec, input(exec, &each), nothing());
+        heeding.hear(LINK, 400 + exec, Heard::InputEnded { of: exec }, nothing());
+    }
+
+    assert_eq!(an_exec_heard(&heeding, execs + 1, ECHOES), ran(&[&each]));
+    assert_eq!(an_exec_heard(&heeding, execs + 2, ECHOES), ran(&[&each]));
+}
+
+/// What is logged as a link passes a cap: one warning for each cap on each link, never one per
+/// line or per exec, and never what the input said (#2571).
+#[test]
+fn passing_a_cap_is_warned_of_once_per_link_without_the_input() {
+    let logged = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer({
+            let logged = Arc::clone(&logged);
+            move || Shared(Arc::clone(&logged))
+        })
+        .finish();
+    let heeding = a_heeding();
+    let secret = "do-not-log-me";
+    let past = format!("{secret}{}", bytes('s', AN_EXEC_NOT_BEGUN_IS_KEPT_AT_MOST));
+    let many = 3 * EXECS_A_LINK_TRACKS_AT_MOST as u64;
+
+    let warnings = |link: u64| {
+        heeding.linked(link);
+        for exec in 1..=many {
+            admitted(&heeding, link, exec, 1000 + (exec % 16) as u32);
+            heeding.hear(link, 2 * exec, input(exec, &past), nothing());
+            heeding.hear(link, 2 * exec + 1, input(exec, secret), nothing());
+        }
+        let said = String::from_utf8(std::mem::take(&mut *logged.lock().unwrap())).unwrap();
+        assert!(!said.contains(secret), "the input was logged: {said}");
+        said.lines().filter(|line| line.contains("WARN")).count()
+    };
+    tracing::subscriber::with_default(subscriber, || {
+        assert_eq!(warnings(LINK), 2, "one for the bytes, one for the count");
+        assert_eq!(warnings(LINK), 0, "the same link again");
+        assert_eq!(warnings(AGAIN), 2, "a new link");
+    });
+}
+
+/// A `secret exec` whose run panics is still no longer tracked, and its host is still told it
+/// ended (#2571).
+#[test]
+fn a_secret_exec_whose_run_panics_ends_and_is_no_longer_tracked() {
+    let heeding = a_heeding();
+    assert!(admitted(&heeding, LINK, 1, GOES_WRONG));
+
+    assert_eq!(an_exec_heard(&heeding, 1, GOES_WRONG), [Replied::Ended]);
+    assert_eq!(tracked(&heeding), 0);
+}
+
+/// The asker of a `secret exec` not run for want of room is told why, then that it ended; one
+/// from a link that is not the current one is only told it ended (#2571).
+#[test]
+fn a_secret_exec_not_run_for_want_of_room_tells_its_asker_why() {
+    let heeding = a_heeding();
+    for exec in 1..=EXECS_A_CHAT_HAS_TRACKED_AT_MOST as u64 {
+        assert!(admitted(&heeding, LINK, exec, ECHOES));
+    }
+    let (replies, replied) = mpsc::channel();
+    let reply: Reply = Arc::new(move |r| {
+        let _ = replies.send(r);
+    });
+
+    assert!(!heeding.admit(LINK, 100, &an_exec(ECHOES), &reply));
+    let told: Vec<Replied> = replied.try_iter().collect();
+    let [Replied::Wrote { text }, Replied::Ended] = told.as_slice() else {
+        panic!("told {told:?}");
+    };
+    assert!(text.contains(TOO_MANY_SECRET_EXECS), "{text}");
+
+    assert!(!heeding.admit(AGAIN, 101, &an_exec(ENDS_UNREAD), &reply));
+    assert_eq!(replied.try_iter().collect::<Vec<_>>(), [Replied::Ended]);
 }
 
 #[test]

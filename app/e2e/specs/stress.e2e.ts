@@ -8,9 +8,9 @@ import { LAUNCHDS_LIMIT, READY, THE_APPS_STARTING_LIMIT, built } from "../harnes
 import { answerTheAsk, pressAndStart } from "../opening.js";
 import {
   type Sample,
+  appProcesses,
   harnessesRunning,
   logLine,
-  running,
   sample,
   webAndHarnessMemory,
 } from "../processes.js";
@@ -100,13 +100,36 @@ const THREAD_SLACK = 40;
 
 const app = built(process.platform === "win32" ? "charter-app.exe" : "charter-app");
 
-/** The app under test, which is one process for the whole run. */
-function theApp(): number {
-  const pids = running(app);
-  if (pids.length !== 1) {
-    throw new Error(`expected one app process, found ${pids.length}: ${pids.join(", ")}`);
+/** The app's window and its session host, by pid. */
+interface TheApp {
+  pid: number;
+  host: number | null;
+}
+
+/**
+ * The app under test: its window, which is one process for the whole run, and the session host
+ * the window started, `null` when it runs none. The host is the window's own binary started
+ * again (#2085), so it is told apart by its argument, not counted as a second app (#2384).
+ */
+function theApp(): TheApp {
+  const { windows, sessionHosts } = appProcesses(app);
+  if (windows.length !== 1) {
+    throw new Error(`expected one app process, found ${windows.length}: ${windows.join(", ")}`);
   }
-  return pids[0];
+  if (sessionHosts.length > 1) {
+    throw new Error(
+      `expected at most one session host, found ${sessionHosts.length}: ${sessionHosts.join(", ")}`,
+    );
+  }
+  return { pid: windows[0], host: sessionHosts[0] ?? null };
+}
+
+/**
+ * The process the chats run in: the session host when the window runs one, the window when it
+ * does not. Its descriptors and threads are what 200 chats and a leak per tab show in (SC-15).
+ */
+function runsTheChats(seen: Looked): Sample {
+  return seen.host ?? seen;
 }
 
 /** The close buttons in the tab bar, left to right. */
@@ -205,11 +228,19 @@ async function closeEveryTab(most = TABS): Promise<void> {
  * kept, because CI keeps `logs/` only for a run that failed, and the numbers are wanted from
  * the runs that did not.
  */
-function look(pid: number, round: number, step: string, began: number): Sample {
-  const seen = sample(pid);
-  if (seen === null) {
+/** A look at the window, and at its session host when it runs one. */
+type Looked = Sample & { host: Sample | null };
+
+function look({ pid, host }: TheApp, round: number, step: string, began: number): Looked {
+  const theWindow = sample(pid);
+  if (theWindow === null) {
     throw new Error(`the app (pid ${pid}) is gone: round ${round}, ${step}`);
   }
+  const hostSeen = host === null ? null : sample(host);
+  if (host !== null && hostSeen === null) {
+    throw new Error(`the app's session host (pid ${host}) is gone: round ${round}, ${step}`);
+  }
+  const seen: Looked = { ...theWindow, host: hostSeen };
   const record = {
     round,
     step,
@@ -231,8 +262,9 @@ function look(pid: number, round: number, step: string, began: number): Sample {
  * idle pool threads go only after about ten seconds. Counting before either would read a
  * burst still draining as a leak.
  */
-async function settle(pid: number): Promise<void> {
-  const threads = () => sample(pid)?.threads ?? 0;
+async function settle({ pid, host }: TheApp): Promise<void> {
+  const threads = () =>
+    (sample(pid)?.threads ?? 0) + (host === null ? 0 : (sample(host)?.threads ?? 0));
   let last = threads();
   let steady = 0;
   const giveUp = Date.now() + 30_000;
@@ -269,12 +301,12 @@ describe("fifty tabs over and over, then two hundred at once", function () {
   this.timeout(BUDGET);
 
   it("opens fifty tabs with no pause, closes them all, three times, alive and usable throughout", async () => {
-    const pid = theApp();
+    const started = theApp();
     await closeEveryTab();
     const began = Date.now();
-    look(pid, 0, "nothing open", began);
+    look(started, 0, "nothing open", began);
 
-    const afterClosing: Sample[] = [];
+    const afterClosing: Looked[] = [];
     for (let round = 1; round <= ROUNDS; round++) {
       const roundBegan = Date.now();
       // No pause: the next tab is asked for as soon as the last one's picker has gone. Every
@@ -284,7 +316,7 @@ describe("fifty tabs over and over, then two hundred at once", function () {
       for (let opened = 0; opened < TABS; opened++) {
         await pressAndStart("New tab");
         if ((opened + 1) % PROGRESS_EVERY === 0) {
-          look(pid, round, `${opened + 1} of ${TABS} open`, began);
+          look(started, round, `${opened + 1} of ${TABS} open`, began);
         }
         const spent = Date.now() - roundBegan;
         if (spent > ROUND_BUDGET) {
@@ -299,21 +331,27 @@ describe("fifty tabs over and over, then two hundred at once", function () {
         interval: 250,
         timeoutMsg: `round ${round}: ${harnessesRunning()} of ${TABS} sessions ever ran`,
       });
-      look(pid, round, "fifty open", began);
+      look(started, round, "fifty open", began);
       await answers(`round ${round} with fifty open`);
 
       await closeEveryTab();
-      await settle(pid);
-      afterClosing.push(look(pid, round, "all closed", began));
+      await settle(started);
+      afterClosing.push(look(started, round, "all closed", began));
     }
 
-    expect(theApp()).toBe(pid);
-    const grew = afterClosing[ROUNDS - 1].threads - afterClosing[0].threads;
-    if (grew > THREAD_SLACK) {
-      throw new Error(
-        `the app kept ${grew} more threads after round ${ROUNDS}'s tabs closed than after ` +
-          `round 1's: closing is leaking what a session runs (see logs/stress.jsonl)`,
-      );
+    expect(theApp()).toEqual(started);
+    const grew = (seen: (looked: Looked) => Sample | null) =>
+      (seen(afterClosing[ROUNDS - 1])?.threads ?? 0) - (seen(afterClosing[0])?.threads ?? 0);
+    for (const [which, kept] of [
+      ["app", grew((looked) => looked)],
+      ["session host", grew((looked) => looked.host)],
+    ] as const) {
+      if (kept > THREAD_SLACK) {
+        throw new Error(
+          `the ${which} kept ${kept} more threads after round ${ROUNDS}'s tabs closed than ` +
+            `after round 1's: closing is leaking what a session runs (see logs/stress.jsonl)`,
+        );
+      }
     }
   });
 
@@ -333,15 +371,15 @@ describe("fifty tabs over and over, then two hundred at once", function () {
           "through launchedUnderLaunchdsLimit",
       );
     }
-    const pid = theApp();
+    const started = theApp();
     await closeEveryTab();
     const began = Date.now();
-    look(pid, 0, `${OPEN_TARGET}: nothing open, started with a limit of ${startedWith}`, began);
+    look(started, 0, `${OPEN_TARGET}: nothing open, started with a limit of ${startedWith}`, began);
 
     for (let opened = 0; opened < OPEN_TARGET; opened++) {
       await pressAndStart("New tab");
       if ((opened + 1) % PROGRESS_EVERY === 0) {
-        look(pid, 0, `${opened + 1} of ${OPEN_TARGET} open`, began);
+        look(started, 0, `${opened + 1} of ${OPEN_TARGET} open`, began);
       }
       const spent = Date.now() - began;
       if (spent > OPEN_TARGET_BUDGET) {
@@ -356,16 +394,17 @@ describe("fifty tabs over and over, then two hundred at once", function () {
       interval: 250,
       timeoutMsg: `${harnessesRunning()} of ${OPEN_TARGET} sessions ever ran`,
     });
-    const open = look(pid, 0, `${OPEN_TARGET} open`, began);
-    // The app holds more descriptors than it was started with, which it can only do because
-    // it raised its limit. Without the count this test would pass on a host that opened its
-    // chats some cheaper way and prove nothing about the limit.
+    const open = runsTheChats(look(started, 0, `${OPEN_TARGET} open`, began));
+    // The process the chats run in holds more descriptors than the app was started with,
+    // which it can only do because the limit was raised. Without the count this test would
+    // pass on a host that opened its chats some cheaper way and prove nothing about the
+    // limit. Since #2085 that process is the session host, not the window (#2384).
     expect(open.descriptors).not.toBeNull();
     expect(open.descriptors ?? 0).toBeGreaterThan(startedWith);
     await answers(`with ${OPEN_TARGET} open`);
 
     await closeEveryTab(OPEN_TARGET);
-    look(pid, 0, `${OPEN_TARGET}: all closed`, began);
-    expect(theApp()).toBe(pid);
+    look(started, 0, `${OPEN_TARGET}: all closed`, began);
+    expect(theApp()).toEqual(started);
   });
 });

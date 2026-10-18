@@ -9,6 +9,11 @@
 //! filters to itself, hands the supervisor the filter's listener over `<socket>`, and becomes
 //! the program. The supervisor then serves the chat's calls until the chat ends, and ends with
 //! its status.
+//!
+//! Neither side starts with the chat's environment (#2460): each reads the one it carries for
+//! the program ([`crate::carried`]) and refuses to start anything where its own is not what
+//! purlis built; the chat's side is started with it carried again, and the program alone is
+//! given it.
 
 mod filter;
 mod layers;
@@ -16,6 +21,7 @@ mod notify;
 mod supervisor;
 mod walk;
 
+use std::ffi::OsString;
 use std::io::{IoSlice, IoSliceMut};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
@@ -46,17 +52,29 @@ const TOLD_WITHIN: std::time::Duration = std::time::Duration::from_secs(1);
 /// The status a wrap ends with when it could not start the chat.
 const NOT_STARTED: i32 = 126;
 
+/// The environment the program is given, as purlis carried it.
+type Env = Vec<(OsString, OsString)>;
+
 /// `purlis _sandbox`, given the words after it: the status to exit with.
-/// Each call the supervisor refuses is told to what `tell` makes, where it makes anything.
-pub fn entry(words: &[String], tell: impl FnOnce() -> Option<crate::refusal::Tell>) -> i32 {
+/// Each call the supervisor refuses is told to what `tell` makes of the program's environment,
+/// where it makes anything.
+pub fn entry(
+    words: &[String],
+    tell: impl FnOnce(&[(OsString, OsString)]) -> Option<crate::refusal::Tell>,
+) -> i32 {
+    let env = match crate::carried::read(std::env::vars_os()) {
+        Ok(env) => env,
+        Err(why) => return refuse(&why.to_string()),
+    };
     if words.first().map(String::as_str) == Some(CHAT) {
-        return chat_side(&words[1..]);
+        return chat_side(&words[1..], env);
     }
     let Some((profile, program)) = crate::read_line(words) else {
         return refuse("the sandbox was started without a profile and a program");
     };
     // Read now, while nothing holds the wrap; its teller is started once the wrap holds itself.
-    match supervise(&profile, &program, tell()) {
+    let tell = tell(&env);
+    match supervise(&profile, &program, env, tell) {
         Ok(code) => code,
         Err(why) => refuse(&why),
     }
@@ -70,6 +88,7 @@ fn refuse(why: &str) -> i32 {
 fn supervise(
     profile: &str,
     program: &[String],
+    env: Env,
     tell: Option<crate::refusal::Tell>,
 ) -> Result<i32, String> {
     let profile = Profile::parse(profile).map_err(|why| why.to_string())?;
@@ -108,6 +127,8 @@ fn supervise(
         .arg(theirs.as_raw_fd().to_string())
         .arg(crate::END)
         .args(program)
+        .env_clear()
+        .envs(crate::carried::carried(env))
         .spawn()
         .map_err(|why| why.to_string())?;
     drop(theirs);
@@ -206,7 +227,7 @@ fn adopt(fd: std::os::fd::RawFd) -> Option<OwnedFd> {
 
 /// The chat's side: its own layer and filters, the listener to the supervisor, then the
 /// program.
-fn chat_side(words: &[String]) -> i32 {
+fn chat_side(words: &[String], env: Env) -> i32 {
     let (Some(socket), Some(end)) = (words.first(), words.get(1)) else {
         return refuse("the sandbox's chat side was started without its socket");
     };
@@ -216,7 +237,11 @@ fn chat_side(words: &[String]) -> i32 {
     let program = &words[2..];
     match restrict_and_hand_over(socket) {
         Ok(()) => {
-            let why = Command::new(&program[0]).args(&program[1..]).exec();
+            let why = Command::new(&program[0])
+                .args(&program[1..])
+                .env_clear()
+                .envs(env)
+                .exec();
             eprintln!("purlis: {} could not be started: {why}", program[0]);
             127
         }

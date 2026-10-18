@@ -23,8 +23,10 @@
 //!   Notice as for a refusal of macOS's Seatbelt; what is told never changes an answer.
 //!
 //! The entry point is the hidden `purlis _sandbox` command ([`entry`]); it is not a public
-//! command line.
+//! command line. The wrap starts with an environment purlis builds, never the chat's: the
+//! command's own is carried in it ([`carried`]) and handed to the command alone.
 
+pub mod carried;
 pub mod profile;
 pub mod refusal;
 
@@ -72,14 +74,18 @@ pub const MOST_PIECE: usize = 96 * 1024;
 /// of the program it is: the status to exit with, or `None` for every other start. The `purlis`
 /// command and the app call it first, so whichever purlis program starts a chat can wrap it.
 pub fn serve_if_asked() -> Option<i32> {
-    serve_if_asked_telling(|| None)
+    serve_if_asked_telling(|_| None)
 }
 
 /// [`serve_if_asked`], where each call the supervisor refuses is told to the [`refusal::Tell`]
 /// `tell` makes (#2344). `tell` is asked once, by the supervisor only, before the wrap holds
-/// itself to the profile, so what it reads to say a refusal is read while nothing holds it.
+/// itself to the profile, so what it reads to say a refusal is read while nothing holds it. It
+/// is handed the environment the wrap carries for its command ([`carried`], #2460), the
+/// environment the chat starts with, since the wrap's own holds nothing else.
 /// `None` tells nothing; a refusal is a refusal whether or not it is told.
-pub fn serve_if_asked_telling(tell: impl FnOnce() -> Option<refusal::Tell>) -> Option<i32> {
+pub fn serve_if_asked_telling(
+    tell: impl FnOnce(&[(std::ffi::OsString, std::ffi::OsString)]) -> Option<refusal::Tell>,
+) -> Option<i32> {
     let mut words = std::env::args_os().skip(1);
     if words.next()? != COMMAND {
         return None;

@@ -99,6 +99,27 @@ turn with a workspace's colour, as the accent does), markdown's code, quotes and
 words' colour, `window.background` the window's surface (the native window's colour, #2328), and the terminal's extras xterm's own
 defaults.
 
+**The native window follows the theme** (#2328). The operating system's own parts of the
+window, the traffic lights, the menus and the dialogs, are drawn dark or light with the drawn
+appearance's tag, and the window's own colour is its `window.background`, opaque. Each window is
+created in both for the theme its first frame draws, so nothing of another colour shows before
+it, and the page hands both over again whenever it draws another theme
+(`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the
+system leaves the native parts to the system. On macOS and Linux the platform keeps one
+appearance for the app, so the focused window's is the one drawn. The tray and the app icon
+stay as they are: they are brand, not theme.
+
+**Forced colours win** (#2328). On a platform that forces its contrast colours (Windows'
+contrast themes), the browser draws every colour in the system's palette, and what the window
+says with a background or a shadow alone would be lost. `app/src/theme/forced-colors.css`, the
+last layer of the window's stylesheet, says it again in system colours and with a shape: a solid
+`Highlight` ring wherever Tab lands; what is selected or current in `SelectedItem` and
+`SelectedItemText`, underlined (an icon tab keeps its edge); what cannot be used in `GrayText`;
+each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
+`MarkText`; a dashed outline on what ends or destroys and on a ground that says something is
+wrong; a switch's thumb and a radio's dot; and an outline
+round what is opened over the window. It holds only system colours, never a token.
+
 **Two tokens may look like one token and are not.** `needs-you.base` and `danger.base` were a
 single value before this — `--stop`, `#c05c5c`, "purlis's red" — and splitting them by meaning
 paid for itself on the first measurement: white on `#c05c5c` is **4.26:1**, under WCAG AA, and
@@ -312,7 +333,11 @@ rewrites the file; the next pick made in Settings writes the new id.
   first appearance is what a theme draws when nothing chose another; following the system works
   with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
   follows with Purlis Classic until Settings › Theme can say that following would stay in it
-  (#2331). A theme has at most 64.
+  (#2331). **When the system asks for more contrast** (`prefers-contrast: more`: Increase
+  contrast on macOS, a high-contrast theme elsewhere), whatever draws an appearance of a tag
+  draws the theme's appearance of that tag tagged `high-contrast` instead, when it has one, and
+  the window draws again when the setting changes (#2328). A built-in pick names its appearance.
+  A theme has at most 64.
 - **`icons`** names the theme's icon set (#2337): the path of a JSON file inside the theme's
   folder (`"icons": "icons/icons.json"`), read as `theme.json` is: no link on the way, a plain
   file, under the same cap. The file draws each view's tab on the rails, by the window's own

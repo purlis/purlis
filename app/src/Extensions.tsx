@@ -25,7 +25,9 @@ import {
   drawIn,
   inForce,
   PREFERS_LIGHT,
+  PREFERS_MORE_CONTRAST,
   sameTheme,
+  systemAsksMoreContrast,
   systemIsLight,
   THEME_ALIASES,
   type Theme,
@@ -35,8 +37,10 @@ import {
   forgetTheirTheme,
   sayAboutThisMachine,
   sayTheFloors,
+  theirFloors,
   theirThemeOnce,
 } from "./windowprefs";
+import { drawNatively, forgetNativeWindow } from "./theme/native";
 import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
@@ -454,7 +458,14 @@ export function drawThemeFor(
 export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
   const on = allowed === "every" ? null : [...allowed];
   try {
-    const answered = await commands.themeInForce(picked, on, systemIsLight(), false, where);
+    const answered = await commands.themeInForce(
+      picked,
+      on,
+      systemIsLight(),
+      systemAsksMoreContrast(),
+      false,
+      where,
+    );
     if (answered.status !== "ok") return [];
     const given = answered.data as typeof answered.data | null;
     return Array.isArray(given?.options) ? given.options : [];
@@ -499,7 +510,10 @@ export function forgetExtensionThemes() {
   following = false;
   unfollowSystem?.();
   unfollowSystem = undefined;
+  unfollowContrast?.();
+  unfollowContrast = undefined;
   forgetTheirTheme();
+  forgetNativeWindow();
 }
 
 /** How to stop following the system's appearance, while it is followed. */
@@ -517,6 +531,22 @@ function followSystem() {
   };
   query.addEventListener("change", changed);
   unfollowSystem = () => query.removeEventListener("change", changed);
+}
+
+/** How to stop following the system's contrast. */
+let unfollowContrast: (() => void) | undefined;
+
+/**
+ * **Draws again when the operating system asks for more contrast, or stops asking** (#2328),
+ * whatever the theme in force: one that has an appearance tagged high contrast draws it. One
+ * listener for the life of the window, started by the first draw.
+ */
+function followContrast() {
+  if (unfollowContrast !== undefined || typeof matchMedia !== "function") return;
+  const query = matchMedia(PREFERS_MORE_CONTRAST);
+  const changed = () => void drawWhatIsInForce();
+  query.addEventListener("change", changed);
+  unfollowContrast = () => query.removeEventListener("change", changed);
 }
 
 /** Whether the theme in force follows the system's appearance, as the core last said. */
@@ -538,10 +568,14 @@ function handedFor(pick: string | null): Theme | undefined {
 }
 
 /** Puts `theme` in force, unless it is already what is drawn — so the terminal is told only of
- *  a change. */
+ *  a change — and draws the native window in it (`theme/native.ts`), which is told only of a
+ *  change too. */
 function draw(theme: Theme) {
   const crossfade = switching;
   switching = false;
+  // The native window is told even when the page draws nothing new: whether it follows the
+  // system may have changed, and it is told only of a change.
+  drawNatively(theme, following);
   if (sameTheme(theme, inForce())) return;
   if (crossfade) crossfadeIn(theme);
   else drawIn(theme);
@@ -566,6 +600,7 @@ function draw(theme: Theme) {
  */
 export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> {
   const mine = ++drawing;
+  followContrast();
   if (reread) surveyAgain = true;
   const handed = handedFor(picked);
   if (handed !== undefined) {
@@ -573,7 +608,9 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     // The person's own theme was drawn with the floors held as the window was created; a
     // built-in clears them.
     const theirs = atCreation().theme;
-    sayTheFloors(picked === null ? theirs.floors : null, { theirs: theirs.path || undefined });
+    sayTheFloors(picked === null ? theirFloors(theirs) : null, {
+      theirs: theirs.path || undefined,
+    });
     draw(handed);
     return;
   }
@@ -581,7 +618,14 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   const on = allowed === "every" ? null : [...allowed];
   let answered: Awaited<ReturnType<typeof commands.themeInForce>>;
   try {
-    answered = await commands.themeInForce(picked, on, systemIsLight(), again, where);
+    answered = await commands.themeInForce(
+      picked,
+      on,
+      systemIsLight(),
+      systemAsksMoreContrast(),
+      again,
+      where,
+    );
   } catch {
     return;
   }

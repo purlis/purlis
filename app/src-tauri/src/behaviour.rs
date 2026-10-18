@@ -175,7 +175,7 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
     let folder = folder.to_path_buf();
     let data = tempfile::tempdir().expect("a data home");
     let log = data.path().to_path_buf();
-    let mut target = a_window_on(log.clone(), move || a_host(&folder, &log));
+    let mut target = a_window_on(log.clone(), false, move || a_host(&folder, &log));
     target._keeps.push(Box::new(data));
     target
 }
@@ -186,12 +186,14 @@ fn in_a_host_keeping_its_switch_in(folder: &Path) -> Target {
 /// window's binary composes them; both hosts are on this machine, linked in memory over the
 /// encrypted link, each end's link key pinned by the other. Host B takes the window's start
 /// and its replies because host A relays them from the window's own link (ruled 2026-10-15).
+/// The window knows its chats run on a runner, so it starts a harness chat there by its names
+/// (#2446).
 pub(crate) fn through_a_link() -> Target {
     let folder = tempfile::tempdir().expect("host B's folder");
     // Host B runs the chats, so it writes their event log.
     let data = tempfile::tempdir().expect("host B's data home");
     let host_b = a_host(folder.path(), data.path());
-    let mut target = a_window_on(data.path().to_path_buf(), move || {
+    let mut target = a_window_on(data.path().to_path_buf(), true, move || {
         purlis_host::Relay::new(Arc::new(move || {
             let host_b = host_b.clone();
             Box::pin(async move { Ok(linked_to(host_b).await) })
@@ -269,6 +271,7 @@ pub(crate) async fn linked_to(host_b: purlis_host::Hosting) -> link::Link {
 /// it in `log`.
 fn a_window_on<H: session::Host + Clone>(
     log: PathBuf,
+    on_a_runner: bool,
     host: impl FnOnce() -> H + Send + 'static,
 ) -> Target {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -279,7 +282,7 @@ fn a_window_on<H: session::Host + Clone>(
     // Made on the runtime, as a host is made where it serves.
     let host = runtime.block_on(async move { host() });
     let (connection, _window) = crate::hostedsessions::tests::in_memory(host, &runtime);
-    let mut target = a_window_over(connection, std::env::vars_os().collect(), log);
+    let mut target = a_window_over(connection, std::env::vars_os().collect(), log, on_a_runner);
     target._keeps.push(Box::new(runtime));
     target
 }
@@ -291,6 +294,7 @@ fn a_window_over(
     connection: Arc<Connection>,
     inherited: Vec<(OsString, OsString)>,
     log: PathBuf,
+    on_a_runner: bool,
 ) -> Target {
     let config = tempfile::tempdir().expect("a config home");
     let (project, root) = a_project();
@@ -301,7 +305,11 @@ fn a_window_over(
     }));
     let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
     switch.held_by(Arc::clone(&connection) as Arc<dyn crate::killswitch::Authority>);
-    let mut sessions = HostedSessions::new(Arc::clone(&connection), &root);
+    let mut sessions = if on_a_runner {
+        HostedSessions::on_a_runner(Arc::clone(&connection), &root)
+    } else {
+        HostedSessions::new(Arc::clone(&connection), &root)
+    };
     sessions.hear_through(hooks.relayed_from_the_host().expect("heard from the host"));
     sessions.stopped_by(Arc::clone(&switch));
     Target {
@@ -351,7 +359,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
     connection
         .wait(PATIENCE)
         .expect("the window connects to its host");
-    let mut target = a_window_over(connection, inherited, log);
+    let mut target = a_window_over(connection, inherited, log, false);
     target.savers_here = 0;
     target.kill_the_host = Some(host.0.killer());
     // Ended before the folders it serves from go.
@@ -802,6 +810,8 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 /// A chat named by the profile `work` and the persona `steward`, told `first_message`.
 fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     crate::host::Named {
+        chat: None,
+        run: None,
         profile: Some("work".to_owned()),
         persona: Some("steward".to_owned()),
         workspace: None,

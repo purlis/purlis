@@ -400,12 +400,13 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
         "no",
         "a job handed to launchd"
     );
-    // The control: the same submit, under the same profile less that one rule, goes through,
-    // so the refusal above is the rule's. The copy must submit outside any sandbox, or the
-    // refusal proves nothing. Some machines take no job from a sandboxed process at all, even
-    // under a profile that allows everything (#2489, a macOS 26.6 runner); there nothing can
-    // show the rule is what refuses it, and only there is the control skipped.
-    assert!(profile.contains("(deny job-creation)\n"), "{profile}");
+    // The control (#2533): macOS 26.6 no longer counts `job-creation` in `(allow default)`, so
+    // there the floor less its rule refuses a submit too, and only an allow can show what the
+    // rule itself does (measured on the macos-latest runner, where `(allow job-creation)` lets
+    // a sandboxed submit through). So: with `job-creation` allowed right after the floor's
+    // `(allow default)`, as an older macOS counts it, the floor still refuses the submit, and
+    // with it allowed in the rule's place the submit goes through. The copy must submit
+    // outside any sandbox, or the refusal proves nothing.
     let submits = |wrap: Option<&str>, label: &str| -> bool {
         let script = tried(&format!(
             "{} submit -l {label} -- /usr/bin/true",
@@ -433,18 +434,19 @@ fn the_floor_starts_nothing_outside_it_and_reaches_no_socket_or_port_of_this_mac
         submits(None, "purlis.floor.unsandboxed"),
         "the copy of launchctl submits a job outside any sandbox"
     );
-    if submits(Some("(version 1)(allow default)"), "purlis.floor.anything") {
-        let without = profile.replace("(deny job-creation)\n", "");
-        assert!(
-            submits(Some(&without), "purlis.floor.control"),
-            "the same submit without the rule"
-        );
-    } else {
-        let _ = writeln!(
-            std::io::stderr(),
-            "control skipped: launchd here takes no job from a sandboxed process"
-        );
-    }
+    let base = "(version 1)\n(allow default)\n";
+    assert!(profile.starts_with(base), "{profile}");
+    let counted = profile.replacen(base, &format!("{base}(allow job-creation)\n"), 1);
+    assert!(
+        !submits(Some(&counted), "purlis.floor.counted"),
+        "the floor refuses a job where (allow default) counts job-creation"
+    );
+    assert!(profile.contains("(deny job-creation)\n"), "{profile}");
+    let allowed = profile.replace("(deny job-creation)\n", "(allow job-creation)\n");
+    assert!(
+        submits(Some(&allowed), "purlis.floor.control"),
+        "the same submit with job-creation allowed in the rule's place"
+    );
     let _ = crate::forklock::status(
         std::process::Command::new("/bin/launchctl").args(["remove", "purlis.floor.test"]),
     );

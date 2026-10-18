@@ -23,6 +23,11 @@
 //! `system` pick a theme draws its first appearance, as Purlis Classic draws its dark. With no
 //! pick, the first extension theme in force that is not refused is drawn.
 //!
+//! **More contrast picks an appearance tagged high contrast** (#2328): when the operating system
+//! asks for more contrast ([`Inputs::contrast`]), each answer that draws an appearance of a tag
+//! draws the theme's appearance of that tag tagged high contrast instead, when it has one. A
+//! built-in pick names its appearance, and Purlis Classic has none tagged high contrast.
+//!
 //! **The consent floors hold for every source** (ADR 0097 §6): whatever is drawn is drawn by
 //! [`draw`], so a pick, the person's own theme, an extension's and a built-in all clear them.
 //!
@@ -33,7 +38,8 @@
 use std::sync::Arc;
 
 use super::{
-    Appearance, Complaint, Held, Resolved, ResolvedTheme, Theme, built_in, classic, default_theme,
+    Appearance, Complaint, Contrast, Held, Resolved, ResolvedTheme, Theme, built_in, classic,
+    default_theme,
 };
 use crate::extension::project::theme::Pick;
 
@@ -98,6 +104,9 @@ pub struct Inputs<'a> {
     pub on: On<'a>,
     /// The operating system's appearance right now.
     pub system: Appearance,
+    /// The contrast the operating system asks for right now: more draws a theme's appearance
+    /// tagged high contrast, when it has one of the tag that is drawn (#2328).
+    pub contrast: Contrast,
 }
 
 /// What the window draws.
@@ -137,10 +146,12 @@ impl Drawn {
     }
 
     /// [`follow`].
-    fn following(theme: &Theme, system: Appearance) -> Self {
-        let (Some(dark), Some(light)) = (theme.of(Appearance::Dark), theme.of(Appearance::Light))
-        else {
-            let only = theme.first();
+    fn following(theme: &Theme, system: Appearance, contrast: Contrast) -> Self {
+        let (Some(dark), Some(light)) = (
+            theme.of_for(Appearance::Dark, contrast),
+            theme.of_for(Appearance::Light, contrast),
+        ) else {
+            let only = theme.first_for(contrast);
             let word = match only.appearance {
                 Appearance::Dark => "dark",
                 Appearance::Light => "light",
@@ -172,9 +183,10 @@ pub fn draw(theme: &ResolvedTheme) -> Drawn {
 
 /// **`theme` following the operating system**, whose appearance is `system` now: the theme's
 /// appearance of that tag, and the window told it follows, when it has a dark and a light one;
-/// its one appearance otherwise, with a note that following the system stays there.
-pub fn follow(theme: &Theme, system: Appearance) -> Drawn {
-    Drawn::following(theme, system)
+/// its one appearance otherwise, with a note that following the system stays there. With more
+/// `contrast` asked for, the appearance of that tag tagged high contrast, when it has one.
+pub fn follow(theme: &Theme, system: Appearance, contrast: Contrast) -> Drawn {
+    Drawn::following(theme, system, contrast)
 }
 
 /// **Resolves the theme the window draws** from `inputs`. `offered` is every theme approved
@@ -189,7 +201,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
                 theme.of(Appearance::Dark).is_some() && theme.of(Appearance::Light).is_some()
             };
             let theme = inputs.theirs.filter(two).unwrap_or_else(|| classic());
-            return Drawn::following(theme, inputs.system);
+            return Drawn::following(theme, inputs.system, inputs.contrast);
         }
         Some(Pick::BuiltIn(id)) => {
             return Drawn::of(built_in(id).unwrap_or_else(default_theme));
@@ -207,7 +219,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         }
         None => {
             if let Some(theirs) = inputs.theirs {
-                return Drawn::of(theirs.first());
+                return Drawn::of(theirs.first_for(inputs.contrast));
             }
         }
     }
@@ -227,7 +239,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         None => Drawn::of(default_theme()),
         Some(resolved) => Drawn {
             complaints: resolved.complaints.clone(),
-            ..Drawn::of(resolved.theme.first())
+            ..Drawn::of(resolved.theme.first_for(inputs.contrast))
         },
     }
 }
