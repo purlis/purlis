@@ -178,6 +178,9 @@ pub trait Store: Send + Sync {
     fn make_own(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
         self.make_fresh(service, account, value)
     }
+    /// Forget what this process remembers of the entry, so the next read asks the store again
+    /// (#2656). A store that remembers nothing has nothing to forget.
+    fn forget(&self, _service: &str, _account: &str) {}
 }
 
 /// The store this build talks to. See the module header: a fenced build never reaches the
@@ -473,6 +476,21 @@ pub fn stub_reads(path: &std::path::Path) -> usize {
         .map_or(0, |reads| reads.get(path).copied().unwrap_or(0))
 }
 
+/// How many times a fenced build's stub at each path was asked whether an item is there
+/// ([`Store::exists`]): on macOS that is a question of its own, so a test counts it beside the
+/// reads (#2656).
+#[cfg(feature = "fenced")]
+static STUB_ASKS: std::sync::Mutex<BTreeMap<PathBuf, usize>> =
+    std::sync::Mutex::new(BTreeMap::new());
+
+/// The questions asked so far of the stub at `path` ([`STUB_ASKS`]).
+#[cfg(feature = "fenced")]
+pub fn stub_asks(path: &std::path::Path) -> usize {
+    STUB_ASKS
+        .lock()
+        .map_or(0, |asks| asks.get(path).copied().unwrap_or(0))
+}
+
 impl Store for FileStore {
     fn get(&self, service: &str, account: &str) -> Result<Option<Secret>, VaultError> {
         #[cfg(feature = "fenced")]
@@ -497,8 +515,12 @@ impl Store for FileStore {
     }
 
     /// From the file's slots, and not counted as a read ([`STUB_READS`]): the question reads no
-    /// value.
+    /// value. It is counted as a question ([`STUB_ASKS`]).
     fn exists(&self, service: &str, account: &str) -> Presence {
+        #[cfg(feature = "fenced")]
+        if let Ok(mut asks) = STUB_ASKS.lock() {
+            *asks.entry(self.path.clone()).or_default() += 1;
+        }
         match self.load() {
             Ok(map) if map.contains_key(&Self::slot(service, account)) => Presence::Present,
             Ok(_) => Presence::Absent,

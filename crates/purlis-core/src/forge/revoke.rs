@@ -77,7 +77,9 @@ pub fn sign_out(
                 .cloned()
                 .unwrap_or_else(|| Endpoints::of(registration))
                 .revoke?;
-            let kept = accounts::kept(keyring, &account).ok().flatten()?;
+            // Afresh, past this process's memory: another process may have renewed the grant,
+            // and the one revoked is the one that is current (#2656).
+            let kept = accounts::kept_afresh(keyring, &account).ok().flatten()?;
             Some((registration, url, kept))
         });
     let account = accounts::sign_out(host, config_root, keyring, id)?;
@@ -170,6 +172,47 @@ mod tests {
         assert_eq!(field("token"), Some("first-refresh-value"));
         assert_eq!(field("token_type_hint"), Some("refresh_token"));
         assert_eq!(field("client_secret"), None);
+    }
+
+    #[test]
+    fn sign_out_always_revokes_the_grant_that_is_current() {
+        use crate::secrets::keyring::Store as _;
+        // This process remembers the first pair (#2656); another process of the app renewed
+        // the grant since and wrote the second pair to the item.
+        let machine = machine(Kind::GitLab, "gitlab.com", Method::Pkce);
+        assert!(machine.kept().is_some(), "this process read the first pair");
+        crate::secrets::keyring::FileStore::at(
+            crate::machine::dir(machine.home.path()).join(crate::secrets::keyring::STUB_FILE),
+        )
+        .set(
+            &accounts::service(&machine.account),
+            "token",
+            r#"{"access":"second-access-value","refresh":"second-refresh-value","expires_at":1}"#,
+        )
+        .unwrap();
+        let forge = StandIn::answering(&[Ok((200, "{}"))]);
+        let (_, at) = signed_out(&machine, Some(&forge));
+        assert_eq!(at, AtTheForge::Ended);
+        let posted = forge.posted.lock().unwrap();
+        let token = posted[0]
+            .1
+            .iter()
+            .find(|(key, _)| key == "token")
+            .map(|(_, value)| value.as_str());
+        assert_eq!(token, Some("second-refresh-value"));
+    }
+
+    #[test]
+    fn a_token_removed_by_sign_out_is_never_handed_out_again_in_this_process() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        assert!(machine.kept().is_some(), "this process remembers the pair");
+        signed_out(&machine, None);
+        assert!(machine.kept().is_none());
+        let keyring = accounts::keyring_at(machine.home.path());
+        assert_eq!(
+            keyring.exists(&accounts::service(&machine.account), "token"),
+            crate::secrets::keyring::Presence::Absent
+        );
     }
 
     #[test]

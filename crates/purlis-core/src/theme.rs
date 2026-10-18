@@ -77,6 +77,7 @@ mod floors;
 mod folders;
 mod fonts;
 mod format;
+pub mod gallery;
 pub mod geometry;
 mod icons;
 mod import;
@@ -91,6 +92,7 @@ mod schema;
 mod tint;
 mod typed;
 pub mod vocabulary;
+mod warnings;
 
 pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
@@ -126,6 +128,7 @@ pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
+pub use warnings::{combination as combination_said, said as warnings_said};
 
 #[cfg(test)]
 mod floors_tests;
@@ -133,6 +136,8 @@ mod floors_tests;
 mod folders_tests;
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod gallery_tests;
 #[cfg(test)]
 mod geometry_tests;
 #[cfg(test)]
