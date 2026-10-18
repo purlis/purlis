@@ -344,6 +344,8 @@ macro_rules! app_commands {
                 searchfiles::search_files_end,
                 updates::update_channel,
                 updates::set_update_channel,
+                browserlimits::browser_limits,
+                browserlimits::set_browser_limit,
                 updates::check_for_update,
                 updates::install_update,
                 updates::restart_to_update,

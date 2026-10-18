@@ -224,6 +224,7 @@ mod hosted {
     };
 
     use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome};
+    use crate::chatbrowsers::NotStarted;
     use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
     use crate::reconnecting::Reconnection;
 
@@ -240,7 +241,11 @@ mod hosted {
 
     /// A chat's browsers run here (#2013): the window's session host.
     impl crate::chatbrowsers::Driver for WindowBrowsers {
-        fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, String> {
+        fn start(
+            &self,
+            root: &Path,
+            reach: BrowserReach,
+        ) -> Result<String, crate::chatbrowsers::NotStarted> {
             self.open_reaching(root, Some(reach))
         }
 
@@ -315,6 +320,17 @@ mod hosted {
                 _ => Ok(()),
             }
         }
+
+        fn driven(&self) -> Result<Vec<String>, String> {
+            match self.link()?.call(Command::List)? {
+                Answer::Chats(listed) => Ok(listed
+                    .into_iter()
+                    .filter(|one| one.kind == Some(ProgramKind::Browser) && one.driver.is_some())
+                    .map(|one| one.chat)
+                    .collect()),
+                other => Err(format!("the session host answered a list with {other:?}")),
+            }
+        }
     }
 
     /// The window's browsers, in its session host: the link they go over, and each project the
@@ -324,6 +340,10 @@ mod hosted {
         connection: Arc<Connection>,
         projects: Mutex<HashMap<PathBuf, Held>>,
         ended: Ended,
+        /// The most browsers the device runs at once (#2023), read at each start, and the lock
+        /// one start holds from its count to its start, so two never both take the last.
+        budget: Arc<dyn Fn() -> usize + Send + Sync>,
+        starting: Mutex<()>,
         /// Each view the window watches, and whether it is dimmed while its runner's link is
         /// down (#2542).
         dimming: Arc<Mutex<Dimming>>,
@@ -363,8 +383,23 @@ mod hosted {
                 connection,
                 projects: Mutex::new(HashMap::new()),
                 ended: Arc::new(|_| {}),
+                budget: Arc::new(|| purlis_core::browserlimits::budget_for(None)),
+                starting: Mutex::new(()),
                 dimming: Arc::default(),
             }
+        }
+
+        /// **At most `budget` browsers run on this device at once** (#2023): every browser the
+        /// session host runs counts, whoever started it.
+        #[cfg(test)]
+        pub(crate) fn budgeted(self, budget: usize) -> Self {
+            self.budgeted_by(Arc::new(move || budget))
+        }
+
+        /// **At most what `budget` reads at each start** (#2023): the person's setting over the
+        /// budget this device's memory gives.
+        pub(crate) fn budgeted_by(self, budget: Arc<dyn Fn() -> usize + Send + Sync>) -> Self {
+            WindowBrowsers { budget, ..self }
         }
 
         /// **`ended` is told each browser this window starts whose engine ends** (#2385): a
@@ -404,21 +439,44 @@ mod hosted {
 
         /// Starts a browser in the project at `root`, and answers its id.
         pub(crate) fn open(&self, root: &Path) -> Result<String, String> {
-            self.open_reaching(root, None)
+            self.open_reaching(root, None).map_err(|not| match not {
+                NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
+                NotStarted::Failed(why) => why,
+            })
         }
 
         /// Starts a browser in the project at `root` reaching `reach` (#2013), or with none,
-        /// nothing listed and every site new to the project refused; answers its id.
+        /// nothing listed and every site new to the project refused; answers its id. Refused
+        /// where the device runs its budget of browsers already (#2023).
         pub(crate) fn open_reaching(
             &self,
             root: &Path,
             reach: Option<BrowserReach>,
-        ) -> Result<String, String> {
-            let (link, project) = self.held(root)?;
-            match link.call(Command::StartProgram(Box::new(StartProgram {
-                reach,
-                ..StartProgram::of(project, ProgramKind::Browser)
-            })))? {
+        ) -> Result<String, NotStarted> {
+            let (link, project) = self.held(root).map_err(NotStarted::Failed)?;
+            let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
+            let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
+                Answer::Chats(listed) => listed
+                    .iter()
+                    .filter(|one| one.kind == Some(ProgramKind::Browser) && one.state != "ended")
+                    .count(),
+                other => {
+                    return Err(NotStarted::Failed(format!(
+                        "the session host answered a list with {other:?}"
+                    )));
+                }
+            };
+            let budget = (self.budget)();
+            if running >= budget {
+                return Err(NotStarted::Full { most: budget });
+            }
+            match link
+                .call(Command::StartProgram(Box::new(StartProgram {
+                    reach,
+                    ..StartProgram::of(project, ProgramKind::Browser)
+                })))
+                .map_err(NotStarted::Failed)?
+            {
                 Answer::ProgramStarted { program, .. } => {
                     let ended = Arc::clone(&self.ended);
                     let named = program.clone();
@@ -428,9 +486,9 @@ mod hosted {
                     }
                     Ok(program)
                 }
-                other => Err(format!(
+                other => Err(NotStarted::Failed(format!(
                     "the session host answered a browser's start with {other:?}"
-                )),
+                ))),
             }
         }
 
@@ -802,6 +860,7 @@ pub async fn take_over_browser(
         crate::off_the_window("taking a browser over", move || {
             browsers.take_over(&program)?;
             crate::browserneedsyou::taken_over(&projects, &program);
+            crate::chatbrowsers::person_drove(&projects, &program, true);
             Ok(())
         })
         .await
@@ -829,6 +888,7 @@ pub async fn hand_back_browser(
         let browsers = browsers(&app)?;
         crate::off_the_window("handing a browser back", move || {
             browsers.hand_back(&program)?;
+            crate::chatbrowsers::person_drove(&projects, &program, false);
             crate::browserneedsyou::handed_back(&projects, &program);
             Ok(())
         })

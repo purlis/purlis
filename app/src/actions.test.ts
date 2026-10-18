@@ -647,6 +647,7 @@ describe("the one list of actions", () => {
       "Your settings: Chats list",
       "Your settings: Notifications",
       "Your settings: This machine",
+      "Your settings: Browsers",
       "Your settings: Accounts",
       "Your settings: Profiles",
     ]);
@@ -2395,8 +2396,9 @@ describe("the palette at fifty chats", () => {
     // 910 since #2034: Your settings: Profiles.
     // This window has no todos loaded, so no `todo.` rows.
     // 911 since #2326: Your settings: Density and fonts.
-    // 914 since #2331: Settings › Theme at You, Project and Workspace.
-    expect(offers).toHaveLength(914);
+    // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
+    // settings: Browsers.
+    expect(offers).toHaveLength(915);
   });
 
   /**
