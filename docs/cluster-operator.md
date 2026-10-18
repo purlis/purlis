@@ -266,7 +266,9 @@ For a Claim in namespace `ns` on Pool `p`, the operator makes, and then applies 
 The upstream claim belongs to the Claim, and the template and the warm pool in a namespace to
 the pool's Claims there, each Claim adding itself, so the cluster's garbage collector removes the
 upstream claim with its Claim and the template and warm pool with the last of their Claims, and
-never while a Claim in the namespace still has a runner from them. Upstream's controller makes the pod
+never while a Claim in the namespace still has a runner from them. A Claim made as the last one
+goes is served all the same: if the garbage collector removes the template or warm pool it has
+just joined, the operator makes them again at once. Upstream's controller makes the pod
 from the template and writes the upstream claim's status, which the operator reads.
 
 **It changes only objects it made.** Before it writes any of the three, it reads what the
@@ -274,8 +276,8 @@ cluster holds under that name. An upstream claim it made names its Claim as its 
 uid, and a template or warm pool it made is owned by one of the pool's Claims in that
 namespace, by name and uid; any other object under that name, one made by hand or by another tool, is left
 exactly as it is. The Claim then says `UpstreamObjectInTheWay`, naming the object's kind and
-name, and nothing is made for it. Remove or rename that object and the Claim goes on: the
-operator looks again every 15 seconds.
+name, and nothing is made for it. Remove or rename that object and the Claim goes on at once: the
+operator watches all three kinds.
 
 ## What it may do
 
@@ -288,8 +290,7 @@ it holds:
 | `runners.purlis.dev` | `claims` | list, watch |
 | `runners.purlis.dev` | `claims/status` | patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
-| `extensions.agents.x-k8s.io` | `sandboxclaims` | create, get, list, patch, watch |
-| `extensions.agents.x-k8s.io` | `sandboxtemplates`, `sandboxwarmpools` | create, get, patch |
+| `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod, reads no Secret, and touches no
 pod at all; its Kubernetes client is built without the websocket support `exec` would need.

@@ -760,3 +760,38 @@ impl crate::browsers::Browsers for StandInBrowsers {
         Ok(Arc::new(screen))
     }
 }
+
+/// In-memory lines a test cuts: each [`Lines::line`] is a pair of ends joined through a task,
+/// and [`Lines::cut`] cuts every line made so far, so both ends read their end, as a dropped
+/// connection does (#2496). A clone is the same lines.
+#[derive(Clone, Default)]
+pub struct Lines(Arc<Mutex<Vec<tokio::task::AbortHandle>>>);
+
+impl Lines {
+    /// A new line, as its two ends.
+    pub fn line(&self) -> (tokio::io::DuplexStream, tokio::io::DuplexStream) {
+        let (ours, line_a) = tokio::io::duplex(256 * 1024);
+        let (line_b, theirs) = tokio::io::duplex(256 * 1024);
+        let line = tokio::spawn(async move {
+            let (mut line_a, mut line_b) = (line_a, line_b);
+            let _ = tokio::io::copy_bidirectional(&mut line_a, &mut line_b).await;
+        });
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(line.abort_handle());
+        (ours, theirs)
+    }
+
+    /// Cut every line made so far.
+    pub fn cut(&self) {
+        for line in self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain(..)
+        {
+            line.abort();
+        }
+    }
+}

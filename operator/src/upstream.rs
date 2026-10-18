@@ -95,7 +95,15 @@ pub struct Reference {
 /// The name of a pool's template and warm pool in a namespace. Prefixed, so an upstream object a
 /// person made by hand in their namespace is never taken for purlis's.
 pub fn name_for(pool: &str) -> String {
-    format!("purlis-pool-{pool}")
+    format!("{POOL_PREFIX}{pool}")
+}
+
+const POOL_PREFIX: &str = "purlis-pool-";
+
+/// The pool whose template or warm pool `name` would be, if it is named for one ([`name_for`]).
+pub fn pool_of(name: &str) -> Option<&str> {
+    name.strip_prefix(POOL_PREFIX)
+        .filter(|pool| !pool.is_empty())
 }
 
 /// What the cluster holds under the name an upstream object of the operator's takes.

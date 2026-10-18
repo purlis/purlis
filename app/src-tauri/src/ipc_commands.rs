@@ -115,6 +115,7 @@ macro_rules! app_commands {
                 mcpfailed::put_away_mcp_failure,
                 hostlost::chat_lost_with_the_host,
                 hostlost::put_away_lost_chat,
+                reconnecting::chats_reconnecting,
                 hostfailing::session_host_failing,
                 hostfailing::start_the_session_host_again,
                 silence::task_quiet,
