@@ -4435,6 +4435,16 @@ impl Chats {
         ))
     }
 
+    /// **Whether chat `session` is open and was started without the sandbox** (#2242): no
+    /// sandbox compiled for it and none holding it, as [`Self::login_asker`] reads it. A chat
+    /// reattached under a sandbox that changed while no window was there (D-2006-11) has no
+    /// compiled sandbox recorded but is still held, so it is not one.
+    pub fn started_unsandboxed(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|running| running.confines.is_none() && running.confinement.is_none())
+    }
+
     /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
     /// `None` for a chat that is not open or was started without a sandbox.
     pub fn confines_of(&self, session: u32) -> Option<purlis_core::sandbox::Confines> {

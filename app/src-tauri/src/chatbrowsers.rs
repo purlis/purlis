@@ -145,6 +145,9 @@ pub struct Waits {
     pub session: u32,
     pub since: u64,
     pub as_persona: AsPersona,
+    /// The chat was started without the sandbox (#2242): its browser lists what a sandboxed
+    /// chat of its persona would, and its Ask says so.
+    pub unsandboxed: bool,
 }
 
 /// **A chat's persona, as its browser is decided** (#2241): read from the app's own record of
@@ -161,9 +164,6 @@ pub struct AsPersona {
     /// **Always for this persona**, as this machine keeps it and policy leaves it in force:
     /// whether it reaches the open web too. None where none is.
     pub always: Option<bool>,
-    /// The chat was started without the sandbox (#2242): its browser lists what a sandboxed
-    /// chat of its persona would, and its Ask says so.
-    pub unsandboxed: bool,
 }
 
 /// One chat's browsers, as the app knows them.
@@ -186,6 +186,8 @@ struct Chat {
     narrowed: bool,
     /// Its persona as it was when its Ask was raised.
     as_persona: AsPersona,
+    /// It was started without the sandbox (#2242), as the app recorded it at its last call.
+    unsandboxed: bool,
     /// The persona whose Always it was allowed on (#2241), where it was: what removing or
     /// changing that Always follows.
     rests_on: Option<String>,
@@ -221,6 +223,7 @@ impl Default for Chat {
             next: 1,
             narrowed: false,
             as_persona: AsPersona::default(),
+            unsandboxed: false,
             rests_on: None,
             sites_asked: Vec::new(),
             sites_since: 0,
@@ -1116,6 +1119,7 @@ impl ChatBrowsers {
                 session: *session,
                 since: chat.since,
                 as_persona: chat.as_persona.clone(),
+                unsandboxed: chat.unsandboxed,
             })
             .collect();
         waits.sort_by_key(|one| (one.since, one.session));
@@ -1278,7 +1282,6 @@ impl ChatBrowsers {
             persona: Some(persona.to_owned()),
             declared: None,
             always: Some(open_web),
-            unsandboxed: false,
         };
         resting
             .into_iter()
@@ -1611,8 +1614,10 @@ impl ChatBrowsers {
     /// ([`Self::sites_waiting`]), whether or not the chat started with the sandbox (#2242).
     ///
     /// `reach` is what the chat's browser may reach, its chat's reach and the browser sites
-    /// allowed here, read as a browser starts and at each act; `now` is in seconds since 1970. The chat is the one whose token the line carried. With no `driver`
-    /// there is no session host, and so no browser.
+    /// allowed here, read as a browser starts and at each act; `unsandboxed` whether the app
+    /// started the chat without the sandbox; `now` is in seconds since 1970. The chat is the one
+    /// whose token the line carried. With no `driver` there is no session host, and so no
+    /// browser.
     /// A `browser_login` call's login, by its name, is `logins`'s to read (#2016): the
     /// declared page and the vault's values, with the kept login it keeps, and whether a kept
     /// store of it is there to open (#2021); or why there are none. Read only once the chat may
@@ -1624,10 +1629,12 @@ impl ChatBrowsers {
         root: &Path,
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
+        unsandboxed: bool,
         as_persona: &dyn Fn() -> AsPersona,
         logins: &dyn Fn(&str) -> ReadLogin,
         now: u64,
     ) -> (Answer, bool) {
+        self.lock().entry(browse.chat).or_default().unsandboxed = unsandboxed;
         let persona = as_persona();
         self.follow_always(driver, browse.chat, &persona);
         let read = match &browse.asked {
@@ -2087,6 +2094,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         return answer;
     }
     let reach = || reach_of(held, browse.chat);
+    let unsandboxed = held.chats().started_unsandboxed(browse.chat);
     let as_persona = || as_persona_of(held, browse.chat);
     let logins = |name: &str| login_of(held, browse.chat, name);
     let listing = held.browsers().listing();
@@ -2095,6 +2103,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         held.root(),
         browse,
         &reach,
+        unsandboxed,
         &as_persona,
         &logins,
         now,
@@ -2174,16 +2183,11 @@ fn persona_of(held: &crate::planes::Held, session: u32) -> Option<String> {
 /// writes.
 fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
     use purlis_core::sandbox;
-    let unsandboxed = held.chats().confines_now(session).is_none();
     let Some(persona) = persona_of(held, session) else {
-        return AsPersona {
-            unsandboxed,
-            ..AsPersona::default()
-        };
+        return AsPersona::default();
     };
     let root = held.root();
     AsPersona {
-        unsandboxed,
         declared: sandbox::persona::declared_browser(&sandbox::Plane::read(root), &persona),
         always: sandbox::local::browser_always_here(
             root,
@@ -2201,10 +2205,16 @@ fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
 /// shown (#2443). A host allowed for the chat's commands is a site its browser
 /// reaches (D-2018-7); a browser site is never one its commands reach. **A chat started without
 /// the sandbox** has no such record (#2242): its browser lists what a sandboxed chat of its
-/// persona would list here, read at each call ([`listed_reach`]), and nothing more. Its own
+/// persona would list here, read at each call ([`listed_reach`]), and nothing more. A
+/// sandboxed chat reattached under a sandbox whose compile was not recorded (D-2006-11) lists
+/// nothing. Its own
 /// sites, for this chat alone, are added by [`ChatBrowsers::answer`].
 fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
     let Some(confines) = held.chats().confines_now(session) else {
+        // Held by a sandbox whose compile was not recorded (D-2006-11): nothing is listed.
+        if !held.chats().started_unsandboxed(session) {
+            return BrowserReach::default();
+        }
         return listed_reach(held, persona_of(held, session).as_deref());
     };
     with_browser_sites(

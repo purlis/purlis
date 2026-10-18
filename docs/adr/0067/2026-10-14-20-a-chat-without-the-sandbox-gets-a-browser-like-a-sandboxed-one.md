@@ -15,8 +15,13 @@ browser's new sites are judged by its driver*.
    never another persona's hosts. An Allow given since reaches its next call. *Decided in
    implementation, D-2242-1, to be confirmed.*
 2. **Its sites ask as any chat's do.** A site new to the project that its browser held back waits
-   on the person in the registry, with the same answers.
+   on the person in the registry, with the same answers. *Decided in implementation, D-2242-2,
+   to be confirmed.*
 3. **Its Ask says what each answer gives it.** The answers are the same and stand in the same
    place. The line says that the chat has no sandbox but its browser does, and that this
    project's sites are the hosts a sandboxed chat of its persona lists and the services on this
-   machine the person allowed.
+   machine the person allowed. *Decided in implementation, D-2242-3, to be confirmed.*
+4. **A chat without the sandbox is one with no sandbox compiled for it and none holding it.** A
+   sandboxed chat reattached under a sandbox that changed while no window was there has no
+   compiled sandbox recorded but is still held: its browser lists nothing, and its Ask is a
+   sandboxed chat's. This is the rule a browser login of such a chat is read by (#2560).

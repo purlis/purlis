@@ -242,12 +242,24 @@ fn answered_as(
     browse: &BrowseAsk,
     as_persona: &AsPersona,
 ) -> (Answer, bool) {
+    answered_started(browsers, hosted, browse, as_persona, false)
+}
+
+/// [`answered_as`] for a chat the app started without the sandbox, or with it (#2242).
+fn answered_started(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    browse: &BrowseAsk,
+    as_persona: &AsPersona,
+    unsandboxed: bool,
+) -> (Answer, bool) {
     let driver: Arc<dyn Driver> = hosted.clone();
     browsers.answer(
         Some(&driver),
         Path::new("/p"),
         browse,
         &|| reach(),
+        unsandboxed,
         &|| as_persona.clone(),
         &logins,
         1000,
@@ -290,7 +302,6 @@ fn as_persona(persona: &str, declared: Option<Browser>, always: Option<bool>) ->
         persona: Some(persona.to_owned()),
         declared,
         always,
-        unsandboxed: false,
     }
 }
 
@@ -322,6 +333,7 @@ fn a_chats_first_browser_call_raises_one_ask_and_starts_no_browser() {
             session: 3,
             since: 1000,
             as_persona: AsPersona::default(),
+            unsandboxed: false,
         }]
     );
 }
@@ -560,6 +572,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         Path::new("/p"),
         &ask(3, click()),
         &|| narrower.clone(),
+        false,
         &AsPersona::default,
         &logins,
         1000,
@@ -624,6 +637,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 Path::new("/p"),
                 &ask(3, click()),
                 &|| reach(),
+                false,
                 &AsPersona::default,
                 &logins,
                 0,
@@ -1253,15 +1267,13 @@ fn the_sites_a_browser_asked_about_wait_as_one_ask_and_an_allow_for_the_chat_rea
 fn a_chat_without_the_sandbox_is_asked_about_a_new_site_as_any_chat_is() {
     let browsers = ChatBrowsers::default();
     let hosted = Arc::new(Hosted::default());
-    let unsandboxed = AsPersona {
-        unsandboxed: true,
-        ..AsPersona::default()
-    };
-    answered_as(&browsers, &hosted, &ask(3, click()), &unsandboxed);
+    let none = AsPersona::default();
+    answered_started(&browsers, &hosted, &ask(3, click()), &none, true);
+    assert!(browsers.waiting()[0].unsandboxed, "its Ask knows it");
     assert!(browsers.allow(3, false));
     *hosted.asks.lock().unwrap() = vec!["news.example.org:443".into()];
 
-    let (answer, _) = answered_as(&browsers, &hosted, &ask(3, click()), &unsandboxed);
+    let (answer, _) = answered_started(&browsers, &hosted, &ask(3, click()), &none, true);
 
     assert_eq!(
         browsers.sites_waiting()[0].sites,
@@ -2425,4 +2437,21 @@ fn a_chat_without_the_sandbox_lists_what_a_sandboxed_chat_of_its_persona_would()
         "{devops:?}"
     );
     assert!(!super::listed_reach(&held, Some("devops")).open_web);
+}
+
+/// #2242: a chat the app does not record as started without the sandbox, such as one held by a
+/// sandbox whose compile was not recorded (D-2006-11), or one this window does not have open, is
+/// given nothing listed: never the listing a chat without the sandbox gets.
+#[test]
+fn a_chat_not_recorded_as_started_without_the_sandbox_is_given_nothing_listed() {
+    let (_dir, planes, id) = held_project(
+        "schema = 1\n[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example\"]\n",
+    );
+    let held = planes.held(&id).expect("held");
+    assert!(!held.chats().started_unsandboxed(9));
+
+    let reach = super::reach_of(&held, 9);
+
+    assert!(reach.listed.is_empty(), "{:?}", reach.listed);
+    assert!(!reach.open_web);
 }

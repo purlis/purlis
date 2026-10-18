@@ -893,10 +893,10 @@ pub fn browser_posture(
     let declared = waits.as_persona.declared;
     // A chat started without the sandbox (#2242): its browser is held to what a sandboxed chat
     // of its persona lists, though the chat itself is not.
-    let mut says = if waits.as_persona.unsandboxed {
+    let mut says = if waits.unsandboxed {
         format!(
             "Wants a browser. This chat has no sandbox, but its browser does: this project's \
-             sites are the hosts {} lists and the services here you allowed",
+             sites are the hosts {} lists and the services on this machine you allowed",
             persona.map_or_else(
                 || "a sandboxed chat on no persona".to_owned(),
                 |p| format!("a sandboxed {p} chat")
