@@ -4180,3 +4180,29 @@ fn a_held_chat_with_no_record_of_its_start_is_offered_a_restart_for_a_login() {
     // The same chat started without the sandbox gets it.
     assert!(login_for(&held, "shop-login", true).is_ok());
 }
+
+/// A chat on no persona has no login, whatever persona the project gives new chats by default
+/// (#2560): the vault rule is the one every brokered read of a vault holds to.
+#[test]
+fn a_chat_on_no_persona_is_refused_a_login_though_the_project_has_a_default() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[persona]\ndefault = \"devops\"\n\n[sandbox]\nmode = \"on\"\n\n\
+         [sandbox.personas.devops]\ntools = { shop-login = { vault = \"team\", browser = \
+         \"https://shop.example.test/login\", key = \"TOKEN\" } }\n",
+    )
+    .unwrap();
+    let tool = shop_login_armed("team", "TOKEN", None).tool;
+    crate::sandbox::local::allow_persona_hosts(
+        project.path(),
+        "devops",
+        &crate::sandbox::persona::digest_of(&[], std::slice::from_ref(&tool), true),
+    )
+    .unwrap();
+    let mut nobody = asker(project.path(), None);
+    nobody.confines = None;
+    let why = login_for(&nobody, "shop-login", true).unwrap_err();
+    assert!(why.contains("runs as no persona"), "{why}");
+    assert!(!why.contains(TOKEN), "{why}");
+}

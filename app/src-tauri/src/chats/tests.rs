@@ -7434,13 +7434,58 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
     };
     open_with(1, Some(applied.confines().clone()));
     open_with(2, None);
-    assert!(!chats.runs_unconfined(1), "a sandboxed chat");
-    assert!(
-        chats.runs_unconfined(2),
+    let unconfined = |session| {
+        chats
+            .login_asker(plane.path(), session)
+            .map(|(_, free)| free)
+    };
+    assert_eq!(unconfined(1), Some(false), "a sandboxed chat");
+    assert_eq!(
+        unconfined(2),
+        Some(true),
         "a chat started without the sandbox"
     );
-    assert!(
-        !chats.runs_unconfined(3),
-        "a chat this app does not have open"
-    );
+    assert_eq!(unconfined(3), None, "a chat this app does not have open");
+}
+
+/// A login is read for the persona a chat was started as, as every brokered read of a vault is
+/// (#2560): never the project's default for a chat on no persona, nor the persona a handoff
+/// left it holding.
+#[test]
+fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
+    let plane = a_sandboxed_plane();
+    std::fs::write(
+        plane.path().join(purlis_core::plane::MANIFEST),
+        "[persona]\ndefault = \"devops\"\n\n[sandbox]\nmode = \"on\"\n",
+    )
+    .expect("charter.toml");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let open_as = |session: u32, persona: Option<&str>, held: Option<&str>| {
+        let mut chat = a_resumable_chat_in(plane.path());
+        chat.persona = persona.map(str::to_owned);
+        chat.held = held.map(|held| purlis_core::reopen::HeldGrants {
+            persona: Some(held.to_owned()),
+        });
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat,
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: None,
+                started_with: StartedWith::default(),
+            },
+        );
+    };
+    open_as(1, None, None);
+    open_as(2, Some("qa"), Some("devops"));
+    let (on_none, unconfined) = chats.login_asker(plane.path(), 1).expect("open");
+    assert_eq!(on_none.persona, None, "no default stands in");
+    assert!(unconfined);
+    let (handed, _) = chats.login_asker(plane.path(), 2).expect("open");
+    assert_eq!(handed.persona.as_deref(), Some("qa"), "its own persona");
+    assert!(chats.login_asker(plane.path(), 3).is_none());
 }

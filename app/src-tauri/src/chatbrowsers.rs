@@ -1420,25 +1420,12 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
 /// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
 fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<LogIn, String> {
-    let open = held
+    // The persona the chat was started as, as every brokered read of a vault takes it, and
+    // whether it runs with no sandbox at all, from the same run of it (#2560).
+    let (asker, unconfined) = held
         .chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == session)
+        .login_asker(held.root(), session)
         .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
-    let asker = purlis_core::secrets::brokered::Asker {
-        root: held.root().to_path_buf(),
-        env: purlis_core::secrets::Env::from_process(),
-        chat: session,
-        // The persona its browser is decided by ([`as_persona_of`]), from the app's record.
-        persona: persona_of(held, session),
-        folder: open.cwd,
-        confines: held.chats().confines_now(session),
-        harness: open.harness,
-    };
-    // Started without the sandbox only where no sandbox was compiled for it and none holds it
-    // (#2560): a chat reattached under a sandbox that changed has neither record nor freedom.
-    let unconfined = held.chats().runs_unconfined(session);
     purlis_core::secrets::brokered::login_for(&asker, name, unconfined)
 }
 
