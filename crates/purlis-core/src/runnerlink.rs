@@ -4,11 +4,12 @@
 //! **A runner's side of its link** (ADR 0078 §3 and §8, spec #2041, #2044): the runner's own
 //! link key and the one desktop it is paired with.
 //!
-//! - **The runner makes its key at its first pairing** ([`pair`]), from the operating system's
-//!   generator, and keeps its private half in [`KEY_FILE`], `0600`, in the session host's own
-//!   folder ([`crate::machine::charterd`]), which every chat's sandbox denies reading and
-//!   writing. Each runner has a key of its own: a new container is a new runner, with a new
-//!   key.
+//! - **The runner mints its device id and makes its key at its one pairing** ([`pair`]), the
+//!   key from the operating system's generator, and keeps the key's private half in
+//!   [`KEY_FILE`], `0600`, in the session host's own folder ([`crate::machine::charterd`]),
+//!   which every chat's sandbox denies reading and writing. Each runner has a device id and a
+//!   key of its own: a new container is a new runner, with a new id and a new key, and a home
+//!   that came with a device id is not paired.
 //! - **A runner holds one peer** (ADR 0078, ruled 2026-10-15): the desktop that paired it, in
 //!   `<config>/peers.json` ([`PEERS_FILE`]), which chats may neither read nor write. A runner
 //!   is paired once: a second pairing is refused whichever desktop asks, and the first stays.
@@ -32,15 +33,18 @@ pub const MOST_LINE: u64 = 4096;
 /// the epoch. It holds one peer; a file of another shape, or with more than one, admits none.
 pub const PEERS_FILE: &str = crate::machine::PEERS_FILE;
 
-/// Pair this runner, whose config home is `config_root` and whose device id is `device`, with
-/// `desktop`, once: the runner's own device id and public key, for the desktop to keep.
+/// Pair this runner, whose config home is `config_root`, with `desktop`, once: the runner's own
+/// device id and public key, for the desktop to keep.
 ///
-/// **A runner is paired once, and only from a home that holds no pairing.** Its key and its
-/// peers file are each made only where no file of that name is ([`purlis_same_user::PrivateDirectory::create_file`]),
+/// **A runner is paired once, and only from a home that holds no pairing and no device id.**
+/// Its device id is minted here ([`crate::machine::mint_device_id`]), so a home that came with
+/// one, from its image or from a runner before it, is refused before anything is made, and two
+/// runners started from one image never pair with one id. Its key and its peers file are each
+/// made only where no file of that name is ([`purlis_same_user::PrivateDirectory::create_file`]),
 /// the key first, so of two pairings at once one makes them and the other is refused, and a
-/// home that already holds either (one a pairing made before, or one its image brought) is
-/// refused whichever desktop asks. What was made is read back before it is answered.
-pub fn pair(config_root: &Path, device: &str, desktop: &Pinned) -> Result<Pinned, String> {
+/// home that already holds either is refused whichever desktop asks. What was made is read
+/// back before it is answered.
+pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
     let folder = &crate::machine::charterd(config_root);
     let held = purlis_same_user::PrivateDirectory::open(folder)
         .map_err(|why| format!("the session host's folder could not be opened: {why}"))?;
@@ -52,6 +56,15 @@ pub fn pair(config_root: &Path, device: &str, desktop: &Pinned) -> Result<Pinned
              paired once, from a home of its own; remove the runner and make a new one"
         )
     };
+    let device = crate::machine::mint_device_id(config_root)
+        .map_err(|why| format!("this runner's device id could not be minted: {why}"))?
+        .ok_or_else(|| {
+            "this runner's home came with a device id this runner did not mint, from its image \
+             or from a runner before it, so it is not paired: a runner mints its device id at \
+             its pairing. Build the image without purlis's machine store in its home, then \
+             remove the runner and make a new one"
+                .to_owned()
+        })?;
     let key = LinkKey::generate().map_err(|why| why.to_string())?;
     let hex = Zeroizing::new(hex_of(made_private(&key)?.as_ref()));
     held.create_file(KEY_FILE, hex.as_bytes())
@@ -77,31 +90,34 @@ pub fn pair(config_root: &Path, device: &str, desktop: &Pinned) -> Result<Pinned
             std::io::ErrorKind::AlreadyExists => made_already("a peers file"),
             _ => format!("the desktop this runner is paired with could not be kept: {why}"),
         })?;
-    match answering(config_root, device)? {
-        Some((ours, peer)) if ours.key.public() == key.public() && &peer == desktop => Ok(Pinned {
-            device: device.to_owned(),
-            key: key.public(),
-        }),
+    match answering(config_root)? {
+        Some((ours, peer))
+            if ours.key.public() == key.public() && ours.device == device && &peer == desktop =>
+        {
+            Ok(Pinned {
+                device,
+                key: key.public(),
+            })
+        }
         _ => Err("this runner's pairing did not read back as it was made, so it is refused".into()),
     }
 }
 
 /// Who this runner, whose config home is `config_root`, is on a link and the desktop it
-/// admits, once it is paired; `None` before.
-pub fn answering(config_root: &Path, device: &str) -> Result<Option<(Identity, Pinned)>, String> {
+/// admits, once it is paired; `None` before. It never mints a device id: the runner's pairing
+/// does.
+pub fn answering(config_root: &Path) -> Result<Option<(Identity, Pinned)>, String> {
     let Some(desktop) = peer(config_root)? else {
         return Ok(None);
     };
+    let device = crate::machine::known_device_id(config_root).ok_or_else(|| {
+        "this runner is paired but keeps no device id; remove the runner and add it again"
+            .to_owned()
+    })?;
     let key = key(&crate::machine::charterd(config_root))?.ok_or_else(|| {
         "this runner is paired but keeps no link key; remove the runner and add it again".to_owned()
     })?;
-    Ok(Some((
-        Identity {
-            device: device.to_owned(),
-            key,
-        },
-        desktop,
-    )))
+    Ok(Some((Identity { device, key }, desktop)))
 }
 
 /// A device id and public link key as one line: `{"device":"<id>","key":"<64 hex>"}`.

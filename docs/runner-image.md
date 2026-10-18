@@ -84,6 +84,7 @@ The check does not read these rows. The team building the image keeps them.
 | A matching C library | purlis's binary is built on Ubuntu 24.04 and needs glibc 2.39 or later. |
 | An architecture purlis builds | `amd64` or `arm64`. |
 | No secret | No credential, token or key is built into the image or set in its environment. What a runner chat needs comes from the person's desktop, one command at a time (spec #2041). |
+| No identity in `HOME` | The image's `HOME` holds no purlis machine store with a device id, no link key and no peers file: nothing a build step got by running `purlis` in it. A new runner's home starts as a copy of the image's, and a runner mints its device id and makes its link key at its one pairing, so a home that came with any of them is refused at pairing. Everything else in `HOME` is the runner's first contents, trusted as the image's binaries are (ADR 0078, amended 2026-10-18). |
 
 ### What the Linux sandbox needs
 
@@ -101,6 +102,14 @@ needs:
 
 On a kernel without it, a sandboxed chat is refused and the refusal says which version is
 needed.
+
+## On a Docker pool
+
+A Docker pool on the person's machine checks each runner container before it is paired and
+before every link. One of the checks is that the container runs on a standard runtime: `runc`
+or `crun`. Docker Desktop's Enhanced Container Isolation runs every container on the Sysbox
+runtime instead, so while it is turned on a Docker pool refuses its runners, and the refusal
+says the container does not run on a standard container runtime.
 
 ## A team's own image
 
