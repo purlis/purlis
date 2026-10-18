@@ -1606,19 +1606,22 @@ impl Browser {
         })
     }
 
-    /// Where frames with sessions of their own put `at`'s frame on the page, in CSS pixels.
-    fn frame_offset(&self, at: &Located, scroll: bool) -> Result<(f64, f64), CallError> {
-        let (mut x, mut y) = (0.0, 0.0);
+    /// Where frames with sessions of their own put `at`'s frame on the page, in CSS pixels;
+    /// `None` when the engine does not say where a frame between them is drawn.
+    fn frame_place(&self, at: &Located, scroll: bool) -> Result<Option<FramePlace>, CallError> {
+        let mut place = FramePlace {
+            corner: (0.0, 0.0),
+            within: None,
+        };
         for (frame, parent_session) in &at.boundaries {
             let owner = self.devtools().call(
                 "DOM.getFrameOwner",
                 json!({ "frameId": frame }),
                 Some(parent_session),
             )?;
-            let owner = owner
-                .get("backendNodeId")
-                .and_then(Value::as_i64)
-                .unwrap_or_default();
+            let Some(owner) = owner.get("backendNodeId").and_then(Value::as_i64) else {
+                return Ok(None);
+            };
             if scroll {
                 let gone_on = self.gated(|| {
                     self.devtools().call(
@@ -1636,17 +1639,39 @@ impl Browser {
                 json!({ "backendNodeId": owner }),
                 Some(parent_session),
             )?;
-            let content = model.pointer("/model/content").and_then(Value::as_array);
-            let corner = |i: usize| {
-                content
-                    .and_then(|c| c.get(i))
-                    .and_then(Value::as_f64)
-                    .unwrap_or_default()
+            let quad = |name: &str| -> Option<[f64; 8]> {
+                let numbers: Vec<f64> = model
+                    .pointer(&format!("/model/{name}"))?
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_f64)
+                    .collect::<Option<_>>()?;
+                numbers.try_into().ok()
             };
-            x += corner(0);
-            y += corner(1);
+            let size = |name: &str| model.pointer(&format!("/model/{name}"))?.as_f64();
+            let (Some(content), Some(border), Some(width), Some(height)) = (
+                quad("content"),
+                quad("border"),
+                size("width"),
+                size("height"),
+            ) else {
+                return Ok(None);
+            };
+            // A frame drawn other than upright at its own size (turned, scaled, zoomed, by its
+            // element or anything around it) is painted over whole: what its document draws is
+            // drawn within its box.
+            if place.within.is_none() && !upright(&border, width, height) {
+                place.within = Some(place.on_page(quad_bounds(&border)));
+            }
+            let inner = place.on_page(Rect {
+                x: content[0],
+                y: content[1],
+                width: 0.0,
+                height: 0.0,
+            });
+            place.corner = (inner.x, inner.y);
         }
-        Ok((x, y))
+        Ok(Some(place))
     }
 
     /// The page point at the centre of `at`, brought into view first when `scroll`.
@@ -1655,7 +1680,11 @@ impl Browser {
             CallError::Engine { .. } => Refusal::NotShown(target.clone()),
             other => refusal(other),
         };
-        let (dx, dy) = self.frame_offset(at, scroll).map_err(shown)?;
+        let (dx, dy) = self
+            .frame_place(at, scroll)
+            .map_err(shown)?
+            .ok_or_else(|| Refusal::NotShown(target.clone()))?
+            .corner;
         if scroll {
             let _ = self.gated(|| {
                 self.devtools().call(
@@ -2132,8 +2161,8 @@ impl Browser {
         boundaries: &[(String, String)],
         backend: i64,
     ) -> Result<Option<Rect>, Refusal> {
-        let offset = match placings.get(boundaries) {
-            Some(offset) => *offset,
+        let place = match placings.get(boundaries) {
+            Some(place) => *place,
             None => {
                 let at = Located {
                     target: String::new(),
@@ -2142,15 +2171,20 @@ impl Browser {
                     backend,
                     boundaries: boundaries.to_vec(),
                 };
-                let offset = match self.frame_offset(&at, false) {
-                    Ok(offset) => Some(offset),
+                let place = match self.frame_place(&at, false) {
+                    Ok(Some(place)) => Some(place),
+                    Ok(None) => {
+                        return Err(Refusal::Withheld(
+                            "where a frame of the page is drawn is not known".into(),
+                        ));
+                    }
                     Err(why) => undrawn(why)?,
                 };
-                placings.insert(boundaries.to_vec(), offset);
-                offset
+                placings.insert(boundaries.to_vec(), place);
+                place
             }
         };
-        let Some((dx, dy)) = offset else {
+        let Some(place) = place else {
             return Ok(None);
         };
         match self.devtools().call(
@@ -2158,11 +2192,9 @@ impl Browser {
             json!({ "backendNodeId": backend }),
             Some(session),
         ) {
-            Ok(quads) => Ok(bounds(&quads).map(|mut rect| {
-                rect.x += dx;
-                rect.y += dy;
-                rect
-            })),
+            Ok(quads) => {
+                Ok(bounds(&quads).map(|rect| place.within.unwrap_or_else(|| place.on_page(rect))))
+            }
             Err(why) => undrawn(why),
         }
     }
@@ -2177,7 +2209,7 @@ impl Browser {
         placings: &mut Placings,
         boxes: &mut Boxes,
     ) -> Result<(), Refusal> {
-        let (kept, greys, roots) = {
+        let (kept, greys, roots, blanked) = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             let greys = state.greys(target);
@@ -2209,7 +2241,17 @@ impl Browser {
                     boundaries: Vec::new(),
                 });
             }
-            (page.scrubbed.clone(), greys, roots)
+            // The blanked elements each session draws, by the engine's ids.
+            let mut blanked: HashMap<String, HashSet<i64>> = HashMap::new();
+            for key in &state.excluded {
+                if let Some(frame) = page.frames.get(&key.frame) {
+                    blanked
+                        .entry(frame.session.clone())
+                        .or_default()
+                        .insert(key.backend);
+                }
+            }
+            (page.scrubbed.clone(), greys, roots, blanked)
         };
         let loose: Vec<&str> = kept.loose();
         let kept: Vec<&str> = kept.texts();
@@ -2240,8 +2282,14 @@ impl Browser {
                     Some(&root.session),
                 )
                 .map_err(|why| Refusal::Withheld(why.to_string()))?;
-            let found =
-                drawn(&answer, &kept, &loose).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let none = HashSet::new();
+            let found = drawn(
+                &answer,
+                &kept,
+                &loose,
+                blanked.get(&root.session).unwrap_or(&none),
+            )
+            .map_err(|why| Refusal::Withheld(why.to_string()))?;
             reads.push((root, found));
         }
         // What the page shows is the top document read, whatever address the page was last
@@ -2284,7 +2332,42 @@ type Boxes = HashMap<(String, i64), Rect>;
 
 /// Where each session sits on its page, by the frames between them, once asked: `None` where the
 /// engine says it is not drawn.
-type Placings = HashMap<Vec<(String, String)>, Option<(f64, f64)>>;
+type Placings = HashMap<Vec<(String, String)>, Option<FramePlace>>;
+
+/// Where a frame's document is drawn on its page, in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FramePlace {
+    /// Where the document's top left corner is.
+    corner: (f64, f64),
+    /// The box of the outermost frame between the page and the document that is drawn other
+    /// than upright at its own size: everything the document draws is drawn within it.
+    within: Option<Rect>,
+}
+
+impl FramePlace {
+    /// `rect`, a box in CSS pixels of the frame's document, on the page.
+    fn on_page(&self, rect: Rect) -> Rect {
+        Rect {
+            x: rect.x + self.corner.0,
+            y: rect.y + self.corner.1,
+            ..rect
+        }
+    }
+}
+
+/// Whether `border`, an element's border box as drawn, is upright and the size the element is
+/// laid out at (`width` by `height`), to within a pixel: drawn as laid out, not turned, scaled
+/// or zoomed.
+fn upright(border: &[f64; 8], width: f64, height: f64) -> bool {
+    let near = |a: f64, b: f64| (a - b).abs() <= 1.0;
+    let [x0, y0, x1, y1, x2, y2, x3, y3] = *border;
+    near(y0, y1)
+        && near(x1, x2)
+        && near(y2, y3)
+        && near(x3, x0)
+        && near(x1 - x0, width)
+        && near(y3 - y0, height)
+}
 
 /// `None` when `why` says a node is not drawn; any other failure withholds the screenshot.
 fn undrawn<T>(why: CallError) -> Result<Option<T>, Refusal> {
@@ -2834,25 +2917,27 @@ impl Placing {
 
 /// The box around every quad.
 fn bounds(answer: &Value) -> Option<Rect> {
-    let all = quads(answer);
-    if all.is_empty() {
-        return None;
-    }
+    quads(answer)
+        .iter()
+        .map(quad_bounds)
+        .reduce(|a, b| hull(&a, &b))
+}
+
+/// The box around one quad.
+fn quad_bounds(quad: &[f64; 8]) -> Rect {
     let (mut left, mut top, mut right, mut bottom) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-    for q in all {
-        for i in 0..4 {
-            left = left.min(q[2 * i]);
-            right = right.max(q[2 * i]);
-            top = top.min(q[2 * i + 1]);
-            bottom = bottom.max(q[2 * i + 1]);
-        }
+    for i in 0..4 {
+        left = left.min(quad[2 * i]);
+        right = right.max(quad[2 * i]);
+        top = top.min(quad[2 * i + 1]);
+        bottom = bottom.max(quad[2 * i + 1]);
     }
-    Some(Rect {
+    Rect {
         x: left,
         y: top,
         width: right - left,
         height: bottom - top,
-    })
+    }
 }
 
 #[cfg(test)]
