@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A pad</title>
+<style>
+  body { margin: 0; background: white; }
+  .at { position: absolute; margin: 0; }
+  #add { left: 200px; top: 140px; width: 80px; height: 36px; }
+  #from { left: 20px; top: 60px; width: 40px; height: 40px; background: #333; }
+  #to { left: 220px; top: 60px; width: 40px; height: 40px; background: #999; }
+</style></head>
+<body>
+  <p id="count" class="at" style="left: 10px; top: 4px">Count: 0</p>
+  <p id="dragged" class="at" style="left: 10px; top: 110px">Not dragged</p>
+  <div id="from" class="at" role="img" aria-label="Start here"></div>
+  <div id="to" class="at" role="img" aria-label="End here"></div>
+  <button id="add" class="at" onclick="const c = document.getElementById('count'); c.textContent = 'Count: ' + (Number(c.textContent.slice(7)) + 1)">Add one</button>
+  <script>
+    let pressedOn = null;
+    document.addEventListener('pointerdown', (e) => { pressedOn = e.target.id; });
+    document.addEventListener('pointerup', (e) => {
+      const over = document.elementFromPoint(e.clientX, e.clientY);
+      if (pressedOn === 'from' && over && over.id === 'to') {
+        document.getElementById('dragged').textContent = 'Dragged from start to end';
+      }
+      pressedOn = null;
+    });
+  </script>
+</body></html>

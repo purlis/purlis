@@ -31,6 +31,7 @@ use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
 
 mod changes;
+mod drawing;
 mod login;
 mod takeover;
 mod view;
@@ -38,6 +39,7 @@ mod world;
 
 pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
+use drawing::Drawing;
 use takeover::{Lease, Typing};
 use world::Worlds;
 
@@ -1678,6 +1680,7 @@ impl Browser {
         let mut place = FramePlace {
             corner: (0.0, 0.0),
             within: None,
+            steps: Vec::new(),
         };
         for (frame, parent_session) in &at.boundaries {
             let owner = self.devtools().call(
@@ -1725,10 +1728,22 @@ impl Browser {
             };
             // A frame drawn other than upright at its own size (turned, scaled, zoomed, by its
             // element or anything around it) is painted over whole: what its document draws is
-            // drawn within its box.
-            if place.within.is_none() && !upright(&border, width, height) {
+            // drawn within its box. An act aimed inside it is carried through the map from the
+            // frame element's laid-out box to where it is drawn (#2557).
+            let as_laid_out = upright(&border, width, height);
+            if place.within.is_none() && !as_laid_out {
                 place.within = Some(place.on_page(quad_bounds(&border)));
             }
+            place.steps.push(if as_laid_out {
+                Step::Moved(content[0], content[1])
+            } else {
+                Drawing::of(&border, width, height)
+                    .and_then(|drawing| {
+                        let inside = drawing.in_box((content[0], content[1]))?;
+                        Some(Step::Drawn { drawing, inside })
+                    })
+                    .unwrap_or(Step::Flat)
+            });
             let inner = place.on_page(Rect {
                 x: content[0],
                 y: content[1],
@@ -1746,11 +1761,10 @@ impl Browser {
             CallError::Engine { .. } => Refusal::NotShown(target.clone()),
             other => refusal(other),
         };
-        let (dx, dy) = self
+        let place = self
             .frame_place(at, scroll)
             .map_err(shown)?
-            .ok_or_else(|| Refusal::NotShown(target.clone()))?
-            .corner;
+            .ok_or_else(|| Refusal::NotShown(target.clone()))?;
         if scroll {
             let _ = self.gated(|| {
                 self.devtools().call(
@@ -1768,8 +1782,9 @@ impl Browser {
                 Some(&at.node_session),
             )
             .map_err(shown)?;
-        let (x, y) = centre(&quads).ok_or_else(|| Refusal::NotShown(target.clone()))?;
-        Ok((x + dx, y + dy))
+        centre(&quads)
+            .and_then(|centre| place.aim(centre))
+            .ok_or_else(|| Refusal::NotShown(target.clone()))
     }
 
     fn mouse(
@@ -2416,7 +2431,7 @@ impl Browser {
         backend: i64,
     ) -> Result<Option<Rect>, Refusal> {
         let place = match placings.get(boundaries) {
-            Some(place) => *place,
+            Some(place) => place.clone(),
             None => {
                 let at = Located {
                     target: String::new(),
@@ -2435,7 +2450,7 @@ impl Browser {
                     }
                     Err(why) => undrawn(why)?,
                 };
-                placings.insert(boundaries.to_vec(), place);
+                placings.insert(boundaries.to_vec(), place.clone());
                 place
             }
         };
@@ -2590,16 +2605,46 @@ type Boxes = HashMap<(String, i64), Rect>;
 type Placings = HashMap<Vec<(String, String)>, Option<FramePlace>>;
 
 /// Where a frame's document is drawn on its page, in CSS pixels.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct FramePlace {
     /// Where the document's top left corner is.
     corner: (f64, f64),
     /// The box of the outermost frame between the page and the document that is drawn other
     /// than upright at its own size: everything the document draws is drawn within it.
     within: Option<Rect>,
+    /// How each frame between them draws the next document, the page's own frame first.
+    steps: Vec<Step>,
+}
+
+/// How a frame draws its document in the document around it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Step {
+    /// Upright at its own size, the document's top left corner at this point.
+    Moved(f64, f64),
+    /// Turned, scaled, zoomed or otherwise: the frame element's box drawn as `drawing`, the
+    /// document's top left corner at `inside` of that box.
+    Drawn {
+        drawing: Drawing,
+        inside: (f64, f64),
+    },
+    /// Drawn with no area, so no point of the document is drawn anywhere to aim at.
+    Flat,
 }
 
 impl FramePlace {
+    /// Where `point`, in CSS pixels of the frame's document, is drawn on the page; `None` when
+    /// it is drawn nowhere.
+    fn aim(&self, point: (f64, f64)) -> Option<(f64, f64)> {
+        self.steps
+            .iter()
+            .rev()
+            .try_fold(point, |(x, y), step| match *step {
+                Step::Moved(dx, dy) => Some((x + dx, y + dy)),
+                Step::Drawn { drawing, inside } => drawing.on_page((x + inside.0, y + inside.1)),
+                Step::Flat => None,
+            })
+    }
+
     /// `rect`, a box in CSS pixels of the frame's document, on the page.
     fn on_page(&self, rect: Rect) -> Rect {
         Rect {
