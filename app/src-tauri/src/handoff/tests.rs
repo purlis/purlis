@@ -5969,13 +5969,19 @@ fn a_dispatch_the_person_keeps_blocked_starts_nothing_and_the_asking_chat_is_tol
 fn a_dispatch_allowed_after_its_limit_filled_is_not_started_and_says_why() {
     // Decided again at the moment of the Allow, under the lock, against the chats as they
     // then stand: the project lets a chat have one task running, and it has one by then.
+    //
+    // **On a pretend host** (#2554): its chats run until the test ends them, so the task
+    // that fills the slot is still running whenever the Allow's own thread decides. A real
+    // stand-in's program ends after ten seconds, and an Allow decided later than that on a
+    // loaded runner found the slot free and rightly started the dispatch.
     let plane = a_plane_with_personas();
     std::fs::write(
         plane.root.join(purlis_core::plane::MANIFEST),
         "[persona]\ndefault = \"steward\"\n[dispatch]\nrunning-per-chat = 1\n",
     )
     .expect("the manifest");
-    let planes = planes();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
