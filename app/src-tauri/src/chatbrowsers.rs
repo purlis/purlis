@@ -43,9 +43,11 @@
 //!   browser alone** (ruled 2026-10-17): the chat's own commands still need their own Allow for
 //!   that host. It is listed apart in the Granted list. Each act tells the browser what it
 //!   reaches now ([`Driver::act`]): the chat's reach and its browser sites, so an Allow since it
-//!   started reaches it at its next act. A chat started without the sandbox is asked nothing:
-//!   until its reach is listed for its browser (#2242), its browser reaches only what it was
-//!   given, and the chat is told so.
+//!   started reaches it at its next act.
+//! - **A chat started without the sandbox gets a browser like a sandboxed one** (#2242): with
+//!   no record of its sandbox, its browser lists what a sandboxed chat of its persona would list
+//!   here, read at each call, never the floor's reach (D-2011-10); its sites ask as any chat's
+//!   do, and its posture Ask says what each answer gives it.
 //!
 //! **In memory only**, like the other Asks a chat raises: a relaunch starts with none, and the
 //! chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
@@ -159,6 +161,9 @@ pub struct AsPersona {
     /// **Always for this persona**, as this machine keeps it and policy leaves it in force:
     /// whether it reaches the open web too. None where none is.
     pub always: Option<bool>,
+    /// The chat was started without the sandbox (#2242): its browser lists what a sandboxed
+    /// chat of its persona would, and its Ask says so.
+    pub unsandboxed: bool,
 }
 
 /// One chat's browsers, as the app knows them.
@@ -507,17 +512,6 @@ fn asked_about(sites: &[Site]) -> String {
         "{} new to this project, so purlis held back what this browser would have opened, sent \
          or typed there, and asked the person whether it may: you will be told their answer on \
          your next turn. Don't retry it until then; go on with what needs no new site",
-        sites_said(sites)
-    )
-}
-
-/// What a chat started without the sandbox is told of the sites its browser held back for
-/// (#2018): nobody is asked, since its browser reaches only what it was given until #2242.
-fn not_asked_about(sites: &[Site]) -> String {
-    format!(
-        "{} new to this project, so purlis held back what this browser would have opened, sent \
-         or typed there. This chat started without the sandbox, so its browser reaches only the \
-         sites it was given, and the person was not asked: go on with what needs no new site",
         sites_said(sites)
     )
 }
@@ -1284,6 +1278,7 @@ impl ChatBrowsers {
             persona: Some(persona.to_owned()),
             declared: None,
             always: Some(open_web),
+            unsandboxed: false,
         };
         resting
             .into_iter()
@@ -1613,12 +1608,10 @@ impl ChatBrowsers {
 
     /// **Answers one browser call of a chat's**, and whether it raised the chat's browser Ask
     /// (what it may reach). The sites its browser held back are kept waiting on the person
-    /// ([`Self::sites_waiting`]) where the chat is `confined`.
+    /// ([`Self::sites_waiting`]), whether or not the chat started with the sandbox (#2242).
     ///
     /// `reach` is what the chat's browser may reach, its chat's reach and the browser sites
-    /// allowed here, read as a browser starts and at each act; `confined` whether the chat has a
-    /// sandbox's record of its reach, without which nobody is asked about a site; `now` is in
-    /// seconds since 1970. The chat is the one whose token the line carried. With no `driver`
+    /// allowed here, read as a browser starts and at each act; `now` is in seconds since 1970. The chat is the one whose token the line carried. With no `driver`
     /// there is no session host, and so no browser.
     /// A `browser_login` call's login, by its name, is `logins`'s to read (#2016): the
     /// declared page and the vault's values, with the kept login it keeps, and whether a kept
@@ -1631,7 +1624,6 @@ impl ChatBrowsers {
         root: &Path,
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
-        confined: bool,
         as_persona: &dyn Fn() -> AsPersona,
         logins: &dyn Fn(&str) -> ReadLogin,
         now: u64,
@@ -1656,12 +1648,8 @@ impl ChatBrowsers {
             && !browsed.asked.is_empty()
         {
             let sites = sites_of(&browsed.asked);
-            let said = if confined {
-                self.asked_about(browse.chat, &sites, now);
-                asked_about(&sites)
-            } else {
-                not_asked_about(&sites)
-            };
+            self.asked_about(browse.chat, &sites, now);
+            let said = asked_about(&sites);
             browsed.note = Some(match browsed.note.take() {
                 Some(note) => format!("{said}. {note}"),
                 None => said,
@@ -2099,7 +2087,6 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         return answer;
     }
     let reach = || reach_of(held, browse.chat);
-    let confined = held.chats().confines_now(browse.chat).is_some();
     let as_persona = || as_persona_of(held, browse.chat);
     let logins = |name: &str| login_of(held, browse.chat, name);
     let listing = held.browsers().listing();
@@ -2108,15 +2095,13 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         held.root(),
         browse,
         &reach,
-        confined,
         &as_persona,
         &logins,
         now,
     );
     held.browsers_listed_since(listing);
     // The sites the browser held back wait in the registry (#2018).
-    if confined
-        && let Answer::Browsed { browsed, .. } = &answer
+    if let Answer::Browsed { browsed, .. } = &answer
         && !browsed.asked.is_empty()
     {
         held.chats().asks_may_have_moved();
@@ -2189,11 +2174,16 @@ fn persona_of(held: &crate::planes::Held, session: u32) -> Option<String> {
 /// writes.
 fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
     use purlis_core::sandbox;
+    let unsandboxed = held.chats().confines_now(session).is_none();
     let Some(persona) = persona_of(held, session) else {
-        return AsPersona::default();
+        return AsPersona {
+            unsandboxed,
+            ..AsPersona::default()
+        };
     };
     let root = held.root();
     AsPersona {
+        unsandboxed,
         declared: sandbox::persona::declared_browser(&sandbox::Plane::read(root), &persona),
         always: sandbox::local::browser_always_here(
             root,
@@ -2209,13 +2199,13 @@ fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
 /// listed, D-2011-10), the browser sites you allowed for every chat here (#2018) that policy
 /// leaves in force, and the project's browser sites for everyone in it that the person here was
 /// shown (#2443). A host allowed for the chat's commands is a site its browser
-/// reaches (D-2018-7); a browser site is never one its commands reach. A chat started without
-/// the sandbox has no such record, so its browser starts with nothing listed, and reaches a
-/// public site only where the person let it reach the open web. Its own sites, for this chat
-/// alone, are added by [`ChatBrowsers::answer`].
+/// reaches (D-2018-7); a browser site is never one its commands reach. **A chat started without
+/// the sandbox** has no such record (#2242): its browser lists what a sandboxed chat of its
+/// persona would list here, read at each call ([`listed_reach`]), and nothing more. Its own
+/// sites, for this chat alone, are added by [`ChatBrowsers::answer`].
 fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
     let Some(confines) = held.chats().confines_now(session) else {
-        return BrowserReach::default();
+        return listed_reach(held, persona_of(held, session).as_deref());
     };
     with_browser_sites(
         held.root(),
@@ -2229,11 +2219,19 @@ fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
 /// reach, and the browser sites allowed here, as a chat's browser does. A site new to the
 /// project asks the person as an address the agent writes would (#2018).
 pub fn person_reach(held: &crate::planes::Held) -> BrowserReach {
+    listed_reach(held, None)
+}
+
+/// **What the project lists for a browser of a chat as `persona`, or as none**, where no chat's
+/// sandbox was compiled for it (#2176, #2242): the project's sandbox settings compiled now as a
+/// chat's start compiles them, never the floor's reach, and the browser sites allowed here. A
+/// project whose file cannot be read lists nothing.
+fn listed_reach(held: &crate::planes::Held, persona: Option<&str>) -> BrowserReach {
     let root = held.root();
     let listed = purlis_core::sandbox::browser_listing::listed_for(
         root,
         &purlis_core::sandbox::Machine::this(),
-        None,
+        persona,
     )
     .map(|reach| purlis_core::browsertools::browser_reach(&reach, false))
     .unwrap_or_default();

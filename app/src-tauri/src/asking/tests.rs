@@ -1241,6 +1241,34 @@ fn a_chats_first_browser_call_is_one_ask_of_what_its_browser_may_reach() {
     assert_eq!(ask.since, Some(40));
 }
 
+#[test]
+fn a_chat_without_the_sandbox_is_told_what_each_answer_gives_its_browser() {
+    // #2242: its browser is held to what a sandboxed chat of its persona lists, and the Ask
+    // says so; the answers are the same, in the same place.
+    let mut world = World::new();
+    world.queue = vec![8];
+    world.names = vec![(8, "qa 8")];
+    world.browsers = vec![crate::chatbrowsers::Waits {
+        session: 8,
+        since: 40,
+        as_persona: crate::chatbrowsers::AsPersona {
+            persona: Some("qa".to_owned()),
+            unsandboxed: true,
+            ..crate::chatbrowsers::AsPersona::default()
+        },
+    }];
+    world.since = vec![("browser:8", 40)];
+
+    let ask = world.asks().remove(0);
+
+    assert_eq!(
+        ask.says,
+        "Wants a browser. This chat has no sandbox, but its browser does: this project's sites \
+         are the hosts a sandboxed qa chat lists and the services here you allowed"
+    );
+    assert_eq!(&ids(&ask)[..2], ["project", "open-web"]);
+}
+
 /// A chat as `persona`, declaring `declared`, waiting on its browser Ask (#2241).
 fn browser_waits(
     world: &mut World,
@@ -1256,6 +1284,7 @@ fn browser_waits(
             persona: Some(persona.to_owned()),
             declared,
             always: None,
+            unsandboxed: false,
         },
     }];
     world.since = vec![("browser:8", 40)];

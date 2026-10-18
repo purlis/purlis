@@ -867,7 +867,9 @@ fn browser_key(session: u32) -> String {
 
 /// **The browser adapter** (#2013): a chat's first browser call, which asks the person what its
 /// browser may reach. Every word is purlis's. **This project's sites** is the hosts the chat's
-/// sandbox lists and the services on this machine the person allowed; **Also the open web**
+/// sandbox lists and the services on this machine the person allowed (for a chat started
+/// without the sandbox, those a sandboxed chat of its persona lists, and the line says so,
+/// #2242); **Also the open web**
 /// adds every public site; **Keep off** refuses its every browser call.
 ///
 /// **Always for this persona** (#2241) is offered beside each, for a chat that runs as a
@@ -889,9 +891,22 @@ pub fn browser_posture(
             .is_none()
     });
     let declared = waits.as_persona.declared;
-    let mut says = "Wants a browser: what may it reach? This project's sites are the hosts its \
-                    sandbox lists and the services on this machine you allowed"
-        .to_owned();
+    // A chat started without the sandbox (#2242): its browser is held to what a sandboxed chat
+    // of its persona lists, though the chat itself is not.
+    let mut says = if waits.as_persona.unsandboxed {
+        format!(
+            "Wants a browser. This chat has no sandbox, but its browser does: this project's \
+             sites are the hosts {} lists and the services here you allowed",
+            persona.map_or_else(
+                || "a sandboxed chat on no persona".to_owned(),
+                |p| format!("a sandboxed {p} chat")
+            )
+        )
+    } else {
+        "Wants a browser: what may it reach? This project's sites are the hosts its sandbox \
+         lists and the services on this machine you allowed"
+            .to_owned()
+    };
     if let (Some(persona), Some(declared)) = (persona, declared) {
         says.push_str(&format!(
             ". Its persona {persona} declares {}",

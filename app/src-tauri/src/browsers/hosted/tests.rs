@@ -372,7 +372,6 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
                 &window.root,
                 &browse,
                 &BrowserReach::default,
-                true,
                 &AsPersona::default,
                 &|_| Err("no login here".to_owned()),
                 1000,

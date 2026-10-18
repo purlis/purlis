@@ -242,24 +242,12 @@ fn answered_as(
     browse: &BrowseAsk,
     as_persona: &AsPersona,
 ) -> (Answer, bool) {
-    answered_confined(browsers, hosted, browse, as_persona, true)
-}
-
-/// [`answered_as`] for a chat that has, or has not, a sandbox's record of its reach.
-fn answered_confined(
-    browsers: &ChatBrowsers,
-    hosted: &Arc<Hosted>,
-    browse: &BrowseAsk,
-    as_persona: &AsPersona,
-    confined: bool,
-) -> (Answer, bool) {
     let driver: Arc<dyn Driver> = hosted.clone();
     browsers.answer(
         Some(&driver),
         Path::new("/p"),
         browse,
         &|| reach(),
-        confined,
         &|| as_persona.clone(),
         &logins,
         1000,
@@ -302,6 +290,7 @@ fn as_persona(persona: &str, declared: Option<Browser>, always: Option<bool>) ->
         persona: Some(persona.to_owned()),
         declared,
         always,
+        unsandboxed: false,
     }
 }
 
@@ -571,7 +560,6 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         Path::new("/p"),
         &ask(3, click()),
         &|| narrower.clone(),
-        true,
         &AsPersona::default,
         &logins,
         1000,
@@ -636,7 +624,6 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 Path::new("/p"),
                 &ask(3, click()),
                 &|| reach(),
-                true,
                 &AsPersona::default,
                 &logins,
                 0,
@@ -1260,24 +1247,30 @@ fn the_sites_a_browser_asked_about_wait_as_one_ask_and_an_allow_for_the_chat_rea
     assert_eq!(browsers.chat_sites(), [(3, site("news.example.org:443"))]);
 }
 
+/// #2242: a chat started without the sandbox gets a browser like a sandboxed one, so a site
+/// new to the project its browser held back waits on the person as any chat's does.
 #[test]
-fn a_chat_without_the_sandbox_is_asked_nothing_and_told_its_browser_reaches_only_what_it_was_given()
-{
+fn a_chat_without_the_sandbox_is_asked_about_a_new_site_as_any_chat_is() {
     let browsers = ChatBrowsers::default();
     let hosted = Arc::new(Hosted::default());
-    let unconfined = |browse: &BrowseAsk| {
-        answered_confined(&browsers, &hosted, browse, &AsPersona::default(), false)
+    let unsandboxed = AsPersona {
+        unsandboxed: true,
+        ..AsPersona::default()
     };
-    unconfined(&ask(3, click()));
+    answered_as(&browsers, &hosted, &ask(3, click()), &unsandboxed);
     assert!(browsers.allow(3, false));
     *hosted.asks.lock().unwrap() = vec!["news.example.org:443".into()];
-    let (answer, _) = unconfined(&ask(3, click()));
-    assert!(browsers.sites_waiting().is_empty(), "nobody is asked");
+
+    let (answer, _) = answered_as(&browsers, &hosted, &ask(3, click()), &unsandboxed);
+
+    assert_eq!(
+        browsers.sites_waiting()[0].sites,
+        [site("news.example.org:443")]
+    );
     match answer {
         Answer::Browsed { browsed, .. } => {
             let note = browsed.note.unwrap();
-            assert!(note.contains("not asked"), "{note}");
-            assert!(note.contains("started without the sandbox"), "{note}");
+            assert!(note.contains("asked the person"), "{note}");
         }
         other => panic!("{other:?}"),
     }
@@ -2382,4 +2375,54 @@ fn with_the_projects_sandbox_a_persons_browser_is_offered_everyone_too() {
         held.browsers().theirs_waiting("B1"),
         [site("example.com:443")]
     );
+}
+
+/// #2242: a chat started without the sandbox lists what a sandboxed chat of its persona would:
+/// the project's hosts, the persona's as the person here allowed them, and the browser sites,
+/// never the floor's reach; and nothing of another persona's.
+#[test]
+fn a_chat_without_the_sandbox_lists_what_a_sandboxed_chat_of_its_persona_would() {
+    use purlis_session_protocol::session::Layer;
+    let text = "schema = 1\n[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example\"]\n\
+                [sandbox.personas.devops]\nhosts = [\"ops.example\"]\n\
+                [sandbox.personas.qa]\nhosts = [\"qa.example\"]\n";
+    let (_dir, planes, id) = held_project(text);
+    let held = planes.held(&id).expect("held");
+    let listed = |persona: Option<&str>| -> Vec<(String, Layer)> {
+        super::listed_reach(&held, persona)
+            .listed
+            .into_iter()
+            .map(|one| (one.host, one.layer))
+            .collect()
+    };
+    assert!(
+        !listed(Some("devops"))
+            .iter()
+            .any(|(host, _)| host == "ops.example"),
+        "not until the person here allows the persona's hosts"
+    );
+    let hosts: Vec<purlis_core::sandbox::hosts::Host> =
+        vec![purlis_core::sandbox::hosts::Host::parse("ops.example").unwrap()];
+    purlis_core::sandbox::local::allow_persona_hosts(
+        held.root(),
+        "devops",
+        &purlis_core::sandbox::persona::digest(&hosts, false),
+    )
+    .expect("allowed");
+
+    let devops = listed(Some("devops"));
+
+    assert!(
+        devops.contains(&("api.example".to_owned(), Layer::Open)),
+        "{devops:?}"
+    );
+    assert!(
+        devops.contains(&("ops.example".to_owned(), Layer::Persona)),
+        "{devops:?}"
+    );
+    assert!(
+        !devops.iter().any(|(host, _)| host == "qa.example"),
+        "{devops:?}"
+    );
+    assert!(!super::listed_reach(&held, Some("devops")).open_web);
 }
