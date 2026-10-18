@@ -344,7 +344,9 @@ fn plex_files() -> Vec<(&'static str, Vec<u8>)> {
 fn a_theme_folder_names_its_fonts_from_woff2_files_inside_it() {
     let dir = tempfile::tempdir().unwrap();
     folder(dir.path(), "plex", &with_fonts(plex()), &plex_files());
-    let loaded = Library::new().load_folder(dir.path(), "plex");
+    let loaded = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "plex");
     assert_eq!(said(&loaded), Vec::<String>::new());
     let fonts = &loaded.theme.first().fonts;
     assert_eq!(fonts.ui.family.as_deref(), Some("IBM Plex Sans"));
@@ -371,7 +373,9 @@ fn purlis_serves_a_font_s_bytes_by_their_digest_and_nothing_else() {
     let mut files = plex_files();
     files[0].1 = woff2("served by its digest");
     folder(dir.path(), "plex", &with_fonts(plex()), &files);
-    let loaded = Library::new().load_folder(dir.path(), "plex");
+    let loaded = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "plex");
     let asset = loaded.theme.first().fonts.ui.faces[0].asset.clone();
     assert_eq!(asset.len(), 64);
     assert_eq!(served(&asset).unwrap(), woff2("served by its digest"));
@@ -403,7 +407,9 @@ fn a_font_is_never_a_url_or_a_path_out_of_the_folder() {
     ] {
         let theme = with_fonts(json!({ "ui": { "family": "Plex", "faces": [{ "file": file }] } }));
         folder(dir.path(), name, &theme, &[]);
-        let loaded = Library::new().load_folder(dir.path(), name);
+        let loaded = Library::new()
+            .reading_named_fonts()
+            .load_folder(dir.path(), name);
         assert!(loaded.refused, "{file}");
         assert_eq!(
             said(&loaded),
@@ -428,13 +434,21 @@ fn a_font_file_is_a_woff2_file_under_the_cap() {
         &[("Fake.woff2", b"OTTO not woff2".to_vec())],
     );
     assert_eq!(
-        said(&Library::new().load_folder(dir.path(), "fake")),
+        said(
+            &Library::new()
+                .reading_named_fonts()
+                .load_folder(dir.path(), "fake")
+        ),
         ["fonts/Fake.woff2 is not a woff2 file"]
     );
     let big = vec![b'w'; usize::try_from(MOST_FONT_BYTES).unwrap() + 1];
     folder(dir.path(), "big", &theme, &[("Fake.woff2", big)]);
     assert_eq!(
-        said(&Library::new().load_folder(dir.path(), "big")),
+        said(
+            &Library::new()
+                .reading_named_fonts()
+                .load_folder(dir.path(), "big")
+        ),
         [format!(
             "fonts/Fake.woff2 is {} bytes, and a font is never larger than {MOST_FONT_BYTES}",
             MOST_FONT_BYTES + 1
@@ -442,7 +456,11 @@ fn a_font_file_is_a_woff2_file_under_the_cap() {
     );
     folder(dir.path(), "gone", &theme, &[]);
     assert_eq!(
-        said(&Library::new().load_folder(dir.path(), "gone")),
+        said(
+            &Library::new()
+                .reading_named_fonts()
+                .load_folder(dir.path(), "gone")
+        ),
         ["fonts/Fake.woff2 is not in the theme's folder"]
     );
 }
@@ -462,12 +480,19 @@ fn a_font_reached_through_a_link_is_not_read() {
         dir.path().join("linked/fonts/Plex.woff2"),
     )
     .unwrap();
-    let loaded = Library::new().load_folder(dir.path(), "linked");
+    let loaded = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "linked");
     assert!(loaded.refused);
     // The folder itself as a link is refused too.
     std::fs::remove_dir_all(dir.path().join("linked/fonts")).unwrap();
     std::os::unix::fs::symlink(elsewhere.path(), dir.path().join("linked/fonts")).unwrap();
-    assert!(Library::new().load_folder(dir.path(), "linked").refused);
+    assert!(
+        Library::new()
+            .reading_named_fonts()
+            .load_folder(dir.path(), "linked")
+            .refused
+    );
 }
 
 #[test]
@@ -492,7 +517,9 @@ fn a_font_s_grammar_is_closed() {
         "mono": { "family": "Mono" }
     }));
     folder(dir.path(), "odd", &theme, &[("A.woff2", woff2("a"))]);
-    let loaded = Library::new().load_folder(dir.path(), "odd");
+    let loaded = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "odd");
     assert!(loaded.refused);
     assert_eq!(
         said(&loaded),
@@ -519,6 +546,7 @@ fn a_theme_that_extends_another_keeps_its_parent_s_fonts() {
         &[],
     );
     let library = Library::new()
+        .reading_named_fonts()
         .with_folder(dir.path(), "plex")
         .with_folder(dir.path(), "warm");
     let loaded = library.load_id("warm");
@@ -605,7 +633,10 @@ fn a_setting_the_engine_cannot_use_is_the_default_and_said() {
 fn the_person_s_font_beats_the_theme_s_in_every_theme() {
     let dir = tempfile::tempdir().unwrap();
     folder(dir.path(), "plex", &with_fonts(plex()), &plex_files());
-    let theme = Library::new().load_folder(dir.path(), "plex").theme;
+    let theme = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "plex")
+        .theme;
     let (person, _) = Person::read(Some(&json!({ "fonts": { "ui": "Atkinson Hyperlegible" } })));
     let layer = person.layer();
     for drawn in [theme.first(), classic_dark()] {
@@ -712,7 +743,9 @@ fn a_refused_theme_s_faces_are_never_served() {
         &theme,
         &[("Refused.woff2", bytes.clone())],
     );
-    let loaded = Library::new().load_folder(dir.path(), "refused");
+    let loaded = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "refused");
     assert!(loaded.refused);
     assert!(served(&sha(&bytes)).is_err());
     // The same folder, put right, is served.
@@ -723,7 +756,12 @@ fn a_refused_theme_s_faces_are_never_served() {
         ] } } }),
     );
     folder(dir.path(), "refused", &fixed, &[]);
-    assert!(!Library::new().load_folder(dir.path(), "refused").refused);
+    assert!(
+        !Library::new()
+            .reading_named_fonts()
+            .load_folder(dir.path(), "refused")
+            .refused
+    );
     assert_eq!(served(&sha(&bytes)).unwrap(), bytes);
 }
 

@@ -36,6 +36,19 @@ type Shown =
   | { kind: "ended" }
   | { kind: "refused"; why: string };
 
+/** What the bar says when the person's key or click was dropped because the page moved on
+ *  (#2304): the page, or a frame inside it, loaded another document after the frame they acted
+ *  on was drawn, so the input never reached something they did not see. */
+const DROPPED =
+  "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
+
+/** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
+ *  button pressed or let go. A move or a wheel is followed by the next one. */
+function anAct(input: BrowserInput) {
+  if (input.kind === "key") return input.action === "down";
+  return input.kind === "mouse" && (input.action === "pressed" || input.action === "released");
+}
+
 /** What waits to be sent: one event of the person's, or their hand-back, after every event
  *  before it. */
 type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
@@ -45,11 +58,19 @@ type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
  * before its up, a press before its release, and the hand-back after every key typed before it.
  * A move waiting behind another is replaced by the newer one, so a quick mouse never queues a
  * backlog. `clear` drops whatever waits: a view watched again starts with nothing queued, so
- * nothing aimed at an earlier frame is sent after it.
+ * nothing aimed at an earlier frame is sent after it. A key or click the page moved on from is
+ * told to `dropped`, and the next one that reaches the page clears it (#2304). An answer that
+ * comes back after `clear` belongs to the watch before, so it says nothing.
  */
-function useSender(program: string, said: (why: string | undefined) => void) {
+function useSender(
+  program: string,
+  said: (why: string | undefined) => void,
+  dropped: (now: boolean) => void,
+) {
   const waiting = useRef<Queued[]>([]);
   const sending = useRef(false);
+  /** Counts the clears: an answer is heard only if no clear came while it was asked. */
+  const watch = useRef(0);
   const next = useCallback(async () => {
     if (sending.current) return;
     sending.current = true;
@@ -59,15 +80,19 @@ function useSender(program: string, said: (why: string | undefined) => void) {
           await one.handBack();
           continue;
         }
+        const asked = watch.current;
         const sent = await commands.browserInput(program, one.input);
+        if (asked !== watch.current) continue;
         if (sent.status === "error") said(sent.error);
         else if (sent.data.outcome === "refused") said(sent.data.why);
-        // A missed one was aimed at a page that has moved on: it is dropped, as it should be.
+        // A missed one was aimed at a page that has moved on: it is dropped, as it should be,
+        // and the bar says so until the person's next key or click reaches the page.
+        else if (anAct(one.input)) dropped(sent.data.outcome === "missed");
       }
     } finally {
       sending.current = false;
     }
-  }, [program, said]);
+  }, [program, said, dropped]);
   const send = useCallback(
     (input: BrowserInput) => {
       const queue = waiting.current;
@@ -92,7 +117,9 @@ function useSender(program: string, said: (why: string | undefined) => void) {
   );
   const clear = useCallback(() => {
     waiting.current = [];
-  }, []);
+    watch.current += 1;
+    dropped(false);
+  }, [dropped]);
   return { send, after, clear };
 }
 
@@ -121,6 +148,7 @@ export function BrowserView({ program }: { program: string }) {
   const [driving, setDriving] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
+  const [dropped, setDropped] = useState(false);
   const [size, setSize] = useState<string>(SIZE_PRESETS[0].id);
   const drives = useRef(false);
   const taking = useRef<Promise<boolean> | null>(null);
@@ -132,7 +160,7 @@ export function BrowserView({ program }: { program: string }) {
   const windowSeen = useWindowSeen();
   const seen = inFront && windowSeen;
   const mac = onAMac();
-  const { send, after, clear } = useSender(program, setSaid);
+  const { send, after, clear } = useSender(program, setSaid, setDropped);
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -215,6 +243,7 @@ export function BrowserView({ program }: { program: string }) {
         return;
       }
       setSaid(undefined);
+      setDropped(false);
       drivingNow(false);
     });
   }, [after, program, drivingNow]);
@@ -344,6 +373,7 @@ export function BrowserView({ program }: { program: string }) {
             ? "You are driving this browser. The agent is paused until you press Done."
             : // Nothing reaches the page while its runner's link is down: no hint to try.
               !reconnecting && "Click or type in the page to take it over."}
+          {dropped && <span className="browser-bar-dropped"> {DROPPED}</span>}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
         <Select

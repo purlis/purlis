@@ -155,6 +155,13 @@ impl Level {
         }
     }
 
+    /// **Whether it is for one chat alone** (#2629): "Allow once" and "Allow for this chat".
+    /// A one-chat Allow reaches only its chat, wherever it is applied or taken back, and with
+    /// no chat named it reaches none.
+    pub fn one_chat(self) -> bool {
+        matches!(self, Self::Once | Self::Chat)
+    }
+
     /// The level `word` names.
     pub fn of_word(word: &str) -> Option<Self> {
         [

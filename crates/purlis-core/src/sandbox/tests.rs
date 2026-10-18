@@ -3839,6 +3839,94 @@ fn a_config_purlis_could_not_read_through_refuses_the_chat() {
     );
 }
 
+/// [`compile_checked`] as it was before #2570: the second [`covering`] pass run whatever the
+/// harness, also where it adds no denial of its own and so checks the very list the first did.
+fn compile_checked_both_passes(
+    compile: Compiler,
+    compiled: &Compiled,
+    root: &std::path::Path,
+    machine: &Machine,
+) -> Result<(Form, Vec<Denial>), NotStarted> {
+    if let Some(unread) = &compiled.denied.unread {
+        return Err(NotStarted::Unread(unread.clone()));
+    }
+    if let Some(why) = &compiled.denied.untold {
+        return Err(NotStarted::KeptUntold(why.clone()));
+    }
+    let ground = ground(root, machine.home.as_deref());
+    if let Some(refused) = covering(&compiled.denied.paths, &ground) {
+        return Err(refused.placed_in(root));
+    }
+    let form = compile(compiled).map_err(NotStarted::Uncompilable)?;
+    let denied = form
+        .denied()
+        .map_or_else(|| compiled.denied.paths.clone(), <[Denial]>::to_vec);
+    if let Some(refused) = covering(&denied, &ground) {
+        return Err(refused.placed_in(root));
+    }
+    Ok((form, denied))
+}
+
+/// The bytes a Claude Code chat's `--settings` gets from `form`.
+fn claude_bytes(form: &Form) -> String {
+    let Form::ClaudeCode(settings) = form else {
+        panic!("a Claude Code form, got {form:?}");
+    };
+    format!(
+        "{}\n{}",
+        serde_json::to_string(&settings.sandbox).expect("the sandbox object"),
+        serde_json::to_string(&settings.deny).expect("the deny rules")
+    )
+}
+
+/// #2570: where the harness adds no denial of its own (Claude Code), the second covering pass
+/// is skipped, and the profile it compiles is byte for byte the one both passes gave, as is
+/// every refusal.
+#[test]
+fn skipping_the_second_covering_pass_for_claude_code_changes_no_byte_of_its_profile() {
+    let compile = compiler(Harness::ClaudeCode).expect("a compiler");
+    let root = std::path::Path::new("/plane");
+    let machine = machine(Os::MacOs);
+    let denials = vec![
+        one(Class::Vaults, "/home/op/.ssh", Access::ReadWrite),
+        one(Class::Vaults, "/plane/.purlis/vaults", Access::ReadWrite),
+        later_code("/plane/ws/.git/hooks", "/plane/ws/.git/config", "hooksPath"),
+        one(Class::HumanPowers, "/elsewhere/keys", Access::Write),
+    ];
+    let plane = compiled(
+        Denied {
+            paths: denials.clone(),
+            ..Denied::default()
+        },
+        Os::MacOs,
+    );
+    assert_eq!(compile(&plane).expect("compiles").denied(), None);
+
+    let skipped = compile_checked(compile, &plane, root, &machine).expect("compiles");
+    let both = compile_checked_both_passes(compile, &plane, root, &machine).expect("compiles");
+    assert_eq!(skipped, both);
+    assert_eq!(claude_bytes(&skipped.0), claude_bytes(&both.0));
+    assert_eq!(skipped.1, denials);
+
+    // A denial that covers the ground is refused the same way, by the first pass.
+    let covers = compiled(
+        Denied {
+            paths: [
+                denials,
+                vec![one(Class::HumanPowers, "/home", Access::Write)],
+            ]
+            .concat(),
+            ..Denied::default()
+        },
+        Os::MacOs,
+    );
+    let refused = compile_checked(compile, &covers, root, &machine).expect_err("refused");
+    assert_eq!(
+        Err(refused),
+        compile_checked_both_passes(compile, &covers, root, &machine)
+    );
+}
+
 /// #1333's rule, which every brokered write asks (ADR 0067 §1 as amended): a chat never changes
 /// the sandbox, at any level, through purlisd.
 #[test]

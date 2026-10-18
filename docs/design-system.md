@@ -486,8 +486,10 @@ can be read. Its interface:
   each finding with its ratio.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
-gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds five
-floors for any theme from any source:
+gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
+`draw`, which holds five floors for any theme from any source. `draw` takes an appearance with
+its theme options' values already layered on it, so the floors hold in every combination of
+appearance and option values, and no option value can bring a consent surface below its floor:
 
 - **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
   0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and `control.hover`
@@ -1048,6 +1050,15 @@ The faces are asked for after the first frame: it is drawn in the family list's 
 the text redraws when a face arrives. A theme not read from a folder (an extension's text) has
 no `fonts/`, so naming a font refuses it. The person's own `theme.json` is in their config
 folder, beside `machine.json`, and its fonts are that folder's `fonts/`.
+
+**A face is read through the theme folder's handle.** For a theme folder of a level, `fonts/`
+is opened from the handle the folder's `theme.json` was read through, refusing a link, and each
+face from the handle of `fonts/`, refusing a link again; serving a face reads it from the same
+handles. **A project's and a workspace's font files are approved with the project** (ADR 0098,
+as amended 2026-10-18): the trust ask lists each by its theme folder, size and digest (at most
+64 files and 32 MiB per project, 24 per folder), asks again when one is new or changed, and a
+face from the project is drawn only when that approval holds it. The
+person's own theme folders' fonts need no approval.
 
 **The person's font beats the theme's.** Settings › You › Density and fonts takes a family for
 the window, for code and for the terminal; an empty field draws the theme's. The engine holds

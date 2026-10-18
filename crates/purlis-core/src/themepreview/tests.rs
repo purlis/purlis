@@ -38,6 +38,25 @@ fn purlis_classic_is_drawn_in_the_appearance_asked_for() {
 }
 
 #[test]
+fn a_specimen_is_drawn_as_the_window_draws_its_theme_with_the_consent_floors_held() {
+    for appearance in [None, Some(Appearance::Dark), Some(Appearance::Light)] {
+        let asked = specimen("purlis-classic", appearance);
+        let theme = chosen(&asked).expect("a theme");
+        let drawn = drawn(&asked).expect("drawn");
+        assert_eq!(drawn, theme::draw(theme));
+        assert_eq!(
+            drawn.held, None,
+            "Purlis Classic clears every consent floor"
+        );
+    }
+    let why = drawn(&specimen("no-such-theme", None)).expect_err("refused");
+    assert_eq!(
+        Err(why),
+        chosen(&specimen("no-such-theme", None)).map(|_| ())
+    );
+}
+
+#[test]
 fn an_appearance_is_named_by_its_own_id_and_by_the_id_it_had_before_the_rename() {
     assert_eq!(
         chosen(&specimen("purlis-light", None)).map(|t| t.name.as_str()),
