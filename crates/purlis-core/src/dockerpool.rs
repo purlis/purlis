@@ -14,7 +14,11 @@
 //! - a user who is not root, by number ([`User`]);
 //! - the image by its digest alone ([`Image`]), never by a tag;
 //! - its home on a volume of its own, and no folder, device or socket of this machine;
-//! - its own network namespace on Docker's default bridge, never the machine's.
+//! - its own network namespace on Docker's default bridge, never the machine's;
+//! - a read-only root file system, its home volume and a `tmpfs` at `/tmp` (`nosuid`, `nodev`,
+//!   `noexec`) its only writable places;
+//! - the pool's limits ([`Limits`]): CPUs, memory with no swap beyond it, processes, and the
+//!   size of `/tmp`.
 //!
 //! purlis's Linux sandbox needs nothing more (`docs/runner-image.md`, #1040).
 //!
@@ -117,13 +121,103 @@ impl User {
     }
 }
 
-/// One runner of the pool, as it is made: its name, its image, its user and its home.
+/// What a runner of the pool may use (spec #2041: a pool's limits, configurable per pool): its
+/// CPUs, in thousandths; its memory, in MiB, with no swap beyond it; how many processes it may
+/// run; and the size of its `/tmp`, in MiB, which counts against its memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    millicpus: u32,
+    memory_mib: u64,
+    pids: u32,
+    tmp_mib: u64,
+}
+
+impl Default for Limits {
+    /// Two CPUs, 4 GiB of memory, 1024 processes and 1 GiB of `/tmp`.
+    fn default() -> Limits {
+        Limits {
+            millicpus: 2000,
+            memory_mib: 4096,
+            pids: 1024,
+            tmp_mib: 1024,
+        }
+    }
+}
+
+impl Limits {
+    /// The fewest processes a runner may be limited to: its host, a chat, its harness and its
+    /// sandbox's supervisor, with room for a build.
+    pub const FEWEST_PIDS: u32 = 64;
+    /// The least memory a runner may be limited to, in MiB.
+    pub const LEAST_MEMORY_MIB: u64 = 512;
+
+    /// A pool's limits: each at least what a runner needs to start a chat, and `/tmp` no larger
+    /// than the memory it counts against.
+    pub fn new(
+        millicpus: u32,
+        memory_mib: u64,
+        pids: u32,
+        tmp_mib: u64,
+    ) -> Result<Limits, Refused> {
+        if millicpus == 0 || millicpus > 1_000_000 {
+            return Err(refused(
+                "a pool's CPU limit is more than none and at most 1000 CPUs",
+            ));
+        }
+        if !(Limits::LEAST_MEMORY_MIB..=16 * 1024 * 1024).contains(&memory_mib) {
+            return Err(refused(format!(
+                "a pool's memory limit is at least {} MiB and at most 16 TiB",
+                Limits::LEAST_MEMORY_MIB
+            )));
+        }
+        if pids < Limits::FEWEST_PIDS {
+            return Err(refused(format!(
+                "a pool's process limit is at least {}",
+                Limits::FEWEST_PIDS
+            )));
+        }
+        if tmp_mib == 0 || tmp_mib > memory_mib {
+            return Err(refused(
+                "a pool's /tmp is more than none and no larger than its memory limit",
+            ));
+        }
+        Ok(Limits {
+            millicpus,
+            memory_mib,
+            pids,
+            tmp_mib,
+        })
+    }
+
+    /// `--cpus`'s value: whole CPUs, with thousandths where there are any.
+    fn cpus(&self) -> String {
+        let (whole, part) = (self.millicpus / 1000, self.millicpus % 1000);
+        if part == 0 {
+            whole.to_string()
+        } else {
+            format!("{whole}.{part:03}")
+        }
+    }
+
+    fn memory_bytes(&self) -> u64 {
+        self.memory_mib * 1024 * 1024
+    }
+
+    /// What `--tmpfs` mounts at `/tmp`, as `docker inspect` writes it back.
+    fn tmp_options(&self) -> String {
+        format!("rw,nosuid,nodev,noexec,size={}m", self.tmp_mib)
+    }
+}
+
+/// One runner of the pool, as it is made: its name, its image, its user, its home and its
+/// pool's limits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Runner {
     name: String,
     image: Image,
     user: User,
     home: String,
+    limits: Limits,
 }
 
 impl Runner {
@@ -164,7 +258,17 @@ impl Runner {
             image,
             user,
             home: home.to_owned(),
+            limits: Limits::default(),
         })
+    }
+
+    /// This runner, held to its pool's `limits` in place of the defaults.
+    pub fn limited(self, limits: Limits) -> Runner {
+        Runner { limits, ..self }
+    }
+
+    pub fn limits(&self) -> Limits {
+        self.limits
     }
 
     pub fn name(&self) -> &str {
@@ -214,6 +318,12 @@ impl Runner {
             "--mount",
             format!("type=volume,source={},target={}", self.volume(), self.home),
         );
+        pair("--tmpfs", format!("/tmp:{}", self.limits.tmp_options()));
+        pair("--cpus", self.limits.cpus());
+        pair("--memory", format!("{}m", self.limits.memory_mib));
+        pair("--memory-swap", format!("{}m", self.limits.memory_mib));
+        pair("--pids-limit", self.limits.pids.to_string());
+        args.push("--read-only".to_owned());
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
@@ -419,17 +529,63 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
     if networks.len() != 1 || !networks.contains_key("bridge") {
         return Err(not("is on a network other than Docker's default bridge"));
     }
-    // Absent, `null` or empty: Docker writes none of them for a container made without them.
-    for (pointer, what) in [
-        ("/HostConfig/Tmpfs", "a memory-backed folder"),
-        ("/HostConfig/Sysctls", "a kernel setting of its own"),
-    ] {
-        match one.pointer(pointer) {
-            None | Some(serde_json::Value::Null) => {}
-            Some(serde_json::Value::Object(set)) if set.is_empty() => {}
-            Some(serde_json::Value::Object(_)) => return Err(not(&format!("is given {what}"))),
-            Some(_) => return Err(unreadable(pointer)),
+    // Absent, `null` or empty: Docker writes none for a container made without one.
+    match one.pointer("/HostConfig/Sysctls") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::Object(set)) if set.is_empty() => {}
+        Some(serde_json::Value::Object(_)) => {
+            return Err(not("is given a kernel setting of its own"));
         }
+        Some(_) => return Err(unreadable("/HostConfig/Sysctls")),
+    }
+    if !truth("/HostConfig/ReadonlyRootfs")? {
+        return Err(not("may write to its root file system"));
+    }
+    let limits = made.runner.limits;
+    let tmp_only = match one.pointer("/HostConfig/Tmpfs") {
+        Some(serde_json::Value::Object(set)) => {
+            set.len() == 1
+                && set.get("/tmp").and_then(serde_json::Value::as_str)
+                    == Some(limits.tmp_options().as_str())
+        }
+        None | Some(serde_json::Value::Null) => false,
+        Some(_) => return Err(unreadable("/HostConfig/Tmpfs")),
+    };
+    if !tmp_only {
+        return Err(not(
+            "does not have its /tmp, and no other memory-backed folder, as it was made",
+        ));
+    }
+    let number = |pointer: &str| -> Result<i64, Refused> {
+        one.pointer(pointer)
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| unreadable(pointer))
+    };
+    let held = |pointer: &str, value: u64| -> Result<bool, Refused> {
+        Ok(u64::try_from(number(pointer)?).ok() == Some(value))
+    };
+    if !held(
+        "/HostConfig/NanoCpus",
+        u64::from(limits.millicpus) * 1_000_000,
+    )? {
+        return Err(not("is not held to its pool's CPU limit"));
+    }
+    if !held("/HostConfig/Memory", limits.memory_bytes())?
+        || !held("/HostConfig/MemorySwap", limits.memory_bytes())?
+    {
+        return Err(not(
+            "is not held to its pool's memory limit, with no swap beyond it",
+        ));
+    }
+    if !held("/HostConfig/PidsLimit", u64::from(limits.pids))? {
+        return Err(not("is not held to its pool's process limit"));
+    }
+    match one.pointer("/HostConfig/OomKillDisable") {
+        None | Some(serde_json::Value::Null) | Some(serde_json::Value::Bool(false)) => {}
+        Some(serde_json::Value::Bool(true)) => {
+            return Err(not("is never ended when it runs out of memory"));
+        }
+        Some(_) => return Err(unreadable("/HostConfig/OomKillDisable")),
     }
     if !matches!(
         text("/HostConfig/Runtime")?,
