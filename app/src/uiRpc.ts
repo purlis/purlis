@@ -6472,7 +6472,7 @@ export type PlaneChanged = {
  * 
  *  A mirror of [`machine::Contribution`] rather than the thing itself, because `purlis-core`
  *  never depends on the app and the app's wire types are generated into TypeScript. Each of
- *  the four maps travels as pairs in the map's own order, which is `BTreeMap`'s and therefore
+ *  the maps travels as pairs in the map's own order, which is `BTreeMap`'s and therefore
  *  sorted, so a value that comes back from the window compares against one taken from disk
  *  without either side having to sort anything.
  */
@@ -6504,6 +6504,12 @@ export type PlaneContribution = {
 	 *  where the persona ships one. The persona tool gate smooths only what is approved here.
 	 */
 	grants: ([string, string])[],
+	/**
+	 *  One line per font file the project's or a workspace's theme folders bring: its path in
+	 *  the project, and the sha-256 of its bytes. The window draws a face from the project only
+	 *  when it is approved here with that digest.
+	 */
+	fonts: ([string, string])[],
 };
 
 /**

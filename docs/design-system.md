@@ -1049,11 +1049,13 @@ the text redraws when a face arrives. A theme not read from a folder (an extensi
 no `fonts/`, so naming a font refuses it. The person's own `theme.json` is in their config
 folder, beside `machine.json`, and its fonts are that folder's `fonts/`.
 
-**A face is read through the theme folder's handle.** `fonts/` is opened from the handle the
-folder's `theme.json` was read through, refusing a link, and each face from the handle of
-`fonts/`, refusing a link again; serving a face reads it from the same handles. A project's and
-a workspace's theme folders bring their fonts only in a project purlis opened through the trust
-ask (ADR 0035); the person's own folders always do.
+**A face is read through the theme folder's handle.** For a theme folder of a level, `fonts/`
+is opened from the handle the folder's `theme.json` was read through, refusing a link, and each
+face from the handle of `fonts/`, refusing a link again; serving a face reads it from the same
+handles. **A project's and a workspace's font files are approved with the project** (ADR 0098,
+as amended 2026-10-18): the trust ask lists each by its path and digest, asks again when one is
+new or changed, and a face from the project is drawn only when that approval holds it. The
+person's own theme folders' fonts need no approval.
 
 **The person's font beats the theme's.** Settings › You › Density and fonts takes a family for
 the window, for code and for the terminal; an empty field draws the theme's. The engine holds

@@ -42,7 +42,7 @@ const FOUND = {
 
 const ASK = {
   path: LOCAL,
-  contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [] },
+  contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [], fonts: [] },
   changes: [],
   first: true,
 };

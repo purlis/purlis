@@ -204,7 +204,7 @@ describe("the two trust questions", () => {
       <ApprovePlane
         ask={{
           path: "/p",
-          contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [] },
+          contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [], fonts: [] },
           changes: [],
           first: true,
         }}

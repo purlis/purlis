@@ -82,3 +82,8 @@ is a setting, reviewed like one.
   Extensions list says which it is.
 - `themes/` becomes a reserved folder at the plane root and in every workspace
   (`docs/plane-format.md`), and `purlis doctor` names what sits there that is not a theme folder.
+
+The amendments to this decision are files of their own in [`0098/`](0098/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

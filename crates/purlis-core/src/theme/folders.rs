@@ -22,11 +22,14 @@
 //! between the check and the read. A theme folder's fonts are read from the same handle
 //! (`super::fonts`).
 //!
-//! # A project's fonts need the project opened
+//! # A project's fonts are read only as approved
 //!
-//! A theme folder of the project or of a workspace has its fonts read only when the project is
-//! one the window opened through the trust gate (ADR 0035): [`Folders::opened`] says so, and
-//! [`Folders::of`] reads every level's `theme.json` but the person's own fonts alone.
+//! Every font file a project's or a workspace's theme folders bring is part of what the project
+//! contributes ([`plane_fonts`], [`crate::machine::Contribution::fonts`]), so the trust ask
+//! (ADR 0035) lists it and asks again when one changes. [`Folders::of`] reads this machine's
+//! approval of the project itself, and a face from the project's or a workspace's folder is read
+//! only when that approval holds its file with the digest of the bytes read. The person's own
+//! folders' faces need no approval.
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -66,9 +69,19 @@ pub struct ThemesFolder {
     pub root: PathBuf,
     /// The `themes/` folder, relative to [`Self::root`].
     pub below: PathBuf,
-    /// Whether its theme folders' fonts are read, or why not: the person's own always; a
-    /// project's and a workspace's only for a project the window opened ([`Folders::opened`]).
-    pub fonts: Result<(), String>,
+    /// Which of its theme folders' faces are read.
+    pub(crate) fonts: FontGate,
+}
+
+/// **Which of a level's faces are read.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FontGate {
+    /// The person's own folders: every face.
+    Own,
+    /// A project's or a workspace's: a face whose file this machine's approval of the project
+    /// holds with that digest, keyed by its path in the project. Empty when the project is not
+    /// approved here.
+    Approved(std::sync::Arc<BTreeMap<String, String>>),
 }
 
 impl ThemesFolder {
@@ -101,37 +114,21 @@ pub enum Found {
 impl Folders {
     /// The levels' folders: the person's under `config_root`'s purlis folder, the project's at
     /// `plane`'s root, and `workspace`'s inside it. A workspace whose name is not one is left
-    /// out. The project's and the workspace's fonts are not read: [`Self::opened`] reads them.
+    /// out. The project's and the workspace's faces are read only as this machine's approval
+    /// of the project, read here from `config_root`'s store, holds them.
     pub fn of(config_root: Option<&Path>, plane: Option<&Path>, workspace: Option<&str>) -> Self {
-        Self::at(config_root, plane, workspace, false)
-    }
-
-    /// [`Self::of`] for `plane`, a project **the window opened through the trust gate** (ADR
-    /// 0035): its and its workspace's theme folders' fonts are read too. Only a caller holding
-    /// a project the person opened calls this.
-    pub fn opened(
-        config_root: Option<&Path>,
-        plane: Option<&Path>,
-        workspace: Option<&str>,
-    ) -> Self {
-        Self::at(config_root, plane, workspace, true)
-    }
-
-    fn at(
-        config_root: Option<&Path>,
-        plane: Option<&Path>,
-        workspace: Option<&str>,
-        opened: bool,
-    ) -> Self {
-        let plane_fonts = |whose: &str| {
-            if opened {
-                Ok(())
-            } else {
-                Err(format!(
-                    "a {whose} theme folder's fonts are read only in a project purlis opened"
-                ))
-            }
-        };
+        let approved = std::sync::Arc::new(
+            config_root
+                .zip(plane)
+                .and_then(|(config, plane)| {
+                    crate::machine::read(config)
+                        .store
+                        .recent(plane)
+                        .and_then(|entry| entry.trust.as_ref())
+                        .map(|trust| trust.contributed.fonts.clone())
+                })
+                .unwrap_or_default(),
+        );
         let machine = config_root.map(|root| {
             let dir = crate::machine::dir(root);
             ThemesFolder {
@@ -141,20 +138,20 @@ impl Folders {
                     .map(Path::to_path_buf)
                     .unwrap_or_default()
                     .join(THEMES),
-                fonts: Ok(()),
+                fonts: FontGate::Own,
             }
         });
         let project = plane.map(|root| ThemesFolder {
             root: root.to_path_buf(),
             below: PathBuf::from(THEMES),
-            fonts: plane_fonts("project's"),
+            fonts: FontGate::Approved(approved.clone()),
         });
         let workspace = plane
             .zip(workspace.filter(|name| crate::contain::workspace_name_ok(name)))
             .map(|(root, name)| ThemesFolder {
                 root: root.to_path_buf(),
                 below: Path::new("workspaces").join(name).join(THEMES),
-                fonts: plane_fonts("workspace's"),
+                fonts: FontGate::Approved(approved),
             });
         Self {
             workspace,
@@ -289,6 +286,27 @@ pub(super) fn read_level(folder: &ThemesFolder, said: &mut Vec<Complaint>) -> He
     }
 }
 
+/// A path in the project, as the trust record names a font file: its folders joined by `/`.
+fn in_project(path: &Path) -> String {
+    path.components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The most font files one theme folder's `fonts/` is read for, in name order: every face a
+/// theme can name fits.
+const MOST_FONT_FILES: usize = 3 * super::fonts::MOST_FACES;
+
+/// **Every font file the project at `plane` brings in its theme folders and its workspaces'**,
+/// by its path in the project, to the sha-256 of its bytes: what the trust ask lists and what
+/// an approval holds (`crate::machine::Contribution::fonts`). Each is read as a face is, through
+/// handles opened refusing a link, a plain woff2 file under the cap; one that is not is left
+/// out, and is then never read as a face either.
+pub(crate) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
+    read::plane_fonts(plane)
+}
+
 /// Whether `below` is a plain relative path of folder names, which is all a level's `themes/`
 /// is below its root.
 fn plain_below(below: &Path) -> bool {
@@ -302,6 +320,7 @@ mod read {
     //! The reads, from handles: every step opened with `O_NOFOLLOW`, the file read from the
     //! descriptor that was checked.
 
+    use std::collections::BTreeMap;
     use std::io::Read;
     use std::os::fd::OwnedFd;
 
@@ -310,7 +329,10 @@ mod read {
 
     use std::path::{Component, Path};
 
-    use super::{Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, plain_below};
+    use super::{
+        FontGate, Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, in_project,
+        plain_below,
+    };
     use crate::theme::fonts::ThemeDir;
 
     const DIRECTORY: OFlags = OFlags::RDONLY
@@ -371,9 +393,11 @@ mod read {
                     theme_json(&at, &shown.to_string(), name).map(|(document, icons, dir)| {
                         let path = folder.path().join(name);
                         // Its fonts are read from the handle its `theme.json` was read through.
+                        let held = ThemeDir::held(path, dir);
                         let held = match &folder.fonts {
-                            Ok(()) => ThemeDir::held(path, dir),
-                            Err(why) => ThemeDir::refusing(path, why.clone()),
+                            FontGate::Own => held,
+                            FontGate::Approved(files) => held
+                                .approved_only(files.clone(), in_project(&folder.below.join(name))),
                         };
                         (document, icons, held)
                     });
@@ -381,6 +405,75 @@ mod read {
             })
             .collect();
         Ok((held, notes))
+    }
+
+    /// `step` inside `at`, a folder opened refusing a link, or `None`.
+    fn folder_in(at: &OwnedFd, step: &str) -> Option<OwnedFd> {
+        openat(at, step, DIRECTORY, Mode::empty()).ok()
+    }
+
+    /// Every name in the folder `at` that `keep` takes, sorted.
+    fn listed(at: &OwnedFd, keep: impl Fn(&str) -> bool) -> Vec<String> {
+        let Ok(dir) = Dir::read_from(at) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = dir
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str().ok().map(str::to_owned))
+            .filter(|name| !name.starts_with('.') && keep(name))
+            .collect();
+        names.sort();
+        names
+    }
+
+    pub(super) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        let Ok(root) = rustix::fs::open(
+            plane,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) else {
+            return out;
+        };
+        let mut levels: Vec<(String, OwnedFd)> = Vec::new();
+        if let Some(themes) = folder_in(&root, super::THEMES) {
+            levels.push((super::THEMES.to_owned(), themes));
+        }
+        if let Some(workspaces) = folder_in(&root, "workspaces") {
+            for name in listed(&workspaces, crate::contain::workspace_name_ok) {
+                if let Some(themes) = folder_in(&workspaces, &name)
+                    .as_ref()
+                    .and_then(|workspace| folder_in(workspace, super::THEMES))
+                {
+                    levels.push((format!("workspaces/{name}/{}", super::THEMES), themes));
+                }
+            }
+        }
+        for (below, themes) in levels {
+            for name in listed(&themes, crate::theme::is_folder_name)
+                .into_iter()
+                .take(MOST_FOLDERS)
+            {
+                let Some(fonts) = folder_in(&themes, &name)
+                    .as_ref()
+                    .and_then(|folder| folder_in(folder, "fonts"))
+                else {
+                    continue;
+                };
+                for file in listed(&fonts, crate::theme::fonts::is_face_name)
+                    .into_iter()
+                    .take(super::MOST_FONT_FILES)
+                {
+                    let Ok(again) = rustix::io::dup(&fonts) else {
+                        continue;
+                    };
+                    if let Some(digest) = crate::theme::fonts::digest_in(again, &file) {
+                        out.insert(format!("{below}/{name}/fonts/{file}"), digest);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// The names in the folder `at` that are theme folders' names, sorted. A name starting with
@@ -523,7 +616,15 @@ mod read {
     //! this build cannot express, and a guard that cannot be expressed refuses rather than
     //! degrades (ADR 0031, as `crate::machine` does for the whole machine store).
 
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
     use super::{Held, ThemesFolder};
+
+    /// No font file is read off unix, so none is contributed.
+    pub(super) fn plane_fonts(_plane: &Path) -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
 
     pub(super) fn level(folder: &ThemesFolder) -> Result<(Held, Vec<String>), String> {
         Err(format!(

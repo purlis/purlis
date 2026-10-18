@@ -1263,8 +1263,25 @@ fn a_face_is_read_through_the_folder_s_handle_when_its_fonts_become_a_link() {
     );
 }
 
+/// The face `fonts/Plex.woff2` of the theme `name` drawn from `folders`, within `reach`.
+fn found(folders: &Folders, name: &str, reach: levels::Reach) -> Resolved {
+    let levels::Found::Read(resolved) = folders.find(name, reach) else {
+        panic!("{name} is read");
+    };
+    resolved
+}
+
+/// This machine approves the project at `plane` as it contributes now.
+fn approve(places: &Places) {
+    let contributes = crate::machine::Contribution::of(&places.plane);
+    crate::machine::update(&places.config, |store| {
+        store.approve(&places.plane, 1, contributes);
+    })
+    .unwrap();
+}
+
 #[test]
-fn a_project_s_and_a_workspace_s_fonts_are_read_only_in_a_project_purlis_opened() {
+fn a_project_s_and_a_workspace_s_fonts_are_read_only_as_approved() {
     let places = Places::new();
     put_with_a_face(&places.project_themes(), "team", &woff2("team, #2555"));
     put_with_a_face(
@@ -1273,34 +1290,154 @@ fn a_project_s_and_a_workspace_s_fonts_are_read_only_in_a_project_purlis_opened(
         &woff2("client, #2555"),
     );
     put_with_a_face(&places.machine_themes(), "mine", &woff2("mine, #2555"));
-    let opened = Folders::opened(Some(&places.config), Some(&places.plane), Some("alpha"));
-    for (name, reach, whose) in [
-        ("team", levels::Reach::Project, "project's"),
-        ("client", levels::Reach::Workspace, "workspace's"),
-    ] {
-        let levels::Found::Read(held) = places.folders(Some("alpha")).find(name, reach) else {
-            panic!("{name} is read");
-        };
+    let cases = [
+        (
+            "team",
+            levels::Reach::Project,
+            "themes/team/fonts/Plex.woff2",
+        ),
+        (
+            "client",
+            levels::Reach::Workspace,
+            "workspaces/alpha/themes/client/fonts/Plex.woff2",
+        ),
+    ];
+    // Not approved here: no face of the project's or the workspace's is read.
+    for (name, reach, file) in cases {
+        let held = found(&places.folders(Some("alpha")), name, reach);
         assert!(held.refused, "{name}");
         assert_eq!(
             complaints_of(&held),
             [format!(
-                "a {whose} theme folder's fonts are read only in a project purlis opened"
+                "{file} is not a font file you approved with this project, so it is not read"
             )]
         );
-        let levels::Found::Read(drawn) = opened.find(name, reach) else {
-            panic!("{name} is read");
-        };
+    }
+    // The person's own fonts need no approval.
+    let mine = found(
+        &places.folders(Some("alpha")),
+        "mine",
+        levels::Reach::Machine,
+    );
+    assert!(!mine.refused, "{:?}", complaints_of(&mine));
+    assert_eq!(mine.theme.first().fonts.ui.faces.len(), 1);
+
+    approve(&places);
+    for (name, reach, _) in cases {
+        let drawn = found(&places.folders(Some("alpha")), name, reach);
         assert!(!drawn.refused, "{name}: {:?}", complaints_of(&drawn));
         assert_eq!(drawn.theme.first().fonts.ui.faces.len(), 1, "{name}");
     }
-    // The person's own fonts are read either way.
-    let levels::Found::Read(mine) = places
-        .folders(Some("alpha"))
-        .find("mine", levels::Reach::Machine)
-    else {
-        panic!("mine is read");
-    };
-    assert!(!mine.refused, "{:?}", complaints_of(&mine));
-    assert_eq!(mine.theme.first().fonts.ui.faces.len(), 1);
+
+    // A face that changed after the approval is not read until it is approved again.
+    std::fs::write(
+        places.project_themes().join("team/fonts/Plex.woff2"),
+        woff2("team, changed, #2555"),
+    )
+    .unwrap();
+    let changed = found(&places.folders(None), "team", levels::Reach::Project);
+    assert!(changed.refused);
+    approve(&places);
+    assert!(!found(&places.folders(None), "team", levels::Reach::Project).refused);
+}
+
+#[test]
+fn a_project_that_brings_only_theme_fonts_is_asked_about_and_asked_again_when_one_changes() {
+    use crate::machine::{Change, Consent, Contribution, Store};
+    let places = Places::new();
+    // Nothing else: no settings, no personas, no record.
+    put_with_a_face(
+        &places.project_themes(),
+        "team",
+        &woff2("only fonts, #2555"),
+    );
+    let contributes = Contribution::of(&places.plane);
+    assert_eq!(
+        contributes.fonts,
+        [(
+            "themes/team/fonts/Plex.woff2".to_owned(),
+            digest(&woff2("only fonts, #2555"))
+        )]
+        .into_iter()
+        .collect()
+    );
+    assert_ne!(contributes, Contribution::default());
+
+    // Approved before it brought a font: the font is new, and asks.
+    let mut store = Store::default();
+    store.approve(&places.plane, 1, Contribution::default());
+    let consent = store.consent(&places.plane, &contributes);
+    assert!(consent.must_ask());
+    assert_eq!(
+        consent.changes(),
+        [Change::FontAdded("themes/team/fonts/Plex.woff2".to_owned())]
+    );
+    assert_eq!(
+        consent.changes()[0].to_string(),
+        "the font file themes/team/fonts/Plex.woff2 is new"
+    );
+
+    // Approved with it: unchanged until a face changes, which asks again.
+    store.approve(&places.plane, 2, contributes.clone());
+    assert_eq!(
+        store.consent(&places.plane, &contributes),
+        Consent::Unchanged
+    );
+    std::fs::write(
+        places.project_themes().join("team/fonts/Plex.woff2"),
+        woff2("only fonts, changed, #2555"),
+    )
+    .unwrap();
+    let consent = store.consent(&places.plane, &Contribution::of(&places.plane));
+    assert!(consent.must_ask());
+    assert_eq!(
+        consent.changes(),
+        [Change::FontChanged(
+            "themes/team/fonts/Plex.woff2".to_owned()
+        )]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_served_face_is_read_through_the_handles_it_was_registered_with() {
+    let places = Places::new();
+    let read = woff2("registered, #2555");
+    put_with_a_face(&places.machine_themes(), "plex", &read);
+    let elsewhere = tempfile::tempdir().unwrap();
+    put_with_a_face(elsewhere.path(), "plex", &woff2("not registered, #2555"));
+    let drawn = found(&places.folders(None), "plex", levels::Reach::Machine);
+    let asset = drawn.theme.first().fonts.ui.faces[0].asset.clone();
+    let folder = places.machine_themes().join("plex");
+
+    // `fonts/` swapped for a link once registered: the face still comes from the folder read.
+    std::fs::rename(folder.join("fonts"), folder.join("fonts-before")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("plex/fonts"), folder.join("fonts")).unwrap();
+    assert_eq!(served(&asset).unwrap(), read);
+
+    // The face file itself become a link: it is not served.
+    let kept = folder.join("fonts-before/Plex.woff2");
+    std::fs::remove_file(&kept).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("plex/fonts/Plex.woff2"), &kept).unwrap();
+    let refused = served(&asset).unwrap_err();
+    assert!(refused.contains("is reached through a link"), "{refused}");
+}
+
+#[test]
+fn a_folder_named_to_the_library_brings_its_fonts_only_when_asked_to() {
+    let dir = tempfile::tempdir().unwrap();
+    put_with_a_face(dir.path(), "plex", &woff2("named, #2555"));
+    let unasked = Library::new().load_folder(dir.path(), "plex");
+    assert!(unasked.refused);
+    assert_eq!(
+        complaints_of(&unasked),
+        [
+            "a theme folder's fonts are read when it is one of your theme folders, or one you name \
+          yourself"
+        ]
+    );
+    let asked = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "plex");
+    assert!(!asked.refused, "{:?}", complaints_of(&asked));
 }

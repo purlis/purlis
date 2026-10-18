@@ -479,6 +479,15 @@ pub struct Contribution {
     /// approved here, and a grant that differs from it meets the harness's own prompt until
     /// the plane is approved again.
     pub grants: BTreeMap<String, String>,
+    /// One key per font file the plane's theme folders bring, at its root and in its
+    /// workspaces: its path in the plane, to the sha-256 of its bytes
+    /// ([`crate::theme::levels::plane_fonts`]).
+    ///
+    /// **A grant, by the operator's ruling (2026-10-18; ADR 0098 as amended).** A theme's
+    /// colours and folders need no approval, and its font files do: a face from the project or
+    /// a workspace is drawn only when this record holds its file with that digest, and a face
+    /// that is new or changed asks again.
+    pub fonts: BTreeMap<String, String>,
 }
 
 impl Contribution {
@@ -532,6 +541,7 @@ impl Contribution {
                     .insert(persona, crate::personagrant::grant_text(&grant));
             }
         }
+        out.fonts = crate::theme::levels::plane_fonts(plane);
         // Through `reopen`, never by reading the file here: that read is already gated on the
         // exact path it opens, bounded, and refuses a FIFO — and a second reader of the same
         // file would be a second set of rules about it.
@@ -614,6 +624,14 @@ impl Contribution {
             Change::GrantAdded,
             Change::GrantRemoved,
             Change::GrantChanged,
+            &mut out,
+        );
+        diff(
+            &self.fonts,
+            &now.fonts,
+            Change::FontAdded,
+            Change::FontRemoved,
+            Change::FontChanged,
             &mut out,
         );
         out
@@ -714,6 +732,11 @@ pub enum Change {
     GrantAdded(String),
     GrantChanged(String),
     GrantRemoved(String),
+    /// A font file a theme folder of the plane brings that is new, or whose bytes are not the
+    /// approved ones; and one that is gone.
+    FontAdded(String),
+    FontChanged(String),
+    FontRemoved(String),
 }
 
 impl Change {
@@ -739,13 +762,16 @@ impl Change {
             | Self::EnvChanged(_)
             | Self::StartsAdded(_)
             | Self::GrantAdded(_)
-            | Self::GrantChanged(_) => true,
+            | Self::GrantChanged(_)
+            | Self::FontAdded(_)
+            | Self::FontChanged(_) => true,
             Self::PluginRemoved(_)
             | Self::EnvRemoved(_)
             | Self::StartsRemoved(_)
             | Self::ProfileAdded(_)
             | Self::ProfileRemoved(_)
-            | Self::GrantRemoved(_) => false,
+            | Self::GrantRemoved(_)
+            | Self::FontRemoved(_) => false,
         }
     }
 
@@ -764,7 +790,10 @@ impl Change {
             | Self::ProfileRemoved(name)
             | Self::GrantAdded(name)
             | Self::GrantChanged(name)
-            | Self::GrantRemoved(name) => name,
+            | Self::GrantRemoved(name)
+            | Self::FontAdded(name)
+            | Self::FontChanged(name)
+            | Self::FontRemoved(name) => name,
         }
     }
 }
@@ -785,6 +814,9 @@ impl std::fmt::Display for Change {
             Self::GrantAdded(_) => ("tool grant of persona", "is new"),
             Self::GrantChanged(_) => ("tool grant of persona", "has changed"),
             Self::GrantRemoved(_) => ("tool grant of persona", "is gone"),
+            Self::FontAdded(_) => ("font file", "is new"),
+            Self::FontChanged(_) => ("font file", "has changed"),
+            Self::FontRemoved(_) => ("font file", "is gone"),
         };
         write!(f, "the {what} {} {how}", self.name())
     }
@@ -2192,6 +2224,7 @@ fn trust_of(raw: &serde_json::Value) -> Option<Trust> {
             starts: words(raw.get("starts")),
             profiles: words(raw.get("profiles")),
             grants: words(raw.get("grants")),
+            fonts: words(raw.get("fonts")),
         },
     })
 }
@@ -2287,6 +2320,8 @@ struct TrustOnDisk {
     profiles: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     grants: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    fonts: BTreeMap<String, String>,
 }
 
 /// Whether a flag is at its default, so the file leaves it out. Spelled here rather than as
@@ -2353,6 +2388,7 @@ impl From<&Store> for OnDisk {
                             starts: trust.contributed.starts.clone(),
                             profiles: trust.contributed.profiles.clone(),
                             grants: trust.contributed.grants.clone(),
+                            fonts: trust.contributed.fonts.clone(),
                         }),
                     })
                 })
@@ -2438,6 +2474,9 @@ mod tests {
                     .into_iter()
                     .collect(),
                 grants: [("ops".to_owned(), r#"{"gh":""}"#.to_owned())]
+                    .into_iter()
+                    .collect(),
+                fonts: [("themes/plex/fonts/Plex.woff2".to_owned(), "ab12".to_owned())]
                     .into_iter()
                     .collect(),
             },

@@ -35,9 +35,12 @@
 //! from the handle of `fonts/`, refusing a link again. [`served`] reads it again from the same
 //! handles. Nothing on the way is looked up by path after `theme.json` was read.
 //!
-//! **A project's and a workspace's fonts need the project opened** (ADR 0035): a level's
-//! folders say whether their fonts are read (`super::folders`), and only a project the window
-//! opened through the trust gate reads them.
+//! **A project's and a workspace's fonts are read only as approved** (ADR 0035, ADR 0098 as
+//! amended): each font file a project's or a workspace's theme folder brings is part of what
+//! the project contributes ([`crate::machine::Contribution::fonts`]), named by its path in the
+//! project and its sha-256, so the trust ask lists it. A face from such a folder is read only
+//! when this machine's approval of the project holds that file with those bytes' digest; any
+//! other refuses the theme. The person's own folders' faces need no approval.
 //!
 //! **The CSS family name is purlis's**: a face is registered under a name the engine makes from
 //! its digest ([`Font::stack`]); the theme's `family` is a label, said in Settings, and never
@@ -185,6 +188,17 @@ fn face_file(file: &str) -> Option<&str> {
 pub(crate) struct ThemeDir {
     path: PathBuf,
     handle: Result<held::Handle, String>,
+    /// For a project's or a workspace's folder: the font files the person approved with the
+    /// project, path to digest, and this folder's path in the project. `None` for the person's
+    /// own folders, whose faces need no approval.
+    approved: Option<Approved>,
+}
+
+/// The font files a project's approval holds, and a theme folder's path in that project.
+#[derive(Debug, Clone)]
+struct Approved {
+    files: std::sync::Arc<BTreeMap<String, String>>,
+    folder: String,
 }
 
 impl ThemeDir {
@@ -194,7 +208,21 @@ impl ThemeDir {
         Self {
             path,
             handle: Ok(std::sync::Arc::new(handle)),
+            approved: None,
         }
+    }
+
+    /// The folder, whose faces are read only when `files` (a project's approved font files,
+    /// keyed by their path in the project) holds each with its digest; `folder` is its path
+    /// in the project.
+    #[must_use]
+    pub(crate) fn approved_only(
+        mut self,
+        files: std::sync::Arc<BTreeMap<String, String>>,
+        folder: String,
+    ) -> Self {
+        self.approved = Some(Approved { files, folder });
+        self
     }
 
     /// The folder at `path`, whose fonts are not read, and `why`.
@@ -202,6 +230,7 @@ impl ThemeDir {
         Self {
             path,
             handle: Err(why),
+            approved: None,
         }
     }
 
@@ -216,7 +245,11 @@ impl ThemeDir {
                 path.display()
             )
         });
-        Self { path, handle }
+        Self {
+            path,
+            handle,
+            approved: None,
+        }
     }
 
     /// The folder, for a sentence.
@@ -265,6 +298,21 @@ fn kept() -> std::sync::MutexGuard<'static, BTreeMap<String, Vec<Kept>>> {
     KEPT.get_or_init(|| Mutex::new(BTreeMap::new()))
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Whether `name` is a face's file name in `fonts/`: what [`face_file`] takes after `fonts/`.
+pub(crate) fn is_face_name(name: &str) -> bool {
+    face_file(&format!("fonts/{name}")).is_some()
+}
+
+/// **The digest of the face `name` in the folder `fonts` holds**, read as a face is (from the
+/// handle, refusing a link, a plain woff2 file under the cap), or `None`: what a project's
+/// contribution records of each font file its theme folders bring.
+#[cfg(unix)]
+pub(crate) fn digest_in(fonts: std::os::fd::OwnedFd, name: &str) -> Option<String> {
+    read_face(&std::sync::Arc::new(fonts), name, name)
+        .ok()
+        .map(|bytes| hex(&bytes))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -408,6 +456,7 @@ pub(super) fn read(
     let inside = Inside {
         fonts: held::fonts(dir),
         folder: folder.path(),
+        approved: folder.approved.as_ref(),
     };
     for (slot, font) in given {
         if !SLOTS.contains(&slot.as_str()) {
@@ -427,6 +476,7 @@ pub(super) fn read(
 /// sentence.
 struct Inside<'a> {
     fonts: Result<held::Handle, Missed>,
+    approved: Option<&'a Approved>,
     folder: &'a Path,
 }
 
@@ -582,6 +632,16 @@ fn face_of(
     match read_face(fonts, &file, &shown) {
         Ok(bytes) => {
             let asset = hex(&bytes);
+            if let Some(approved) = folder.approved {
+                let named = format!("{}/fonts/{file}", approved.folder);
+                if approved.files.get(&named) != Some(&asset) {
+                    complaints.push(format!(
+                        "{named} is not a font file you approved with this project, so it is \
+                         not read"
+                    ));
+                    return None;
+                }
+            }
             Some(Face {
                 asset,
                 weight,

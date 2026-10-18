@@ -234,9 +234,7 @@ pub async fn theme_in_force(
         }
         theme_in_force_of(
             &levels,
-            // `at` is a project this window holds, so one it opened through the trust gate
-            // (ADR 0035): its theme folders' fonts are read.
-            &purlis_core::theme::Folders::opened(Some(&root), at.as_deref(), workspace),
+            &purlis_core::theme::Folders::of(Some(&root), at.as_deref(), workspace),
             on.as_deref(),
             crate::windowprefs::THEIRS.get(Some(&root)).theme.as_ref(),
             light,
@@ -1582,9 +1580,7 @@ fn with_levels(
 ) -> ProjectTheme {
     use purlis_core::theme::{self, Folders, Level, LevelInputs, Levels, choices, levels};
     let levels = Levels::read(Some(config), Some(root), workspace);
-    // `root` is a project this window holds, so one it opened through the trust gate (ADR
-    // 0035): its theme folders' fonts are read.
-    let folders = Folders::opened(Some(config), Some(root), workspace);
+    let folders = Folders::of(Some(config), Some(root), workspace);
     let drawn = theme::resolve_levels(
         &LevelInputs {
             levels: &levels,

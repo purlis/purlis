@@ -17,7 +17,8 @@ import { AnswerBar } from "./AnswerBar";
  *
  * What it shows is what charter can enumerate, and no more: the plugins the project's
  * committed settings enable, the environment they set, the programs its reopen record would
- * start, and the tools each persona may run without a prompt. It does not and cannot summarise
+ * start, the tools each persona may run without a prompt, and the font files its theme folders
+ * bring (ADR 0098 as amended: a face from the project is drawn only as approved). It does not and cannot summarise
  * the project's persona charters, its memory or its todos, which are text a model will read and
  * act on — charter has no model and makes no judgements about the content of work. Said on screen, in the last line, rather than left for
  * whoever first assumes the dialog covered everything.
@@ -53,7 +54,8 @@ export function ApprovePlane({
     contributes.env.length === 0 &&
     contributes.starts.length === 0 &&
     contributes.profiles.length === 0 &&
-    contributes.grants.length === 0;
+    contributes.grants.length === 0 &&
+    contributes.fonts.length === 0;
   // Cancel, focused by the dialog itself rather than by tab order: opening a project puts
   // what this lists in force, and it is never what a stray Return key finds.
   const cancel = useRef<HTMLButtonElement>(null);
@@ -106,7 +108,7 @@ export function ApprovePlane({
           {nothing && (
             <p className="came-back">
               Nothing purlis can enumerate: it enables no plugins, sets no environment, grants no
-              persona a tool, and its record names no chat to start.
+              persona a tool, brings no font files, and its record names no chat to start.
             </p>
           )}
           {contributes.plugins.length > 0 && (
@@ -149,6 +151,22 @@ export function ApprovePlane({
                   <li key={persona}>
                     <code>{persona}</code>
                     <span className="value"> {grant}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {contributes.fonts.length > 0 && (
+            <section>
+              {/* Each font file by its path in the project and the sha-256 of its bytes: the
+                window draws a face from the project only when it is approved here with that
+                digest, so a face that changes later asks again. */}
+              <h4>Font files its themes bring</h4>
+              <ul className="contributes">
+                {contributes.fonts.map(([file, digest]) => (
+                  <li key={file}>
+                    <code>{file}</code>
+                    <span className="value"> sha-256 {digest}</span>
                   </li>
                 ))}
               </ul>
