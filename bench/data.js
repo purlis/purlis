@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792356900810,
+  "lastUpdate": 1792358470786,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17472,6 +17472,48 @@ window.BENCHMARK_DATA = {
             "value": 104.814195,
             "unit": "ms",
             "extra": "median of 5 runs: 102.223, 102.422, 104.814, 105.534, 107.448 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "67dfd81deb9b6953db74d2decdec129eec1b4187",
+          "message": "Theme import and export: follow-ups (#2587, #2588, #2612) (#2660)\n\n- A staged import is read only to check (Library::checking, Staged::read;\n  Staged::path is private): no font of the stage is registered to be\n  served. Folders::find_at and every_at read only to check too.\n- One rule for names Windows cannot hold (theme::portable, on contain's\n  device table, now with CONIN$ and CONOUT$): device names and names\n  ending in a dot or a space are refused with a sentence in import,\n  export, the stage, the level reader and the files a theme names.\n- purlis theme export takes a level id and finds it with Folders::find_at,\n  never a farther level's folder. A level id takes the name grammar, so\n  the engine says why a folder like `con` is refused.\n\nCloses #2587\nCloses #2588\nCloses #2612\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T01:12:28+04:00",
+          "tree_id": "5610e224f7b53899c4e6c990c5ebbeea3de25cf4",
+          "url": "https://github.com/purlis/purlis/commit/67dfd81deb9b6953db74d2decdec129eec1b4187"
+        },
+        "date": 1792358468669,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4573345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.456, 0.457, 0.457, 0.463, 0.479 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.720934999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.346, 16.694, 16.721, 16.750, 16.779 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6643775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.793, 101.341, 101.664, 102.033, 102.408 ms"
           }
         ]
       }
