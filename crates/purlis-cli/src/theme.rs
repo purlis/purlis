@@ -1,15 +1,24 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis theme list` and `purlis theme check` (spec #2313, #2321): every theme available on
-//! this machine and where it comes from, and the theme check of any one of them.
+//! `purlis theme list`, `check`, `import` and `export` (spec #2313, #2321, #2334): every theme
+//! available on this machine and where it comes from, the theme check of any one of them, a
+//! theme folder made from a theme of another program, and a theme folder as a zip.
 //!
 //! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it
 //! or says what it left out, and checks each appearance; this module finds the themes there are,
 //! asks the engine about each, and prints its answer, as a table for a person or as JSON for a
-//! chat. Nothing is written: a theme command reads Purlis Classic, the person's `theme.json`,
-//! the theme folders of every level and the approved extensions' themes, and leaves every file
-//! as it found it.
+//! chat. `list` and `check` write nothing: they read Purlis Classic, the person's `theme.json`,
+//! the theme folders of every level and the approved extensions' themes, and leave every file
+//! as they found it.
+//!
+//! **`import` and `export`** (#2334): the engine makes a theme folder's files from a VS Code
+//! colour theme, a base16 or base24 scheme, an iTerm2 or a Ghostty palette or a theme folder's
+//! zip, through its fixed mapping tables, and lists every source key no token takes. `import`
+//! writes them beside where they go, has the engine read them there as it reads any theme
+//! folder, and puts in place only a theme it draws: one theme folder, in the machine level's
+//! `themes/` unless `--into` names another, never over one that is there without `--force`.
+//! `export` writes one zip of a theme folder that `import` gives back file for file.
 //!
 //! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic,
 //! `purlis-classic`); the person's own `theme.json` (its id is [`MINE`]) and the theme folders
@@ -86,6 +95,45 @@ pub enum ThemeCommand {
         /// reports on its own (`null` until purlis checks them).
         #[arg(long)]
         json: bool,
+    },
+    /// Make a theme folder from a theme you already have: a VS Code colour theme (JSON with
+    /// comments), a base16 or base24 scheme (YAML or JSON), an iTerm2 colour preset
+    /// (.itermcolors), a Ghostty theme, or a theme folder's zip from `purlis theme export`.
+    /// Each kind goes through a fixed mapping table (`purlis docs show themes`); every key of
+    /// the source no token takes is listed, and the new theme's check is shown. It never
+    /// replaces a theme folder that is there without --force. Exits 0 when the folder is
+    /// written, 1 when it is not, 2 when there is no such file.
+    Import {
+        /// The file to import.
+        source: String,
+        /// What the file is, when its name and its first words do not say.
+        #[arg(long, value_parser = ["vscode", "base16", "base24", "iterm", "ghostty", "zip"])]
+        kind: Option<String>,
+        /// The folder the new theme folder goes in: a `themes/` folder. Your own themes'
+        /// folder (`themes/` in purlis's config folder) when not given.
+        #[arg(long)]
+        into: Option<String>,
+        /// Replace a theme folder of the same name that is there.
+        #[arg(long)]
+        force: bool,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Write a theme folder as a zip to hand to someone: its theme.json, the files beside it
+    /// (a licence, a preview) and its fonts/ and icons/, under one folder of its name, so
+    /// `purlis theme import` (or unzip) gives the folder back. What it does not carry is
+    /// listed. Exits 0 when the zip is written, 1 when it is not, 2 when there is no such
+    /// theme.
+    Export {
+        /// The path of a theme folder, or `purlis-classic`.
+        theme: String,
+        /// The zip to write: `<theme folder's name>.zip` here when not given.
+        #[arg(long)]
+        to: Option<String>,
+        /// Replace a file that is there.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -359,6 +407,319 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
                 print!("{}", checked_text(&found, &checked));
             }
             ExitCode::from(u8::from(found.refused.is_some()))
+        }
+        ThemeCommand::Import {
+            source,
+            kind,
+            into,
+            force,
+            json,
+        } => import(
+            config.as_deref(),
+            source,
+            kind.as_deref(),
+            into.as_deref(),
+            *force,
+            *json,
+        ),
+        ThemeCommand::Export { theme, to, force } => export(theme, to.as_deref(), *force),
+    }
+}
+
+/// The most of a path a line prints.
+const PATH_LIMIT: usize = 1024;
+
+/// The folder your own theme folders are kept in: `themes/` in purlis's config folder.
+fn your_themes(config: &Path) -> std::path::PathBuf {
+    purlis_core::machine::dir(config).join(theme::levels::THEMES)
+}
+
+/// `purlis theme import`: the engine makes the folder's files from the source, they are
+/// written beside where they go, the engine reads them there as it reads any theme folder, and
+/// only a theme it draws is put in place.
+fn import(
+    config: Option<&Path>,
+    source: &str,
+    kind: Option<&str>,
+    into: Option<&str>,
+    force: bool,
+    json: bool,
+) -> ExitCode {
+    let path = Path::new(source);
+    if !path.is_file() {
+        eprintln!(
+            "purlis: there is no file '{}' to import",
+            shown::short(source)
+        );
+        return ExitCode::from(2);
+    }
+    let bytes = match read_source(path) {
+        Ok(bytes) => bytes,
+        Err(why) => return not_written(&why),
+    };
+    let file_name = path
+        .file_name()
+        .map_or_else(|| source.to_owned(), |it| it.to_string_lossy().into_owned());
+    let kind = match kind.and_then(theme::SourceKind::named) {
+        Some(kind) => kind,
+        None => match theme::detect(&file_name, &bytes) {
+            Some(kind) => kind,
+            None => {
+                return not_written(&format!(
+                    "purlis cannot tell what {} is: say which with --kind (vscode, base16, \
+                     base24, iterm, ghostty or zip)",
+                    shown::short(&file_name)
+                ));
+            }
+        },
+    };
+    let imported = match theme::import(kind, &file_name, &bytes) {
+        Ok(imported) => imported,
+        Err(why) => return not_written(&why),
+    };
+    let into = match (into, config) {
+        (Some(into), _) => std::path::PathBuf::from(into),
+        (None, Some(config)) => your_themes(config),
+        (None, None) => {
+            return not_written(
+                "purlis has no config folder to keep your themes in here: say where with --into",
+            );
+        }
+    };
+    let staged = match theme::stage(&into, &imported.folder, &imported.files, force) {
+        Ok(staged) => staged,
+        Err(why) => return not_written(&why.to_string()),
+    };
+    let target = into.join(&imported.folder);
+    let mut found = read_folder(&staged.path, target.display().to_string());
+    found.id.clone_from(&imported.folder);
+    let checked = checks(&found);
+    let written = if found.refused.is_some() {
+        drop(staged);
+        None
+    } else {
+        match staged.commit() {
+            Ok(path) => Some(path),
+            Err(why) => return not_written(&why.to_string()),
+        }
+    };
+    if json {
+        println!(
+            "{}",
+            imported_json(&imported, written.as_deref(), &found, &checked)
+        );
+    } else {
+        print!(
+            "{}",
+            imported_text(&imported, written.as_deref(), &found, &checked)
+        );
+    }
+    ExitCode::from(u8::from(written.is_none()))
+}
+
+/// A source file, read under the cap every import reads under (a zip's own is larger).
+fn read_source(path: &Path) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let most = theme::MOST_ZIP_BYTES.max(theme::MOST_SOURCE_BYTES);
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|file| file.take(most + 1).read_to_end(&mut bytes))
+        .map_err(|why| format!("{} could not be read: {why}", path.display()))?;
+    if bytes.len() as u64 > most {
+        return Err(format!(
+            "{} is larger than {} MiB, the most purlis imports",
+            path.display(),
+            most / 1024 / 1024
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Nothing was written, for `why`: said on standard error, exit 1.
+fn not_written(why: &str) -> ExitCode {
+    eprintln!("purlis: {}", shown::readable(why, 480));
+    ExitCode::from(1)
+}
+
+/// What an import says to a person: where the folder went (or that it did not), what was left
+/// out of the source, and the new theme's check.
+fn imported_text(
+    imported: &theme::Imported,
+    written: Option<&Path>,
+    found: &Found,
+    checked: &[theme::Checked],
+) -> String {
+    let mut out = match written {
+        Some(path) => format!(
+            "imported {} ({}) into {}\n",
+            shown::short(&imported.name),
+            imported.kind.name(),
+            shown::readable(&path.display().to_string(), PATH_LIMIT)
+        ),
+        None => format!(
+            "not imported: the theme {} makes is refused, so nothing was written\n",
+            imported.kind.name()
+        ),
+    };
+    if imported.left_out.is_empty() {
+        out.push_str("not taken: nothing\n");
+    } else {
+        out.push_str(&format!("not taken ({}):\n", imported.left_out.len()));
+        for one in &imported.left_out {
+            out.push_str(&format!(
+                "  {}: {}\n",
+                shown::readable(&one.key, 160),
+                shown::readable(&one.why, 240)
+            ));
+        }
+    }
+    out.push_str(&checked_text(found, checked));
+    if let Some(path) = written {
+        let path = shown::readable(&path.display().to_string(), PATH_LIMIT);
+        out.push_str(&format!(
+            "the theme is in {path}: `purlis theme check {path}` checks it again, and `purlis \
+             theme export {path}` makes a zip of it to share\n"
+        ));
+    }
+    out
+}
+
+/// What an import says to a chat: `written` (the folder's path, or `null`), what was not
+/// taken from the source, and the check as `purlis theme check --json` answers it.
+fn imported_json(
+    imported: &theme::Imported,
+    written: Option<&Path>,
+    found: &Found,
+    checked: &[theme::Checked],
+) -> Value {
+    json!({
+        "schema": SCHEMA,
+        "kind": imported.kind,
+        "name": imported.name,
+        "folder": imported.folder,
+        "written": written.map(|it| it.display().to_string()),
+        "not_taken": imported.left_out,
+        "check": checked_json(found, checked),
+    })
+}
+
+/// The folder Purlis Classic is exported as: its own id is kept for the built-in, so a copy
+/// imported back sits beside it and never in its place.
+const CLASSIC_COPY: &str = "purlis-classic-copy";
+
+/// `purlis theme export`.
+fn export(asked: &str, to: Option<&str>, force: bool) -> ExitCode {
+    let packed = if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+        let files = theme::Files::from([(
+            theme::THEME_JSON.to_owned(),
+            theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
+        )]);
+        theme::pack(CLASSIC_COPY, &files).map(|bytes| theme::Packed {
+            name: CLASSIC_COPY.to_owned(),
+            bytes,
+            files: 1,
+            left_out: Vec::new(),
+        })
+    } else {
+        let path = Path::new(asked);
+        if !path.is_dir() {
+            let why = if path.exists() || asked == MINE {
+                " — export takes a theme folder: put a theme file in a folder of its own first"
+            } else {
+                ""
+            };
+            eprintln!(
+                "purlis: there is no theme folder '{}' here{why}",
+                shown::short(asked)
+            );
+            return ExitCode::from(2);
+        }
+        theme::export(path)
+    };
+    let packed = match packed {
+        Ok(packed) => packed,
+        Err(why) => return not_written(&why),
+    };
+    let to = to.map_or_else(
+        || std::path::PathBuf::from(format!("{}.zip", packed.name)),
+        std::path::PathBuf::from,
+    );
+    if let Err(why) = write_zip(&to, &packed.bytes, force) {
+        return not_written(&why);
+    }
+    let mut out = format!(
+        "exported {} ({} {}) to {}\n",
+        shown::short(&packed.name),
+        packed.files,
+        purlis_core::counts::plural(packed.files, "file", "files"),
+        shown::readable(&to.display().to_string(), PATH_LIMIT)
+    );
+    if !packed.left_out.is_empty() {
+        out.push_str(&format!("not carried ({}):\n", packed.left_out.len()));
+        for one in &packed.left_out {
+            out.push_str(&format!(
+                "  {}: {}\n",
+                shown::readable(&one.key, 160),
+                one.why
+            ));
+        }
+    }
+    print!("{out}");
+    ExitCode::SUCCESS
+}
+
+/// Writes `bytes` to `to` whole or not at all: beside it first, then moved in. A file there is
+/// replaced only with `force`, and never a link or a folder.
+fn write_zip(to: &Path, bytes: &[u8], force: bool) -> Result<(), String> {
+    use std::io::Write;
+    match std::fs::symlink_metadata(to) {
+        Ok(meta) if !meta.file_type().is_file() => {
+            return Err(format!(
+                "{} is there and is not a plain file: purlis does not replace it",
+                to.display()
+            ));
+        }
+        Ok(_) if !force => {
+            return Err(format!(
+                "{} is there already, and is replaced only with --force",
+                to.display()
+            ));
+        }
+        _ => {}
+    }
+    let name = to
+        .file_name()
+        .map(|it| it.to_string_lossy().into_owned())
+        .ok_or_else(|| format!("{} is not a file purlis can write", to.display()))?;
+    let beside = to.with_file_name(format!(".{name}.writing-{}", std::process::id()));
+    let failed = |why: std::io::Error| format!("{}: {why}", to.display());
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&beside)
+        .and_then(|mut file| file.write_all(bytes).and_then(|()| file.sync_all()));
+    if let Err(why) = written {
+        let _ = std::fs::remove_file(&beside);
+        return Err(failed(why));
+    }
+    // Without --force, the move itself refuses a file that appeared at `to` meanwhile.
+    let moved = if force {
+        std::fs::rename(&beside, to).map(|()| true)
+    } else {
+        theme::rename_no_replace(&beside, to)
+    };
+    match moved {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            let _ = std::fs::remove_file(&beside);
+            Err(format!(
+                "{} is there already, and is replaced only with --force",
+                to.display()
+            ))
+        }
+        Err(why) => {
+            let _ = std::fs::remove_file(&beside);
+            Err(failed(why))
         }
     }
 }
