@@ -247,3 +247,178 @@ fn a_keyword_the_rule_cannot_judge_that_was_already_there_unchanged_is_not_a_nar
         "{found:?}"
     );
 }
+
+/// The schema with a definition `wide` that an earlier theme reaches through `holder`.
+fn reached_through(holder: Value) -> Value {
+    changed(|it| {
+        it["$defs"]["wide"] = json!({ "type": "integer" });
+        it["$defs"]["deeper"] = json!({ "$ref": "#/$defs/wide" });
+        it["$defs"]["holder"] = holder;
+        it["properties"]["held"] = json!({ "$ref": "#/$defs/holder" });
+    })
+}
+
+#[test]
+fn a_widened_definition_under_an_unchanged_inverting_keyword_is_a_narrowing() {
+    // Inside each of these a wider schema can refuse a value an earlier theme held: `not`
+    // refuses what it accepts, an `if` that accepts more sends a value to `then`, and a value
+    // two `oneOf` branches accept is refused.
+    for (keyword, holder) in [
+        ("not", json!({ "not": { "$ref": "#/$defs/wide" } })),
+        (
+            "if",
+            json!({ "if": { "$ref": "#/$defs/wide" }, "then": { "minimum": 0 } }),
+        ),
+        (
+            "oneOf",
+            json!({ "oneOf": [{ "$ref": "#/$defs/wide" }, { "type": "string" }] }),
+        ),
+        // Through a second reference.
+        (
+            "oneOf",
+            json!({ "oneOf": [{ "$ref": "#/$defs/deeper" }, { "type": "string" }] }),
+        ),
+    ] {
+        let before = reached_through(holder.clone());
+        let mut after = before.clone();
+        after["$defs"]["wide"] = json!({ "type": ["integer", "string"] });
+        let found = narrowings(&before, &after);
+        assert_eq!(
+            found,
+            [format!(
+                "/$defs/wide: reached from inside /$defs/holder/{keyword}, where a wider schema \
+                 can accept less; this check cannot judge a change here"
+            )],
+            "{holder}"
+        );
+    }
+    // The same definition reached from nowhere inverting only adds.
+    let plain =
+        reached_through(json!({ "anyOf": [{ "$ref": "#/$defs/wide" }, { "type": "string" }] }));
+    let mut wider = plain.clone();
+    wider["$defs"]["wide"] = json!({ "type": ["integer", "string"] });
+    assert_eq!(narrowings(&plain, &wider), Vec::<String>::new());
+}
+
+#[test]
+fn a_definition_under_a_one_of_told_apart_by_a_constant_may_widen() {
+    // The schema's own `option` is such a `oneOf`, and it reaches `tokens`: a new token only adds.
+    assert!(
+        schema()["$defs"]["option"]["oneOf"]
+            .as_array()
+            .is_some_and(|branches| branches.len() > 1)
+    );
+    let after = changed(|it| {
+        it["$defs"]["tokens"]["properties"]["brand.new"] = json!({ "$ref": "#/$defs/colour" });
+    });
+    assert_eq!(narrowings(&schema(), &after), Vec::<String>::new());
+    // A `oneOf` whose branches are not told apart by a constant they all require is held.
+    let loose = |kind: Value| {
+        json!({ "oneOf": [
+            { "type": "object", "required": ["kind"],
+              "properties": { "kind": { "const": "a" }, "on": { "$ref": "#/$defs/wide" } } },
+            { "type": "object", "required": ["kind"], "properties": { "kind": kind } },
+        ] })
+    };
+    for kind in [json!({ "const": "a" }), json!({ "type": "string" })] {
+        let before = reached_through(loose(kind));
+        let mut after = before.clone();
+        after["$defs"]["wide"] = json!({ "type": ["integer", "string"] });
+        assert_eq!(narrowings(&before, &after).len(), 1);
+    }
+    let told = reached_through(loose(json!({ "const": "b" })));
+    let mut wider = told.clone();
+    wider["$defs"]["wide"] = json!({ "type": ["integer", "string"] });
+    assert_eq!(narrowings(&told, &wider), Vec::<String>::new());
+}
+
+#[test]
+fn a_new_named_key_of_a_closed_object_is_judged_against_the_patterns_that_accepted_it() {
+    let before = changed(|it| {
+        it["properties"]["extras"] = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": { "^x-": { "type": "string" } }
+        });
+    });
+    // A name the pattern accepted, now asked for less than the pattern asked: it narrows.
+    let after = changed(|it| {
+        it["properties"]["extras"] = before["properties"]["extras"].clone();
+        it["properties"]["extras"]["properties"] = json!({ "x-brand": { "type": "integer" } });
+    });
+    assert_eq!(
+        narrowings(&before, &after),
+        ["/properties/extras/properties/x-brand/type: string is no longer accepted"]
+    );
+    // The same name asked for what the pattern asked, and a name it never accepted: they add.
+    let after = changed(|it| {
+        it["properties"]["extras"] = before["properties"]["extras"].clone();
+        it["properties"]["extras"]["properties"] = json!({
+            "x-brand": { "type": "string", "description": "The brand." },
+            "brand": { "type": "integer" }
+        });
+    });
+    assert_eq!(narrowings(&before, &after), Vec::<String>::new());
+    // A named key the earlier schema had, now left to a pattern that asks for less.
+    let named = changed(|it| {
+        it["properties"]["extras"] = before["properties"]["extras"].clone();
+        it["properties"]["extras"]["properties"] = json!({ "x-brand": { "type": "string" } });
+    });
+    let after = changed(|it| {
+        it["properties"]["extras"] = before["properties"]["extras"].clone();
+    });
+    assert_eq!(narrowings(&named, &after), Vec::<String>::new());
+    let mut narrower = after.clone();
+    narrower["properties"]["extras"]["patternProperties"]["^x-"]["maxLength"] = json!(8);
+    assert!(!narrowings(&named, &narrower).is_empty());
+}
+
+/// **The comparison CI's step makes with the last release** (#2524): `released` is that
+/// release's `docs/schema/theme.v2.schema.json`, as its tag holds it.
+fn since_release(released: &str) -> Vec<String> {
+    let released: Value = serde_json::from_str(released).expect("the released schema is JSON");
+    narrowings(&released, &schema())
+}
+
+#[test]
+#[ignore = "CI's step `The theme schema only grows since the last release` runs it, with \
+            PURLIS_THEME_SCHEMA_RELEASED naming the last release's schema \
+            (tools/theme-schema-since-release.sh)"]
+fn the_schema_only_grows_since_the_last_release() {
+    let path = std::env::var_os("PURLIS_THEME_SCHEMA_RELEASED").expect(
+        "PURLIS_THEME_SCHEMA_RELEASED names the last release's schema; \
+         tools/theme-schema-since-release.sh sets it",
+    );
+    let released = std::fs::read_to_string(&path).expect("the released schema");
+    let narrowed = since_release(&released);
+    assert!(
+        narrowed.is_empty(),
+        "format 2's schema only grows, and the engine's takes away or narrows what the last \
+         release's {SCHEMA_FILE} has; a theme valid against that release would stop being \
+         valid. Keep it, or make the change a new format:\n{}",
+        narrowed.join("\n")
+    );
+}
+
+#[test]
+fn a_removal_carried_by_the_committed_file_is_held_by_the_last_release_s() {
+    // The engine drops a token and the committed file is edited to match: against the
+    // committed file nothing is taken away, against the release it is.
+    let released = schema_text();
+    let gone = TOKENS[0];
+    let engine = changed(|it| {
+        it["$defs"]["tokens"]["properties"]
+            .as_object_mut()
+            .unwrap()
+            .remove(gone);
+    });
+    let committed = engine.clone();
+    assert_eq!(narrowings(&committed, &engine), Vec::<String>::new());
+    let released: Value = serde_json::from_str(&released).unwrap();
+    assert_eq!(
+        narrowings(&released, &engine),
+        [format!("/$defs/tokens/properties/{gone} is gone")]
+    );
+    // And the release's own schema, as this engine generates it, narrows nothing.
+    assert_eq!(since_release(&schema_text()), Vec::<String>::new());
+}
