@@ -588,7 +588,54 @@ pub fn sandbox_block(
     sandbox_host(session, block, locks)
         .or_else(|| sandbox_write(session, block, locks))
         .or_else(|| sandbox_local(session, block, locks, declared))
+        .or_else(|| sandbox_runner(session, block, None))
         .or_else(|| sandbox_port(session, block, locks))
+}
+
+/// **The runner's service adapter** (#2510, ruled 2026-10-18): a service on the runner chat
+/// `session` runs on, which that runner left out of its plan and asks about, held now, is an
+/// ask as a host is. Allow is offered once and for this chat alone, never wider: it lasts while
+/// the chat runs there and keeps nothing on this machine. It names the runner, `runner`, where
+/// the window knows its name. Then Keep blocked.
+pub fn sandbox_runner(
+    session: u32,
+    block: &crate::taskblocks::HeldBlock,
+    runner: Option<&str>,
+) -> Option<Shown> {
+    use crate::sandboxing::{GrantLevel, GrantWhat};
+    if block.kind != purlis_core::sandboxblock::Kind::RunnerService.word() {
+        return None;
+    }
+    let port: u16 = block.target.parse().ok()?;
+    // Short enough to be said whole: what allowing it means at length is on its Notice.
+    let says = format!(
+        "{} Allowing it lets this chat alone reach it there, and nothing on this Mac.",
+        runner.map_or_else(
+            || format!("The runner this chat runs on refused its service at port {port}."),
+            |name| format!("The runner {name} refused its service at port {port}."),
+        ),
+    );
+    Some(Shown {
+        session,
+        ask: block_key(session, block),
+        says: said_inertly(&says),
+        options: allows(&[GrantLevel::Once, GrantLevel::Chat], true)
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        source: AskSource::SandboxLocal,
+        chain: Vec::new(),
+        answer: AnswerPath::SandboxBlock {
+            shown: crate::taskblocks::BlockShown {
+                operation: block.operation.clone(),
+                kind: block.kind.clone(),
+                what: GrantWhat::Port,
+                target: block.target.clone(),
+            },
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    })
 }
 
 /// **The service-on-this-Mac adapter** (qw384): a port of this machine chat `session`'s
@@ -1341,6 +1388,9 @@ pub struct Waiting<'a> {
     pub held: &'a HoldEnds<'a>,
     /// When an ask began to wait, by its key, where its source knows (#1700).
     pub since: &'a dyn Fn(&str) -> Option<u32>,
+    /// The name of the runner a chat runs on, where its runner left a service out of its plan
+    /// (#2510).
+    pub runner_of: &'a dyn Fn(u32) -> Option<String>,
 }
 
 /// **The asks of one project, one per thing that waits** (#1690): each source's adapter, then
@@ -1405,7 +1455,9 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             }),
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
-        let mut ask = sandbox_block(*session, block, waiting.locks, waiting.declared)?;
+        // A runner's service, named with its runner (#2510).
+        let mut ask = sandbox_runner(*session, block, (waiting.runner_of)(*session).as_deref())
+            .or_else(|| sandbox_block(*session, block, waiting.locks, waiting.declared))?;
         let since = (waiting.since)(&ask.ask);
         // A live ask (#1709): the same ask, under the same key, saying its connection waits,
         // and until when.
@@ -1614,6 +1666,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 .get(ask)
                 .map(|at| u32::try_from(*at).unwrap_or(u32::MAX))
         },
+        runner_of: &|session| chats.runner_of(session),
     };
     Asking {
         plane: plane.clone(),

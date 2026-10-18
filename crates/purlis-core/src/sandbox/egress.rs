@@ -582,10 +582,11 @@ pub struct Serving {
     pub internal: Option<Internal>,
     /// For a chat planned on another machine (#2510, ruled 2026-10-18): the services of this
     /// machine, by port, its plan gave it for it alone and this machine's sandbox does not
-    /// give. A connection to one on the loopback interface is held while the person is asked,
-    /// by its loopback address, and carried once they allow it for this chat. Any other port
-    /// of this machine is refused as before. Asked about only where the proxy asks live.
-    pub asked_for: Vec<u16>,
+    /// give, so it was started without them ([`super::plan::Plan::as_the_runner_starts_it`]).
+    /// Where the proxy asks live, a connection to one on the loopback interface is held while
+    /// the person is asked, by its loopback address, and carried once they allow it for this
+    /// chat. Any other port of this machine is refused as before.
+    pub left_out: Vec<u16>,
 }
 
 impl Serving {
@@ -602,7 +603,7 @@ impl Serving {
             reached: None,
             asks: None,
             internal: None,
-            asked_for: Vec::new(),
+            left_out: Vec::new(),
         }
     }
 }
@@ -702,7 +703,7 @@ impl Proxy {
             reached: serving.reached,
             asks: serving.asks,
             internal: serving.internal,
-            asked_for: serving.asked_for,
+            left_out: serving.left_out,
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
         });
@@ -919,7 +920,7 @@ struct Allowed {
     reached: Option<Reached>,
     asks: Option<Arc<Asks>>,
     internal: Option<Internal>,
-    asked_for: Vec<u16>,
+    left_out: Vec<u16>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -976,32 +977,32 @@ impl Allowed {
             &self.plain_ports
         };
         let decision = self.reach.decide_by_name(host, port, ports, own);
-        // A service asked for this chat alone (#2510): asked about, never refused as this
+        // A service left out of this chat's plan (#2510): asked about, never refused as this
         // machine or as a name of it that is never a host, where the proxy asks live.
         let refused_here = matches!(
             decision,
             Decision::Ask | Decision::Refused(Refused::LocalAddress | Refused::NeverAHost(_))
         );
-        if refused_here && self.asks.is_some() && self.asks_for(host, port) {
+        if refused_here && self.asks.is_some() && self.left_out_at(host, port) {
             return Decision::Ask;
         }
         decision
     }
 
-    /// **Whether `host` on `port` is a service asked for this chat alone** (#2510): one of
-    /// [`Serving::asked_for`], on this machine's loopback by any name the proxy carries one by,
+    /// **Whether `host` on `port` is a service left out of this chat's plan** (#2510): one of
+    /// [`Serving::left_out`], on this machine's loopback by any name the proxy carries one by,
     /// not withdrawn, and never a port purlis's own proxies listen on.
-    fn asks_for(&self, host: &str, port: u16) -> bool {
-        self.asked_for.contains(&port)
-            && localport::loopback_port(&host_and_port(host, port)) == Some(port)
+    fn left_out_at(&self, host: &str, port: u16) -> bool {
+        self.left_out.contains(&port)
+            && localport::names_loopback(host, port)
             && !self.reach.withdrew(port)
             && localport::still_ports(&[port]) == [port]
     }
 
-    /// Where a connection to `host` on `port` is made once a service asked for this chat alone
-    /// is allowed: its loopback address, never looked up. `None` for any other connection.
+    /// Where a connection to `host` on `port` is made once a service left out of this chat's
+    /// plan is allowed: its loopback address, never looked up. `None` for any other connection.
     fn pinned(&self, host: &str, port: u16) -> Option<SocketAddr> {
-        if !self.asks_for(host, port) {
+        if !self.left_out_at(host, port) {
             return None;
         }
         let named = host.trim_start_matches('[').trim_end_matches(']');
@@ -1013,7 +1014,8 @@ impl Allowed {
     }
 
     /// Connects for `host` on `port`, carried by `decision`: at its pinned loopback address for
-    /// a service asked for this chat alone ([`Self::pinned`]), otherwise as [`connect_held`].
+    /// a service left out of this chat's plan ([`Self::pinned`]), otherwise as
+    /// [`connect_held`].
     fn connect(
         &self,
         host: &str,
@@ -1053,10 +1055,10 @@ impl Allowed {
         } else {
             self.plain_ports.clone()
         };
-        // A service asked for this chat alone is asked about by its loopback address, whichever
-        // name the chat reached it by, so one Allow answers every spelling (#2510).
-        let asked = if self.asks_for(host, port) {
-            "127.0.0.1"
+        // A service left out of this chat's plan is asked about by its loopback address,
+        // whichever name the chat reached it by, so one Allow answers every spelling (#2510).
+        let asked = if self.left_out_at(host, port) {
+            super::tunnel::LOOPBACK
         } else {
             host
         };

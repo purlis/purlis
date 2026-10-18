@@ -3737,6 +3737,7 @@ struct Elsewhere {
     socks: u16,
     held: Box<dyn HeldElsewhere>,
     left_out: Vec<u16>,
+    host_name: Option<String>,
 }
 
 impl Drop for Elsewhere {
@@ -3777,10 +3778,12 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     fn forget(&self, host: &hosts::Host, by: reach::By);
     /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
     fn allowed_live(&self) -> Vec<(String, reach::By)>;
-    /// The person allowed the service on `port` of the machine its proxy runs on, for this chat
-    /// alone ([`asks::Asks::allow_this_machine`], #2510): the targets held connections gave up
-    /// on before it, which the chat is told to retry.
-    fn allow_this_machine(&self, port: u16) -> Vec<String>;
+    /// The person allowed the service on `port` of the machine its proxy runs on, left out of
+    /// the chat's plan, for this chat ([`asks::Asks::allow_left_out`], #2510): the targets held
+    /// connections gave up on before it, which the chat is told to retry.
+    fn allow_left_out(&self, port: u16) -> Vec<String>;
+    /// The person kept that service blocked ([`asks::Asks::keep_left_out_blocked`], #2510).
+    fn keep_left_out_blocked(&self, port: u16);
 }
 
 impl Board for asks::Asks {
@@ -3804,8 +3807,12 @@ impl Board for asks::Asks {
         asks::Asks::allowed_live(self)
     }
 
-    fn allow_this_machine(&self, port: u16) -> Vec<String> {
-        asks::Asks::allow_this_machine(self, port)
+    fn allow_left_out(&self, port: u16) -> Vec<String> {
+        asks::Asks::allow_left_out(self, port)
+    }
+
+    fn keep_left_out_blocked(&self, port: u16) {
+        asks::Asks::keep_left_out_blocked(self, port);
     }
 }
 
@@ -3837,6 +3844,8 @@ pub struct Placed {
     /// The services the chat was planned to reach on the host's machine for it alone, which
     /// that host started it without (#2510).
     pub left_out: Vec<u16>,
+    /// The name of the host's machine, where it left a service out (#2510).
+    pub host_name: Option<String>,
 }
 
 impl Placed {
@@ -3849,6 +3858,12 @@ impl Placed {
             routed: confined.routed.as_ref().map(PathBuf::from),
             ssh: confined.ssh.as_ref().map(PathBuf::from),
             left_out: confined.left_out.clone(),
+            // Said in the window: held to a name's own characters, whatever the host sent.
+            host_name: confined
+                .host_name
+                .as_deref()
+                .map(crate::dispatch::host_of)
+                .filter(|name| name != "unknown"),
         }
     }
 }
@@ -3936,6 +3951,7 @@ impl Confinement {
                 socks: placed.socks,
                 held,
                 left_out: placed.left_out,
+                host_name: placed.host_name,
             }),
             tmp: placed.tmp.map(Folder::Theirs),
             asks,
@@ -3954,6 +3970,16 @@ impl Confinement {
             routed: self.routed.as_ref().map(|dir| dir.path().to_path_buf()),
             ssh: self.ssh.as_ref().map(|route| route.dir().to_path_buf()),
             left_out: self.left_out().to_vec(),
+            host_name: self.runner().map(str::to_owned),
+        }
+    }
+
+    /// The name of the machine the host holding its proxy runs on, where that host left a
+    /// service out ([`Self::left_out`], #2510).
+    pub fn runner(&self) -> Option<&str> {
+        match &self.proxy {
+            Proxied::Here(_) => None,
+            Proxied::Elsewhere(elsewhere) => elsewhere.host_name.as_deref(),
         }
     }
 
@@ -3967,8 +3993,9 @@ impl Confinement {
         }
     }
 
-    /// **What the window says of the services left out** ([`Self::left_out`]), in a sentence for
-    /// the chat's tab: `None` where none was.
+    /// **What the window says of the services left out** ([`Self::left_out`]), for the chat's
+    /// tab: what the runner did not give, then what comes of it, by whether its proxy asks
+    /// live. `None` where none was.
     pub fn said_of_what_was_left_out(&self) -> Option<String> {
         let (last, rest) = self.left_out().split_last()?;
         let ports = match rest {
@@ -3981,11 +4008,18 @@ impl Confinement {
                     .join(", ")
             ),
         };
+        let runner = match self.runner() {
+            Some(name) => format!("The runner {name}"),
+            None => "The runner this chat runs on".to_owned(),
+        };
+        let it = if rest.is_empty() { "it" } else { "them" };
+        let then = if self.asks.is_some() {
+            format!("You are asked when the chat reaches for {it} there.")
+        } else {
+            format!("The chat cannot reach {it} there.")
+        };
         Some(format!(
-            "This chat runs on a runner, which does not give it {ports} that you allowed for \
-             this chat alone on this machine until you allow {it} there: you are asked when the \
-             chat reaches for {it}.",
-            it = if rest.is_empty() { "it" } else { "them" }
+            "{runner} does not give this chat {ports} that you allowed for it alone. {then}"
         ))
     }
 

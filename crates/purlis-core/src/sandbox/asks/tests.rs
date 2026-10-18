@@ -328,3 +328,36 @@ fn a_host_allowed_live_reaches_a_run_started_after_and_a_removed_one_does_not() 
         Route::Refused(_)
     ));
 }
+
+/// #2510: a service of this machine left out of a chat's plan, once allowed, lets a connection
+/// held on it on, by any of its loopback spellings, and only on its port; it is never told as a
+/// host allowed live, since it is no grant. Kept blocked, it is refused; forgotten, asked again.
+#[test]
+fn a_service_left_out_once_allowed_lets_only_its_port_on_and_is_no_grant() {
+    let (asks, _) = board(Duration::from_secs(30), Duration::from_millis(10));
+    let waiting = held(&asks, "127.0.0.1", 5432);
+    until_holding(&asks, 1);
+
+    assert!(asks.allow_left_out(5432).is_empty(), "nothing gave up");
+
+    assert_eq!(waiting.join().unwrap(), Answer::Allowed(By::Chat));
+    assert_eq!(
+        asks.hold("localhost", 5432, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+    assert!(asks.allowed_live().is_empty(), "no grant");
+
+    asks.keep_left_out_blocked(5432);
+    assert_eq!(asks.hold("127.0.0.1", 5432, &[443]), Answer::Refused);
+
+    asks.allow_left_out(5432);
+    asks.forget_left_out(5432);
+    let (short, _) = board(Duration::from_millis(50), Duration::from_millis(10));
+    short.allow_left_out(5433);
+    short.forget_left_out(5433);
+    assert_eq!(
+        short.hold("127.0.0.1", 5433, &[443]),
+        Answer::TimedOut,
+        "asked again"
+    );
+}

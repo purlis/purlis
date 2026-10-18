@@ -2913,6 +2913,11 @@ impl Planes {
                     .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
                 let mut told = hooks::blocked_holding(&plane, &block, has_check);
                 if let Some(strong) = strong {
+                    // A runner's service is said with that runner's name (#2510).
+                    told = hooks::on_its_runner(
+                        told,
+                        strong.chats().runner_of(block.line.chat).as_deref(),
+                    );
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());

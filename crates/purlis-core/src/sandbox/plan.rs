@@ -287,23 +287,24 @@ impl Plan {
 
     /// [`Self::start`], for a plan made on another machine (#2445): its proxy carries an
     /// internal address only where `internal`, the runner's policy, lists it, checked at every
-    /// connect ([`super::internal`]). A service of the runner on `asked_for`, one the plan gave
+    /// connect ([`super::internal`]). A service of the runner in `left_out`, one the plan gave
     /// the chat for it alone and the runner left out ([`Self::as_the_runner_starts_it`]), is
-    /// asked about live, and carried once the person allows it for this chat (#2510).
+    /// asked about where the proxy asks live, and carried once the person allows it for this
+    /// chat (#2510).
     pub fn start_held(
         &self,
         telling: Telling,
         internal: Internal,
-        asked_for: Vec<u16>,
+        left_out: Vec<u16>,
     ) -> std::io::Result<Confinement> {
-        self.starting(telling, Some(internal), asked_for)
+        self.starting(telling, Some(internal), left_out)
     }
 
     fn starting(
         &self,
         telling: Telling,
         internal: Option<Internal>,
-        asked_for: Vec<u16>,
+        left_out: Vec<u16>,
     ) -> std::io::Result<Confinement> {
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
@@ -314,7 +315,7 @@ impl Plan {
         let reach = Reach::from_written(&self.reach).map_err(std::io::Error::other)?;
         let serving = egress::Serving {
             internal,
-            asked_for,
+            left_out,
             ..self.serving(reach, telling)
         };
         match &self.beside {

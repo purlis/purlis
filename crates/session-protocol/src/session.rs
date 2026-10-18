@@ -147,7 +147,7 @@ use crate::view::{Limits, Views};
 ///
 /// 1.20 added what a host leaves out of a plan made on another machine (#2510): `confined` may
 /// name the services of the host's machine the plan gave the chat for it alone, which the host
-/// started it without (`left_out`).
+/// started it without (`left_out`), and the name of that machine (`host_name`).
 pub const VERSION: Version = Version {
     major: 1,
     minor: 20,
@@ -541,6 +541,10 @@ pub struct Confined {
     /// them (1.20, #2510).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub left_out: Vec<u16>,
+    /// The name of the machine the host runs on, as its system names it, where it left a
+    /// service out (1.20, #2510): what the window names the runner by when it asks about one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_name: Option<String>,
 }
 
 /// What a confinement's board of live asks holds now (1.4).

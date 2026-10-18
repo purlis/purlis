@@ -52,8 +52,8 @@ pub struct Hosted {
     confinement: Confinement,
     board: Option<Arc<Asks>>,
     /// The services of this machine its plan gave the chat for it alone, which this machine's
-    /// sandbox for the project does not give, so it was started without them (#2510). Its
-    /// proxy asks about each, and the person may allow it for this chat alone.
+    /// sandbox for the project does not give, so it was started without them (#2510). Where
+    /// its proxy asks live, it asks about each, and the person may allow it for this chat.
     left_out: Vec<u16>,
     /// Where its plan was made.
     planned: Planned,
@@ -200,32 +200,31 @@ fn given_here(root: &Path) -> Vec<u16> {
     super::Widened::default().and_ports(&yours, &locks).ports
 }
 
-/// What an Allow the window sent allows ([`allowed_as`]).
+/// What the window's answer to an ask names ([`answered_about`]).
 #[derive(Debug, PartialEq, Eq)]
-enum Allowing {
-    /// A host, at the scope the person chose.
-    Host(Host, By),
-    /// The service on this port of this machine, for this chat alone, while its confinement
-    /// runs (#2510).
-    ThisMachine(u16),
+enum Answered {
+    /// A host.
+    Host(Host),
+    /// The service on this port of this machine, left out of the chat's plan (#2510).
+    LeftOut(u16),
 }
 
-/// **What an Allow of `typed` at `by` allows, in a confinement planned `planned`** (#2510, ruled
-/// 2026-10-18). A host off this machine is allowed as it says. A service of this machine's
-/// loopback is allowed only in a confinement planned on another machine, and only where it is
-/// one the runner `left_out` of what the plan gave for this chat alone: then for this chat, for
-/// as long as the confinement runs. Any other is refused in a sentence, as a host of this machine
-/// always is.
-fn allowed_as(planned: Planned, left_out: &[u16], typed: &str, by: By) -> Result<Allowing, String> {
+/// **What the window's answer about `typed` names, in a confinement planned `planned`** (#2510,
+/// ruled 2026-10-18). A host off this machine is as it says. A service of this machine's
+/// loopback is answered only in a confinement planned on another machine, and only where it is
+/// one the runner `left_out` of what the plan gave for this chat alone: allowed, it is carried
+/// for this chat for as long as the confinement runs. Any other is refused in a sentence, as a
+/// host of this machine always is.
+fn answered_about(planned: Planned, left_out: &[u16], typed: &str) -> Result<Answered, String> {
     match super::localport::loopback_port(typed) {
         Some(port) if planned == Planned::Elsewhere && left_out.contains(&port) => {
-            Ok(Allowing::ThisMachine(port))
+            Ok(Answered::LeftOut(port))
         }
         Some(port) if planned == Planned::Elsewhere => Err(format!(
             "the runner does not let this chat reach port {port} of its own: it was not \
              allowed for this chat alone where the chat was planned"
         )),
-        _ => Host::parse(typed).map(|host| Allowing::Host(host, by)),
+        _ => Host::parse(typed).map(Answered::Host),
     }
 }
 
@@ -242,6 +241,8 @@ impl Hosted {
             routed: shown(placed.routed),
             ssh: shown(placed.ssh),
             left_out: self.left_out.clone(),
+            // Named only where it left a service out, which the window then says it of.
+            host_name: (!self.left_out.is_empty()).then(crate::dispatch::host),
         }
     }
 
@@ -257,17 +258,24 @@ impl Hosted {
         };
         Ok(match change {
             ReachChange::Allow { host, layer } => {
-                match allowed_as(self.planned, &self.left_out, host, by_of(*layer))? {
-                    Allowing::Host(host, by) => board.allow(&host, by),
-                    Allowing::ThisMachine(port) => board.allow_this_machine(port),
+                match answered_about(self.planned, &self.left_out, host)? {
+                    Answered::Host(host) => board.allow(&host, by_of(*layer)),
+                    // For this chat alone, whatever scope it was sent at.
+                    Answered::LeftOut(port) => board.allow_left_out(port),
                 }
             }
             ReachChange::Forget { host, layer } => {
-                board.forget(&Host::parse(host)?, by_of(*layer));
+                match answered_about(self.planned, &self.left_out, host)? {
+                    Answered::Host(host) => board.forget(&host, by_of(*layer)),
+                    Answered::LeftOut(port) => board.forget_left_out(port),
+                }
                 Vec::new()
             }
             ReachChange::KeepBlocked { host } => {
-                board.keep_blocked(&Host::parse(host)?);
+                match answered_about(self.planned, &self.left_out, host)? {
+                    Answered::Host(host) => board.keep_blocked(&host),
+                    Answered::LeftOut(port) => board.keep_left_out_blocked(port),
+                }
                 Vec::new()
             }
             ReachChange::WithdrawPort { .. } => Vec::new(),

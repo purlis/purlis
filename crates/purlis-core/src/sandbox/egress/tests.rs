@@ -1585,10 +1585,10 @@ fn a_proxy_for_a_chat_planned_on_another_machine_refuses_an_internal_address() {
     assert_eq!(heard.local(), ["10.255.255.1:443"], "told once");
 }
 
-/// A proxy for a chat planned on another machine, asked for the services on `asked_for` of this
-/// machine alone (#2510), on an echo server's port, and its board.
-fn asking_for(
-    asked_for: Vec<u16>,
+/// A proxy for a chat planned on another machine, whose plan left out the services on
+/// `left_out` of this machine (#2510), on an echo server's port, and its board.
+fn leaving_out(
+    left_out: Vec<u16>,
     port: u16,
 ) -> (Proxy, std::sync::Arc<crate::sandbox::asks::Asks>, Heard) {
     let heard = Heard::default();
@@ -1599,31 +1599,35 @@ fn asking_for(
     ));
     let proxy = Proxy::serving(super::Serving {
         asks: Some(std::sync::Arc::clone(&asks)),
-        asked_for,
+        left_out,
         ..heard_on(&heard, none(), port)
     })
     .expect("a proxy");
     (proxy, asks, heard)
 }
 
-/// #2510: a service of this machine the person allowed for this chat alone on another machine
-/// is held and asked about, by its loopback address whichever name the chat used, and reached
-/// the moment it is allowed for this chat.
+/// A tunnel to `localhost` on `port` through `proxy`, answered on a thread of its own, and the
+/// client it was asked on.
+fn tunnel_to_localhost(proxy: &Proxy, port: u16) -> (TcpStream, std::thread::JoinHandle<String>) {
+    let client = to(proxy);
+    let mut asking = client.try_clone().expect("a clone");
+    let answered = std::thread::spawn(move || {
+        status(
+            &mut asking,
+            &format!("CONNECT localhost:{port} HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"),
+        )
+    });
+    (client, answered)
+}
+
+/// #2510: a service of this machine left out of a chat's plan is held and asked about, by its
+/// loopback address whichever name the chat used, and reached the moment it is allowed.
 #[test]
-fn a_service_asked_for_this_chat_alone_is_held_and_reached_once_it_is_allowed() {
+fn a_service_left_out_is_held_and_reached_once_it_is_allowed() {
     let (listener, port) = an_echo_server();
     let echoed = echo_once(listener);
-    let (proxy, asks, heard) = asking_for(vec![port], port);
-    let mut client = to(&proxy);
-    let answered = {
-        let mut client = client.try_clone().expect("a clone");
-        std::thread::spawn(move || {
-            status(
-                &mut client,
-                &format!("CONNECT localhost:{port} HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"),
-            )
-        })
-    };
+    let (proxy, asks, heard) = leaving_out(vec![port], port);
+    let (mut client, answered) = tunnel_to_localhost(&proxy, port);
     until_held(&asks);
     assert_eq!(
         asks.asked(),
@@ -1631,7 +1635,7 @@ fn a_service_asked_for_this_chat_alone_is_held_and_reached_once_it_is_allowed() 
         "asked by its loopback address"
     );
 
-    asks.allow_this_machine(port);
+    asks.allow_left_out(port);
 
     assert_eq!(
         answered.join().unwrap(),
@@ -1642,13 +1646,29 @@ fn a_service_asked_for_this_chat_alone_is_held_and_reached_once_it_is_allowed() 
     assert!(heard.local().is_empty(), "no Block for a service let on");
 }
 
-/// #2510: a port of this machine the chat was not planned to be given for it alone is refused
-/// at once as this machine, never asked about.
+/// #2510: the person's no to a service left out ends its hold at once, and it is not reached.
 #[test]
-fn a_port_of_this_machine_not_asked_for_is_refused_at_once_and_never_asked_about() {
+fn a_service_left_out_kept_blocked_is_refused_at_once() {
     let (listener, port) = an_echo_server();
     listener.set_nonblocking(true).expect("nonblocking");
-    let (proxy, asks, heard) = asking_for(vec![port.wrapping_add(1).max(1)], port);
+    let (proxy, asks, _) = leaving_out(vec![port], port);
+    let (_client, answered) = tunnel_to_localhost(&proxy, port);
+    until_held(&asks);
+
+    asks.keep_left_out_blocked(port);
+
+    assert_eq!(answered.join().unwrap(), "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "the proxy reached this machine");
+}
+
+/// #2510: a port of this machine the chat's plan did not leave out is refused at once as this
+/// machine, never asked about.
+#[test]
+fn a_port_of_this_machine_not_left_out_is_refused_at_once_and_never_asked_about() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let (proxy, asks, heard) = leaving_out(vec![port.wrapping_add(1).max(1)], port);
 
     let said = status(
         &mut to(&proxy),
@@ -1663,14 +1683,14 @@ fn a_port_of_this_machine_not_asked_for_is_refused_at_once_and_never_asked_about
     assert_eq!(heard.local(), [exactly(port)]);
 }
 
-/// #2510: a service asked for is refused at once, not asked about, where the proxy asks nobody.
+/// #2510: a service left out is refused at once, not asked about, where the proxy asks nobody.
 #[test]
-fn a_service_asked_for_is_refused_where_the_proxy_asks_nobody() {
+fn a_service_left_out_is_refused_where_the_proxy_asks_nobody() {
     let (listener, port) = an_echo_server();
     listener.set_nonblocking(true).expect("nonblocking");
     let heard = Heard::default();
     let proxy = Proxy::serving(super::Serving {
-        asked_for: vec![port],
+        left_out: vec![port],
         ..heard_on(&heard, none(), port)
     })
     .expect("a proxy");

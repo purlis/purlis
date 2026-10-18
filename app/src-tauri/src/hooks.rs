@@ -852,8 +852,24 @@ pub(crate) fn blocked_on(
         other => scopes_ruled_out(&locks, other),
     };
     let (offer, route, levels) = match allowed_already(plane.root(), offer, target.as_deref()) {
-        Some(said) => (BlockOffer::Allowed, Some(said), Vec::new()),
-        None => (offer, route, levels),
+        Some(said) if block.kind != purlis_core::sandboxblock::Kind::RunnerService => {
+            (BlockOffer::Allowed, Some(said), Vec::new())
+        }
+        _ => (offer, route, levels),
+    };
+    // A service of the runner the chat runs on is allowed once or for this chat, never wider
+    // (#2510): nothing of it is kept on this machine.
+    let levels = if block.kind == purlis_core::sandboxblock::Kind::RunnerService {
+        if offer == BlockOffer::Port {
+            vec![
+                crate::sandboxing::GrantLevel::Once,
+                crate::sandboxing::GrantLevel::Chat,
+            ]
+        } else {
+            Vec::new()
+        }
+    } else {
+        levels
     };
     ChatBlocked {
         offer,
@@ -874,6 +890,30 @@ pub(crate) fn blocked_on(
         vault: None,
         suggested: None,
     }
+}
+
+/// What a runner's service whose port the block did not name says (#2510): never raised by
+/// purlis's own runner, which always names the port it asks about.
+const RUNNER_SERVICE_UNNAMED: &str = "The runner this chat runs on refused a service on it \
+                                      without naming its port, so there is nothing to allow \
+                                      here.";
+
+/// **What the window says of a block on a service of the runner chat `told.session` runs on**
+/// (#2510): its Notice names that runner, `runner`, where the window knows its name. Any other
+/// block is as it was told.
+pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> ChatBlocked {
+    if told.kind == purlis_core::sandboxblock::Kind::RunnerService.word()
+        && told.offer == BlockOffer::Port
+        && let Some(port) = told
+            .target
+            .as_deref()
+            .and_then(|port| port.parse::<u16>().ok())
+    {
+        told.route = Some(purlis_core::sandbox::localport::on_the_runner_said(
+            port, runner,
+        ));
+    }
+    told
 }
 
 /// A vault's name as a Notice draws it (#1353): one line, every credential shape masked and
@@ -1328,6 +1368,25 @@ fn offered_to(
                 Some(Err(grant::Refused::Outside(why) | grant::Refused::Not(why))) => {
                     (BlockOffer::Port, None, Some(why))
                 }
+            }
+        }
+        // A service of the runner the chat runs on, which its runner asks about (#2510): Allow,
+        // naming its port, for this chat alone there. Its runner's name is said where the
+        // window knows it ([`on_its_runner`]).
+        (Operation::Connect, Kind::RunnerService) => {
+            match target.and_then(|port| port.trim().parse::<u16>().ok()) {
+                Some(port) => (
+                    BlockOffer::Port,
+                    Some(port.to_string()),
+                    Some(purlis_core::sandbox::localport::on_the_runner_said(
+                        port, None,
+                    )),
+                ),
+                None => (
+                    BlockOffer::Brokered,
+                    None,
+                    Some(RUNNER_SERVICE_UNNAMED.to_owned()),
+                ),
             }
         }
         (_, Kind::ProjectState) => brokered(Class::Integrity),

@@ -471,6 +471,7 @@ impl Confining for StandInConfining {
             routed: None,
             ssh: given.first().map(|port| format!("/tmp/given-{port}")),
             left_out: Vec::new(),
+            host_name: None,
         }
     }
 

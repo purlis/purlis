@@ -188,6 +188,7 @@ impl World {
                     .find(|(key, _)| *key == ask)
                     .map(|(_, at)| *at)
             },
+            runner_of: &|_| None,
         })
     }
 }
@@ -1612,4 +1613,43 @@ fn a_browser_site_too_long_to_name_whole_is_only_kept_blocked() {
         .find(|one| one.source == AskSource::BrowserSite)
         .unwrap();
     assert_eq!(ids(sites), [KEEP]);
+}
+
+#[test]
+fn a_runners_service_is_asked_by_its_runner_and_offers_once_and_this_chat_alone() {
+    // #2510, ruled 2026-10-18: a service the runner left out is never a service on this Mac,
+    // and is allowed for no more than this chat.
+    let block = HeldBlock {
+        operation: "connect".to_owned(),
+        kind: "runner-service".to_owned(),
+        what: GrantWhat::Port,
+        target: "5432".to_owned(),
+    };
+    let named = sandbox_runner(5, &block, Some("runner-7")).expect("an ask");
+    assert_eq!(
+        named.says,
+        "The runner runner-7 refused its service at port 5432. Allowing it lets this chat alone \
+         reach it there, and nothing on this Mac."
+    );
+    assert_eq!(
+        named
+            .options
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect::<Vec<_>>(),
+        ["once", "chat", KEEP]
+    );
+    let unnamed = sandbox_block(5, &block, &Locks::none(), &Default::default()).expect("an ask");
+    assert!(
+        unnamed
+            .says
+            .starts_with("The runner this chat runs on refused its service at port 5432."),
+        "{}",
+        unnamed.says
+    );
+    assert!(
+        !unnamed.says.contains("on this Mac at port"),
+        "{}",
+        unnamed.says
+    );
 }

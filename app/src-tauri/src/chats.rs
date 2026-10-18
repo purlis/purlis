@@ -2041,50 +2041,79 @@ impl Chats {
         live
     }
 
-    /// **The person allowed the service on `port` at `level`, from the window, where a runner
-    /// asks about it** (#2510, ruled 2026-10-18): every open chat it reaches (chat `session`
-    /// alone for this chat, every chat of the project for yours) whose confinement a runner
-    /// started without that service takes it now, for this chat alone on that runner, while its
-    /// confinement runs. Each chat a held connection of had given up on it is told to retry.
-    pub fn allow_port_live(
+    /// The service on `port` left out of chat `session`'s plan by the runner it runs on
+    /// (#2510): its confinement's board, where its proxy asks live and the port is one it left
+    /// out. `None` for any other chat or port.
+    fn left_out_board(
         &self,
-        session: Option<u32>,
+        session: u32,
         port: u16,
-        level: purlis_core::sandbox::grant::Level,
-    ) -> Live {
-        use purlis_core::sandbox::grant::Level;
-        let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
-            let open = lock(&self.open);
-            open.iter()
-                .filter(|(number, _)| level != Level::Chat || Some(**number) == session)
-                .filter_map(|(number, running)| {
-                    let confinement = running.confinement.as_ref()?;
-                    confinement
-                        .left_out()
-                        .contains(&port)
-                        .then(|| Some((*number, confinement.asks()?.clone())))?
-                })
-                .collect()
+    ) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
+        let open = lock(&self.open);
+        let confinement = open.get(&session)?.confinement.as_ref()?;
+        confinement
+            .left_out()
+            .contains(&port)
+            .then(|| confinement.asks().cloned())
+            .flatten()
+    }
+
+    /// Whether the runner chat `session` runs on asks about the service on `port`, which it left
+    /// out of the chat's plan (#2510).
+    pub fn runner_asks_about(&self, session: u32, port: u16) -> bool {
+        self.left_out_board(session, port).is_some()
+    }
+
+    /// The name of the runner chat `session` runs on, where its runner left a service out of
+    /// its plan (#2510).
+    pub fn runner_of(&self, session: u32) -> Option<String> {
+        lock(&self.open)
+            .get(&session)?
+            .confinement
+            .as_ref()?
+            .runner()
+            .map(str::to_owned)
+    }
+
+    /// **The person allowed the service on `port` the runner chat `session` runs on asked
+    /// about, from the window** (#2510, ruled 2026-10-18): that chat alone takes it now, on that
+    /// runner, while its confinement runs. No other chat is reached, and nothing is kept on
+    /// this machine. Whether it reached the chat, and whether a held connection of it had given
+    /// up and the chat is told to retry.
+    pub fn allow_left_out_live(&self, session: u32, port: u16) -> Live {
+        let Some(board) = self.left_out_board(session, port) else {
+            return Live::default();
         };
-        let mut live = Live::default();
-        for (number, board) in boards {
-            if !board.allow_this_machine(port).is_empty() {
-                self.tell_outcome(
-                    number,
-                    purlis_core::askoutcome::Outcome {
-                        about: purlis_core::askoutcome::About::Port {
-                            port: port.to_string(),
-                        },
-                        answer: purlis_core::askoutcome::Answer::Allowed {
-                            scope: purlis_core::askoutcome::Scope::live(Level::Chat),
-                        },
+        let mut live = Live {
+            reached: vec![session],
+            told_to_retry: Vec::new(),
+        };
+        if !board.allow_left_out(port).is_empty() {
+            self.tell_outcome(
+                session,
+                purlis_core::askoutcome::Outcome {
+                    about: purlis_core::askoutcome::About::Port {
+                        port: port.to_string(),
                     },
-                );
-                live.told_to_retry.push(number);
-            }
-            live.reached.push(number);
+                    answer: purlis_core::askoutcome::Answer::Allowed {
+                        scope: purlis_core::askoutcome::Scope::live(
+                            purlis_core::sandbox::grant::Level::Chat,
+                        ),
+                    },
+                },
+            );
+            live.told_to_retry.push(session);
         }
         live
+    }
+
+    /// **The person kept the service on `port` the runner chat `session` runs on asked about
+    /// blocked** (#2510): what its proxy holds on it is refused now, and every later connection
+    /// to it, until an Allow.
+    pub fn keep_left_out_blocked_live(&self, session: u32, port: u16) {
+        if let Some(board) = self.left_out_board(session, port) {
+            board.keep_left_out_blocked(port);
+        }
     }
 
     /// **An Allow of `host` at `level` was removed**, from the window (#1666): what it allowed
@@ -3150,7 +3179,7 @@ impl Chats {
             None => None,
         };
         // A runner starts the chat without the services you allowed for this chat alone on this
-        // machine, and the tab says so (#2510).
+        // machine, and the tab says so, and whether the chat is asked about them there (#2510).
         late.extend(
             confinement
                 .as_ref()

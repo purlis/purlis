@@ -152,6 +152,7 @@ impl Beside for Host {
             routed: None,
             ssh: None,
             left_out: Vec::new(),
+            host_name: None,
         })
     }
 

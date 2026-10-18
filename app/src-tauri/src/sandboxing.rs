@@ -1901,9 +1901,9 @@ pub(crate) fn kept_for(
         told_to_retry: retry,
     } = match what {
         What::Host(host) => chats.allow_live(session, host, level),
-        // A service a runner asks about for a chat planned here alone (#2510).
-        What::Port(port) => chats.allow_port_live(session, *port, level),
-        What::Write(_) | What::Socket(_) | What::Service(_) => crate::chats::Live::default(),
+        What::Write(_) | What::Socket(_) | What::Service(_) | What::Port(_) => {
+            crate::chats::Live::default()
+        }
     };
     if let Some(session) = session
         && !live.contains(&session)
@@ -2022,6 +2022,18 @@ pub async fn allow_sandbox_block(
     let tell = planes.block_teller();
     crate::off_the_window(ANSWERING_SANDBOX, move || {
         let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
+        // A service of the runner the chat runs on (#2510): for this chat alone, there, and
+        // nothing kept on this machine.
+        if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word() {
+            let allowed = allow_on_its_runner(
+                held.chats(),
+                session,
+                (&shown.target, level),
+                &held.audit_then_record(network.as_ref()),
+            )?;
+            held.chats().blocks().answered(session, &block);
+            return Ok(allowed);
+        }
         let (what, target) = (shown.what, shown.target);
         let root = held.root().to_path_buf();
         let allowed = match allow(
@@ -2050,6 +2062,61 @@ pub async fn allow_sandbox_block(
     })
     .await
 }
+
+/// **Allows the service on `port` of the runner chat `session` runs on, which that runner asked
+/// about** (#2510, ruled 2026-10-18): once or for this chat, never wider, for that chat alone
+/// while it runs there. The Allow is audited, and no grant is kept on this machine, so the
+/// chat's next start plans it as before and the runner asks again. Refused, with nothing done,
+/// at any other level, and where the chat's runner did not leave that port out.
+pub(crate) fn allow_on_its_runner(
+    chats: &crate::chats::Chats,
+    session: u32,
+    (port, level): (&str, GrantLevel),
+    audit: Audit<'_>,
+) -> Result<Allowed, String> {
+    let level = sandbox::grant::Level::from(level);
+    if !matches!(
+        level,
+        sandbox::grant::Level::Once | sandbox::grant::Level::Chat
+    ) {
+        return Err(RUNNER_SERVICE_SCOPES.to_owned());
+    }
+    let port: u16 = port
+        .trim()
+        .parse()
+        .map_err(|_| format!("purlis did not allow {port}: it is not a port."))?;
+    if !chats.runner_asks_about(session, port) {
+        return Err(format!(
+            "purlis did not allow port {port}: the runner chat {session} runs on does not ask \
+             about it now."
+        ));
+    }
+    let target = port.to_string();
+    audit(
+        Some(session),
+        &sandbox::grant::Audited {
+            granted: true,
+            what: "port",
+            target: &target,
+            level,
+        },
+    )?;
+    let live = chats.allow_left_out_live(session, port);
+    let kept = Kept {
+        retry: live.told_to_retry,
+        live: live.reached,
+        already: false,
+    };
+    Ok(Allowed {
+        said: allowed_said(Some(session), level, &kept),
+        live: true,
+    })
+}
+
+/// Why a service of a runner is not allowed past one chat (#2510).
+pub(crate) const RUNNER_SERVICE_SCOPES: &str = "purlis allows a service on the runner a chat \
+                                                runs on once or for this chat alone, never for \
+                                                more chats or on this Mac.";
 
 /// **Allow port** on Settings' Network page (#1970): the service on this Mac at `port`, for open
 /// chat `chat` alone or for every chat of this project on this machine, granted by
@@ -2130,6 +2197,12 @@ pub(crate) fn keep_block(
         && let Ok(host) = sandbox::grant::host(&block.target)
     {
         chats.keep_blocked_live(session, &host);
+    }
+    // A service of the runner the chat runs on (#2510): its hold ends at once.
+    if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word()
+        && let Ok(port) = block.target.parse::<u16>()
+    {
+        chats.keep_left_out_blocked_live(session, port);
     }
     crate::askoutcome::kept_blocked(chats, session, (block.what, &shown.target), reason);
     Some(block)

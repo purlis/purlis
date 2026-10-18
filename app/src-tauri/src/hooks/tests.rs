@@ -2501,3 +2501,39 @@ fn a_printed_port_is_only_ever_a_suggestion_on_a_notice_that_asks_for_one() {
     assert_eq!(claude.offer, BlockOffer::Port);
     assert_eq!(claude.suggested.as_deref(), Some("50795"));
 }
+
+/// #2510: a service the runner a chat runs on asks about is offered by its port, once or for
+/// this chat alone, and its Notice names the runner, never this Mac's service.
+#[test]
+fn a_runners_service_is_offered_once_or_for_this_chat_and_named_by_its_runner() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let plane: PlaneId = serde_json::from_value(serde_json::json!(project.path())).unwrap();
+    let block = Block {
+        operation: Operation::Connect,
+        kind: Kind::RunnerService,
+        ours: false,
+    };
+    let told = blocked_on(&plane, 3, &block, None, Some("5432"), false);
+    assert_eq!(told.offer, BlockOffer::Port);
+    assert_eq!(told.target.as_deref(), Some("5432"));
+    assert_eq!(
+        told.levels,
+        [
+            crate::sandboxing::GrantLevel::Once,
+            crate::sandboxing::GrantLevel::Chat
+        ]
+    );
+    assert_eq!(
+        told.said,
+        "a connection to a service on the runner this chat runs on"
+    );
+
+    let named = on_its_runner(told, Some("runner-7"));
+    let route = named.route.expect("what allowing it means");
+    assert!(
+        route.contains("port 5432 of the runner runner-7"),
+        "{route}"
+    );
+    assert!(route.contains("nothing on this Mac"), "{route}");
+}

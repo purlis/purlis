@@ -241,11 +241,15 @@ pub enum Kind {
     CertificateCheck,
     /// Another system service.
     SystemService,
+    /// A service on the runner a chat runs on (#2510): one port of that runner's loopback
+    /// interface, left out of the chat's plan because it was allowed for this chat alone on the
+    /// person's own machine, which the runner's proxy asks about.
+    RunnerService,
 }
 
 impl Kind {
     /// Every kind, in the order they are listed.
-    pub const ALL: [Kind; 15] = [
+    pub const ALL: [Kind; 16] = [
         Self::ProjectFiles,
         Self::ProjectState,
         Self::ProtectedFile,
@@ -261,6 +265,7 @@ impl Kind {
         Self::LocalService,
         Self::CertificateCheck,
         Self::SystemService,
+        Self::RunnerService,
     ];
 
     /// The word it is stored under.
@@ -281,6 +286,7 @@ impl Kind {
             Self::LocalService => "local-service",
             Self::CertificateCheck => "certificate-check",
             Self::SystemService => "system-service",
+            Self::RunnerService => "runner-service",
         }
     }
 
@@ -320,6 +326,7 @@ impl Kind {
             Self::LocalService => "a service on this Mac",
             Self::CertificateCheck => "the system's certificate check",
             Self::SystemService => "a system service",
+            Self::RunnerService => "a service on the runner this chat runs on",
         }
     }
 }

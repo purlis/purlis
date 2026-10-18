@@ -71,6 +71,7 @@ fn placed(http: u16, socks: u16, tmp: Option<&std::path::Path>) -> Placed {
         routed: None,
         ssh: None,
         left_out: Vec::new(),
+        host_name: None,
     }
 }
 
@@ -105,24 +106,63 @@ fn a_proxy_held_elsewhere_on_a_port_a_chat_was_given_is_refused() {
     assert!(!localport::is_own(50832), "nothing is kept of a refusal");
 }
 
+/// What holds a proxy elsewhere whose proxy asks live.
+#[derive(Debug)]
+struct Asking;
+
+impl HeldElsewhere for Asking {
+    fn id(&self) -> &str {
+        "01HOSTED"
+    }
+
+    fn withdraw_port(&self, _port: u16) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn board(&self) -> Option<Arc<dyn Board>> {
+        Some(Arc::new(crate::sandbox::asks::Asks::new(Arc::new(|_| {}))))
+    }
+}
+
 #[test]
-fn a_proxy_held_elsewhere_says_which_services_its_host_left_out_and_one_here_none() {
-    let confinement = Confinement::held_elsewhere(
+fn a_proxy_held_elsewhere_says_which_services_its_runner_left_out_and_what_comes_of_it() {
+    let asking = Confinement::held_elsewhere(
+        Placed {
+            left_out: vec![5432],
+            host_name: Some("runner-7".into()),
+            ..placed(50851, 50852, None)
+        },
+        Box::new(Asking),
+    )
+    .expect("held");
+    assert_eq!(asking.left_out(), [5432]);
+    assert_eq!(asking.runner(), Some("runner-7"));
+    assert_eq!(
+        asking.said_of_what_was_left_out().as_deref(),
+        Some(
+            "The runner runner-7 does not give this chat the service on port 5432 that you \
+             allowed for it alone. You are asked when the chat reaches for it there."
+        )
+    );
+
+    let silent = Confinement::held_elsewhere(
         Placed {
             left_out: vec![5432, 6379],
-            ..placed(50851, 50852, None)
+            ..placed(50853, 50854, None)
         },
         Box::new(Holding(Arc::default())),
     )
     .expect("held");
-
-    assert_eq!(confinement.left_out(), [5432, 6379]);
-    let said = confinement.said_of_what_was_left_out().expect("a sentence");
-    assert!(said.contains("5432 and 6379"), "{said}");
-    assert!(said.contains("for this chat alone"), "{said}");
+    assert_eq!(
+        silent.said_of_what_was_left_out().as_deref(),
+        Some(
+            "The runner this chat runs on does not give this chat the services on ports 5432 \
+             and 6379 that you allowed for it alone. The chat cannot reach them there."
+        )
+    );
 
     let alone = Confinement::held_elsewhere(
-        placed(50853, 50854, None),
+        placed(50855, 50856, None),
         Box::new(Holding(Arc::default())),
     )
     .expect("held");

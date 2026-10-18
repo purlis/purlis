@@ -278,13 +278,20 @@ impl Board for HostBoard {
         });
     }
 
-    /// Sent as an Allow of the port at this machine's loopback, which the host takes only for a
-    /// service its plan gave the chat alone and it left out (#2510).
-    fn allow_this_machine(&self, port: u16) -> Vec<String> {
+    /// Sent as an Allow of the port at the host's loopback, which the host takes only for a
+    /// service it left out of the chat's plan (#2510).
+    fn allow_left_out(&self, port: u16) -> Vec<String> {
         self.change(ReachChange::Allow {
-            host: format!("127.0.0.1:{port}"),
+            host: left_out_at(port),
             layer: layer_of(By::Chat),
         })
+    }
+
+    /// Sent as a Keep blocked of the port at the host's loopback (#2510).
+    fn keep_left_out_blocked(&self, port: u16) {
+        self.change(ReachChange::KeepBlocked {
+            host: left_out_at(port),
+        });
     }
 
     fn allowed_live(&self) -> Vec<(String, By)> {
@@ -294,6 +301,12 @@ impl Board for HostBoard {
             .map(|listed| (listed.host, by_of(listed.layer)))
             .collect()
     }
+}
+
+/// How a service on `port` the host left out of a chat's plan is named to it: its loopback
+/// address, as its proxy asked about it (#2510).
+fn left_out_at(port: u16) -> String {
+    format!("{}:{port}", purlis_core::sandbox::tunnel::LOOPBACK)
 }
 
 /// Sends `change` to confinement `id`, and waits for the hosts it tells to retry.

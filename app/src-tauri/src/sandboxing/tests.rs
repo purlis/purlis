@@ -2789,3 +2789,29 @@ fn an_allow_for_the_chat_is_kept_by_the_run_a_restart_began_while_it_was_audited
     assert!(refused.contains("closed"), "{refused}");
     assert!(chats.grants_a_start_of(ran.get()).services.is_empty());
 }
+
+/// #2510, ruled 2026-10-18: a service of the runner a chat runs on is allowed once or for that
+/// chat alone, and only where its runner asks about it; nothing is audited or kept on this
+/// machine for one refused, so the chat's next start plans it as before.
+#[test]
+fn a_runners_service_is_never_allowed_past_its_chat_nor_kept_on_this_machine() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let audited = std::cell::Cell::new(0);
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+        audited.set(audited.get() + 1);
+        Ok(())
+    };
+    for level in [GrantLevel::You, GrantLevel::Project, GrantLevel::Machine] {
+        assert_eq!(
+            allow_on_its_runner(&chats, 3, ("5432", level), &audit),
+            Err(RUNNER_SERVICE_SCOPES.to_owned()),
+            "{level:?}"
+        );
+    }
+    let not_asked = allow_on_its_runner(&chats, 3, ("5432", GrantLevel::Chat), &audit)
+        .expect_err("its runner does not ask about it");
+    assert!(not_asked.contains("5432"), "{not_asked}");
+    assert_eq!(audited.get(), 0, "nothing audited");
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+}
