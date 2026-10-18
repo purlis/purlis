@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792302325254,
+  "lastUpdate": 1792303598302,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16590,6 +16590,48 @@ window.BENCHMARK_DATA = {
             "value": 101.21057350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.864, 101.193, 101.211, 101.713, 102.844 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fe77e3132a66b0c5d3777415416590bbbe997414",
+          "message": "Cluster operator: a pool's template and warm pool go with its last Claim (#2260) (#2553)\n\nThe template and warm pool in a namespace are owned by the pool's Claims there (#2259), so the\ngarbage collector removes them with the last one. The operator now watches upstream claims,\ntemplates and warm pools, whoever made them, by their metadata alone: each change or removal\nwakes every Claim in that namespace on the pool it is named for (claims_woken_by), so a Claim\nmade as the last one goes makes them again at once, and a Claim an object was in the way of goes\non as soon as it is gone, with no polling.\n\nThe ClusterRole gains list and watch on sandboxtemplates and sandboxwarmpools.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T09:57:54+04:00",
+          "tree_id": "27c9f5806b8ed704c4f8f2e3bc2a85b2a9f55537",
+          "url": "https://github.com/purlis/purlis/commit/fe77e3132a66b0c5d3777415416590bbbe997414"
+        },
+        "date": 1792303596273,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.278018,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.269, 0.276, 0.278, 0.284, 0.289 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575106499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.441, 16.548, 16.575, 16.577, 16.614 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.94511800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.676, 100.682, 100.945, 101.206, 101.471 ms"
           }
         ]
       }
