@@ -118,7 +118,10 @@
 //! - `relayed-internal`: on a runner, the internal services a chat the desktop planned may
 //!   reach (#2445, ruled 2026-10-18): an address of a private network, a cluster's or a link's,
 //!   or of the runner itself, is carried for such a chat only where this list names it, written
-//!   as `hosts` is. Absent, such a chat reaches none. A name or a `*.domain` entry trusts DNS:
+//!   as `hosts` is or as a range, `10.96.0.0/12` or `[fd00:10:96::/112]`, with an optional
+//!   `:port` (#2530). Absent, such a chat reaches none. An entry that is neither is not taken,
+//!   and is said in a sentence of its own ([`Locks::relayed_internal_refused`]); the rest of
+//!   the file stands. A name or a `*.domain` entry trusts DNS:
 //!   it carries whatever internal address the name resolves to, so a resolver someone else can
 //!   change widens it. A cloud metadata service is never carried. It gives nothing to a chat
 //!   this machine plans itself, and `hosts` gives nothing to a relayed one.
@@ -141,6 +144,7 @@ use std::path::{Path, PathBuf};
 use super::Preset;
 use super::grant;
 use super::hosts::{Granted, Host, Level};
+use super::internal::Entry;
 
 /// **This machine's policy file**: in a system folder only an administrator writes.
 pub const MACHINE_FILE: &str = "/etc/purlis/policy.json";
@@ -195,7 +199,9 @@ pub struct Locks {
     /// The hosts no level may add and no Allow may keep (#1666).
     never_hosts: Vec<Host>,
     /// The internal services a chat planned on another machine reaches on this one (#2445).
-    relayed_internal: Vec<Host>,
+    relayed_internal: Vec<Entry>,
+    /// Each entry of `relayed-internal` that is not taken, in a sentence naming it (#2530).
+    relayed_internal_refused: Vec<String>,
     /// The most each dispatch limit may be, where the policy says (#1440).
     dispatch: crate::dispatchlimits::Level,
     /// Whether every dispatch from one chat to another is forbidden (#1437).
@@ -288,6 +294,7 @@ impl Locks {
             allow_scopes: Some(Vec::new()),
             never_hosts: Vec::new(),
             relayed_internal: Vec::new(),
+            relayed_internal_refused: Vec::new(),
             dispatch: crate::dispatchlimits::ceiling_when_refused(),
             no_dispatch: true,
             dispatch_locked: Vec::new(),
@@ -455,8 +462,14 @@ impl Locks {
 
     /// **The internal services a chat planned on another machine reaches on this one** (#2445,
     /// ruled 2026-10-18): the `relayed-internal` list, and nothing else of the policy's.
-    pub fn relayed_internal(&self) -> &[Host] {
+    pub fn relayed_internal(&self) -> &[Entry] {
         &self.relayed_internal
+    }
+
+    /// **Each entry of `relayed-internal` not taken** (#2530), in a sentence naming it and
+    /// saying why: it carries nothing, and nothing else is locked for it.
+    pub fn relayed_internal_refused(&self) -> &[String] {
+        &self.relayed_internal_refused
     }
 
     /// The hosts policy pins as never allowed (#1666).
@@ -815,7 +828,8 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
     };
     let hosts = hosts_of("hosts")?;
     let never_hosts = hosts_of("never-hosts")?.unwrap_or_default();
-    let relayed_internal = hosts_of("relayed-internal")?.unwrap_or_default();
+    let (relayed_internal, relayed_internal_refused) =
+        relayed_internal(sandbox.get("relayed-internal"))?;
     let allow_scopes = words("allow-scopes")?
         .map(|words| {
             words
@@ -855,11 +869,45 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         allow_scopes,
         never_hosts,
         relayed_internal,
+        relayed_internal_refused,
         dispatch,
         no_dispatch,
         dispatch_locked,
         team_never: false,
     })
+}
+
+/// **What a policy's `relayed-internal` lists** (#2530): each entry it takes, and a sentence for
+/// each it does not, naming it. One that is not an entry is left out alone, since it could
+/// only have carried more; a value that is not a list refuses the file.
+fn relayed_internal(
+    value: Option<&serde_json::Value>,
+) -> Result<(Vec<Entry>, Vec<String>), String> {
+    let items = match value {
+        None => return Ok((Vec::new(), Vec::new())),
+        Some(serde_json::Value::Array(items)) => items,
+        Some(_) => return Err("its \"relayed-internal\" is not a list".to_owned()),
+    };
+    let mut taken: Vec<Entry> = Vec::new();
+    let mut refused = Vec::new();
+    for item in items {
+        let said = |why: &str| {
+            format!(
+                "its relayed-internal entry {} is not taken: {why}",
+                clip(&item.to_string())
+            )
+        };
+        match item.as_str().map(Entry::parse) {
+            Some(Ok(entry)) => {
+                if !taken.contains(&entry) {
+                    taken.push(entry);
+                }
+            }
+            Some(Err(why)) => refused.push(said(&why)),
+            None => refused.push(said("an entry is written as text in quotes.")),
+        }
+    }
+    Ok((taken, refused))
 }
 
 /// The keys of `dispatch` that are locks; every other key is a limit's ceiling.

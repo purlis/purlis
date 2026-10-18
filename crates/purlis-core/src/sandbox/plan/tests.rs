@@ -208,7 +208,7 @@ mod made_elsewhere {
         Internal::listing(
             hosts
                 .iter()
-                .map(|host| Host::parse(host).expect("a host"))
+                .map(|host| crate::sandbox::internal::Entry::parse(host).expect("an entry"))
                 .collect(),
         )
     }

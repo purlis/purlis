@@ -1481,10 +1481,60 @@ fn relayed_internal_lists_hosts_of_its_own_and_leaves_hosts_alone() {
     );
 }
 
+/// A range is an entry of its own (#2530).
 #[test]
-fn a_relayed_internal_entry_that_is_not_a_host_refuses_the_file_and_opens_nothing() {
+fn relayed_internal_takes_a_range() {
     let locks = Locks::parse(
-        r#"{"sandbox": {"relayed-internal": ["10.0.0.0/8"]}}"#,
+        r#"{"sandbox": {"relayed-internal": ["10.96.0.0/12", "[fd00:10:96::/112]:443"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+
+    assert_eq!(locks.refused_because(), None);
+    assert_eq!(
+        locks
+            .relayed_internal()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["10.96.0.0/12", "[fd00:10:96::/112]:443"]
+    );
+}
+
+/// One bad entry is named in a sentence of its own and carries nothing (#2530): the rest of the
+/// list, and every other lock, stand as written, and nothing else is locked for it.
+#[test]
+fn a_bad_relayed_internal_entry_is_refused_alone_and_locks_nothing_else() {
+    let locks = Locks::parse(
+        r#"{"sandbox": {"relayed-internal": ["10.0.0.5/8", "10.96.0.1:443", 7, "0.0.0.0/0"],
+                        "never-hosts": ["*.paste.example"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+
+    assert_eq!(locks.refused_because(), None);
+    assert_eq!(
+        locks
+            .relayed_internal()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["10.96.0.1:443"]
+    );
+    let refused = locks.relayed_internal_refused();
+    assert_eq!(refused.len(), 3, "{refused:?}");
+    assert!(refused[0].contains("\"10.0.0.5/8\"") && refused[0].contains("10.0.0.0/8"));
+    assert!(refused[1].contains("7") && refused[1].contains("text"));
+    assert!(refused[2].contains("\"0.0.0.0/0\""));
+    assert!(!locks.forbids_personal_hosts());
+    assert!(!locks.forbids_write_grants());
+    assert!(!locks.forbids_opt_out());
+    assert!(locks.allowed_hosts().is_none());
+    assert_eq!(locks.never_hosts().len(), 1);
+}
+
+#[test]
+fn a_relayed_internal_that_is_not_a_list_refuses_the_file() {
+    let locks = Locks::parse(
+        r#"{"sandbox": {"relayed-internal": "10.0.0.0/8"}}"#,
         Path::new("/etc/purlis/policy.json"),
     );
 

@@ -277,12 +277,14 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
         return match (here.resolve)(name, port.unwrap_or(HTTPS))
             .into_iter()
             .find(|ip| {
-                super::internal::held(*ip, Some(here.own))
-                    && (!listed || super::hosts::metadata_address(*ip))
+                here.internal.holds(*ip, Some(here.own)) && (!listed || here.internal.metadata(*ip))
             }) {
-            Some(ip) => Err(format!(
-                "it lets the chat reach {entry}, which the runner resolves to {ip}, an internal \
-                 address its policy does not list"
+            Some(ip) => Err(not_taken_said(
+                format!(
+                    "it lets the chat reach {entry}, which the runner resolves to {ip}, an \
+                     internal address its policy does not list"
+                ),
+                here,
             )),
             None => Ok(()),
         };
@@ -297,12 +299,26 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
             )),
         };
     }
-    if super::internal::held(ip, Some(here.own)) && !here.internal.lists_entry(entry) {
-        return Err(format!(
-            "it lets the chat reach {entry}, an internal address the runner's policy does not list"
+    if here.internal.holds(ip, Some(here.own)) && !here.internal.lists_entry(entry) {
+        return Err(not_taken_said(
+            format!(
+                "it lets the chat reach {entry}, an internal address the runner's policy does not \
+                 list"
+            ),
+            here,
         ));
     }
     Ok(())
+}
+
+/// `why`, and each entry of the runner's `relayed-internal` it does not take, in its own
+/// sentence (#2530).
+fn not_taken_said(why: String, here: &Here<'_>) -> String {
+    let not_taken = here.internal.not_taken();
+    if not_taken.is_empty() {
+        return why;
+    }
+    format!("{why} ({})", not_taken.join("; "))
 }
 
 /// The port a listed name without one is resolved on: the name's addresses are the same on any.

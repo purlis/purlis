@@ -323,3 +323,50 @@ fn only_the_hosts_you_confirmed_are_yours() {
     );
     assert_eq!(mine, hosts(&["10.0.0.7:22"]));
 }
+
+/// An interface's mask, as the system lists it (#2530): a mask that would take in more than one
+/// network a machine is on, or one of the other family, is read as the address alone.
+#[test]
+fn an_interfaces_mask_of_0_a_short_one_or_one_of_the_other_family_holds_its_address_alone() {
+    use super::{Network, network_of};
+    use std::net::IpAddr;
+    let ip = |text: &str| text.parse::<IpAddr>().expect("an address");
+    let alone = |text: &str| Network::host(ip(text));
+
+    for (address, mask) in [
+        ("198.51.100.20", "0.0.0.0"),
+        ("2600:1f14::42", "::"),
+        ("198.51.100.20", "240.0.0.0"),
+        ("2600:1f14::42", "ff00::"),
+        ("198.51.100.20", "ffff:ffff:ffff:ffff::"),
+        ("2600:1f14::42", "255.255.255.0"),
+    ] {
+        assert_eq!(
+            network_of(ip(address), Some(ip(mask))),
+            alone(address),
+            "{address} with mask {mask}"
+        );
+    }
+    assert_eq!(
+        network_of(ip("198.51.100.20"), None),
+        alone("198.51.100.20")
+    );
+    let on = network_of(ip("198.51.100.20"), Some(ip("255.255.255.0")));
+    assert_eq!(on, Network::of(ip("198.51.100.20"), 24));
+    assert!(on.holds(ip("198.51.100.200")) && !on.holds(ip("198.51.101.1")));
+}
+
+/// NAT64's local-use prefix is read at every length it may be used at (#2530): an address in it
+/// that carries a refused IPv4 address at any of them is refused.
+#[test]
+fn a_local_use_nat64_address_carrying_a_refused_ipv4_one_at_any_length_is_refused() {
+    use super::refused_address;
+    // 169.254.169.254 written at /48: 64:ff9b:1 | a9fe | u | a9 fe.
+    let at_48: std::net::IpAddr = "64:ff9b:1:a9fe:a9:fe00::".parse().unwrap();
+    assert!(refused_address(at_48, &[]));
+    assert!(refused("[64:ff9b:1:a9fe:a9:fe00::]").contains("carries the IPv4 address"));
+    assert!(!refused_address(
+        "64:ff9b:1::cb00:7107".parse().unwrap(),
+        &[]
+    ));
+}

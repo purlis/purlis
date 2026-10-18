@@ -9,7 +9,9 @@
 //! address of a private network, a cluster's or a link's ([`private_address`]), and every address
 //! of the runner itself or of a network it is on but `127.0.0.1` and `::1`, are carried only
 //! where the runner's own policy lists them ([`super::policy`]'s `relayed-internal`, ruled
-//! 2026-10-18), by the name asked for or by that address. That is how a cluster's administrator
+//! 2026-10-18), by the name asked for, by that address or by a range it is in ([`Entry`],
+//! #2530). An IPv6 address a NAT64 prefix carries an IPv4 one in, this machine's own among them
+//! ([`super::nat64`]), is judged as that one. That is how a cluster's administrator
 //! lets a runner's relayed chats reach an internal service. A cloud metadata service is never
 //! one.
 //!
@@ -20,7 +22,11 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
-use super::hosts::{Host, Network, embedded_v4, metadata_address, refused_address};
+use super::hosts::{Host, Network, carried_v4, metadata_address, refused_address};
+use super::nat64::{self, Nat64};
+
+mod entry;
+pub use entry::{Entry, Range};
 
 /// **Whether `ip` is an address of a private network, a cluster's or a link's**: `10/8`,
 /// `172.16/12`, `192.168/16`, the shared `100.64/10` many clusters give their pods and services,
@@ -29,12 +35,12 @@ use super::hosts::{Host, Network, embedded_v4, metadata_address, refused_address
 pub fn private_address(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => private_v4(ip),
-        IpAddr::V6(ip) => match embedded_v4(ip) {
-            Some(carried) => private_v4(carried),
-            None => {
+        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
+            [] => {
                 let first = ip.segments()[0];
                 ip.is_unicast_link_local() || first & 0xfe00 == 0xfc00 || first & 0xffc0 == 0xfec0
             }
+            carried => carried.iter().any(|one| private_v4(*one)),
         },
     }
 }
@@ -47,13 +53,18 @@ fn private_v4(ip: Ipv4Addr) -> bool {
 /// **The internal services this machine's policy lists** (module docs): what a chat planned on
 /// another machine reaches past the public Internet.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Internal(Source);
+pub struct Internal {
+    listed: Source,
+    /// The NAT64 prefixes an address is decoded through besides the well-known ones: `None` for
+    /// this machine's own, read from it ([`nat64::of_this_machine`]).
+    nat64: Option<Vec<Nat64>>,
+}
 
 /// Where an [`Internal`] reads what it lists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Source {
     /// A fixed list.
-    Listed(Vec<Host>),
+    Listed(Vec<Entry>),
     /// This machine's policy for the project at the path, read at every question, so a policy
     /// narrowed while a chat runs holds its next connection.
     Policy(PathBuf),
@@ -66,23 +77,74 @@ impl Default for Internal {
 }
 
 impl Internal {
-    /// The services `listed` names.
-    pub fn listing(listed: Vec<Host>) -> Self {
-        Self(Source::Listed(listed))
+    /// The services `listed` names, with no NAT64 prefix of this machine's.
+    pub fn listing(listed: Vec<Entry>) -> Self {
+        Self {
+            listed: Source::Listed(listed),
+            nat64: Some(Vec::new()),
+        }
     }
 
     /// What this machine's policy lists for the project at `root` (ruled 2026-10-18): its
-    /// `relayed-internal`, read again at every question; none where it lists none.
+    /// `relayed-internal`, read again at every question; none where it lists none. An address
+    /// this machine's own NAT64 carries is judged as the IPv4 one it carries (#2530).
     pub fn of(root: &Path) -> Self {
-        Self(Source::Policy(root.to_path_buf()))
+        Self {
+            listed: Source::Policy(root.to_path_buf()),
+            nat64: None,
+        }
+    }
+
+    /// These services, with `prefixes` as this machine's NAT64 prefixes.
+    pub fn with_nat64(self, prefixes: Vec<Nat64>) -> Self {
+        Self {
+            nat64: Some(prefixes),
+            ..self
+        }
     }
 
     /// What it lists now.
-    fn listed(&self) -> Vec<Host> {
-        match &self.0 {
+    fn listed(&self) -> Vec<Entry> {
+        match &self.listed {
             Source::Listed(listed) => listed.clone(),
             Source::Policy(root) => super::policy::Locks::of(root).relayed_internal().to_vec(),
         }
+    }
+
+    /// **The entries of this machine's policy it does not take**, each in a sentence naming it
+    /// (#2530): none for a fixed list.
+    pub fn not_taken(&self) -> Vec<String> {
+        match &self.listed {
+            Source::Listed(_) => Vec::new(),
+            Source::Policy(root) => super::policy::Locks::of(root)
+                .relayed_internal_refused()
+                .to_vec(),
+        }
+    }
+
+    /// The IPv4 addresses `ip` carries through this machine's own NAT64 prefixes.
+    fn through_nat64(&self, ip: IpAddr) -> Vec<IpAddr> {
+        let IpAddr::V6(ip) = ip else {
+            return Vec::new();
+        };
+        let prefixes = self.nat64.clone().unwrap_or_else(nat64::of_this_machine);
+        prefixes
+            .iter()
+            .filter_map(|prefix| prefix.carried(ip))
+            .map(IpAddr::V4)
+            .collect()
+    }
+
+    /// **Whether `ip` is internal** ([`held`]), as itself or as an IPv4 address this machine's
+    /// own NAT64 carries in it.
+    pub(crate) fn holds(&self, ip: IpAddr, own: Option<&[Network]>) -> bool {
+        held(ip, own) || self.through_nat64(ip).into_iter().any(|one| held(one, own))
+    }
+
+    /// Whether `ip` is a cloud metadata service's, as itself or carried through this machine's
+    /// own NAT64.
+    pub(crate) fn metadata(&self, ip: IpAddr) -> bool {
+        metadata_address(ip) || self.through_nat64(ip).into_iter().any(metadata_address)
     }
 
     /// **Whether `host`, reached at `at`, is carried**: an address that is not internal is, and
@@ -90,10 +152,10 @@ impl Internal {
     /// port. A cloud metadata service is never carried. `own` is this machine's networks; where
     /// they could not be read, every address but `127.0.0.1` and `::1` is held as internal.
     pub fn carries(&self, host: &str, at: SocketAddr, own: Option<&[Network]>) -> bool {
-        if !held(at.ip(), own) {
+        if !self.holds(at.ip(), own) {
             return true;
         }
-        if metadata_address(at.ip()) {
+        if self.metadata(at.ip()) {
             return false;
         }
         let listed = self.listed();
@@ -107,7 +169,7 @@ impl Internal {
     /// that is or names a cloud metadata service's address.
     pub fn lists_entry(&self, entry: &str) -> bool {
         Host::parse(entry).is_ok_and(|asked| {
-            !asked.address().is_some_and(metadata_address)
+            !asked.address().is_some_and(|ip| self.metadata(ip))
                 && self.listed().iter().any(|one| one.covers(&asked))
         })
     }
