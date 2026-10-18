@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn the_os_s_words_keep_the_sandbox_s_clause_in_a_sandboxed_chat() {
-        // #1421: `init`, `browser install` and the handoff's warning name the path themselves,
+        // #1421: `init` and the handoff's warning name the path themselves,
         // and said only "(Operation not permitted)" in a sandboxed chat.
         let path = Path::new("/plane/.gitignore");
         let sandboxed = refused_write(eperm(), path, true);

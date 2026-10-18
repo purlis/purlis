@@ -86,7 +86,10 @@ fn install_is_retired_and_says_what_to_use_instead_whatever_it_is_given() {
     }
     assert!(!s.log.exists(), "npx never ran");
     assert!(!s.root.join(".claude").exists(), "no skill is written");
-    assert!(!s.root.join(".gitignore").exists(), "no ignore line is written");
+    assert!(
+        !s.root.join(".gitignore").exists(),
+        "no ignore line is written"
+    );
 }
 
 #[test]

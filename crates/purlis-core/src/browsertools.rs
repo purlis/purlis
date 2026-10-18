@@ -27,6 +27,13 @@ use crate::chattools::Tool;
 use crate::hookwire::Browsing;
 use crate::sandbox::reach::{Reach, layer_of};
 
+/// What the retired `purlis browser install` answers (#2575): it generated Playwright's own
+/// page-driving pages into a project, a second way for chats to drive a browser.
+pub const INSTALL_RETIRED: &str = "`purlis browser install` is retired, and nothing was written. \
+     A chat purlis starts drives a real browser with purlis's own browser tools (`browser_open`, \
+     `browser_snapshot`, `browser_click`, `browser_login` and the rest), which purlis's \
+     `browser` skill teaches.";
+
 /// The prefix every browser tool's name starts with.
 pub const PREFIX: &str = "browser_";
 
