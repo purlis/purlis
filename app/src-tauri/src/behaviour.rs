@@ -531,16 +531,17 @@ impl Pane {
         Pane { seen }
     }
 
-    /// Waits until the pane has drawn `text`, read as the text the pane draws: a view is sent
+    /// Waits until the pane has drawn `text`, both read as the text they draw: a view is sent
     /// the screen as it is first and then the output, so a line the program writes in two
     /// pieces can reach it with the cursor moves that end the screen between them (#2375).
     fn shows(&self, text: &str) {
         let deadline = Instant::now() + PATIENCE;
+        let wanted = drawn(text);
         loop {
             // A copy, so a failed wait panics holding no lock: the view's sink still takes the
             // lock on the host's thread, and a poisoned one would fail it there too.
             let seen = self.seen.lock().expect("the pane").clone();
-            if drawn(&seen).contains(text) {
+            if drawn(&seen).contains(&wanted) {
                 return;
             }
             assert!(
@@ -608,6 +609,17 @@ fn a_line_written_in_two_pieces_around_the_screen_a_pane_opens_on_is_shown_whole
     };
 
     pane.shows("without the sandbox :END");
+}
+
+/// What a pane is told when its program ends carries escape sequences of its own, and is
+/// shown as it is drawn.
+#[test]
+fn the_end_a_pane_is_told_is_shown_as_it_is_drawn() {
+    let pane = Pane {
+        seen: Arc::new(Mutex::new(format!("HARNESS-READY\u{1b}[K\r\n{ENDED}"))),
+    };
+
+    pane.shows(ENDED);
 }
 
 /// How each chat ended, as the window is told.
