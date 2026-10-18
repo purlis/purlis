@@ -74,8 +74,12 @@ fn never_asked_under(sandbox: &str) {
     let project = tempfile::tempdir().expect("a project");
     crate::sandbox::policy::set_for_this_test(locked(sandbox));
     let asked = super::askable_here(project.path(), vec![5432]);
-    let (_, composed_asked) =
-        super::started_here(Planned::Composed, composed(Vec::new()), &[5432], project.path());
+    let (_, composed_asked) = super::started_here(
+        Planned::Composed,
+        composed(Vec::new()),
+        &[5432],
+        project.path(),
+    );
     crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
     assert!(asked.is_empty(), "nothing is asked about");
     assert!(composed_asked.is_empty(), "nothing composed is asked about");
@@ -107,8 +111,12 @@ fn a_service_left_out_is_asked_about_where_the_runners_policy_keeps_a_one_chat_s
     let project = tempfile::tempdir().expect("a project");
     crate::sandbox::policy::set_for_this_test(locked(r#"{"allow-scopes": ["chat"]}"#));
     let kept = super::askable_here(project.path(), vec![5432]);
-    let (_, composed_kept) =
-        super::started_here(Planned::Composed, composed(Vec::new()), &[5432], project.path());
+    let (_, composed_kept) = super::started_here(
+        Planned::Composed,
+        composed(Vec::new()),
+        &[5432],
+        project.path(),
+    );
     crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
     assert_eq!(kept, [5432]);
     assert_eq!(composed_kept, [5432]);

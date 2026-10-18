@@ -20,5 +20,8 @@ stands as the operator ruled it on 2026-10-18: **the person is asked, per chat**
    chat's tab says the runner left it out. *D-2590-2.*
 3. **It is asked about, and answered, as item 3 of the amendment for #2510 says.** The runner
    takes an answer about one of its own loopback ports only for a port it left out of that
-   confinement, and refuses any other in a sentence. Nothing is kept on either machine.
+   confinement, and refuses any other in a sentence. As for a plan made elsewhere, a port is
+   left out to be asked about only where the runner's own policy lets a chat be allowed a
+   service on it, keeps the live ask on and keeps a one-chat scope; otherwise none is asked
+   about or said left out. Nothing is kept on either machine.
    *D-2590-3.*
