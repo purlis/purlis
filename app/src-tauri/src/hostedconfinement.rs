@@ -279,12 +279,17 @@ impl Board for HostBoard {
     }
 
     /// Sent as an Allow of the port at the host's loopback, which the host takes only for a
-    /// service it left out of the chat's plan (#2510).
-    fn allow_left_out(&self, port: u16) -> Vec<String> {
-        self.change(ReachChange::Allow {
-            host: left_out_at(port),
-            layer: layer_of(By::Chat),
-        })
+    /// service it left out of the chat's plan (#2510): its refusal, or a link that cannot carry
+    /// it, is said, never taken as an Allow.
+    fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String> {
+        change(
+            &self.link,
+            &self.id,
+            ReachChange::Allow {
+                host: left_out_at(port),
+                layer: layer_of(By::Chat),
+            },
+        )
     }
 
     /// Sent as a Keep blocked of the port at the host's loopback (#2510).

@@ -2815,3 +2815,36 @@ fn a_runners_service_is_never_allowed_past_its_chat_nor_kept_on_this_machine() {
     assert_eq!(audited.get(), 0, "nothing audited");
     assert!(sandbox::local::granted_ports(project.path()).is_empty());
 }
+
+/// #2510: an Allow the runner did not take is audited as taken back and refused in words, so
+/// the audit never holds an Allow that did not reach the runner.
+#[test]
+fn a_runners_service_its_runner_did_not_take_is_audited_back_and_refused() {
+    let audited = std::cell::RefCell::new(Vec::new());
+    let audit = |_: Option<u32>, one: &sandbox::grant::Audited<'_>| {
+        audited
+            .borrow_mut()
+            .push((one.granted, one.target.to_owned()));
+        Ok(())
+    };
+    let refused = allowed_on_its_runner(4, ("5432", GrantLevel::Chat), &audit, &|_| true, &|_| {
+        Err("the runner refused it".to_owned())
+    })
+    .expect_err("refused");
+    assert!(refused.contains("the runner refused it"), "{refused}");
+    assert_eq!(
+        *audited.borrow(),
+        [(true, "5432".to_owned()), (false, "5432".to_owned())]
+    );
+
+    audited.borrow_mut().clear();
+    let allowed = allowed_on_its_runner(4, ("5432", GrantLevel::Once), &audit, &|_| true, &|_| {
+        Ok(crate::chats::Live {
+            reached: vec![4],
+            told_to_retry: Vec::new(),
+        })
+    })
+    .expect("allowed");
+    assert!(allowed.live);
+    assert_eq!(*audited.borrow(), [(true, "5432".to_owned())]);
+}

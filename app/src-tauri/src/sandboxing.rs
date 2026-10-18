@@ -2074,6 +2074,25 @@ pub(crate) fn allow_on_its_runner(
     (port, level): (&str, GrantLevel),
     audit: Audit<'_>,
 ) -> Result<Allowed, String> {
+    allowed_on_its_runner(
+        session,
+        (port, level),
+        audit,
+        &|port| chats.runner_asks_about(session, port),
+        &|port| chats.allow_left_out_live(session, port),
+    )
+}
+
+/// [`allow_on_its_runner`], where `asks` says whether the chat's runner asks about a port and
+/// `reach` tells it the Allow. An Allow the runner did not take is audited as taken back, and
+/// refused in a sentence, so the audit never holds an Allow that did not reach the runner.
+pub(crate) fn allowed_on_its_runner(
+    session: u32,
+    (port, level): (&str, GrantLevel),
+    audit: Audit<'_>,
+    asks: &dyn Fn(u16) -> bool,
+    reach: &dyn Fn(u16) -> Result<crate::chats::Live, String>,
+) -> Result<Allowed, String> {
     let level = sandbox::grant::Level::from(level);
     if !matches!(
         level,
@@ -2085,7 +2104,7 @@ pub(crate) fn allow_on_its_runner(
         .trim()
         .parse()
         .map_err(|_| format!("purlis did not allow {port}: it is not a port."))?;
-    if !chats.runner_asks_about(session, port) {
+    if !asks(port) {
         return Err(format!(
             "purlis did not allow port {port}: the runner chat {session} runs on does not ask \
              about it now."
@@ -2101,7 +2120,29 @@ pub(crate) fn allow_on_its_runner(
             level,
         },
     )?;
-    let live = chats.allow_left_out_live(session, port);
+    let live = match reach(port) {
+        Ok(live) => live,
+        Err(why) => {
+            let undone = audit(
+                Some(session),
+                &sandbox::grant::Audited {
+                    granted: false,
+                    what: "port",
+                    target: &target,
+                    level,
+                },
+            );
+            return Err(match undone {
+                Ok(()) => {
+                    format!("purlis did not allow port {port}: the runner did not take it ({why}).")
+                }
+                Err(unsaid) => format!(
+                    "purlis did not allow port {port}: the runner did not take it ({why}). The \
+                     audit records it allowed, and could not record that it was not ({unsaid})."
+                ),
+            });
+        }
+    };
     let kept = Kept {
         retry: live.told_to_retry,
         live: live.reached,

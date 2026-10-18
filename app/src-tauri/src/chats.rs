@@ -2083,16 +2083,16 @@ impl Chats {
     /// about, from the window** (#2510, ruled 2026-10-18): that chat alone takes it now, on that
     /// runner, while its confinement runs. No other chat is reached, and nothing is kept on
     /// this machine. Whether it reached the chat, and whether a held connection of it had given
-    /// up and the chat is told to retry.
-    pub fn allow_left_out_live(&self, session: u32, port: u16) -> Live {
+    /// up and the chat is told to retry; or why the runner did not take it.
+    pub fn allow_left_out_live(&self, session: u32, port: u16) -> Result<Live, String> {
         let Some(board) = self.left_out_board(session, port) else {
-            return Live::default();
+            return Ok(Live::default());
         };
         let mut live = Live {
             reached: vec![session],
             told_to_retry: Vec::new(),
         };
-        if !board.allow_left_out(port).is_empty() {
+        if !board.allow_left_out(port)?.is_empty() {
             self.tell_outcome(
                 session,
                 purlis_core::askoutcome::Outcome {
@@ -2108,7 +2108,7 @@ impl Chats {
             );
             live.told_to_retry.push(session);
         }
-        live
+        Ok(live)
     }
 
     /// **The person kept the service on `port` the runner chat `session` runs on asked about
@@ -5421,7 +5421,7 @@ struct Asking {
 /// nothing a chat sends reaches the board.
 fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::plan::Asking {
     use purlis_core::sandbox::asks::Heard;
-    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    use purlis_core::sandboxblock::{Block, Operation};
     let Asking {
         hear,
         reached,
@@ -5472,14 +5472,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                     let Some(raise) = lock(&hear).clone() else {
                         continue;
                     };
-                    // A service of the runner the chat was planned to reach for it alone is
-                    // asked about as a service on its machine, by its port, never as a host
-                    // (#2510).
-                    let (kind, target) = match purlis_core::sandbox::localport::named_port(&target)
-                    {
-                        Some(port) => (Kind::LocalService, port.to_string()),
-                        None => (Kind::Host, target),
-                    };
+                    let (kind, target) = asked_as(target);
                     let block = purlis_core::hookwire::SandboxBlocked {
                         chat,
                         sandbox_blocked: Block {
@@ -5526,16 +5519,33 @@ fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) ->
     true
 }
 
-/// The block a live ask about `target`, a host and port, is held as: none for what a grant
-/// cannot name.
+/// **What a live ask about `target`, a host and port, is raised as**: a host, or, for a port
+/// of the loopback interface, a service of the runner the chat runs on, by its port (#2510).
+/// Only a runner's proxy asks about a loopback port, for one it left out of the chat's plan;
+/// never a service on this Mac, so no answer to it grants anything on this machine.
+fn asked_as(target: String) -> (purlis_core::sandboxblock::Kind, String) {
+    use purlis_core::sandboxblock::Kind;
+    match purlis_core::sandbox::localport::named_port(&target) {
+        Some(port) => (Kind::RunnerService, port.to_string()),
+        None => (Kind::Host, target),
+    }
+}
+
+/// The block a live ask about `target`, a host and port, is held as ([`asked_as`]): none for
+/// what a grant cannot name.
 fn live_block(target: &str) -> Option<crate::taskblocks::HeldBlock> {
     use purlis_core::sandboxblock::{Kind, Operation};
-    let what = crate::sandboxing::GrantWhat::Host;
+    let (kind, target) = asked_as(target.to_owned());
+    let what = if kind == Kind::RunnerService {
+        crate::sandboxing::GrantWhat::Port
+    } else {
+        crate::sandboxing::GrantWhat::Host
+    };
     Some(crate::taskblocks::HeldBlock {
         operation: Operation::Connect.word().to_owned(),
-        kind: Kind::Host.word().to_owned(),
+        kind: kind.word().to_owned(),
         what,
-        target: crate::taskblocks::normalised(what, target)?,
+        target: crate::taskblocks::normalised(what, &target)?,
     })
 }
 

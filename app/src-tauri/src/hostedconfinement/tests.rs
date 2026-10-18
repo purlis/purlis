@@ -521,3 +521,112 @@ fn a_runner_starts_a_relayed_plan_without_a_service_allowed_for_this_chat_alone(
     hosting.end_all();
     drop(service);
 }
+
+/// **A runner's service left out of a relayed plan is reached once the window's board allows
+/// it, and no other port of the runner's is** (#2510, ruled 2026-10-18), end to end: the
+/// window's own board for the confinement ([`super::HeldInTheHost`]) sends the Allow over the
+/// link between hosts, the runner takes it for that port alone and refuses another, and its
+/// proxy then carries the chat to the service, which it refused before. Binds the loopback
+/// interface: CI.
+#[test]
+fn the_windows_allow_of_a_service_a_runner_left_out_lets_the_chat_reach_it_there() {
+    use std::io::{BufRead, BufReader, Read, Write};
+
+    use purlis_core::sandbox::HeldElsewhere as _;
+    use purlis_session_protocol::session::{Answer, Command, Confine};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let service = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a service");
+    let port = service.local_addr().expect("its port").port();
+    let project = tempfile::tempdir().expect("a project");
+    let root = std::fs::canonicalize(project.path()).expect("a resolved project");
+    let hosting = purlis_host::Hosting::confining(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        super::ConfinesHere,
+        purlis_host::standin::StandIns::default(),
+    );
+    let link = Arc::new(
+        runtime
+            .block_on(async {
+                crate::hostedsessions::HostLink::over(
+                    crate::behaviour::linked_to(hosting.clone()).await,
+                    tokio::runtime::Handle::current(),
+                    || {},
+                )
+                .await
+            })
+            .expect("the link between hosts"),
+    );
+    link.call(Command::HoldProject {
+        project: PROJECT.into(),
+        project_path: root.display().to_string(),
+    })
+    .expect("held on the runner");
+    let plan = super::wire(&Plan {
+        reach: Reach::of(
+            purlis_core::sandbox::localport::reach_entries(port)
+                .into_iter()
+                .map(|entry| (entry, By::Chat))
+                .collect(),
+        )
+        .written(),
+        tunnel_ports: TUNNEL_PORTS.to_vec(),
+        plain_ports: PLAIN_PORTS.to_vec(),
+        any_port: true,
+        beside: Beside::Wrapped,
+        given: vec![port],
+    });
+    let id = "01J9CNFNMNT0000000000000000";
+    let confined = match link.call(Command::Confine(Box::new(Confine {
+        confinement: id.into(),
+        project: PROJECT.into(),
+        plan,
+        asks: true,
+    }))) {
+        Ok(Answer::Confined(confined)) => confined,
+        other => panic!("not confined: {other:?}"),
+    };
+    assert_eq!(confined.left_out, [port]);
+    let tunnel = || {
+        let mut proxy =
+            std::net::TcpStream::connect(("127.0.0.1", confined.http)).expect("the proxy");
+        proxy
+            .set_read_timeout(Some(std::time::Duration::from_secs(15)))
+            .expect("a timeout");
+        write!(proxy, "CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").expect("asked");
+        let mut line = String::new();
+        BufReader::new(proxy.try_clone().expect("a clone"))
+            .read_line(&mut line)
+            .expect("an answer");
+        (line.trim_end().to_owned(), proxy)
+    };
+    assert_eq!(
+        tunnel().0,
+        "HTTP/1.1 403 Forbidden",
+        "not before it is allowed"
+    );
+
+    let held = super::HeldInTheHost::new(id.into(), Arc::clone(&link), true);
+    let board = held.board().expect("its board");
+    assert!(board.allow_left_out(port).is_ok());
+    let other = if port == u16::MAX { port - 1 } else { port + 1 };
+    assert!(
+        board.allow_left_out(other).is_err(),
+        "another port of the runner's"
+    );
+
+    let (said, _proxy) = tunnel();
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    let (mut reached, _) = service.accept().expect("the service is reached");
+    let mut nothing = [0u8; 1];
+    reached
+        .set_read_timeout(Some(std::time::Duration::from_millis(50)))
+        .expect("a timeout");
+    let _ = reached.read(&mut nothing);
+    drop(held);
+    hosting.end_all();
+}

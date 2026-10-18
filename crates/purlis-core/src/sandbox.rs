@@ -3785,8 +3785,9 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     fn allowed_live(&self) -> Vec<(String, reach::By)>;
     /// The person allowed the service on `port` of the machine its proxy runs on, left out of
     /// the chat's plan, for this chat ([`asks::Asks::allow_left_out`], #2510): the targets held
-    /// connections gave up on before it, which the chat is told to retry.
-    fn allow_left_out(&self, port: u16) -> Vec<String>;
+    /// connections gave up on before it, which the chat is told to retry; or why the host that
+    /// holds the proxy did not take it.
+    fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String>;
     /// The person kept that service blocked ([`asks::Asks::keep_left_out_blocked`], #2510).
     fn keep_left_out_blocked(&self, port: u16);
 }
@@ -3812,8 +3813,8 @@ impl Board for asks::Asks {
         asks::Asks::allowed_live(self)
     }
 
-    fn allow_left_out(&self, port: u16) -> Vec<String> {
-        asks::Asks::allow_left_out(self, port)
+    fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String> {
+        Ok(asks::Asks::allow_left_out(self, port))
     }
 
     fn keep_left_out_blocked(&self, port: u16) {
