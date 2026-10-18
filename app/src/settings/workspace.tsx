@@ -25,10 +25,9 @@ import {
 } from "./fileControls";
 import { EXTENSIONS_LINK } from "./links";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
-import { themeOptionsRow } from "./themeOptions";
 import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "./driver";
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
-import { yourTheme } from "./yourTheme";
+import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
 
 /**
@@ -187,18 +186,22 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
       links: [EXTENSIONS_LINK],
       empty: "No extension is installed on this machine or named by this workspace.",
     },
+    // The person's own theme for this workspace, chosen from a card per theme (#2331): the
+    // nearest level the theme engine reads, kept on this machine.
+    {
+      id: "workspace.theme",
+      label: "Theme",
+      ...THEME_GROUP,
+      settings: themeRows("workspace.theme", { plane: read.plane, workspace: read.workspace }),
+    },
     {
       id: "workspace.appearance",
       label: "Appearance",
-      help: "The theme and the icons the window draws while this workspace is in front, and the colour it is tinted with.",
-      settings: [
-        // The person's own choice first: it is the nearest level the theme engine reads.
-        ...yourTheme(read.plane, read.workspace, read.theme, () => undefined),
-        ...fromFile("workspace.appearance", [
-          ...theme.controls,
-          iconsControl("workspace", read.iconThemes, read.extensions.extensions),
-        ]),
-      ],
+      help: "The theme this workspace commits as its default, the icons the window draws while it is in front, and the colour it is tinted with.",
+      settings: fromFile("workspace.appearance", [
+        ...theme.controls,
+        iconsControl("workspace", read.iconThemes, read.extensions.extensions),
+      ]),
       notes: [
         ...theme.notes,
         ...iconsNotes(
@@ -208,8 +211,6 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
           read.iconsDrawn,
         ),
       ],
-      // The drawn theme's options and where each value comes from (#2325).
-      after: [themeOptionsRow("workspace.appearance")],
     },
     {
       id: "workspace.plugins",

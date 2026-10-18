@@ -15,9 +15,11 @@ import {
   ratchet,
   SRC,
   sourceFiles,
+  type StyleSource,
   styleEntries,
   unprefixed,
   utilityOf,
+  windowFiles,
 } from "./guards.testkit";
 import { LENGTH_UNITS } from "./cssMath.testkit";
 import { GEOMETRY } from "./theme/geometry";
@@ -34,7 +36,8 @@ import { property, TOKENS } from "./theme/theme";
  * other way of ranking it. In a stylesheet, in a component's or a script's style as the
  * geometry guard reads it (`styleEntries`: an inline `style`, a style object held in a variable,
  * an assignment such as `el.style.fontSize = "13px"`, `el.style.cssText` or a `style` attribute
- * set as text, `Object.assign(el.style, { … })`, a `setProperty` call), or as a Tailwind utility
+ * set as text, `Object.assign(el.style, { … })`, a `setProperty` call, each followed wherever
+ * the file hands it on, #2566), or as a Tailwind utility
  * read past its variants as the
  * declarations it writes (`utilityDeclarations`: `font-semibold` is a weight of `600`,
  * `leading-[1.3]` and the `/7` of `text-sm/7` a line height, `text-[13px]` a size, `font-mono`
@@ -198,9 +201,9 @@ const offTheScale = (word: string) =>
  *  `style <key>: <value>` or `setProperty <name>: <value>`, and each Tailwind utility that ranks
  *  a word off the tokens, as `class <utility>`. A value that is computed (a variable, a call) is
  *  not read: only what is written out. */
-export function componentLiterals(source: string): string[] {
+export function componentLiterals(source: string, from: StyleSource = {}): string[] {
   const found: string[] = [];
-  for (const { label, property, value } of styleEntries(source)) {
+  for (const { label, property, value } of styleEntries(source, from)) {
     const name = unprefixed(property);
     if (!(name in MAY_BE)) continue;
     const written = /^-?[\d.]/.test(value) ? value : value.slice(1, -1);
@@ -226,7 +229,10 @@ function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<str
     const found = cssLiterals(text(file));
     byFile.set(file, file === FORCED ? found.filter((one) => !SYSTEM_TEXT.test(one)) : found);
   }
-  for (const file of sourceFiles(isScript)) byFile.set(file, componentLiterals(text(file)));
+  const others = windowFiles(planted);
+  for (const file of sourceFiles(isScript)) {
+    byFile.set(file, componentLiterals(text(file), { file, read: others }));
+  }
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
@@ -529,6 +535,39 @@ export function plant(row: HTMLElement) {
     expect(result[2]).toContain("ui-text-body");
     expect(result[3]).toContain("ui-text-code");
     expect(result[4]).toContain("var(--line-height-body)");
+  });
+
+  it("follows a type value wherever the file hands its style on, in the real tree (#2566)", () => {
+    const planted = `${read("Inbox.tsx")}
+import { plantedFace } from "./theme/theme";
+const plantedRoles = { title: { fontSize: "13px" } };
+const plantedHeld = { fontWeight: 600 };
+const plantedAssigned = { fontWeight: 500 };
+const plantedLine = () => ({ lineHeight: 1.3 });
+export const PlantedMember = () => <p style={plantedRoles.title} />;
+export const PlantedEither = ({ on }: { on: boolean }) => <p style={on ? plantedHeld : undefined} />;
+export const PlantedCall = () => <p style={plantedLine()} />;
+export const PlantedImported = () => <p style={plantedFace} />;
+export function plantAlias(row: HTMLElement) {
+  const { style } = row;
+  style.fontSize = "15px";
+  row.style.cssText += "font-weight: 500";
+  row.style[\`font-size\`] = "11px";
+  Object.assign(row.style, plantedAssigned);
+}
+`;
+    const script = `${read("theme/theme.ts")}\nexport const plantedFace = { fontFamily: "Menlo" };\n`;
+    const result = complaints(literalsByFile({ "Inbox.tsx": planted, "theme/theme.ts": script }));
+    expect(result.map((complaint) => complaint.split(" (")[0])).toEqual([
+      'Inbox.tsx: new type literal: style plantedRoles.title.fontSize: "13px"',
+      "Inbox.tsx: new type literal: style plantedHeld.fontWeight: 600",
+      "Inbox.tsx: new type literal: style plantedLine().lineHeight: 1.3",
+      'Inbox.tsx: new type literal: style plantedFace.fontFamily: "Menlo"',
+      "Inbox.tsx: new type literal: style plantedAssigned.fontWeight: 500",
+      'Inbox.tsx: new type literal: style.fontSize: "15px"',
+      'Inbox.tsx: new type literal: style.font-size: "11px"',
+      'Inbox.tsx: new type literal: style.cssText font-weight: "500"',
+    ]);
   });
 
   it("reads a type property past its vendor's prefix (#2498)", () => {

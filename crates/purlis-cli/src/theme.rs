@@ -18,7 +18,9 @@
 //! writes them beside where they go, has the engine read them there as it reads any theme
 //! folder, and puts in place only a theme it draws: one theme folder, in the machine level's
 //! `themes/` unless `--into` names another, never over one that is there without `--force`.
-//! `export` writes one zip of a theme folder that `import` gives back file for file.
+//! `export` writes one zip of a theme folder that `import` gives back file for file; a level's
+//! folder is named by its id (#2612) and found by the engine at that level alone. A staged import
+//! is read only to check (#2587): none of its fonts is left registered once it moves or goes.
 //!
 //! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic,
 //! `purlis-classic`); the person's own `theme.json` (its id is [`MINE`]) and the theme folders
@@ -43,7 +45,7 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use purlis_core::theme::levels::{Found as AtLevel, Reach};
-use purlis_core::theme::{self, Complaint, Finding, Folders, Resolved, Theme};
+use purlis_core::theme::{self, Complaint, Folders, Resolved, Theme};
 use purlis_core::{extension, shown};
 use serde_json::{Value, json};
 
@@ -123,10 +125,13 @@ pub enum ThemeCommand {
     /// Write a theme folder as a zip to hand to someone: its theme.json, the files beside it
     /// (a licence, a preview) and its fonts/ and icons/, under one folder of its name, so
     /// `purlis theme import` (or unzip) gives the folder back. What it does not carry is
-    /// listed. Exits 0 when the zip is written, 1 when it is not, 2 when there is no such
-    /// theme.
+    /// listed. A theme folder's id (`project:dusk`) exports that level's own folder, never a
+    /// farther level's of the same name. Exits 0 when the zip is written, 1 when it is not, 2
+    /// when there is no such theme.
     Export {
-        /// The path of a theme folder, or `purlis-classic`.
+        /// A theme folder's id from `purlis theme list` (`machine:<folder>`,
+        /// `project:<folder>`, `workspace:<workspace>:<folder>`), the path of a theme folder,
+        /// or `purlis-classic`.
         theme: String,
         /// The zip to write: `<theme folder's name>.zip` here when not given.
         #[arg(long)]
@@ -194,6 +199,26 @@ impl Level {
         }
     }
 
+    /// How an id names a folder of this level, as a sentence shows it.
+    fn form(&self) -> &'static str {
+        match self {
+            Self::Machine => "machine:<folder>",
+            Self::Project => "project:<folder>",
+            Self::Workspace(_) => "workspace:<workspace>:<folder>",
+        }
+    }
+
+    /// The level's own `themes/`, as a sentence names it.
+    fn own_themes(&self) -> String {
+        match self {
+            Self::Machine => "your own themes/".to_owned(),
+            Self::Project => "the project's own themes/".to_owned(),
+            Self::Workspace(name) => {
+                format!("the workspace {}'s own themes/", shown::short(name))
+            }
+        }
+    }
+
     /// The level an id names, and the folder: `None` when `asked` is not a level's id.
     fn of_id(asked: &str) -> Option<(Self, &str)> {
         let (level, rest) = asked.split_once(':')?;
@@ -206,7 +231,9 @@ impl Level {
             }
             _ => return None,
         };
-        theme::is_folder_name(folder).then_some((level, folder))
+        // The grammar alone: a folder of it the platform rule refuses (`con`) is found and
+        // refused by the engine with why.
+        theme::is_folder_spelling(folder).then_some((level, folder))
     }
 }
 
@@ -422,7 +449,7 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             *force,
             *json,
         ),
-        ThemeCommand::Export { theme, to, force } => export(theme, to.as_deref(), *force),
+        ThemeCommand::Export { theme, to, force } => export(here, theme, to.as_deref(), *force),
     }
 }
 
@@ -491,8 +518,18 @@ fn import(
         Err(why) => return not_written(&why.to_string()),
     };
     let target = into.join(&imported.folder);
-    let mut found = read_folder(&staged.path, target.display().to_string());
-    found.id.clone_from(&imported.folder);
+    // Read only to check: nothing of the stage is left registered once it moves or goes.
+    let staged_name = staged
+        .path()
+        .file_name()
+        .and_then(|it| it.to_str())
+        .unwrap_or_default();
+    let library = extends_library(&into, staged_name);
+    let found = Found::of(
+        imported.folder.clone(),
+        From::Folder(target.display().to_string()),
+        staged.read(library),
+    );
     let checked = checks(&found);
     let written = if found.refused.is_some() {
         drop(staged);
@@ -607,8 +644,9 @@ fn imported_json(
 /// imported back sits beside it and never in its place.
 const CLASSIC_COPY: &str = "purlis-classic-copy";
 
-/// `purlis theme export`.
-fn export(asked: &str, to: Option<&str>, force: bool) -> ExitCode {
+/// `purlis theme export`: Purlis Classic as its copy, a level's theme folder by its id, or a
+/// theme folder by its path.
+fn export(here: Here<'_>, asked: &str, to: Option<&str>, force: bool) -> ExitCode {
     let packed = if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
         let files = theme::Files::from([(
             theme::THEME_JSON.to_owned(),
@@ -620,6 +658,24 @@ fn export(asked: &str, to: Option<&str>, force: bool) -> ExitCode {
             files: 1,
             left_out: Vec::new(),
         })
+    } else if let Some((level, folder)) = Level::of_id(asked) {
+        match level_folder(here, &level, folder) {
+            Ok(path) => theme::export(&path),
+            Err(said) => {
+                eprintln!(
+                    "purlis: there is no theme folder '{}' at the {} level — `{}` exports a \
+                     folder of {}, never a farther level's of the same name",
+                    shown::short(folder),
+                    level.word(),
+                    level.form(),
+                    level.own_themes()
+                );
+                for one in said {
+                    eprintln!("  {}", shown::readable(&one.said, 240));
+                }
+                return ExitCode::from(2);
+            }
+        }
     } else {
         let path = Path::new(asked);
         if !path.is_dir() {
@@ -792,15 +848,35 @@ fn one_at_level(here: Here<'_>, level: &Level, folder: &str) -> Result<Found, Ve
     }
 }
 
+/// The path of the theme folder `folder` of `level` itself, once the engine has found it there
+/// as a choice made at that level finds it ([`Folders::find_at`]); what reading the levels said
+/// when that level has no such folder. A farther level's folder of the name is never taken.
+fn level_folder(
+    here: Here<'_>,
+    level: &Level,
+    folder: &str,
+) -> Result<std::path::PathBuf, Vec<Complaint>> {
+    let folders = folders(here, level);
+    match folders.find_at(folder, level.reach()) {
+        AtLevel::Missing(said) => Err(said),
+        AtLevel::Read(_) => themes_of(&folders, level)
+            .map(|themes| themes.path().join(folder))
+            .ok_or_else(Vec::new),
+    }
+}
+
+/// The `themes/` folder of `level` itself, when it has one.
+fn themes_of<'a>(folders: &'a Folders, level: &Level) -> Option<&'a theme::levels::ThemesFolder> {
+    match level {
+        Level::Machine => folders.machine.as_ref(),
+        Level::Project => folders.project.as_ref(),
+        Level::Workspace(_) => folders.workspace.as_ref(),
+    }
+}
+
 /// What the engine answered for the folder `folder` of `level`.
 fn at_level_found(folders: &Folders, level: &Level, folder: &str, resolved: Resolved) -> Found {
-    let themes = match level {
-        Level::Machine => &folders.machine,
-        Level::Project => &folders.project,
-        Level::Workspace(_) => &folders.workspace,
-    };
-    let path = themes
-        .as_ref()
+    let path = themes_of(folders, level)
         .map(|it| it.path().join(folder).display().to_string())
         .unwrap_or_default();
     Found::of(
@@ -970,12 +1046,21 @@ fn read_folder(path: &Path, shown: String) -> Found {
     } else {
         themes
     };
+    Found::of(
+        name.to_owned(),
+        from,
+        extends_library(themes, name).load_folder(themes, name),
+    )
+}
+
+/// The library of the folders beside `name` in `themes` that its `extends` chain names.
+fn extends_library(themes: &Path, name: &str) -> theme::Library {
     // A folder the person named: its fonts are read, as the window would read their own.
     let mut library = theme::Library::new().reading_named_fonts();
     for parent in extends_chain(themes, name) {
         library = library.with_folder(themes, &parent);
     }
-    Found::of(name.to_owned(), from, library.load_folder(themes, name))
+    library
 }
 
 /// The most parents a folder's `extends` chain is followed through: the engine says a circle
@@ -1120,14 +1205,6 @@ fn in_theme_order<'a>(
     })
 }
 
-/// What a combination is called on a warning's line: its appearance, and each option's value
-/// in the theme's order when the theme has options (`dark, borders on, accent teal`).
-fn combination(theme: &Theme, checked: &theme::Checked) -> String {
-    let mut parts = vec![checked.appearance.clone()];
-    parts.extend(in_theme_order(theme, checked).map(|(option, value)| format!("{option} {value}")));
-    shown::short(&parts.join(", "))
-}
-
 /// The theme's options as the check's header says them: each id, its kind, its values and its
 /// default.
 fn options_line(theme: &Theme) -> Option<String> {
@@ -1195,23 +1272,7 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
             out.push_str(&format!("  {}\n", shown::readable(&note.said, 240)));
         }
     }
-    // A combination is named on its lines only when there is more than one to tell apart.
-    let named = checked.len() > 1;
-    let said: Vec<String> = checked
-        .iter()
-        .flat_map(|one| {
-            let called = combination(theme, one);
-            warnings(&one.report.findings)
-                .into_iter()
-                .map(move |warning| {
-                    if named {
-                        format!("{called}: {}", warning.line())
-                    } else {
-                        warning.line()
-                    }
-                })
-        })
-        .collect();
+    let said = theme::warnings_said(theme, checked);
     if said.is_empty() {
         out.push_str("warnings: none\n");
     } else {
@@ -1220,6 +1281,8 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
             out.push_str(&format!("  {line}\n"));
         }
     }
+    // A combination is named on its lines only when there is more than one to tell apart.
+    let named = checked.len() > 1;
     let held: Vec<String> = checked
         .iter()
         .filter_map(|one| {
@@ -1231,7 +1294,7 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
                 held.tokens.join(", ")
             );
             Some(if named {
-                format!("{}: {line}", combination(theme, one))
+                format!("{}: {line}", theme::combination_said(theme, one))
             } else {
                 line
             })
@@ -1261,121 +1324,6 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
     }
     out.push_str(&format!("hard floors: {FLOORS_NOT_CHECKED}\n"));
     out
-}
-
-/// The findings of one pair (or one terminal colour, or the selected row against one other),
-/// as the theme is and in each workspace tint it was found in: one line of the text.
-struct Warning {
-    /// What is drawn on what.
-    subject: String,
-    /// The floor it is under; `None` for the selected row, which has no ratio.
-    floor: Option<f64>,
-    /// Found in the theme as it is, with its ratio when it has one.
-    plain: Option<Option<f64>>,
-    /// Each workspace tint it was found in, with its ratio when it has one.
-    tints: Vec<(&'static str, Option<f64>)>,
-}
-
-impl Warning {
-    fn line(&self) -> String {
-        let lowest = self
-            .tints
-            .iter()
-            .filter_map(|(_, ratio)| *ratio)
-            .fold(f64::INFINITY, f64::min);
-        let tints = if self.tints.len() == theme::PALETTE.len() {
-            "every workspace tint".to_owned()
-        } else {
-            let names: Vec<&str> = self.tints.iter().map(|(name, _)| *name).collect();
-            format!(
-                "the {} {}",
-                names.join(", "),
-                purlis_core::counts::plural(names.len(), "tint", "tints")
-            )
-        };
-        let floor = self
-            .floor
-            .map_or_else(String::new, |floor| format!(", under {floor}"));
-        match (self.plain, self.tints.is_empty()) {
-            (Some(Some(ratio)), true) => format!("{}: {ratio:.2}{floor}", self.subject),
-            (Some(Some(ratio)), false) => format!(
-                "{}: {ratio:.2}{floor}; in {tints} too, down to {lowest:.2}",
-                self.subject
-            ),
-            (Some(None), true) => self.subject.clone(),
-            (Some(None), false) => format!("{}; in {tints} too", self.subject),
-            (None, _) if lowest.is_finite() => {
-                format!("{}, in {tints}: down to {lowest:.2}{floor}", self.subject)
-            }
-            (None, _) => format!("{}, in {tints}", self.subject),
-        }
-    }
-}
-
-/// The findings as a person reads them: one line per pair, the theme as it is first and the
-/// tints after, in the engine's order. `--json` keeps every finding as the engine reports it.
-fn warnings(findings: &[Finding]) -> Vec<Warning> {
-    let mut found: Vec<Warning> = Vec::new();
-    for finding in findings {
-        let (subject, floor, tint, ratio) = match finding {
-            Finding::Contrast { tint, pair, ratio } => {
-                let over = pair
-                    .under
-                    .map_or_else(String::new, |under| format!(" over {under}"));
-                (
-                    format!("{} on {}{over}", pair.front, pair.back),
-                    Some(pair.floor),
-                    *tint,
-                    Some(*ratio),
-                )
-            }
-            Finding::Ansi {
-                tint,
-                token,
-                ratio,
-                floor,
-            } => (
-                format!("{token} on terminal.background"),
-                Some(*floor),
-                *tint,
-                Some(*ratio),
-            ),
-            Finding::SelectedNotApart { tint, other } => (
-                format!("list.selected is drawn exactly as {other}"),
-                None,
-                *tint,
-                None,
-            ),
-            Finding::SelectionTextAlone => (
-                "selection.text is a colour while selection.background is \"platform\", so it \
-                 is never drawn"
-                    .to_owned(),
-                None,
-                None,
-                None,
-            ),
-        };
-        let at = match found
-            .iter()
-            .position(|one| one.subject == subject && one.floor == floor)
-        {
-            Some(at) => at,
-            None => {
-                found.push(Warning {
-                    subject,
-                    floor,
-                    plain: None,
-                    tints: Vec::new(),
-                });
-                found.len() - 1
-            }
-        };
-        match tint {
-            None => found[at].plain = Some(ratio),
-            Some(hue) => found[at].tints.push((hue, ratio)),
-        }
-    }
-    found
 }
 
 /// The check as a chat reads it: the theme, its appearances and options, why it is refused (or

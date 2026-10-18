@@ -348,9 +348,10 @@ rewrites the file; the next pick made in Settings writes the new id.
   `high-contrast`, with their `tokens` and `motion`. One whose id its parent has layers over
   that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
   first appearance is what a theme draws when nothing chose another; following the system works
-  with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
-  follows with Purlis Classic until Settings › Theme can say that following would stay in it
-  (#2331). **When the system asks for more contrast** (`prefers-contrast: more`: Increase
+  with any theme that has a dark and a light one, and following a theme of one appearance stays
+  in it, which Settings › Theme says on its Follow the system (#2331). The old `system` id, with
+  the person's own `theme.json` of one appearance, follows with Purlis Classic, as it did before
+  format 2. **When the system asks for more contrast** (`prefers-contrast: more`: Increase
   contrast on macOS, a high-contrast theme elsewhere), whatever draws an appearance of a tag
   draws the theme's appearance of that tag tagged `high-contrast` instead, when it has one, and
   the window draws again when the setting changes (#2328). A built-in pick names its appearance.
@@ -376,8 +377,8 @@ rewrites the file; the next pick made in Settings writes the new id.
   parent's id takes that one's place. The theme check covers every appearance × option
   combination, so a theme has at most 64, and one past that is refused with its count. The
   theme engine takes the option values as an input (`Theme::with`), by the same precedence as
-  the appearance, and Settings › Appearance shows the drawn theme's options with where each
-  value comes from.
+  the appearance, and Settings › Theme shows the chosen theme's options with where each value
+  comes from.
 - **`tint`** says how a workspace's colour tints the theme (#2329), the same in each of its
   appearances: `"tint": { "on": true, "tokens": ["accent.base", "surface.raised"], "hues":
   { "red": "#c0392b" } }`. `on: false` and a workspace's colour tints nothing in it. `tokens`
@@ -591,8 +592,9 @@ other theme is passed over with a sentence, and the next level's is used. A choi
 that is there and cannot be drawn (a refused folder, an extension's theme that is off) draws
 Purlis with a sentence saying why.
 
-**The person's choices** are made in Settings › Appearance › Your theme (and Your appearance),
-at the Project level and at each Workspace level, and kept in `theme-choices.json` beside
+**The person's choices** are made in Settings › Theme ([the gallery](#settings--theme-the-gallery)),
+at the You level (the machine default), the Project level and each Workspace level, and kept in
+`theme-choices.json` beside
 `machine.json`, keyed by the project's id (`[project] id` where the manifest keeps one, so a
 re-clone finds them; otherwise the id purlis holds the project by, which a re-clone elsewhere
 does not find), never committed. Each project's entry keeps when it was last changed, and at the
@@ -625,6 +627,56 @@ transition of its own keeps it; reduced motion makes it immediate.
 a theme folder of the person's own (`themes/<name>/theme.json`), chosen as the machine default
 where none is chosen, so the window draws what it drew. The move is all or nothing, and only the
 person's press in the window makes it.
+
+### Settings › Theme, the gallery
+
+**A card per theme a choice at the level may name** (spec #2313, #2331,
+`purlis_core::theme::gallery`): Purlis Classic, the theme folders within the level's reach
+(nearest level first, a nearer level's folder of a name in a farther one's place, as a choice
+reads them), and the themes of the extensions in force there. You is the machine's level (its
+choice is the machine default), Project the project's and Workspace the workspace's. The
+person's own single-file `theme.json` is no card, since no choice names it; when it is what is
+drawn, the gallery says so.
+
+- **Each card shows the theme specimen in each of its appearances** (up to three, then a
+  count): the specimen #2330 draws for a chat's `theme_preview`, asked by the window with
+  `theme_specimen` and the level, one at a time, and kept for the window's life by the card's
+  `stamp`, which changes whenever anything the theme draws does. While a chat's
+  `theme_preview` holds the painter, the app answers `SPECIMEN_BUSY`, and the window asks again
+  after a wait longer than one specimen's budget, a few times; a picture that could not be
+  drawn is never kept.
+- **Pointing at a card, or moving to it with the arrow keys, draws its theme in the window**,
+  and leaving puts the person's theme back (`theme/hoverPreview.ts`). The engine resolves the
+  card in the appearance a choice of it would draw (`theme_card_drawn`), with the consent floors
+  held, and nothing is written. A theme the window draws while a card is shown is what goes
+  back; a move from one card to the next never shows the person's theme between them. The
+  pointer and the keyboard share one preview: it goes back when neither is on a card, when the
+  window is hidden or loses the focus, on Escape, and once the cards are out of the document (a
+  project switch). An answer that arrives after its card was left, pressed or closed draws
+  nothing, and a card whose theme is the one drawn draws nothing either.
+- **Pressing a card, or Enter or Space on it, writes the person's choice at the level**, and
+  the row offers Undo. **Use the default** takes the choice at the level away, so the levels
+  underneath decide again. A line over the cards says what is drawn here, with the source badge
+  the rest of Settings uses: the person's choice, or the level that decided. Appearance is
+  offered only for a choice made at the level, so picking one never quietly makes a choice. A
+  refused card chooses nothing and says why as its description.
+- **Under the cards**: the chosen theme's appearances (one by id, its first, or Follow the
+  system, which says when a theme of one tag stays in it); its options, each value with its
+  badge; the theme check's findings, in the words `purlis theme check` prints
+  (`theme::warnings_said`), with what was left out of the theme and the consent floors it
+  breaks; and **Duplicate as my theme** and **Open folder**.
+- **Duplicate as my theme** makes a theme folder of the person's own whose `theme.json`
+  `extends` the card's theme and is called "<name> (mine)", under the first of `<id>-mine`,
+  `<id>-mine-2`, … that no folder has. A folder of the person's own reaches Purlis Classic and
+  their other folders, so those are the cards it is offered on. Every step to the new folder is
+  opened refusing a link, and nothing is written over.
+- **Open folder** opens the card's theme folder in the file manager: the folder the engine
+  places for the card, never a path the window sent.
+- **The keyboard and a screen reader**: the cards are a listbox, one Tab stop, the chosen card
+  the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
+  cards writes nothing. Nothing in the group takes the focus by itself.
+- The machine default, a duplicate and Open folder are the window's alone (`WINDOW_ONLY`); the
+  gallery's reads are served as `theme_in_force` is.
 
 ### Where a user's theme lives
 
@@ -1220,12 +1272,9 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), a
   **scroll margin or padding** (`scroll-margin*`, `scroll-padding*`, read as a margin or a
   padding) and the grid's names for a gap (`grid-gap`, `grid-row-gap`, `grid-column-gap`), in
-  any stylesheet but `theme/geometry.css`; in a component's or a script's style: an inline
-  `style` (`{{ … }}` or `{ … } as CSSProperties`), a style object held in a variable
-  (`const held = { … }; style={held}`, or one typed or cast as `CSSProperties`),
-  `Object.assign(el.style, { … })`, an assignment (`el.style.padding = "7px"`), `el.style.cssText`
-  or a `style` attribute set as text, and a `setProperty(…)` call (`el.style?.setProperty(…)`
-  too); or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
+  any stylesheet but `theme/geometry.css`; in a component's or a script's style, followed
+  wherever the file hands it on ([what the guards read in script](#what-the-guards-read-in-script));
+  or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
   past its variants (`md:`, `data-[open]:`, `[&>*]:`): off the core scale (`p-5`, `start-5`,
   `text-2xl`, `rounded-2xl`), with a value of its own (`p-[7px]`, `text-[13px]`,
   `rounded-[5px]`) or as an arbitrary property (`[padding:7px]`). A custom property that holds
@@ -1329,6 +1378,62 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
 
 Each snap is listed with its change in px in the pull request, and the window is looked at
 before and after.
+
+### What the guards read in script
+
+The geometry and type guards read a component's or a script's style through one reader,
+`styleEntries` in `guards.testkit.ts`, and the controls guard reads a control's `style` through
+the same one (`tagStyleKeys`), so the three see a style the same way (#2498, #2566). The reader
+starts where a style is handed: a `style={…}` expression, a spread in a style object, the
+objects `Object.assign` writes onto an element's style, and a style object typed or cast as
+`CSSProperties`. From there it follows the style wherever the file hands it on:
+
+- an object written there (`{{ … }}`, `{ … } as CSSProperties`), and each object it spreads;
+- a variable that holds it (`style={held}`), and a variable that holds that one;
+- a member of a local object, by name or by a written key (`style={styles.box}`,
+  `style={styles["box"]}`), or of a destructuring (`const { box } = styles; style={box}`);
+- each branch of a ternary (`style={on ? held : undefined}`), each side of `||` and `??`, the
+  last of `&&`, and what is in parentheses or before `as`, `satisfies` or `!`;
+- what a local function returns, a declared function's every `return` (past a return type
+  such as `: { padding: string }`) or an arrow's expression (`style={boxStyle(on)}`), what
+  `useMemo` returns, and what a function `useCallback` holds returns when it is called;
+- what a relative import gives (`import { box }`, `import * as styles` and its members, a
+  default export, an object or a function), what an imported function returns, one called on a
+  `* as` import among them (`s.make()`), and what that file re-exports (`export { box as panel }`,
+  `export * from`). A relative import is the file TypeScript resolves it to: `./s`, `./s.ts`
+  and `./s.js` are `s.ts` or `s.tsx`, and a folder is its `index`. Each imported file is read
+  and parsed once in a guard's pass.
+
+In script it reads an element's style however the file holds it: `el.style` and `el["style"]`
+themselves and a name declared to hold one (`const st = el.style`, `const st = (el.style)`,
+`const st = el.style as CSSStyleDeclaration`, `const { style } = el`, `const { style: s } = el`,
+and a name that holds one of those). An
+assignment to one of its properties (`st.padding = "7px"`, `st["padding-top"]`,
+``st[`padding`]``), its CSS text set or added to (`st.cssText = "…"`, `st.cssText += "…"`), a
+`style` attribute set as text, and every `setProperty(…)` call are read, each declaration in
+CSS text on its own. A value is read where it is written out, and where a ternary picks
+between values written out.
+
+**The reader fails closed.** A style it cannot finish following fails the guard with a
+sentence that names the file and the style, and is never passed over:
+
+- a style handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it is used;
+- a style that comes from a relative import the guard cannot open: one above `src`, one whose
+  file is not found, or one in a file that is not script (`./box.css`).
+
+What they do not read: a value held in a variable on its own (`const pad = "7px"`, then
+`padding: pad`), or any other value worked out; a member reached by a computed key
+(`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
+`useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
+in a prop with another name (`boxStyle={…}`) or under an object's `style` key
+(`createElement("div", { style })`); an element's style handed to a function as a parameter
+(`g(el.style)`), or held by a name assigned after it is declared (`let st; st = el.style`);
+an import from a package or through a path alias; CSS text assigned from a variable, or a
+template literal with `${…}` in it. A cycle (`const a = b; const b = a`) holds nothing to read
+and is not a failure. The controls
+guard reads a control's `style` attribute only, not an assignment to an element's style in
+script, which names no control. The colour and motion guard (`theme/literals.test.ts`) reads
+every string a script writes, wherever it is handed, so it needs no reader of its own.
 
 ## Text roles
 

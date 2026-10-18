@@ -6,33 +6,15 @@ import type { WindowOption } from "../bindings";
 import { themeOptionsInForce } from "../Extensions";
 import { onDrawn } from "../theme/theme";
 import type { Badge, RowIds } from "./components";
-import type { LiveSetting } from "./groups";
 
 /**
- * **The theme's options, in either Appearance group** (#2325): each option of the theme the
- * window draws, the value it is drawn with, and a badge saying where that value comes from —
- * the theme's default, or a choice. The core's theme engine answers (`theme_in_force`), and the
- * row only shows it: the values follow the appearance's precedence (spec #2313), and the
- * person's choices are written where the appearance's are.
+ * **A theme's options** (#2325), as Settings › Theme shows them (#2331): each option, the value
+ * it is drawn with, and a badge saying where that value comes from — the theme's default, or a
+ * choice. The core's theme engine answers (`theme_in_force` for the theme drawn, the gallery's
+ * card for another), and the list only shows it.
  */
-export function themeOptionsRow(group: string): LiveSetting {
-  return {
-    id: `${group}.options`,
-    label: "Theme options",
-    writes: "nothing",
-    help: "The options of the theme in force here: the value of each, and where that value comes from.",
-    useControl: function useThemeOptions() {
-      const options = useOptionsInForce();
-      return {
-        grouped: true,
-        control: (ids) => <OptionsList options={options} ids={ids} />,
-      };
-    },
-  };
-}
-
 /** The options of the theme in force, asked again whenever the window draws another theme. */
-function useOptionsInForce(): readonly WindowOption[] | undefined {
+export function useOptionsInForce(): readonly WindowOption[] | undefined {
   const [options, setOptions] = useState<readonly WindowOption[]>();
   useEffect(() => {
     let live = true;
@@ -72,18 +54,21 @@ function valueLabel(option: WindowOption): string {
   return option.values.find((one) => one.id === option.value)?.label ?? option.value;
 }
 
-function OptionsList({
+export function OptionsList({
   options,
   ids,
+  none = "The theme drawn here has no options.",
 }: {
   options: readonly WindowOption[] | undefined;
   ids: RowIds;
+  /** What the list says of a theme with none. */
+  none?: string;
 }) {
   const said =
     options === undefined
       ? "Reading the theme's options…"
       : options.length === 0
-        ? "The theme drawn here has no options."
+        ? none
         : undefined;
   return (
     <div

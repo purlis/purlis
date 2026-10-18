@@ -77,6 +77,7 @@ mod floors;
 mod folders;
 mod fonts;
 mod format;
+pub mod gallery;
 pub mod geometry;
 mod icons;
 mod import;
@@ -84,12 +85,14 @@ pub mod levels;
 mod native;
 mod options;
 mod person;
+pub mod portable;
 mod published;
 mod resolve;
 mod schema;
 mod tint;
 mod typed;
 pub mod vocabulary;
+mod warnings;
 
 pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
@@ -125,6 +128,7 @@ pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
+pub use warnings::{combination as combination_said, said as warnings_said};
 
 #[cfg(test)]
 mod floors_tests;
@@ -132,6 +136,8 @@ mod floors_tests;
 mod folders_tests;
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod gallery_tests;
 #[cfg(test)]
 mod geometry_tests;
 #[cfg(test)]
@@ -565,8 +571,16 @@ pub fn load(document: &Value) -> Resolved {
 }
 
 /// Whether `name` is a theme folder's name a pick may name it by: lower-case letters, digits and
-/// dashes, starting with a letter, at most 32 long — the grammar of an appearance's id too.
+/// dashes, starting with a letter, at most 32 long — the grammar of an appearance's id too — and
+/// a name Windows holds ([`portable`]: not `con`, `nul`, `com1`, …).
 pub fn is_folder_name(name: &str) -> bool {
+    is_folder_spelling(name) && portable::not_held(name).is_none()
+}
+
+/// Whether `name` is spelled in a theme folder's name grammar, before [`portable`] is asked:
+/// what a level's id may name, so the engine finds a folder the platform rule refuses (`con`)
+/// and says why.
+pub fn is_folder_spelling(name: &str) -> bool {
     format::is_name(name)
 }
 

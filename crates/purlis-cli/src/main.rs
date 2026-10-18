@@ -808,14 +808,11 @@ fn serve() -> ExitCode {
         purlis_core::machine::charterd(&config),
     );
     // A runner's host answers links from the one desktop it is paired with, reading its
-    // pairing as each link arrives (`runnerlink`, #2044); unpaired, it links nobody.
+    // pairing as each link arrives (`runnerlink`, #2044); unpaired, it links nobody, and it
+    // never mints the device id its pairing mints (#2539).
     let answering: purlis_host::Answering = {
         let config = config.clone();
-        std::sync::Arc::new(move || {
-            let device = purlis_core::machine::device_id(&config)
-                .map_err(|why| format!("this runner has no device id: {why}"))?;
-            purlis_core::runnerlink::answering(&config, &device)
-        })
+        std::sync::Arc::new(move || purlis_core::runnerlink::answering(&config))
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(

@@ -24,6 +24,7 @@ export const SETTINGS_GROUPS: Readonly<
 > = {
   you: [
     { id: "you.text", label: "Text" },
+    { id: "you.theme", label: "Theme" },
     { id: "you.look", label: "Density and fonts" },
     { id: "you.editor", label: "Editor" },
     { id: "you.chats", label: "Chats list" },
@@ -44,6 +45,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "project.dispatch", label: "Dispatch" },
     { id: "project.forges", label: "Forges" },
     { id: "project.extensions", label: "Extensions" },
+    { id: "project.theme", label: "Theme" },
     { id: "project.appearance", label: "Appearance" },
     { id: "project.plugins", label: "Plugins" },
   ],
@@ -52,6 +54,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "workspace.repos", label: "Repos" },
     { id: "workspace.dispatch", label: "Dispatch" },
     { id: "workspace.extensions", label: "Extensions" },
+    { id: "workspace.theme", label: "Theme" },
     { id: "workspace.appearance", label: "Appearance" },
     { id: "workspace.plugins", label: "Plugins" },
   ],
