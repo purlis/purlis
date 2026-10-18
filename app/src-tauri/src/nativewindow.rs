@@ -8,7 +8,8 @@
 //!
 //! - **As a window is created** ([`dressed`]): the main window and every split window are built
 //!   in the appearance and the colour of the theme their first frame draws
-//!   (`windowprefs::native_at_creation`), so nothing of another colour is shown before it.
+//!   (`windowprefs::at_creation`, the levels resolved once, #2602), so nothing of another
+//!   colour is shown before it.
 //! - **On every theme change** ([`draw_native_window`]): the page hands the drawn theme's tag
 //!   and colour over as it draws it, and the window is drawn in them. A theme that follows the
 //!   operating system leaves the native parts to the system, so `prefers-color-scheme` goes on
@@ -40,14 +41,22 @@ fn colour_of(native: Native) -> Color {
 }
 
 /// **A window being built, dressed in `native`**: its native parts in its appearance and its
-/// background in its colour from the first frame the operating system draws.
+/// background in its colour from the first frame the operating system draws. A first frame that
+/// `follows_system` leaves the native parts to the system, as [`draw_native_window`] does.
 pub(crate) fn dressed<'a, R: Runtime, M: Manager<R>>(
     builder: WebviewWindowBuilder<'a, R, M>,
     native: Native,
+    follows_system: bool,
 ) -> WebviewWindowBuilder<'a, R, M> {
     builder
-        .theme(Some(theme_of(native.appearance)))
+        .theme(created_theme(native, follows_system))
         .background_color(colour_of(native))
+}
+
+/// The theme a window is created with: `native`'s appearance, or the system's while it follows
+/// the system.
+fn created_theme(native: Native, follows_system: bool) -> Option<tauri::Theme> {
+    (!follows_system).then(|| theme_of(native.appearance))
 }
 
 /// **What this window sets the app's native appearance to, if anything**: nothing unless it is the
@@ -130,5 +139,14 @@ mod tests {
         // Behind: nothing, whether it forces or follows, so the window in front keeps its own.
         assert_eq!(appearance_to_set(light, false, false), None);
         assert_eq!(appearance_to_set(light, true, false), None);
+    }
+
+    #[test]
+    fn a_window_is_created_in_its_first_frame_s_appearance_or_the_system_s_while_it_follows() {
+        let light = purlis_core::theme::built_in("purlis-light")
+            .expect("Classic light")
+            .native();
+        assert_eq!(created_theme(light, false), Some(tauri::Theme::Light));
+        assert_eq!(created_theme(light, true), None);
     }
 }

@@ -132,6 +132,7 @@ mod smartclose;
 mod specimen;
 mod staleclones;
 mod stopping;
+mod syscontrast;
 mod taskblocks;
 mod taskbrief;
 mod taskchanges;
@@ -3478,11 +3479,25 @@ pub fn run() {
                 .cloned()
                 .ok_or("tauri.conf.json declares no main window")?;
             let config_root = purlis_core::machine::config_root();
+            // The working directory, resolved ONCE (`planes::at_launch` below takes this
+            // answer): the plane it names is the one the window opens on, and its theme levels
+            // are what the first frame draws (#2602).
+            let cwd = std::env::current_dir();
+            let launch_root = planes::launch_root(&cwd);
+            let created = windowprefs::at_creation(
+                config_root.as_deref(),
+                windowprefs::CreatedOn::main(
+                    config_root.as_deref(),
+                    launch_root.as_ref().and_then(|root| root.as_deref().ok()),
+                )
+                .as_ref(),
+            );
             nativewindow::dressed(
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?,
-                windowprefs::native_at_creation(config_root.as_deref()),
+                created.native,
+                created.follows_system,
             )
-            .initialization_script(windowprefs::creation_script(config_root.as_deref()))
+            .initialization_script(created.script)
             .on_new_window(navguard::no_new_window)
             .build()?;
             reached("the window is built");
@@ -3996,7 +4011,7 @@ pub fn run() {
             // opens. Everything after this names its plane; nothing asks the working
             // directory again. A launch that finds no plane leaves the app holding none,
             // which is a state and not a failure.
-            let launch = planes::at_launch(&app.state::<Planes>(), std::env::current_dir());
+            let launch = planes::at_launch(&app.state::<Planes>(), cwd, launch_root);
             // Whether this launch puts the last quit's window set back. Read from THIS
             // process's arguments, once: a second launch's `--no-restore` would be about a
             // restore that happened hours ago, so the single-instance closure never reaches
