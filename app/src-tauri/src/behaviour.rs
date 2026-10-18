@@ -775,7 +775,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
         bin.path(),
         "claude",
         // The first message, alone on a line of its own (see the test above).
-        "#!/bin/sh\nfor arg; do last=\"$arg\"; done\nprintf '\\n%s' \"$last\"\nsleep 2\nprintf ' :END'\nread line\n",
+        "#!/bin/sh\nfor arg; do last=\"$arg\"; done\nprintf '\\n%s :END' \"$last\"\nread line\n",
     );
     a_profile(&target.root, "work", &harness);
 
@@ -790,8 +790,6 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
         .expect("it starts")
         .0;
 
-    // PROBE #2375: open the pane between the two pieces.
-    std::thread::sleep(Duration::from_millis(1000));
     Pane::on(target, id).shows("without the sandbox :END");
     let events = purlis_core::eventlog::read(&target.log).expect("the log reads");
     assert!(
