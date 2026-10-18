@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792343232713,
+  "lastUpdate": 1792344537214,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17052,6 +17052,48 @@ window.BENCHMARK_DATA = {
             "value": 100.8707335,
             "unit": "ms",
             "extra": "median of 5 runs: 100.443, 100.850, 100.871, 101.475, 102.726 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b8f84e74d43f5c1ea8e469e7d1202f549eb60d8",
+          "message": "Runners: after a re-link the window takes back its own runner chats' sandboxes (#2593)\n\n* Runners: after a re-link the window takes back its own runner chats' sandboxes (#2511)\n\nSession protocol 1.19: take_back, the desktop relay's own word on each\nlink it makes to a runner for one window, names that window; the runner\nanswers with the confinements of the chats that window started there,\nmade or composed for it, and names them to the new link. It never names\none the runner's own window made, or one made or composed for another\nwindow's link. A chat started on either of two overlapping links of one\nwindow is named to both.\n\nFD-27's grants table gains a take_back row (remote-link only) and its row\ntest; ADR 0078 and ADR 0068 amended with the person's ruling of\n2026-10-17.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: take_back is session protocol 1.22; the ADRs mark what is to be confirmed (#2511)\n\n1.19 was reserved and released: 1.21 landed first. The version notes and\nthe fixture keep protocol order. The ADR amendments say only the ruling\nis ruled, and the changelog fragment says what the host does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T21:26:07+04:00",
+          "tree_id": "c2d8f2bd8dace064f3605452258825be92344865",
+          "url": "https://github.com/purlis/purlis/commit/9b8f84e74d43f5c1ea8e469e7d1202f549eb60d8"
+        },
+        "date": 1792344536102,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.518529,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.474, 0.497, 0.519, 0.521, 0.535 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.080246000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.953, 16.991, 17.080, 17.131, 17.441 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.558591,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.268, 103.358, 104.559, 106.291, 106.611 ms"
           }
         ]
       }
