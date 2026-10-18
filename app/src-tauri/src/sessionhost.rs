@@ -162,6 +162,20 @@ impl purlis_host::Compose for Composes {
             ),
         )
     }
+
+    /// How the run of `spec` is sandboxed, read by the core from what is started (#2636).
+    fn sandbox_of(
+        &self,
+        spec: &purlis_core::session::Spec,
+        confined: bool,
+    ) -> purlis_host::protocol::session::RunSandbox {
+        purlis_core::sandbox::ran::applied_to(
+            &spec.program,
+            &spec.args,
+            confined,
+            purlis_core::sandbox::Os::this(),
+        )
+    }
 }
 
 /// **What hears each held project's hooks in the window's session host** (#2000): the core's

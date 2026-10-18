@@ -21,7 +21,7 @@ use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
     self, Answer, Client, Command, Confine, ConfinePlan, Events, Exit, HeldProgram, Launch,
-    ProgramKind, StartProgram,
+    ProgramKind, RunSandbox, StartProgram,
 };
 use purlis_session_protocol::view::{Chunk, Viewer};
 use purlis_terminal::session::Spec;
@@ -203,6 +203,8 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 exit: None,
                 confined: None,
                 plan: None,
+                // Nothing confines a stand-in, and nothing wraps it.
+                sandbox: Some(RunSandbox::Off),
                 cols: 120,
                 rows: 40,
             },
@@ -215,6 +217,8 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 exit: Some(Exit::Code(7)),
                 confined: None,
                 plan: None,
+                // Nothing confines a stand-in, and nothing wraps it.
+                sandbox: Some(RunSandbox::Off),
                 cols: 120,
                 rows: 40,
             },
@@ -285,6 +289,9 @@ async fn a_program_in_a_confinement_is_answered_with_where_its_confinement_is() 
         Some(vec![443]),
         "the plan it was started from"
     );
+    // #2636: read from the confinement that holds it, though nothing on its line names a
+    // sandbox: a confined run never reads as off.
+    assert_eq!(programs[0].sandbox, Some(RunSandbox::By("proxy".into())));
     assert!(!host.confines.ended(CONFINEMENT));
 }
 

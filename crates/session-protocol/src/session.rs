@@ -164,9 +164,13 @@ use crate::view::{Limits, Views};
 /// 2026-10-17): `take_back`, sent by a relaying host on each link it makes for one window,
 /// names that window, and is answered `taken_back` with the confinements of the chats that
 /// window started over the links before, which the host names to this link.
+///
+/// 1.28 added how a hosted program's run is sandboxed (#2636): each program `programs` answers
+/// says how its host applied the sandbox to its run (`sandbox`), read by the host from what it
+/// started, never from the start.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 22,
+    minor: 28,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -887,6 +891,10 @@ pub struct HeldProgram {
     /// a window that comes back compares with the plan it would make now.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<ConfinePlan>,
+    /// How its run is sandboxed, as the host applied it (1.28). Absent from a host before 1.28,
+    /// whose window takes the run as sandboxed and offers it a restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<RunSandbox>,
     /// The size its terminal is now.
     pub cols: u16,
     pub rows: u16,
@@ -959,6 +967,19 @@ pub struct Readiness {
     pub edits_lines: Option<bool>,
     /// How long it has written nothing, in milliseconds.
     pub quiet_for_ms: u64,
+}
+
+/// **How a hosted program's run is sandboxed, as its host applied it** (1.28, #2636): read by
+/// the host from what it started, the confinement it runs in and the program that wraps it,
+/// never from anything a start said of itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunSandbox {
+    /// It runs in no sandbox: no confinement holds it and nothing wraps it.
+    Off,
+    /// It runs in this sandbox, by its backend's word (`seatbelt`, `landlock`, `bubblewrap`),
+    /// or `proxy` for one held by its confinement's proxy alone.
+    By(String),
 }
 
 /// How a hosted program ended (1.2).
