@@ -148,9 +148,15 @@ use crate::view::{Limits, Views};
 /// 1.17 added a relaying host telling its client when its link to the other host is down and
 /// when it is back (#2496, ADR 0078 as amended 2026-10-17): the pushed notices `link_down`, with
 /// why, and `link_back`.
+///
+/// 1.18 added logins purlis performs in a chat's browser (#2016): `log_in` carries a declared
+/// login, the address and the values from the vault ([`crate::browsing::LogIn`]), to a browser,
+/// answered `browsed` once the browser is handed back, or refused `browser_refused` in words
+/// that carry no value. The window's alone ([`crate::grants::Power::LogIn`]): no relayed link
+/// sends it.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 17,
+    minor: 18,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -435,6 +441,16 @@ pub enum Command {
         program: String,
         width: u16,
         height: u16,
+    },
+    /// purlis performs a login in browser `program` (1.18, #2016): it takes the browser from the
+    /// agent, goes to the login's address, fills it only on that address's origin, submits,
+    /// waits for the password field to go, and hands the browser back, which then reaches that
+    /// origin alone. Answered [`Answer::Browsed`] with the page it left, or refused
+    /// [`BROWSER_REFUSED`] in words that carry no value. The values never show in this
+    /// command's `Debug`. The window's alone ([`crate::grants::Power::LogIn`]).
+    LogIn {
+        program: String,
+        login: crate::browsing::LogIn,
     },
 }
 
@@ -1092,6 +1108,7 @@ wire_words!(Command {
     HandBack => "hand_back",
     BrowserInput => "browser_input",
     SizeBrowser => "size_browser",
+    LogIn => "log_in",
 });
 
 impl Command {
@@ -1132,6 +1149,7 @@ impl Command {
             | Command::HandBack { .. }
             | Command::BrowserInput { .. }
             | Command::SizeBrowser { .. } => Power::Browser,
+            Command::LogIn { .. } => Power::LogIn,
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
         }
@@ -1625,7 +1643,10 @@ impl Lane {
             Command::BoardMoved { project, .. }
             | Command::Board { project }
             | Command::ProgramsOf { project } => Some(Lane::Board(project.clone())),
-            Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
+            // A login is one more of the browser's acts, in their order.
+            Command::Browse { program, .. } | Command::LogIn { program, .. } => {
+                Some(Lane::Browsing(program.clone()))
+            }
             // The person's take-over, input and hand-back keep their order with each other and
             // with the browser's views, never waiting behind an act in flight, which the
             // take-over cuts.
@@ -2241,6 +2262,25 @@ impl Client {
                 call_id: call_id.into(),
                 act,
                 reach: None,
+            })
+            .await?
+        {
+            Answer::Browsed(browsed) => Ok(*browsed),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// purlis performs `login` in browser `program` (1.18, #2016): the page it left once it
+    /// handed the browser back, or why the login did not go through ([`BROWSER_REFUSED`]).
+    pub async fn log_in(
+        &self,
+        program: &str,
+        login: crate::browsing::LogIn,
+    ) -> Result<crate::browsing::Browsed, CallError> {
+        match self
+            .call(Command::LogIn {
+                program: program.into(),
+                login,
             })
             .await?
         {

@@ -137,6 +137,8 @@ pub const PAIRS: &[Pair] = &[
     p("needs-you.base", "surface.base", 3.0),
     // The needs-you mark on the strip it sits on.
     p("needs-you.base", "surface.deep", 3.0),
+    // The title bar's needs-you hand on its button under the pointer.
+    p("needs-you.base", "control.hover", 3.0),
     p("text.muted", "surface.hover", 3.0),
     p("state.running", "surface.hover", 3.0),
     p("state.waiting", "surface.hover", 3.0),
@@ -346,6 +348,10 @@ pub const PAIRS: &[Pair] = &[
     .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
+    // An Allow (`.ui-button-grants`, ADR 0097 §6) is edged in the accent on the control's own
+    // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
+    p("accent.base", "control.base", 3.0),
+    p("accent.base", "control.hover", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

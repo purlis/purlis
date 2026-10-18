@@ -80,7 +80,7 @@ mod typed;
 pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
-pub use floors::{DANGER_APART, Floor, Held};
+pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
     CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
     Style, served,

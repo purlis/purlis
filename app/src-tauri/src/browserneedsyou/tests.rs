@@ -44,6 +44,14 @@ impl Driver for Host {
         })
     }
 
+    fn log_in(
+        &self,
+        _program: &str,
+        _login: purlis_session_protocol::browsing::LogIn,
+    ) -> Result<Browsed, Refused> {
+        Err(Refused::Said("no login here".into()))
+    }
+
     fn close(&self, _program: &str) -> Result<(), String> {
         Ok(())
     }
@@ -120,6 +128,7 @@ impl Project {
                 &BrowserReach::default,
                 true,
                 &AsPersona::default,
+                &|_| Err("no login here".into()),
                 1000,
             )
             .0;

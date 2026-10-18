@@ -365,6 +365,26 @@ describe("answering in place", () => {
     );
   });
 
+  it("draws each Allow as a grant and its refusal plain, neither primary (ADR 0097 §6)", async () => {
+    core();
+    draw([permission(3, "p1", ["steward 3"]), HOST]);
+    const answers = (who: string) =>
+      within(screen.getByRole("group", { name: `Answers to ${who}` })).getAllByRole("button");
+    for (const [who, allow, keep] of [
+      ["steward 3", "Allow", "Deny"],
+      ["steward 5", "Allow for this chat", "Keep blocked"],
+    ]) {
+      const [first, second] = answers(who);
+      expect(first).toHaveAccessibleName(allow);
+      expect(first).toHaveClass("ui-button", "ui-button-grants");
+      expect(first).not.toHaveClass("ui-button-primary");
+      expect(second).toHaveAccessibleName(keep);
+      expect(second).toHaveClass("ui-button");
+      expect(second).not.toHaveClass("ui-button-grants");
+      expect(second).not.toHaveClass("ui-button-primary");
+    }
+  });
+
   it("marks a persona's declared browser in its place, and answers only on a press (#2241)", async () => {
     const calls = core();
     const browser: Shown = {
@@ -1005,6 +1025,34 @@ describe("updates, after the asks (#1693)", () => {
     expect(never).toHaveBeenCalledOnce();
     expect(go).toHaveBeenCalledOnce();
     expect(row.dismiss).toHaveBeenCalledOnce();
+  });
+
+  it("draws an away refusal's Allow from now on as a grant and Never for this pair plain (ADR 0097 §6)", () => {
+    core();
+    const [row] = rows([update("away:steward#devops#", 1, { kind: "refused-away", chain: [] })], {
+      answers: [
+        {
+          label: "Never for this pair",
+          name: "Never for this pair: steward",
+          title: "",
+          press: vi.fn(),
+        },
+        {
+          label: "Allow from now on",
+          name: "Allow from now on: steward to devops",
+          title: "",
+          allows: true,
+          press: vi.fn(),
+        },
+      ],
+    });
+    draw([], { updates: updates([row]) });
+    const allow = screen.getByRole("button", { name: "Allow from now on: steward to devops" });
+    const never = screen.getByRole("button", { name: "Never for this pair: steward" });
+    expect(allow).toHaveClass("ui-button", "inbox-answer", "allows", "ui-button-grants");
+    expect(allow.querySelector("svg.ui-button-grants-mark")).toHaveAttribute("aria-hidden", "true");
+    expect(never).not.toHaveClass("ui-button-grants");
+    expect(never).not.toHaveClass("ui-button-primary");
   });
 
   it("is reached by ↓ from the last ask, its two buttons first, and Enter presses one", async () => {

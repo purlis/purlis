@@ -5607,6 +5607,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ureq",
+ "zeroize",
  "zip 9.0.3",
 ]
 
@@ -5654,6 +5655,7 @@ dependencies = [
  "grep-searcher",
  "hmac 0.13.0",
  "http",
+ "idna",
  "ignore",
  "imagesize",
  "keyring",

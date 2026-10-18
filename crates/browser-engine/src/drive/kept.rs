@@ -36,8 +36,8 @@ enum Of {
     Group(NodeKey),
 }
 
-/// One text kept out.
-#[derive(Debug, Clone)]
+/// One text kept out: wiped from memory when it goes (#2016).
+#[derive(Clone)]
 struct Text {
     /// What it was read from, if anything.
     from: Option<Of>,
@@ -45,10 +45,24 @@ struct Text {
     text: String,
 }
 
-/// Texts kept out of every answer.
-#[derive(Debug, Clone, Default)]
+impl Drop for Text {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.text);
+    }
+}
+
+/// Texts kept out of every answer. Its `Debug` says how many, never what they are (#2016).
+#[derive(Clone, Default)]
 pub(crate) struct Kept {
     texts: Vec<Text>,
+}
+
+impl std::fmt::Debug for Kept {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Kept")
+            .field("texts", &self.texts.len())
+            .finish()
+    }
 }
 
 impl Kept {
@@ -262,5 +276,14 @@ mod tests {
         kept.group_tree(&field(11), &["x739214"]);
         assert_eq!(kept.texts(), vec!["739214", "x739214"]);
         assert_eq!(kept.loose(), vec!["739214", "x739214"]);
+    }
+
+    #[test]
+    fn what_is_kept_out_is_never_shown_by_debug() {
+        let mut kept = Kept::default();
+        kept.run(&["fixture-word-7"]);
+        let said = format!("{kept:?}");
+        assert!(!said.contains("fixture-word-7"), "{said}");
+        assert!(said.contains('1'), "{said}");
     }
 }

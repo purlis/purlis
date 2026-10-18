@@ -7,6 +7,7 @@ import { asksMoved } from "./asks";
 import { inTheWindow } from "./personaHostsAllow";
 import { inertly } from "./sandboxBlocks";
 import { Choice, Field, SettingRow } from "./settings/components";
+import { GrantsMark } from "./primitives/Grants";
 
 /** The pick that opens the box a path is typed in: no socket's path, which starts at `/`. */
 const ANOTHER = "another";
@@ -140,11 +141,13 @@ export function SandboxChoose({ block, id }: { block: ChatBlocked; id: string })
           <div className="block-allow-actions ui-button-row">
             <button
               type="button"
-              className="ui-button ui-button-sm ui-button-primary"
+              // It grants what is chosen: drawn as every grant is (ADR 0097 §6).
+              className="ui-button ui-button-sm ui-button-grants"
               tabIndex={0}
               disabled={busy || target === ""}
               onClick={choose}
             >
+              <GrantsMark />
               {what === "socket" ? "Use this socket" : "Use this service"}
             </button>
           </div>

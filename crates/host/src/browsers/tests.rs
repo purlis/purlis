@@ -80,6 +80,13 @@ impl Screen for Slow {
     fn size_to(&self, _width: u16, _height: u16) -> Result<(), super::NotTaken> {
         Ok(())
     }
+
+    fn log_in(
+        &self,
+        _login: &purlis_session_protocol::browsing::LogIn,
+    ) -> Result<super::LoginEnded, NotActed> {
+        Err(NotActed::Refused("a stand-in".into()))
+    }
 }
 
 #[test]

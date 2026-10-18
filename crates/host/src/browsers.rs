@@ -26,9 +26,12 @@
 //! nothing else returns it (not the window's link ending, not a crash of the window). While the
 //! person drives, every act is refused in [`A_BROWSER_THE_PERSON_DRIVES`]'s words and only their
 //! input reaches the browser; an act is carried out under the epoch of the lease it was checked
-//! against, so one the take-over overtook is cut by the engine. A view of a 1.14 link is sent
-//! frames that name what they show (`view::frames::AIMED_JPEG`), which the person's input names
-//! back.
+//! against, so one the take-over overtook is cut by the engine. While purlis performs a login
+//! (#2016) the engine holds the lease itself, refusing the agent's acts until it hands the
+//! browser back under a new epoch, which the host takes as the agent's lease from then on; a
+//! take-over meanwhile cuts the login and leaves the browser the person's. A view of a 1.14
+//! link is sent frames that name what they show (`view::frames::AIMED_JPEG`), which the
+//! person's input names back.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -37,7 +40,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::StreamExt;
-use purlis_session_protocol::browsing::{Act, Aim, Browsed, BrowserReach, Driver, Input};
+use purlis_session_protocol::browsing::{Act, Aim, Browsed, BrowserReach, Driver, Input, LogIn};
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
 use purlis_session_protocol::view::frames::{JPEG, aimed, frame};
 use purlis_session_protocol::view::{Attachment, Source};
@@ -88,6 +91,21 @@ pub trait Screen: Send + Sync + 'static {
     fn input(&self, input: &Input) -> Result<(), NotTaken>;
     /// The person sets its pages' size, in CSS pixels, while they drive (#2014).
     fn size_to(&self, width: u16, height: u16) -> Result<(), NotTaken>;
+    /// purlis performs `login` (#2016), taking the browser from the agent and handing it back:
+    /// who drives it after, under which epoch, and what the login came to. Refused, acting on
+    /// nothing, while the person drives. It waits on the page, so the host calls it off its
+    /// runtime.
+    fn log_in(&self, login: &LogIn) -> Result<LoginEnded, NotActed>;
+}
+
+/// **How a login purlis performed ended** (#2016): who drives the browser now (the agent,
+/// handed it back, or the person, who took it over meanwhile), under which epoch, and the page
+/// it left or why it did not go through, in words that carry no value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginEnded {
+    pub driver: Driver,
+    pub epoch: u64,
+    pub outcome: Result<Browsed, NotActed>,
 }
 
 /// Why a browser did not take the person's input or size (#2014).
@@ -395,6 +413,24 @@ impl Running for Browser {
             (Driver::Agent, epoch) => epoch,
         };
         self.hub.screen.act(call_id, act, epoch)
+    }
+
+    fn log_in(&self, login: LogIn) -> Result<Browsed, NotActed> {
+        let epoch = match *self.lease() {
+            (Driver::Person, _) => {
+                return Err(NotActed::Refused(A_BROWSER_THE_PERSON_DRIVES.into()));
+            }
+            (Driver::Agent, epoch) => epoch,
+        };
+        let ended = self.hub.screen.log_in(&login)?;
+        drop(login);
+        // The lease the engine handed back is the agent's from now on, unless the person took
+        // the browser over meanwhile: their take-over set the host's lease already.
+        let mut lease = self.lease();
+        if *lease == (Driver::Agent, epoch) {
+            *lease = (ended.driver, ended.epoch);
+        }
+        ended.outcome
     }
 
     fn take_over(&self) -> Result<Driver, Refusal> {
