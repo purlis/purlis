@@ -321,6 +321,15 @@ fn every_command() -> Vec<Command> {
         Command::HandBack {
             program: CHAT.into(),
         },
+        // A login purlis performs carries a vault's values (1.18, #2016): the window's alone.
+        Command::LogIn {
+            program: CHAT.into(),
+            login: purlis_session_protocol::browsing::LogIn {
+                address: "https://shop.example.test/login".into(),
+                user: None,
+                password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
+            },
+        },
     ]
 }
 
@@ -374,6 +383,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "browser_input",
             "size_browser",
             "hand_back",
+            "log_in",
         ],
         Scope::Terminal => &[
             "list",

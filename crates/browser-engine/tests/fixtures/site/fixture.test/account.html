@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Account</title>
+<style>
+  body { margin: 0; font: 40px sans-serif; }
+  .said { color: rgb(255, 0, 0); margin: 8px; }
+</style></head>
+<body>
+  <h1>Account</h1>
+  <p class="said" id="who"></p>
+  <p>Your password: <span class="said" id="secret" hidden></span></p>
+  <button id="show">Show password</button>
+  <script>
+    // The page that a login lands on shows what was sent to it, once asked to.
+    const sent = new URLSearchParams(location.search);
+    document.getElementById('who').textContent = 'Signed in as ' + sent.get('username');
+    document.getElementById('secret').textContent = sent.get('password');
+    document.getElementById('show').addEventListener('click', () => {
+      document.getElementById('secret').hidden = false;
+    });
+  </script>
+</body></html>

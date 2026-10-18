@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  input, button { display: block; margin: 8px; font: 24px sans-serif; color: rgb(255, 0, 0); }
+</style></head>
+<body>
+  <h1>Sign in</h1>
+  <form action="account.html" method="get">
+    <label>User name <input name="username" autocomplete="username"></label>
+    <label>Password <input type="password" name="password" id="password"></label>
+    <button type="button" id="show">Show password</button>
+    <button type="submit">Sign in</button>
+  </form>
+  <script>
+    // A show-password toggle: the field's value as plain text.
+    document.getElementById('show').addEventListener('click', () => {
+      const field = document.getElementById('password');
+      field.type = field.type === 'password' ? 'text' : 'password';
+    });
+  </script>
+</body></html>
