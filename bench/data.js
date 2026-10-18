@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792280157740,
+  "lastUpdate": 1792293440122,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16254,6 +16254,48 @@ window.BENCHMARK_DATA = {
             "value": 103.3507285,
             "unit": "ms",
             "extra": "median of 5 runs: 101.531, 102.476, 103.351, 103.582, 104.712 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "96ce1b8c2facb6bae6d739410b078a584d1954f7",
+          "message": "An Allow for one chat is audited only once it is kept (#2537)\n\n* Audit an Allow for one chat only once it is kept (#2454)\n\nkept_for wrote the trust.sandbox.grant audit first and only then held a\ngrant for one chat; a chat that had closed made hold_grant refuse, so the\naudit recorded an Allow that was never kept.\n\nFor the Once and Chat levels the grant is now held first: the hold is the\none check that the chat is open, under the lock its closing takes. The\naudit is written after, and a hold whose audit cannot be written is let go\nthrough the Held token Chats::hold_grant_as returns (an added grant goes,\none made lasting is once again). Allowed already is what the hold left\nunchanged, so making a once grant lasting is audited too.\n\nCloses #2454\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Reserve a grant for one chat, then keep it once audited (#2454 review)\n\nHolding the grant before its audit let a start, the Granted list, a live\nask and a second Allow see a grant whose audit was not written yet. A\ngrant for one chat is now reserved first (the open check, nothing kept)\nand committed only after its audit is written; a failed audit drops the\nreservation, so it never removes or downgrades a grant another Allow kept\nmeanwhile. A chat that closes while its audit is written keeps nothing,\nand the audit records the grant ended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* A Revoke made while an Allow is audited stands (#2454 review 2)\n\nA reservation carries the chat's count of grants taken back (a Revoke, or\na close that ends them); a commit after one is refused and the audit told\nthe grant ended. A grant for the chat commits to any open run of it, so a\nrestart while its audit is written keeps it; a grant once keeps the\nexact-session check. Where the ending cannot be audited either, the\nperson is told the audit is short a row and nothing was allowed.\nHeld is renamed ReservedGrant (chats already has a Reserved).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Write the ending's audit before the error that names it (#2454)\n\nThe window-copy check reads every call an error is made of; the audit\ncall sat inside Err(...), so it is made first and its answer matched.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T07:16:05+04:00",
+          "tree_id": "f9fb5b7d61b0127a3a055c9fa8d08168f036c468",
+          "url": "https://github.com/purlis/purlis/commit/96ce1b8c2facb6bae6d739410b078a584d1954f7"
+        },
+        "date": 1792293438623,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.271041,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.269, 0.270, 0.271, 0.278, 0.291 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.610758500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.533, 16.576, 16.611, 16.613, 16.623 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1759665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.671, 101.081, 101.176, 101.241, 101.442 ms"
           }
         ]
       }
