@@ -2564,10 +2564,19 @@ export type BriefOf =
  *  One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
  *  page and its document), which the person's input names back, and the JPEG in base64. An
  *  empty `jpeg` says the view has ended for good.
+ * 
+ *  Or, with `reconnection` and no image, where the view stands while the link to the runner it
+ *  is drawn from is down and back (#2542): its last frame stays, dimmed, until it is
+ *  reconnected.
  */
 export type BrowserFrame = {
 	aim: string,
 	jpeg: string,
+	/**
+	 *  Where the view stands while its runner's link is down and back (#2542): said on its
+	 *  own, with no image; `null` on every frame.
+	 */
+	reconnection: Reconnection | null,
 };
 
 /**
