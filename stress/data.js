@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792362842592,
+  "lastUpdate": 1792365907734,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2838,6 +2838,42 @@ window.BENCHMARK_DATA = {
             "value": 325.6,
             "unit": "MB",
             "extra": "median of 6 samples: 251, 352.1, 347.4, 325.2, 326, 278.8 MB; window 152.2 MB, session host 173.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0221bf611ca897387a2bbc713b6b604df2822cf0",
+          "message": "Theme: a window's first frame draws the theme the levels choose (#2631)\n\n* Theme: a window's first frame draws the theme the levels choose\n\nThe core resolves the theme levels once as a window is created, for the\nproject and workspace it opens on, and the creation script, the native\nwindow and the page's first frame take that one answer (#2602). The\nsystem's contrast is read natively at creation: Increase contrast on\nmacOS, the desktop portal on Linux; elsewhere the page picks among the\nframes it is handed for both (#2582). An appearance a theme does not\nhave draws its first for the system's contrast, and the page's shortcut\nto the person's own theme gives way to the levels with no project in\nfront.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: first-frame tests hold, and rustfmt\n\nThe floors test compares the theme and its floors, the remembered\nstore is a seam so no test writes machine.json, and the page test\nexpects the new first frame field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: macOS contrast is not read natively yet\n\nThe read needs two objc2-app-kit features the tree does not build\ntoday, which is the operator's call. Until then macOS, like Windows,\nhands the page a frame for each contrast and the page picks with\nprefers-contrast.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: macOS reads Increase contrast as a window is created\n\nNSWorkspace.accessibilityDisplayShouldIncreaseContrast, with two more\nfeatures of objc2-app-kit (NSWorkspace, NSAccessibility); Cargo.lock is\nunchanged. The decision from the platform's answer is tested.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: a first frame draws a project's theme only once it is trusted\n\nA window's first frame draws a project's theme only once the project is\ntrusted on this machine: a remembered project is used only while the\nstore's approval of it holds for what it contributes now. Linux asks\nthe portal once per process, and more contrast is drawn when either\nthe portal or the page asks for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: the first frame's trust test reads the faces through the store\n\nA window created on a project whose approval in this machine's store\ndoes not hold its faces is handed none. The contrast test no longer asks\nthe real platform, so no portal is started by a test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: name the approved store in the trust test plainly\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T02:16:08+04:00",
+          "tree_id": "e94e156ad3e69157f370bbc5096aebc6d4c90b03",
+          "url": "https://github.com/purlis/purlis/commit/0221bf611ca897387a2bbc713b6b604df2822cf0"
+        },
+        "date": 1792365906211,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 904,
+            "unit": "MB",
+            "extra": "median of 3 samples: 687, 904, 1099 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 381.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 388.8, 386.2, 374.4, 380.6, 381.5, 310.2 MB; window 199.4 MB, session host 181.7 MB"
           }
         ]
       }
