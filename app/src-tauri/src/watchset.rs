@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! What the app's file watchers share (`planewatch.rs`, `filewatch.rs`, `branchwatch.rs`,
-//! `killswitch.rs`):
+//! `killswitch.rs`, `themewatch.rs`):
 //! which events are changes, folding the platform's events into bursts, and keeping a
 //! watcher's watches equal to a wanted set of folders, each watched non-recursively.
 //!
@@ -172,7 +172,7 @@ pub(crate) fn bursts_or_idle(
 
 /// The burst `first` begins: everything received until `quiet_for` after it, or `None` when the
 /// watcher is dropped before then.
-fn rest_of_burst(
+pub(crate) fn rest_of_burst(
     events: &Receiver<notify::Event>,
     first: notify::Event,
     quiet_for: Duration,

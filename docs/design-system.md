@@ -619,6 +619,18 @@ LIVE workspace's pick is its committed default; where it now comes before the pe
 for the project, which the local file's pick used to beat, the Notice says so once. A theme
 pick in a manifest is a proposed change when a chat makes it (ADR 0098 §4).
 
+**Saving a theme folder repaints the window** (#2324, ADR 0098): the core watches the theme
+folders the window's theme is read from — each level's `themes/`, its theme folders and the
+folders directly inside them, and the folders of an extension that contributes only themes —
+each non-recursively and never through a link, at most 128 for a window, found from the roots
+the window's levels already hold (`purlis_core::theme::reload`). A save tells the window to ask
+for its theme again, the one way it is ever drawn, so the consent floors and a project's font
+approvals hold on a reload as they hold at launch. A burst of saves is one redraw, and redraws
+are at least 400 ms apart, so the window is drawn again within a second of the last save. Where
+the platform will not watch a folder, the core looks at it every two seconds instead. A theme
+the engine refuses on a reload draws Purlis, with a Notice saying why; a project's font file
+that changed since the project was approved is refused until the project is approved again.
+
 **A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
 with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a
 transition of its own keeps it; reduced motion makes it immediate.

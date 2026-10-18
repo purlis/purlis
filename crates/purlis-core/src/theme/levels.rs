@@ -363,6 +363,7 @@ fn drawn_for(
                 )),
                 Some(one) if one.theme.refused => Drawn {
                     complaints: one.theme.complaints.clone(),
+                    refused: true,
                     ..Drawn::of(default_theme())
                 },
                 Some(one) => {
@@ -380,6 +381,7 @@ fn drawn_for(
             Found::Missing(said) => return Err(said),
             Found::Read(resolved) if resolved.refused => Drawn {
                 complaints: resolved.complaints,
+                refused: true,
                 ..Drawn::of(default_theme())
             },
             Found::Read(resolved) => {

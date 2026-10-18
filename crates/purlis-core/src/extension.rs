@@ -442,6 +442,51 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// **Whether it contributes only themes** (ADR 0098 §3): it asks for no capability, names
+    /// no program and no state directory, and contributes themes or icon themes and nothing
+    /// else. Such an extension is a set of theme folders: it is not fingerprinted, it is never
+    /// asked about, and editing its themes asks nothing ([`Standing::Themes`]). A manifest that
+    /// adds anything else is approved as any other extension.
+    pub fn themes_only(&self) -> bool {
+        let Self {
+            protocol: _,
+            capabilities,
+            id: _,
+            name: _,
+            themes,
+            icon_themes,
+            left_out: _,
+            panels,
+            views,
+            program,
+            state,
+            settings,
+            actions,
+            palette,
+            writes,
+            badges,
+            repo_columns,
+            cli,
+            events,
+            briefing,
+        } = self;
+        (!themes.is_empty() || !icon_themes.is_empty())
+            && capabilities.is_empty()
+            && panels.is_empty()
+            && views.is_empty()
+            && program.is_none()
+            && state.is_none()
+            && settings.is_empty()
+            && actions.is_empty()
+            && palette.is_empty()
+            && writes.is_empty()
+            && badges.is_empty()
+            && repo_columns.is_empty()
+            && cli.is_empty()
+            && events.is_none()
+            && briefing.is_none()
+    }
+
     /// Whether it hears `kind` ([`events`]).
     pub fn hears(&self, kind: events::Kind) -> bool {
         self.events
@@ -727,12 +772,16 @@ pub enum Standing {
     New,
     /// It was approved, and what is on disk now is not what was approved.
     Changed,
+    /// It contributes only themes ([`Manifest::themes_only`]), so it is a set of theme folders
+    /// and needs no approval (ADR 0098 §3). It runs nothing: nothing that starts a program, or
+    /// acts or writes for one, takes this standing as an approval.
+    Themes,
 }
 
 impl Standing {
     /// Whether charter may let it contribute without asking.
     pub fn may_contribute(self) -> bool {
-        matches!(self, Self::Approved)
+        matches!(self, Self::Approved | Self::Themes)
     }
 
     /// The word a prompt or a refusal says.
@@ -741,6 +790,7 @@ impl Standing {
             Self::Approved => "approved",
             Self::New => "new",
             Self::Changed => "changed",
+            Self::Themes => "themes",
         }
     }
 }
@@ -908,9 +958,20 @@ impl Loaded {
     /// same id and the same bytes, is not at that path and reads as new. Inside the bundle any
     /// bytes are trusted: an update brings new ones, and what covers them is the app's
     /// signature, not a fingerprint in a file the operator's own user can write.
+    ///
+    /// **An installed extension that contributes only themes stands as theme folders**
+    /// ([`Standing::Themes`]), whatever its bytes: it is read at the path the person installed
+    /// it from, and a manifest that adds anything else is held to the fingerprint again.
     pub fn standing(&self, found: &Extension) -> Standing {
         match self.entry(found.id()) {
             None => Standing::New,
+            Some(entry)
+                if entry.source == Source::Installed
+                    && entry.path == found.path
+                    && found.manifest.themes_only() =>
+            {
+                Standing::Themes
+            }
             Some(entry) if entry.source == Source::App => {
                 if entry.path == found.path {
                     Standing::Approved

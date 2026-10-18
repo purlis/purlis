@@ -137,6 +137,7 @@ mod taskbrief;
 mod taskchanges;
 mod tasksused;
 mod themegallery;
+mod themewatch;
 mod thismachine;
 mod todos;
 mod unstarted;
@@ -3293,6 +3294,8 @@ pub fn run() {
                     if let Some(watch) = window.try_state::<branchwatch::BranchWatch>() {
                         watch.forget(window.label());
                     }
+                    // Nor the theme folders it draws from (#2324).
+                    themewatch::forget(window.label());
                     // And its ⌘⇧F searches stop (FM-8).
                     if let Some(searches) =
                         window.try_state::<std::sync::Arc<searchfiles::FileSearches>>()
