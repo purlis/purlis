@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792344537214,
+  "lastUpdate": 1792345833288,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17094,6 +17094,48 @@ window.BENCHMARK_DATA = {
             "value": 104.558591,
             "unit": "ms",
             "extra": "median of 5 runs: 103.268, 103.358, 104.559, 106.291, 106.611 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc269f4634d2ea13cfd800060385a18f89141428",
+          "message": "Runners: a runner's browser view shows reconnecting too (#2598)\n\n* Runners: a runner's browser view shows reconnecting too (#2542)\n\nA browser view rides the window's own link, so the window's browsers\nfollow what that link hears of its runner: every view drawn from it is\ndimmed under \"Reconnecting…\" while the link is down, and each is\nreconnected once the link is back, once it draws again from a snapshot\n(its stream's first frame), or once the window cannot tell. The word\ntravels on the view's own frame channel, in order with its frames; a\nthumbnail keeps its last frame as it is.\n\nADR 0078 amended; the changelog fragment for #2496 now names browsers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: the browser bar's status says Reconnecting, the overlay is seen only (#2542)\n\nA browser view keeps one status: the word over its last frame is said\nin the bar's status, and the overlay is hidden from a screen reader.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: review fixes for a runner's browser view reconnecting (#2542)\n\nThe bar says Reconnecting in place of the hint to take the page over;\nviews followed on a window link that was replaced are dropped; the ADR\namendment marks what is to be confirmed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T21:49:13+04:00",
+          "tree_id": "b4724bc16e3aa4abbdf4047306279b5afedf6c83",
+          "url": "https://github.com/purlis/purlis/commit/fc269f4634d2ea13cfd800060385a18f89141428"
+        },
+        "date": 1792345831736,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.448191,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.442, 0.447, 0.448, 0.464, 0.475 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.204748,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.149, 16.181, 16.205, 16.332, 16.838 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.364809,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.287, 102.042, 102.365, 102.552, 102.935 ms"
           }
         ]
       }
