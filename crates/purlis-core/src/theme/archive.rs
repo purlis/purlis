@@ -57,7 +57,8 @@ pub fn is_reserved(id: &str) -> bool {
 }
 
 /// Whether `id` is an id a theme folder may have: a name of the palette's grammar (lower-case
-/// letters, digits and dashes, starting with a letter, at most 32 long) that is not reserved.
+/// letters, digits and dashes, starting with a letter, at most 32 long) that Windows holds and
+/// that is not reserved.
 pub fn is_folder_id(id: &str) -> bool {
     super::is_folder_name(id) && !is_reserved(id)
 }
@@ -69,6 +70,8 @@ fn not_an_id(id: &str) -> String {
             "{} is an id purlis keeps for its own themes, so no theme folder takes it",
             crate::shown::short(id)
         )
+    } else if let Some(why) = super::portable::refusal(id, id) {
+        why
     } else {
         format!(
             "{} is not a theme folder's id: lower-case letters, digits and dashes, starting \
@@ -175,11 +178,20 @@ pub fn gather(folder: &Path) -> Result<(Files, Vec<LeftOut>), String> {
         Ok(())
     };
     for (name, at, kind) in entries(folder)? {
+        // A name Windows cannot hold is not carried: the zip opens on every platform.
+        if let Some(why) = super::portable::refusal(&name, &name) {
+            left_out.push(LeftOut::new(name, why));
+            continue;
+        }
         match kind {
             Entry::File if is_plain(&name) => take(name, &at, &mut files)?,
             Entry::Folder if KEPT_FOLDERS.contains(&name.as_str()) => {
                 for (inner, inner_at, inner_kind) in entries(&at)? {
                     let path = format!("{name}/{inner}");
+                    if let Some(why) = super::portable::refusal(&path, &inner) {
+                        left_out.push(LeftOut::new(path, why));
+                        continue;
+                    }
                     match inner_kind {
                         Entry::File if is_plain(&inner) => take(path, &inner_at, &mut files)?,
                         other => left_out.push(LeftOut::new(path, other.why(&inner))),
@@ -368,6 +380,10 @@ pub fn unpack(bytes: &[u8]) -> Result<(String, Files), String> {
                 "{named} in the zip is not a path inside one theme folder"
             ));
         }
+        let entry_named = format!("{named} in the zip");
+        if let Some(why) = super::portable::path_refusal(&entry_named, trimmed) {
+            return Err(why);
+        }
         if !is_folder_id(top) {
             return Err(format!("the zip's folder: {}", not_an_id(top)));
         }
@@ -480,8 +496,9 @@ pub struct Staged {
     pub into: PathBuf,
     /// The theme folder's name there.
     pub name: String,
-    /// Where it is written for now: a hidden folder in `into`.
-    pub path: PathBuf,
+    /// Where it is written for now: a hidden folder in `into`. Read only through
+    /// [`Self::read`]; [`Self::path`] says where it is.
+    path: PathBuf,
     /// Whether a theme folder of its name that is there is replaced.
     force: bool,
     done: bool,
@@ -535,6 +552,9 @@ pub fn stage(into: &Path, name: &str, files: &Files, force: bool) -> Result<Stag
         _ => {}
     }
     for path in files.keys() {
+        if let Some(why) = super::portable::path_refusal(path, path) {
+            return Err(NotWritten::Failed(why));
+        }
         if !is_kept(path) {
             return Err(NotWritten::Failed(format!(
                 "{} is not where a theme folder keeps a file",
@@ -606,6 +626,28 @@ fn sweep(into: &Path) {
 }
 
 impl Staged {
+    /// Where the theme folder is written for now: a hidden folder in [`Self::into`]. To read
+    /// it, [`Self::read`].
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// **The engine's read of the staged folder**, as it reads any theme folder the person
+    /// named, its fonts included (`library` holds the folders beside it its `extends` may name),
+    /// but only to check ([`super::Library::checking`]): the stage is moved or removed next, so
+    /// none of its fonts is registered to be served from where it is now.
+    pub fn read(&self, library: super::Library) -> super::Resolved {
+        let staged = self
+            .path
+            .file_name()
+            .and_then(|it| it.to_str())
+            .unwrap_or_default();
+        library
+            .reading_named_fonts()
+            .checking()
+            .load_folder(&self.into, staged)
+    }
+
     /// **Puts the theme folder in place**: `into/name`. Without `force` given to [`stage`], it
     /// never replaces anything there, an empty folder included: the move itself refuses
     /// (`NotWritten::Exists`). With `force`, a folder there is exchanged for the new one in one
