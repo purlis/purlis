@@ -1738,6 +1738,8 @@ describe("carrying out a row", () => {
       new Set([
         "newChat",
         "newShell",
+        // New browser (#2176).
+        "newBrowser",
         // Search in files (#1137): the Search view since #1676, as the views' rows are.
         "showSideView:search",
         "newShell:alpha",
@@ -2270,9 +2272,9 @@ describe("the palette at fifty chats", () => {
       // `Open a chat beside the one in front` (`front` has an `r`).
       // One more under both since #1487: `Previous chat in this tab`, a row about the tab in
       // front, before the branch's two in the catalogue. One more under `r` since #1137:
-      // `Search in files` (`search` has an `r`).
+      // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(15);
+      expect(at("r", loaded())).toBe(16);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2409,8 +2411,8 @@ describe("the palette at fifty chats", () => {
     // This window has no todos loaded, so no `todo.` rows.
     // 911 since #2326: Your settings: Density and fonts.
     // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
-    // settings: Browsers.
-    expect(offers).toHaveLength(915);
+    // settings: Browsers. 916 since #2176: New browser.
+    expect(offers).toHaveLength(916);
   });
 
   /**

@@ -686,6 +686,13 @@ export const commands = {
 	 */
 	allowBrowserSites: (plane: PlaneId, session: number, sites: string[], level: GrantLevel) => typedError<null, string>(__TAURI_INVOKE("allow_browser_sites", { plane, session, sites, level })),
 	/**
+	 *  **Allow on the sites a browser the person opened asked about** (#2176): `sites`, the sites
+	 *  its view showed, are browser sites at `level`: every browser of this project on this
+	 *  machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a chat's site Allow is: no chat's own commands reach
+	 *  them. Refused whole unless each waits on the person for that browser now.
+	 */
+	allowPersonBrowserSites: (plane: PlaneId, program: string, sites: string[], level: GrantLevel) => typedError<null, string>(__TAURI_INVOKE("allow_person_browser_sites", { plane, program, sites, level })),
+	/**
 	 *  **Keep blocked on chat `session`'s browser sites** (#2018): nothing is allowed, they wait no
 	 *  more, and the chat is told on its next turn not to retry, with the reason the person typed.
 	 */
@@ -1204,6 +1211,14 @@ export const commands = {
 	browserInput: (program: string, input: BrowserInput) => typedError<InputOutcome, string>(__TAURI_INVOKE("browser_input", { program, input })),
 	/**  The person sets browser `program`'s pages to `width` by `height` CSS pixels (#2014). */
 	sizeBrowser: (program: string, width: number, height: number) => typedError<null, string>(__TAURI_INVOKE("size_browser", { program, width, height })),
+	/**
+	 *  **The person sends browser `program` of project `plane` to the address they typed** (#2176),
+	 *  from its view tab: http and https only, any other scheme refused in words, and an address
+	 *  the browser's reach refuses outright said so before it loads. A site new to the project is
+	 *  held back as an address the agent writes is, and the answer names it to ask about. Never a
+	 *  chat's browser, which its chat drives. The window's alone (`ui::WINDOW_ONLY`).
+	 */
+	goBrowser: (plane: PlaneId, program: string, address: string) => typedError<Went, string>(__TAURI_INVOKE("go_browser", { plane, program, address })),
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
 	/**
@@ -10847,6 +10862,13 @@ export type Way =
 "report" | 
 /**  Its end, at once. */
 "now";
+
+/**
+ *  **Where the person's address took their browser** (#2176): the page is at `address` now, or
+ *  the browser held back what it would have opened on `sites`, each new to the project, and
+ *  the person is asked whether their browsers may go there.
+ */
+export type Went = { outcome: "went"; address: string | null } | { outcome: "asks"; sites: string[] };
 
 /**  One file of a branch against the branch it was cut from: "Show what changed" (FM-11). */
 export type WhatChanged = {

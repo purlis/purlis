@@ -455,7 +455,9 @@ mod hosted {
             Ok((link, project))
         }
 
-        /// Starts a browser in the project at `root`, and answers its id.
+        /// Starts a browser in the project at `root` reaching nothing listed, and answers its
+        /// id: what a test of the window's browsers starts.
+        #[cfg(test)]
         pub(crate) fn open(&self, root: &Path) -> Result<String, String> {
             self.open_reaching(root, None, None)
                 .map_err(|not| match not {

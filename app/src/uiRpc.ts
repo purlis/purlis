@@ -392,6 +392,7 @@ export const commands = {
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
+	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
@@ -568,6 +569,7 @@ export const commands = {
 	handBackBrowser: __WINDOW_ONLY_RESULT,
 	browserInput: __WINDOW_ONLY_RESULT,
 	sizeBrowser: __WINDOW_ONLY_RESULT,
+	goBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
 	/**
@@ -9297,6 +9299,13 @@ export type Way =
 "report" | 
 /**  Its end, at once. */
 "now";
+
+/**
+ *  **Where the person's address took their browser** (#2176): the page is at `address` now, or
+ *  the browser held back what it would have opened on `sites`, each new to the project, and
+ *  the person is asked whether their browsers may go there.
+ */
+export type Went = { outcome: "went"; address: string | null } | { outcome: "asks"; sites: string[] };
 
 /**  One file of a branch against the branch it was cut from: "Show what changed" (FM-11). */
 export type WhatChanged = {

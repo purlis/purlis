@@ -451,27 +451,26 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       {theirs && asking !== null && (
         <NoticePaneRow>
           <Notice
-          at="pane"
-          cause={`browser-sites:${program}`}
-          fixes={[
-            {
-              label: "Allow on this machine",
-              allows: true,
-              onPress: () => allowSites(asking, "you"),
-            },
-            {
-              label: "Allow for everyone in the project",
-              allows: true,
-              onPress: () => allowSites(asking, "project"),
-            },
-          ]}
-          onDismiss={() => setAsking(null)}
-          dismissSays="Keep it blocked: the page stays where it was"
-        >
-          {asking.sites.join(", ")} {asking.sites.length === 1 ? "is a site" : "are sites"} new
-          to this project, so this browser did not go there. On this machine lets every
-          browser of this project here go there; for everyone writes it in the project's
-          settings.
+            at="pane"
+            cause={`browser-sites:${program}`}
+            fixes={[
+              {
+                label: "Allow on this machine",
+                allows: true,
+                onPress: () => allowSites(asking, "you"),
+              },
+              {
+                label: "Allow for everyone in the project",
+                allows: true,
+                onPress: () => allowSites(asking, "project"),
+              },
+            ]}
+            onDismiss={() => setAsking(null)}
+            dismissSays="Keep it blocked: the page stays where it was"
+          >
+            {asking.sites.join(", ")} {asking.sites.length === 1 ? "is a site" : "are sites"} new to
+            this project, so this browser did not go there. On this machine lets every browser of
+            this project here go there; for everyone writes it in the project's settings.
           </Notice>
         </NoticePaneRow>
       )}

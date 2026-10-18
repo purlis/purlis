@@ -2288,7 +2288,7 @@ fn a_browser_the_person_opens_reaches_the_projects_hosts_and_its_browser_sites()
 #[test]
 fn allow_on_a_browser_the_person_opened_keeps_only_the_sites_it_asked_about() {
     use purlis_core::sandbox::{self, grant::Level};
-    let (_dir, planes, id) = held_project("schema = 1\n");
+    let (_dir, planes, id) = held_project("schema = 1\n[sandbox]\nmode = \"on\"\negress = []\n");
     let held = planes.held(&id).expect("held");
     let audited: Mutex<Vec<String>> = Mutex::default();
     let audit = |chat: Option<u32>, one: &sandbox::grant::Audited<'_>| {
@@ -2328,7 +2328,8 @@ fn allow_on_a_browser_the_person_opened_keeps_only_the_sites_it_asked_about() {
         "answered once"
     );
 
-    held.browsers().theirs_asked("B1", &["team.example:443".to_owned()]);
+    held.browsers()
+        .theirs_asked("B1", &["team.example:443".to_owned()]);
     allow(&["team.example:443"], Level::Project).expect("allowed for everyone");
     assert_eq!(
         sandbox::browser_sites::in_force(held.root(), &sandbox::policy::Locks::of(held.root())),

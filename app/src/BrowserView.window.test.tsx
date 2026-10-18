@@ -203,7 +203,7 @@ describe("a browser's view nobody can see", () => {
     const host = core();
     const drawn = (inFront: boolean) => (
       <ProjectShownProvider value={inFront}>
-        <BrowserView program="B1" />
+        <BrowserView plane={PLANE} program="B1" />
       </ProjectShownProvider>
     );
     const { rerender } = render(drawn(false));
@@ -247,7 +247,7 @@ describe("taking a browser over from its view (#2014)", () => {
     const host = core(undefined, personDrives, input);
     const view = (seen: boolean) => (
       <ProjectShownProvider value={seen}>
-        <BrowserView program="B1" />
+        <BrowserView plane={PLANE} program="B1" />
       </ProjectShownProvider>
     );
     const { rerender } = render(view(true));
@@ -564,7 +564,9 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     besides.go_browser = () => ({ outcome: "went", address: "https://example.com/docs" });
     const host = await opened();
 
-    await userEvent.type(await screen.findByRole("textbox", { name: "Address" }), "example.com/docs");
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com/docs" },
+    });
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
 
     await waitFor(() =>
@@ -586,8 +588,10 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     besides.allow_person_browser_sites = () => null;
     const host = await opened();
 
-    await userEvent.type(await screen.findByRole("textbox", { name: "Address" }), "example.com");
-    await userEvent.keyboard("{Enter}");
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
 
     expect(
       await screen.findByText(/example\.com:443 is a site new to this project/),
@@ -608,8 +612,10 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
   it("keeps the site blocked on Dismiss, and goes nowhere", async () => {
     besides.go_browser = () => ({ outcome: "asks", sites: ["example.com:443"] });
     const host = await opened();
-    await userEvent.type(await screen.findByRole("textbox", { name: "Address" }), "example.com");
-    await userEvent.keyboard("{Enter}");
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
     await screen.findByText(/is a site new to this project/);
 
     await userEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
@@ -628,11 +634,10 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     besides.go_browser = () => Promise.reject(refused);
     await opened();
 
-    await userEvent.type(
-      await screen.findByRole("textbox", { name: "Address" }),
-      "javascript:alert(1)",
-    );
-    await userEvent.keyboard("{Enter}");
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "javascript:alert(1)" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
 
     expect(await screen.findByText(refused)).toBeInTheDocument();
   });
