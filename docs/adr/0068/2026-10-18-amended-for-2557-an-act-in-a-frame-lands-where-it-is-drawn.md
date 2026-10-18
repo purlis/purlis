@@ -26,3 +26,7 @@ not.
    document, then each frame between, outermost first, is scrolled to show the point where the
    element is in it, and where each frame is drawn is read again after those scrolls.
    *D-2557-4, decided in implementation, to be confirmed.*
+5. **Aimed once the frames are at rest.** After those scrolls, where the frames are drawn is
+   read until two reads a moment apart agree, and the act aims by that; frames still moving
+   after a few tenths of a second answer "not shown". *D-2557-5, decided in implementation, to
+   be confirmed.*

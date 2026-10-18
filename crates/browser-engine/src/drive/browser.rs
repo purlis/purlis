@@ -120,6 +120,11 @@ const POLL: Duration = Duration::from_millis(50);
 const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
+/// How long apart two reads of where a scrolled frame is drawn are taken, to see it has come to
+/// rest (#2557).
+const AT_REST_GAP: Duration = Duration::from_millis(30);
+/// How many reads a scrolled frame has to come to rest in before an act into it is not shown.
+const AT_REST_READS: usize = 10;
 /// How long a drag waits after its last move for the engine to say its own drag started
 /// (#2136).
 const DRAG_STARTS_WITHIN: Duration = Duration::from_millis(150);
@@ -1793,9 +1798,23 @@ impl Browser {
                 return Err(refusal(CallError::TimedOut));
             }
         }
-        let (place, centre) = self.placed_centre(target, at)?;
-        place
-            .drawn_at(centre)
+        // A scroll into view may still be carried to the documents around the element after it
+        // answers: aim only once two reads apart say the same.
+        let mut last = self.placed_centre(target, at)?;
+        let mut at_rest = false;
+        for _ in 0..AT_REST_READS {
+            std::thread::sleep(AT_REST_GAP);
+            let now = self.placed_centre(target, at)?;
+            if now == last {
+                at_rest = true;
+                break;
+            }
+            last = now;
+        }
+        let (place, centre) = last;
+        at_rest
+            .then(|| place.drawn_at(centre))
+            .flatten()
             .ok_or_else(|| Refusal::NotShown(target.clone()))
     }
 

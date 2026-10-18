@@ -281,3 +281,21 @@ fn a_click_in_a_frame_whose_corners_cross_is_answered_not_shown() {
     frame_drawn_as(&engine, crossed.clone(), crossed, 200.0, 60.0);
     refused_with_nothing_sent(&browser, &engine);
 }
+
+#[test]
+fn a_click_in_a_frame_that_does_not_come_to_rest_after_its_scroll_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    // Each read finds the frame a pixel lower than the last.
+    let mut top = 200.0;
+    engine.on(move |sent, _| {
+        (sent.method == "DOM.getBoxModel").then(|| {
+            top += 1.0;
+            let q = json!([100.0, top, 300.0, top, 300.0, top + 60.0, 100.0, top + 60.0]);
+            Ok(
+                json!({"model":{"content":q,"padding":q,"border":q,"margin":q,
+                "width":200,"height":60}}),
+            )
+        })
+    });
+    refused_with_nothing_sent(&browser, &engine);
+}
