@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792359801383,
+  "lastUpdate": 1792360949452,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17556,6 +17556,48 @@ window.BENCHMARK_DATA = {
             "value": 104.64732649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.319, 103.218, 104.647, 105.110, 105.805 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "601fd6407d13b27a84af4bf37aeb54702290a7ff",
+          "message": "Runners: the internal-address floor decodes every NAT64 layout, takes ranges, and says which entry is wrong (#2644)\n\n* Runners: the internal-address floor decodes every NAT64 layout, takes ranges, and says which entry is wrong (#2530)\n\n- sandbox::nat64: RFC 6052 layouts /32 to /96; the local-use prefix read\n  at every length from /48; this machine's own prefixes read from its\n  resolver's answer for ipv4only.arpa (RFC 7050), kept five minutes.\n- sandbox.relayed-internal takes ranges (10.96.0.0/12, [fd00::/112]:443).\n- One bad entry is left out with its own sentence; the rest of the policy\n  stands. Said in the runner's plan refusal and a doctor row.\n- An interface mask of /0, a short one or one of the other family holds\n  the address alone, each tested.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Plan tests: drop an import no longer used (#2530)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: a range never covers the runner's own address, and NAT64 is listed as IPv4 (#2530)\n\n- An address of the runner's own is carried only by an entry naming that\n  address and that port exactly; where the runner's addresses cannot be\n  read, every address is held to that.\n- An address under the runner's NAT64 prefix is judged against each IPv4\n  address it carries, never the IPv6 one.\n- A failed ipv4only.arpa lookup is asked again after thirty seconds.\n- An entry not taken is said on one line, as the file wrote it, and why.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: the runner's own address is named exactly before NAT64 is read (#2530)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T01:51:55+04:00",
+          "tree_id": "14f526d3ba4563d6d175a1103f6fe411d1e510a2",
+          "url": "https://github.com/purlis/purlis/commit/601fd6407d13b27a84af4bf37aeb54702290a7ff"
+        },
+        "date": 1792360948019,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.28685550000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.273, 0.274, 0.287, 0.292, 0.301 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4722365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.460, 16.464, 16.472, 16.478, 16.706 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.03596999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.768, 101.262, 102.036, 102.175, 102.186 ms"
           }
         ]
       }
