@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792341761541,
+  "lastUpdate": 1792341789637,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5280,6 +5280,42 @@ window.BENCHMARK_DATA = {
             "value": 392.5,
             "unit": "MB",
             "extra": "median of 6 samples: 385, 391.7, 390.7, 393.4, 394.1, 412 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9c6e6872b81f085a642fa1632cc1501ecc4d28be",
+          "message": "Linux wrap: starts with a fixed environment purlis builds (#2548)\n\n* Linux wrap: starts with a fixed environment purlis builds\n\npurlis's own wrap (purlis _sandbox) and the chat's side it starts begin\nwith an environment purlis builds. The program's environment is carried\nin the wrap's own under names of the wrap's own (purlis_linux_sandbox::\ncarried), read back whole and given to the program alone. A wrap whose\nown environment is anything else starts nothing.\n\nA chat's terminal (chatspec::spec, in the window and in a session host)\nand a brokered secret exec start the wrap this way. The teller reads the\nchat's hook settings from the carried environment.\n\nCloses #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Carry what a profile hands a chat past the Linux wrap\n\nThe window sets a profile's handed variables after the chat's spec is\nbuilt. chatspec::with_handed sets them last in the program's environment\nand carries them with the rest when the chat runs on purlis's own wrap.\ncarried::read builds on every system.\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Let the terminal's SHELL be beside what the Linux wrap carries\n\nThe pseudo-terminal sets SHELL on every program it starts, as the session\nsets TERM. The wrap lets both be and hands neither on; a terminal test\npins what a session sets.\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Sort the Linux wrap's refusals by the project and temp folder it carries\n\nThe supervisor starts with none of the chat's environment, so it sorts\neach refusal against the project the carried PURLIS_ROOT names (held to\nthe fence as a resolve is; the walk from where the wrap started only\nwithout one) and the carried TMPDIR. sorter_in is the seam the teller\ntells through. with_handed decides by the chat's line, as spec does.\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Clippy: the chat's temp folder is already a reference\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T19:57:59+04:00",
+          "tree_id": "0dd88d39086e2fd9cd16470cc9982e0c6ce6470d",
+          "url": "https://github.com/purlis/purlis/commit/9c6e6872b81f085a642fa1632cc1501ecc4d28be"
+        },
+        "date": 1792341788050,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1464.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1292.2, 1464.7, 1638.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 380.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 372.5, 374.1, 379.4, 380.9, 381.3, 396.8 MB"
           }
         ]
       }
