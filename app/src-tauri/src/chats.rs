@@ -576,6 +576,10 @@ pub struct Chats {
     /// conversation keeps it and no other chat ever gets it. **In memory only**: a grant for
     /// one chat ends with the app.
     grants: Mutex<HashMap<String, Vec<ChatGrant>>>,
+    /// How many times each chat's grants were taken back (#2454), by the chat's id: by a
+    /// Revoke, or a close that ended them. A grant reserved before one is never kept. Locked
+    /// after `grants` wherever both are.
+    taken_back: Mutex<HashMap<String, u64>>,
     /// The copy of a kube context each chat was pointed at (qw384b), by the chat's id: written
     /// into that chat's own folder at each of its starts alone. **In memory only**.
     kubeconfigs: Mutex<HashMap<String, String>>,
@@ -870,6 +874,35 @@ fn no_conversation(session: u32) -> String {
 pub const SANDBOXED_AGAIN: &str = "This chat ran without the sandbox until this restart. It runs \
                                    in the sandbox now, because that choice lasts for one start.";
 
+/// **A grant reserved for one chat and not kept yet** ([`Chats::reserve_grant`], #2454): it
+/// is held by nothing but this, so no start, no Granted list, no live ask and no later Allow
+/// sees it until [`Chats::commit_grant`] keeps it, once its audit is written. Dropped, it was
+/// never kept.
+#[derive(Debug)]
+pub(crate) struct ReservedGrant {
+    session: u32,
+    /// The chat's id, which its grants are kept by.
+    id: String,
+    what: purlis_core::sandbox::grant::What,
+    at: u64,
+    /// The chat's name as its tab showed it.
+    chat: String,
+    once: bool,
+    already: bool,
+    /// How many times the chat's grants had been taken back when it was reserved
+    /// ([`Chats::revoke`], a close that ends them): one taken back since keeps it from being
+    /// kept.
+    taken_back: u64,
+}
+
+impl ReservedGrant {
+    /// Whether the chat held it already, at least as long, when it was reserved: then keeping
+    /// it changes nothing, and nothing is audited.
+    pub(crate) fn already(&self) -> bool {
+        self.already
+    }
+}
+
 /// One grant a person made for one chat (#1342), as Settings' Granted list shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatGrant {
@@ -981,6 +1014,7 @@ impl Chats {
             ending: AtomicBool::new(false),
             most_at_once: MOST_AT_ONCE,
             grants: Mutex::new(HashMap::new()),
+            taken_back: Mutex::new(HashMap::new()),
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
@@ -1563,6 +1597,16 @@ impl Chats {
         grants
     }
 
+    /// What a start of open chat `session` would be granted now ([`Self::grants_of`]): for a
+    /// test of what a start or a restart composes into its sandbox.
+    #[cfg(test)]
+    pub(crate) fn grants_a_start_of(&self, session: u32) -> purlis_core::sandbox::grant::Grants {
+        let chat = lock(&self.open)
+            .get(&session)
+            .map(|running| running.chat.clone());
+        chat.map(|chat| self.grants_of(&chat)).unwrap_or_default()
+    }
+
     /// **Lets chat `session` do `what`** (#1342), for as long as the app holds it, and owes it a
     /// restart on its conversation that tells it `told`. A chat that is not open, or one with no
     /// id, gets nothing, and is told why.
@@ -1581,65 +1625,127 @@ impl Chats {
 
     /// [`Self::grant`] without the restart: for a grant the chat's proxy takes live (#1666),
     /// held still so a later start of the chat keeps it and the Granted list shows it.
+    #[cfg(test)]
     pub fn hold_grant(
         &self,
         session: u32,
         what: purlis_core::sandbox::grant::What,
         at: u64,
     ) -> Result<(), String> {
-        self.hold_grant_as(session, what, at, false)
+        self.commit_grant(self.reserve_grant(session, what, at, false)?)
     }
 
     /// [`Self::hold_grant`], once (D-sock-3): the restart that takes it starts with it, and it
     /// goes when the session it was allowed in ends, so no later start of the chat has it.
+    #[cfg(test)]
     pub fn hold_grant_once(
         &self,
         session: u32,
         what: purlis_core::sandbox::grant::What,
         at: u64,
     ) -> Result<(), String> {
-        self.hold_grant_as(session, what, at, true)
+        self.commit_grant(self.reserve_grant(session, what, at, true)?)
     }
 
-    fn hold_grant_as(
+    /// **Reserves a grant of `what` for open chat `session`** (#2454), once where `once`: the
+    /// first of two steps, made before its audit is written. It checks that the chat is open,
+    /// so a chat that is not is refused before anything is audited; and it keeps nothing, so
+    /// what the chat holds is unchanged until [`Self::commit_grant`].
+    pub(crate) fn reserve_grant(
         &self,
         session: u32,
         what: purlis_core::sandbox::grant::What,
         at: u64,
         once: bool,
-    ) -> Result<(), String> {
-        let (id, name) = {
-            let open = lock(&self.open);
-            let running = open
-                .get(&session)
-                .ok_or_else(|| format!("chat {session} is not open, so nothing was allowed"))?;
-            let id = running.chat.identity.id.clone().ok_or_else(|| {
+    ) -> Result<ReservedGrant, String> {
+        let open = lock(&self.open);
+        let running = open
+            .get(&session)
+            .ok_or_else(|| format!("chat {session} is not open, so nothing was allowed"))?;
+        let id =
+            running.chat.identity.id.clone().ok_or_else(|| {
                 "that chat has no id yet, so nothing was allowed for it".to_owned()
             })?;
-            (
-                id,
-                running
-                    .chat
-                    .label
-                    .clone()
-                    .unwrap_or_else(|| running.chat.name.clone()),
-            )
+        let chat = running
+            .chat
+            .label
+            .clone()
+            .unwrap_or_else(|| running.chat.name.clone());
+        // Held already where it lasts, or is once and once is asked: once made lasting is a new
+        // grant, and audited.
+        let grants = lock(&self.grants);
+        let already = grants.get(&id).is_some_and(|made| {
+            made.iter()
+                .any(|one| one.what == what && (once || !one.once))
+        });
+        let taken_back = lock(&self.taken_back).get(&id).copied().unwrap_or(0);
+        Ok(ReservedGrant {
+            session,
+            id,
+            what,
+            at,
+            chat,
+            once,
+            already,
+            taken_back,
+        })
+    }
+
+    /// **Keeps a grant [`Self::reserve_grant`] reserved** (#2454), once its audit is written:
+    /// from now on the chat's starts, the Granted list and a later Allow see it. Kept once only:
+    /// a grant the chat holds already at least as long is left as it is, and one held once is
+    /// made lasting where this one lasts.
+    ///
+    /// Refused, keeping nothing, where since it was reserved the chat closed, as its grants end
+    /// with it (D-1348-1), or any grant of the chat was taken back: a Revoke made meanwhile
+    /// stands. A grant for the chat is kept for any session of it still open, so a restart on its
+    /// conversation keeps it; a grant once is for the session it was allowed in alone (D-sock-3).
+    /// Checked under the locks a close and a Revoke take, so neither can come between.
+    pub(crate) fn commit_grant(&self, reserved: ReservedGrant) -> Result<(), String> {
+        let open = lock(&self.open);
+        let still = if reserved.once {
+            open.get(&reserved.session)
+                .is_some_and(|running| running.chat.identity.id.as_deref() == Some(&reserved.id))
+        } else {
+            open.values()
+                .any(|running| running.chat.identity.id.as_deref() == Some(&reserved.id))
         };
+        if !still {
+            return Err(format!(
+                "chat {} closed before it was allowed, so nothing was kept",
+                reserved.session
+            ));
+        }
         let mut grants = lock(&self.grants);
-        let made = grants.entry(id).or_default();
-        match made.iter_mut().find(|one| one.what == what) {
+        let taken_back = lock(&self.taken_back)
+            .get(&reserved.id)
+            .copied()
+            .unwrap_or(0);
+        if taken_back != reserved.taken_back {
+            return Err(format!(
+                "a grant of chat {} was taken back while this was allowed, so nothing was kept",
+                reserved.session
+            ));
+        }
+        let made = grants.entry(reserved.id).or_default();
+        match made.iter_mut().find(|one| one.what == reserved.what) {
             // Allowed for the chat after once: it lasts now.
-            Some(one) if one.once && !once => one.once = false,
+            Some(one) if one.once && !reserved.once => one.once = false,
             Some(_) => {}
             None => made.push(ChatGrant {
-                what,
-                at,
-                chat: name,
-                once,
-                from: session,
+                what: reserved.what,
+                at: reserved.at,
+                chat: reserved.chat,
+                once: reserved.once,
+                from: reserved.session,
             }),
         }
         Ok(())
+    }
+
+    /// Counts a taking back of chat `id`'s grants, with `grants` locked (#2454).
+    fn took_back(&self, id: &str) {
+        *lock(&self.taken_back).entry(id.to_owned()).or_default() += 1;
     }
 
     /// **Points chat `session`'s kubectl at a cluster on this Mac** (qw384b): `config` is the
@@ -2067,6 +2173,7 @@ impl Chats {
     /// Whether chat `id` holds a grant of `what`.
     /// Whether open chat `session` holds a grant of `what` already (#1666): an Allow of it for
     /// this chat again keeps nothing new.
+    #[cfg(test)]
     pub fn holds_for(&self, session: u32, what: &purlis_core::sandbox::grant::What) -> bool {
         let id = lock(&self.open)
             .get(&session)
@@ -2089,7 +2196,11 @@ impl Chats {
         };
         let before = made.len();
         made.retain(|one| one.what != *what);
-        made.len() != before
+        let revoked = made.len() != before;
+        if revoked {
+            self.took_back(id);
+        }
+        revoked
     }
 
     /// **Restarts chat `session` on its conversation**: the one restart (#1342, #1362, #1428).
@@ -3271,7 +3382,9 @@ impl Chats {
                     .values()
                     .any(|one| one.chat.identity.id.as_deref() == Some(id));
                 if !still {
-                    lock(&self.grants).remove(id);
+                    let mut grants = lock(&self.grants);
+                    grants.remove(id);
+                    self.took_back(id);
                 }
             }
             let mut let_go = lock(&self.let_go);
