@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792353758900,
+  "lastUpdate": 1792356152424,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2694,6 +2694,42 @@ window.BENCHMARK_DATA = {
             "value": 331.4,
             "unit": "MB",
             "extra": "median of 6 samples: 405.1, 407.3, 335, 327, 327.9, 270.1 MB; window 156.6 MB, session host 174.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "77f672e0a701a018e9bcc3e4b35e1e556cfd27de",
+          "message": "A theme folder's fonts are read through its checked handle (#2603)\n\n* A theme folder's fonts are read through its checked handle\n\nA face is opened from the handle of the theme folder's fonts/, which is\nopened from the handle its theme.json was read through, each open\nrefusing a link; serving a face reads it from the same handles. A\nproject's and a workspace's theme folders bring their fonts only through\nFolders::opened, for a project the window opened through the trust ask\n(ADR 0035); the person's own folders always do.\n\nCloses #2555\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A project's font files are approved with the project\n\nEach font file in a theme folder at the plane root or in a workspace is\npart of what the project contributes, by its path and sha-256, so the\ntrust ask lists it and a new or changed one asks again. The theme engine\nreads this machine's approval of the project itself and draws a face\nfrom the project only when the approval holds its file with that digest.\nA folder named to the library brings its fonts only when asked to.\nRecorded as an amendment of ADR 0098 (operator's ruling, 2026-10-18).\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A project's font files are listed under one budget\n\nA project's font files are listed under one budget for the whole plane:\nat most 64 files and 32 MiB, 24 in one theme folder, the theme folders of\n64 workspaces, 256 folders and 256 files opened. A file past it is not\nlisted, so it is never approved or drawn, and the complaint names the\nlimit. A vouch after a chat's record write reads the record's half alone.\nThe trust ask groups font files by theme folder with their size and a\nshort digest, and counts those past the first twelve.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Every trust-ask fixture says what font files a project brings\n\nThe two fixtures that described a project's contribution without its\nfont files are typed as the contribution now, so the ask they draw has\nevery field and a fixture that leaves one out does not type-check.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T23:50:35+04:00",
+          "tree_id": "085cc6c0cbc915f719d0973b25df60150dab3a9b",
+          "url": "https://github.com/purlis/purlis/commit/77f672e0a701a018e9bcc3e4b35e1e556cfd27de"
+        },
+        "date": 1792356150671,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 897,
+            "unit": "MB",
+            "extra": "median of 3 samples: 758, 897, 1221 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 379.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 307.9, 389.5, 374.4, 384.1, 384.9, 273.6 MB; window 194.3 MB, session host 184.2 MB"
           }
         ]
       }
