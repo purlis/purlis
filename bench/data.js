@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792307810376,
+  "lastUpdate": 1792309848433,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16758,6 +16758,48 @@ window.BENCHMARK_DATA = {
             "value": 101.54750200000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.981, 101.352, 101.548, 101.877, 101.980 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "76cf839e375daca719745412163e44c2fc60749e",
+          "message": "The native window follows the theme; forced colours and high contrast (#2581)\n\nThe window is created in the native appearance and window.background of\nthe theme its first frame draws, and the page hands every later theme's\nappearance and colour to the core; only the focused window sets the\napp's appearance, and a theme that follows the system leaves it to the\nsystem. Forced colours draw focus, selection, what needs you, danger,\ndisabled controls and state marks in system colours and with a shape,\nin a last stylesheet layer. prefers-contrast: more is an engine input\nthat picks the appearance tagged high contrast of the tag being drawn.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T11:49:26+04:00",
+          "tree_id": "41a3f70a39cf7c638427c185e2fde1d0920d12e5",
+          "url": "https://github.com/purlis/purlis/commit/76cf839e375daca719745412163e44c2fc60749e"
+        },
+        "date": 1792309847233,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48189499999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.476, 0.478, 0.482, 0.488, 0.491 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.357695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.207, 16.274, 16.358, 16.411, 16.419 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.88792799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.120, 100.599, 100.888, 100.908, 101.867 ms"
           }
         ]
       }
