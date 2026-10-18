@@ -386,20 +386,71 @@ impl SocketGround {
     }
 }
 
-/// Why a socket grant never names the system's name lookup (#2657), in one sentence.
-pub const NAME_LOOKUP: &str = "That socket is the system's name lookup, and letting a chat \
-                               reach it would let the chat look up any name past the sandbox's \
-                               proxy, so purlis never allows it.";
+/// **The local sockets of the system's name lookup** (#2657): Linux's
+/// ([`crate::sandboxblock::RESOLVER_SOCKETS`], which also sorts a refusal at one as a lookup)
+/// and the Mac's own. No socket grant names one.
+pub const NAME_LOOKUP_SOCKETS: [&str; 8] = [
+    "/run/systemd/resolve/io.systemd.Resolve",
+    "/run/nscd/socket",
+    "/var/run/nscd/socket",
+    "/var/lib/sss/pipes/nss",
+    "/run/avahi-daemon/socket",
+    "/var/run/avahi-daemon/socket",
+    "/run/systemd/resolve/io.systemd.Resolve.Monitor",
+    "/var/run/mDNSResponder",
+];
 
-/// **Whether `path` is a socket of the system's name lookup**
-/// ([`crate::sandboxblock::RESOLVER_SOCKETS`], #2657), written as one or leading to one: no
-/// grant names it, at any level, so what a Notice offers for it and what a grant keeps agree.
+/// **The system services of the Mac's own name lookup** (#2657): no service grant names one.
+pub const NAME_LOOKUP_SERVICES: [&str; 1] = ["com.apple.dnssd.service"];
+
+/// What purlis says where an Allow names the system's name lookup (#2657): the rule, then why,
+/// one sentence each.
+pub const NAME_LOOKUP_REFUSED: &str = "purlis never allows the system's name lookup. It would let \
+                                       a chat look up names its sandbox does not let it reach.";
+
+/// **Whether `path` is a socket of the system's name lookup** ([`NAME_LOOKUP_SOCKETS`], #2657),
+/// written as one, with `.` and `..` read as written, or leading to one: no grant names it, at
+/// any level, so what a Notice offers for it and what a grant keeps agree.
 pub fn is_name_lookup(path: &Path) -> bool {
-    let real = super::real(path);
-    crate::sandboxblock::RESOLVER_SOCKETS.iter().any(|lookup| {
+    let lexical = lexically(path);
+    let real = super::real(&lexical);
+    NAME_LOOKUP_SOCKETS.iter().any(|lookup| {
         let lookup = Path::new(lookup);
-        path == lookup || real == lookup || real == super::real(lookup)
+        lexical == lookup || real == lookup || real == super::real(lookup)
     })
+}
+
+/// **Whether `name` is a service of the system's name lookup** ([`NAME_LOOKUP_SERVICES`],
+/// #2657), in any case.
+pub fn is_name_lookup_service(name: &str) -> bool {
+    NAME_LOOKUP_SERVICES
+        .iter()
+        .any(|lookup| lookup.eq_ignore_ascii_case(name.trim()))
+}
+
+/// [`NAME_LOOKUP_REFUSED`] where `what` is a socket or a service of the system's name lookup.
+pub fn name_lookup_refused(what: &What) -> Option<&'static str> {
+    match what {
+        What::Socket(path) if is_name_lookup(path) => Some(NAME_LOOKUP_REFUSED),
+        What::Service(name) if is_name_lookup_service(name) => Some(NAME_LOOKUP_REFUSED),
+        _ => None,
+    }
+}
+
+/// `path` with `.` dropped and `..` taking off the name before it, read from the words alone.
+fn lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// **`typed` as a local socket a grant names**, or why not: the path the kernel names it by,
@@ -415,7 +466,7 @@ pub fn socket(typed: &str, ground: &SocketGround) -> Result<PathBuf, Refused> {
         ));
     }
     if is_name_lookup(path) {
-        return Err(Refused::Outside(NAME_LOOKUP.to_owned()));
+        return Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned()));
     }
     let resolved = super::real(path);
     match shape(&resolved) {
@@ -581,6 +632,9 @@ pub fn service(typed: &str) -> Result<String, Refused> {
             "purlis allows a system service by its whole name, such as com.apple.trustd.agent."
                 .to_owned(),
         ));
+    }
+    if is_name_lookup_service(name) {
+        return Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned()));
     }
     let lower = name.to_ascii_lowercase();
     if NEVER_SERVICES.iter().any(|part| lower.contains(part)) {

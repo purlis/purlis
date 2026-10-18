@@ -710,22 +710,33 @@ fn allowing_a_tasks_dispatch_for_this_chat_allows_nothing_for_its_session_or_sib
     );
 }
 
-/// #2657: the centralized Ask never allows a socket of the system's name lookup for the
-/// tasks it lists, at any level: every task is judged as a Notice judges it, so nothing is kept
-/// and the answer says why.
+/// #2657: the centralized Ask never allows the system's name lookup for the tasks it lists, at
+/// any level: every task is judged as a Notice judges it, so nothing is kept and the answer
+/// says why in one line.
 #[test]
-fn the_ask_never_allows_a_socket_of_the_systems_name_lookup_for_its_tasks_at_any_level() {
+fn the_ask_never_allows_the_systems_name_lookup_for_its_tasks_at_any_level() {
+    use purlis_core::sandbox::services::{
+        NAME_LOOKUP_REFUSED, NAME_LOOKUP_SERVICES, NAME_LOOKUP_SOCKETS,
+    };
     let project = tempfile::tempdir().expect("a project");
     let root = project.path();
     let machine = purlis_core::sandbox::Machine::this();
-    for lookup in purlis_core::sandboxblock::RESOLVER_SOCKETS {
+    let lookups = NAME_LOOKUP_SOCKETS
+        .iter()
+        .map(|path| (GrantWhat::Socket, "local-socket", *path))
+        .chain(
+            NAME_LOOKUP_SERVICES
+                .iter()
+                .map(|name| (GrantWhat::Service, "system-service", *name)),
+        );
+    for (what, kind, target) in lookups {
         let seen: Vec<SeenBlock> = [4, 5]
             .map(|task| SeenBlock {
                 task,
                 operation: "connect".to_owned(),
-                kind: "local-socket".to_owned(),
-                what: GrantWhat::Socket,
-                target: lookup.to_owned(),
+                kind: kind.to_owned(),
+                what,
+                target: target.to_owned(),
             })
             .to_vec();
         for level in [
@@ -751,14 +762,16 @@ fn the_ask_never_allows_a_socket_of_the_systems_name_lookup_for_its_tasks_at_any
             let refused = app
                 .answer(1, &seen, level, &judge, &[])
                 .expect_err("refused");
-            assert!(
-                refused.starts_with("Nothing was allowed: for chat 4,"),
-                "{lookup} {level:?}: {refused}"
-            );
-            if level != GrantLevel::Project {
+            if level == GrantLevel::Project {
                 assert!(
-                    refused.ends_with(purlis_core::sandbox::services::NAME_LOOKUP),
-                    "{lookup} {level:?}: {refused}"
+                    refused.starts_with("Nothing was allowed: for chat 4, purlis will not"),
+                    "{target} {level:?}: {refused}"
+                );
+            } else {
+                assert_eq!(
+                    refused,
+                    format!("Nothing was allowed: for chat 4, {NAME_LOOKUP_REFUSED}"),
+                    "{target} {level:?}"
                 );
             }
             assert!(app.kept().is_empty());

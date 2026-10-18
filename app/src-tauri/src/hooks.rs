@@ -1434,6 +1434,13 @@ fn offered_to(
                 Some(Err(grant::Refused::Never(route))) => {
                     (BlockOffer::Brokered, None, Some(route))
                 }
+                // One no grant names, such as the system's name lookup (#2657): why, and the
+                // chat without the sandbox.
+                Some(Err(grant::Refused::Outside(why))) => (
+                    BlockOffer::Unsandboxed,
+                    target.map(str::to_owned),
+                    Some(why),
+                ),
                 _ => without_the_sandbox(
                     "The sandbox did not say which system service it refused, so there is no \
                      service to allow.",

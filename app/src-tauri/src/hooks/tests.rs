@@ -2780,39 +2780,47 @@ fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
     assert!(!service.levels.is_empty(), "{:?}", service.levels);
 }
 
-/// #2657: a block's Notice for a socket of the system's name lookup offers no Allow, only the
-/// chat without the sandbox, and on macOS says why in the grant's own sentence.
+/// #2657: a block's Notice for the system's name lookup offers no Allow, only the chat
+/// without the sandbox: for each of its sockets, and on macOS saying why in the grant's own
+/// words, and for the Mac's own lookup service.
 #[test]
-fn a_notice_for_a_socket_of_the_systems_name_lookup_offers_no_allow() {
+fn a_notice_for_the_systems_name_lookup_offers_no_allow() {
+    use purlis_core::sandbox::services::{
+        NAME_LOOKUP_REFUSED, NAME_LOOKUP_SERVICES, NAME_LOOKUP_SOCKETS,
+    };
     use purlis_core::sandboxblock::{Block, Kind, Operation};
     let project = tempfile::tempdir().expect("a project");
     let root = project.path().canonicalize().expect("real");
     let plane: PlaneId =
         serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
-    for lookup in purlis_core::sandboxblock::RESOLVER_SOCKETS {
-        let said = blocked(
+    let told = |operation, kind, target: &str| {
+        blocked(
             &plane,
             &purlis_core::hookwire::SandboxBlocked {
                 chat: 3,
                 sandbox_blocked: Block {
-                    operation: Operation::Connect,
-                    kind: Kind::LocalSocket,
+                    operation,
+                    kind,
                     ours: false,
                 },
                 harness: None,
-                target: Some(lookup.to_owned()),
+                target: Some(target.to_owned()),
                 read_back: false,
                 suggested: None,
             }
             .into(),
-        );
+        )
+    };
+    for lookup in NAME_LOOKUP_SOCKETS {
+        let said = told(Operation::Connect, Kind::LocalSocket, lookup);
         assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
         if cfg!(target_os = "macos") {
-            assert_eq!(
-                said.route.as_deref(),
-                Some(purlis_core::sandbox::services::NAME_LOOKUP),
-                "{lookup}"
-            );
+            assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
         }
+    }
+    for lookup in NAME_LOOKUP_SERVICES {
+        let said = told(Operation::Lookup, Kind::SystemService, lookup);
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
+        assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
     }
 }
