@@ -426,6 +426,11 @@ impl Reach {
             .insert(port);
     }
 
+    /// Whether `port` of this machine was withdrawn ([`Self::withdraw`]).
+    pub fn withdrew(&self, port: u16) -> bool {
+        self.withdrawn.holds(port)
+    }
+
     /// The decision for `port` of this machine's loopback, by whichever name it was reached.
     fn on_this_mac(&self, port: u16) -> Decision {
         match self

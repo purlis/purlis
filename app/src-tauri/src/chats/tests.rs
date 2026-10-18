@@ -7393,6 +7393,49 @@ fn only_a_shell_tab_at_the_project_root_is_a_place_to_type_an_install_command() 
     assert!(!chats.is_shell_at(9999, root.path()), "no such session");
 }
 
+/// #2510: a runner's proxy's ask about a port of its loopback is raised and held as that
+/// runner's service, by its port, never as a service on this Mac nor as a host; the Ask it
+/// derives offers once and this chat alone, and Allow for you is refused.
+#[test]
+fn a_runners_ask_about_its_loopback_is_raised_and_held_as_the_runners_service() {
+    use purlis_core::sandboxblock::Kind;
+    for target in ["127.0.0.1:5432", "[::1]:5432", "localhost:5432"] {
+        assert_eq!(
+            asked_as(target.to_owned()),
+            (Kind::RunnerService, "5432".to_owned()),
+            "{target}"
+        );
+        let held = live_block(target).expect("held");
+        assert_eq!(held.kind, "runner-service");
+        assert_eq!(held.what, crate::sandboxing::GrantWhat::Port);
+        assert_eq!(held.target, "5432");
+        let ask = crate::asking::sandbox_block(
+            4,
+            &held,
+            &purlis_core::sandbox::policy::Locks::none(),
+            &Default::default(),
+        )
+        .expect("an ask");
+        assert!(
+            ask.says
+                .starts_with("The runner this chat runs on refused its service at port 5432."),
+            "{}",
+            ask.says
+        );
+        assert_eq!(
+            ask.options
+                .iter()
+                .map(|one| one.id.as_str())
+                .collect::<Vec<_>>(),
+            ["once", "chat", "keep"]
+        );
+    }
+    assert_eq!(
+        asked_as("api.example.com:443".to_owned()),
+        (Kind::Host, "api.example.com:443".to_owned())
+    );
+}
+
 /// A chat is taken for one started without the sandbox only where no sandbox was compiled
 /// for it and none holds it (#2560); a sandboxed one never is, nor one the app does not
 /// have open.
@@ -7525,6 +7568,12 @@ impl purlis_core::sandbox::Board for Told {
     fn allowed_live(&self) -> Vec<(String, purlis_core::sandbox::reach::By)> {
         lock(&self.allowed).clone()
     }
+
+    fn allow_left_out(&self, _: u16) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+
+    fn keep_left_out_blocked(&self, _: u16) {}
 }
 
 /// What holds a [`Told`] board, as the session host holds a chat's proxy.
@@ -7560,6 +7609,8 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 tmp: None,
                 routed: None,
                 ssh: None,
+                left_out: Vec::new(),
+                host_name: None,
             },
             Box::new(HeldWith(Arc::clone(board))),
         );

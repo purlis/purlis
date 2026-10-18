@@ -20,7 +20,7 @@ use super::asks::Asks;
 use super::egress;
 use super::internal::Internal;
 use super::localport;
-use super::reach::{Reach, Written};
+use super::reach::{By, Reach, Written};
 use super::{Confinement, tunnel};
 
 /// **A chat's confinement, planned** (module docs).
@@ -193,7 +193,15 @@ impl Plan {
     ///   listed only where the runner's policy lists it ([`super::internal`]), and so is a name
     ///   that resolves to one there. A name under `*.` resolves to nothing here, and is held to
     ///   the same rule at every connect.
+    ///
+    /// A service the plan gives for this chat alone, which the runner does not give, is not
+    /// held to it: the runner starts the plan without it ([`Self::as_the_runner_starts_it`]).
     pub fn fits(&self, here: &Here<'_>) -> Result<(), String> {
+        self.as_the_runner_starts_it(here.given).0.fitting(here)
+    }
+
+    /// [`Self::fits`], for the plan as the runner starts it.
+    fn fitting(&self, here: &Here<'_>) -> Result<(), String> {
         if let Beside::ProxyOnly { routes } = &self.beside
             && routes != here.routes
         {
@@ -215,6 +223,48 @@ impl Plan {
             .try_for_each(|(entry, _)| fits_here(entry, here))
     }
 
+    /// **This plan as the runner starts it, and the services of the runner it leaves out**
+    /// (#2510): each service the plan gives for this chat alone ([`Self::for_this_chat_alone`])
+    /// that the runner's sandbox for the project, `given_here`, does not give is taken out, its
+    /// port and its loopback entries, so the chat does not reach it there. Everything else is
+    /// as planned.
+    pub fn as_the_runner_starts_it(&self, given_here: &[u16]) -> (Plan, Vec<u16>) {
+        let left_out: Vec<u16> = self
+            .given
+            .iter()
+            .copied()
+            .filter(|port| !given_here.contains(port) && self.for_this_chat_alone(*port))
+            .collect();
+        if left_out.is_empty() {
+            return (self.clone(), left_out);
+        }
+        let entries: Vec<String> = left_out
+            .iter()
+            .flat_map(|port| localport::reach_entries(*port))
+            .collect();
+        let mut plan = self.clone();
+        plan.given.retain(|port| !left_out.contains(port));
+        plan.reach
+            .listed
+            .retain(|(entry, by)| !(*by == By::Chat && entries.contains(entry)));
+        (plan, left_out)
+    }
+
+    /// Whether the plan gives the service on `port` for this chat alone, as the window plans a
+    /// service the person allowed for one chat: it lists the port's loopback entries, at the
+    /// chat's layer and at no other.
+    fn for_this_chat_alone(&self, port: u16) -> bool {
+        let entries = localport::reach_entries(port);
+        let mut layers = self
+            .reach
+            .listed
+            .iter()
+            .filter(|(entry, _)| entries.contains(entry))
+            .map(|(_, by)| *by)
+            .peekable();
+        layers.peek().is_some() && layers.all(|by| by == By::Chat)
+    }
+
     /// What the proxy serves: this plan, told to `telling`.
     pub fn serving(&self, reach: Reach, telling: Telling) -> egress::Serving {
         egress::Serving {
@@ -232,21 +282,37 @@ impl Plan {
     /// Refused where a port the chat was given is one purlis listens on now in this process,
     /// so no proxy and no chat ever share a port, and where the reach does not read back.
     pub fn start(&self, telling: Telling) -> std::io::Result<Confinement> {
-        self.starting(telling, None)
+        self.starting(telling, None, Vec::new())
     }
 
     /// [`Self::start`], for a plan made on another machine (#2445): its proxy carries an
     /// internal address only where `internal`, the runner's policy, lists it, checked at every
-    /// connect ([`super::internal`]).
-    pub fn start_held(&self, telling: Telling, internal: Internal) -> std::io::Result<Confinement> {
-        self.starting(telling, Some(internal))
+    /// connect ([`super::internal`]). A service of the runner in `left_out`, one the plan gave
+    /// the chat for it alone and the runner left out ([`Self::as_the_runner_starts_it`]), is
+    /// asked about where the proxy asks live, and carried once the person allows it for this
+    /// chat (#2510).
+    pub fn start_held(
+        &self,
+        telling: Telling,
+        internal: Internal,
+        left_out: Vec<u16>,
+    ) -> std::io::Result<Confinement> {
+        self.starting(telling, Some(internal), left_out)
     }
 
     fn starting(
         &self,
         telling: Telling,
         internal: Option<Internal>,
+        left_out: Vec<u16>,
     ) -> std::io::Result<Confinement> {
+        // Only a plan made on another machine leaves a service out, to be asked about there
+        // ([`egress::Serving::left_out`]): a proxy planned here never asks about a port of
+        // its machine.
+        debug_assert!(
+            left_out.is_empty() || internal.is_some(),
+            "a service is left out only of a plan made on another machine"
+        );
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
             return Err(std::io::Error::other(
@@ -256,6 +322,7 @@ impl Plan {
         let reach = Reach::from_written(&self.reach).map_err(std::io::Error::other)?;
         let serving = egress::Serving {
             internal,
+            left_out,
             ..self.serving(reach, telling)
         };
         match &self.beside {
