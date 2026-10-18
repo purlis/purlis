@@ -193,3 +193,33 @@ fn events_nobody_reads_are_held_to_a_bound_and_the_ones_past_it_are_counted() {
     assert_eq!(events.try_iter().count(), MAX_QUEUED_EVENTS);
     drop(engine.join().unwrap());
 }
+
+#[test]
+fn what_a_page_writes_to_its_console_is_never_queued_nor_counted() {
+    // #2138: the driver reads no console events, so they never take a place another event
+    // needs.
+    let (connection, events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        for n in 0..MAX_QUEUED_EVENTS + 50 {
+            for method in [
+                "Runtime.consoleAPICalled",
+                "Runtime.exceptionThrown",
+                "Runtime.exceptionRevoked",
+                "Runtime.inspectRequested",
+            ] {
+                engine.send(json!({"method": method, "params": {"n": n}}));
+            }
+        }
+        engine.send(json!({"method": "Runtime.executionContextCreated", "params": {}}));
+        let call = engine.read();
+        engine.send(json!({"id": call["id"], "result": {}}));
+        engine
+    });
+    connection
+        .call("Browser.getVersion", json!({}), None)
+        .unwrap();
+    assert_eq!(connection.dropped_events(), 0);
+    let queued: Vec<String> = events.try_iter().map(|e| e.method).collect();
+    assert_eq!(queued, ["Runtime.executionContextCreated"]);
+    drop(engine.join().unwrap());
+}
