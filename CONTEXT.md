@@ -460,6 +460,13 @@ reachability, never identity. It belongs to **Project**, with the device it reac
 _Avoid_: transport (that is FD-4's framing), tunnel, provider (that is the **runner provider**,
 which creates the machine)
 
+**Bridge**:
+`purlis bridge`, the program a connector runs on a runner: a pipe from its standard input and
+output to that runner's session host, which ends the link's handshake itself. Its one other act
+is a runner's pairing, once, with `--pair`. It belongs to **Project**, with the connector it
+serves (ADR 0078 §2, as amended 2026-10-17).
+_Avoid_: agent, relay (that is the desktop host's relay, or later the hosted relay), proxy
+
 **Link**:
 The encrypted, mutually authenticated stream between the desktop's session host and a runner's,
 carried by a connector. Each end proves itself with its device's link key, pinned when the runner
