@@ -113,8 +113,10 @@ impl Refresher {
             return Ok(kept.access);
         }
         let _one = REFRESHING.lock().unwrap_or_else(|e| e.into_inner());
-        // Another request may have renewed it while this one waited its turn.
-        let kept = self.read(keyring.as_ref(), account)?;
+        // Another request may have renewed it while this one waited its turn, or another
+        // process (the session host, the window) may have: read afresh, past this process's
+        // memory, so a spent refresh token is never sent (#2656).
+        let kept = self.read_afresh(keyring.as_ref(), account)?;
         if !due(account, &kept, now) {
             return Ok(kept.access);
         }
@@ -162,7 +164,29 @@ impl Refresher {
         keyring: &dyn crate::secrets::keyring::Store,
         account: &ForgeAccount,
     ) -> Result<Kept, ForgeError> {
-        match accounts::kept(keyring, account) {
+        Self::found(account, accounts::kept(keyring, account))
+    }
+
+    fn read_afresh(
+        &self,
+        keyring: &dyn crate::secrets::keyring::Store,
+        account: &ForgeAccount,
+    ) -> Result<Kept, ForgeError> {
+        Self::found(account, accounts::kept_afresh(keyring, account))
+    }
+
+    /// The forge refused `account`'s token: this process forgets it, so the next request reads
+    /// the item again rather than sending what was refused (#2656). The window may have
+    /// replaced it, or signed in again.
+    pub fn refused(&self, account: &ForgeAccount) {
+        accounts::forget(accounts::keyring_at(&self.config_root).as_ref(), account);
+    }
+
+    fn found(
+        account: &ForgeAccount,
+        read: Result<Option<Kept>, String>,
+    ) -> Result<Kept, ForgeError> {
+        match read {
             Ok(Some(kept)) => Ok(kept),
             Ok(None) => Err(ForgeError::of(
                 Failure::Auth,
@@ -430,6 +454,34 @@ pub(crate) mod tests {
         assert!(crate::applog::holds_a_value_kept_out(
             "second-refresh-value"
         ));
+    }
+
+    #[test]
+    fn a_renewal_another_process_made_is_read_afresh_and_its_spent_refresh_token_never_sent() {
+        // This process remembers the first pair (#2656). Another process of the app (the
+        // session host, or the window) renews it first and writes the second pair to the item.
+        use crate::secrets::keyring::Store as _;
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let other_process = crate::secrets::keyring::FileStore::at(
+            crate::machine::dir(machine.home.path()).join(crate::secrets::keyring::STUB_FILE),
+        );
+        let renewed = format!(
+            r#"{{"access":"second-access-value","refresh":"second-refresh-value","expires_at":{}}}"#,
+            machine.expires_at + LASTS
+        );
+        other_process
+            .set(&accounts::service(&machine.account), "token", &renewed)
+            .unwrap();
+        let forge = Arc::new(StandIn::answering(&[]));
+        let token = machine
+            .refresher(&forge)
+            .token_at(&machine.account, machine.expires_at - AHEAD.as_secs())
+            .unwrap();
+        assert_eq!(token.expose_secret(), "second-access-value");
+        assert!(
+            forge.posted.lock().unwrap().is_empty(),
+            "the first refresh token, spent by the other process, is never sent"
+        );
     }
 
     #[test]
