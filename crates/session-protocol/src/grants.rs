@@ -39,7 +39,7 @@
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
 //! | `programs_of` (1.13) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
-//! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.19) | | | | | | yes |
+//! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
@@ -110,7 +110,7 @@
 //!   and the host with them, which is the person's act of quitting purlis. A stop needs no
 //!   human, so every other scope still has `stop` and `stop_all`.
 //! - **A window takes back its own runner chats' sandboxes after a re-link, and only its own**
-//!   (1.19, #2511, ruled 2026-10-17). `take_back` is the desktop's relay's own word over the
+//!   (1.22, #2511, ruled 2026-10-17). `take_back` is the desktop's relay's own word over the
 //!   link between hosts, never a client's: on each link it makes for one window it names that
 //!   window, and the runner names that link the confinements of the chats that window started
 //!   there over the links before, made or composed for them. It names it no confinement the
@@ -224,7 +224,7 @@ pub enum Power {
     Reattach,
     /// `quit` (1.13): the host ends every program and stops.
     Quit,
-    /// `take_back` (1.19): a relaying host names the window a link is for, and is named again
+    /// `take_back` (1.22): a relaying host names the window a link is for, and is named again
     /// the confinements of the chats that window started. Never the window's own.
     TakeBack,
 }

@@ -331,7 +331,7 @@ fn every_command() -> Vec<Command> {
             },
         },
         // A relaying host names the window a link is for, and is named again the confinements
-        // of the chats that window started (1.19, #2511): over the link between hosts alone.
+        // of the chats that window started (1.22, #2511): over the link between hosts alone.
         Command::TakeBack {
             window: "01JA0WNDW0000000000000000".into(),
         },

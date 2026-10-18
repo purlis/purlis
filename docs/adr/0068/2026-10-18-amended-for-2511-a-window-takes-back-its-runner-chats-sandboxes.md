@@ -5,11 +5,12 @@ link's names end with it; the amendment for #2407 (item 4) left taking a runner 
 confinement back after the link between hosts is made again for later. **The person ruled on
 2026-10-17** that after a re-link the window may take back the sandboxes of the chats it started
 on a runner, its own chats only, never the runner's own window's (ADR 0078, amended 2026-10-18).
-This note records how a host names them. §5 and the amendments above are left as accepted, and
-this note adds to them.
+Only that ruling is ruled. This note records how a host names them: items 1 to 5 are **decided
+in implementation, to be confirmed** (D-2511-1 to D-2511-4). §5 and the amendments above are
+left as accepted, and this note adds to them.
 
-1. **A link between hosts names the window it is for** (session protocol 1.19, `take_back`,
-   FD-27's row of its own): only `remote-link` sends it, and only the desktop's relay, on each
+1. **A link between hosts names the window it is for** (session protocol 1.22, `take_back`,
+   FD-27's row of its own; 1.19 was reserved for it, and released once 1.21 was out first): only `remote-link` sends it, and only the desktop's relay, on each
    link it makes for one window. A link names one window; a second, other name is refused
    `malformed`.
 2. **A confinement made or composed for that link is that window's.** The host keeps, with each
