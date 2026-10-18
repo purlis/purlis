@@ -155,17 +155,17 @@ use crate::view::{Limits, Views};
 /// that carry no value. The window's alone ([`crate::grants::Power::LogIn`]): no relayed link
 /// sends it.
 ///
-/// 1.20 added what a host leaves out of a plan made on another machine (#2510): `confined` may
-/// name the services of the host's machine the plan gave the chat for it alone, which the host
-/// started it without (`left_out`), and the name of that machine (`host_name`).
-///
 /// 1.21 added what changed on a browser's page (#2137): the act `changes` answers the lines of
 /// the page's tree new or gone since it was last read; and a snapshot's or a find's lines mark
 /// each element laid out wholly outside what the page's viewport shows (`(out of view)`). A
 /// host before 1.21 refuses `changes`.
+///
+/// 1.23 added what a host leaves out of a plan made on another machine (#2510): `confined` may
+/// name the services of the host's machine the plan gave the chat for it alone, which the host
+/// started it without (`left_out`), and the name of that machine (`host_name`).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 21,
+    minor: 23,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -563,11 +563,11 @@ pub struct Confined {
     pub ssh: Option<String>,
     /// The services of the host's machine, by port, that the plan gave the chat for it alone and
     /// the host started it without, since the host's own sandbox for the project does not give
-    /// them (1.20, #2510).
+    /// them (1.23, #2510).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub left_out: Vec<u16>,
     /// The name of the machine the host runs on, as its system names it, where it left a
-    /// service out (1.20, #2510): what the window names the runner by when it asks about one.
+    /// service out (1.23, #2510): what the window names the runner by when it asks about one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_name: Option<String>,
 }

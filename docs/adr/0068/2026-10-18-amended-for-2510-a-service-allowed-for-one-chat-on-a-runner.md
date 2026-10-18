@@ -16,9 +16,9 @@ D-2510-2, D-2510-4, D-2510-5).
    port and those entries) instead of refusing the plan. Nothing else in the plan changes, and
    every other check of the amendment for #2445 still applies. A port given at any other
    layer, or with no entry of the chat's, is held to those checks as before. A host older than
-   session protocol 1.20 still refuses such a plan, as it did. *Rejected:* refusing the plan,
+   session protocol 1.23 still refuses such a plan, as it did. *Rejected:* refusing the plan,
    which leaves a chat the person allowed more to with nothing at all. *D-2510-1.*
-2. **The runner says what it left out, and the window says so.** Session protocol 1.20, a
+2. **The runner says what it left out, and the window says so.** Session protocol 1.23, a
    minor: `confined` may name those ports (`left_out`) and the runner's own name, as its system
    names it (`host_name`). The chat's tab says the runner does not give the chat those
    services, then whether the chat is asked about them there or cannot reach them, by whether
