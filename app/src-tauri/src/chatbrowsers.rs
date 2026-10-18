@@ -101,6 +101,10 @@ pub trait Driver: Send + Sync + 'static {
     /// Ends browser `program` by its id, with its reach proxy: what is tried when a close did
     /// not end it.
     fn stop(&self, program: &str) -> Result<(), String>;
+    /// **The browsers the session host lists with a driver now** (#2023): the person's, from
+    /// a take-over, or purlis's while it performs a login. The host's own word, which no idle
+    /// stop goes against.
+    fn driven(&self) -> Result<Vec<String>, String>;
 }
 
 /// How many of a chat's browsers were ended, and how many could not be yet: those are kept, and
@@ -184,6 +188,8 @@ struct Chat {
     /// Its browsers that stopped for going unused, by the names it knew them by, until it is
     /// told (#2023).
     idled: Vec<String>,
+    /// How long, in minutes, those had gone unused when they stopped.
+    idled_after: u64,
 }
 
 impl Default for Chat {
@@ -203,6 +209,7 @@ impl Default for Chat {
             sites: Vec::new(),
             used: HashMap::new(),
             idled: Vec::new(),
+            idled_after: 0,
         }
     }
 }
@@ -250,7 +257,7 @@ pub struct ChatBrowsers {
     /// again: nothing else of the window's would know it moved.
     told: Option<Arc<dyn Fn() + Send + Sync>>,
     /// The limits in force (#2023).
-    limits: purlis_core::browserlimits::Limits,
+    limits: LimitsNow,
     /// The browsers the person drives now, by program (#2023): never stopped for going unused.
     person_drives: Mutex<Vec<String>>,
 }
@@ -258,7 +265,7 @@ pub struct ChatBrowsers {
 impl Default for ChatBrowsers {
     fn default() -> Self {
         ChatBrowsers {
-            limits: purlis_core::browserlimits::Limits::for_memory(None),
+            limits: Arc::new(|| purlis_core::browserlimits::Limits::for_memory(None)),
             person_drives: Mutex::default(),
             chats: Mutex::default(),
             ending: Arc::new(Ending::after(RETRY_FIRST, RETRY_MOST)),
@@ -487,8 +494,8 @@ impl ChatBrowsers {
         }
     }
 
-    /// **The person used browser `program`** at `now` (#2023): their input in its view, or a
-    /// take-over. It counts as used, as the chat's act does.
+    /// **Browser `program` was used** at `now` (#2023): the person took it over or handed it back,
+    /// or an Ask raised about it. It counts as used, as the chat's act does.
     pub fn touched(&self, program: &str, now: u64) {
         if let Some(chat) = self
             .lock()
@@ -528,12 +535,36 @@ impl ChatBrowsers {
         now: u64,
         waiting: &[String],
     ) -> Vec<(u32, Ended)> {
-        let after = self.limits.idle_after.as_secs();
-        let driving = self
-            .person_drives
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+        let Some(after) = (self.limits)().idle_after else {
+            return Vec::new();
+        };
+        let minutes = after.as_secs().div_ceil(60);
+        let after = after.as_secs();
+        // What the host says is driven now, asked before any lock: one it lists with a driver
+        // never stops this way. A host that cannot say stops nothing.
+        let host_drives = match driver.map(|driver| driver.driven()) {
+            Some(Ok(driven)) => driven,
+            Some(Err(why)) => {
+                tracing::debug!("purlis: no browser stopped for going unused this time: {why}");
+                return Vec::new();
+            }
+            None => Vec::new(),
+        };
+        let driving = {
+            let mut driving = self
+                .person_drives
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            // One no chat has any more is forgotten.
+            let chats = self.lock();
+            driving.retain(|program| {
+                chats
+                    .values()
+                    .any(|chat| chat.browsers.iter().any(|(_, one)| one == program))
+            });
+            drop(chats);
+            driving.clone()
+        };
         let mut stopping: Vec<(u32, Vec<ChatBrowser>)> = Vec::new();
         {
             let mut chats = self.lock();
@@ -544,6 +575,7 @@ impl ChatBrowsers {
                     .filter(|(_, program)| {
                         !chat.ended.contains(program)
                             && !driving.contains(program)
+                            && !host_drives.contains(program)
                             && !waiting.contains(program)
                             && chat
                                 .used
@@ -560,6 +592,7 @@ impl ChatBrowsers {
                     .map(|(name, program)| {
                         chat.drop_browser(&name);
                         chat.idled.push(name.clone());
+                        chat.idled_after = minutes;
                         ChatBrowser {
                             session: *session,
                             name,
@@ -582,7 +615,14 @@ impl ChatBrowsers {
     }
 
     /// These browsers, held to `limits` (#2023).
+    #[cfg(test)]
     pub fn limited(self, limits: purlis_core::browserlimits::Limits) -> Self {
+        self.limited_by(Arc::new(move || limits))
+    }
+
+    /// These browsers, held to the limits `limits` reads at each call: the person's settings
+    /// over purlis's defaults (#2023).
+    pub fn limited_by(self, limits: LimitsNow) -> Self {
         ChatBrowsers { limits, ..self }
     }
 
@@ -1164,7 +1204,11 @@ impl ChatBrowsers {
             .map(|chat| std::mem::take(&mut chat.idled))
             .unwrap_or_default();
         if !idled.is_empty() {
-            let said = idled_said(&idled, self.limits.idle_after);
+            let minutes = self
+                .lock()
+                .get(&browse.chat)
+                .map_or(0, |chat| chat.idled_after);
+            let said = idled_said(&idled, minutes);
             match &mut answer {
                 Answer::Browsed { browsed, .. } => {
                     browsed.note = Some(match browsed.note.take() {
@@ -1237,7 +1281,7 @@ impl ChatBrowsers {
         };
         let named = browse.browser.clone().or_else(|| chat.current.clone());
         let chat_sites = chat.sites.clone();
-        let per_project = self.limits.per_project;
+        let per_project = (self.limits)().per_project;
         let start = |chat: &mut Chat| -> Result<String, String> {
             if elsewhere + chat.running() >= per_project {
                 return Err(purlis_core::browserlimits::project_full_said(per_project));
@@ -2144,18 +2188,24 @@ fn sites_of(asked: &[String]) -> Vec<Site> {
 }
 
 /// What a chat is told of its browsers `names`, stopped for going unused for `after` (#2023).
-fn idled_said(names: &[String], after: std::time::Duration) -> String {
-    let minutes = after.as_secs().div_ceil(60);
-    let unit = if minutes == 1 { "minute" } else { "minutes" };
-    let which = match names {
-        [one] => format!("browser {one} was"),
-        many => format!("browsers {} were", many.join(", ")),
+fn idled_said(names: &[String], minutes: u64) -> String {
+    let (which, held) = match names {
+        [one] => (format!("browser {one} was"), "what it held is"),
+        many => (
+            format!("browsers {} were", many.join(", ")),
+            "what they held is",
+        ),
     };
     format!(
-        "{which} stopped after {minutes} {unit} unused, and what it held is gone; a browser call \
-         that names no browser opens a new one"
+        "{which} stopped after {} unused ({} sets how long), and {held} gone; a browser call \
+         that names no browser opens a new one",
+        purlis_core::counts::counted(minutes, "minute", "minutes"),
+        purlis_core::browserlimits::SETTING,
     )
 }
+
+/// The limits in force, read at each call (#2023).
+pub type LimitsNow = Arc<dyn Fn() -> purlis_core::browserlimits::Limits + Send + Sync>;
 
 /// How often each project looks for its chats' browsers gone unused (#2023).
 pub const IDLE_LOOKED_AT_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
@@ -2181,15 +2231,14 @@ pub fn idle_swept(held: &crate::planes::Held, now: u64) {
     }
 }
 
-/// **The person used browser `program`** (#2023), in whichever project its chat is: their
-/// input, a take-over (`driving` true) or a hand-back (false).
-pub fn person_used(projects: &[Arc<crate::planes::Held>], program: &str, driving: Option<bool>) {
+/// **The person took browser `program` over (`driving` true) or handed it back (false)**
+/// (#2023), in whichever project its chat is: while they drive it, it never stops for going
+/// unused, and either is a use of it. Their input is not counted one by one: a browser they
+/// drive is never stopped this way.
+pub fn person_drove(projects: &[Arc<crate::planes::Held>], program: &str, driving: bool) {
     let now = crate::sandboxing::now_secs();
     for held in projects {
-        match driving {
-            Some(by_the_person) => held.browsers().driven(program, by_the_person, now),
-            None => held.browsers().touched(program, now),
-        }
+        held.browsers().driven(program, driving, now);
     }
 }
 

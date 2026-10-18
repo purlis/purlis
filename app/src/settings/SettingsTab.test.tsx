@@ -66,6 +66,7 @@ describe("the Settings tab, at the You level", () => {
       "Chats list",
       "Notifications",
       "This machine",
+      "Browsers",
       "Accounts",
       "Profiles",
     ]);

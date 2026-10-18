@@ -147,9 +147,7 @@ fn a_week_charter_did_not_write_reads_as_not_counted() {
     for junk in [r#""soon""#, "41", "null", r#""2026-W99""#] {
         std::fs::write(
             file(machine.path()),
-            format!(
-                r#"{{"version":{VERSION},"at":0,"recents":[],"windows":[],"weekly":{junk}}}"#
-            ),
+            format!(r#"{{"version":{VERSION},"at":0,"recents":[],"windows":[],"weekly":{junk}}}"#),
         )
         .unwrap();
         // Counted again this week is the cost, and the safe direction: it sends nothing more.
@@ -216,9 +214,7 @@ fn a_channel_charter_did_not_write_leaves_the_machine_on_stable_and_says_so() {
         let dir = private_dir(machine.path()).unwrap();
         std::fs::write(
             dir.join(FILE),
-            format!(
-                r#"{{"version":{VERSION},"at":0,"recents":[],"windows":[],"channel":{junk}}}"#
-            ),
+            format!(r#"{{"version":{VERSION},"at":0,"recents":[],"windows":[],"channel":{junk}}}"#),
         )
         .unwrap();
 
@@ -918,9 +914,7 @@ fn a_fifo_that_already_holds_a_grant_is_declined_rather_than_drained() {
             .open(&at)
             .expect("a writer on the pipe");
         writer
-            .write_all(
-                br#"{"enabledPlugins":{"piped@market":true},"env":{"PATH":"/tmp/evil"}}"#,
-            )
+            .write_all(br#"{"enabledPlugins":{"piped@market":true},"env":{"PATH":"/tmp/evil"}}"#)
             .expect("the grant goes into the pipe");
     }
 
@@ -1247,8 +1241,7 @@ fn a_directory_that_was_already_there_at_0755_is_tightened() {
     // directory, which `$CHARTER_HOME` may point at a share.
     let machine = machine();
     std::fs::create_dir_all(dir(machine.path())).unwrap();
-    std::fs::set_permissions(dir(machine.path()), std::fs::Permissions::from_mode(0o755))
-        .unwrap();
+    std::fs::set_permissions(dir(machine.path()), std::fs::Permissions::from_mode(0o755)).unwrap();
 
     write(machine.path(), &one_plane()).unwrap();
 
@@ -2363,4 +2356,33 @@ fn the_lock_is_let_go_even_where_a_copy_of_its_descriptor_lives_on() {
         "the lock is free once its holder is dropped"
     );
     drop(copy);
+}
+
+// The eighth (#2023, ruled 2026-10-18): the browser limits set on this machine.
+
+#[test]
+fn the_browser_limits_survive_a_write_and_a_read_and_are_absent_until_one_is_set() {
+    let machine = machine();
+    let mut store = one_plane();
+    write(machine.path(), &store).unwrap();
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(!text.contains("browsers"), "nothing set yet: {text}");
+
+    store.browsers.on_this_device = Some(6);
+    store.browsers.idle_minutes = Some(0);
+    write(machine.path(), &store).unwrap();
+
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(text.contains(r#""on_this_device": 6"#), "{text}");
+    assert!(!text.contains("per_project"), "only what was set: {text}");
+    assert_eq!(read(machine.path()).store.browsers, store.browsers);
+}
+
+#[test]
+fn a_browser_limit_out_of_its_bounds_reads_as_not_set() {
+    let doc = serde_json::json!({
+        "browsers": { "per_project": 0, "on_this_device": 100000, "idle_minutes": "ten" }
+    });
+
+    assert_eq!(browsers_of(doc.get("browsers")), BrowserLimits::default());
 }

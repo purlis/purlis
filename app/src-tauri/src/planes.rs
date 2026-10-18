@@ -4103,7 +4103,7 @@ impl Planes {
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
                 .telling(Arc::clone(&browsers_listed))
-                .limited(purlis_core::browserlimits::Limits::here()),
+                .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
             browsers_listed,
             proposals: crate::proposals::Proposals::default(),

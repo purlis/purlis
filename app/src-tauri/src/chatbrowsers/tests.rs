@@ -34,6 +34,9 @@ struct Hosted {
     stops_fail: Mutex<u32>,
     /// The device's budget, where the host says it is reached.
     full: Mutex<Option<usize>>,
+    /// The browsers the host lists with a driver (#2023), and whether its list fails.
+    host_drives: Mutex<Vec<String>>,
+    list_fails: Mutex<bool>,
     /// While set, every close waits until it is let go of: a host that does not answer.
     holding: Mutex<bool>,
     let_go: Condvar,
@@ -158,6 +161,13 @@ impl Driver for Hosted {
         }
         self.stopped.lock().unwrap().push(program.to_owned());
         Ok(())
+    }
+
+    fn driven(&self) -> Result<Vec<String>, String> {
+        if *self.list_fails.lock().unwrap() {
+            return Err("the session host did not answer in time".into());
+        }
+        Ok(self.host_drives.lock().unwrap().clone())
     }
 }
 
@@ -447,7 +457,10 @@ fn past_the_devices_budget_a_chats_browser_is_refused_in_words_that_say_not_to_r
 
     let why = refusal(answered(&browsers, &hosted, &ask(3, click())).0);
 
-    assert!(why.contains("this device runs 8 browsers"), "{why}");
+    assert!(
+        why.contains("purlis runs at most 8 browsers at once on this device"),
+        "{why}"
+    );
     assert!(why.contains("browser_close"), "{why}");
     assert!(!why.contains("Try once more"), "{why}");
 }
@@ -1404,7 +1417,6 @@ fn a_login_waits_for_the_chats_browser_ask_like_any_browser_call() {
     assert!(hosted.started.lock().unwrap().is_empty());
 }
 
-
 /// [`answered`] at `now`, in seconds since 1970.
 fn answered_at(
     browsers: &ChatBrowsers,
@@ -1421,6 +1433,7 @@ fn answered_at(
             &|| reach(),
             true,
             &AsPersona::default,
+            &logins,
             now,
         )
         .0
@@ -1540,11 +1553,85 @@ fn a_browser_the_person_drives_or_that_waits_on_them_never_stops_for_being_unuse
 #[test]
 fn the_idle_time_is_the_one_its_browsers_are_held_to() {
     let browsers = ChatBrowsers::default().limited(purlis_core::browserlimits::Limits {
-        idle_after: std::time::Duration::from_secs(120),
+        idle_after: Some(std::time::Duration::from_secs(120)),
         ..purlis_core::browserlimits::Limits::for_memory(None)
     });
     let hosted = Arc::new(Hosted::default());
     let driver = used_at_1000(&browsers, &hosted);
 
     assert_eq!(browsers.idle(Some(&driver), 1120, &[]).len(), 1);
+}
+
+#[test]
+fn a_browser_the_host_lists_with_a_driver_never_stops_for_being_unused() {
+    // The host's own word: a take-over the window has not heard back from, or a login.
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver = used_at_1000(&browsers, &hosted);
+    hosted.host_drives.lock().unwrap().push("program-1".into());
+
+    assert!(browsers.idle(Some(&driver), 99_000, &[]).is_empty());
+
+    hosted.host_drives.lock().unwrap().clear();
+    assert_eq!(browsers.idle(Some(&driver), 99_000, &[]).len(), 1);
+}
+
+#[test]
+fn a_host_that_cannot_say_what_it_drives_has_nothing_stopped_for_being_unused() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver = used_at_1000(&browsers, &hosted);
+    *hosted.list_fails.lock().unwrap() = true;
+
+    assert!(browsers.idle(Some(&driver), 99_000, &[]).is_empty());
+    assert!(hosted.closed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_login_is_a_use_and_keeps_its_browser_from_stopping() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver = used_at_1000(&browsers, &hosted);
+
+    answered_at(&browsers, &hosted, &ask(3, log_in("shop-login")), 1500);
+
+    assert!(
+        browsers.idle(Some(&driver), 2000, &[]).is_empty(),
+        "logged in at 1500"
+    );
+    assert_eq!(browsers.idle(Some(&driver), 2100, &[]).len(), 1);
+}
+
+#[test]
+fn with_idle_minutes_set_to_never_no_browser_stops_for_being_unused() {
+    let browsers = ChatBrowsers::default().limited(purlis_core::browserlimits::Limits {
+        idle_after: None,
+        ..purlis_core::browserlimits::Limits::for_memory(None)
+    });
+    let hosted = Arc::new(Hosted::default());
+    let driver = used_at_1000(&browsers, &hosted);
+
+    assert!(browsers.idle(Some(&driver), 999_999, &[]).is_empty());
+}
+
+#[test]
+fn the_note_of_browsers_stopped_unused_names_each_and_the_setting() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver = used_at_1000(&browsers, &hosted);
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    browsers.idle(Some(&driver), 1600, &[]);
+
+    let answer = answered_at(&browsers, &hosted, &ask(3, click()), 1700);
+
+    let Answer::Browsed { browsed, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    let note = browsed.note.unwrap_or_default();
+    assert!(note.contains("browsers b1, b2 were stopped"), "{note}");
+    assert!(note.contains("what they held is gone"), "{note}");
+    assert!(
+        note.contains("Settings › This machine › Browsers"),
+        "{note}"
+    );
 }

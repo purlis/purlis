@@ -306,6 +306,17 @@ mod hosted {
                 _ => Ok(()),
             }
         }
+
+        fn driven(&self) -> Result<Vec<String>, String> {
+            match self.link()?.call(Command::List)? {
+                Answer::Chats(listed) => Ok(listed
+                    .into_iter()
+                    .filter(|one| one.kind == Some(ProgramKind::Browser) && one.driver.is_some())
+                    .map(|one| one.chat)
+                    .collect()),
+                other => Err(format!("the session host answered a list with {other:?}")),
+            }
+        }
     }
 
     /// The window's browsers, in its session host: the link they go over, and each project the
@@ -315,9 +326,9 @@ mod hosted {
         connection: Arc<Connection>,
         projects: Mutex<HashMap<PathBuf, Held>>,
         ended: Ended,
-        /// The most browsers the device runs at once (#2023), and the lock one start holds from
-        /// its count to its start, so two never both take the last.
-        budget: usize,
+        /// The most browsers the device runs at once (#2023), read at each start, and the lock
+        /// one start holds from its count to its start, so two never both take the last.
+        budget: Arc<dyn Fn() -> usize + Send + Sync>,
         starting: Mutex<()>,
     }
 
@@ -337,14 +348,21 @@ mod hosted {
                 connection,
                 projects: Mutex::new(HashMap::new()),
                 ended: Arc::new(|_| {}),
-                budget: purlis_core::browserlimits::budget_for(None),
+                budget: Arc::new(|| purlis_core::browserlimits::budget_for(None)),
                 starting: Mutex::new(()),
             }
         }
 
         /// **At most `budget` browsers run on this device at once** (#2023): every browser the
         /// session host runs counts, whoever started it.
+        #[cfg(test)]
         pub(crate) fn budgeted(self, budget: usize) -> Self {
+            self.budgeted_by(Arc::new(move || budget))
+        }
+
+        /// **At most what `budget` reads at each start** (#2023): the person's setting over the
+        /// budget this device's memory gives.
+        pub(crate) fn budgeted_by(self, budget: Arc<dyn Fn() -> usize + Send + Sync>) -> Self {
             WindowBrowsers { budget, ..self }
         }
 
@@ -412,8 +430,9 @@ mod hosted {
                     )));
                 }
             };
-            if running >= self.budget {
-                return Err(NotStarted::Full { most: self.budget });
+            let budget = (self.budget)();
+            if running >= budget {
+                return Err(NotStarted::Full { most: budget });
             }
             match link
                 .call(Command::StartProgram(Box::new(StartProgram {
@@ -729,7 +748,7 @@ pub async fn take_over_browser(
         crate::off_the_window("taking a browser over", move || {
             browsers.take_over(&program)?;
             crate::browserneedsyou::taken_over(&projects, &program);
-            crate::chatbrowsers::person_used(&projects, &program, Some(true));
+            crate::chatbrowsers::person_drove(&projects, &program, true);
             Ok(())
         })
         .await
@@ -757,7 +776,7 @@ pub async fn hand_back_browser(
         let browsers = browsers(&app)?;
         crate::off_the_window("handing a browser back", move || {
             browsers.hand_back(&program)?;
-            crate::chatbrowsers::person_used(&projects, &program, Some(false));
+            crate::chatbrowsers::person_drove(&projects, &program, false);
             crate::browserneedsyou::handed_back(&projects, &program);
             Ok(())
         })
@@ -775,25 +794,20 @@ pub async fn hand_back_browser(
 #[specta::specta]
 pub async fn browser_input(
     app: tauri::AppHandle,
-    planes: tauri::State<'_, crate::planes::Planes>,
     program: String,
     input: BrowserInput,
 ) -> Result<InputOutcome, String> {
-    // The person's input is a use of the browser: it does not stop unused (#2023).
-    let projects = planes.every_held();
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("sending input to a browser", move || {
-            let outcome = browsers.input(&program, input)?;
-            crate::chatbrowsers::person_used(&projects, &program, None);
-            Ok(outcome)
+            browsers.input(&program, input)
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program, input, projects);
+        let _ = (app, program, input);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }

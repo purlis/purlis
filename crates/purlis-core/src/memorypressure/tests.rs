@@ -119,3 +119,15 @@ fn only_short_holds_a_start() {
 fn this_machine_is_read() {
     assert_ne!(read(), Memory::Unread);
 }
+
+#[test]
+fn the_machines_memory_is_read_from_what_its_system_says() {
+    assert_eq!(memsize("17179869184\n"), Some(17_179_869_184));
+    assert_eq!(memsize("unknown oid"), None);
+    assert_eq!(memsize(""), None);
+    assert_eq!(
+        meminfo_total("MemTotal:       16303500 kB\nMemFree:  1000 kB\n"),
+        Some(16_303_500 * 1024)
+    );
+    assert_eq!(meminfo_total("MemFree:  1000 kB\n"), None);
+}

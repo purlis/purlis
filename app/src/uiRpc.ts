@@ -1226,6 +1226,8 @@ export const commands = {
 	/**  Which channel this machine takes charter from: `stable` or `dev`. */
 	updateChannel: () => __TAURI_INVOKE<string>("update_channel"),
 	setUpdateChannel: __WINDOW_ONLY_RESULT,
+	browserLimits: __WINDOW_ONLY_RESULT,
+	setBrowserLimit: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -2575,6 +2577,29 @@ export type BrowserFrame = {
  *  Meta 4, Shift 8).
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+
+/**  Which limit a row sets. */
+export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
+
+/**  One limit, as its row draws it. */
+export type BrowserLimitShown = {
+	/**  What is in force now. */
+	value: number,
+	/**  What purlis's default is here: for the device's budget, what its memory gives. */
+	default: number,
+	/**  Whether the person set it, so a reset is on offer. */
+	set: boolean,
+	least: number,
+	most: number,
+};
+
+/**  What the Browsers group draws. */
+export type BrowserLimitsShown = {
+	per_project: BrowserLimitShown,
+	on_this_device: BrowserLimitShown,
+	/**  `0` is never. */
+	idle_minutes: BrowserLimitShown,
+};
 
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";

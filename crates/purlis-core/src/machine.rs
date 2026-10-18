@@ -17,7 +17,7 @@
 //! a Reporter with several planes would be asked repeatedly until the safeguard became a
 //! reflex."* charter-app also already writes its panic log to Tauri's `app_log_dir()`.
 //!
-//! **Seven things, and nothing else:**
+//! **Eight things, and nothing else:**
 //!
 //! - **the planes recently opened**, so the opener has something to offer;
 //! - **whether the operator approved each one**, and *what it would do when opened* at the
@@ -37,6 +37,11 @@
 //!   OB-17, ADR 0083 as amended for it). It is the updater's state, as the channel is, and it
 //!   is here for the channel's reasons. It is not an identifier: every machine that checked in
 //!   a week holds the same value, and it never leaves the device.
+//! - **the browser limits the person set on this machine** ([`Store::browsers`], #2023): the most
+//!   browsers a project's chats hold, the most this device runs, and how long a chat's browser
+//!   may go unused. The person ruled these keys and their home on 2026-10-18: the device's budget
+//!   follows this machine's memory, so it belongs to no project, and a team's committed file must
+//!   never set another person's machine. Each is absent until set, and absent is purlis's default.
 //!
 //! **The fourth was three until ADR 0040, and the fifth and sixth are newer still; the count
 //! is load-bearing.** ADR 0040 and ADR 0066 are the amendments: ADR 0066 argues the sixth (a
@@ -935,6 +940,21 @@ pub struct Store {
     /// The ISO week this machine last fetched the weekly manifest in
     /// ([`crate::updates::weekly_due`], OB-17). Never sent anywhere.
     pub weekly: Option<crate::updates::IsoWeek>,
+    /// The browser limits set on this machine (#2023, ruled 2026-10-18): each absent one is
+    /// purlis's default ([`crate::browserlimits`]).
+    pub browsers: BrowserLimits,
+}
+
+/// **The browser limits set on this machine** (#2023): `browsers.per_project`,
+/// `browsers.on_this_device` and `browsers.idle_minutes` in the file. `None` is not set, and
+/// purlis's default is in force; a value out of [`crate::browserlimits`]'s bounds is read as
+/// not set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BrowserLimits {
+    pub per_project: Option<u32>,
+    pub on_this_device: Option<u32>,
+    /// `0` is never: a chat's browser does not stop for going unused.
+    pub idle_minutes: Option<u32>,
 }
 
 /// A device's id (ADR 0066): random, minted at the first launch that finds none, and the only
@@ -1007,6 +1027,22 @@ pub fn log_name(config: Option<&Path>, host: &str) -> String {
 /// machine's [`crate::dispatch::host`].
 pub fn this_log_name() -> String {
     log_name(config_root_if_there().as_deref(), &crate::dispatch::host())
+}
+
+/// The browser limits off the file's `browsers` table: each one in its bounds, or not set.
+fn browsers_of(raw: Option<&serde_json::Value>) -> BrowserLimits {
+    use crate::browserlimits::{self as limits, Limit};
+    let one = |limit: Limit| {
+        raw.and_then(|table| table.get(limit.key()))
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|n| limits::within(limit, *n))
+    };
+    BrowserLimits {
+        per_project: one(Limit::PerProject),
+        on_this_device: one(Limit::OnThisDevice),
+        idle_minutes: one(Limit::IdleMinutes),
+    }
 }
 
 /// The device off the file: an id that is not a ULID is no id, and the next ask mints one.
@@ -2090,6 +2126,7 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .get("weekly")
             .and_then(serde_json::Value::as_str)
             .and_then(crate::updates::IsoWeek::named),
+        browsers: browsers_of(doc.get("browsers")),
     }
 }
 
@@ -2248,6 +2285,25 @@ struct OnDisk {
     /// Left out until the first weekly count, for the same reason.
     #[serde(skip_serializing_if = "Option::is_none")]
     weekly: Option<String>,
+    /// Left out until a browser limit is set, for the same reason (#2023).
+    #[serde(skip_serializing_if = "BrowsersOnDisk::is_unset")]
+    browsers: BrowsersOnDisk,
+}
+
+#[derive(serde::Serialize)]
+struct BrowsersOnDisk {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_project: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_this_device: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    idle_minutes: Option<u32>,
+}
+
+impl BrowsersOnDisk {
+    fn is_unset(&self) -> bool {
+        self.per_project.is_none() && self.on_this_device.is_none() && self.idle_minutes.is_none()
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -2316,6 +2372,11 @@ impl From<&Store> for OnDisk {
                 created: device.created,
             }),
             weekly: store.weekly.map(|week| week.to_string()),
+            browsers: BrowsersOnDisk {
+                per_project: store.browsers.per_project,
+                on_this_device: store.browsers.on_this_device,
+                idle_minutes: store.browsers.idle_minutes,
+            },
             recents: store
                 .recents
                 .iter()

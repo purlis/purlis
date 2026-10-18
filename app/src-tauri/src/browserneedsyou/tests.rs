@@ -63,6 +63,10 @@ impl Driver for Host {
     fn stop(&self, _program: &str) -> Result<(), String> {
         Ok(())
     }
+
+    fn driven(&self) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
 }
 
 /// A project whose chat 4 has browser `b1` open, on the fixture site's CAPTCHA page, and

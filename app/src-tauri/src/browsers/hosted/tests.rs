@@ -185,7 +185,7 @@ fn past_the_devices_budget_the_next_browser_is_refused_in_words_and_one_closed_m
 
     let refused = browsers.open(&window.root).unwrap_err();
 
-    assert!(refused.contains("This device"), "{refused}");
+    assert!(refused.contains("on this device"), "{refused}");
     assert!(refused.contains("2 browsers"), "{refused}");
     assert_eq!(window.started.started().len(), 2, "nothing more started");
     browsers.close(&one).unwrap();

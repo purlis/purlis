@@ -31,6 +31,7 @@ mod autosave;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browserlimits;
 mod browserneedsyou;
 mod browsers;
 mod changes;
@@ -3412,7 +3413,9 @@ pub fn run() {
                 let window = app.handle().clone();
                 app.manage(std::sync::Arc::new(
                     browsers::WindowBrowsers::new(host.connection())
-                        .budgeted(purlis_core::browserlimits::Limits::here().on_this_device)
+                        .budgeted_by(std::sync::Arc::new(|| {
+                            purlis_core::browserlimits::Limits::here().on_this_device
+                        }))
                         .telling_ended(std::sync::Arc::new(move |program: String| {
                             let window = window.clone();
                             // The link's thread tells it: what follows is done off it.
