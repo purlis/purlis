@@ -913,9 +913,11 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     surface = DEFAULT_THEME.values["surface.base"];
     await emit(THEME_FOLDERS_CHANGED, { survey: false });
     await expect.poll(() => inForce().values["surface.base"]).toBe(surface);
-    expect(asks().slice(before).map((one) => [one.args.reread, one.args.at])).toEqual([
-      [false, { plane: "p-1", workspace: "alpha" }],
-    ]);
+    expect(
+      asks()
+        .slice(before)
+        .map((one) => [one.args.reread, one.args.at]),
+    ).toEqual([[false, { plane: "p-1", workspace: "alpha" }]]);
     // What a level chose may name a folder just made: the picks are asked again too.
     await emit(THEME_FOLDERS_CHANGED, { survey: true });
     await expect.poll(() => asks().length).toBe(before + 2);
