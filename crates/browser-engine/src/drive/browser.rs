@@ -1681,6 +1681,7 @@ impl Browser {
             corner: (0.0, 0.0),
             within: None,
             steps: Vec::new(),
+            owners: Vec::new(),
         };
         for (frame, parent_session) in &at.boundaries {
             let owner = self.devtools().call(
@@ -1722,9 +1723,11 @@ impl Browser {
             if place.within.is_none() && !as_laid_out {
                 place.within = Some(place.on_page(quad_bounds(&border)));
             }
+            place.owners.push(owner);
             place.steps.push(if as_laid_out {
                 Step::Moved {
-                    at: (content[0], content[1]),
+                    at: (border[0], border[1]),
+                    inside: (content[0] - border[0], content[1] - border[1]),
                     shows: (content[2] - content[0], content[5] - content[1]),
                 }
             } else {
@@ -1751,27 +1754,38 @@ impl Browser {
         Ok(Some(place))
     }
 
-    /// Scrolls each frame between the page and `at` into view, outermost first, then `at`
-    /// itself.
-    fn bring_into_view(&self, at: &Located) -> Result<(), Refusal> {
-        for (frame, parent_session) in &at.boundaries {
-            let owner = self
-                .devtools()
-                .call(
-                    "DOM.getFrameOwner",
-                    json!({ "frameId": frame }),
-                    Some(parent_session),
+    /// The page point at the centre of `at`, brought into view first when `scroll`: the
+    /// element in its own document, then, outermost first, each frame between around the point
+    /// where the element is in it. Where the frames are drawn is read again after those scrolls.
+    fn point(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
+        if scroll {
+            let _ = self.gated(|| {
+                self.devtools().call(
+                    "DOM.scrollIntoViewIfNeeded",
+                    json!({ "backendNodeId": at.backend }),
+                    Some(&at.node_session),
                 )
-                .ok()
-                .and_then(|owner| owner.get("backendNodeId").and_then(Value::as_i64));
-            // A frame whose owner is not known is not placed either, so the act is not shown.
-            let Some(owner) = owner else {
-                return Ok(());
-            };
+            })?;
+        }
+        let (place, centre) = self.placed_centre(target, at)?;
+        if !scroll || at.boundaries.is_empty() {
+            return place
+                .drawn_at(centre)
+                .ok_or_else(|| Refusal::NotShown(target.clone()));
+        }
+        let (_, boxes) = place
+            .through(centre)
+            .ok_or_else(|| Refusal::NotShown(target.clone()))?;
+        for ((owner, (_, parent_session)), (x, y)) in
+            place.owners.iter().zip(&at.boundaries).zip(boxes)
+        {
             let gone_on = self.gated(|| {
                 self.devtools().call(
                     "DOM.scrollIntoViewIfNeeded",
-                    json!({ "backendNodeId": owner }),
+                    json!({
+                        "backendNodeId": owner,
+                        "rect": { "x": x - 1.0, "y": y - 1.0, "width": 2.0, "height": 2.0 },
+                    }),
                     Some(parent_session),
                 )
             });
@@ -1779,27 +1793,23 @@ impl Browser {
                 return Err(refusal(CallError::TimedOut));
             }
         }
-        let _ = self.gated(|| {
-            self.devtools().call(
-                "DOM.scrollIntoViewIfNeeded",
-                json!({ "backendNodeId": at.backend }),
-                Some(&at.node_session),
-            )
-        })?;
-        Ok(())
+        let (place, centre) = self.placed_centre(target, at)?;
+        place
+            .drawn_at(centre)
+            .ok_or_else(|| Refusal::NotShown(target.clone()))
     }
 
-    /// The page point at the centre of `at`, brought into view first when `scroll`. Where the
-    /// frames between are drawn is read after every scroll, since scrolling an element into
-    /// view may scroll the documents around it too.
-    fn point(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
+    /// Where the frames between the page and `at` are drawn, and `at`'s centre in its own
+    /// document, as the engine says them now.
+    fn placed_centre(
+        &self,
+        target: &Ref,
+        at: &Located,
+    ) -> Result<(FramePlace, (f64, f64)), Refusal> {
         let shown = |why: CallError| match why {
             CallError::Engine { .. } => Refusal::NotShown(target.clone()),
             other => refusal(other),
         };
-        if scroll {
-            self.bring_into_view(at)?;
-        }
         let place = self
             .frame_place(at)
             .map_err(shown)?
@@ -1812,9 +1822,8 @@ impl Browser {
                 Some(&at.node_session),
             )
             .map_err(shown)?;
-        centre(&quads)
-            .and_then(|centre| place.drawn_at(centre))
-            .ok_or_else(|| Refusal::NotShown(target.clone()))
+        let centre = centre(&quads).ok_or_else(|| Refusal::NotShown(target.clone()))?;
+        Ok((place, centre))
     }
 
     fn mouse(
@@ -2646,14 +2655,25 @@ struct FramePlace {
     within: Option<Rect>,
     /// How each frame between them draws the next document, the page's own frame first.
     steps: Vec<Step>,
+    /// The element of each of those frames, by its backend node id in the document around it.
+    owners: Vec<i64>,
 }
+
+/// Where a point of a frame's document is drawn on the page, and where it is in each frame
+/// element's own box on the way there, the page's own frame first.
+type Through = ((f64, f64), Vec<(f64, f64)>);
 
 /// How a frame draws its document in the document around it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Step {
-    /// Upright at its own size, the document's top left corner at `at`, showing `shows` (width
-    /// and height) of the document.
-    Moved { at: (f64, f64), shows: (f64, f64) },
+    /// Upright at its own size: the frame element's box with its top left corner at `at`, the
+    /// document's top left corner at `inside` of that box, showing `shows` (width and height) of
+    /// the document.
+    Moved {
+        at: (f64, f64),
+        inside: (f64, f64),
+        shows: (f64, f64),
+    },
     /// Turned, scaled, zoomed or otherwise: the frame element's box drawn as `drawing`, the
     /// document's top left corner at `inside` of that box, showing `shows` of the document.
     Drawn {
@@ -2670,20 +2690,46 @@ impl FramePlace {
     /// it is drawn nowhere, or outside what a frame between shows of its document: an act lands
     /// only inside the frame that shows its element (#2557).
     fn drawn_at(&self, point: (f64, f64)) -> Option<(f64, f64)> {
-        self.steps
-            .iter()
-            .rev()
-            .try_fold(point, |(x, y), step| match *step {
-                Step::Moved { at, shows } => shown(x, y, shows).then_some((x + at.0, y + at.1)),
+        self.through(point).map(|(on_page, _)| on_page)
+    }
+
+    /// Where `point` is drawn on the page, and where it is in each frame element's own box on
+    /// the way, the page's own frame first; `None` as for [`FramePlace::drawn_at`].
+    fn through(&self, point: (f64, f64)) -> Option<Through> {
+        let mut boxes = Vec::with_capacity(self.steps.len());
+        let mut at = point;
+        for step in self.steps.iter().rev() {
+            let (x, y) = at;
+            at = match *step {
+                Step::Moved {
+                    at: corner,
+                    inside,
+                    shows,
+                } => {
+                    if !shown(x, y, shows) {
+                        return None;
+                    }
+                    let in_box = (x + inside.0, y + inside.1);
+                    boxes.push(in_box);
+                    (in_box.0 + corner.0, in_box.1 + corner.1)
+                }
                 Step::Drawn {
                     drawing,
                     inside,
                     shows,
-                } => shown(x, y, shows)
-                    .then(|| drawing.on_page((x + inside.0, y + inside.1)))
-                    .flatten(),
-                Step::Flat => None,
-            })
+                } => {
+                    if !shown(x, y, shows) {
+                        return None;
+                    }
+                    let in_box = (x + inside.0, y + inside.1);
+                    boxes.push(in_box);
+                    drawing.on_page(in_box)?
+                }
+                Step::Flat => return None,
+            };
+        }
+        boxes.reverse();
+        Some((at, boxes))
     }
 
     /// `rect`, a box in CSS pixels of the frame's document, on the page.

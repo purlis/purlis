@@ -232,29 +232,46 @@ fn a_click_a_pixel_inside_its_frames_edge_is_carried_out() {
 }
 
 #[test]
-fn where_a_frame_is_drawn_is_read_after_the_element_is_scrolled_into_view() {
+fn a_frame_scrolled_to_show_the_element_is_read_again_and_aimed_at_where_it_is_now() {
     let (browser, engine) = browser();
+    // The frame element (backend node 50) is at (100, 200) until the page scrolls it to show
+    // the button, and at (100, 100) after.
+    let quad = |top: f64| json!([100.0, top, 300.0, top, 300.0, top + 60.0, 100.0, top + 60.0]);
+    let mut scrolled = false;
+    engine.on(move |sent, _| {
+        if sent.method == "DOM.scrollIntoViewIfNeeded" && sent.params["backendNodeId"] == 50 {
+            scrolled = true;
+        }
+        (sent.method == "DOM.getBoxModel").then(|| {
+            let q = quad(if scrolled { 100.0 } else { 200.0 });
+            Ok(
+                json!({"model":{"content":q,"padding":q,"border":q,"margin":q,
+                "width":200,"height":60}}),
+            )
+        })
+    });
     let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
-    let before = engine.all_sent().len();
 
     browser.call(&id(2), Call::Click { target: pay }).unwrap();
 
-    let order: Vec<String> = engine
-        .all_sent()
+    // The frame was scrolled around the button's centre in its box, (20, 15).
+    let owner_scrolls: Vec<_> = engine
+        .sent("DOM.scrollIntoViewIfNeeded")
         .into_iter()
-        .skip(before)
-        .filter(|s| s.method == "DOM.scrollIntoViewIfNeeded" || s.method == "DOM.getBoxModel")
-        .map(|s| s.method)
+        .filter(|s| s.params["backendNodeId"] == 50)
+        .map(|s| s.params["rect"].clone())
         .collect();
-    let last_scroll = order
-        .iter()
-        .rposition(|m| m == "DOM.scrollIntoViewIfNeeded")
-        .expect("the element is scrolled into view");
-    let first_read = order
-        .iter()
-        .position(|m| m == "DOM.getBoxModel")
-        .expect("where the frame is drawn is read");
-    assert!(last_scroll < first_read, "{order:?}");
+    assert_eq!(
+        owner_scrolls,
+        vec![json!({"x": 19.0, "y": 14.0, "width": 2.0, "height": 2.0})]
+    );
+    assert_eq!(
+        presses_and_releases(&engine),
+        vec![
+            ("mousePressed".into(), 120.0, 115.0),
+            ("mouseReleased".into(), 120.0, 115.0),
+        ]
+    );
 }
 
 #[test]
