@@ -59,6 +59,11 @@ pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
     let device = crate::machine::mint_device_id(config_root)
         .map_err(|why| format!("this runner's device id could not be minted: {why}"))?
         .ok_or_else(|| {
+            // A home that holds a pairing was paired before (or is being paired now): say so,
+            // rather than that its id came from elsewhere.
+            if held.path().join(KEY_FILE).exists() || store.path().join(PEERS_FILE).exists() {
+                return made_already("a pairing");
+            }
             "this runner's home came with a device id this runner did not mint, from its image \
              or from a runner before it, so it is not paired: a runner mints its device id at \
              its pairing. Build the image without purlis's machine store in its home, then \
