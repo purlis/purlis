@@ -6,11 +6,11 @@
 //! in that appearance's `window.background` and its first frame draws it, with nothing to put
 //! right once the page reads `prefers-contrast`.
 //!
-//! - **macOS**: Increase contrast (`NSWorkspace.accessibilityDisplayShouldIncreaseContrast`).
 //! - **Linux**: the desktop portal's `org.freedesktop.appearance` `contrast`, asked within
 //!   [`BUDGET`]; a session with no portal that answers in time answers nothing.
-//! - **Windows**: nothing is read here, and the page's own `prefers-contrast` picks among the
-//!   frames it is handed for both contrasts (`windowprefs.rs`).
+//! - **macOS and Windows**: nothing is read here yet, and the page's own `prefers-contrast` picks
+//!   among the frames it is handed for both contrasts (`windowprefs.rs`), so the first frame is
+//!   still the high-contrast appearance when the system asks for it.
 //!
 //! Where nothing is read the answer is `None`: the window is created for the standard contrast
 //! and the page decides its first frame from `prefers-contrast`, as it did before.
@@ -26,12 +26,6 @@ pub(crate) fn asked() -> Option<Contrast> {
             Contrast::Standard
         }
     })
-}
-
-#[cfg(target_os = "macos")]
-fn read() -> Option<bool> {
-    use objc2_app_kit::NSWorkspace;
-    Some(NSWorkspace::sharedWorkspace().accessibilityDisplayShouldIncreaseContrast())
 }
 
 /// How long the portal is given to answer. A running portal answers in milliseconds; the window
@@ -64,7 +58,7 @@ fn portal_contrast() -> Option<bool> {
     u32::try_from(value).ok().map(|contrast| contrast == 1)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 fn read() -> Option<bool> {
     None
 }
