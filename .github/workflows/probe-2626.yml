@@ -1,0 +1,19 @@
+# Temporary probe for #2626 (removed before merge): the real-socket check on macOS, which the
+# pull-request CI runs only on Linux (`macos-tests` is nightly).
+name: probe-2626
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - run: mkdir -p app/dist
+      - run: cargo test --locked -p purlis-app --lib -- --exact sandboxing::tests::a_declared_link_to_a_real_socket_is_named_and_kept_only_as_the_notice_drew_it --nocapture
