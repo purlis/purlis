@@ -31,9 +31,6 @@ use std::time::Duration;
 use crate::counts::counted;
 use crate::repocmd::{Say, Sink};
 
-#[path = "browser_login.rs"]
-pub mod login;
-
 /// The `@playwright/cli` version installed when none is asked for — known to work with the
 /// `browser` skill, not a claim about what is current.
 pub const PINNED: &str = "0.1.18";

@@ -278,8 +278,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         message.contains(&format!("SandboxTemplate {}", made.name_any())),
         "{message}"
     );
-    // Long enough for the operator to look again: still as it was made, and nothing asked of
-    // upstream for the claim.
+    // A while later: still as it was made, and nothing asked of upstream for the claim.
     tokio::time::sleep(Duration::from_secs(20)).await;
     let held = templates.get(&made.name_any()).await.expect("the template");
     // Upstream's own controller labels every template; the operator writes nothing to it.
@@ -417,6 +416,97 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
         },
     )
     .await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_pools_template_and_warm_pool_go_with_its_last_claim_in_a_namespace() {
+    use purlis_cluster_operator::upstream::{SandboxTemplate, SandboxWarmPool, name_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-last-claim").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-last-claim",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-last-claim",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &scratch.name);
+    let name = name_for("e2e-last-claim");
+    let ready = |claim: &'static str| {
+        let claims = claims.clone();
+        async move {
+            eventually(
+                &format!("{claim} is ready"),
+                Duration::from_secs(300),
+                || async {
+                    let claim = claims.get(claim).await.ok()?;
+                    (ready_of(&claim)?.0 == "True").then_some(())
+                },
+            )
+            .await
+        }
+    };
+
+    claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-last-claim"))
+        .await
+        .expect("the first claim");
+    ready("ada-1").await;
+    // The last claim goes, and another is made at the same moment: it is served.
+    claims
+        .delete("ada-1", &DeleteParams::default())
+        .await
+        .expect("the first claim deleted");
+    claims
+        .create(&PostParams::default(), &claim("ada-2", "e2e-last-claim"))
+        .await
+        .expect("a claim made as the last one goes");
+    ready("ada-2").await;
+    let template = templates.get(&name).await.expect("the template");
+    assert!(
+        template
+            .owner_references()
+            .iter()
+            .any(|owner| owner.kind == "Claim" && owner.name == "ada-2"),
+        "{template:?}"
+    );
+
+    claims
+        .delete("ada-2", &DeleteParams::default())
+        .await
+        .expect("the last claim deleted");
+    eventually(
+        "the template and warm pool go with the last claim",
+        Duration::from_secs(120),
+        || async {
+            let template = templates.get_opt(&name).await.ok()?;
+            let warm = warm_pools.get_opt(&name).await.ok()?;
+            (template.is_none() && warm.is_none()).then_some(())
+        },
+    )
+    .await;
+    // The pool is still there: a claim made now is served from it.
+    claims
+        .create(&PostParams::default(), &claim("ada-3", "e2e-last-claim"))
+        .await
+        .expect("a claim made after");
+    ready("ada-3").await;
+
+    let _ = pools
+        .delete("e2e-last-claim", &DeleteParams::default())
+        .await;
     scratch.end().await;
 }
 
@@ -840,7 +930,8 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
         tokio::time::sleep(settled()).await;
 
         // A claim made under the new binding: the template is owned only by a claim the
-        // operator refused, so it is not taken for the operator's, and nothing is written.
+        // operator refused, so it is not taken for the operator's, nothing is written, and the
+        // claim says whose it is.
         claims
             .create(&PostParams::default(), &claim("ada-2", "e2e-refused-runs"))
             .await
@@ -850,7 +941,13 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
             Duration::from_secs(60),
             || async {
                 let claim = claims.get("ada-2").await.ok()?;
-                (ready_of(&claim)?.1 == "UpstreamObjectInTheWay").then_some(())
+                let ready = claim
+                    .status?
+                    .conditions
+                    .into_iter()
+                    .find(|c| c.type_ == "Ready")?;
+                (ready.reason == "HeldByClaimsMadeBeforePolicy" && ready.message.contains("ada-1"))
+                    .then_some(())
             },
         )
         .await;

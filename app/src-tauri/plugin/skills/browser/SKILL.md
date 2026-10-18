@@ -5,50 +5,23 @@ description: Drive a real browser for a task that needs one — a web login, an 
 
 # Driving a browser with vault credentials
 
-Two different projects own the two halves of this:
+**In a chat purlis started, use purlis's own browser tools.** They drive a real browser the
+person can watch and take over: `browser_open` and `browser_navigate`, `browser_snapshot` and
+`browser_find` for a page as a tree of elements with references, actions on those references
+(`browser_click`, `browser_type`, `browser_press`, …), and `browser_screenshot`. No tool runs
+script. The first browser tool asks the person what the browser may reach.
 
-- **How to drive a page** belongs to Playwright: snapshots, clicking, network mocking,
-  tracing. Generate its reference into this plane once:
+## One browser per worker
 
-  ```bash
-  purlis browser install          # writes .claude/skills/playwright-cli/
-  ```
-
-  purlis ships none of those pages. They are Apache-2.0, and they change far more often
-  than purlis releases. To update them, run that command again rather than editing them.
-  It runs `npx`, so it needs Node.js. `--version` pins an exact version.
-  In a sandboxed project, ask the operator to run `purlis browser install` in their own
-  terminal: a sandboxed chat may not write a project's skills.
-
-  The command also gitignores `.playwright-cli/`, which is where traces and snapshots land.
-  A trace holds the network traffic of whatever it recorded, logins included. Whether to
-  commit the generated pages and `.playwright/cli.config.json` is the plane's choice.
-
-- **Where credentials come from, and how parallel workers stay isolated** is what this
-  skill covers.
-
-## One session per worker
-
-Each worker passes its own `-s=<name>`. Sessions hold independent cookies, localStorage,
-IndexedDB, cache and tabs, so N workers can each be logged in as a different user at once.
-
-```bash
-npx @playwright/cli@<version> -s=owner  open https://example.test/
-npx @playwright/cli@<version> -s=viewer open https://example.test/
-npx @playwright/cli@<version> list          # live sessions
-npx @playwright/cli@<version> -s=owner close
-```
-
-**Pin the version in every command.** A session belongs to the *version* that opened it.
-Two commands that resolve different versions look at different daemons. The second then
-reports `The browser 'owner' is not open` while the first browser is still alive and logged
-in.
+Each browser has its own cookies, storage and pages, so workers that must be logged in as
+different users each use one of their own: `browser_new` opens another, and the tools use it
+from then on (pass `browser` to pick one by the name a tool answered with, `b1`, `b2`).
+`browser_close` ends one and everything it held.
 
 ## Credentials: never typed, never printed
 
-**In a sandboxed chat, log in with your persona's browser-login tool.** There
-`purlis secret exec` runs only a tool the chat's persona declares, and a shell or a `--dotenv`
-is never one. A project declares a login once, in its committed settings, and the user allows
+**In a chat purlis started, log in with your persona's browser login, through purlis's own
+browser tools.** A project declares a login once, in its committed settings, and the user allows
 it on their machine with the persona's hosts:
 
 ```toml
@@ -57,27 +30,18 @@ tools = { shop-login = { vault = "qa", browser = "https://shop.example.test/logi
                          user = "username", key = "password" } }
 ```
 
-Then run the tool by its name, with the session to log in:
+Then call the `browser_login` tool with `login = "shop-login"` (and `browser` to pick one of
+your browsers). purlis goes to the declared page in your browser, fills the login from the vault
+only while the page is on the declared origin, submits, waits for the password field to go, and
+hands the browser back logged in. You never see the login: it is kept out of every snapshot and
+screenshot, and the fields purlis filled are blanked. From then on that browser reaches the
+login's site alone; call `browser_new` for any other site. You choose which declared login, and
+nothing else. If the login is refused, tell the user the sentence: it names what to declare or
+allow. A page with a captcha or a second factor, or one that first sends the browser to a
+sign-in page on another site, does not log in this way; ask the user, or hand them the browser
+with `ask_operator` pointed at it.
 
-```bash
-shop-login -s=owner
-npx @playwright/cli@<version> -s=owner open
-npx @playwright/cli@<version> -s=owner state-load .playwright-cli/owner.login.json
-rm .playwright-cli/owner.login.json
-```
-
-purlis opens the declared page in a browser of its own, fills the login only while that page
-is on the declared host, submits, and leaves the logged-in session's cookies in
-`.playwright-cli/<session>.login.json` for you to load. You never see the login, and you cannot
-point it at another page or host: the tool takes the session's name and nothing else. It needs
-Playwright's command line installed where the chat cannot write (`npm install -g
-@playwright/cli@<version>`, which puts `playwright-cli` on the user's path). If the tool is
-refused, tell the user the sentence: it names what to declare or allow. A page with a captcha
-or a second factor, or one that first sends the browser to a sign-in page on another site,
-does not log in this way; ask the user.
-
-That cookie file is the logged-in session in another form. Load it, then delete it, and never
-print or commit it.
+Running the login's name as a command does nothing: it says to use `browser_login`.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
@@ -134,7 +98,7 @@ command substitution into the transcript, with nothing to redact it.
 
 - **Never read a filled secret back.** Do not evaluate `el.value`, take a screenshot of a
   filled password field, or dump the dotenv file.
-- Never type a credential in directly, even "just once to test". Use the browser-login tool
-  in a chat, or the bridge in the user's terminal.
+- Never type a credential in directly, even "just once to test". Use `browser_login` in a
+  chat, or the bridge in the user's terminal.
 - Never commit a session directory, a storage-state file or a trace. Each one holds live
   cookies or authenticated traffic, which is the credential in another form.

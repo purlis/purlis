@@ -443,12 +443,13 @@ export function DispatchGrantNotice({
         onPress: () => allow(level),
         // For everyone is the project's file: off on a read-only project, with why (#826).
         off: level === "project" ? readOnly : undefined,
+        allows: true,
       }),
     );
   const project: NoticeAction[] =
     pair.length > 0
       ? [
-          answering({ label: "Accept", onPress: answer(true) }),
+          answering({ label: "Accept", onPress: answer(true), allows: true }),
           { label: "Not on my machine", onPress: answer(false) },
         ]
       : [];

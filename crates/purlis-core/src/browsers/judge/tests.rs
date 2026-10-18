@@ -209,3 +209,108 @@ fn a_site_is_its_host_and_port_as_the_engine_writes_the_address() {
     assert_eq!(site_of("https:///nohost"), None);
     assert_eq!(site_of("https://example.org:notaport/"), None);
 }
+
+// ---- A login purlis performs (#2016) ----
+
+fn by(address: &str, why: Why, by: Driver) -> Outbound {
+    Outbound {
+        by,
+        ..out(address, why)
+    }
+}
+
+#[test]
+fn what_purlis_sends_to_its_logins_site_goes_and_nothing_else_it_sends_does() {
+    let sites = sites(&["docs.example.com"], false);
+    sites.logging_in(&Site::of("shop.example.test", 443));
+    for why in [Why::Addressed, Why::Sends] {
+        assert_eq!(
+            sites.judge(&by("https://shop.example.test/login", why, Driver::Purlis)),
+            Gate::Go
+        );
+    }
+    assert!(
+        sites
+            .new_sites()
+            .carries(&Site::of("shop.example.test", 443))
+    );
+    // A page purlis drives that sends elsewhere is judged as the agent's would be.
+    assert_eq!(
+        sites.judge(&by(
+            "https://news.example.org/?leak=1",
+            Why::Sends,
+            Driver::Purlis
+        )),
+        ask("news.example.org:443")
+    );
+    // The agent's own address to the login's site, before anything is bound, is the agent's.
+    assert_eq!(
+        sites.judge(&by(
+            "https://shop.example.test/?q=1",
+            Why::Addressed,
+            Driver::Agent
+        )),
+        ask("shop.example.test:443")
+    );
+}
+
+#[test]
+fn a_browser_holding_a_login_asks_about_no_other_site() {
+    let sites = sites(&["docs.example.com"], false);
+    sites
+        .bound()
+        .to(&Site::of("shop.example.test", 443))
+        .unwrap();
+    // Refused at the proxy, in words; never an Ask an Allow could answer.
+    assert_eq!(
+        sites.judge(&out("https://news.example.org/?leak=1", Why::Addressed)),
+        Gate::Go
+    );
+    assert!(!sites.bound().lets("news.example.org", 443));
+    assert!(!sites.bound().lets("docs.example.com", 443));
+    assert!(sites.bound().lets("shop.example.test", 443));
+    assert!(sites.bound().lets("Shop.Example.Test.", 443));
+    assert!(!sites.bound().lets("shop.example.test", 80));
+}
+
+#[test]
+fn a_browser_bound_to_one_login_is_not_bound_to_another() {
+    let sites = sites(&[], false);
+    let bound = sites.bound();
+    assert!(
+        bound.lets("anything.example", 443),
+        "unbound, nothing is refused here"
+    );
+    bound.to(&Site::of("shop.example.test", 443)).unwrap();
+    bound.to(&Site::of("shop.example.test", 443)).unwrap();
+    let refused = bound.to(&Site::of("mail.example.test", 443)).unwrap_err();
+    assert!(
+        refused.contains("holds a login at shop.example.test:443"),
+        "{refused}"
+    );
+    assert!(!bound.lets("mail.example.test", 443));
+}
+
+#[test]
+fn a_logins_site_is_let_on_for_good_only_once_the_browser_is_bound_to_it() {
+    let shop = Site::of("shop.example.test", 443);
+    let sites = sites(&["docs.example.com"], false);
+    sites.logging_in(&shop);
+    assert!(sites.new_sites().carries(&shop), "while the login runs");
+    sites.done_logging_in();
+    assert!(
+        !sites.new_sites().carries(&shop),
+        "a login that never filled lets nothing on"
+    );
+    assert_eq!(
+        sites.judge(&out("https://shop.example.test/?q=1", Why::Addressed)),
+        ask("shop.example.test:443")
+    );
+    sites.logging_in(&shop);
+    sites.bound_to(&shop);
+    sites.done_logging_in();
+    assert!(
+        sites.new_sites().carries(&shop),
+        "bound to it, the browser reaches it"
+    );
+}

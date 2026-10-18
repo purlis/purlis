@@ -417,9 +417,10 @@ how it is cited and nothing here is renumbered.
     does not ask beside it. Since #1444 it carries the same for `purlis handoff`, by each flag
     its line can start with and its `report`: a handoff is a dispatch in handoff mode, decided
     the same way, and `init` no longer writes an `ask` rule for it. Since #2245 it also allows
-    each of the chat's browser tools by name (`browser_open` to `browser_close`): the person's
+    each of the chat's browser tools by name (`browser_open` to `browser_login`): the person's
     answer to the chat's browser Ask, which the app asks at the first call, is the consent, so
-    the harness does not ask beside it. Codex's approval and
+    the harness does not ask beside it; for `browser_login` (#2016), so is this machine's Allow
+    of the persona's tools, without which the login is not armed and nothing is filled. Codex's approval and
     sandbox are whole-session switches, so it carries none (ADR 0064's measurements). A record's tab resumes that record whichever place is
     in front. **Smart close puts the chat into the background** (SI-8f): its tab shrinks to a
     fixed chip — the chat's icon and the breathing mark, the name in its tooltip — at the chat

@@ -117,7 +117,7 @@ export function PersonaHostsNotice({
               persona={one.persona}
               fixes={
                 canAllow
-                  ? [{ label: allowLabel(one), onPress: () => allow(one) }, notNow]
+                  ? [{ label: allowLabel(one), onPress: () => allow(one), allows: true }, notNow]
                   : [notNow]
               }
             >

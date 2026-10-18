@@ -272,6 +272,16 @@ pub trait Running: Send + Sync + 'static {
             "this program is not a browser, so it takes no browser's act".into(),
         ))
     }
+    /// purlis performs `login` in it (#2016): refused for every program that is not a browser.
+    fn log_in(
+        &self,
+        login: purlis_session_protocol::browsing::LogIn,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
+        drop(login);
+        Err(crate::browsers::NotActed::Refused(
+            "this program is not a browser, so purlis logs nothing in to it".into(),
+        ))
+    }
     /// What a browser may reach from now on (#2018): nothing to do for any other program.
     fn reach_now(
         &self,
@@ -307,6 +317,20 @@ pub trait Running: Send + Sync + 'static {
 /// Who drives a browser now, as an answer.
 fn driving(driver: Driver) -> Answer {
     Answer::Driving { driver }
+}
+
+/// Why a browser did not act, as the protocol refuses it.
+fn not_acted(not: crate::browsers::NotActed) -> Refusal {
+    match not {
+        crate::browsers::NotActed::Ended => Refusal {
+            code: session::BROWSER_ENDED.into(),
+            why: crate::browsers::AN_ENDED_BROWSER.into(),
+        },
+        crate::browsers::NotActed::Refused(why) => Refusal {
+            code: session::BROWSER_REFUSED.into(),
+            why,
+        },
+    }
 }
 
 /// What a browser's command for a program that is no browser is refused with.
@@ -1615,16 +1639,22 @@ impl Hosting {
         .await
         .map_err(|why| not_started(why.to_string()))?
         .map(|browsed| Answer::Browsed(Box::new(browsed)))
-        .map_err(|not| match not {
-            crate::browsers::NotActed::Ended => Refusal {
-                code: session::BROWSER_ENDED.into(),
-                why: crate::browsers::AN_ENDED_BROWSER.into(),
-            },
-            crate::browsers::NotActed::Refused(why) => Refusal {
-                code: session::BROWSER_REFUSED.into(),
-                why,
-            },
-        })
+        .map_err(not_acted)
+    }
+
+    /// purlis performs `login` in browser `program` (#2016), off the runtime: it waits on the
+    /// page.
+    async fn log_in(
+        &self,
+        program: &str,
+        login: purlis_session_protocol::browsing::LogIn,
+    ) -> Result<Answer, Refusal> {
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.log_in(login))
+            .await
+            .map_err(|why| not_started(why.to_string()))?
+            .map(|browsed| Answer::Browsed(Box::new(browsed)))
+            .map_err(not_acted)
     }
 
     /// One of the person's commands on browser `program` (#2014), carried out off the runtime.
@@ -2447,6 +2477,7 @@ impl session::Host for Hosting {
                 act,
                 reach,
             } => self.browse(&program, call_id, act, reach).await,
+            Command::LogIn { program, login } => self.log_in(&program, login).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),

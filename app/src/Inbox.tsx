@@ -42,6 +42,7 @@ import {
 } from "./inboxScope";
 import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
+import { GrantsMark } from "./primitives/Grants";
 import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
@@ -497,6 +498,21 @@ export type WindowLines = {
   count: number;
 };
 
+/**
+ * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
+ * sandbox's host, folder or local service, and a browser's sites. On these, each answer that
+ * allows is drawn as `.ui-button-grants` and every other in the plain style: equal in weight,
+ * and told apart at a glance in every theme by the grant's edge and its open lock. A question's choices, a removal and a browser's reach are
+ * answers of another kind and keep their own looks.
+ */
+export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>([
+  "permission",
+  "sandbox-host",
+  "sandbox-write",
+  "sandbox-local",
+  "browser-site",
+]);
+
 /** What one ask's row offers, decided once for its stops and its drawing. */
 type Shape = {
   /** Why the chat waits, said in place of what it asked. */
@@ -674,6 +690,8 @@ function Ask({
     changeDrawn ? "drawn" : "",
   ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
+  /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
+  const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
   const answer = (option: Offered) => {
     if (busy) return;
     // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
@@ -761,10 +779,13 @@ function Ask({
                 type="button"
                 // The answer the source suggests is styled as the primary one, in its place
                 // (#2241): a persona's declared browser. Still only the person's press answers.
+                // On an ask of Allow and Keep blocked, each Allow is the grants style, as plain
+                // as Keep blocked and told apart by its edge and its lock (ADR 0097 §6).
                 className={[
                   "ui-button inbox-answer",
                   option.allows ? "allows" : "",
                   option.preselected === true ? "ui-button-primary" : "",
+                  grants(option) ? "ui-button-grants" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -772,6 +793,7 @@ function Ask({
                 aria-busy={busy || undefined}
                 onClick={() => answer(option)}
               >
+                {grants(option) && <GrantsMark />}
                 {option.label}
               </button>
             </Stop>
@@ -1320,13 +1342,17 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
               <Stop key={answer.label} id={`${key}:${at}`}>
                 <button
                   type="button"
+                  // An answer that allows is a grant, drawn as every grant is (ADR 0097 §6).
                   className={
-                    answer.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"
+                    answer.allows
+                      ? "ui-button inbox-answer allows ui-button-grants"
+                      : "ui-button inbox-answer"
                   }
                   aria-label={answer.name}
                   title={answer.title}
                   onClick={() => press(answer)}
                 >
+                  {answer.allows && <GrantsMark />}
                   {answer.label}
                 </button>
               </Stop>

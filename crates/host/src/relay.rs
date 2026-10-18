@@ -25,10 +25,18 @@
 //! client's commands until the new one carries all of that, and only then ends; after a drop,
 //! the client's commands wait while it is carried over. **No command the client sent is sent
 //! again**: one the link ended under is refused as unanswered, and while no link is up every
-//! command is refused in words saying so, and is not kept. A view the other host will not
-//! attach again has ended for good, and the client is told so. What the other host named to the
-//! link that ended, a chat's confinement among them, is not named again by this: the other host
-//! names a link only what that link made or took back (#2511).
+//! command is refused in words saying so, and is not kept. **The client is told the link is
+//! down**, pushed `link_down` once each time no link is up, and `link_back` once one is up again
+//! and carries what its link stands on (#2496): a link renewed ahead of its limit is neither, and
+//! a relay made with [`Relay::new`] tells its client both as a kept one does. Both are this
+//! host's own words: the other host's are never handed on, and neither holds up linking again
+//! for a client that has stopped reading. A view the other host will not attach again has ended for good, and the
+//! client is told so. What the other host named to the link that ended, a chat's confinement
+//! among them, is not named again by this: the other host names a link only what that link made
+//! or took back (#2511).
+//!
+//! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
+//! client, so a vault's value never reaches another host this way.
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
@@ -298,13 +306,15 @@ fn not_linked(why: &str) -> Refusal {
 
 /// Take `source`'s links for a client link, one after another, and carry what the client's
 /// link stands on over to each that comes up. When no more come, wait for a command to ask for
-/// links again.
+/// links again. The client is told once each time no link is up, and once one is back
+/// ([`LinkTold`]); a link renewed ahead of its limit is neither.
 async fn keep(
     source: Source,
     client: Arc<ClientLink>,
     tell: watch::Sender<Standing>,
     again: Arc<Notify>,
 ) {
+    let mut told = LinkTold::default();
     loop {
         let mut links = source();
         let mut up: Option<Arc<Upstream>> = None;
@@ -338,6 +348,7 @@ async fn keep(
                                 // answered: the kept link is told the relay has moved then.
                                 retiring = up.replace(Arc::clone(&upstream));
                                 tell.send_replace(Standing::Up(upstream));
+                                told.back(&client);
                                 if retiring.is_none() {
                                     links.moved();
                                 }
@@ -349,9 +360,9 @@ async fn keep(
                                     tell.send_replace(Standing::Up(Arc::clone(old)));
                                 }
                                 None => {
-                                    tell.send_replace(Standing::Down(
-                                        "the link to it ended as it came up".into(),
-                                    ));
+                                    let why = "the link to it ended as it came up";
+                                    tell.send_replace(Standing::Down(why.into()));
+                                    told.down(&client, why);
                                 }
                             },
                         }
@@ -359,6 +370,7 @@ async fn keep(
                     Some(Linked::Down(why)) => {
                         up = None;
                         retiring = None;
+                        told.down(&client, &why);
                         tell.send_replace(Standing::Down(why));
                     }
                     None => no_more = true,
@@ -369,13 +381,44 @@ async fn keep(
                 }
                 () = link_ended => {
                     up = None;
-                    tell.send_replace(Standing::Down("the link to it ended".into()));
+                    let why = "the link to it ended";
+                    tell.send_replace(Standing::Down(why.into()));
+                    told.down(&client, why);
                 }
             }
         }
         tell.send_replace(Standing::Over);
         again.notified().await;
         tell.send_replace(Standing::Linking);
+    }
+}
+
+/// What the client was last told of the link to the other host (#2496).
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum LinkTold {
+    /// Nothing since the link was last up: it is up, as far as the client knows.
+    #[default]
+    Up,
+    /// That no link is up.
+    Down,
+}
+
+impl LinkTold {
+    /// No link is up, for `why`: the client is told, unless it was told already.
+    fn down(&mut self, client: &ClientLink, why: &str) {
+        if std::mem::replace(self, LinkTold::Down) == LinkTold::Up {
+            client.tell_now(Pushed::LinkDown { why: why.into() });
+        }
+    }
+
+    /// A link is up and carries what the client's link stands on: a client told it was down is
+    /// told it is back. One word for each outage, so it waits for room, on a task of its own,
+    /// and never holds up the link.
+    fn back(&mut self, client: &Arc<ClientLink>) {
+        if std::mem::replace(self, LinkTold::Up) == LinkTold::Down {
+            let client = Arc::clone(client);
+            tokio::spawn(async move { client.tell(Pushed::LinkBack {}).await });
+        }
     }
 }
 
@@ -459,6 +502,18 @@ impl ClientLink {
             return;
         };
         if target.send(pushed).await.is_err() {
+            self.kept().subscriber = None;
+        }
+    }
+
+    /// Hand `pushed` to the client's subscription, while it has one, without waiting for room:
+    /// a client that has stopped reading never holds up linking again, and is not told what
+    /// does not fit. It learns its views are back as each draws again (#2496).
+    fn tell_now(&self, pushed: Pushed) {
+        let Some(target) = self.kept().subscriber.clone() else {
+            return;
+        };
+        if let Err(mpsc::error::TrySendError::Closed(_)) = target.try_send(pushed) {
             self.kept().subscriber = None;
         }
     }
@@ -830,6 +885,9 @@ async fn push_on(
                 };
                 client.view_ended(ours, why).await;
             }
+            // Whether the link to the other host is up is this host's to say, never the other
+            // host's (#2496).
+            Pushed::LinkDown { .. } | Pushed::LinkBack {} => {}
             pushed => client.tell(pushed).await,
         }
     }
@@ -872,6 +930,16 @@ fn refused(why: &CallError) -> Refusal {
 
 impl session::Host for Relay {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
+        // A login's values never leave this host (#2016): not for any client, the window's
+        // included.
+        if command.power() == Power::LogIn {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a browser on another host is logged in to nothing: a login's values are \
+                      not sent to another host"
+                    .into(),
+            });
+        }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),

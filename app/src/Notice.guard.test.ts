@@ -405,6 +405,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Also a save's own output, line by line: what the last press answered, not a standing line",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "SessionPane.tsx": {
+    count: 1,
+    why:
+      "a runner's chat reconnecting while the runner's link is down (#2496): one quiet state " +
+      "over its last screen, as ruled 2026-10-17, never a Notice. It asks nothing and offers " +
+      "nothing: purlis links again on its own, and it empties once the chat is reconnected. " +
+      "It stays mounted, so its word is heard as it comes.",
+  },
   "StartChat.tsx": {
     count: 3,
     why:
