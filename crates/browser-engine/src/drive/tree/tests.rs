@@ -576,3 +576,23 @@ fn a_blanked_field_holding_a_value_of_its_own_next_to_the_boxes_is_no_part_of_th
         "{text}"
     );
 }
+
+#[test]
+fn a_gone_line_holds_nothing_kept_out_since_it_was_read_in_an_address_either() {
+    // #2137: a line read before a text was kept out is told without it, encoded or not.
+    let snapshot = build(&frames(), &HashSet::new(), &[]);
+    let before: Vec<super::Seen> = vec![
+        (
+            None,
+            "- link \"Find\" url=http://fixture.test/?q=zq7%20kp9".into(),
+        ),
+        (None, "- text \"zq7 kp9 was typed\"".into()),
+    ];
+    let mut refer = |_: &NodeKey| "e1".to_owned();
+    let mut kept = super::Kept::default();
+    kept.run(&["zq7 kp9"]);
+    let told = snapshot.changes(&before, 1000, &kept, &mut refer);
+    assert!(told.contains("gone: - link \"Find\""), "{told}");
+    assert!(told.contains("gone: - text \""), "{told}");
+    assert!(!told.contains("zq7"), "{told}");
+}

@@ -154,9 +154,14 @@ use crate::view::{Limits, Views};
 /// answered `browsed` once the browser is handed back, or refused `browser_refused` in words
 /// that carry no value. The window's alone ([`crate::grants::Power::LogIn`]): no relayed link
 /// sends it.
+///
+/// 1.21 added what changed on a browser's page (#2137): the act `changes` answers the lines of
+/// the page's tree new or gone since it was last read; and a snapshot's or a find's lines mark
+/// each element laid out wholly outside what the page's viewport shows (`(out of view)`). A
+/// host before 1.21 refuses `changes`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 18,
+    minor: 21,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,

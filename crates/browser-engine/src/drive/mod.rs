@@ -16,6 +16,10 @@
 //! - **Pages in pages.** A snapshot is read from a line, so many lines at a time, and scoped to
 //!   one element; a find by text or role answers references with the line to read from. Frames
 //!   are named in the tree, and their elements are acted on like any other.
+//! - **What changed, and what is not shown** (#2137). [`Call::Changes`] answers only the lines
+//!   new or gone since the page was last read, so an action need not be followed by a whole
+//!   snapshot; and a snapshot or a find marks each element the page lays out wholly outside
+//!   what its viewport shows `(out of view)`, so the agent knows to scroll to it.
 //! - **Settling.** Every action answers once its page has settled (nothing loading, nothing
 //!   requested still open, quiet a while, its document complete), or says what it still waited
 //!   for when the time allowed ran out. An action that opens a page answers with that page,
@@ -302,6 +306,13 @@ pub enum Call {
         text: Option<String>,
         role: Option<String>,
         within: Option<Ref>,
+    },
+    /// The lines of the page's tree new or gone since the page was last read, by a snapshot, a
+    /// find or an earlier one of these (#2137): each new one with its reference and the line it
+    /// is read at. A page not read before, or since gone on to another document, answers its
+    /// tree's first lines. Kept by id like an act: a retry answers what the first answered.
+    Changes {
+        page: Option<PageId>,
     },
     Click {
         target: Ref,

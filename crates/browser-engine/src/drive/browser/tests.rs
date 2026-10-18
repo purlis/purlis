@@ -315,6 +315,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
                     vec![100.0, 100.0, 200.0, 100.0, 200.0, 110.0, 100.0, 110.0],
                 ),
                 (60, vec![0.0, 300.0, 50.0, 300.0, 50.0, 320.0, 0.0, 320.0]),
+                // Below the bottom of the 800 by 600 viewport.
+                (71, vec![0.0, 900.0, 80.0, 900.0, 80.0, 920.0, 0.0, 920.0]),
             ]),
             ready: "complete".into(),
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
@@ -408,6 +410,113 @@ fn a_snapshot_names_its_page_and_the_frames_in_it_once_the_page_has_settled() {
     );
     assert!(text.contains("- frame \"payment\" ["), "{text}");
     assert!(text.contains("  - button \"Pay now\" ["), "{text}");
+}
+
+#[test]
+fn a_snapshot_marks_what_is_on_the_page_but_out_of_view() {
+    let (browser, _engine) = browser();
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} in\n{text}"))
+            .to_owned()
+    };
+    assert!(line("Below the fold").ends_with(" (out of view)"), "{text}");
+    assert!(!line("Read more").contains("out of view"), "{text}");
+    // An element whose place the engine cannot say is not said to be out of view.
+    assert!(!line("Remember me").contains("out of view"), "{text}");
+    let found = browser
+        .call(
+            &id(2),
+            Call::Find {
+                page: None,
+                text: Some("fold".into()),
+                role: None,
+                within: None,
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(&found.content, Content::Text(t) if t.contains("\"Below the fold\" [") && t.contains("(out of view)")),
+        "{found:?}"
+    );
+}
+
+/// Renames the main frame's link, as a page that changed it would show it.
+fn rename_the_link(engine: &Engine, to: &str) {
+    let mut model = super::lock(&engine.model);
+    for node in model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap() {
+        if matches!(node["backendDOMNodeId"].as_i64(), Some(12 | 13)) {
+            node["name"]["value"] = json!(to);
+        }
+    }
+}
+
+fn changes(browser: &Browser, n: u32) -> String {
+    match browser
+        .call(&id(n), Call::Changes { page: None })
+        .unwrap()
+        .content
+    {
+        Content::Text(text) => text,
+        other => panic!("changes are text: {other:?}"),
+    }
+}
+
+#[test]
+fn changes_answer_the_lines_new_and_gone_since_the_page_was_last_read() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    rename_the_link(&engine, "Read less");
+    let changed = changes(&browser, 2);
+    assert!(changed.contains("1 new, 1 gone"), "{changed}");
+    assert!(
+        changed
+            .lines()
+            .any(|l| l.starts_with("new: - link \"Read less\" [e") && l.contains("(line ")),
+        "{changed}"
+    );
+    assert!(
+        changed
+            .lines()
+            .any(|l| l.starts_with("gone: - link \"Read more\"") && !l.contains('[')),
+        "{changed}"
+    );
+    assert!(
+        !changed.contains("Pay now"),
+        "what did not change is not said: {changed}"
+    );
+    // The new line's reference is one to act on.
+    let less = ref_of(
+        changed
+            .lines()
+            .find(|l| l.starts_with("new: "))
+            .unwrap()
+            .trim_start_matches("new: "),
+        "- link",
+    );
+    browser.call(&id(3), Call::Hover { target: less }).unwrap();
+    assert!(changes(&browser, 4).contains("Nothing changed"));
+}
+
+#[test]
+fn changes_of_a_page_not_read_before_answer_all_of_it() {
+    let (browser, _engine) = browser();
+    let all = changes(&browser, 1);
+    assert!(all.contains("not read before"), "{all}");
+    assert!(all.contains("- button \"Pay now\" ["), "{all}");
+}
+
+#[test]
+fn changes_are_answered_again_to_a_retry_of_the_same_call() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    rename_the_link(&engine, "Read less");
+    let first = changes(&browser, 2);
+    let again = browser.call(&id(2), Call::Changes { page: None }).unwrap();
+    assert!(again.repeated);
+    assert_eq!(again.content, Content::Text(first));
 }
 
 #[test]
