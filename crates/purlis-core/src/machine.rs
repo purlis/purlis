@@ -1045,6 +1045,30 @@ pub fn device_id(config_root: &Path) -> io::Result<String> {
         .ok_or_else(|| io::Error::other("the machine store kept no device id"))
 }
 
+/// A new id for this device, minted now, or `None` when the store already holds one, which it
+/// keeps: what a runner's pairing asks ([`crate::runnerlink::pair`]), since a runner's id is
+/// minted by the runner itself and never comes with its home.
+///
+/// Through [`update`], so of two processes asking at once one mints and the other is told
+/// there is one already.
+pub fn mint_device_id(config_root: &Path) -> io::Result<Option<String>> {
+    let mut minted = None;
+    update(config_root, |store| {
+        if store.device.is_none() {
+            let id = ulid::Ulid::generate().to_string();
+            store.device = Some(Device {
+                id: id.clone(),
+                created: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|since| since.as_secs())
+                    .unwrap_or_default(),
+            });
+            minted = Some(id);
+        }
+    })?;
+    Ok(minted)
+}
+
 /// This device's id if one has been minted, and `None` otherwise: never mints one.
 ///
 /// For a writer that only names a file by it (FD-25): a hook or a `charter` command must not

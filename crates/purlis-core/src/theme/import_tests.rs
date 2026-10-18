@@ -560,7 +560,7 @@ fn a_staged_folder_dropped_leaves_nothing() {
     let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
 
     let staged = stage(dir.path(), "one", &files, false).expect("staged");
-    let path = staged.path.clone();
+    let path = staged.path().to_path_buf();
     assert!(path.join(THEME_JSON).is_file());
     drop(staged);
 
@@ -917,7 +917,7 @@ fn a_link_swapped_in_at_the_target_under_force_is_put_back_and_refused() {
     std::fs::write(elsewhere.join("kept.txt"), "mine").expect("a file");
     let files = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
     let staged = stage(dir.path(), "one", &files, true).expect("staged");
-    let stage_path = staged.path.clone();
+    let stage_path = staged.path().to_path_buf();
     std::os::unix::fs::symlink(&elsewhere, dir.path().join("one")).expect("a link meanwhile");
 
     let refused = staged.commit().expect_err("refused");
@@ -958,4 +958,300 @@ fn what_the_finder_adds_is_not_counted_against_the_entries_a_theme_folder_may_ha
     let (_, files) = unpack(&a_zip(&entries)).expect("unpacked");
 
     assert_eq!(files.len(), MOST_FILES);
+}
+
+// ------------------------------------------------------------------------------------------
+// A staged import is read only to check (#2587)
+// ------------------------------------------------------------------------------------------
+
+/// What [`served`] answers for a digest no accepted theme registered.
+const NEVER_REGISTERED: &str = "that is not a font of a theme purlis read";
+
+/// A woff2 file no other test has: its digest is registered only by what this test reads.
+fn a_font_of_its_own(tag: &str) -> Vec<u8> {
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |it| it.as_nanos());
+    format!(
+        "wOF2 a staged font for {tag}, {} at {at}",
+        std::process::id()
+    )
+    .into_bytes()
+}
+
+/// The digest [`served`] knows a font's bytes by.
+fn digest(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A theme folder's files: a `theme.json` whose UI font is `fonts/ui.woff2`, holding `font`,
+/// with `tokens` in its one appearance.
+fn with_a_font(font: &[u8], tokens: &Value) -> Files {
+    let theme = serde_json::json!({
+        "name": "Inked",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }],
+        "fonts": { "ui": { "family": "Inked Sans", "faces": [{ "file": "fonts/ui.woff2" }] } }
+    });
+    Files::from([
+        (THEME_JSON.to_owned(), theme.to_string().into_bytes()),
+        ("fonts/ui.woff2".to_owned(), font.to_vec()),
+    ])
+}
+
+#[test]
+fn a_staged_import_that_goes_in_place_leaves_no_font_registered_under_the_stage() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let themes = dir.path().join("themes");
+    let font = a_font_of_its_own("one that goes in place");
+    let asset = digest(&font);
+
+    let staged = stage(
+        &themes,
+        "inked",
+        &with_a_font(&font, &serde_json::json!({})),
+        false,
+    )
+    .expect("staged");
+    let read = staged.read(Library::new());
+    assert!(!read.refused, "{:?}", read.complaints);
+    assert_eq!(read.theme.first().fonts.ui.faces[0].asset, asset);
+    assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
+    let path = staged.commit().expect("in place");
+    assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
+
+    // The folder in place is a theme like any other: reading it to draw it serves its font, from
+    // where it is now.
+    let drawn = Library::new()
+        .reading_named_fonts()
+        .load_folder(&themes, "inked");
+    assert!(!drawn.refused, "{:?}", drawn.complaints);
+    assert_eq!(path, themes.join("inked"));
+    assert_eq!(served(&asset), Ok(font));
+}
+
+#[test]
+fn a_staged_import_that_fails_leaves_no_font_registered_under_the_stage() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let themes = dir.path().join("themes");
+
+    // The theme is drawn, but a folder of its name is there and --force was not given.
+    let font = a_font_of_its_own("one whose folder is there");
+    let asset = digest(&font);
+    let staged = stage(
+        &themes,
+        "inked",
+        &with_a_font(&font, &serde_json::json!({})),
+        false,
+    )
+    .expect("staged");
+    let stage_path = staged.path().to_path_buf();
+    std::fs::create_dir_all(themes.join("inked")).expect("a folder there meanwhile");
+    let read = staged.read(Library::new());
+    assert!(!read.refused, "{:?}", read.complaints);
+    assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
+    assert_eq!(
+        staged.commit(),
+        Err(NotWritten::Exists(themes.join("inked")))
+    );
+    assert!(!stage_path.exists());
+    assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
+
+    // The theme is refused, so nothing is put in place and the stage goes.
+    let font = a_font_of_its_own("one the engine refuses");
+    let asset = digest(&font);
+    let staged = stage(
+        &themes,
+        "refused",
+        &with_a_font(
+            &font,
+            &serde_json::json!({ "surface.base": "not a colour" }),
+        ),
+        false,
+    )
+    .expect("staged");
+    let stage_path = staged.path().to_path_buf();
+    assert!(staged.read(Library::new()).refused);
+    drop(staged);
+    assert!(!stage_path.exists());
+    assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
+}
+
+// ------------------------------------------------------------------------------------------
+// Names Windows cannot hold (#2588)
+// ------------------------------------------------------------------------------------------
+
+#[test]
+fn every_device_name_and_a_name_ending_in_a_dot_or_a_space_is_not_held() {
+    use portable::{NotHeld, not_held};
+    let mut devices: Vec<String> = ["con", "prn", "aux", "nul"]
+        .iter()
+        .map(|it| (*it).to_owned())
+        .collect();
+    devices.extend(["conin$", "conout$"].map(str::to_owned));
+    for n in 0..=9 {
+        devices.push(format!("com{n}"));
+        devices.push(format!("lpt{n}"));
+    }
+    devices.extend(["com¹", "lpt³"].map(str::to_owned));
+    for device in &devices {
+        for name in [
+            device.clone(),
+            device.to_ascii_uppercase(),
+            format!("{device}.json"),
+            format!("{}.tar.gz", device.to_ascii_uppercase()),
+            format!("{device} .txt"),
+        ] {
+            assert_eq!(not_held(&name), Some(NotHeld::Device), "{name}");
+        }
+    }
+    assert_eq!(not_held("LICENSE."), Some(NotHeld::Dot));
+    assert_eq!(not_held("notes "), Some(NotHeld::Space));
+    for held in [
+        "console",
+        "com10",
+        "lpt01",
+        "conin",
+        "lpt",
+        "nul-theme",
+        "auxiliary",
+        "icon.json",
+        ".con",
+    ] {
+        assert_eq!(not_held(held), None, "{held}");
+    }
+    assert!(!is_folder_name("con"));
+    assert!(!is_folder_name("lpt9"));
+    assert!(is_folder_name("console"));
+}
+
+#[test]
+fn a_zip_naming_what_windows_cannot_hold_is_refused_with_a_sentence() {
+    let theme: &[u8] = b"{}";
+    for (bad, said) in [
+        ("kept/fonts/CON.woff2", "fonts/CON.woff2"),
+        ("kept/aux.md", "aux.md"),
+        ("kept/Nul", "Nul"),
+        ("kept/icons/lpt1.json", "lpt1.json"),
+        ("kept/LICENSE.", "LICENSE."),
+        ("kept/notes ", "notes "),
+    ] {
+        let zip = a_zip(&[("kept/theme.json", theme), (bad, b"x")]);
+
+        let refused = unpack(&zip).expect_err(bad);
+
+        assert!(refused.contains("Windows"), "{bad}: {refused}");
+        assert!(refused.contains(&format!("{bad} in the zip")), "{refused}");
+        assert!(
+            refused.contains(said.rsplit('/').next().unwrap_or(said)),
+            "{refused}"
+        );
+        // One sentence: no full stop but the one a name may end in.
+        let without_names = refused.replace(said, "");
+        assert_eq!(
+            without_names.matches(". ").count(),
+            0,
+            "one sentence: {refused}"
+        );
+    }
+    let named = a_zip(&[("com3/theme.json", theme)]);
+    let refused = unpack(&named).expect_err("a device as the folder");
+    assert!(refused.contains("Windows keeps for a device"), "{refused}");
+    let imported = import(SourceKind::Zip, "com3.zip", &named).expect_err("refused");
+    assert!(imported.contains("Windows"), "{imported}");
+}
+
+#[test]
+fn a_theme_whose_name_would_be_a_device_is_not_imported() {
+    let named = br#"{ "name": "Aux", "colors": {} }"#;
+
+    let refused = import(SourceKind::Vscode, "aux.json", named).expect_err("refused");
+
+    assert!(
+        refused.contains("aux, a name Windows keeps for a device"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_stage_or_an_export_of_what_windows_cannot_hold_is_refused_or_not_carried() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let theme = Files::from([(THEME_JSON.to_owned(), b"{}".to_vec())]);
+    let Err(NotWritten::Failed(why)) = stage(dir.path(), "nul", &theme, false) else {
+        panic!("a device as the folder is staged");
+    };
+    assert!(why.contains("Windows"), "{why}");
+    let mut with_a_device = theme.clone();
+    with_a_device.insert("icons/prn.json".to_owned(), b"{}".to_vec());
+    let Err(NotWritten::Failed(why)) = stage(dir.path(), "kept", &with_a_device, false) else {
+        panic!("a device inside is staged");
+    };
+    assert!(why.contains("prn.json") && why.contains("Windows"), "{why}");
+
+    let folder = a_folder(dir.path(), "kept");
+    std::fs::write(folder.join("aux.txt"), "x").expect("a file");
+    std::fs::write(folder.join("icons/con.json"), "{}").expect("a file");
+    let packed = export(&folder).expect("exported");
+    let left: Vec<(&str, bool)> = packed
+        .left_out
+        .iter()
+        .map(|it| (it.key.as_str(), it.why.contains("Windows")))
+        .collect();
+    assert_eq!(left, [("aux.txt", true), ("icons/con.json", true)]);
+    assert_eq!(packed.files, 4);
+
+    let device = a_folder(dir.path(), "lpt2");
+    let refused = export(&device).expect_err("a device as the folder");
+    assert!(refused.contains("Windows"), "{refused}");
+}
+
+#[test]
+fn the_folder_reader_refuses_a_device_name_and_a_font_or_icon_set_named_so() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let themes = dir.path().join("themes");
+    let refused = Library::new().load_folder(&themes, "aux");
+    assert!(refused.refused);
+    assert!(
+        refused.complaints[0].said.contains("Windows"),
+        "{refused:?}"
+    );
+
+    let font = a_font_of_its_own("a device font");
+    let mut files = with_a_font(&font, &serde_json::json!({}));
+    let mut theme: Value = serde_json::from_slice(&files[THEME_JSON]).expect("JSON");
+    theme["fonts"]["ui"]["faces"][0]["file"] = Value::from("fonts/NUL.woff2");
+    files.insert(THEME_JSON.to_owned(), theme.to_string().into_bytes());
+    let folder = themes.join("inked");
+    std::fs::create_dir_all(folder.join("fonts")).expect("a folder");
+    for (path, bytes) in &files {
+        std::fs::write(folder.join(path), bytes).expect("a file");
+    }
+    let read = Library::new()
+        .reading_named_fonts()
+        .load_folder(&themes, "inked");
+    assert!(read.refused);
+    let said: Vec<&str> = read.complaints.iter().map(|it| it.said.as_str()).collect();
+    assert!(
+        said.iter()
+            .any(|it| it.contains("NUL.woff2") && it.contains("Windows")),
+        "{said:?}"
+    );
+
+    theme.as_object_mut().expect("an object").remove("fonts");
+    theme["icons"] = Value::from("icons/com1.json");
+    std::fs::write(folder.join(THEME_JSON), theme.to_string()).expect("a theme");
+    let read = Library::new()
+        .reading_named_fonts()
+        .load_folder(&themes, "inked");
+    assert!(read.refused);
+    assert!(
+        read.complaints
+            .iter()
+            .any(|it| it.said.contains("com1.json") && it.said.contains("Windows")),
+        "{:?}",
+        read.complaints
+    );
 }

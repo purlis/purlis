@@ -641,6 +641,7 @@ describe("the one list of actions", () => {
       alone.filter((one) => one.id.startsWith("settings.group:")).map((one) => one.title),
     ).toEqual([
       "Your settings: Text",
+      "Your settings: Theme",
       "Your settings: Density and fonts",
       "Your settings: Editor",
       "Your settings: Chats list",
@@ -668,7 +669,7 @@ describe("the one list of actions", () => {
       ]),
     );
     // Only the focused workspace's: the other one is a focus away.
-    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(6);
+    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(7);
     expect(by(offers, "settings.group:workspace.repos:web")?.note).toBe(
       "web: Settings at its level, at Repos.",
     );
@@ -2394,9 +2395,10 @@ describe("the palette at fifty chats", () => {
     // 909 since #1989: Your settings: Notifications.
     // 910 since #2034: Your settings: Profiles.
     // This window has no todos loaded, so no `todo.` rows.
-    // 911 since #2326: Your settings: Density and fonts. 912 since #2023: Your settings:
-    // Browsers.
-    expect(offers).toHaveLength(912);
+    // 911 since #2326: Your settings: Density and fonts.
+    // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
+    // settings: Browsers.
+    expect(offers).toHaveLength(915);
   });
 
   /**

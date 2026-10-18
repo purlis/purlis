@@ -583,6 +583,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // file, so only their press in the window makes either.
     "theme_choose",
     "theme_move_into_a_folder",
+    // Settings › Theme's gallery (#2331): the person's machine default, a theme folder of their
+    // own made by Duplicate as my theme, and Open folder, which starts their file manager on a
+    // theme's folder. Each is the person's press in the window.
+    "theme_choose_machine",
+    "theme_duplicate",
+    "theme_open_folder",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -896,6 +902,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "tasks_sharing_a_folder",
     "tasks_used",
     "template_that_fits",
+    // What Settings › Theme's gallery reads (#2331): its cards, and what a card draws while the
+    // pointer is on it. Nothing is written.
+    "theme_card_drawn",
+    "theme_gallery",
     "theme_in_force",
     // The person's density and font override, read by the engine (#2326): no file, no state.
     "theme_person",

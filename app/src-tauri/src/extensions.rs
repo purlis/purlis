@@ -372,6 +372,14 @@ fn offered_kept() -> std::sync::MutexGuard<'static, Option<Arc<[purlis_core::the
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// **The themes approved extensions contribute**, from the survey [`theme_in_force`] keeps
+/// until an approval or a removal asks again: Settings › Theme's gallery reads the same (#2331).
+pub(crate) fn offered_now(root: &std::path::Path) -> Arc<[purlis_core::theme::Offered]> {
+    offered_kept()
+        .get_or_insert_with(|| offered_of(&extension::survey(root, &built_in())))
+        .clone()
+}
+
 /// Each theme in force, resolved from the text its fingerprint was taken over.
 fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
     in_force(seen)
@@ -886,7 +894,7 @@ fn texts_in_force(
 }
 
 /// The config home, or the reason charter has no machine-level state.
-fn config_root() -> Result<std::path::PathBuf, String> {
+pub(crate) fn config_root() -> Result<std::path::PathBuf, String> {
     purlis_core::machine::config_root()
         .ok_or_else(|| "this machine has no config home, so purlis keeps no extensions".to_owned())
 }

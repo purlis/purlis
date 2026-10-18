@@ -61,6 +61,7 @@ describe("the Settings tab, at the You level", () => {
         .map((one) => one.textContent),
     ).toEqual([
       "Text",
+      "Theme",
       "Density and fonts",
       "Editor",
       "Chats list",
@@ -256,6 +257,8 @@ describe("the Settings tab, by keyboard", () => {
     render(<SettingsTab />);
 
     group("Text").focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(group("Theme")).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}");
     expect(group("Density and fonts")).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}");

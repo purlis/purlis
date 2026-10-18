@@ -235,6 +235,32 @@ function core(
       if (cmd === "project_icons_drawn") return iconsDrawn;
       if (cmd === "project_theme") return { ...theme, local_left_out: leftOut };
       if (cmd === "project_theme_drawn") return theme.draws;
+      // Settings › Theme's cards (#2331): Purlis Classic and the project's folder, which the
+      // project commits as its default.
+      if (cmd === "theme_gallery")
+        return {
+          cards: [
+            { id: "purlis-classic", name: "Purlis Classic", from: "built-in" },
+            { id: "brand", name: "Brand", from: "project" },
+          ].map((one) => ({
+            ...one,
+            extension: null,
+            appearances: [{ id: "dark", appearance: "dark", high_contrast: false }],
+            options: [],
+            refused: false,
+            said: [],
+            warnings: [],
+            floors: [],
+            follows: null,
+            duplicable: one.from === "built-in",
+            folder: one.from === "project",
+            stamp: "0",
+          })),
+          yours: null,
+          drawn: "brand",
+          level: "project-default",
+          from: "charter.toml",
+        };
       if (cmd === "reachable_repos")
         return {
           repos: [
@@ -357,6 +383,7 @@ describe("the Workspace level", () => {
         "Repos",
         "Dispatch",
         "Extensions",
+        "Theme",
         "Appearance",
         "Plugins",
       ]),
@@ -372,7 +399,7 @@ describe("the Workspace level", () => {
     // Extensions is offered for its link to the Extensions dialog (#1387), and says why it has
     // nothing (#1198).
     await waitFor(() =>
-      expect(groups()).toEqual(["Live", "Repos", "Dispatch", "Extensions", "Appearance"]),
+      expect(groups()).toEqual(["Live", "Repos", "Dispatch", "Extensions", "Theme", "Appearance"]),
     );
     await userEvent.click(
       within(screen.getByRole("navigation", { name: "Groups" })).getByRole("button", {
@@ -437,7 +464,8 @@ describe("every workspace setting there is, at the Workspace level", () => {
     ["Repos", ["Cloned here", "Not cloned here"]],
     ["Dispatch", ["Limits"]],
     ["Extensions", ["Persona statistics: enabled", "Solarized: enabled"]],
-    ["Appearance", ["Your theme", "Your appearance", "Theme", "Colour", "Icons", "Theme options"]],
+    ["Theme", ["Themes", "Appearance", "Options", "Theme check", "This theme"]],
+    ["Appearance", ["Theme", "Colour", "Icons"]],
     [
       "Plugins",
       [
@@ -458,19 +486,13 @@ describe("every workspace setting there is, at the Workspace level", () => {
     );
   });
 
-  it("keeps your theme for the workspace on this machine, and says which level draws (#2323)", async () => {
-    const { asked, sent } = core(ALPHA, undefined, {
-      ...NO_THEME,
-      folders: ["brand"],
-      drawn: "Brand",
-      level: "project-default",
-      from: "charter.toml",
-    });
-    const group = await at("Appearance");
+  it("keeps your theme for the workspace on this machine, from its card, and says which level draws (#2323, #2331)", async () => {
+    const { asked, sent } = core();
+    const group = await at("Theme");
 
-    const pick = within(group).getByLabelText("Your theme");
-    expect(group).toHaveTextContent("Drawn here: Brand, from charter.toml.");
-    await pickIn(pick, "brand");
+    const brand = await within(group).findByRole("option", { name: /^Brand/ });
+    expect(group).toHaveTextContent("Drawn here: Brand");
+    await userEvent.click(brand);
 
     await waitFor(() =>
       expect(asked("theme_choose")).toEqual([

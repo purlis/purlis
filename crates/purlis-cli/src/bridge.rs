@@ -7,8 +7,8 @@
 //!
 //! `purlis bridge --pair` pairs the runner, once (ADR 0078 §3, as ruled 2026-10-17, #2044): it
 //! reads the desktop's device id and public link key on its standard input, one line of
-//! [`purlis_core::runnerlink::to_line`], keeps them as the runner's one peer, makes the
-//! runner's link key, and writes the runner's own device id and public key on its standard
+//! [`purlis_core::runnerlink::to_line`], keeps them as the runner's one peer, mints the
+//! runner's device id and makes its link key, and writes the runner's own device id and public key on its standard
 //! output for the desktop to keep. It is the bridge's one act that is not a pipe. The
 //! connector's own login vouches for this one exchange; after it, the keys decide.
 
@@ -30,9 +30,7 @@ pub fn run(pair: bool) -> Result<u8, String> {
             .read_line(&mut line)
             .map_err(|why| format!("the desktop's device id and key could not be read: {why}"))?;
         let desktop = purlis_core::runnerlink::from_line(&line)?;
-        let device = purlis_core::machine::device_id(&config)
-            .map_err(|why| format!("this runner has no device id: {why}"))?;
-        let ours = purlis_core::runnerlink::pair(&config, &device, &desktop)?;
+        let ours = purlis_core::runnerlink::pair(&config, &desktop)?;
         let mut out = std::io::stdout().lock();
         writeln!(out, "{}", purlis_core::runnerlink::to_line(&ours))
             .and_then(|()| out.flush())
