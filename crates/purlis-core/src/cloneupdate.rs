@@ -1833,14 +1833,7 @@ pub fn refusal_of(
         if inv.unread {
             return None;
         }
-        let (sub, post, end) = planeroot::resolve_git_alias_to_its_end(
-            root,
-            &inv.sub,
-            &inv.post,
-            &inv.pre,
-            &inv.env,
-            &inv.own_env,
-        );
+        let (sub, post, end) = inv.resolved(root);
         // The shell's redirections are its own, never git's words: `git rebase <upstream>
         // 2>&1` names one commit, as `git rebase <upstream>` does.
         // A quoted word spelled like one is an operand: then nothing is dropped.
