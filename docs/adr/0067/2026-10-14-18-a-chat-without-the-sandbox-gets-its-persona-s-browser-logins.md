@@ -14,3 +14,8 @@ own browser* is read as follows. Where it disagrees, this note holds.
    the project turned the sandbox on, and from where no chat writes. An Allow given since applies
    to its next call; one withdrawn since refuses it. *Decided in implementation, D-2560-1, to be
    confirmed.*
+3. **A chat with no sandbox at all.** This holds only for a chat no sandbox was compiled for and
+   none holds. A chat a sandbox still holds whose start the app no longer has on record (one
+   reattached after its sandbox changed while no window was there) is offered a restart before
+   any login, as it is for the rest of its sandbox. *Decided in implementation, D-2560-2, to be
+   confirmed.*

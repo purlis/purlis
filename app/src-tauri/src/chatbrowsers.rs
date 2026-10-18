@@ -28,7 +28,9 @@
 //! - **Keep off** refuses every call of the chat's, in words that say not to retry.
 //! - **A login is purlis's to perform** (#2016). `browser_login` names one of the chat's
 //!   persona's declared browser logins; the app reads its values for exactly the login the
-//!   chat's start armed (`purlis_core::secrets::brokered::login_for`) and hands them to the
+//!   chat's start armed, or, for a chat started without the sandbox, the login its persona
+//!   declares and this machine allowed, read at the call (#2560,
+//!   `purlis_core::secrets::brokered::login_for`), and hands them to the
 //!   session host ([`Driver::log_in`]), whose browser fills them on the login's own origin and
 //!   hands the browser back reaching that origin alone. The chat is told the page the login
 //!   left, never a value; it chooses which declared login, and nothing else.
@@ -1428,12 +1430,16 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<LogI
         root: held.root().to_path_buf(),
         env: purlis_core::secrets::Env::from_process(),
         chat: session,
-        persona: open.persona,
+        // The persona its browser is decided by ([`as_persona_of`]), from the app's record.
+        persona: persona_of(held, session),
         folder: open.cwd,
         confines: held.chats().confines_now(session),
         harness: open.harness,
     };
-    purlis_core::secrets::brokered::login_for(&asker, name)
+    // Started without the sandbox only where no sandbox was compiled for it and none holds it
+    // (#2560): a chat reattached under a sandbox that changed has neither record nor freedom.
+    let unconfined = held.chats().runs_unconfined(session);
+    purlis_core::secrets::brokered::login_for(&asker, name, unconfined)
 }
 
 /// The persona chat `session` runs with, from the app's own record of it, never from what

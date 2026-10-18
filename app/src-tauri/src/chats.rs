@@ -350,7 +350,6 @@ struct Running {
     workspace: Option<String>,
     /// What runs beside a chat charter wraps — its egress proxy and its own temp directory —
     /// for as long as the chat is open (ADR 0067 §2). Dropped with it.
-    #[allow(dead_code)]
     confinement: Option<purlis_core::sandbox::Confinement>,
     /// What its sandbox was compiled to as it started, which a command run on its behalf is
     /// held to (#1407); `None` for a chat started without one.
@@ -4265,6 +4264,16 @@ impl Chats {
 
     /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
     /// `None` for a chat that is not open or was started without a sandbox.
+    /// **Whether chat `session` runs with no sandbox at all** (#2560): open, with no sandbox
+    /// compiled for it as it started and no confinement holding it. A chat reattached under a
+    /// sandbox that changed while no window was there (D-2006-11) has no compiled sandbox
+    /// recorded but is still held, so it is not one.
+    pub fn runs_unconfined(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|running| running.confines.is_none() && running.confinement.is_none())
+    }
+
     pub fn confines_of(&self, session: u32) -> Option<purlis_core::sandbox::Confines> {
         lock(&self.open)
             .get(&session)

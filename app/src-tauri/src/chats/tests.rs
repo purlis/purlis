@@ -7392,3 +7392,55 @@ fn only_a_shell_tab_at_the_project_root_is_a_place_to_type_an_install_command() 
     assert!(!chats.is_shell_at(agent, root.path()), "an agent's pane");
     assert!(!chats.is_shell_at(9999, root.path()), "no such session");
 }
+
+/// A chat is taken for one started without the sandbox only where no sandbox was compiled
+/// for it and none holds it (#2560); a sandboxed one never is, nor one the app does not
+/// have open.
+#[test]
+fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let decided = purlis_core::sandbox::decide_granted(
+        Harness::ClaudeCode,
+        plane.path(),
+        &a_machine(),
+        &|_| true,
+        &purlis_core::sandbox::Person {
+            opt_out: None,
+            level_as: None,
+            made: &purlis_core::sandbox::Made::Relaunch,
+        },
+        None,
+        &purlis_core::sandbox::grant::Grants::default(),
+    )
+    .expect("compiles");
+    let Some(purlis_core::sandbox::Decided::Sandboxed(applied)) = decided else {
+        panic!("not sandboxed");
+    };
+    let open_with = |session: u32, confines: Option<purlis_core::sandbox::Confines>| {
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines,
+                started_with: StartedWith::default(),
+            },
+        );
+    };
+    open_with(1, Some(applied.confines().clone()));
+    open_with(2, None);
+    assert!(!chats.runs_unconfined(1), "a sandboxed chat");
+    assert!(
+        chats.runs_unconfined(2),
+        "a chat started without the sandbox"
+    );
+    assert!(
+        !chats.runs_unconfined(3),
+        "a chat this app does not have open"
+    );
+}

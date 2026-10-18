@@ -1219,12 +1219,15 @@ pub(crate) fn chat_writes(asker: &Asker, confines: &Confines) -> Vec<PathBuf> {
 /// values from its vault, for purlis to fill in the chat's browser itself, so none reaches the
 /// chat. Exactly what a declared tool's run is held to (D-PE-ruling-2): a tool the chat's start
 /// armed, allowed on this machine with its persona's hosts, whose vault the registry, or your
-/// grant on this machine, lets that persona use. A chat the app started without the sandbox is
-/// held to the same, its persona's declarations and this machine's Allow read at the call
-/// (#2560). Refused, with a sentence and no value, for anything else.
+/// grant on this machine, lets that persona use. A chat the app started without the sandbox,
+/// `unconfined` (no sandbox compiled for it and none holding it), is held to the same, its
+/// persona's declarations and this machine's Allow read at the call (#2560); one a sandbox
+/// still holds with no record of its start is offered a restart. Refused, with a sentence and
+/// no value, for anything else.
 pub fn login_for(
     asker: &Asker,
     name: &str,
+    unconfined: bool,
 ) -> Result<purlis_session_protocol::browsing::LogIn, String> {
     use purlis_session_protocol::browsing::{LogIn, Secret};
     let persona = asker.persona.as_deref().unwrap_or_default();
@@ -1246,6 +1249,16 @@ pub fn login_for(
             declared_now(&asker.root, persona),
             "Start the chat again once it is",
         ),
+        // A chat a sandbox still holds whose start's record the app no longer keeps (a sandbox
+        // that changed while no window was there, D-2006-11) is offered a restart, as it is
+        // for the rest of its sandbox.
+        None if !unconfined => {
+            return Err(format!(
+                "this chat's sandbox changed since it started, so purlis performs no browser \
+                 login for it until it starts again: restart the chat, then call browser_login \
+                 with {name} again"
+            ));
+        }
         None if asker.persona.as_deref().is_some_and(|p| !p.is_empty()) => {
             let (declared, allowed) =
                 crate::sandbox::tools::declared_and_allowed_here(&asker.root, persona);
