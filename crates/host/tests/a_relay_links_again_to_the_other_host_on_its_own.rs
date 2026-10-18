@@ -9,8 +9,9 @@
 //! hands no event twice. A command in flight as its link is renewed is answered on it. The
 //! window is told once that the link is down and once that it is back, and a renewal is neither
 //! (#2496). While no link is up, every command is refused in words and none is sent on later; a
-//! host at the far end whose key is not the one pinned is never linked; and what host B named to
-//! a link that ended, a chat's confinement, is not the next link's (#2511). Host B's programs
+//! host at the far end whose key is not the one pinned is never linked; and over each new link
+//! the window takes back the confinements of the chats it started on host B, and only its own
+//! (#2511). Host B's programs
 //! are stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs
 //! a terminal.
 
@@ -30,7 +31,7 @@ use purlis_session_protocol::hostlink::{
 use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
     self, Answer, Beside, Client, Command, Confine, ConfinePlan, Event, Events, Exit, Launch,
-    Layer, Listed, ProgramKind, Pushed, StartProgram, Told, ViewKind,
+    Layer, Listed, ProgramKind, Pushed, ReachChange, StartProgram, Told, ViewKind,
 };
 use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use purlis_terminal::session::Spec;
@@ -147,6 +148,7 @@ impl<B: session::Host + Clone> Connector for Cable<B> {
 }
 
 struct Window<B = Hosting> {
+    relay: Relay,
     client: Client,
     views: Acceptor,
     events: Events,
@@ -198,6 +200,21 @@ async fn a_window_on<B: session::Host + Clone>(
         })
     };
     let relay = Relay::kept(keep);
+    let (client, views, events) = a_window_link(&relay).await;
+    Window {
+        relay,
+        client,
+        views,
+        events,
+        runs,
+        another,
+        cable,
+        _project: tempfile::tempdir().unwrap(),
+    }
+}
+
+/// A window's link to host A, which relays it.
+async fn a_window_link(relay: &Relay) -> (Client, Acceptor, Events) {
     let (a, b) = duplex(256 * 1024);
     let (client, served) = tokio::join!(
         link::connect(
@@ -208,17 +225,8 @@ async fn a_window_on<B: session::Host + Clone>(
         ),
         link::serve_any(b, session::speaks(), &HELD)
     );
-    tokio::spawn(session::serve(served.unwrap(), relay, None));
-    let (client, views, events) = Client::new(client.unwrap());
-    Window {
-        client,
-        views,
-        events,
-        runs,
-        another,
-        cable,
-        _project: tempfile::tempdir().unwrap(),
-    }
+    tokio::spawn(session::serve(served.unwrap(), relay.clone(), None));
+    Client::new(client.unwrap())
 }
 
 /// Every liveness as the link has it, but renewed only as the test says.
@@ -556,61 +564,149 @@ fn planned() -> Confine {
     }
 }
 
-/// A chat the window started in a confinement it made on host B. What host B named to the link
-/// that made it ends with that link, and a link after it is named nothing again: until the
-/// window takes its runner chats' confinements back (#2511), that confinement is not the next
-/// link's to act on, and host B refuses it as one it does not hold.
-#[tokio::test]
-async fn after_a_re_link_a_runner_chats_confinement_is_not_the_new_links_to_act_on() {
-    let runs = StandIns::default();
-    let b = Hosting::confining(Echo, StandInConfines::default(), runs.clone());
-    let window = a_window_on(b, runs, never_renewed()).await;
-    window
-        .client
-        .hold_project(PROJECT, window._project.path().to_str().unwrap())
+/// A chat started in confinement `id`, which the window made on host B.
+fn running_in(id: &str) -> StartProgram {
+    StartProgram {
+        launch: Some(Launch {
+            program: "/bin/echo".into(),
+            args: Vec::new(),
+            cwd: None,
+            set: Vec::new(),
+            strip: Vec::new(),
+            pass: Vec::new(),
+            declared: Vec::new(),
+            harness: None,
+            git_hooks: None,
+            reporting: None,
+            confinement: Some(id.into()),
+        }),
+        ..StartProgram::of(PROJECT, ProgramKind::Harness)
+    }
+}
+
+/// `client`, holding the project, runs a chat in confinement `id` it made on host B.
+async fn confined_chat(client: &Client, project: &std::path::Path, id: &str) {
+    client
+        .hold_project(PROJECT, project.to_str().unwrap())
         .await
         .unwrap();
-    window
-        .client
-        .call(Command::Confine(Box::new(planned())))
+    client
+        .call(Command::Confine(Box::new(Confine {
+            confinement: id.into(),
+            ..planned()
+        })))
         .await
         .expect("confined on host B");
-    window
-        .client
-        .start_program(StartProgram {
-            launch: Some(Launch {
-                program: "/bin/echo".into(),
-                args: Vec::new(),
-                cwd: None,
-                set: Vec::new(),
-                strip: Vec::new(),
-                pass: Vec::new(),
-                declared: Vec::new(),
-                harness: None,
-                git_hooks: None,
-                reporting: None,
-                confinement: Some(CONFINEMENT.into()),
-            }),
-            ..StartProgram::of(PROJECT, ProgramKind::Harness)
-        })
+    client
+        .start_program(running_in(id))
         .await
         .expect("it runs in the confinement on host B");
-    let reach = || Command::ReachOf {
-        confinement: CONFINEMENT.into(),
-    };
+}
+
+fn reach(id: &str) -> Command {
+    Command::ReachOf {
+        confinement: id.into(),
+    }
+}
+
+/// A chat the window started in a confinement it made on host B. Over the next link host A
+/// names the window again, and host B names that link the chat's confinement: the window
+/// changes the chat's reach again, and forgets an Allow the person gave.
+#[tokio::test]
+async fn after_a_re_link_the_window_acts_on_its_runner_chats_confinement_again() {
+    let runs = StandIns::default();
+    let confines = StandInConfines::default();
+    let b = Hosting::confining(Echo, confines.clone(), runs.clone());
+    let window = a_window_on(b, runs, never_renewed()).await;
+    confined_chat(&window.client, window._project.path(), CONFINEMENT).await;
+    let allowed = Layer::Chat;
     window
         .client
-        .call(reach())
+        .call(Command::ChangeReach {
+            confinement: CONFINEMENT.into(),
+            change: ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: allowed,
+            },
+        })
         .await
-        .expect("the link that made it acts on it");
+        .expect("the person allows a host");
 
     window.cable.cut();
     window.linked_again().await;
 
-    let refused = window.client.call(reach()).await.unwrap_err();
+    window
+        .client
+        .call(reach(CONFINEMENT))
+        .await
+        .expect("the window acts on it again");
+    let forget = ReachChange::Forget {
+        host: "pypi.example.com".into(),
+        layer: allowed,
+    };
+    window
+        .client
+        .call(Command::ChangeReach {
+            confinement: CONFINEMENT.into(),
+            change: forget.clone(),
+        })
+        .await
+        .expect("the person forgets the Allow");
+    assert_eq!(confines.seen()[0].changes.last(), Some(&forget));
+}
+
+/// Two windows relayed by host A, each with a chat in a confinement of its own on host B: after
+/// a re-link, each takes back its own and is refused the other's as one host B does not hold.
+#[tokio::test]
+async fn after_a_re_link_a_window_takes_back_its_own_runner_chats_and_not_another_windows() {
+    const ANOTHER: &str = "01J9CNFNMNT0000000000000009";
+    let runs = StandIns::default();
+    let b = Hosting::confining(Echo, StandInConfines::default(), runs.clone());
+    let window = a_window_on(b, runs, never_renewed()).await;
+    let (another, _views, _events) = a_window_link(&window.relay).await;
+    confined_chat(&window.client, window._project.path(), CONFINEMENT).await;
+    confined_chat(&another, window._project.path(), ANOTHER).await;
+
+    window.cable.cut();
+    window.linked_again().await;
+    timeout(PATIENCE, async {
+        while another.list().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the other window's link comes back too");
+
+    for (client, own, other) in [
+        (&window.client, CONFINEMENT, ANOTHER),
+        (&another, ANOTHER, CONFINEMENT),
+    ] {
+        client.call(reach(own)).await.expect("its own chat's");
+        let refused = client.call(reach(other)).await.unwrap_err();
+        assert_eq!(
+            refused.refusal().map(|refusal| refusal.code.as_str()),
+            Some(session::NO_SUCH_CHAT),
+            "{refused}"
+        );
+    }
+}
+
+/// `take_back` is host A's own word to host B: a window's is refused, whatever host A grants.
+#[tokio::test]
+async fn a_window_never_sends_a_take_back_through_the_relay() {
+    let window = a_window(never_renewed()).await;
+
+    let refused = window
+        .client
+        .call(Command::TakeBack {
+            window: "01JA0WNDW0000000000000000".into(),
+        })
+        .await
+        .unwrap_err();
+
     assert_eq!(
         refused.refusal().map(|refusal| refusal.code.as_str()),
-        Some(session::NO_SUCH_CHAT),
+        Some(session::NOT_ALLOWED),
         "{refused}"
     );
 }

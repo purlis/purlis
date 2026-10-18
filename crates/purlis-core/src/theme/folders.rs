@@ -137,26 +137,62 @@ impl Folders {
     /// **The theme folder `name`**, from the nearest level within `reach` that has one, read
     /// with a library of that level and the levels farther out: what it may extend.
     pub fn find(&self, name: &str, reach: Reach) -> Found {
+        let (levels, said) = self.read_within(reach);
+        match levels.iter().position(|held| held.contains_key(name)) {
+            Some(at) => Found::Read(load(&library_of(&levels[at..]), name, said)),
+            None => Found::Missing(said),
+        }
+    }
+
+    /// **The theme folder `name` of the level `at` itself**, read exactly as a choice made at
+    /// that level reads it ([`Self::find`]). `Missing` when that level has no folder of that
+    /// name: a farther level's folder of the name is not read in its place.
+    pub fn find_at(&self, name: &str, at: Reach) -> Found {
+        let (levels, said) = self.read_within(at);
+        match levels.first() {
+            Some(held) if self.level(at).is_some() && held.contains_key(name) => {
+                Found::Read(load(&library_of(&levels), name, said))
+            }
+            _ => Found::Missing(said),
+        }
+    }
+
+    /// **Every theme folder of the level `at` itself**, by name, each read exactly as
+    /// [`Self::find_at`] reads it: what `purlis theme list` lists for that level. Empty when
+    /// the level has no `themes/`.
+    pub fn every_at(&self, at: Reach) -> Vec<(String, Resolved)> {
+        if self.level(at).is_none() {
+            return Vec::new();
+        }
+        let (levels, said) = self.read_within(at);
+        let Some(nearest) = levels.first() else {
+            return Vec::new();
+        };
+        let library = library_of(&levels);
+        nearest
+            .keys()
+            .map(|name| (name.clone(), load(&library, name, said.clone())))
+            .collect()
+    }
+
+    /// The `themes/` folder of the level `at`, when there is one.
+    fn level(&self, at: Reach) -> Option<&ThemesFolder> {
+        match at {
+            Reach::Workspace => self.workspace.as_ref(),
+            Reach::Project => self.project.as_ref(),
+            Reach::Machine => self.machine.as_ref(),
+        }
+    }
+
+    /// The levels `reach` reaches, nearest first, each read, and what reading them had to say.
+    fn read_within(&self, reach: Reach) -> (Vec<Held>, Vec<Complaint>) {
         let mut said = Vec::new();
-        let levels: Vec<Held> = self
+        let levels = self
             .within(reach)
             .into_iter()
             .map(|folder| read_level(folder, &mut said))
             .collect();
-        let Some(at) = levels.iter().position(|held| held.contains_key(name)) else {
-            return Found::Missing(said);
-        };
-        // Farthest first, so a nearer level's folder of a name takes a farther one's place.
-        let mut library = Library::new();
-        for held in levels[at..].iter().rev() {
-            for (one, read) in held {
-                library = library.with_read(one, read.clone());
-            }
-        }
-        let mut resolved = library.load_id(name);
-        said.append(&mut resolved.complaints);
-        resolved.complaints = said;
-        Found::Read(resolved)
+        (levels, said)
     }
 
     /// Every theme folder's name within `reach`, nearest first and each once: what a pick there
@@ -173,6 +209,27 @@ impl Folders {
         }
         names
     }
+}
+
+/// The library of the levels read, nearest first: farthest first into it, so a nearer level's
+/// folder of a name takes a farther one's place.
+fn library_of(levels: &[Held]) -> Library {
+    let mut library = Library::new();
+    for held in levels.iter().rev() {
+        for (one, read) in held {
+            library = library.with_read(one, read.clone());
+        }
+    }
+    library
+}
+
+/// The theme folder `name` read with `library`, what reading the levels said (`said`) before
+/// what reading it says.
+fn load(library: &Library, name: &str, mut said: Vec<Complaint>) -> Resolved {
+    let mut resolved = library.load_id(name);
+    said.append(&mut resolved.complaints);
+    resolved.complaints = said;
+    resolved
 }
 
 /// One level's theme folders, each read, or nothing when the level has no `themes/`; what is

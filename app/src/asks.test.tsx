@@ -157,6 +157,7 @@ const BROWSER_SITES: Shown = {
   options: [
     { id: "chat", label: "Allow for this chat", allows: true },
     { id: "you", label: "Always allow in this project, on this machine", allows: true },
+    { id: "project", label: "Allow for everyone in this project", allows: true },
     { id: "keep", label: "Keep blocked", allows: false },
   ],
   source: "browser-site",
@@ -390,11 +391,13 @@ describe("answering through the path an ask names", () => {
     const calls = sent({ allow_browser_sites: null, keep_browser_sites_blocked: null });
     await answerThrough(PLANE, BROWSER_SITES, "chat");
     await answerThrough(PLANE, BROWSER_SITES, "you");
+    await answerThrough(PLANE, BROWSER_SITES, "project");
     await answerTaken(PLANE, BROWSER_SITES, "keep", "  not this one ");
     const sites = ["news.example.org:443"];
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "chat" }],
       ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "you" }],
+      ["allow_browser_sites", { plane: PLANE, session: 8, sites, level: "project" }],
       ["keep_browser_sites_blocked", { plane: PLANE, session: 8, sites, reason: "not this one" }],
     ]);
   });
