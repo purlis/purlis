@@ -84,8 +84,8 @@ fn a_removed_token_is_a_narrowing() {
 fn a_new_token_or_key_only_adds() {
     let after = changed(|it| {
         it["$defs"]["tokens"]["properties"]["brand.new"] = json!({ "$ref": "#/$defs/colour" });
-        it["properties"]["options"] = json!({ "type": "object" });
-        it["$defs"]["option"] = json!({ "type": "string" });
+        it["properties"]["flourish"] = json!({ "type": "object" });
+        it["$defs"]["flourish"] = json!({ "type": "string" });
     });
     assert_eq!(narrowings(&schema(), &after), Vec::<String>::new());
 }
@@ -186,22 +186,40 @@ fn a_keyword_the_rule_does_not_know_is_a_narrowing_until_it_is_taught() {
 }
 
 #[test]
-fn a_keyword_the_rule_cannot_judge_anywhere_is_a_narrowing() {
+fn a_keyword_the_rule_cannot_judge_is_a_narrowing_wherever_the_earlier_schema_accepted_values() {
+    let token = TOKENS[0];
+    let inner = json!({ "type": "object" });
     for keyword in ["not", "if", "oneOf"] {
         let after = changed(|it| {
-            // Inside a new token, where the walk itself has nothing to compare it with.
-            it["$defs"]["tokens"]["properties"]["brand.new"] =
-                json!({ keyword: { "type": "string" } });
+            // On a token the earlier schema had.
+            it["$defs"]["tokens"]["properties"][token][keyword] = json!({ "type": "string" });
+            // In place of what a key the earlier schema had asked of its value.
+            it["$defs"]["appearance"]["properties"]["tokens"] = json!({ keyword: inner });
         });
         let found = narrowings(&schema(), &after);
-        assert_eq!(found.len(), 1, "{keyword}: {found:?}");
-        assert!(
-            found[0].starts_with(&format!(
-                "/$defs/tokens/properties/brand.new/{keyword}: a keyword this check cannot judge"
-            )),
-            "{found:?}"
-        );
+        for at in [
+            format!("/$defs/tokens/properties/{token}/{keyword}"),
+            "/$defs/appearance/properties/tokens".to_owned(),
+        ] {
+            assert!(
+                found.iter().any(|one| one.starts_with(&at)),
+                "{keyword} at {at}: {found:?}"
+            );
+        }
     }
+}
+
+#[test]
+fn a_keyword_the_rule_cannot_judge_inside_what_only_adds_is_not_a_narrowing() {
+    // A new definition and a new key of a closed object: nothing an earlier theme could hold
+    // reaches them, so what they accept is new and only adds.
+    let after = changed(|it| {
+        it["$defs"]["flourish"] = json!({ "oneOf": [{ "type": "string" }, { "type": "boolean" }] });
+        it["properties"]["flourish"] =
+            json!({ "type": "array", "items": { "$ref": "#/$defs/flourish" } });
+        it["$defs"]["tokens"]["properties"]["brand.new"] = json!({ "not": { "type": "string" } });
+    });
+    assert_eq!(narrowings(&schema(), &after), Vec::<String>::new());
 }
 
 #[test]
@@ -210,4 +228,22 @@ fn a_property_named_like_a_keyword_is_only_a_name() {
         it["properties"]["if"] = json!({ "type": "string" });
     });
     assert_eq!(narrowings(&schema(), &after), Vec::<String>::new());
+}
+
+#[test]
+fn a_keyword_the_rule_cannot_judge_that_was_already_there_unchanged_is_not_a_narrowing() {
+    let before = changed(|it| {
+        it["$defs"]["choice"] = json!({ "oneOf": [{ "type": "string" }, { "type": "boolean" }] });
+    });
+    assert_eq!(narrowings(&before, &before), Vec::<String>::new());
+    let after = changed(|it| {
+        it["$defs"]["choice"] = json!({ "oneOf": [{ "type": "string" }] });
+    });
+    let found = narrowings(&before, &after);
+    assert!(
+        found
+            .iter()
+            .any(|one| one.starts_with("/$defs/choice/oneOf: a keyword this check cannot judge")),
+        "{found:?}"
+    );
 }

@@ -52,8 +52,9 @@ mod promise {
         "enumDescriptions",
     ];
 
-    /// Keywords whose effect on what a schema accepts this comparison cannot judge: one
-    /// anywhere in the later schema is a narrowing until the comparison is taught it.
+    /// Keywords whose effect on what a schema accepts this comparison cannot judge: one that is
+    /// new or changed wherever the earlier schema accepted values is a narrowing until the
+    /// comparison is taught it.
     const UNJUDGED: &[&str] = &["not", "if", "then", "else", "oneOf"];
 
     /// Bounds a later schema may lower or drop, never raise or add.
@@ -81,7 +82,7 @@ mod promise {
     pub fn narrowings(before: &Value, after: &Value) -> Vec<String> {
         let mut found = Vec::new();
         compare(before, after, "", &mut found);
-        unjudged(after, "", &mut found);
+        unjudged(after, Some(before), "", &mut found);
         found.sort();
         found.dedup();
         found
@@ -104,20 +105,29 @@ mod promise {
         }
     }
 
-    /// Every [`UNJUDGED`] keyword in `schema`, wherever it is. The keys of `properties`,
-    /// `patternProperties` and `$defs` are names, not keywords, so only their values are read.
-    fn unjudged(schema: &Value, at: &str, found: &mut Vec<String>) {
+    /// Every [`UNJUDGED`] keyword in `schema` that `before` does not hold, word for word, at the
+    /// same place, wherever the two schemas both have one: one the earlier schema already had,
+    /// unchanged, accepts what it accepted. Where `before` has nothing (a new definition, a new
+    /// key) the walk in [`compare`] has judged whether anything an earlier theme held reaches
+    /// it. The keys of `properties`, `patternProperties` and `$defs` are names, not keywords,
+    /// so only their values are read.
+    fn unjudged(schema: &Value, before: Option<&Value>, at: &str, found: &mut Vec<String>) {
+        if before.is_none() {
+            return;
+        }
         let Value::Object(fields) = schema else {
             if let Value::Array(items) = schema {
                 for (n, item) in items.iter().enumerate() {
-                    unjudged(item, &format!("{at}/{n}"), found);
+                    let was = before.and_then(|it| it.get(n));
+                    unjudged(item, was, &format!("{at}/{n}"), found);
                 }
             }
             return;
         };
         for (key, value) in fields {
             let here = format!("{at}/{key}");
-            if UNJUDGED.contains(&key.as_str()) {
+            let was = before.and_then(|it| it.get(key));
+            if UNJUDGED.contains(&key.as_str()) && was != Some(value) {
                 found.push(format!(
                     "{here}: a keyword this check cannot judge; teach \
                      `theme::published::narrowings` whether it narrows"
@@ -126,10 +136,11 @@ mod promise {
             match (key.as_str(), value) {
                 ("properties" | "patternProperties" | "$defs", Value::Object(named)) => {
                     for (name, one) in named {
-                        unjudged(one, &format!("{here}/{name}"), found);
+                        let was_one = was.and_then(|it| it.get(name));
+                        unjudged(one, was_one, &format!("{here}/{name}"), found);
                     }
                 }
-                _ => unjudged(value, &here, found),
+                _ => unjudged(value, was, &here, found),
             }
         }
     }
