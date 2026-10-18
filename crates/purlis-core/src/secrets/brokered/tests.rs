@@ -3490,10 +3490,6 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
 fn a_browser_login_is_refused_for_anything_but_its_armed_tool() {
     let project = project();
     let mut asker = asker(project.path(), Some("devops"));
-    let mut unsandboxed = asker.clone();
-    unsandboxed.confines = None;
-    let why = login_for(&unsandboxed, "shop-login").unwrap_err();
-    assert!(why.contains("started without the sandbox"), "{why}");
     let why = login_for(&asker, "shop-login").unwrap_err();
     assert!(
         why.contains("devops declares no browser login shop-login"),
@@ -4118,4 +4114,42 @@ fn a_wrapped_tool_declared_under_another_name_runs_under_that_name() {
         Vec::<PathBuf>::new(),
         "the run's link went with it"
     );
+}
+
+/// A chat started without the sandbox (#2560): its persona's browser login is read from the
+/// project's settings and this machine's Allow at the login itself, as a sandboxed chat's start
+/// arms it, with the same vault rules; a login this machine has not allowed fills nothing.
+#[test]
+fn a_chat_started_without_the_sandbox_gets_its_personas_allowed_login() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\ntools = { shop-login = { \
+         vault = \"team\", browser = \"https://shop.example.test/login\", key = \"TOKEN\" } }\n",
+    )
+    .unwrap();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines = None;
+    let why = login_for(&asker, "shop-login").unwrap_err();
+    assert!(why.contains("not allowed on this machine"), "{why}");
+    assert!(!why.contains(TOKEN), "{why}");
+    let tool = shop_login_armed("team", "TOKEN", None).tool;
+    crate::sandbox::local::allow_persona_hosts(
+        project.path(),
+        "devops",
+        &crate::sandbox::persona::digest_of(&[], std::slice::from_ref(&tool), false),
+    )
+    .unwrap();
+    let login = login_for(&asker, "shop-login").expect("the login");
+    assert_eq!(login.address, "https://shop.example.test/login");
+    assert_eq!(login.password.expose(), TOKEN);
+    let why = login_for(&asker, "mail-login").unwrap_err();
+    assert!(
+        why.contains("devops declares no browser login mail-login"),
+        "{why}"
+    );
+    // On no persona, nothing.
+    let mut nobody = asker.clone();
+    nobody.persona = None;
+    assert!(login_for(&nobody, "shop-login").is_err());
 }
