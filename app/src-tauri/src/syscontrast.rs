@@ -7,8 +7,9 @@
 //! right once the page reads `prefers-contrast`.
 //!
 //! - **macOS**: Increase contrast (`NSWorkspace.accessibilityDisplayShouldIncreaseContrast`).
-//! - **Linux**: the desktop portal's `org.freedesktop.appearance` `contrast`, asked within
-//!   [`BUDGET`]; a session with no portal that answers in time answers nothing.
+//! - **Linux**: the desktop portal's `org.freedesktop.appearance` `contrast`, asked once per
+//!   process within [`BUDGET`]; a session with no portal that answers in time answers nothing.
+//!   The page's `prefers-contrast` may still ask for more where the portal does not.
 //! - **Windows**: nothing is read here yet, and the page's own `prefers-contrast` picks among
 //!   the frames it is handed for both contrasts (`windowprefs.rs`), so the first frame is still
 //!   the high-contrast appearance when the system asks for it.
@@ -20,13 +21,23 @@ use purlis_core::theme::Contrast;
 
 /// What the platform says it asks for, or `None` where it says nothing purlis can read.
 pub(crate) fn asked() -> Option<Contrast> {
-    decided(read())
+    decided(read(), PAGE_MAY_ASK_MORE)
 }
 
-/// The contrast a platform's answer asks for: more when it says so, the standard one when it
-/// says not, and `None` when it said nothing.
-fn decided(more: Option<bool>) -> Option<Contrast> {
-    more.map(crate::extensions::contrast_of)
+/// Whether the page's `prefers-contrast` may ask for more where this platform's read says not:
+/// on Linux the portal and WebKitGTK's setting are two places, and more contrast is drawn when
+/// either asks for it. On macOS the page answers from the same setting the core reads.
+const PAGE_MAY_ASK_MORE: bool = cfg!(target_os = "linux");
+
+/// The contrast a platform's answer asks for: more when it says so; the standard one when it
+/// says not, unless the page may still ask for more (`page_may_ask_more`), when the page picks;
+/// and `None`, the page picking, when it said nothing.
+fn decided(more: Option<bool>, page_may_ask_more: bool) -> Option<Contrast> {
+    match more? {
+        true => Some(Contrast::More),
+        false if page_may_ask_more => None,
+        false => Some(Contrast::Standard),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -40,12 +51,15 @@ fn read() -> Option<bool> {
 #[cfg(target_os = "linux")]
 const BUDGET: std::time::Duration = std::time::Duration::from_millis(100);
 
+/// The portal is asked once per process: every later window takes the same answer, with no
+/// wait and no thread of its own.
 #[cfg(target_os = "linux")]
 fn read() -> Option<bool> {
-    match crate::portal::in_time(BUDGET, portal_contrast) {
+    static ANSWERED: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    *ANSWERED.get_or_init(|| match crate::portal::in_time(BUDGET, portal_contrast) {
         crate::portal::Asked::Answered(more) => more,
         _ => None,
-    }
+    })
 }
 
 /// The portal's `contrast` setting: `1` asks for more contrast, `0` for none in particular.
@@ -76,10 +90,14 @@ mod tests {
 
     #[test]
     fn the_platform_s_answer_decides_the_contrast_a_window_is_created_for() {
-        assert_eq!(decided(Some(true)), Some(Contrast::More));
-        assert_eq!(decided(Some(false)), Some(Contrast::Standard));
-        // Nothing read: the page's `prefers-contrast` picks among the frames it is handed.
-        assert_eq!(decided(None), None);
+        for page in [false, true] {
+            assert_eq!(decided(Some(true), page), Some(Contrast::More));
+            // Nothing read: the page's `prefers-contrast` picks among the frames it is handed.
+            assert_eq!(decided(None, page), None);
+        }
+        assert_eq!(decided(Some(false), false), Some(Contrast::Standard));
+        // Where the page may still ask for more, it picks: more is drawn when either asks.
+        assert_eq!(decided(Some(false), true), None);
     }
 
     #[test]

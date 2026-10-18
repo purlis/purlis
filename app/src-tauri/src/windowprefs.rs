@@ -97,6 +97,11 @@ impl CreatedOn {
     /// **The project the main window opens on**: the launch's own (`launched`, the plane the
     /// working directory resolved to), else the one in front in the first window the machine
     /// remembers (`machine.json`), which the restore brings back; `None` with neither.
+    ///
+    /// **A window's first frame draws a project's theme only once the project is trusted on this
+    /// machine.** Running purlis in a project is that yes; a remembered one is drawn only while
+    /// the store's approval of it holds for what it contributes now, the check the restore makes
+    /// before it opens it (`Planes::open_if_approved`). Otherwise the machine's levels decide.
     pub(crate) fn main(config_root: Option<&Path>, launched: Option<&Path>) -> Option<Self> {
         Self::main_of(launched, || {
             config_root.map(|root| purlis_core::machine::read(root).store)
@@ -114,10 +119,12 @@ impl CreatedOn {
         }
         let remembered = remembered()?;
         let first = remembered.windows.first()?;
-        first
-            .planes
-            .get(first.active)
-            .map(|plane| Self::plane(plane))
+        let plane = first.planes.get(first.active)?;
+        let contributes = purlis_core::machine::Contribution::of(plane);
+        if remembered.consent(plane, &contributes).must_ask() {
+            return None;
+        }
+        Some(Self::plane(plane))
     }
 }
 
@@ -999,13 +1006,13 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         assert_eq!(CreatedOn::main(Some(&places.config), None), None);
         let remembered = || {
-            Some(purlis_core::machine::Store {
-                windows: vec![purlis_core::machine::Window {
-                    planes: vec![places.plane.clone(), other.clone()],
-                    active: 1,
-                }],
-                ..purlis_core::machine::Store::default()
-            })
+            let mut store = purlis_core::machine::Store::default();
+            store.approve(&other, 1, purlis_core::machine::Contribution::of(&other));
+            store.windows = vec![purlis_core::machine::Window {
+                planes: vec![places.plane.clone(), other.clone()],
+                active: 1,
+            }];
+            Some(store)
         };
         assert_eq!(
             CreatedOn::main_of(Some(&places.plane), remembered).map(|on| on.plane),
@@ -1014,6 +1021,92 @@ mod tests {
         assert_eq!(
             CreatedOn::main_of(None, remembered).map(|on| on.plane),
             Some(other.clone())
+        );
+    }
+
+    #[test]
+    fn a_remembered_project_not_trusted_now_chooses_nothing_of_the_first_frame() {
+        let places = Places::new("[theme]\nuse = \"team\"\n");
+        let fonts = places.plane.join("themes/team/fonts");
+        std::fs::create_dir_all(&fonts).unwrap();
+        let face = b"wOF2 a face of the team's own, never served before it is trusted";
+        std::fs::write(fonts.join("Team.woff2"), face).unwrap();
+        Places::put(
+            &places.plane.join("themes"),
+            "team",
+            r##"{"name":"Team","appearances":[{"id":"day","appearance":"light",
+                "tokens":{"window.background":"#abcdef"}}],
+                "fonts":{"ui":{"family":"Team","faces":[{"file":"fonts/Team.woff2"}]}}}"##,
+        );
+        let window = |store: &mut purlis_core::machine::Store| {
+            store.windows = vec![purlis_core::machine::Window {
+                planes: vec![places.plane.clone()],
+                active: 0,
+            }];
+        };
+        // Never approved, and approved for less than it contributes now.
+        let never = {
+            let mut store = purlis_core::machine::Store::default();
+            store.remember(&places.plane, 1);
+            window(&mut store);
+            store
+        };
+        // It now names a program to run that it did not when it was approved.
+        purlis_core::reopen::write(
+            &places.plane,
+            &purlis_core::reopen::Record {
+                chats: vec![purlis_core::reopen::Chat {
+                    program: "claude".to_owned(),
+                    name: "one".to_owned(),
+                    active: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let stale = {
+            let mut store = purlis_core::machine::Store::default();
+            store.approve(
+                &places.plane,
+                1,
+                purlis_core::machine::Contribution::default(),
+            );
+            window(&mut store);
+            store
+        };
+        for store in [never, stale] {
+            let on = CreatedOn::main_of(None, || Some(store));
+            assert_eq!(on, None);
+            let created = places.created(on.as_ref(), Some(Contrast::Standard));
+            assert_eq!(created.native, theme::default_theme().native());
+        }
+        let digest: String = {
+            use sha2::Digest;
+            sha2::Sha256::digest(face)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        };
+        assert!(
+            theme::served(&digest).is_err(),
+            "no face of it is registered"
+        );
+        // Approved for what it contributes now: its theme is drawn.
+        let mut trusted = purlis_core::machine::Store::default();
+        trusted.approve(
+            &places.plane,
+            1,
+            purlis_core::machine::Contribution::of(&places.plane),
+        );
+        window(&mut trusted);
+        let on = CreatedOn::main_of(None, || Some(trusted));
+        assert_eq!(on.as_ref().map(|on| &on.plane), Some(&places.plane));
+        let created = places.created(on.as_ref(), Some(Contrast::Standard));
+        assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
+        assert!(
+            theme::served(&digest).is_ok(),
+            "its face is served once it is trusted"
         );
     }
 
