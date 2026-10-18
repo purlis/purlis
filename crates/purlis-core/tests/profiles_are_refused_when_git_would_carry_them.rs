@@ -388,21 +388,100 @@ fn one_start_asks_git_once_and_every_reader_in_it_gets_that_answer() {
     );
 }
 
+/// A git that answers whatever `answer` holds when it is run, and counts its runs in `asked`.
+fn a_git_that_answers_from(dir: &Path, asked: &Path, answer: &Path) -> std::path::PathBuf {
+    a_git_that(
+        dir,
+        "git-that-answers-from",
+        &format!(
+            "echo asked >> '{}'\ncat '{}'",
+            asked.display(),
+            answer.display()
+        ),
+    )
+}
+
+/// What a stand-in git prints for a local file it ignores, and for one it would commit.
+const IGNORED: &str = "!! charter.local.toml\n";
+const COMMITTABLE: &str = "?? charter.local.toml\n";
+
 #[test]
 fn an_answer_is_kept_for_its_start_alone_and_never_for_the_next() {
     purlis_core::unsteered!();
     // Kept for one start, never for the run: git's answer changes when the person runs
-    // `git add -f` or `git rm --cached`, and the next start asks again.
+    // `git add -f` or `git rm --cached`, and the next start asks again and decides by it.
     let dir = a_plane();
     let asked = dir.path().join("asked");
-    let git = a_git_that_counts(dir.path(), &asked, "?? charter.local.toml");
+    let answer = dir.path().join("answer");
+    fs::write(&answer, IGNORED).unwrap();
+    let git = a_git_that_answers_from(dir.path(), &asked, &answer);
 
-    profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
-    profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
-    profiles::ignore_check_with(dir.path(), &git);
-    profiles::ignore_check_with(dir.path(), &git);
+    let first = profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
+    fs::write(&answer, COMMITTABLE).unwrap();
+    let second = profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
 
-    assert_eq!(times_asked(&asked), 4);
+    assert!(first.passes(), "{first:?}");
+    assert!(
+        !second.passes(),
+        "the next start kept the last one's answer"
+    );
+    assert_eq!(times_asked(&asked), 2);
+}
+
+#[test]
+fn a_local_file_changed_during_a_start_is_asked_about_again() {
+    purlis_core::unsteered!();
+    // A reader later in the start never judges content newer than its answer: the file changed
+    // after the first reader's answer, so the second reader asks git again, and refuses.
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let answer = dir.path().join("answer");
+    fs::write(&answer, IGNORED).unwrap();
+    let git = a_git_that_answers_from(dir.path(), &asked, &answer);
+
+    let (first, second) = profiles::git_asked_once(|| {
+        let first = profiles::ignore_check_with(dir.path(), &git);
+        fs::write(
+            dir.path().join(profiles::LOCAL_FILE),
+            "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+        )
+        .unwrap();
+        fs::write(&answer, COMMITTABLE).unwrap();
+        (first, profiles::ignore_check_with(dir.path(), &git))
+    });
+
+    assert!(first.passes(), "{first:?}");
+    assert!(
+        !second.passes(),
+        "a changed file was judged by the answer before the change"
+    );
+    assert_eq!(times_asked(&asked), 2);
+}
+
+#[test]
+fn a_start_that_panics_keeps_no_answer_for_the_next() {
+    purlis_core::unsteered!();
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let answer = dir.path().join("answer");
+    fs::write(&answer, IGNORED).unwrap();
+    let git = a_git_that_answers_from(dir.path(), &asked, &answer);
+
+    let panicked = std::panic::catch_unwind(|| {
+        profiles::git_asked_once(|| {
+            profiles::ignore_check_with(dir.path(), &git);
+            panic!("a start that fails part-way");
+        })
+    });
+    fs::write(&answer, COMMITTABLE).unwrap();
+    let after = profiles::ignore_check_with(dir.path(), &git);
+
+    assert!(panicked.is_err());
+    assert!(
+        !after.passes(),
+        "the answer of a start that panicked outlived it"
+    );
+    assert_eq!(times_asked(&asked), 2);
 }
 
 #[test]

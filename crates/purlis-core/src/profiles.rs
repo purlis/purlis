@@ -1245,21 +1245,85 @@ fn checked_within(root: &Path, git: Option<&Path>, timeout: std::time::Duration)
         return IgnoreCheck::default();
     }
     let key = (root.to_path_buf(), git.map(Path::to_path_buf));
-    if let Some(kept) = ASKED_ONCE.with_borrow(|kept| kept.as_ref()?.get(&key).cloned()) {
+    // Taken before git is asked, so a change while it answers is a change the next reader sees.
+    let stamp = Stamp::of(root);
+    let kept = ASKED_ONCE.with_borrow(|kept| {
+        kept.as_ref()?
+            .get(&key)
+            .filter(|(then, _)| *then == stamp)
+            .map(|(_, check)| check.clone())
+    });
+    if let Some(kept) = kept {
         return kept;
     }
     let check = check_of(root, git_path_state(root, git, timeout));
     ASKED_ONCE.with_borrow_mut(|kept| {
         if let Some(kept) = kept {
-            kept.insert(key, check.clone());
+            kept.insert(key, (stamp, check.clone()));
         }
     });
     check
 }
 
+/// What git's answer about the local file was asked against (#2179): the file itself, and the
+/// plane's own `.gitignore`, `.git/index` and `.git/info/exclude` where they are there, each by
+/// device, inode, length and change and modification times. A kept answer is given only while
+/// every one is as it was, so what a reader reads later in a start is never newer than the
+/// answer it is judged by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Stamp(Vec<Option<FileStamp>>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileStamp {
+    dev: u64,
+    ino: u64,
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    changed: (i64, i64),
+}
+
+impl Stamp {
+    fn of(root: &Path) -> Self {
+        let paths = [
+            crate::names::local_settings(root),
+            root.join(".gitignore"),
+            root.join(".git").join("index"),
+            root.join(".git").join("info").join("exclude"),
+        ];
+        Self(
+            paths
+                .iter()
+                .map(|path| FileStamp::of(path.as_path()))
+                .collect(),
+        )
+    }
+}
+
+impl FileStamp {
+    fn of(path: &Path) -> Option<Self> {
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        #[cfg(unix)]
+        let (dev, ino, changed) = {
+            use std::os::unix::fs::MetadataExt;
+            (meta.dev(), meta.ino(), (meta.ctime(), meta.ctime_nsec()))
+        };
+        #[cfg(not(unix))]
+        let (dev, ino, changed) = (0, 0, (0, 0));
+        Some(Self {
+            dev,
+            ino,
+            len: meta.len(),
+            modified: meta.modified().ok(),
+            changed,
+        })
+    }
+}
+
 /// What git answered about each plane's local file in the start this thread is making, by the
-/// plane and the git asked; `None` outside one ([`git_asked_once`]).
-type AskedOnce = Option<std::collections::HashMap<(PathBuf, Option<PathBuf>), IgnoreCheck>>;
+/// plane and the git asked, with what it was asked against; `None` outside one
+/// ([`git_asked_once`]).
+type AskedOnce =
+    Option<std::collections::HashMap<(PathBuf, Option<PathBuf>), (Stamp, IgnoreCheck)>>;
 
 thread_local! {
     static ASKED_ONCE: std::cell::RefCell<AskedOnce> = const { std::cell::RefCell::new(None) };
@@ -1273,9 +1337,11 @@ thread_local! {
 ///
 /// **For one start, never longer.** What git answers changes when the person runs
 /// `git add -f` or `git rm --cached`, so the answer is dropped when `work` returns and the
-/// next start asks again. Within one start it is the answer the start's own profile read
-/// already decides by ([`crate::start::ready_read`], #1445). A file that is absent is still
-/// looked for at every check, as [`ignore_check`] does, and git is asked once it appears.
+/// next start asks again. **And only while nothing it was asked against has changed**
+/// ([`Stamp`]): the local file, or the plane's `.gitignore`, index or exclude file, changed
+/// since the answer was given is asked about again, so no reader in the start judges content
+/// newer than its answer. A file that is absent is still looked for at every check, as
+/// [`ignore_check`] does, and git is asked once it appears.
 /// The answers are this thread's: a start runs on one. A start inside another shares its
 /// answers.
 pub fn git_asked_once<T>(work: impl FnOnce() -> T) -> T {
