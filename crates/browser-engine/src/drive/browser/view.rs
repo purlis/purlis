@@ -14,6 +14,11 @@ use serde_json::{Value, json};
 use super::super::clipped::{STYLES, clipped};
 use super::{Browser, NodeKey, Placings, Rect, lock};
 
+/// The most nodes a page's process may hold for its layout to be read for what a box or a frame
+/// cuts off (#2564). Past it, the read is skipped and nothing is marked cut off, so a heavy page
+/// is never read whole for a mark.
+pub(super) const MOST_NODES_READ: u64 = 50_000;
+
 impl Browser {
     /// Which of `keys` `target`'s page does not show: laid out wholly outside what its
     /// viewport shows, or cut off by a box or a frame they are in. An element the engine cannot
@@ -80,9 +85,26 @@ impl Browser {
         }
         let mut out = HashSet::new();
         for (session, keys) in by_session {
+            // Read once for each session the shown elements are in, and only where the page is
+            // small enough to read: an answer the engine cannot count, or past the bound, marks
+            // nothing.
+            let nodes = self
+                .devtools()
+                .call("Memory.getDOMCounters", json!({}), Some(&session))
+                .ok()
+                .and_then(|counted| counted.get("nodes").and_then(Value::as_u64));
+            if nodes.is_none_or(|nodes| nodes > MOST_NODES_READ) {
+                continue;
+            }
             let Ok(answer) = self.devtools().call(
                 "DOMSnapshot.captureSnapshot",
-                json!({ "computedStyles": STYLES }),
+                json!({
+                    "computedStyles": STYLES,
+                    "includeDOMRects": true,
+                    "includePaintOrder": false,
+                    "includeBlendedBackgroundColors": false,
+                    "includeTextColorOpacities": false,
+                }),
                 Some(&session),
             ) else {
                 continue;
@@ -106,8 +128,9 @@ impl Browser {
         out
     }
 
-    /// What the viewport of `session`'s document shows, in CSS pixels: placed where elements
-    /// are drawn on the screen, or, `in_document`, where they are laid out in the document.
+    /// What the viewport of `session`'s document shows, in CSS pixels: the page's visual
+    /// viewport where elements are drawn on the screen, or, `in_document`, the document's own
+    /// layout viewport where its elements are laid out (a frame read in a session of its own).
     fn viewport_of(&self, session: &str, in_document: bool) -> Option<Rect> {
         self.devtools()
             .call("Page.getLayoutMetrics", json!({}), Some(session))
@@ -121,10 +144,15 @@ impl Browser {
 /// it.
 fn shown(metrics: &Value, in_document: bool) -> Option<Rect> {
     let number = |path: &str| metrics.pointer(path).and_then(Value::as_f64);
-    let width = number("/cssVisualViewport/clientWidth")?;
-    let height = number("/cssVisualViewport/clientHeight")?;
+    let viewport = if in_document {
+        "cssLayoutViewport"
+    } else {
+        "cssVisualViewport"
+    };
+    let width = number(&format!("/{viewport}/clientWidth"))?;
+    let height = number(&format!("/{viewport}/clientHeight"))?;
     let (x, y) = if in_document {
-        ("/cssVisualViewport/pageX", "/cssVisualViewport/pageY")
+        ("/cssLayoutViewport/pageX", "/cssLayoutViewport/pageY")
     } else {
         ("/cssVisualViewport/offsetX", "/cssVisualViewport/offsetY")
     };

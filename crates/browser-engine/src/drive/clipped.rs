@@ -13,8 +13,11 @@
 //!
 //! **Nothing is said to be cut off that is not known to be.** An element taken out of the flow
 //! (`position: absolute` or `fixed`) is not compared with a box that may not hold it; the page's
-//! root and body, whose overflow is the viewport's, are left to the viewport's own check; and an
-//! answer that cannot be read says nothing is cut off.
+//! root and body, whose overflow is the viewport's, are left to the viewport's own check; only a
+//! box CSS applies overflow to cuts anything off (never an inline box, nor `overflow: clip` with a
+//! margin to paint into); a frame is compared at the size its element shows it before any
+//! transform, and not at all when that size is not given; and an answer that cannot be read
+//! says nothing is cut off.
 
 use std::collections::{HashMap, HashSet};
 
@@ -23,7 +26,27 @@ use serde_json::Value;
 use super::blank::Rect;
 
 /// The styles read for each element laid out, in this order.
-pub(crate) const STYLES: [&str; 3] = ["overflow-x", "overflow-y", "position"];
+pub(crate) const STYLES: [&str; 5] = [
+    "overflow-x",
+    "overflow-y",
+    "position",
+    "display",
+    "overflow-clip-margin",
+];
+
+/// The boxes whose overflow cuts off what does not fit: CSS applies `overflow` to block
+/// containers, flex and grid containers, and table cells, never to an inline box.
+const CUT_BY_OVERFLOW: [&str; 9] = [
+    "block",
+    "inline-block",
+    "flow-root",
+    "list-item",
+    "flex",
+    "inline-flex",
+    "grid",
+    "inline-grid",
+    "table-cell",
+];
 
 /// Which of `wanted` (the engine's ids for nodes of the session `answer` reads) are laid out
 /// wholly outside a box they are in that cuts off what overflows it, or outside what the frame
@@ -76,6 +99,8 @@ struct Document {
     placed: HashMap<usize, Placed>,
     /// Where its frame is scrolled to.
     scrolled: (f64, f64),
+    /// The size each frame element shows its document at, untransformed (its client box).
+    client: HashMap<usize, (f64, f64)>,
 }
 
 struct Read {
@@ -132,8 +157,13 @@ impl Read {
             if bounds.len() != laid.len() || styles.len() != laid.len() {
                 return None;
             }
+            // Each element's client box, untransformed: what a frame element shows its document
+            // at. An answer without them compares no frame.
+            let clients = list(layout, "clientRects").filter(|c| c.len() == laid.len());
+            let mut client = HashMap::new();
             let mut placed = HashMap::new();
-            for ((node, bounds), style) in laid.iter().zip(bounds).zip(styles) {
+            for (entry, ((node, bounds), style)) in laid.iter().zip(bounds).zip(styles).enumerate()
+            {
                 let at = usize::try_from(node.as_i64()?)
                     .ok()
                     .filter(|at| *at < count)?;
@@ -145,6 +175,13 @@ impl Read {
                 let &[x, y, width, height] = bounds.as_slice() else {
                     return None;
                 };
+                if let Some(&[_, _, w, h]) = clients
+                    .and_then(|c| c[entry].as_array())
+                    .map(|r| r.iter().filter_map(Value::as_f64).collect::<Vec<f64>>())
+                    .as_deref()
+                {
+                    client.insert(at, (w, h));
+                }
                 let style: Vec<&str> = style
                     .as_array()?
                     .iter()
@@ -153,8 +190,12 @@ impl Read {
                 // What is not an element (a text, the document) is given no styles.
                 let (cut, position) = match style.as_slice() {
                     [] => ((false, false), Position::InFlow),
-                    [across, down, position] => (
-                        (cuts(across), cuts(down)),
+                    [across, down, position, display, margin] => (
+                        if CUT_BY_OVERFLOW.contains(display) {
+                            (cuts(across, margin), cuts(down, margin))
+                        } else {
+                            (false, false)
+                        },
                         match *position {
                             "absolute" => Position::Absolute,
                             "fixed" => Position::Fixed,
@@ -179,10 +220,11 @@ impl Read {
                 );
             }
             if let Some(contents) = nodes.get("contentDocumentIndex") {
-                for (node, content) in list(contents, "index")?
-                    .iter()
-                    .zip(list(contents, "value")?)
-                {
+                let (index, value) = (list(contents, "index")?, list(contents, "value")?);
+                if index.len() != value.len() {
+                    return None;
+                }
+                for (node, content) in index.iter().zip(value) {
                     let node = usize::try_from(node.as_i64()?).ok()?;
                     let content = usize::try_from(content.as_i64()?).ok()?;
                     owners.insert(content, (d, node));
@@ -195,6 +237,7 @@ impl Read {
                 roots,
                 placed,
                 scrolled: (number("scrollOffsetX"), number("scrollOffsetY")),
+                client,
             });
         }
         Some(Read { documents, owners })
@@ -238,21 +281,24 @@ impl Read {
         }
         match self.owners.get(&d) {
             Some(&(parent, frame)) if depth < self.documents.len() => {
-                let Some(element) = self
-                    .documents
-                    .get(parent)
-                    .and_then(|p| p.placed.get(&frame))
-                else {
+                let Some(owner) = self.documents.get(parent) else {
                     return false;
                 };
-                let frame_shows = Rect {
-                    x: document.scrolled.0,
-                    y: document.scrolled.1,
-                    width: element.bounds.width,
-                    height: element.bounds.height,
+                let Some(element) = owner.placed.get(&frame) else {
+                    return false;
                 };
-                !meets(&rect, &frame_shows)
-                    || self.cut_off(parent, frame, element.bounds, shows, depth + 1)
+                // What the frame shows, in its document's coordinates: from where it is scrolled
+                // to, at the size the frame element shows it before any transform.
+                let outside_its_frame = owner.client.get(&frame).is_some_and(|&(width, height)| {
+                    let frame_shows = Rect {
+                        x: document.scrolled.0,
+                        y: document.scrolled.1,
+                        width,
+                        height,
+                    };
+                    width > 0.0 && height > 0.0 && !meets(&rect, &frame_shows)
+                });
+                outside_its_frame || self.cut_off(parent, frame, element.bounds, shows, depth + 1)
             }
             Some(_) => false,
             None => shows.is_some_and(|shows| d == 0 && !meets(&rect, &shows)),
@@ -273,9 +319,13 @@ fn meets(a: &Rect, b: &Rect) -> bool {
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
-/// Whether an overflow cuts off what does not fit.
-fn cuts(overflow: &str) -> bool {
-    matches!(overflow, "hidden" | "scroll" | "auto" | "clip" | "overlay")
+/// Whether an overflow cuts off what does not fit; `clip` only with no margin to paint into.
+fn cuts(overflow: &str, margin: &str) -> bool {
+    match overflow {
+        "hidden" | "scroll" | "auto" | "overlay" => true,
+        "clip" => matches!(margin, "" | "0px"),
+        _ => false,
+    }
 }
 
 fn list<'a>(of: &'a Value, field: &str) -> Option<&'a Vec<Value>> {
