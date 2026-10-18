@@ -484,6 +484,17 @@ export function systemIsLight(): boolean {
   return typeof matchMedia === "function" && matchMedia(PREFERS_LIGHT).matches;
 }
 
+/** The media query the operating system answers when it asks for more contrast (#2328): true
+ *  with Increase contrast on (macOS), a high-contrast theme (Linux), or contrast themes
+ *  (Windows). */
+export const PREFERS_MORE_CONTRAST = "(prefers-contrast: more)";
+
+/** Whether the operating system asks for more contrast right now: what the core is told, so a
+ *  theme with an appearance tagged high contrast draws it. No where the platform cannot say. */
+export function systemAsksMoreContrast(): boolean {
+  return typeof matchMedia === "function" && matchMedia(PREFERS_MORE_CONTRAST).matches;
+}
+
 /** Whether two resolved themes draw the same, so a theme the core answers again is not drawn
  *  again: the terminal is told only of a change. */
 export function sameTheme(a: Theme, b: Theme): boolean {
@@ -908,6 +919,31 @@ export function onTerminalFont(follow: (family: string, arrived: boolean) => voi
 function paint(theme: Theme, to: HTMLElement, colour: string | null): void {
   const tint = tinted(theme, colour);
   for (const token of TINTED_WINDOW) to.style.setProperty(property(token), tint.values[token]);
+}
+
+/** The class the crossfade between two workspaces' themes puts on the root (`App.css`). */
+export const CROSSFADE = "theme-crossfade";
+
+/** The crossfade in progress, so a second switch inside one extends it. */
+let fading: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * **Draws `theme` with a short crossfade** (spec #2313, #2323): what a workspace switch does.
+ * Every colour eases from the last theme's to this one's across the motion token
+ * `duration.enter`, and the class comes off once it has. With reduced motion the duration is 0
+ * and the class is never put on: the repaint is at once.
+ */
+export function crossfadeIn(theme: Theme, to: HTMLElement = document.documentElement): void {
+  const ms = motionReduced() ? 0 : theme.motion.durations["duration.enter"];
+  if (ms > 0) {
+    to.classList.add(CROSSFADE);
+    if (fading !== undefined) clearTimeout(fading);
+    fading = setTimeout(() => {
+      to.classList.remove(CROSSFADE);
+      fading = undefined;
+    }, ms);
+  }
+  drawIn(theme, to);
 }
 
 /** What the running window is drawn in. Read by a pane that is opening a terminal, which then

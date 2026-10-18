@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { yourTheme } from "./yourTheme";
 import { useProjectThemeAnswers } from "../projectTheme";
 import {
   commands,
@@ -137,7 +138,9 @@ export function kept(file: Pick<SettingsFile, "which" | "file">): string {
  * of them may be kept in either file. `[plane] worktrees` is the Shared file's alone, and
  * `[harness]`, `[chat_env]` the Local file's: those are never offered the other.
  */
-const EITHER = new Set(["plane", "repos", "extensions", "theme", "harness_plugins"]);
+// `[theme]` is not among them: the person's own theme is kept on this machine (Your theme,
+// #2323), and `charter.toml`'s is the project's committed default.
+const EITHER = new Set(["plane", "repos", "extensions", "harness_plugins"]);
 
 /** Whether a key in `charter.toml` may be moved to `charter.local.toml` and back. */
 function eitherFile(path: readonly SettingsStep[]): boolean {
@@ -731,10 +734,16 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       id: "project.appearance",
       label: "Appearance",
       help: "The theme and the icons the window draws while this project is in front.",
-      settings: fromShared("project.appearance", [
-        ...theme.controls,
-        iconsControl("project", read.iconThemes, read.extensions.extensions),
-      ]),
+      settings: [
+        // The person's own choice first: it is the nearest level the theme engine reads.
+        ...(read.plane === undefined
+          ? []
+          : yourTheme(read.plane, undefined, read.theme, reread ?? (() => undefined))),
+        ...fromShared("project.appearance", [
+          ...theme.controls,
+          iconsControl("project", read.iconThemes, read.extensions.extensions),
+        ]),
+      ],
       notes: [
         ...theme.notes,
         // Local's pick wins over Shared's, while Local has its say at all.

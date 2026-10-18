@@ -92,7 +92,10 @@ export const MOST_PER_PROJECT = 200;
 export const ON_THIS_MACHINE = "on this machine";
 
 /** The causes kept {@link ON_THIS_MACHINE}: each a Notice shown once per machine. */
-export const ONCE_ON_THIS_MACHINE: ReadonlySet<string> = new Set(["chip-explained"]);
+export const ONCE_ON_THIS_MACHINE: ReadonlySet<string> = new Set([
+  "chip-explained",
+  "theme-folder-offered",
+]);
 
 const kept = (cause: unknown): cause is string =>
   typeof cause === "string" && cause.length <= 1024 && KEPT.has(familyOf(cause));

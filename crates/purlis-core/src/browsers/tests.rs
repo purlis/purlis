@@ -381,3 +381,124 @@ fn the_engines_archive_is_a_third_partys_and_the_manifest_is_purliss_own() {
         .unwrap();
     assert!(crate::netlog::is_charters("github.com", path));
 }
+
+// ---- A login purlis performs (#2016) ----
+
+#[test]
+fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
+    use purlis_host::protocol::browsing::{LogIn, Secret};
+    let (login, site) = super::login_of(&LogIn {
+        address: "https://shop.example.test/login?next=/cart".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap();
+    assert_eq!(login.origin, "https://shop.example.test");
+    assert_eq!(site, Site::of("shop.example.test", 443));
+    assert!(login.user.is_none());
+    let local = super::login_of(&LogIn {
+        address: "http://127.0.0.1:8123/login".into(),
+        user: Some(Secret::new("fixture-user".into())),
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap();
+    assert_eq!(local.0.origin, "http://127.0.0.1:8123");
+    assert_eq!(local.1, Site::of("127.0.0.1", 8123));
+    let refused = super::login_of(&LogIn {
+        address: "file:///etc/passwd".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap_err();
+    assert!(refused.contains("not one a browser opens"), "{refused}");
+    // Neither the driver's login nor what the window handed says its values.
+    assert!(!format!("{login:?}").contains("fixture-word"));
+}
+
+#[test]
+fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
+    use purlis_host::protocol::browsing::{LogIn, Secret};
+    let refused = super::login_of(&LogIn {
+        address: "http://shop.example.test/login".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap_err();
+    assert!(refused.contains("plain http"), "{refused}");
+    let (login, site) = super::login_of(&LogIn {
+        address: "https://bücher.example/login".into(),
+        user: None,
+        password: Secret::new("fixture-word".into()),
+    })
+    .unwrap();
+    assert_eq!(login.origin, "https://xn--bcher-kva.example");
+    assert_eq!(site, Site::of("xn--bcher-kva.example", 443));
+}
+
+/// A login performed through a real reach proxy and judge (#2016): the run is handed what binds
+/// the browser, and once it has, another site its chat lists is refused, the login's own is
+/// carried, and a second login at another site is refused. These bind sockets, so they first
+/// run on CI.
+#[cfg(unix)]
+#[test]
+fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    use crate::sandbox::browser_reach::{Lane, ReachProxy};
+
+    let server = || {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
+        let port = listener.local_addr().expect("an address").port();
+        (listener, port)
+    };
+    let (_login_site, login_port) = server();
+    let (_other_site, other_port) = server();
+    let reach = BrowserReach {
+        listed: [login_port, other_port]
+            .iter()
+            .flat_map(|port| crate::sandbox::localport::reach_entries(*port))
+            .map(|host| Listed {
+                host,
+                layer: Layer::Chat,
+            })
+            .collect(),
+        ..BrowserReach::default()
+    };
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy =
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap();
+    let status = |port: u16| -> String {
+        let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .unwrap();
+        stream
+            .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).unwrap();
+        line.trim_end().to_owned()
+    };
+    assert_eq!(status(other_port), "HTTP/1.1 200 Connection established");
+    let login_site = Site::of("127.0.0.1", login_port);
+    let bound = super::performed(&sites, &proxy, &login_site, "http://127.0.0.1", |bind| {
+        bind()
+    })
+    .expect("performed");
+    assert_eq!(bound, Ok(()));
+    assert_eq!(status(other_port), "HTTP/1.1 403 Forbidden");
+    assert_eq!(status(login_port), "HTTP/1.1 200 Connection established");
+    let ran = std::cell::Cell::new(false);
+    let refused = super::performed(
+        &sites,
+        &proxy,
+        &Site::of("127.0.0.1", other_port),
+        "http://127.0.0.1",
+        |_| ran.set(true),
+    )
+    .unwrap_err();
+    assert!(refused.contains("holds a login at 127.0.0.1:"), "{refused}");
+    assert!(!ran.get(), "a second login at another site runs nothing");
+}

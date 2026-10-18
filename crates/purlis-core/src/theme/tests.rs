@@ -619,6 +619,7 @@ fn drawn(pick: Option<&str>, theirs: Option<&Theme>, on: On<'_>) -> Drawn {
             theirs,
             on,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         offered,
     )
@@ -655,6 +656,7 @@ fn following_the_system_draws_the_built_in_of_its_appearance_and_says_it_follows
                 theirs: None,
                 on: On::Every,
                 system,
+                contrast: Contrast::Standard,
             },
             || unreachable!("no survey for a built-in"),
         );
@@ -672,6 +674,7 @@ fn with_no_pick_the_person_s_own_theme_comes_before_any_extension_s() {
             theirs: Some(&mine),
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || unreachable!("no survey when the person has a theme"),
     );
@@ -717,6 +720,7 @@ fn an_extension_theme_that_is_not_json_is_passed_over_unless_it_was_picked() {
             theirs: None,
             on: On::Only(&acme),
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         only_broken,
     );
@@ -740,6 +744,7 @@ fn an_extension_theme_that_is_not_json_is_passed_over_unless_it_was_picked() {
             theirs: None,
             on: On::Only(&acme),
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         then_good,
     );
@@ -759,6 +764,7 @@ fn an_extension_theme_s_complaints_come_with_it() {
             theirs: None,
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || {
             Arc::from(vec![Offered::of(

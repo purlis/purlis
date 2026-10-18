@@ -119,6 +119,9 @@ describe("the persona grants Notice", () => {
     );
     const { rerender } = render(notice(false));
     const user = userEvent.setup();
+    // Allow is the grants style and Keep the plain one (ADR 0097 §6).
+    expect(await screen.findByRole("button", { name: "Allow" })).toHaveClass("ui-button-grants");
+    expect(screen.getByRole("button", { name: "Keep" })).not.toHaveClass("ui-button-grants");
     await user.click(await screen.findByRole("button", { name: "Allow" }));
     const allowed = screen.getByRole("status", { name: "Persona's hosts allowed" });
     expect(allowed).not.toHaveTextContent("when this turn ends");

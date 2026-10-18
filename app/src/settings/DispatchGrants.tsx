@@ -20,6 +20,7 @@ import { ColumnHeading } from "./ColumnHeading";
 import { Choice, type RowIds } from "./components";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
+import { GrantsMark } from "../primitives/Grants";
 
 /** No grants and no locks: what a core that answers nothing is read as. */
 const NONE: DispatchGrants = {
@@ -122,6 +123,12 @@ interface Offer {
    * (#1759). One that does not say so is off there, with the project's sentence as why.
    */
   readonly machine?: boolean;
+  /**
+   * **It grants**: an Allow, an Accept, a grant held wider or given back. Its button, and the
+   * confirming one, are `.ui-button-grants` with the open lock, as plain as the answers beside
+   * them and told apart by the edge and the lock (ADR 0097 §6).
+   */
+  readonly grants?: boolean;
 }
 
 /** An offer the person pressed, waiting on their confirmation. */
@@ -494,6 +501,7 @@ export function DispatchGrantsList({
     if (to === null)
       return {
         yes: "Hold in any workspace",
+        grants: true,
         about: grant,
         machine: changes.level === "you",
         says: `Let this grant hold in any workspace? ${pairSaid(changes)} for work in every workspace of this project, and at its root, without asking you.${committed}`,
@@ -503,6 +511,7 @@ export function DispatchGrantsList({
     if (to === from)
       return {
         yes: "Count it again",
+        grants: true,
         about: `${grant} in ${to}`,
         // Mine, or this machine's acceptance of the project's made again: never the file.
         machine: true,
@@ -663,6 +672,7 @@ export function DispatchGrantsList({
     };
     const accept: Offer = {
       yes: "Accept",
+      grants: true,
       about: `the project's grant for ${pair}${within}, on this machine`,
       machine: true,
       says:
@@ -737,6 +747,7 @@ export function DispatchGrantsList({
     const workspace = null;
     const allow = (level: "you" | "project"): Offer => ({
       yes: level === "you" ? "Allow for me" : "Allow for everyone",
+      grants: true,
       about: `${persona} may dispatch to any persona`,
       machine: level === "you",
       says:
@@ -762,6 +773,7 @@ export function DispatchGrantsList({
     });
     const accept: Offer = {
       yes: "Accept",
+      grants: true,
       about: `the project's any persona for ${persona}, on this machine`,
       machine: true,
       says: `Follow the project's "any persona" for ${persona} on this machine? ${covers}`,
@@ -855,6 +867,7 @@ export function DispatchGrantsList({
       };
       const acceptIt: Offer = {
         yes: "Accept",
+        grants: true,
         machine: true,
         about: `the project's any persona for ${persona} in ${at}, on this machine`,
         says: `Follow the project's "any persona" for ${persona} in ${at} on this machine? ${coversIn}`,
@@ -989,6 +1002,7 @@ export function DispatchGrantsList({
         : `${aside} ${aside === 1 ? "grant" : "grants"} set aside for it ${aside === 1 ? "comes" : "come"} back where the other persona exists, with what this machine had accepted of the project's.`;
     return {
       yes: `Give back to ${name}`,
+      grants: true,
       about: "what an earlier persona of this name was allowed",
       says: `Let the ${name} this project has now have what an earlier persona named ${name} was allowed? ${held} It may then dispatch, and be dispatched to, as the earlier one could, without asking you.`,
       done: `Given back to ${name}.${unread !== null ? " It does not count until the list of nevers reads." : ""}`,
@@ -1047,7 +1061,7 @@ export function DispatchGrantsList({
           <button
             key={key}
             type="button"
-            className="ui-button"
+            className={offer.grants === true ? "ui-button ui-button-grants" : "ui-button"}
             tabIndex={0}
             disabled={busy || (offer.machine !== true && readOnly !== undefined)}
             title={offer.machine === true ? undefined : readOnly}
@@ -1060,6 +1074,7 @@ export function DispatchGrantsList({
               setAsking({ ...offer, key, line });
             }}
           >
+            {offer.grants === true && <GrantsMark />}
             {offer.yes}
           </button>
         );
@@ -1083,13 +1098,14 @@ export function DispatchGrantsList({
       <p id={`${ids.id}-confirm`}>{ask.says}</p>
       <button
         type="button"
-        className="ui-button"
+        className={ask.grants === true ? "ui-button ui-button-grants" : "ui-button"}
         ref={yes}
         tabIndex={0}
         disabled={busy}
         aria-describedby={`${ids.id}-confirm`}
         onClick={() => void confirm()}
       >
+        {ask.grants === true && <GrantsMark />}
         {ask.yes}
       </button>
       <button type="button" className="ui-button" tabIndex={0} disabled={busy} onClick={cancel}>
@@ -1142,6 +1158,7 @@ export function DispatchGrantsList({
         : `${back} was gone, and the persona of that name now is not the one that left: a grant added for it is not in force until you Give back to ${back}, in the table above.`;
     const offer: Offer = {
       yes: "Add grant",
+      grants: true,
       about: `${from} may dispatch to ${to}, ${level === "you" ? "for me on this machine" : "for everyone in this project"}, ${inAny ? "in any workspace" : where === "" ? "choose where it holds" : `in ${where}`}`,
       says:
         level === "you"
@@ -1221,7 +1238,7 @@ export function DispatchGrantsList({
         )}{" "}
         <button
           type="button"
-          className="ui-button"
+          className="ui-button ui-button-grants"
           tabIndex={0}
           disabled={busy || where === ""}
           data-ask={key}
@@ -1233,6 +1250,7 @@ export function DispatchGrantsList({
             setAsking({ ...offer, key, line: ADD });
           }}
         >
+          <GrantsMark />
           {offer.yes}
         </button>
         {waits !== undefined && (
