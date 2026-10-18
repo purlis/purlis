@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792299917290,
+  "lastUpdate": 1792301097923,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16506,6 +16506,48 @@ window.BENCHMARK_DATA = {
             "value": 101.34417049999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.923, 101.223, 101.344, 101.372, 102.163 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d8c7a04705171bd429a2c676e520ac1c06de41a2",
+          "message": "The theme specimen and the theme_preview tool (#2437)\n\n* The theme specimen and the theme_preview tool\n\npurlis draws the theme specimen, a fixed page of sample content (every\nSettings control, a chat pane and a terminal drawn by xterm, an editor\nwith a real grammar, a dialog and a Notice), in a hidden window of its\nown, and photographs it with the platform's webview. A chat's\ntheme_preview tool asks for it over the chat's hook socket and gets the\npicture back as an image, for Purlis Classic or one of its appearances,\nalone or two side by side. The window asks for the same picture with\ntheme_specimen.\n\nThe page is handed the built-in themes and the one theme to draw, and\nits window is granted no command.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The specimen page draws its theme without a needless cast\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme_preview runs without asking, and every answer match knows Previewed\n\nThe operator ruled theme_preview pre-allowed (ADR 0064, amended\n2026-10-17): it returns only pictures of the fixture specimen. The CLI's\nexhaustive answer matches gain Answer::Previewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The specimen's dialog is held to tokens with the window's other dialogs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The window's bindings name theme_specimen, and the read-only MCP test asks theme_preview\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The macOS snapshot is one audited block, for the operator's ruling\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The specimen's files are formatted as the window's are\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The stylesheet guard knows the theme specimen's page and its one layer\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The specimen's stylesheet carries its licence lines as the others do\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A Mac is told it takes no specimen picture until its audited block is ruled on\n\nThe macOS snapshot reaches WebKit only through unsafe, and the workspace holds\nexactly the audited blocks the operator allowed. Until that ruling, macOS answers\nas Windows does, and the scenario test holds each platform to what it does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme_preview draws Purlis Classic's appearances from the format 2 theme\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* macOS photographs the specimen through its audited WebKit snapshot\n\nThe operator allowed the fourth audited unsafe block (2026-10-17), so the\ninterim that answered a Mac as Windows is undone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Four audited unsafe blocks: the fourth is the theme specimen's macOS snapshot\n\nThe operator's ruling of 2026-10-17 (#2330) allows a fourth audited block, for\nWebKit's snapshot of the specimen. AGENTS.md, the workspace lint's comment and\nthe audit test (now four_unsafe_blocks.rs) name all four.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The window's bindings regenerated over main's theme commands\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* One specimen at a time with no queue, its window destroyed however the draw ends\n\nAn ask that finds a specimen being drawn is answered at once. A guard destroys\nthe hidden window on an answer, a refusal or a panic. The macOS picture's width\nis pinned to the page's, and the snapshot's SAFETY comment gives its real reasons.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The specimen page reaches nothing of the person's, through imports of imports\n\nThe guard follows every static import from the page's entry. The text defaults,\nthe Notice's settle time and the persona marks' read each move to a module of\ntheir own, so a Notice and the defaults import nothing that reads state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T09:16:01+04:00",
+          "tree_id": "212242e95411ee4337d4d9af69636956c03cd857",
+          "url": "https://github.com/purlis/purlis/commit/d8c7a04705171bd429a2c676e520ac1c06de41a2"
+        },
+        "date": 1792301096338,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5299039999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.514, 0.527, 0.530, 0.536, 0.571 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.693721500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.631, 16.657, 16.694, 16.984, 17.026 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.9520235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.881, 103.487, 103.952, 104.491, 105.869 ms"
           }
         ]
       }
