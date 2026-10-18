@@ -77,6 +77,13 @@ were recorded on a filesystem that folds case; on one that does not, the replay 
   `=`, in clusters and after long-name prefixes; `--` ending the options; and the other flags
   that take a value.
 
+**And in the plane-root rows, the root guards reading a line as a whole:** a `git reset` in any
+mode that takes commits no upstream has off the root's branch (`--soft` and `--mixed` too) is
+refused; a `git reset` or `git checkout` after an earlier command on the line that may change the
+repository is judged as unknown where nothing is measured at risk; a git command word the shell
+fills in, and an unquoted command substitution among git's own options, are refused. The keys that
+moved are `rst` and `bra`.
+
 **And one answer that moved with no row to edit (#1515): asking for the handoff command's
 help.** The Python's A7 refused every handoff that no quoted heredoc feeds, `charter handoff
 --help` among them. The app's guard lets that one through, because the program prints its help

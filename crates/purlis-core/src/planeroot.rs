@@ -3584,9 +3584,11 @@ fn reset_lands_on(post: &[String]) -> Option<Lands> {
         }
         post.truncate(cut);
     }
-    if post
-        .iter()
-        .any(|a| a == "-p" || a == "--patch" || a.starts_with("--pathspec-from-file"))
+    // A mode that keeps the tree has path forms of its own; a tree mode is judged as it was.
+    if !tree
+        && post
+            .iter()
+            .any(|a| a == "-p" || a == "--patch" || a.starts_with("--pathspec-from-file"))
     {
         return None;
     }
