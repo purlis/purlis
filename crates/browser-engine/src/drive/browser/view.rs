@@ -27,7 +27,7 @@ impl Browser {
             return Vec::new();
         };
         let cut = self.cut_off(target, &session, keys);
-        let Some(shown) = self.shows(&session, false) else {
+        let Some(shown) = self.viewport_of(&session, false) else {
             return keys
                 .iter()
                 .filter(|key| cut.contains(*key))
@@ -90,7 +90,7 @@ impl Browser {
             let shows = if session == page_session {
                 None
             } else {
-                match self.shows(&session, true) {
+                match self.viewport_of(&session, true) {
                     Some(shows) => Some(shows),
                     None => continue,
                 }
@@ -108,7 +108,7 @@ impl Browser {
 
     /// What the viewport of `session`'s document shows, in CSS pixels: placed where elements
     /// are drawn on the screen, or, `in_document`, where they are laid out in the document.
-    fn shows(&self, session: &str, in_document: bool) -> Option<Rect> {
+    fn viewport_of(&self, session: &str, in_document: bool) -> Option<Rect> {
         self.devtools()
             .call("Page.getLayoutMetrics", json!({}), Some(session))
             .ok()
