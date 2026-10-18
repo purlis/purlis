@@ -82,6 +82,7 @@ use std::time::{Duration, Instant};
 
 use super::asks::{Answer, Asks};
 use super::internal::Internal;
+use super::localport;
 use super::reach::{Decision, Reach, Refused};
 
 /// The port a tunnel is carried to: HTTPS's.
@@ -579,6 +580,13 @@ pub struct Serving {
     /// policy lists, the only internal addresses its connections are carried to
     /// ([`super::internal`]). None holds no address to it.
     pub internal: Option<Internal>,
+    /// For a chat planned on another machine (#2510, ruled 2026-10-18): the services of this
+    /// machine, by port, its plan gave it for it alone and this machine's sandbox does not
+    /// give, so it was started without them ([`super::plan::Plan::as_the_runner_starts_it`]).
+    /// Where the proxy asks live, a connection to one on the loopback interface is held while
+    /// the person is asked, by its loopback address, and carried once they allow it for this
+    /// chat. Any other port of this machine is refused as before.
+    pub left_out: Vec<u16>,
 }
 
 impl Serving {
@@ -595,6 +603,7 @@ impl Serving {
             reached: None,
             asks: None,
             internal: None,
+            left_out: Vec::new(),
         }
     }
 }
@@ -694,6 +703,7 @@ impl Proxy {
             reached: serving.reached,
             asks: serving.asks,
             internal: serving.internal,
+            left_out: serving.left_out,
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
         });
@@ -910,6 +920,7 @@ struct Allowed {
     reached: Option<Reached>,
     asks: Option<Arc<Asks>>,
     internal: Option<Internal>,
+    left_out: Vec<u16>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -965,7 +976,67 @@ impl Allowed {
         } else {
             &self.plain_ports
         };
-        self.reach.decide_by_name(host, port, ports, own)
+        let decision = self.reach.decide_by_name(host, port, ports, own);
+        // A service left out of this chat's plan (#2510): asked about, never refused as this
+        // machine or as a name of it that is never a host, where the proxy asks live.
+        let refused_here = matches!(
+            decision,
+            Decision::Ask | Decision::Refused(Refused::LocalAddress | Refused::NeverAHost(_))
+        );
+        if refused_here && self.asks.is_some() && self.left_out_at(host, port) {
+            return Decision::Ask;
+        }
+        decision
+    }
+
+    /// **Whether `host` on `port` is a service left out of this chat's plan** (#2510): one of
+    /// [`Serving::left_out`], on this machine's loopback by any name the proxy carries one by,
+    /// not withdrawn, and never a port purlis's own proxies listen on.
+    ///
+    /// **The one way a proxy asks about a port of its machine's loopback.** `left_out` is
+    /// filled only for a plan made on another machine, on the runner that starts it
+    /// ([`super::hosted::start`], [`super::plan::Plan::start_held`]); a proxy planned here never
+    /// asks about one. The window relies on that: it raises every loopback ask as the runner's
+    /// service (`chats::asked_as` in the app), never as one on the person's own machine.
+    fn left_out_at(&self, host: &str, port: u16) -> bool {
+        self.left_out.contains(&port)
+            && localport::names_loopback(host, port)
+            && !self.reach.withdrew(port)
+            && localport::still_ports(&[port]) == [port]
+    }
+
+    /// Where a connection to `host` on `port` is made once a service left out of this chat's
+    /// plan is allowed: its loopback address, never looked up. `None` for any other connection.
+    fn pinned(&self, host: &str, port: u16) -> Option<SocketAddr> {
+        if !self.left_out_at(host, port) {
+            return None;
+        }
+        let named = host.trim_start_matches('[').trim_end_matches(']');
+        let ip = match named.parse::<std::net::IpAddr>() {
+            Ok(ip) => ip,
+            Err(_) => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        };
+        Some(SocketAddr::new(ip, port))
+    }
+
+    /// Connects for `host` on `port`, carried by `decision`: at its pinned loopback address for
+    /// a service left out of this chat's plan ([`Self::pinned`]), otherwise as
+    /// [`connect_held`].
+    fn connect(
+        &self,
+        host: &str,
+        port: u16,
+        own: &[std::net::IpAddr],
+        read: Option<&[super::hosts::Network]>,
+    ) -> Connected {
+        match self.pinned(host, port) {
+            Some(at) => {
+                TcpStream::connect_timeout(&at, PATIENCE).map_or(Connected::Not, Connected::To)
+            }
+            None => connect_held(host, port, &self.reach, own, &|at| {
+                self.carries(host, at, read)
+            }),
+        }
     }
 
     /// **The decision, once the person had their say** (#1666): an ask is held on the chat's
@@ -990,7 +1061,14 @@ impl Allowed {
         } else {
             self.plain_ports.clone()
         };
-        match asks.hold(host, port, &ports) {
+        // A service left out of this chat's plan is asked about by its loopback address,
+        // whichever name the chat reached it by, so one Allow answers every spelling (#2510).
+        let asked = if self.left_out_at(host, port) {
+            super::tunnel::LOOPBACK
+        } else {
+            host
+        };
+        match asks.hold(asked, port, &ports) {
             Answer::Allowed(by) => Ok(Decision::by(by)),
             // The board is full, or no Notice can be raised: refused at once as before, with a
             // Block of its own.
@@ -1167,30 +1245,27 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return;
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    let mut upstream =
-        match connect_held(&request.host, request.port, &allowed.reach, &own, &|at| {
-            allowed.carries(&request.host, at, read.as_deref())
-        }) {
-            Connected::To(upstream) => upstream,
-            Connected::OnlyLocal => {
-                let local = Decision::Refused(Refused::LocalAddress);
-                allowed.refused(&request.host, request.port, &local);
-                answer(
-                    &mut client,
-                    "403 Forbidden",
-                    &refusal_said(&request.host, request.port, &local),
-                );
-                return;
-            }
-            Connected::Not => {
-                answer(
-                    &mut client,
-                    "502 Bad Gateway",
-                    &format!("purlis's egress proxy could not reach {}", request.host),
-                );
-                return;
-            }
-        };
+    let mut upstream = match allowed.connect(&request.host, request.port, &own, read.as_deref()) {
+        Connected::To(upstream) => upstream,
+        Connected::OnlyLocal => {
+            let local = Decision::Refused(Refused::LocalAddress);
+            allowed.refused(&request.host, request.port, &local);
+            answer(
+                &mut client,
+                "403 Forbidden",
+                &refusal_said(&request.host, request.port, &local),
+            );
+            return;
+        }
+        Connected::Not => {
+            answer(
+                &mut client,
+                "502 Bad Gateway",
+                &format!("purlis's egress proxy could not reach {}", request.host),
+            );
+            return;
+        }
+    };
     let _ = upstream.set_write_timeout(Some(allowed.idle));
     let sent = match &request.forward {
         None => client.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n"),
@@ -1253,9 +1328,7 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return socks_reply(&mut client, reply::NOT_ALLOWED);
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    let upstream = match connect_held(&host, port, &allowed.reach, &own, &|at| {
-        allowed.carries(&host, at, read.as_deref())
-    }) {
+    let upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
             allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));

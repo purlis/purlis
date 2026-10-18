@@ -470,6 +470,8 @@ impl Confining for StandInConfining {
             tmp: Some("/tmp/charter-chat-standin".into()),
             routed: None,
             ssh: given.first().map(|port| format!("/tmp/given-{port}")),
+            left_out: Vec::new(),
+            host_name: None,
         }
     }
 

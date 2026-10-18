@@ -2968,6 +2968,107 @@ fn an_allow_for_the_chat_is_kept_by_the_run_a_restart_began_while_it_was_audited
     assert!(chats.grants_a_start_of(ran.get()).services.is_empty());
 }
 
+/// #2510, ruled 2026-10-18: a service of the runner a chat runs on is allowed once or for that
+/// chat alone, and only where its runner asks about it; nothing is audited or kept on this
+/// machine for one refused, so the chat's next start plans it as before.
+#[test]
+fn a_runners_service_is_never_allowed_past_its_chat_nor_kept_on_this_machine() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let audited = std::cell::Cell::new(0);
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+        audited.set(audited.get() + 1);
+        Ok(())
+    };
+    for level in [GrantLevel::You, GrantLevel::Project, GrantLevel::Machine] {
+        assert_eq!(
+            allow_on_its_runner(&chats, 3, ("5432", level), &audit),
+            Err(RUNNER_SERVICE_SCOPES.to_owned()),
+            "{level:?}"
+        );
+    }
+    let not_asked = allow_on_its_runner(&chats, 3, ("5432", GrantLevel::Chat), &audit)
+        .expect_err("its runner does not ask about it");
+    assert!(not_asked.contains("5432"), "{not_asked}");
+    assert_eq!(audited.get(), 0, "nothing audited");
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+}
+
+/// #2510: an Allow the runner did not take is audited as taken back and refused in words, so
+/// the audit never holds an Allow that did not reach the runner.
+#[test]
+fn a_runners_service_its_runner_did_not_take_is_audited_back_and_refused() {
+    let audited = std::cell::RefCell::new(Vec::new());
+    let audit = |_: Option<u32>, one: &sandbox::grant::Audited<'_>| {
+        audited
+            .borrow_mut()
+            .push((one.granted, one.target.to_owned()));
+        Ok(())
+    };
+    let refused = allowed_on_its_runner(4, ("5432", GrantLevel::Chat), &audit, &|_| true, &|_| {
+        Err("the runner refused it".to_owned())
+    })
+    .expect_err("refused");
+    assert!(refused.contains("the runner refused it"), "{refused}");
+    assert_eq!(
+        *audited.borrow(),
+        [(true, "5432".to_owned()), (false, "5432".to_owned())]
+    );
+
+    audited.borrow_mut().clear();
+    let allowed = allowed_on_its_runner(4, ("5432", GrantLevel::Once), &audit, &|_| true, &|_| {
+        Ok(crate::chats::Live {
+            reached: vec![4],
+            told_to_retry: Vec::new(),
+        })
+    })
+    .expect("allowed");
+    assert!(allowed.live);
+    assert_eq!(*audited.borrow(), [(true, "5432".to_owned())]);
+}
+
+/// #2510: a block on a runner's service, answered with Allow for you in a project, grants
+/// nothing in that project on this machine; the same Allow of a service on this Mac does, so
+/// the project's granted ports are where such a grant would land.
+#[test]
+fn allow_for_you_on_a_runners_service_grants_nothing_in_the_project_here() {
+    use crate::taskblocks::HeldBlock;
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| Ok(());
+    let block = |kind: &str| HeldBlock {
+        operation: "connect".to_owned(),
+        kind: kind.to_owned(),
+        what: GrantWhat::Port,
+        target: "5432".to_owned(),
+    };
+
+    let refused = allow_held(
+        project.path(),
+        &machine(),
+        &chats,
+        (3, &block("runner-service")),
+        GrantLevel::You,
+        &audit,
+        100,
+    )
+    .expect_err("refused");
+    assert_eq!(refused.to_string(), RUNNER_SERVICE_SCOPES);
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+
+    allow_held(
+        project.path(),
+        &machine(),
+        &chats,
+        (3, &block("local-service")),
+        GrantLevel::You,
+        &audit,
+        100,
+    )
+    .expect("a service on this Mac is allowed for you");
+    assert_eq!(sandbox::local::granted_ports(project.path()), [5432]);
+}
+
 /// #2653: **a host allowed for me is removed from my hosts**: Remove on its row takes it out of
 /// the personal hosts file, audited at "for me". A chat is named only for a one-chat grant,
 /// so a for-me revoke that names a chat, or a one-chat revoke that names none, removes nothing
