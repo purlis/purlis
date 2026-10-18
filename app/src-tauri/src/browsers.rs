@@ -636,6 +636,13 @@ mod hosted {
             self.projects.lock().unwrap_or_else(PoisonError::into_inner)
         }
 
+        /// Whether `program` is a browser this window started in the project at `root` (#2022).
+        pub(crate) fn started_in(&self, root: &Path, program: &str) -> bool {
+            self.projects()
+                .get(root)
+                .is_some_and(|held| held.browsers.iter().any(|one| one == program))
+        }
+
         /// Ends `program` and forgets it.
         pub(crate) fn close(&self, program: &str) -> Result<(), String> {
             // Forgotten only once the host has ended it: one it could not be told of stays
@@ -966,12 +973,53 @@ pub async fn close_browser(
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
-        crate::off_the_window("ending a browser", move || browsers.close(&program)).await
+        crate::off_the_window("ending a browser", move || {
+            browsers.close(&program)?;
+            // A pinned one whose chat closed leaves its rows (#2022).
+            for one in &held {
+                let listing = one.browsers().listing();
+                one.browsers().stopped_by_the_person(&program);
+                one.browsers_listed_since(listing);
+            }
+            Ok(())
+        })
+        .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program);
+        let _ = (app, program, held);
         Ok(())
+    }
+}
+
+/// **The person hands browser `program` to chat `session` of project `plane`** (#2022): one
+/// pinned there whose chat closed, or one they opened there that no chat uses. Its chat's browser
+/// tools use it from their next call; answers what the chat calls it. The window's alone
+/// (`ui::WINDOW_ONLY`): only the person gives a chat a browser.
+#[tauri::command]
+#[specta::specta]
+pub async fn hand_browser_to_chat(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    program: String,
+    session: u32,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    #[cfg(unix)]
+    {
+        let opened_here = browsers(&app)
+            .map(|browsers| browsers.started_in(held.root(), &program))
+            .unwrap_or(false);
+        crate::off_the_window("handing a browser to a chat", move || {
+            crate::chatbrowsers::handed(&held, &program, session, opened_here)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, held, program, session);
+        Err("browsers run on macOS and Linux only".to_owned())
     }
 }
 

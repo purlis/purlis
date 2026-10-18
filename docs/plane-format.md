@@ -5412,6 +5412,19 @@ down rather than read off the code.
   (ADR 0069).
 - **Git:** gitignored (under `/.purlis/`).
 
+### `app/browsers-at-quit.json`
+- **What:** where this project's browsers were when purlis last quit (#2022, the person's
+  ruling of 2026-10-18): `{"addresses": ["https://shop.example.test/cart"]}`. Addresses only,
+  each cut to its scheme, host, port and path (no user, password, query or fragment), `http`
+  and `https` alone, each once, at most 32. None of a browser that held a login purlis performed
+  or that the person took over. No cookie, login, title or page content.
+- **Written by** the app as it quits, before the chats end (`purlis_core::browsersatquit::keep`),
+  0600, and removed when there is nothing to keep. **Read once** at the next start and taken
+  away (`take`), so a second start offers nothing; a file that does not read, or a link in its
+  place, offers nothing, is never followed, and is removed.
+- **Tier:** Clone state, rebuildable — deleting it loses only the offer of where
+  the browsers were. Never committed.
+
 ### `app/sandbox-blocks.json`
 - **No longer written** (#1662). It held seven days of sandbox blocks for `purlis doctor`'s
   count; those are kept now in this machine's network record in purlis's data home

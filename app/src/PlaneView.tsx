@@ -74,6 +74,7 @@ import {
   type Offer,
   type Project,
   type Ran,
+  type BrowserOffered,
   type Said,
   type TaskEndWay,
   type ViewPlaced,
@@ -204,6 +205,7 @@ import { putAway } from "./regionsAway";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
 import { StaleCloneNotices } from "./StaleCloneNotices";
+import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
@@ -3658,9 +3660,17 @@ export const PlaneView = memo(function PlaneView({
   }, [plane, refusedBy, showView, succeeded]);
 
   /** The browsers of this project's chats (#2024): rows under their chats, live on their tabs. */
-  const { browsers: chatBrowsers, read: chatBrowsersRead } = useChatBrowsers(plane);
-  /** Their programs: a tab showing one closes only its view, since it ends with its chat. */
-  const chatPrograms = useMemo(() => programsOf(chatBrowsers), [chatBrowsers]);
+  const {
+    browsers: chatBrowsers,
+    kept: keptBrowsers,
+    read: chatBrowsersRead,
+  } = useChatBrowsers(plane);
+  /** Their programs: a tab showing one closes only its view, since it ends with its chat, and
+   *  one pinned past its chat ends only when the person stops it (#2022). */
+  const chatPrograms = useMemo(
+    () => programsOf(chatBrowsers, keptBrowsers),
+    [chatBrowsers, keptBrowsers],
+  );
   const chatProgramsNow = useRef(chatPrograms);
   useEffect(() => {
     chatProgramsNow.current = chatPrograms;
@@ -4039,6 +4049,39 @@ export const PlaneView = memo(function PlaneView({
         ]),
       ),
     [chatBrowsers, nameOf],
+  );
+  /** The pinned browsers whose chat closed (#2022), by what their chat was called. */
+  const keptShown = useMemo(
+    () => keptBrowsers.map((browser): BrowserShown => ({ browser, chat: browser.was ?? "" })),
+    [keptBrowsers],
+  );
+  /** Every chat's browser as the catalogue offers rows for it (#2022). */
+  const browsersOffered = useMemo(
+    (): BrowserOffered[] => [
+      ...[...chatBrowsersShown.values()].flatMap((list) =>
+        list
+          .filter(({ browser }) => !browser.unended)
+          .map(({ browser, chat }) => ({
+            program: browser.program,
+            name: browser.name,
+            session: browser.session,
+            chat,
+            pinned: browser.pinned,
+            kept: false,
+            login: browser.login,
+          })),
+      ),
+      ...keptShown.map(({ browser, chat }) => ({
+        program: browser.program,
+        name: browser.name,
+        session: browser.session,
+        chat,
+        pinned: true,
+        kept: true,
+        login: browser.login,
+      })),
+    ],
+    [chatBrowsersShown, keptShown],
   );
   /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
   const browsersOfTab = useCallback(
@@ -6068,6 +6111,25 @@ export const PlaneView = memo(function PlaneView({
       createVault,
       ...edits.doing,
       ...memoryEdits.doing,
+      // A chat's browser pinned or unpinned, handed to a chat, or stopped (#2022): the core
+      // says where it cannot, and the listing it moves is read again on its event.
+      pinBrowser: async (program: string, session: number, pinned: boolean): Promise<Ran> => {
+        const said = await commands.pinChatBrowser(plane, session, program, pinned);
+        return said.status === "error" ? { ok: false, refused: said.error } : { ok: true };
+      },
+      handBrowser: async (program: string, session: number): Promise<Ran> => {
+        const said = await commands.handBrowserToChat(plane, program, session);
+        return said.status === "error"
+          ? { ok: false, refused: said.error }
+          : {
+              ok: true,
+              said: `${nameOfNow.current(session)} uses it as browser ${said.data} from its next browser call.`,
+            };
+      },
+      stopBrowser: async (program: string): Promise<Ran> => {
+        const said = await commands.closeBrowser(program);
+        return said.status === "error" ? { ok: false, refused: said.error } : { ok: true };
+      },
       removeWorktree,
       mergeWorktree,
       declareWorktreeDone,
@@ -6867,6 +6929,7 @@ export const PlaneView = memo(function PlaneView({
             personas,
             vaults: vaultNames,
             todos,
+            browsers: browsersOffered,
             plane,
             projects,
             // Which window this is, for the rows that move a project between windows (charter#126).
@@ -6958,6 +7021,7 @@ export const PlaneView = memo(function PlaneView({
       tabs,
       vaultNames,
       todos,
+      browsersOffered,
       views,
       extensionCommands,
       worktree,
@@ -8063,6 +8127,8 @@ export const PlaneView = memo(function PlaneView({
         dismiss={dismiss}
         settle={settleNotices}
       />
+      {/* **Where this project's browsers were at the last quit** (#2022): offered once. */}
+      <BrowsersAtQuitNotice plane={plane} />
       {/* **A workspace's repo left off its default branch, or on a moved remote** (#1985): one
           Notice per repo, with the Fix that loses no work. */}
       <StaleCloneNotices
@@ -8303,6 +8369,7 @@ export const PlaneView = memo(function PlaneView({
                     showView(taskChangesView(task.id), taskChangesTitle(task.name))
                   }
                   browsers={chatBrowsersShown}
+                  kept={keptShown}
                   onBrowser={openChatBrowser}
                 />
               </WaitingTaskWaysContext.Provider>

@@ -40,7 +40,7 @@ export function browserLimitsGroup(): SettingsGroup {
       row(
         "idle_minutes",
         "Minutes before an unused browser stops",
-        "A chat's browser nobody used for this long stops, and the chat is told. 0 never stops one. A browser you drive never stops this way.",
+        "A chat's browser nobody used for this long stops, and the chat is told. 0 never stops one. A browser you drive or pinned never stops this way.",
       ),
     ],
   };
@@ -127,6 +127,12 @@ function row(limit: BrowserLimit, label: string, help: string): LiveSetting {
       useEffect(() => setTyped(undefined), [shown?.value]);
       const commit = () => {
         if (typed === undefined || shown === undefined) return;
+        // A field left blank is put back to its default: never read as 0, which is "never".
+        if (typed.trim() === "") {
+          setTyped(undefined);
+          if (shown.set) void write(limit, null);
+          return;
+        }
         const to = Number(typed.trim());
         if (!Number.isInteger(to) || to < shown.least || to > shown.most) {
           refused = {
