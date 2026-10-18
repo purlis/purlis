@@ -11,19 +11,38 @@ repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.sc
 - **Built in**: Purlis Classic, `purlis-classic`, with a dark and a light appearance. The ids
   its appearances have had (`purlis-dark`, `purlis-light`, `charter-dark`, `charter-light`)
   still name it.
-- **Your own**: `theme.json` in purlis's config folder (`$PURLIS_CONFIG_HOME`, else
-  `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`). Its id is `mine`.
+- **Your own**, at the machine level: `theme.json` in purlis's config folder
+  (`$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`), whose id
+  is `mine`, and each theme folder in that folder's `themes/`, whose id is `machine:<folder>`.
+- **The project's**: each theme folder in `themes/` at the plane root, `project:<folder>`.
+- **A workspace's**: each theme folder in `workspaces/<ws>/themes/`,
+  `workspace:<ws>:<folder>`.
 - **An extension**: each theme an approved extension contributes while it is on. Its id is
   `<extension>/<theme>`, as a project's pick names it.
 
-`purlis theme list` shows every theme available here:
+A theme folder's id names its level because a folder of the same name can be at several levels;
+a pick names it by its folder's name alone, and the nearest level within the pick's reach is
+read. The theme commands read the levels' folders exactly as the window does, with the same
+reach: a folder extends the folders of its own level and the levels farther out. Outside a
+plane there are no project or workspace levels. What reading a level has to say (a `themes/` reached through a link, more folders than are
+read) is attached to every theme at that level: as a note on a theme that is drawn, among the
+reasons on one that is refused.
+
+`purlis theme list` shows every theme available here, the machine's first, then the project's,
+each workspace's by name, and the extensions':
 
 ```
   ID                        NAME            APPEARANCES  FROM
   purlis-classic            Purlis Classic  dark, light  built-in
-  mine                      Late            dark         /home/me/.config/purlis/theme.json
+  mine                      Late            dark         machine /home/me/.config/purlis/theme.json
+  machine:dusk              Dusk            dark, light  machine /home/me/.config/purlis/themes/dusk
+  project:team              Team            dark         project /work/plane/themes/team
+  workspace:ops:alarm       Alarm           dark         workspace ops /work/plane/workspaces/ops/themes/alarm
   solarized/Solarized Dark  Solarized Dark  dark         extension solarized
 ```
+
+FROM starts with the theme's level: `built-in`, `machine`, `project`, `workspace <ws>` or
+`extension <extension>`.
 
 APPEARANCES names each appearance by its id, with its tag when the id is not one (`day
 (light)`) and `high contrast` when it is tagged so. An id may hold a space, as an extension's
@@ -37,7 +56,10 @@ this purlis reads (see [The schema a theme names](#the-schema-a-theme-names)), e
 values are `off` and `on`, so its `default` here is `"on"` or `"off"`, where `theme.json`
 writes `true` or `false`), `combinations` is how many appearance × option combinations the
 theme has, `from` is `{"kind": "built-in"}`,
-`{"kind": "mine", "path"}` or `{"kind": "extension", "extension"}`, and `refused` is `null` or
+`{"kind": "mine", "path"}`, `{"kind": "machine", "folder", "path"}`,
+`{"kind": "project", "folder", "path"}`, `{"kind": "workspace", "workspace", "folder", "path"}`
+or `{"kind": "extension", "extension"}`, `level` is `built-in`, `machine`, `project`,
+`workspace` or `extension` (`null` for a theme named by its path), and `refused` is `null` or
 why (`name`, `appearances`, `options` and `combinations` are then `null`).
 
 ## Theme options
@@ -67,8 +89,11 @@ number of values (a toggle has two). A theme past that is refused with its count
 
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the
-themes it may `extend`). A file path that is a link is followed, since it is the path you typed;
-a theme folder, or its `theme.json`, that is a link is refused:
+themes it may `extend`). A level's theme folder is named by its level and folder
+(`project:team`) and checked exactly as the window reads it: that level's folder, never a
+farther level's of the same name, extending what a choice made at that level reaches. A file
+path that is a link is followed, since it is the path you typed; a theme folder, or its
+`theme.json`, that is a link is refused:
 
 ```
 Dim — /home/me/dim.json, dark
@@ -79,8 +104,11 @@ warnings (2):
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
 ```
 
-A last `hard floors:` line follows. Until purlis keeps hard floors (#2332), it says they are
-not checked by this purlis yet.
+Then `floors held:`, what the window draws of the theme: each consent floor it breaks in a
+combination, and the tokens the window draws as purlis's own for it (`danger is
+distinguishable from primary — purlis draws its own danger.base`), or `none`. A last `hard
+floors:` line follows. Until purlis keeps hard floors (#2332), it says they are not checked by
+this purlis yet.
 
 - **Refused**: a theme that breaks its grammar anywhere is not drawn at all, and each value
   that refused it is listed: a colour that is not hex or a palette name, a duration or an
@@ -96,6 +124,10 @@ not checked by this purlis yet.
   value in the theme's order of its options (`dark, borders on: …`). A theme with options says
   them on an `options:` line under its name, with how many combinations were checked. A warning
   is the author's call; the theme is drawn.
+- **Floors held** are the consent floors (an ask contrasts with its surface, Allow is
+  distinguishable from Keep blocked, the danger colours contrast with what they are drawn on,
+  danger is distinguishable from primary, the state marks meet the mark floor). A theme that
+  breaks one is drawn with purlis's own values for those tokens and the rest as written.
 - **Hard floors** are the few rules a theme can never break. This purlis does not check them
   yet (#2332), and says so rather than reporting a pass.
 
@@ -110,7 +142,7 @@ is refused, **2** when there is no such theme.
   "theme_schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "theme": {"id": "mine", "name": "Dim",
             "appearances": [{"id": "dark", "appearance": "dark", "high_contrast": false}],
-            "options": [], "combinations": 1,
+            "options": [], "combinations": 1, "level": "machine",
             "from": {"kind": "mine", "path": "/home/me/.config/purlis/theme.json"}},
   "refused": null,
   "errors": [],
@@ -119,6 +151,7 @@ is refused, **2** when there is no such theme.
   "warnings": [{"appearance": "dark", "options": {}, "kind": "contrast", "tint": null,
                 "pair": {"front": "text.muted", "back": "surface.base", "floor": 4.5},
                 "ratio": 2.38}],
+  "held": [],
   "hard_floors": null,
   "clean": false
 }
@@ -132,9 +165,12 @@ for a theme with none), in the theme's order of its options. Its `kind` is `cont
 its `ratio`, and `under` when the back is a wash laid over another token), `ansi` (a terminal
 colour too close to the terminal's background: `token`, `ratio`, `floor`) or
 `selected-not-apart` (the selected row drawn exactly as `other`). `tint` is the workspace colour
-it was found in, or `null` for the theme as it is. `hard_floors` is `null` until purlis checks
-them. `clean` is true with no error, no note and no warning; it covers those only, never hard
-floors, which `hard_floors` reports on its own. `schema` is the version of this shape, in both
+it was found in, or `null` for the theme as it is. `held` has one entry for each combination
+in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
+`floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
+as purlis's own. `hard_floors` is `null` until purlis checks them. `clean` is true with no
+error, no note, no warning and no floor held; it covers those only, never hard floors, which
+`hard_floors` reports on its own. `schema` is the version of this shape, in both
 answers: a reader checks it first. A theme folder's `from` is `{"kind": "folder", "path"}`, a
 theme file's `{"kind": "file", "path"}`.
 

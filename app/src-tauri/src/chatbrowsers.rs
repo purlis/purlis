@@ -1461,8 +1461,9 @@ fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
 
 /// **What chat `session`'s browser reaches**: what its sandbox lists, as it was compiled at its
 /// start with the hosts allowed it live since, never its floor (a browser takes only what is
-/// listed, D-2011-10), and the browser sites you allowed for every chat here (#2018) that
-/// policy leaves in force. A host allowed for the chat's commands is a site its browser
+/// listed, D-2011-10), the browser sites you allowed for every chat here (#2018) that policy
+/// leaves in force, and the project's browser sites for everyone in it that the person here was
+/// shown (#2443). A host allowed for the chat's commands is a site its browser
 /// reaches (D-2018-7); a browser site is never one its commands reach. A chat started without
 /// the sandbox has no such record, so its browser starts with nothing listed, and reaches a
 /// public site only where the person let it reach the open web. Its own sites, for this chat
@@ -1483,6 +1484,19 @@ fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
                 layer: Layer::You,
             }),
     );
+    with_project_sites(reach, &sandbox::browser_sites::in_force(root, &locks))
+}
+
+/// `reach`, listing `sites`, the project's browser sites for everyone in it in force here
+/// (#2443), each at the project's layer.
+fn with_project_sites(
+    mut reach: BrowserReach,
+    sites: &[purlis_core::sandbox::hosts::Host],
+) -> BrowserReach {
+    reach.listed.extend(sites.iter().map(|site| Listed {
+        host: site.to_string(),
+        layer: Layer::Project,
+    }));
     reach
 }
 
@@ -1761,9 +1775,10 @@ pub fn kept_off(
 }
 
 /// **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
-/// browser sites at `level`, this chat or every chat of this project on this machine. A grant
-/// for the browser alone (ruled 2026-10-17): the chat's own commands still need their own Allow
-/// for each host. Its browser reaches them from its next act; the chat is told on its next turn.
+/// browser sites at `level`: this chat, every chat of this project on this machine, or everyone
+/// in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
+/// chat's own commands still need their own Allow for each host. Its browser reaches them from
+/// its next act; the chat is told on its next turn.
 #[tauri::command]
 #[specta::specta]
 pub async fn allow_browser_sites(
@@ -1806,10 +1821,10 @@ pub fn sites_allowed(
 ) -> Result<(), String> {
     use purlis_core::sandbox::{self, grant::Level};
     let sites = sites_sent(sites)?;
-    if !matches!(level, Level::Chat | Level::You) {
+    if !matches!(level, Level::Chat | Level::You | Level::Project) {
         return Err(
-            "purlis allows a browser site for this chat, or for every chat of this project on \
-             this machine. A browser site for everyone in the project is coming, in #2443."
+            "purlis allows a browser site for this chat, for every chat of this project on this \
+             machine, or for everyone in the project."
                 .to_owned(),
         );
     }
@@ -1846,6 +1861,16 @@ pub fn sites_allowed(
                 level,
             },
         )?;
+    }
+    if level == Level::Project {
+        // Committed for everyone in the project (#2443): the browsers' alone, never a host of
+        // the chats' own commands, and seen here as this window wrote it.
+        for site in &sites {
+            let host = sandbox::hosts::Host::parse(&site.to_string())?;
+            sandbox::browser_sites::grant(root, &host).map_err(|why| {
+                format!("purlis could not keep {site}, so nothing was allowed: {why}")
+            })?;
+        }
     }
     if level == Level::You {
         for site in &sites {
