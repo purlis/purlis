@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792341896181,
+  "lastUpdate": 1792343232713,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17010,6 +17010,48 @@ window.BENCHMARK_DATA = {
             "value": 104.2206075,
             "unit": "ms",
             "extra": "median of 5 runs: 103.174, 103.969, 104.221, 104.294, 105.385 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "254620b4fbf5a5f65fae20e8df1bbd9a02ce9d48",
+          "message": "Browsers: purlis's own page scripts run in an isolated world (#2551)\n\n* Browsers: purlis's own page scripts run in an isolated world (#2138)\n\nThe settle check, choosing a drop-down's options, reading a field and the\nfocus check run in a world of purlis's own in the frame they act on, named\nby the id the engine gives it and forgotten when its frame or session goes.\nConsole events are not queued, and a field that cannot be read holds the key.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a field read fails after its key is read again at hand-back (#2138)\n\nThe field is marked touched before the read that follows its key, and a\nkey that reached the page before its field could not be read says so in\nwords of its own. The driver's notes name the scripts that run in\npurlis's world.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T20:57:11+04:00",
+          "tree_id": "ca2a291bf0d3ff09cc5608be07cbfce3fe2fe60f",
+          "url": "https://github.com/purlis/purlis/commit/254620b4fbf5a5f65fae20e8df1bbd9a02ce9d48"
+        },
+        "date": 1792343231376,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.285735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.281, 0.282, 0.286, 0.293, 0.298 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.658976000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.578, 16.627, 16.659, 16.659, 16.733 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.8707335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.443, 100.850, 100.871, 101.475, 102.726 ms"
           }
         ]
       }
