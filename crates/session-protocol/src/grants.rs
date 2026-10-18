@@ -39,6 +39,7 @@
 //! | `browse`, an act of a chat's browser, and a browser's `reach` (1.11) | yes | | | | | |
 //! | `programs_of` (1.13) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
+//! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
@@ -108,6 +109,14 @@
 //!   its confinement among it, which only the window confines; and `quit` ends every program
 //!   and the host with them, which is the person's act of quitting purlis. A stop needs no
 //!   human, so every other scope still has `stop` and `stop_all`.
+//! - **A window takes back its own runner chats' sandboxes after a re-link, and only its own**
+//!   (1.22, #2511, ruled 2026-10-17). `take_back` is the desktop's relay's own word over the
+//!   link between hosts, never a client's: on each link it makes for one window it names that
+//!   window, and the runner names that link the confinements of the chats that window started
+//!   there over the links before, made or composed for them. It names it no confinement the
+//!   runner's own window made, and none made or composed for a link of another window. The
+//!   window itself sends none: on its own host it takes its chats back with `programs_of`, and
+//!   the desktop's relay refuses one from any client.
 //! - **A browser is started and watched in the window alone** (1.6, #2012). A browser is a
 //!   program started as the person, and what it shows is theirs: the pages of sites they are
 //!   signed in to. Until runners run browsers (spec #2041), no other scope starts one or attaches
@@ -215,6 +224,9 @@ pub enum Power {
     Reattach,
     /// `quit` (1.13): the host ends every program and stops.
     Quit,
+    /// `take_back` (1.22): a relaying host names the window a link is for, and is named again
+    /// the confinements of the chats that window started. Never the window's own.
+    TakeBack,
 }
 
 impl Scope {
@@ -223,7 +235,7 @@ impl Scope {
         use Power as P;
         use Scope as S;
         match self {
-            S::LocalUi => true,
+            S::LocalUi => power != P::TakeBack,
             S::Terminal => matches!(
                 power,
                 P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
@@ -241,6 +253,7 @@ impl Scope {
                     | P::Launch
                     | P::Heard
                     | P::Confine
+                    | P::TakeBack
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),
@@ -318,6 +331,17 @@ mod tests {
                 "{scope}"
             );
             assert_eq!(scope.may(Power::Quit), scope == Scope::LocalUi, "{scope}");
+        }
+    }
+
+    #[test]
+    fn only_a_relaying_host_takes_back_its_windows_runner_chats() {
+        for scope in Scope::ALL {
+            assert_eq!(
+                scope.may(Power::TakeBack),
+                scope == Scope::RemoteLink,
+                "{scope}"
+            );
         }
     }
 
