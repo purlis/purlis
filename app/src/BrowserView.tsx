@@ -23,6 +23,7 @@ import { useWindowSeen } from "./browserWatch";
 import { EmptyState } from "./EmptyState";
 import { Select } from "./primitives/Select";
 import { useProjectShown } from "./projectShown";
+import { RECONNECTING_SAID } from "./reconnecting";
 import { onAMac } from "./tabKeys";
 
 /** The keys that are only held with another. */
@@ -109,11 +110,16 @@ function useSender(program: string, said: (why: string | undefined) => void) {
  * ({@link handsBack}), hands it back; the session host keeps the browser theirs until then,
  * across a crash of the window too. A size preset is the person's too, so picking one takes the
  * browser over.
+ *
+ * **A browser on a runner whose link is down says "Reconnecting…" over its last frame**
+ * (#2542), quietly, as a runner's chat does (#2496), until the core says it is reconnected: the
+ * link is back, or the view drew again from a new snapshot.
  */
 export function BrowserView({ program }: { program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [shown, setShown] = useState<Shown>({ kind: "opening" });
   const [driving, setDriving] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
   const [size, setSize] = useState<string>(SIZE_PRESETS[0].id);
   const drives = useRef(false);
@@ -144,11 +150,19 @@ export function BrowserView({ program }: { program: string }) {
     const frames = new Channel<BrowserFrame>();
     frames.onmessage = (frame) => {
       if (gone) return;
+      // Where the view stands while its runner's link is down and back: no image of its own.
+      if (frame.reconnection !== null) {
+        setReconnecting(frame.reconnection === "reconnecting");
+        return;
+      }
       // An empty frame is the host's word that the view has ended for good.
       if (frame.jpeg === "") {
         setShown({ kind: "ended" });
         return;
       }
+      // A frame comes only over a link that is up: a view watched again after its runner's
+      // link came back is drawn as it comes.
+      setReconnecting(false);
       aim.current = frame.aim;
       draw(frameBytes(frame.jpeg));
     };
@@ -351,7 +365,7 @@ export function BrowserView({ program }: { program: string }) {
         )}
       </div>
       <div
-        className="browser-surface"
+        className={reconnecting ? "browser-surface reconnecting" : "browser-surface"}
         data-testid="browser-surface"
         tabIndex={0}
         aria-label="The browser's page: click or type to take it over"
@@ -371,6 +385,15 @@ export function BrowserView({ program }: { program: string }) {
           width={shown.kind === "live" ? shown.width : undefined}
           height={shown.kind === "live" ? shown.height : undefined}
         />
+        {/* Always there, so a screen reader hears the word as it comes and goes. */}
+        <div className="pane-reconnecting">
+          <span
+            className={reconnecting ? "pane-reconnecting-said ui-text-secondary" : undefined}
+            role="status"
+          >
+            {reconnecting ? RECONNECTING_SAID : ""}
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -54,6 +54,9 @@ export function useBrowserWatch(
     const frames = new Channel<BrowserFrame>();
     frames.onmessage = (frame) => {
       if (gone) return;
+      // Where the view stands while its runner's link is down (#2542) is said over the focused
+      // view; a thumbnail keeps its last frame as it is.
+      if (frame.reconnection !== null) return;
       // An empty frame is the host's word that the view has ended for good. What it shows
       // (`aim`) is for the person's input, which a thumbnail takes none of.
       if (frame.jpeg === "") setWatched({ kind: "ended" });

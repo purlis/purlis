@@ -149,7 +149,7 @@ function core(browsers: ChatBrowser[]) {
     },
     /** A frame on the view of `program` attached as `role`. */
     frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
-      views.get(`${program} ${role}`)?.onmessage({ aim: "p1:1", jpeg: base64 }),
+      views.get(`${program} ${role}`)?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null }),
   };
 }
 
@@ -291,7 +291,10 @@ describe("a chat's browser view, opened from its row", () => {
       ),
     );
     const view = await screen.findByTestId("browser-view");
-    const bar = within(view).getByRole("status");
+    // The bar's word, not the one over the page while a runner's link is down (#2542).
+    const bar = within(view)
+      .getAllByRole("status")
+      .find((one) => one.classList.contains("browser-bar-said"));
     await screen.findByLabelText("The browser's page");
     expect(bar).toHaveTextContent("Click or type in the page to take it over.");
     host.frame("B7", "focused", "/9j/AA==");
