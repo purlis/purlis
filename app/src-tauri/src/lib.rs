@@ -130,6 +130,7 @@ mod silence;
 mod slowstart;
 mod smartclose;
 mod specimen;
+mod themegallery;
 mod staleclones;
 mod stopping;
 mod taskblocks;

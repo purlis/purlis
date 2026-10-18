@@ -2450,9 +2450,15 @@ export const commands = {
 	/**
 	 *  **The window draws the specimen itself** (Settings › Theme's cards, and the scenario tests):
 	 *  `theme` by id and `appearance` (`dark`, `light`, or none for the theme's first), as a chat's
-	 *  `theme_preview` is drawn.
+	 *  `theme_preview` is drawn. With `at`, or for a theme that is not Purlis Classic, `theme` is a
+	 *  card of the gallery at the level `at` names (the machine's with none, #2331) and
+	 *  `appearance` one of its appearances by id: the engine resolves it there, with the floors
+	 *  held, and the page is handed that theme alone.
 	 */
-	themeSpecimen: (theme: string, appearance: string | null) => typedError<SpecimenPicture, string>(__TAURI_INVOKE("theme_specimen", { theme, appearance })),
+	themeSpecimen: (theme: string, appearance: string | null, at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null) => typedError<SpecimenPicture, string>(__TAURI_INVOKE("theme_specimen", { theme, appearance, at })),
 	/**
 	 *  **Maps today's in-plane theme picks into the person's choices, once** (#2323,
 	 *  [`purlis_core::theme::levels::adopt`]): a sentence for each pick copied, which the window says
@@ -2473,6 +2479,67 @@ export const commands = {
 	 *  the choice away. What Settings › Appearance › Your theme writes.
 	 */
 	themeChoose: (plane: PlaneId, workspace: string | null, theme: string | null, appearance: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_choose", { plane, workspace, theme, appearance })),
+	/**
+	 *  **The gallery at the level `at` names** (#2331): a card per theme a choice there may name,
+	 *  the person's own choice there, and which card is drawn and which level chose it.
+	 */
+	themeGallery: (at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null) => typedError<ThemeGallery, string>(__TAURI_INVOKE("theme_gallery", { at })),
+	/**
+	 *  **What the card `theme` draws** at the level `at` names, in `appearance` (an appearance's
+	 *  id, `system` to follow the operating system, which is light when `light`, or `null` for its
+	 *  first): what the window draws while the pointer or the keyboard is on the card, and puts
+	 *  back when it leaves. Nothing is written. `null` when the gallery has no such card.
+	 */
+	themeCardDrawn: (at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null, theme: string, appearance: string | null, light: boolean) => typedError<{
+	/**
+	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
+	 *  JSON at all, which nothing picked).
+	 */
+	theme: WindowTheme | null,
+	/**  What resolving it had to put right. */
+	complaints: string[],
+	/**  Whether it follows the operating system's appearance. */
+	follows_system: boolean,
+	/**
+	 *  The Notice that names the consent floors the theme breaks, when it breaks one: what is
+	 *  drawn has purlis's own values for those tokens.
+	 */
+	floors: string | null,
+	/**
+	 *  The options of the theme drawn, each with the value it is drawn with (#2325): empty for
+	 *  a theme with none.
+	 */
+	options: WindowOption[],
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light })),
+	/**
+	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
+	 *  them, kept beside `machine.json` and never in a project file; `theme` of `null` takes the
+	 *  choice away. What Settings › Theme writes at the You level.
+	 */
+	themeChooseMachine: (theme: string | null, appearance: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_choose_machine", { theme, appearance })),
+	/**
+	 *  **Duplicate as my theme** (#2331): a theme folder of the person's own that extends the card
+	 *  `theme` of the gallery at the level `at` names. Answers the new folder's name.
+	 */
+	themeDuplicate: (at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null, theme: string) => typedError<string, string>(__TAURI_INVOKE("theme_duplicate", { at, theme })),
+	/**
+	 *  **Open folder** (#2331): the card `theme`'s theme folder, at the level `at` names, opened in
+	 *  the operating system's file manager. The window names the card; the folder is the one the
+	 *  engine places for it, never a path the window sent.
+	 */
+	themeOpenFolder: (at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null, theme: string) => typedError<null, string>(__TAURI_INVOKE("theme_open_folder", { at, theme })),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
@@ -5977,6 +6044,44 @@ export type FoundFile = {
  *  What Apply writes is judged again by the rules of where it was shown.
  */
 export type From = "row" | "tab";
+
+/**  One appearance of a card. */
+export type GalleryAppearance = {
+	id: string,
+	/**  `dark` or `light`. */
+	appearance: string,
+	high_contrast: boolean,
+};
+
+/**  **One card of a gallery**: what the theme engine read of one theme. */
+export type GalleryCard = {
+	/**  What a choice names it by. */
+	id: string,
+	name: string,
+	/**  `built-in`, `machine`, `project`, `workspace` or `extension`. */
+	from: string,
+	/**  The extension it comes from, for an extension's theme. */
+	extension: string | null,
+	/**  Its appearances, the first what it draws when nothing chose one. */
+	appearances: GalleryAppearance[],
+	/**  Its options, each at its default. */
+	options: WindowOption[],
+	refused: boolean,
+	/**  Why it is refused, or what was left out of it: a sentence each. */
+	said: string[],
+	/**  The theme check's warnings, a line each. */
+	warnings: string[],
+	/**  The consent floors it breaks, a sentence each. */
+	floors: string[],
+	/**  What following the system does with a theme of one tag; `null` with a dark and a light. */
+	follows: string | null,
+	/**  Whether Duplicate as my theme is offered. */
+	duplicable: boolean,
+	/**  Whether Open folder is offered. */
+	folder: boolean,
+	/**  Changes whenever what the theme draws changes: what its pictures are kept by. */
+	stamp: string,
+};
 
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
@@ -10103,6 +10208,29 @@ export type TheirAgentsMd = {
 export type ThemeAt = {
 	plane: PlaneId,
 	workspace: string | null,
+};
+
+/**  **A level's gallery**, as Settings › Theme draws it. */
+export type ThemeGallery = {
+	/**  Every theme a choice at this level may name, Purlis Classic first. */
+	cards: GalleryCard[],
+	/**  The person's own choice at this level, kept on this machine; `null` when they made none. */
+	yours: YourTheme | null,
+	/**
+	 *  The card the window draws here, as the levels resolve it; `null` when what is drawn is
+	 *  no card of this gallery (the person's own `theme.json`).
+	 */
+	drawn: string | null,
+	/**
+	 *  Which level chose what is drawn (`workspace-choice`, `workspace-default`,
+	 *  `project-choice`, `project-default`, `machine-default`, `purlis`).
+	 */
+	level: string,
+	/**
+	 *  Where that level is, in a sentence's words: "your choice for this workspace on this
+	 *  machine", "charter.toml", …
+	 */
+	from: string,
 };
 
 /**  What [`theme_in_force`] answers. */

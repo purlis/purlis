@@ -43,7 +43,7 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use purlis_core::theme::levels::{Found as AtLevel, Reach};
-use purlis_core::theme::{self, Complaint, Finding, Folders, Resolved, Theme};
+use purlis_core::theme::{self, Complaint, Folders, Resolved, Theme};
 use purlis_core::{extension, shown};
 use serde_json::{Value, json};
 
@@ -1120,14 +1120,6 @@ fn in_theme_order<'a>(
     })
 }
 
-/// What a combination is called on a warning's line: its appearance, and each option's value
-/// in the theme's order when the theme has options (`dark, borders on, accent teal`).
-fn combination(theme: &Theme, checked: &theme::Checked) -> String {
-    let mut parts = vec![checked.appearance.clone()];
-    parts.extend(in_theme_order(theme, checked).map(|(option, value)| format!("{option} {value}")));
-    shown::short(&parts.join(", "))
-}
-
 /// The theme's options as the check's header says them: each id, its kind, its values and its
 /// default.
 fn options_line(theme: &Theme) -> Option<String> {
@@ -1195,23 +1187,7 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
             out.push_str(&format!("  {}\n", shown::readable(&note.said, 240)));
         }
     }
-    // A combination is named on its lines only when there is more than one to tell apart.
-    let named = checked.len() > 1;
-    let said: Vec<String> = checked
-        .iter()
-        .flat_map(|one| {
-            let called = combination(theme, one);
-            warnings(&one.report.findings)
-                .into_iter()
-                .map(move |warning| {
-                    if named {
-                        format!("{called}: {}", warning.line())
-                    } else {
-                        warning.line()
-                    }
-                })
-        })
-        .collect();
+    let said = theme::warnings_said(theme, checked);
     if said.is_empty() {
         out.push_str("warnings: none\n");
     } else {
@@ -1261,121 +1237,6 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
     }
     out.push_str(&format!("hard floors: {FLOORS_NOT_CHECKED}\n"));
     out
-}
-
-/// The findings of one pair (or one terminal colour, or the selected row against one other),
-/// as the theme is and in each workspace tint it was found in: one line of the text.
-struct Warning {
-    /// What is drawn on what.
-    subject: String,
-    /// The floor it is under; `None` for the selected row, which has no ratio.
-    floor: Option<f64>,
-    /// Found in the theme as it is, with its ratio when it has one.
-    plain: Option<Option<f64>>,
-    /// Each workspace tint it was found in, with its ratio when it has one.
-    tints: Vec<(&'static str, Option<f64>)>,
-}
-
-impl Warning {
-    fn line(&self) -> String {
-        let lowest = self
-            .tints
-            .iter()
-            .filter_map(|(_, ratio)| *ratio)
-            .fold(f64::INFINITY, f64::min);
-        let tints = if self.tints.len() == theme::PALETTE.len() {
-            "every workspace tint".to_owned()
-        } else {
-            let names: Vec<&str> = self.tints.iter().map(|(name, _)| *name).collect();
-            format!(
-                "the {} {}",
-                names.join(", "),
-                purlis_core::counts::plural(names.len(), "tint", "tints")
-            )
-        };
-        let floor = self
-            .floor
-            .map_or_else(String::new, |floor| format!(", under {floor}"));
-        match (self.plain, self.tints.is_empty()) {
-            (Some(Some(ratio)), true) => format!("{}: {ratio:.2}{floor}", self.subject),
-            (Some(Some(ratio)), false) => format!(
-                "{}: {ratio:.2}{floor}; in {tints} too, down to {lowest:.2}",
-                self.subject
-            ),
-            (Some(None), true) => self.subject.clone(),
-            (Some(None), false) => format!("{}; in {tints} too", self.subject),
-            (None, _) if lowest.is_finite() => {
-                format!("{}, in {tints}: down to {lowest:.2}{floor}", self.subject)
-            }
-            (None, _) => format!("{}, in {tints}", self.subject),
-        }
-    }
-}
-
-/// The findings as a person reads them: one line per pair, the theme as it is first and the
-/// tints after, in the engine's order. `--json` keeps every finding as the engine reports it.
-fn warnings(findings: &[Finding]) -> Vec<Warning> {
-    let mut found: Vec<Warning> = Vec::new();
-    for finding in findings {
-        let (subject, floor, tint, ratio) = match finding {
-            Finding::Contrast { tint, pair, ratio } => {
-                let over = pair
-                    .under
-                    .map_or_else(String::new, |under| format!(" over {under}"));
-                (
-                    format!("{} on {}{over}", pair.front, pair.back),
-                    Some(pair.floor),
-                    *tint,
-                    Some(*ratio),
-                )
-            }
-            Finding::Ansi {
-                tint,
-                token,
-                ratio,
-                floor,
-            } => (
-                format!("{token} on terminal.background"),
-                Some(*floor),
-                *tint,
-                Some(*ratio),
-            ),
-            Finding::SelectedNotApart { tint, other } => (
-                format!("list.selected is drawn exactly as {other}"),
-                None,
-                *tint,
-                None,
-            ),
-            Finding::SelectionTextAlone => (
-                "selection.text is a colour while selection.background is \"platform\", so it \
-                 is never drawn"
-                    .to_owned(),
-                None,
-                None,
-                None,
-            ),
-        };
-        let at = match found
-            .iter()
-            .position(|one| one.subject == subject && one.floor == floor)
-        {
-            Some(at) => at,
-            None => {
-                found.push(Warning {
-                    subject,
-                    floor,
-                    plain: None,
-                    tints: Vec::new(),
-                });
-                found.len() - 1
-            }
-        };
-        match tint {
-            None => found[at].plain = Some(ratio),
-            Some(hue) => found[at].tints.push((hue, ratio)),
-        }
-    }
-    found
 }
 
 /// The check as a chat reads it: the theme, its appearances and options, why it is refused (or

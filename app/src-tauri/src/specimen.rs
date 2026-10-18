@@ -165,34 +165,102 @@ pub fn label(n: u64) -> String {
 
 /// **The window draws the specimen itself** (Settings › Theme's cards, and the scenario tests):
 /// `theme` by id and `appearance` (`dark`, `light`, or none for the theme's first), as a chat's
-/// `theme_preview` is drawn.
+/// `theme_preview` is drawn. With `at`, or for a theme that is not Purlis Classic, `theme` is a
+/// card of the gallery at the level `at` names (the machine's with none, #2331) and
+/// `appearance` one of its appearances by id: the engine resolves it there, with the floors
+/// held, and the page is handed that theme alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_specimen(
+    planes: tauri::State<'_, crate::planes::Planes>,
     theme: String,
     appearance: Option<String>,
+    at: Option<crate::extensions::ThemeAt>,
 ) -> Result<SpecimenPicture, String> {
-    let appearance = match appearance.as_deref() {
-        None => None,
-        Some("dark") => Some(purlis_core::theme::Appearance::Dark),
-        Some("light") => Some(purlis_core::theme::Appearance::Light),
-        Some(other) => return Err(format!("`{other}` is not an appearance: dark or light")),
+    let tagged = match appearance.as_deref() {
+        None => Some(None),
+        Some("dark") => Some(Some(purlis_core::theme::Appearance::Dark)),
+        Some("light") => Some(Some(purlis_core::theme::Appearance::Light)),
+        Some(_) => None,
     };
-    let specimen = Specimen { theme, appearance };
-    let mut drawn = tauri::async_runtime::spawn_blocking(move || {
-        painted(painter().as_deref(), std::slice::from_ref(&specimen))
+    let built_in = tagged.filter(|appearance| {
+        at.is_none()
+            && themepreview::chosen(&Specimen {
+                theme: theme.clone(),
+                appearance: *appearance,
+            })
+            .is_ok()
+    });
+    let specimen = match built_in {
+        Some(appearance) => Ask::BuiltIn(Specimen { theme, appearance }),
+        None => {
+            let place = match at {
+                Some(crate::extensions::ThemeAt { plane, workspace }) => {
+                    Some((planes.held(&plane)?.root().to_path_buf(), workspace))
+                }
+                None => None,
+            };
+            Ask::Card {
+                place,
+                theme,
+                appearance,
+            }
+        }
+    };
+    let one = tauri::async_runtime::spawn_blocking(move || match specimen {
+        Ask::BuiltIn(specimen) => {
+            painted(painter().as_deref(), std::slice::from_ref(&specimen)).map(|mut drawn| {
+                let one = drawn.remove(0);
+                (one.png, one.width, one.height, one.millis, one.appearance)
+            })
+        }
+        Ask::Card {
+            place,
+            theme,
+            appearance,
+        } => {
+            let theme =
+                crate::themegallery::specimen_theme(place, &theme, appearance.as_deref())?;
+            let painter = painter().ok_or_else(|| NO_PAINTER.to_owned())?;
+            let started = Instant::now();
+            let picture = painter.paint(&theme)?;
+            let appearance = if theme.appearance == "light" {
+                purlis_core::theme::Appearance::Light
+            } else {
+                purlis_core::theme::Appearance::Dark
+            };
+            Ok((
+                picture.png,
+                picture.width,
+                picture.height,
+                u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX),
+                appearance,
+            ))
+        }
     })
     .await
     .map_err(|e| format!("the theme specimen failed inside purlis: {e}"))??;
-    let one = drawn.remove(0);
+    let (png, width, height, millis, appearance) = one;
     use base64::Engine as _;
     Ok(SpecimenPicture {
-        png: base64::engine::general_purpose::STANDARD.encode(&one.png),
-        width: one.width,
-        height: one.height,
-        millis: one.millis,
-        appearance: themepreview::word(one.appearance).to_owned(),
+        png: base64::engine::general_purpose::STANDARD.encode(&png),
+        width,
+        height,
+        millis,
+        appearance: themepreview::word(appearance).to_owned(),
     })
+}
+
+/// What the window asked a specimen of: a built-in by id, as a chat asks, or a gallery's card,
+/// resolved by the engine.
+enum Ask {
+    BuiltIn(Specimen),
+    Card {
+        /// The plane's root and the workspace in it; `None` for the machine's level.
+        place: Option<(std::path::PathBuf, Option<String>)>,
+        theme: String,
+        appearance: Option<String>,
+    },
 }
 
 /// What [`theme_specimen`] answers.

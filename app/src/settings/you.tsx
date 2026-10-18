@@ -24,6 +24,7 @@ import { thisMachineGroup } from "./thisMachine";
 import { accountsGroup } from "./accounts";
 import { notificationsGroup } from "./notifications";
 import { profilesGroup } from "./profiles";
+import { themeGallery } from "./themeGallery";
 
 /**
  * **The You level's groups** (V89h): Text and Editor, which were the Preferences tab's
@@ -45,6 +46,8 @@ export function youGroups(plane?: string): SettingsGroup[] {
       help: "How big the text is drawn, on this machine.",
       settings: [textSize("window"), textSize("terminal")],
     },
+    // The machine default, chosen from a card per theme (#2331).
+    themeGallery("you.theme", null),
     {
       id: "you.look",
       label: "Density and fonts",

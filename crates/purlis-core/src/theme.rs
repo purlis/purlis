@@ -77,6 +77,7 @@ mod floors;
 mod folders;
 mod fonts;
 mod format;
+pub mod gallery;
 pub mod geometry;
 mod icons;
 mod import;
@@ -89,6 +90,7 @@ mod resolve;
 mod schema;
 mod tint;
 mod typed;
+mod warnings;
 pub mod vocabulary;
 
 pub use archive::{
@@ -122,6 +124,7 @@ pub use tint::{
     tint_hex_within, tinted,
 };
 pub use typed::Typed;
+pub use warnings::said as warnings_said;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
@@ -132,6 +135,8 @@ mod floors_tests;
 mod folders_tests;
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod gallery_tests;
 #[cfg(test)]
 mod geometry_tests;
 #[cfg(test)]
