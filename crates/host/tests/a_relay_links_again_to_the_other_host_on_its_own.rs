@@ -1,23 +1,23 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host A keeps its link to host B for each window link it relays (#2215, ADR 0078 §2): the
-//! link is kept through `hostlink::keep_linked`, so a link that is cut comes back on its own and
-//! one renewed ahead of its limit is replaced by the next. Over each new link host A holds the
-//! window's projects again, subscribes again from the window's cursor and attaches the window's
-//! views again, each with a snapshot, under the numbers the window already knows them by, and
-//! hands no event twice. A command in flight as its link is renewed is answered on it. The
-//! window is told once that the link is down and once that it is back, and a renewal is neither
-//! (#2496). While no link is up, every command is refused in words and none is sent on later; a
-//! host at the far end whose key is not the one pinned is never linked; and over each new link
-//! the window takes back the confinements of the chats it started on host B, and only its own
-//! (#2511). Host B's programs
-//! are stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs
+//! Host A keeps its link to host B for each window link it relays (#2215, ADR 0078 §2): the link is
+//! kept through `hostlink::keep_linked`, so a link that is cut comes back on its own and one
+//! renewed ahead of its limit is replaced by the next. Over each new link host A holds the window's
+//! projects again, subscribes again from the window's cursor and attaches the window's views again,
+//! each with a snapshot, under the numbers the window already knows them by, and hands no event
+//! twice. A project is held where the window holds it now, and a hold host B refuses is not carried
+//! (#2535). A command in flight as its link is renewed is answered on it. The window is told once
+//! that the link is down and once that it is back, and a renewal is neither (#2496). While no link
+//! is up, every command is refused in words and none is sent on later; a host at the far end whose
+//! key is not the one pinned is never linked; and over each new link the window takes back the
+//! confinements of the chats it started on host B, and only its own (#2511). Host B's programs are
+//! stand-ins and its link runs over an in-memory cable the test cuts, so none of this needs
 //! a terminal.
 
 #![cfg(unix)]
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -904,13 +904,18 @@ impl Drop for LetGo {
     }
 }
 
-/// A host B that keeps what each link held and how it last subscribed, and holds back every
-/// attach on a link after the first until the test lets them go: so what the window does while
-/// a renewed link is carried over lands between the carry-over's passes.
+/// A host B that keeps what each link held, and where, and how it last subscribed, and holds
+/// back every attach on a link after the first until the test lets them go: so what the window
+/// does while a renewed link is carried over lands between the carry-over's passes. As a host
+/// does, it holds a project at one place for each link; and on a link after the first it
+/// refuses a hold at a path the test names.
 #[derive(Clone, Default)]
 struct Gated {
     links: Arc<Mutex<Vec<u64>>>,
-    held: Arc<Mutex<HashMap<u64, BTreeSet<String>>>>,
+    held: Arc<Mutex<HashMap<u64, BTreeMap<String, String>>>>,
+    /// How many holds each link sent.
+    tried: Arc<Mutex<HashMap<u64, usize>>>,
+    refusing: Arc<Mutex<BTreeSet<String>>>,
     subscribed: Arc<Mutex<HashMap<u64, session::Since>>>,
     waiting: Arc<Mutex<usize>>,
     open: Arc<tokio::sync::watch::Sender<bool>>,
@@ -933,7 +938,7 @@ impl Gated {
         links.iter().position(|link| *link == peer.link()).unwrap()
     }
 
-    fn held_on(&self, nth: usize) -> BTreeSet<String> {
+    fn held_on(&self, nth: usize) -> BTreeMap<String, String> {
         let link = self.links.lock().unwrap()[nth];
         self.held
             .lock()
@@ -941,6 +946,11 @@ impl Gated {
             .get(&link)
             .cloned()
             .unwrap_or_default()
+    }
+
+    fn holds_tried_on(&self, nth: usize) -> usize {
+        let link = self.links.lock().unwrap()[nth];
+        self.tried.lock().unwrap().get(&link).copied().unwrap_or(0)
     }
 
     fn subscribed_on(&self, nth: usize) -> Option<session::Since> {
@@ -957,13 +967,24 @@ impl session::Host for Gated {
     ) -> Result<Answer, session::Refusal> {
         let nth = self.nth(peer);
         match command {
-            Command::HoldProject { project, .. } => {
-                self.held
-                    .lock()
-                    .unwrap()
-                    .entry(peer.link())
-                    .or_default()
-                    .insert(project);
+            Command::HoldProject {
+                project,
+                project_path,
+            } => {
+                let refused = |why: &str| session::Refusal {
+                    code: session::NOT_ALLOWED.into(),
+                    why: why.into(),
+                };
+                *self.tried.lock().unwrap().entry(peer.link()).or_default() += 1;
+                if nth > 0 && self.refusing.lock().unwrap().contains(&project_path) {
+                    return Err(refused("that folder is not there"));
+                }
+                let mut held = self.held.lock().unwrap();
+                let held = held.entry(peer.link()).or_default();
+                if held.get(&project).is_some_and(|at| *at != project_path) {
+                    return Err(refused("this link holds the project at another path"));
+                }
+                held.insert(project, project_path);
                 Ok(Answer::Done)
             }
             Command::LetGoOfProject { project } => {
@@ -1036,7 +1057,7 @@ async fn what_the_window_changes_while_a_renewed_link_is_carried_over_is_carried
     })
     .await
     .expect("the renewed link is carried over");
-    assert!(b.held_on(1).contains(PROJECT));
+    assert!(b.held_on(1).contains_key(PROJECT));
 
     // Meanwhile the window lets go of the project and subscribes from somewhere new.
     window
@@ -1051,10 +1072,140 @@ async fn what_the_window_changes_while_a_renewed_link_is_carried_over_is_carried
     b.open.send_replace(true);
 
     timeout(PATIENCE, async {
-        while b.held_on(1).contains(PROJECT) || b.subscribed_on(1) != Some(since.clone()) {
+        while b.held_on(1).contains_key(PROJECT) || b.subscribed_on(1) != Some(since.clone()) {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("the renewed link lets go of the project and subscribes from where the window did");
+}
+
+/// A window on host A, through `b`, that holds the project at `path`, subscribes and attaches a
+/// view: so a renewed link's carry-over waits at its attach until the test opens `b`.
+async fn watching_through(b: &Gated, path: &str) -> Window<Gated> {
+    let liveness = Liveness {
+        renew_after: Some(Duration::from_millis(300)),
+        ..Liveness::default()
+    };
+    let window = a_window_on(b.clone(), StandIns::default(), liveness).await;
+    window.client.hold_project(PROJECT, path).await.unwrap();
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+    window
+        .client
+        .call(Command::AttachView {
+            program: "01J9ZQ3V7K8M2N4P6R8T0V2X4Z".into(),
+            kind: ViewKind::Terminal,
+            role: None,
+            rate: None,
+        })
+        .await
+        .unwrap();
+    window
+}
+
+/// Until the renewed link is part-way through its carry-over: its attach waits.
+async fn carrying_over(b: &Gated) {
+    timeout(PATIENCE, async {
+        while *b.waiting.lock().unwrap() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the renewed link is carried over");
+}
+
+#[tokio::test]
+async fn a_project_held_again_at_another_path_during_a_carry_over_is_held_there_on_the_new_link() {
+    let b = Gated::new();
+    let (first, second) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (first, second) = (
+        first.path().to_str().unwrap().to_owned(),
+        second.path().to_str().unwrap().to_owned(),
+    );
+    let window = watching_through(&b, &first).await;
+    carrying_over(&b).await;
+    assert_eq!(b.held_on(1).get(PROJECT), Some(&first));
+
+    // Meanwhile the window lets go of the project and holds it again at another path.
+    window
+        .client
+        .call(Command::LetGoOfProject {
+            project: PROJECT.into(),
+        })
+        .await
+        .unwrap();
+    window.client.hold_project(PROJECT, &second).await.unwrap();
+    b.open.send_replace(true);
+
+    timeout(PATIENCE, async {
+        while b.held_on(1).get(PROJECT) != Some(&second) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the renewed link holds the project where the window holds it now");
+}
+
+#[tokio::test]
+async fn a_hold_host_b_refuses_during_a_carry_over_is_not_carried_and_is_held_again_once_it_is_not()
+{
+    let b = Gated::new();
+    let path = tempfile::tempdir().unwrap();
+    let path = path.path().to_str().unwrap().to_owned();
+    let window = watching_through(&b, &path).await;
+    // Host B refuses the renewed link's hold of the project in the carry-over's first pass.
+    b.refusing.lock().unwrap().insert(path.clone());
+    carrying_over(&b).await;
+    assert_eq!(b.held_on(1).get(PROJECT), None);
+
+    // It takes the hold again before the carry-over's last pass.
+    b.refusing.lock().unwrap().clear();
+    b.open.send_replace(true);
+
+    timeout(PATIENCE, async {
+        while b.held_on(1).get(PROJECT) != Some(&path) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the renewed link holds the project the first pass could not");
+    drop(window);
+}
+
+#[tokio::test]
+async fn a_hold_host_b_refuses_through_a_carry_over_is_no_longer_carried_for_the_window() {
+    let b = Gated::new();
+    let path = tempfile::tempdir().unwrap();
+    let path = path.path().to_str().unwrap().to_owned();
+    let window = watching_through(&b, &path).await;
+    b.refusing.lock().unwrap().insert(path.clone());
+    carrying_over(&b).await;
+    b.open.send_replace(true);
+    // Both passes of the renewed link's carry-over were refused the hold.
+    timeout(PATIENCE, async {
+        while b.holds_tried_on(1) < 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the carry-over's last pass tries the hold again");
+    assert_eq!(b.held_on(1).get(PROJECT), None);
+
+    // Host B would take the hold now, and the next link is not sent it: the relay no longer
+    // keeps the project for the window. A hold the window sends again is answered.
+    b.refusing.lock().unwrap().clear();
+    timeout(PATIENCE, async {
+        while b.links.lock().unwrap().len() < 3 || b.subscribed_on(2).is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the next link is carried over");
+    assert_eq!(b.held_on(2).get(PROJECT), None);
+    assert_eq!(b.holds_tried_on(2), 0);
+    window.client.hold_project(PROJECT, &path).await.unwrap();
 }

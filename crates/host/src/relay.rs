@@ -12,26 +12,27 @@
 //! for it, so the client draws and acknowledges it as one the host opened itself. What the
 //! other host pushes reaches the client once it subscribes.
 //!
-//! **The link to the other host is kept** (#2215, ADR 0078 §2): a relay made with
-//! [`Relay::kept`] keeps it through
-//! [`keep_linked`](purlis_session_protocol::hostlink::keep_linked), so a link that drops comes
-//! back on its own and one renewed ahead of its limit is replaced by the next, with the same
-//! pauses and renewal as any kept link, and to the host pinned for it alone. Over each new link
-//! the relay carries over what the client's link stands on, and nothing else: it holds the
-//! projects the client holds, subscribes again from the client's cursor (the last event it
-//! handed the client, so none comes twice), and attaches the client's views again, each with a
-//! snapshot, under the numbers the client knows them by and at their next epoch, so the client
-//! draws each again as a view that came back. A link renewed ahead of its limit carries the
-//! client's commands until the new one carries all of that, and only then ends; after a drop,
-//! the client's commands wait while it is carried over. **No command the client sent is sent
-//! again**: one the link ended under is refused as unanswered, and while no link is up every
-//! command is refused in words saying so, and is not kept. **The client is told the link is
-//! down**, pushed `link_down` once each time no link is up, and `link_back` once one is up again
-//! and carries what its link stands on (#2496): a link renewed ahead of its limit is neither, and
-//! a relay made with [`Relay::new`] tells its client both as a kept one does. Both are this
-//! host's own words: the other host's are never handed on, and neither holds up linking again
-//! for a client that has stopped reading. A view the other host will not attach again has ended for good, and the
-//! client is told so.
+//! **The link to the other host is kept** (#2215, ADR 0078 §2): a relay made with [`Relay::kept`]
+//! keeps it through [`keep_linked`](purlis_session_protocol::hostlink::keep_linked), so a link that
+//! drops comes back on its own and one renewed ahead of its limit is replaced by the next, with the
+//! same pauses and renewal as any kept link, and to the host pinned for it alone. Over each new
+//! link the relay carries over what the client's link stands on, and nothing else: it holds the
+//! projects the client holds, each where the client holds it now, subscribes again from the
+//! client's cursor (the last event it handed the client, so none comes twice), and attaches the
+//! client's views again, each with a snapshot, under the numbers the client knows them by and at
+//! their next epoch, so the client draws each again as a view that came back. A hold is carried
+//! once the other host takes it (#2535): a project it will not hold on the new link is no longer
+//! kept for the client, and the other host refuses the client's next command for it. A link renewed
+//! ahead of its limit carries the client's commands until the new one carries all of that, and only
+//! then ends; after a drop, the client's commands wait while it is carried over. **No command the
+//! client sent is sent again**: one the link ended under is refused as unanswered, and while no
+//! link is up every command is refused in words saying so, and is not kept. **The client is told
+//! the link is down**, pushed `link_down` once each time no link is up, and `link_back` once one is
+//! up again and carries what its link stands on (#2496): a link renewed ahead of its limit is
+//! neither, and a relay made with [`Relay::new`] tells its client both as a kept one does. Both are
+//! this host's own words: the other host's are never handed on, and neither holds up linking again
+//! for a client that has stopped reading. A view the other host will not attach again has ended for
+//! good, and the client is told so.
 //!
 //! **The window takes back its own runner chats' sandboxes** (#2511, ruled 2026-10-17). The
 //! relay gives each client link a name of its own, and on every link it makes to the other host
@@ -699,7 +700,8 @@ struct LinkEnded;
 /// cursor, and attach its views again. The link before it, if
 /// one is still up, carries commands while the first pass is made; then commands wait, the
 /// commands still changing what the client stands on are let finish, and what they changed is
-/// carried too. `None` when the new link ends first.
+/// carried too. A project the last pass could not hold is no longer kept for the client
+/// ([`not_held_on`]). `None` when the new link ends first.
 async fn carry_over(
     link: Link,
     client: &Arc<ClientLink>,
@@ -714,18 +716,43 @@ async fn carry_over(
         .subscribe()
         .wait_for(|changing| *changing == 0)
         .await;
-    carry(&upstream, client, &mut carried).await.ok()?;
+    let refused = carry(&upstream, client, &mut carried).await.ok()?;
+    not_held_on(client, refused);
     Some(upstream)
 }
 
+/// The projects the new link's last pass could not hold are no longer kept for the client: no
+/// later link holds them in its name, and the other host refuses the client's next command for
+/// one as a project it does not hold. The client is not told of it here, and goes on counting
+/// the project as held (#2645).
+fn not_held_on(client: &ClientLink, refused: Refused) {
+    let mut kept = client.kept();
+    for (project, (path, why)) in refused {
+        if kept.held.get(&project) == Some(&path) {
+            kept.held.remove(&project);
+            crate::say(&format!(
+                "project {project} is not held at {path} on the new link to the other host, \
+                 which refused it: {why}"
+            ));
+        }
+    }
+}
+
+/// The holds a pass of a carry-over sent that the other host refused: by project, where the
+/// client holds it, and the other host's words.
+type Refused = BTreeMap<String, (String, String)>;
+
 /// One pass of a carry-over: what the client's link stands on that is not yet carried to
 /// `upstream`. A view the other host will not attach again has ended for good, and the client is
-/// told so; one the client let go of since it was carried is let go of there too.
+/// told so; one the client let go of since it was carried is let go of there too. A project the
+/// client holds again at another path is let go of where it was carried, then held where the
+/// client holds it now. A hold is carried once the other host takes it: the holds it refused
+/// are answered, and the next pass sends them again.
 async fn carry(
     upstream: &Arc<Upstream>,
     client: &Arc<ClientLink>,
     carried: &mut Carried,
-) -> Result<(), LinkEnded> {
+) -> Result<Refused, LinkEnded> {
     fn closed<T>(result: &Result<T, CallError>) -> bool {
         matches!(result, Err(CallError::Closed(_)))
     }
@@ -771,17 +798,47 @@ async fn carry(
                 project: project.clone(),
             })
             .await;
-        if closed(&let_go) {
-            return Err(LinkEnded);
+        match let_go {
+            Ok(_) => {
+                carried.held.remove(&project);
+            }
+            Err(CallError::Closed(_)) => return Err(LinkEnded),
+            // Still held where it was carried: the next pass lets go of it again.
+            Err(_) => {}
         }
-        carried.held.remove(&project);
     }
+    let mut refused = BTreeMap::new();
     for (project, path) in held {
-        let held = upstream.client.hold_project(&project, &path).await;
-        if closed(&held) {
-            return Err(LinkEnded);
+        // Held again at another path: the other host holds a project at one place for each
+        // link, so the new link lets go of where it holds it first.
+        if carried.held.contains_key(&project) {
+            let let_go = upstream
+                .client
+                .call(Command::LetGoOfProject {
+                    project: project.clone(),
+                })
+                .await;
+            match let_go {
+                Ok(_) => {
+                    carried.held.remove(&project);
+                }
+                Err(CallError::Closed(_)) => return Err(LinkEnded),
+                // Still held where it was carried, so it is not held at the new path.
+                Err(why) => {
+                    refused.insert(project, (path, why.to_string()));
+                    continue;
+                }
+            }
         }
-        carried.held.insert(project, path);
+        match upstream.client.hold_project(&project, &path).await {
+            Ok(()) => {
+                carried.held.insert(project, path);
+            }
+            Err(CallError::Closed(_)) => return Err(LinkEnded),
+            Err(why) => {
+                refused.insert(project, (path, why.to_string()));
+            }
+        }
     }
     // A host that does not know the word takes nothing back.
     let taken = upstream.client.take_back(&client.window).await;
@@ -819,7 +876,7 @@ async fn carry(
                 .await;
         }
     }
-    Ok(())
+    Ok(refused)
 }
 
 /// Joins each view's stream the other host opens on one link to a new stream on the client's
