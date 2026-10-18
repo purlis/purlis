@@ -73,7 +73,9 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     // read the real DOM. Whoever turns it on does it as its own change, with its own evidence.
     const css = await stylesheet();
     expect(css).not.toContain("font-feature-settings");
-    expect(css).not.toMatch(/\bblockquote\b/);
+    // Preflight's first rule resets every element's box, down to the file picker's button. (A
+    // sheet of the window's own may name an element such as `blockquote`, #2327.)
+    expect(css).not.toContain("::file-selector-button");
   });
 
   it("gives a motion utility the motion token, and nothing of Tailwind's own", async () => {
@@ -102,8 +104,16 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     // Unlayered CSS beats layered CSS, so `App.css` had to be imported INTO a layer or no
     // utility could ever override a rule in it without `!important`.
     const css = await stylesheet();
-    expect(css).toContain("@layer theme, base, vendor, charter, components, utilities;");
+    expect(css).toContain("@layer theme, base, vendor, charter, components, utilities, forced;");
     expect(css).toMatch(/@layer charter\s*\{/);
+  });
+
+  it("draws forced colours over everything, in the last layer, through the build (#2328)", async () => {
+    const css = await stylesheet("p-1");
+    const forced = /@layer forced\s*\{([\s\S]*)/.exec(css)?.[1] ?? "";
+    expect(forced).toMatch(/@media \(forced-colors: active\)/);
+    expect(forced).toMatch(/:focus-visible\s*\{[^}]*outline-color:\s*Highlight/);
+    expect(css.indexOf("@layer utilities {")).toBeLessThan(css.indexOf("@layer forced {"));
   });
 
   it("puts xterm's stylesheet in a layer below charter's, so a token can beat its black", async () => {

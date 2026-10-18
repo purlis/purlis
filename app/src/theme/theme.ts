@@ -186,6 +186,14 @@ export const TOKENS = [
   // foreground's contrast floor.
   "terminal.find-match",
   "terminal.find-match-active",
+  // What the terminal draws selected text in (clear: each cell keeps its own colour), what it
+  // draws a selection in while the pane is not focused, and its scrollbar: at rest, under the
+  // pointer and held (#2327).
+  "terminal.selection-foreground",
+  "terminal.selection-inactive",
+  "terminal.scrollbar",
+  "terminal.scrollbar-hover",
+  "terminal.scrollbar-active",
   "terminal.ansi.black",
   "terminal.ansi.red",
   "terminal.ansi.green",
@@ -202,7 +210,137 @@ export const TOKENS = [
   "terminal.ansi.bright-magenta",
   "terminal.ansi.bright-cyan",
   "terminal.ansi.bright-white",
+
+  // **Code in the light editor** (#2327, `editor/look.ts`): one colour per syntax role, each
+  // with an italic and a bold flag ({@link FLAGS}). `keyword` is a language's own words and
+  // modifiers; `string` strings and regular expressions; `number` numbers; `constant` true,
+  // false, null and atoms; `comment` comments and meta; `function` a function's name where it
+  // is called or defined; `type` type, class and namespace names; `property` a property's name;
+  // `attribute` an attribute's name; `tag` a markup tag; `heading` a markdown heading;
+  // `invalid` what the language could not read; `variable`, `operator` and `punctuation` the
+  // rest of the text, in the editor's own colour unless a theme says otherwise.
+  "syntax.keyword",
+  "syntax.string",
+  "syntax.number",
+  "syntax.constant",
+  "syntax.comment",
+  "syntax.function",
+  "syntax.type",
+  "syntax.property",
+  "syntax.attribute",
+  "syntax.tag",
+  "syntax.heading",
+  "syntax.invalid",
+  "syntax.variable",
+  "syntax.operator",
+  "syntax.punctuation",
+
+  // **A markdown render** (#2327: a memory, a todo, a session record, a release's notes): its
+  // links, inline code, code blocks, quotes and headings.
+  "markdown.link",
+  "markdown.code",
+  "markdown.code-block",
+  "markdown.quote",
+  "markdown.heading",
+
+  // **What the platform draws unless a theme says** (#2327): the window's text selection and
+  // the words in it, the caret in a field, a field's placeholder, and the scrollbars' thumb and
+  // track. `"platform"` ({@link PLATFORM}) leaves each but the track to the platform, as Purlis
+  // Classic does; a colour, transparent included, is drawn as given. The track is drawn only with
+  // a thumb, and selected text only on a selection the theme colours too.
+  "selection.background",
+  "selection.text",
+  "caret",
+  "placeholder",
+  "scrollbar.thumb",
+  "scrollbar.track",
+
+  // **A chart's series** (#2327, `Views.tsx`'s `Chart`), a categorical palette: the first is
+  // the series a chart draws today, and the rest are for a chart with more than one.
+  "chart.1",
+  "chart.2",
+  "chart.3",
+  "chart.4",
+  "chart.5",
+  "chart.6",
+  "chart.7",
+  "chart.8",
+
+  // **The window's own background** (#2327): what is behind everything, and what the native
+  // window is painted in before the first frame.
+  "window.background",
 ] as const;
+
+/**
+ * **The tokens a theme gives as a flag, not a colour** (#2327): each syntax role's italic and
+ * bold, whether the terminal's cursor blinks, and whether bold text is drawn in the bright ANSI
+ * colours. The engine's `vocabulary::FLAGS`, which `core.test.ts` holds this to.
+ */
+export const FLAGS = [
+  "syntax.keyword.italic",
+  "syntax.keyword.bold",
+  "syntax.string.italic",
+  "syntax.string.bold",
+  "syntax.number.italic",
+  "syntax.number.bold",
+  "syntax.constant.italic",
+  "syntax.constant.bold",
+  "syntax.comment.italic",
+  "syntax.comment.bold",
+  "syntax.function.italic",
+  "syntax.function.bold",
+  "syntax.type.italic",
+  "syntax.type.bold",
+  "syntax.property.italic",
+  "syntax.property.bold",
+  "syntax.attribute.italic",
+  "syntax.attribute.bold",
+  "syntax.tag.italic",
+  "syntax.tag.bold",
+  "syntax.heading.italic",
+  "syntax.heading.bold",
+  "syntax.invalid.italic",
+  "syntax.invalid.bold",
+  "syntax.variable.italic",
+  "syntax.variable.bold",
+  "syntax.operator.italic",
+  "syntax.operator.bold",
+  "syntax.punctuation.italic",
+  "syntax.punctuation.bold",
+  "terminal.cursor-blink",
+  "terminal.bold-as-bright",
+] as const;
+
+/** The terminal cursor's shape, one of {@link CURSOR_STYLES} (the engine's `CURSOR_STYLE`). */
+export const CURSOR_STYLE = "terminal.cursor-style";
+
+/** The terminal cursor's shapes, as xterm names them. */
+export const CURSOR_STYLES = ["block", "underline", "bar"] as const;
+
+/** The terminal's line height, a multiple of its text size (the engine's `LINE_HEIGHT`). */
+export const LINE_HEIGHT = "terminal.line-height";
+
+/**
+ * **The colour tokens the platform draws unless a theme says** (the engine's `PLATFORM_DRAWN`):
+ * one of them may be {@link PLATFORM} instead of a colour, and the window then writes no rule for
+ * it, so the platform's selection, caret, placeholder and scrollbars, and the terminal's own
+ * colour for selected text, are drawn as they were before a theme could say.
+ */
+export const PLATFORM_DRAWN = [
+  "terminal.selection-foreground",
+  "selection.background",
+  "selection.text",
+  "caret",
+  "placeholder",
+  "scrollbar.thumb",
+] as const satisfies readonly Token[];
+
+/** The syntax roles of {@link TOKENS}, each drawn with an italic and a bold flag. */
+export const SYNTAX_ROLES = TOKENS.filter((token) => token.startsWith("syntax."));
+
+/** The value that leaves a token of {@link PLATFORM_DRAWN} to the platform (the engine's
+ *  `PLATFORM`). */
+export const PLATFORM = "platform";
 
 /** One token's name. */
 export type Token = (typeof TOKENS)[number];
@@ -240,6 +378,16 @@ export type Theme = {
   geometry?: Record<Density, Record<string, string>>;
   /** Its UI, mono and terminal fonts (#2326). */
   fonts?: Record<FontSlot, Font>;
+  /** The tokens that are not colours (#2327), every one present: {@link FLAGS}, the
+   *  {@link CURSOR_STYLE} and the {@link LINE_HEIGHT}. */
+  typed: Typed;
+};
+
+/** A resolved theme's tokens that are not colours, by token (`purlis_core::theme::Typed`). */
+export type Typed = {
+  flags: Readonly<Record<string, boolean>>;
+  choices: Readonly<Record<string, string>>;
+  numbers: Readonly<Record<string, number>>;
 };
 
 /** One icon of a theme's set: path data on a 24 grid. */
@@ -336,6 +484,17 @@ export function systemIsLight(): boolean {
   return typeof matchMedia === "function" && matchMedia(PREFERS_LIGHT).matches;
 }
 
+/** The media query the operating system answers when it asks for more contrast (#2328): true
+ *  with Increase contrast on (macOS), a high-contrast theme (Linux), or contrast themes
+ *  (Windows). */
+export const PREFERS_MORE_CONTRAST = "(prefers-contrast: more)";
+
+/** Whether the operating system asks for more contrast right now: what the core is told, so a
+ *  theme with an appearance tagged high contrast draws it. No where the platform cannot say. */
+export function systemAsksMoreContrast(): boolean {
+  return typeof matchMedia === "function" && matchMedia(PREFERS_MORE_CONTRAST).matches;
+}
+
 /** Whether two resolved themes draw the same, so a theme the core answers again is not drawn
  *  again: the terminal is told only of a change. */
 export function sameTheme(a: Theme, b: Theme): boolean {
@@ -344,6 +503,7 @@ export function sameTheme(a: Theme, b: Theme): boolean {
   if (TOKENS.some((token) => a.values[token] !== b.values[token])) return false;
   if (JSON.stringify(a.icons ?? {}) !== JSON.stringify(b.icons ?? {})) return false;
   return (
+    JSON.stringify(a.typed) === JSON.stringify(b.typed) &&
     JSON.stringify(a.motion) === JSON.stringify(b.motion) &&
     JSON.stringify(a.geometry) === JSON.stringify(b.geometry) &&
     JSON.stringify(a.fonts) === JSON.stringify(b.fonts)
@@ -364,6 +524,10 @@ export const TINTED_WINDOW: readonly Token[] = [
   // A selected row is drawn in the accent's hue, so it turns with the accent (#1672).
   "list.selected",
   "list.selected-edge",
+  // A markdown link and a chart's first series are drawn in the accent in Purlis Classic, and
+  // turn with it as they did when they were the accent (#2327).
+  "markdown.link",
+  "chart.1",
 ];
 
 /**
@@ -457,6 +621,42 @@ export function cssVariables(theme: Theme): Record<string, string> {
   return written;
 }
 
+/**
+ * **The custom properties the syntax roles' flags are written to** (#2327), which the editor's
+ * highlighting reads (`editor/look.ts`): `--syntax-comment-font-style` is `italic` or `normal`,
+ * `--syntax-comment-font-weight` is `bold` or `normal`.
+ */
+export const SYNTAX_FACE_PROPERTIES: readonly string[] = SYNTAX_ROLES.flatMap((role) => [
+  `${property(role)}-font-style`,
+  `${property(role)}-font-weight`,
+]);
+
+/** The syntax roles' italic and bold as the custom properties {@link SYNTAX_FACE_PROPERTIES}
+ *  names. */
+export function syntaxFaces(theme: Theme): Record<string, string> {
+  const written: Record<string, string> = {};
+  for (const role of SYNTAX_ROLES) {
+    written[`${property(role)}-font-style`] = theme.typed.flags[`${role}.italic`]
+      ? "italic"
+      : "normal";
+    written[`${property(role)}-font-weight`] = theme.typed.flags[`${role}.bold`]
+      ? "bold"
+      : "normal";
+  }
+  return written;
+}
+
+/**
+ * The tokens of {@link PLATFORM_DRAWN} the window draws: those `theme` gives a colour rather than
+ * {@link PLATFORM}, as the space-separated list the stylesheet's `[data-theme-draws~="…"]` rules
+ * read.
+ */
+export function themeDraws(theme: Theme): string {
+  return PLATFORM_DRAWN.filter(
+    (token) => !token.startsWith("terminal.") && theme.values[token] !== PLATFORM,
+  ).join(" ");
+}
+
 /** Each terminal token, and the key xterm knows it by. Written out rather than derived: the
  *  names differ in shape (`cursor-accent` against `cursorAccent`, `selection` against
  *  `selectionBackground`) and a clever conversion would be one rename away from silently
@@ -467,6 +667,10 @@ const XTERM: [Token, string][] = [
   ["terminal.cursor", "cursor"],
   ["terminal.cursor-accent", "cursorAccent"],
   ["terminal.selection", "selectionBackground"],
+  ["terminal.selection-inactive", "selectionInactiveBackground"],
+  ["terminal.scrollbar", "scrollbarSliderBackground"],
+  ["terminal.scrollbar-hover", "scrollbarSliderHoverBackground"],
+  ["terminal.scrollbar-active", "scrollbarSliderActiveBackground"],
   ["terminal.ansi.black", "black"],
   ["terminal.ansi.red", "red"],
   ["terminal.ansi.green", "green"],
@@ -492,7 +696,30 @@ const XTERM: [Token, string][] = [
 export function xtermTheme(theme: Theme): Record<string, string> {
   const object: Record<string, string> = {};
   for (const [token, key] of XTERM) object[key] = theme.values[token];
+  // Left to the platform, the selected cells keep their own colours: xterm is not told one
+  // (#2327).
+  const selected = theme.values["terminal.selection-foreground"];
+  if (selected !== PLATFORM) object.selectionForeground = selected;
   return object;
+}
+
+/** What xterm is told of a theme besides its colours (#2327): its own option names. */
+export type XtermLook = {
+  cursorStyle: (typeof CURSOR_STYLES)[number];
+  cursorBlink: boolean;
+  lineHeight: number;
+  drawBoldTextInBrightColors: boolean;
+};
+
+/** The theme's terminal tokens that are not colours, as xterm's options. */
+export function xtermLook(theme: Theme): XtermLook {
+  const style = theme.typed.choices[CURSOR_STYLE];
+  return {
+    cursorStyle: CURSOR_STYLES.find((one) => one === style) ?? "block",
+    cursorBlink: theme.typed.flags["terminal.cursor-blink"] === true,
+    lineHeight: theme.typed.numbers[LINE_HEIGHT] ?? 1,
+    drawBoldTextInBrightColors: theme.typed.flags["terminal.bold-as-bright"] !== false,
+  };
 }
 
 /** What `@xterm/addon-search` is told to draw its matches in. Its own shape, and its own
@@ -560,8 +787,10 @@ export function apply(
     const stack = drawnFont(slot, theme, over);
     if (stack !== undefined) to.style.setProperty(`--font-${slot}`, stack);
   }
+  for (const [name, value] of Object.entries(syntaxFaces(theme))) to.style.setProperty(name, value);
   to.style.colorScheme = theme.appearance;
   to.dataset.theme = theme.name;
+  to.dataset.themeDraws = themeDraws(theme);
   to.dataset.density = over.density;
   loadFaces(theme, over);
 }
@@ -690,6 +919,31 @@ export function onTerminalFont(follow: (family: string, arrived: boolean) => voi
 function paint(theme: Theme, to: HTMLElement, colour: string | null): void {
   const tint = tinted(theme, colour);
   for (const token of TINTED_WINDOW) to.style.setProperty(property(token), tint.values[token]);
+}
+
+/** The class the crossfade between two workspaces' themes puts on the root (`App.css`). */
+export const CROSSFADE = "theme-crossfade";
+
+/** The crossfade in progress, so a second switch inside one extends it. */
+let fading: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * **Draws `theme` with a short crossfade** (spec #2313, #2323): what a workspace switch does.
+ * Every colour eases from the last theme's to this one's across the motion token
+ * `duration.enter`, and the class comes off once it has. With reduced motion the duration is 0
+ * and the class is never put on: the repaint is at once.
+ */
+export function crossfadeIn(theme: Theme, to: HTMLElement = document.documentElement): void {
+  const ms = motionReduced() ? 0 : theme.motion.durations["duration.enter"];
+  if (ms > 0) {
+    to.classList.add(CROSSFADE);
+    if (fading !== undefined) clearTimeout(fading);
+    fading = setTimeout(() => {
+      to.classList.remove(CROSSFADE);
+      fading = undefined;
+    }, ms);
+  }
+  drawIn(theme, to);
 }
 
 /** What the running window is drawn in. Read by a pane that is opening a terminal, which then

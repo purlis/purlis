@@ -71,10 +71,10 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
         "the network log telling a Charter address from a third party's; it calls nothing",
     ),
     (
-        "crates/purlis-core/src/theme/schema.rs",
-        Some("docs/schema/theme.schema.json"),
-        "the theme schema's `$id`, which a theme's `$schema` names: purlis never fetches it, an \
-         editor does (ADR 0083 amendment of 2026-10-17)",
+        "crates/purlis-core/src/theme/published.rs",
+        Some("raw.githubusercontent.com/purlis/purlis/v"),
+        "the theme schema's address at this release, which a theme's `$schema` names: purlis \
+         never fetches it, an editor does (ADR 0083 amendments of 2026-10-17)",
     ),
 ];
 

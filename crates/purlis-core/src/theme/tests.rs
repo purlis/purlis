@@ -55,7 +55,7 @@ fn every_built_in_gives_every_token_and_every_motion_value() {
     for theme in built_ins() {
         for token in TOKENS {
             assert!(
-                is_colour(theme.value(token)),
+                is_colour(theme.value(token)) || vocabulary::is_platform(token, theme.value(token)),
                 "{} has no {token}",
                 theme.name
             );
@@ -78,7 +78,7 @@ fn every_built_in_appearance_holds_an_id_a_tag_colours_and_motion_and_no_geometr
         assert_eq!(keys, ["appearance", "id", "motion", "tokens"]);
         let tokens = one["tokens"].as_object().unwrap();
         assert!(tokens.keys().all(|key| !vocabulary::names_geometry(key)));
-        assert_eq!(tokens.len(), TOKENS.len());
+        assert_eq!(tokens.len(), TOKENS.len() + typed::all().count());
     }
 }
 
@@ -89,7 +89,20 @@ fn the_two_built_ins_differ_everywhere_a_theme_is_allowed_to() {
         .copied()
         .filter(|token| dark().value(token) == light().value(token))
         .collect();
-    assert_eq!(same, ["needs-you.text"]);
+    // And what both leave to the platform, clear in each (#2327).
+    assert_eq!(
+        same,
+        [
+            "needs-you.text",
+            "terminal.selection-foreground",
+            "selection.background",
+            "selection.text",
+            "caret",
+            "placeholder",
+            "scrollbar.thumb",
+            "scrollbar.track",
+        ]
+    );
 }
 
 #[test]
@@ -606,6 +619,7 @@ fn drawn(pick: Option<&str>, theirs: Option<&Theme>, on: On<'_>) -> Drawn {
             theirs,
             on,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         offered,
     )
@@ -642,6 +656,7 @@ fn following_the_system_draws_the_built_in_of_its_appearance_and_says_it_follows
                 theirs: None,
                 on: On::Every,
                 system,
+                contrast: Contrast::Standard,
             },
             || unreachable!("no survey for a built-in"),
         );
@@ -659,6 +674,7 @@ fn with_no_pick_the_person_s_own_theme_comes_before_any_extension_s() {
             theirs: Some(&mine),
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || unreachable!("no survey when the person has a theme"),
     );
@@ -704,6 +720,7 @@ fn an_extension_theme_that_is_not_json_is_passed_over_unless_it_was_picked() {
             theirs: None,
             on: On::Only(&acme),
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         only_broken,
     );
@@ -727,6 +744,7 @@ fn an_extension_theme_that_is_not_json_is_passed_over_unless_it_was_picked() {
             theirs: None,
             on: On::Only(&acme),
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         then_good,
     );
@@ -746,6 +764,7 @@ fn an_extension_theme_s_complaints_come_with_it() {
             theirs: None,
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || {
             Arc::from(vec![Offered::of(

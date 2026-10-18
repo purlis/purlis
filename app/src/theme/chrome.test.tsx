@@ -54,6 +54,7 @@ import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { RemoveProfile } from "../settings/profiles";
+import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
 import { LiveDialog } from "../LiveDialog";
 import { NewBranch } from "../NewBranch";
@@ -1003,6 +1004,11 @@ const DIALOGS: Opened[] = [
           onCancel={nothing}
         />,
       ),
+  },
+  {
+    name: "the theme specimen's dialog",
+    file: "specimen/Specimen.tsx",
+    open: async () => render(<SpecimenDialog />),
   },
   {
     name: "Save all",

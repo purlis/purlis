@@ -611,7 +611,8 @@ _Avoid_: selector, handle, node id, ref (in prose)
 Said of an element of a page whose content no answer to the agent shows: the field purlis filled
 for a **browser login**, and every field the person typed into. A snapshot shows it by its role
 and reference only, a screenshot has it painted over, and what it held is kept out of every answer
-about its page for as long as the page is open. Once a page keeps anything out, a screenshot also
+about its page for as long as the page is open. Blanked boxes next to each other, such as a code
+typed one character a box, are kept out joined too. Once a page keeps anything out, a screenshot also
 paints over that text wherever else a page draws it, and on pages of the same site every canvas,
 image and video, which it cannot read; when what the page draws cannot be read, the screenshot
 is withheld.
@@ -693,8 +694,10 @@ the browsers it opened.
 _Avoid_: remember, persona grant (that is a persona's hosts and tools)
 
 **Browser login**:
-A persona's declared tool that signs a browser in from a vault: purlis drives the browser to the
-declared address, fills and submits. The value reaches the browser and never the chat.
+A persona's declared tool that signs a browser in from a vault: the chat names it, and purlis,
+as the browser's **driver**, goes to the declared address, fills on its origin alone and
+submits. The value reaches the browser and never the chat, and the browser then reaches that
+login's site alone.
 _Avoid_: autofill, credential tool, password tool
 
 **Reach** (of a browser):

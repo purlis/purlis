@@ -85,6 +85,55 @@ fn a_refused_write_of_the_project_s_own_files_names_the_path_a_grant_would() {
 }
 
 #[test]
+fn a_refused_file_no_longer_linked_is_named_by_the_name_it_had() {
+    // The kernel names such a file with " (deleted)" after its last name.
+    for (operation, named, kind, had) in [
+        (
+            "file-write-data",
+            "/home/dev/plane/workspaces/beta/notes.md (deleted)",
+            Kind::ProjectFiles,
+            "/home/dev/plane/workspaces/beta/notes.md",
+        ),
+        (
+            "file-write-data",
+            "/home/dev/outside.log (deleted)",
+            Kind::Home,
+            "/home/dev/outside.log",
+        ),
+    ] {
+        let told = block_of(&refused(operation, named, "sh"), &place());
+        assert_eq!(
+            told,
+            Some((
+                Block {
+                    operation: Operation::Write,
+                    kind,
+                    ours: false,
+                },
+                Some(had.to_owned()),
+            )),
+            "{named}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_socket_no_longer_linked_is_named_by_the_path_it_had() {
+    let told = block_of(
+        &refused(
+            "network-outbound",
+            "/home/dev/run/agent.sock (deleted)",
+            "sh",
+        ),
+        &place(),
+    );
+    assert_eq!(
+        told.and_then(|(block, target)| (block.kind == Kind::LocalSocket).then_some(target)),
+        Some(Some("/home/dev/run/agent.sock".to_owned()))
+    );
+}
+
+#[test]
 fn a_refused_read_of_purlis_s_state_names_nothing_to_allow() {
     assert_eq!(
         block_of(
@@ -165,16 +214,36 @@ fn a_refused_socket_and_a_refused_service_on_this_machine_name_what_a_grant_woul
 }
 
 #[test]
-fn a_refused_connection_to_an_internet_address_is_left_to_purlis_s_proxy() {
+fn a_refused_connection_to_an_internet_address_is_one_past_the_proxy_that_names_its_address() {
     // The chat reaches the internet through purlis's proxy alone, which tells the hosts it
-    // refuses by name; an address a program dialled past it is no host to allow.
-    assert_eq!(
-        block_of(
-            &refused("network-outbound", "93.184.216.34:443", "curl"),
-            &place()
-        ),
-        None
-    );
+    // refuses by name; an address a program dialled past it is no host to allow, and is told
+    // as what it is (#2423).
+    for (named, address) in [
+        ("93.184.216.34:443", "93.184.216.34:443"),
+        ("[2606:2800:220:1::1]:80", "[2606:2800:220:1::1]:80"),
+    ] {
+        let told = block_of(&refused("network-outbound", named, "curl"), &place());
+        assert_eq!(
+            told,
+            Some((
+                Block {
+                    operation: Operation::Connect,
+                    kind: Kind::Address,
+                    ours: false,
+                },
+                Some(address.to_owned()),
+            )),
+            "{named}"
+        );
+        let (block, _) = told.expect("told");
+        assert!(tells(&block));
+        assert!(!crate::sandboxblock::is_the_proxys(&block));
+        assert_eq!(
+            block.said(),
+            "a connection to an internet address by a program that does not go through the \
+             sandbox's proxy"
+        );
+    }
 }
 
 #[test]

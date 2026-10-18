@@ -5,6 +5,9 @@ import { useSyncExternalStore } from "react";
 import { CHAT_KEYBOARD } from "./actions";
 import { onAMac } from "./tabKeys";
 import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
+import { DEFAULT_TEXT, drawWindowText, type TextSizes, type Which } from "./textDefaults";
+
+export { DEFAULT_TEXT, drawWindowText, type TextSizes, type Which };
 
 /**
  * **How big the text is: the window's and the terminal's, two sizes, per machine**
@@ -30,21 +33,10 @@ import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
  * program is told are the ones that now fit.
  */
 
-/** Which of the two sizes. */
-export type Which = "window" | "terminal";
-
-export type TextSizes = Record<Which, number>;
-
 /** The smallest a size may be, in px. Below this the terminal's cells stop being legible. */
 export const LEAST_TEXT = 10;
 /** The largest, in px. Above this a laptop's terminal is a few dozen columns. */
 export const MOST_TEXT = 24;
-
-/**
- * The sizes a machine starts at: **one step bigger than both were** (#283). The window was
- * `13px` in `App.css` and the terminal `12` in `SessionPane`.
- */
-export const DEFAULT_TEXT: TextSizes = { window: 14, terminal: 13 };
 
 /** What the two sizes are called, in a sentence and in Settings. */
 export const TEXT_NAMES: Record<Which, string> = {
@@ -161,11 +153,6 @@ export function useTextSizes(): TextSizes {
 export function forgetTextSizes(): void {
   changed = undefined;
   started = undefined;
-}
-
-/** Draws the window's text at `px`: the root's font size, which every `rem` is measured by. */
-export function drawWindowText(px: number, root: HTMLElement = document.documentElement): void {
-  root.style.fontSize = `${px}px`;
 }
 
 /** What a size key asks for. */

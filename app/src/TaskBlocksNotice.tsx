@@ -4,17 +4,16 @@
 import { useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
+import { GrantsMark } from "./primitives/Grants";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { RestartEndsLine } from "./RestartEnds";
 import { asksOf, inertly } from "./sandboxBlocks";
+import { SETTLE_MS } from "./noticeSettle";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
 
-/**
- * How long after a question formed, or after the tasks it lists changed, a press on it does
- * nothing: a guard against a press aimed at what was there before. It only blunts a misclick;
- * what binds an answer to what was shown is the core's check of each task's block (D-1508-9).
- */
-export const SETTLE_MS = 1500;
+// How long a press on a question just formed or changed does nothing: `noticeSettle.ts` holds
+// it, beside the Notice's own settle, so a Notice imports nothing of this file's.
+export { SETTLE_MS };
 
 /**
  * The time a list is drawn at. Read in the render that draws a changed list, once per change
@@ -210,11 +209,13 @@ export function TaskBlocksNotice({
             <button
               key={level}
               type="button"
-              className="ui-button ui-button-sm"
+              // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
+              className="ui-button ui-button-sm ui-button-grants"
               tabIndex={0}
               disabled={busy}
               onClick={() => allow(level)}
             >
+              <GrantsMark />
               {scope[level]}
             </button>
           ))}
@@ -226,7 +227,9 @@ export function TaskBlocksNotice({
   if (keepSaid === undefined) return null;
   const keep: NoticeAction = { label: keepSaid, onPress: keepBlocked };
   const allows: NoticeAction[] = [
-    ...(main !== undefined ? [{ label: scope[main], onPress: () => allow(main) }] : []),
+    ...(main !== undefined
+      ? [{ label: scope[main], onPress: () => allow(main), allows: true }]
+      : []),
     ...(others.length > 0
       ? [
           {

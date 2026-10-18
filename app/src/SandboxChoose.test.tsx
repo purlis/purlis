@@ -247,6 +247,10 @@ describe("a socket the sandbox did not name", () => {
     expect(screen.getByRole("button", { name: "Use this socket" })).toHaveClass(
       "ui-button",
       "ui-button-sm",
+      "ui-button-grants",
+    );
+    // It grants: the grant's style, never the suggested answer's (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Use this socket" })).not.toHaveClass(
       "ui-button-primary",
     );
   });

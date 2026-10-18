@@ -729,6 +729,11 @@ export const commands = {
 	 *  puts it away, and changes nothing else.
 	 */
 	putAwayLostChat: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_lost_chat", { plane, session })),
+	/**
+	 *  The chats of `plane` that are reconnecting now: what a pane drawn during an outage starts
+	 *  from.
+	 */
+	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
 	/**  Whether the session host is failing, and what the window says of it. */
 	sessionHostFailing: () => __TAURI_INVOKE<{
 	/**  How many unexpected exits tripped the breaker. */
@@ -2400,20 +2405,26 @@ export const commands = {
 	setExtensionOn: (id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("set_extension_on", { id, on })),
 	openExtensionRecord: (editor: YourEditor) => typedError<null, string>(__TAURI_INVOKE("open_extension_record", { editor })),
 	/**
-	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it
-	 *  ([`purlis_core::theme::resolve`]) and the window only applies what comes back.
+	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it from the six
+	 *  theme levels ([`purlis_core::theme::resolve_levels`], #2323) and the window only applies what
+	 *  comes back.
 	 * 
-	 *  `pick` is what the project or workspace in front picked (`project_theme_drawn`), `on` the
-	 *  extensions it has on (`extensions_on`), `None` with no project in front, when every approved
-	 *  extension's theme may be drawn. `light` is the operating system's appearance, which a
-	 *  `system` pick follows; the window asks again when it changes.
+	 *  `at` is the project and workspace in front ([`ThemeAt`]); the engine reads their levels and
+	 *  theme folders itself. With no project in front, `pick` is what the window was told to draw,
+	 *  and the person's machine default is beneath it. `on` is the extensions the project has on
+	 *  (`extensions_on`), `None` with no project in front, when every approved extension's theme may
+	 *  be drawn. `light` is the operating system's appearance, which `system` follows; the window
+	 *  asks again when it changes.
 	 * 
 	 *  The themes approved extensions contribute come from a survey, which reads and fingerprints
 	 *  every extension's files, so it is taken only when the answer needs one and kept until
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
 	 */
-	themeInForce: (pick: string | null, on: string[] | null, light: boolean, reread: boolean) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, reread })),
+	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
@@ -2429,6 +2440,32 @@ export const commands = {
 	 *  layout's `appearance` as JSON text.
 	 */
 	themePerson: (appearance: string | null) => __TAURI_INVOKE<PersonInForce>("theme_person", { appearance }),
+	/**
+	 *  **The window draws the specimen itself** (Settings › Theme's cards, and the scenario tests):
+	 *  `theme` by id and `appearance` (`dark`, `light`, or none for the theme's first), as a chat's
+	 *  `theme_preview` is drawn.
+	 */
+	themeSpecimen: (theme: string, appearance: string | null) => typedError<SpecimenPicture, string>(__TAURI_INVOKE("theme_specimen", { theme, appearance })),
+	/**
+	 *  **Maps today's in-plane theme picks into the person's choices, once** (#2323,
+	 *  [`purlis_core::theme::levels::adopt`]): a sentence for each pick copied, which the window says
+	 *  in a Notice; none when there was nothing to copy.
+	 */
+	themeLevelsAdopt: (plane: PlaneId, workspace: string | null) => typedError<string[], string>(__TAURI_INVOKE("theme_levels_adopt", { plane, workspace })),
+	/**
+	 *  **Moves the person's format 1 `theme.json` into a theme folder of their own** and chooses it
+	 *  as the machine default where none is chosen (#2323,
+	 *  [`purlis_core::theme::levels::move_into_a_folder`]), on the person's press of the Notice that
+	 *  offers it, all or nothing. Answers what it did, in a sentence.
+	 */
+	themeMoveIntoAFolder: () => typedError<string, string>(__TAURI_INVOKE("theme_move_into_a_folder")),
+	/**
+	 *  **The person's own theme choice** for the project at `plane`, or for `workspace` in it
+	 *  (#2323, [`purlis_core::theme::choices`]): `theme` and `appearance` as a pick names them, kept
+	 *  in machine config by the project's id and never in a project file; `theme` of `None` takes
+	 *  the choice away. What Settings › Appearance › Your theme writes.
+	 */
+	themeChoose: (plane: PlaneId, workspace: string | null, theme: string | null, appearance: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_choose", { plane, workspace, theme, appearance })),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
@@ -2780,11 +2817,14 @@ export const commands = {
 	projectTheme: (plane: PlaneId, workspace: string | null) => typedError<ProjectTheme, string>(__TAURI_INVOKE("project_theme", { plane, workspace })),
 	/**
 	 *  What the window draws while this project — and `workspace` in it, when one is named
-	 *  (charter-app#281) — is in front, as a file holds it: `null` leaves the window its own theme.
+	 *  (charter-app#281) — is in front, as the window is told it: the choice of the nearest theme
+	 *  level that made one (#2323, [`purlis_core::theme::Levels`]), `null` when none did and the
+	 *  window draws the person's own theme or asks the engine.
 	 * 
 	 *  **The record alone**, as [`extensions_on`] is, so it is cheap enough to ask for every project
-	 *  a window holds. A pick the extension does not contribute is left to the window, which only
-	 *  ever holds the themes a survey found, and draws the built-in when the pick is not among them.
+	 *  a window holds: an extension's theme the project has off is told as the built-in, and one the
+	 *  extension does not contribute is left to [`theme_in_force`], which reads the levels, their
+	 *  theme folders and the survey.
 	 */
 	projectThemeDrawn: (plane: PlaneId, workspace: string | null) => typedError<string | null, string>(__TAURI_INVOKE("project_theme_drawn", { plane, workspace })),
 	/**
@@ -3128,6 +3168,19 @@ export const commands = {
 	 *  file keeps goes with it: text sizes, editor, Notices dismissed. Answers where it went.
 	 */
 	useDefaultLayout: () => typedError<string, string>(__TAURI_INVOKE("use_default_layout")),
+	/**
+	 *  **Draws this window natively as the theme the page just drew**: `appearance` is the drawn
+	 *  appearance's tag (`dark` or `light`) and `background` its `window.background`, both read in
+	 *  the engine's grammar and refused otherwise. `follows_system` leaves the native parts to the
+	 *  operating system, whose appearance the theme is drawn in already. Only the focused window
+	 *  sets the appearance; every window sets its own colour.
+	 */
+	drawNativeWindow: (appearance: string, background: string, followsSystem: boolean) => typedError<null, string>(__TAURI_INVOKE("draw_native_window", { appearance, background, followsSystem })),
+	/**
+	 *  **The appearance the operating system draws this window's native parts in**: `dark` or
+	 *  `light`. The scenario tests ask; nothing in the UI does.
+	 */
+	nativeWindowDrawn: () => typedError<string, string>(__TAURI_INVOKE("native_window_drawn")),
 	/**  One secret's value, to show in the window for a while ([`reveal`]). */
 	vaultSecretReveal: (plane: PlaneId, vault: string, key: string) => typedError<SecretValue, string>(__TAURI_INVOKE("vault_secret_reveal", { plane, vault, key })),
 	/**
@@ -4357,6 +4410,14 @@ export type ChatWorktree = {
 	branch: string | null,
 	wired: boolean,
 	stale: boolean,
+};
+
+/**  A plane's chats that are reconnecting, or reconnected, as their panes show it. */
+export type ChatsReconnecting = {
+	plane: PlaneId,
+	/**  The chats, by their number in the plane. */
+	sessions: number[],
+	reconnection: Reconnection,
 };
 
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
@@ -8219,6 +8280,25 @@ export type ProjectTheme = {
 	 *  the drawn theme's (#1145).
 	 */
 	icons_why?: string | null,
+	/**  **What the theme levels draw here** (#2323): the theme's name as the window draws it. */
+	drawn?: string | null,
+	/**
+	 *  Which level chose it (`workspace-choice`, `workspace-default`, `project-choice`,
+	 *  `project-default`, `machine-default`, `purlis`).
+	 */
+	level?: string | null,
+	/**
+	 *  Where that level is, in a sentence's words: "your choice for this workspace on this
+	 *  machine", "charter.toml", …
+	 */
+	from?: string | null,
+	/**
+	 *  The person's own choice here, kept on this machine: for the workspace when asked in
+	 *  one, else for the project.
+	 */
+	yours?: YourTheme | null,
+	/**  The theme folders a pick here may name, nearest level first. */
+	folders?: string[] | null,
 };
 
 /**  Why what this machine accepted of the project's grants is not settled now (#1543). */
@@ -8442,6 +8522,16 @@ export type Recents = {
 	 */
 	forgetful: string | null,
 };
+
+/**  Where a chat's view stands while the link to the runner it runs on comes and goes. */
+export type Reconnection = 
+/**  The link is down: its last screen stays, dimmed, until it is back. */
+"reconnecting" | 
+/**
+ *  The link is back, or its view drew again, or the window cannot tell any more: it is
+ *  drawn as it comes.
+ */
+"reconnected";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -9604,6 +9694,18 @@ export type SmartClosing = {
 	record: SavedRecord | null,
 };
 
+/**  What [`theme_specimen`] answers. */
+export type SpecimenPicture = {
+	/**  The picture, PNG, in base64. */
+	png: string,
+	width: number,
+	height: number,
+	/**  From asking for the window to holding the picture. */
+	millis: number,
+	/**  The appearance it was drawn in: `dark` or `light`. */
+	appearance: string,
+};
+
 export type StaleBranch = {
 	branch: string,
 	default: string,
@@ -9954,6 +10056,15 @@ export type TheirAgentsMd = {
 	workspace: string,
 	repo: string,
 	piece: string | null,
+};
+
+/**
+ *  **Where the window is**, for [`theme_in_force`] (#2323): the project in front and the
+ *  workspace it is on, `None` at its plane root, which resolves from the project's levels down.
+ */
+export type ThemeAt = {
+	plane: PlaneId,
+	workspace: string | null,
 };
 
 /**  What [`theme_in_force`] answers. */
@@ -10576,6 +10687,15 @@ export type WindowTheme = {
 	geometry: WindowGeometry,
 	/**  The UI, mono and terminal fonts (#2326). */
 	fonts: WindowFonts,
+	/**  The tokens that are not colours (#2327). */
+	typed: WindowTyped,
+};
+
+/**  A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers. */
+export type WindowTyped = {
+	flags: { [key in string]: boolean },
+	choices: { [key in string]: string },
+	numbers: { [key in string]: number | null },
 };
 
 /**  A person's opt-out, as the picker sends it. */
@@ -10712,6 +10832,12 @@ export type YourLevel = {
 	 *  the file says that counts unconfirmed because it is stricter.
 	 */
 	confirmed: boolean,
+};
+
+/**  The person's own theme choice, as Settings shows it. */
+export type YourTheme = {
+	theme: string,
+	appearance: string | null,
 };
 
 /* Tauri Specta runtime */

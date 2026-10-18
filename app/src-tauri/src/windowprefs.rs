@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use purlis_core::theme::{self, Complaint, Theirs, TheirsKept};
+use purlis_core::theme::{self, Complaint, Contrast, Theirs, TheirsKept};
 use purlis_core::windowprefs::{self, Reading};
 
 use crate::extensions::{PersonInForce, WindowTheme};
@@ -53,28 +53,67 @@ struct TheirTheme {
     /// The Notice that names the consent floors the theme breaks, when it breaks one: what is
     /// drawn has purlis's own values for those tokens.
     floors: Option<String>,
+    /// Whether it is a format 1 file in force, which the window offers, once, to move into a
+    /// theme folder (#2323).
+    format_1: bool,
+    /// What is drawn in its place while the system asks for more contrast (#2328): the theme's
+    /// appearance tagged high contrast, when it has one of the first's tag; `None` when more
+    /// contrast draws the same.
+    more: Option<TheirDrawn>,
+}
+
+/// One appearance of the person's theme as the first frame draws it, and its floors' Notice.
+#[derive(Debug, serde::Serialize)]
+struct TheirDrawn {
+    theme: WindowTheme,
+    floors: Option<String>,
 }
 
 impl From<Theirs> for TheirTheme {
     fn from(theirs: Theirs) -> Self {
-        // What the first frame draws: the theme's first appearance, which the engine draws with
-        // no pick (`purlis_core::theme::resolve`), the consent floors held.
-        let drawn = theirs
-            .theme
-            .as_ref()
-            .map(|theme| theme::draw(theme.first()));
+        // What the first frame draws: the theme's first appearance for the contrast the system
+        // asks for, which the engine draws with no pick (`purlis_core::theme::first_frame`), the
+        // consent floors held. The window knows which contrast is asked; the core does not, so
+        // both are handed.
+        let drawn = |contrast| {
+            theirs.theme.as_ref().and_then(|theme| {
+                let drawn = theme::first_frame(Some(theme), contrast);
+                Some(TheirDrawn {
+                    theme: WindowTheme::from(drawn.theme.as_ref()?),
+                    floors: drawn.held.map(|held| held.said()),
+                })
+            })
+        };
+        let standard = drawn(Contrast::Standard);
+        let more = drawn(Contrast::More)
+            .filter(|more| Some(&more.theme) != standard.as_ref().map(|it| &it.theme));
         Self {
             path: theirs.path,
             found: theirs.found,
             trouble: theirs.trouble,
-            theme: drawn
-                .as_ref()
-                .and_then(|drawn| drawn.theme.as_ref())
-                .map(WindowTheme::from),
             complaints: theirs.complaints,
-            floors: drawn.and_then(|drawn| drawn.held).map(|held| held.said()),
+            floors: standard.as_ref().and_then(|it| it.floors.clone()),
+            theme: standard.map(|it| it.theme),
+            more,
+            format_1: theirs.format_1,
         }
     }
+}
+
+/// **The native window as the first frame draws it** (#2328): the appearance and the colour the
+/// window is created in, from the same read of the person's theme as [`creation_script`], so
+/// nothing is painted in another colour before the page's first frame. The system's contrast is
+/// the page's to know: the window is created for the standard one, and the page tells the window
+/// again as it draws (`nativewindow.rs`).
+pub(crate) fn native_at_creation(config_root: Option<&Path>) -> theme::Native {
+    native_at_creation_from(&THEIRS, config_root)
+}
+
+fn native_at_creation_from(kept: &TheirsKept, config_root: Option<&Path>) -> theme::Native {
+    let theirs = kept.get(config_root);
+    theme::first_frame(theirs.theme.as_ref(), Contrast::Standard)
+        .theme
+        .map_or_else(|| theme::default_theme().native(), |drawn| drawn.native())
 }
 
 /// **The person's own theme, read once for this process** (`purlis_core::theme::TheirsKept`):
@@ -492,6 +531,58 @@ mod tests {
         // Forget and Locate… take the path out of the store, then the window lets go of what it
         // kept there: an empty list only takes the key out, so it shows a Notice again at most.
         assert_eq!(keeping("/media/disk/forgotten", &[]), Ok(()));
+    }
+
+    #[test]
+    fn the_native_window_is_created_in_the_first_frame_s_appearance_and_background() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        // No theme of the person's: Purlis's, as the page draws it.
+        let none = native_at_creation_from(&TheirsKept::new(), Some(home.path()));
+        assert_eq!(none, theme::default_theme().native());
+        std::fs::write(
+            dir.join(windowprefs::THEME),
+            r##"{"name":"Mine","appearance":"light","tokens":{"window.background":"#abcdef"}}"##,
+        )
+        .unwrap();
+        let kept = TheirsKept::new();
+        let native = native_at_creation_from(&kept, Some(home.path()));
+        assert_eq!(native.appearance, theme::Appearance::Light);
+        assert_eq!(native.background, [0xab, 0xcd, 0xef]);
+        // The same read the page is handed: the theme its first frame draws.
+        let at = defined(&creation_script_from(&kept, Some(home.path())));
+        assert_eq!(at["theme"]["theme"]["appearance"], "light");
+        assert_eq!(
+            at["theme"]["theme"]["values"]["window.background"],
+            "#abcdef"
+        );
+    }
+
+    #[test]
+    fn the_page_is_handed_the_person_s_high_contrast_appearance_for_more_contrast() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(windowprefs::THEME),
+            r##"{"name":"Mine","appearances":[{"id":"dark","appearance":"dark"},
+                {"id":"sharp","appearance":"dark","high-contrast":true,
+                 "tokens":{"surface.base":"#000000"}}]}"##,
+        )
+        .unwrap();
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
+        assert_eq!(
+            at["theme"]["more"]["theme"]["values"]["surface.base"],
+            "#000000"
+        );
+        assert_ne!(at["theme"]["theme"]["values"]["surface.base"], "#000000");
+        assert_eq!(at["theme"]["more"]["floors"], serde_json::Value::Null);
+
+        // A theme with none tagged high contrast is handed once.
+        std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"Mine"}"#).unwrap();
+        let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
+        assert_eq!(at["theme"]["more"], serde_json::Value::Null);
     }
 
     #[test]

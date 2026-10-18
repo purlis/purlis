@@ -852,6 +852,57 @@ fn a_vault_s_name_on_a_notice_is_drawn_inertly() {
     assert!(!said("a\nb").contains('\n'));
 }
 
+/// #2423: a connection a program made straight to an internet address, past purlis's proxy,
+/// raises a quiet line that names the address, offers no Allow, and says the way round.
+#[test]
+fn an_address_dialled_past_the_proxy_is_a_quiet_line_that_names_it_and_offers_no_allow() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let said = blocked(
+        &plane,
+        &purlis_core::hookwire::SandboxBlocked {
+            chat: 3,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::Address,
+                ours: false,
+            },
+            harness: Some("codex".to_owned()),
+            target: Some("93.184.216.34:443".to_owned()),
+            read_back: false,
+            suggested: None,
+        }
+        .into(),
+    );
+    assert_eq!(said.offer, BlockOffer::Unsandboxed);
+    assert_eq!(said.target.as_deref(), Some("93.184.216.34:443"));
+    assert_eq!(said.choose, None);
+    let route = said.route.expect("the way round");
+    assert!(route.contains("through the sandbox's proxy"), "{route}");
+    assert!(said.quiet.is_some(), "nothing waits on it");
+    // Never an address that is no address: the line names nothing then.
+    let said = blocked(
+        &plane,
+        &purlis_core::hookwire::SandboxBlocked {
+            chat: 3,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::Address,
+                ours: false,
+            },
+            harness: Some("codex".to_owned()),
+            target: Some("example.com:443".to_owned()),
+            read_back: false,
+            suggested: None,
+        }
+        .into(),
+    );
+    assert_eq!(said.target, None);
+}
+
 #[test]
 fn a_block_s_notice_offers_allow_only_for_a_host_or_a_folder_and_the_way_out_otherwise() {
     use purlis_core::sandboxblock::{Block, Kind, Operation};

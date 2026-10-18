@@ -89,6 +89,7 @@ mod lifecycle;
 mod live;
 mod mcpfailed;
 mod memories;
+mod nativewindow;
 mod navguard;
 mod network;
 mod off_the_main_thread;
@@ -109,6 +110,7 @@ mod projectsettings;
 mod proposals;
 mod readonly;
 mod rebrief;
+mod reconnecting;
 mod references;
 mod remotequestion;
 mod removalasks;
@@ -127,6 +129,7 @@ mod settings;
 mod silence;
 mod slowstart;
 mod smartclose;
+mod specimen;
 mod staleclones;
 mod stopping;
 mod taskblocks;
@@ -2793,6 +2796,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<chatbrowsers::BrowsersListed>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
+        // What `chats-reconnecting` carries (#2496).
+        .typ::<reconnecting::ChatsReconnecting>()
         // What `chat-stop` carries (#1448).
         .typ::<stopping::ChatStop>()
         // What `activity-line` carries (#1495).
@@ -3305,6 +3310,8 @@ pub fn run() {
         })
         .setup(|app| {
             reached("setup");
+            // The theme specimen's painter (#2330): hidden windows of this app's own.
+            specimen::install(app.handle());
             // One charter per user even without a session bus (`instance.rs`). After the
             // single-instance plugin, which has already handed an ordinary second launch over;
             // before the window and before any plane, whose hook socket `hookwire` removes
@@ -3446,8 +3453,10 @@ pub fn run() {
             // **The window, built here rather than by Tauri from the config, so it can be
             // handed the operator's layout and theme as it is created** (`windowprefs.rs`). Its
             // entry in `tauri.conf.json` says `"create": false` and is still the one source of
-            // its size, title and title bar; this adds the initialization script and nothing
-            // else. First in `setup`, which is exactly where Tauri would have built it.
+            // its size, title and title bar; this adds the initialization script, and the
+            // native appearance and colour of the theme its first frame draws
+            // (`nativewindow.rs`), and nothing else. First in `setup`, which is exactly where
+            // Tauri would have built it.
             let main = app
                 .config()
                 .app
@@ -3456,12 +3465,14 @@ pub fn run() {
                 .find(|window| window.label == lifecycle::WINDOW)
                 .cloned()
                 .ok_or("tauri.conf.json declares no main window")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?
-                .initialization_script(windowprefs::creation_script(
-                    purlis_core::machine::config_root().as_deref(),
-                ))
-                .on_new_window(navguard::no_new_window)
-                .build()?;
+            let config_root = purlis_core::machine::config_root();
+            nativewindow::dressed(
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?,
+                windowprefs::native_at_creation(config_root.as_deref()),
+            )
+            .initialization_script(windowprefs::creation_script(config_root.as_deref()))
+            .on_new_window(navguard::no_new_window)
+            .build()?;
             reached("the window is built");
             // Where a panic is kept, now that the app can be told where its logs belong. An app
             // with no log directory still has standard error, which is all it had before.
@@ -3853,6 +3864,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             hostlost::LOST,
+                            &told,
+                        );
+                    })
+                })
+                // A runner's chats while its link is down: the window says "Reconnecting" over
+                // each one's screen until it is back (#2496).
+                .telling_reconnecting({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: reconnecting::ChatsReconnecting| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            reconnecting::EVENT,
                             &told,
                         );
                     })

@@ -18,6 +18,35 @@
   -webkit-text-size-adjust: 100%;
 }
 
+/* **What the platform draws until a theme says otherwise** (#2327): the text selection and its
+   words, the caret in a field, a field's placeholder, and the scrollbars. A theme that gives one
+   of these tokens "platform" leaves it to the platform, and `theme.apply` names the ones it
+   colours in `data-theme-draws`, so no rule here is written for the rest: Purlis Classic draws
+   them as the platform always has. Selected text is coloured only on a selection the theme
+   colours too. `scrollbar-color` is inherited, so it is set once. The light editor draws its
+   own selection and caret (`editor/look.ts`), so these rules stop at its edge; the terminal
+   draws its own in its canvas. */
+:root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection {
+  background-color: var(--selection-background);
+}
+
+:root[data-theme-draws~="selection.background"][data-theme-draws~="selection.text"]
+  :not(.cm-editor, .cm-editor *)::selection {
+  color: var(--selection-text);
+}
+
+:root[data-theme-draws~="caret"] :is(input, textarea, [contenteditable]):not(.cm-editor *) {
+  caret-color: var(--caret);
+}
+
+:root[data-theme-draws~="placeholder"] ::placeholder {
+  color: var(--placeholder);
+}
+
+:root[data-theme-draws~="scrollbar.thumb"] {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
 /* **Nothing in the window rubber-bands** — the operator: *"our charter app scroll now bouncing -
    lets disable scroll bouncing"*. macOS's WebView overscrolls the page and every scroll
    container with an elastic bounce, which in an app shell pulls the whole window's chrome down
@@ -1253,6 +1282,32 @@ button.show-more:focus-visible {
 
 .pane-corner.at-end {
   right: var(--space-4);
+}
+
+/* **A runner's chat while its link is down** (#2496, `SessionPane.tsx`): its last screen dimmed
+   under one quiet word, until the link is back and the screen draws again. The word is a
+   sibling of the terminal like the find bar, over the whole body and under the corners, and it
+   takes no pointer: the pane's own controls stay where they are. */
+.pane.reconnecting {
+  opacity: 0.45;
+}
+
+.pane-reconnecting {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Its words wear the secondary text role (`ui-text-secondary`); this draws only the pill. */
+.pane-reconnecting-said {
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
 }
 
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
@@ -4565,8 +4620,8 @@ h2.sidebar-title .node-icon {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-/* The mark may be `needs-you.base`; the WORDS may not. `#b85050` on `surface.base` measures
-   3.61:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
+/* The mark may be `needs-you.base`; the WORDS may not. `#bd5654` on `surface.base` measures
+   3.88:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
    the same distinction that split `needs-you` from `danger` in the first place. The number
    is loud by being filled, on the one pair the contrast test already measures. */
 .needs-you-button svg {
@@ -5850,8 +5905,32 @@ h2.sidebar-title .node-icon {
   margin: var(--space-1) 0;
 }
 
+/* A markdown render's own colours (#2327): its links, inline code, code blocks, quotes and
+   headings. Purlis Classic's link is the accent and the rest are the words' own colour. */
 .release-notes a {
-  color: var(--accent-base);
+  color: var(--markdown-link);
+}
+
+.release-notes code {
+  color: var(--markdown-code);
+}
+
+/* Code inside a link is the link's. */
+.release-notes a code {
+  color: inherit;
+}
+
+.release-notes pre,
+.release-notes pre code {
+  color: var(--markdown-code-block);
+}
+
+.release-notes blockquote {
+  color: var(--markdown-quote);
+}
+
+.release-notes :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--markdown-heading);
 }
 
 /* =====================================================================================
@@ -6968,9 +7047,10 @@ h2.sidebar-title .node-icon {
   overflow: hidden;
 }
 
+/* A chart's one series is the first of the chart palette (#2327). */
 .chart-bar {
   display: block;
-  background: var(--accent-base);
+  background: var(--chart-1);
 }
 
 /* Bars: label, track, value on one line each, the labels in a column of their own so every

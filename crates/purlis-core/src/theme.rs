@@ -36,10 +36,16 @@
 //! - **The consent floors hold whenever a theme is drawn** ([`Floor`], ADR 0097 §6): every
 //!   answer [`resolve`], [`follow`] and [`draw`] give draws purlis's own values for the tokens of
 //!   a floor the theme breaks, and says so in [`Drawn::held`].
+//! - **The system's contrast is an input** ([`Contrast`], #2328): asking for more draws a
+//!   theme's appearance tagged high contrast, of the tag that would be drawn, when it has one.
+//! - **The native window follows the theme** ([`Native`], #2328): [`ResolvedTheme::native`] is
+//!   the appearance the operating system draws the window's own parts in and its colour before
+//!   the first frame, and [`first_frame`] is what a window draws as it is created.
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
-//!   vocabulary (`docs/schema/theme.schema.json`, held to it by a test).
+//!   vocabulary (`docs/schema/theme.v2.schema.json`, held to it by a test), and [`SCHEMA_URL`]
+//!   its address at this release, which a format only ever grows at (`published`).
 //!
 //! **Geometry and fonts** (#2326, [`geometry`], [`Fonts`]) are read from a theme folder within
 //! their bounds, and [`Person`] reads the person's density and font override, whose [`Layer`]
@@ -61,20 +67,26 @@ use std::sync::OnceLock;
 use serde_json::Value;
 
 mod check;
+pub mod choices;
 mod floors;
+mod folders;
 mod fonts;
 mod format;
 pub mod geometry;
 mod icons;
+pub mod levels;
+mod native;
 mod options;
 mod person;
+mod published;
 mod resolve;
 mod schema;
 mod tint;
+mod typed;
 pub mod vocabulary;
 
 pub use check::{Finding, PAIRS, Pair, Report};
-pub use floors::{DANGER_APART, Floor, Held};
+pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
     CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
     Style, served,
@@ -82,14 +94,20 @@ pub use fonts::{
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
+pub use levels::{Choice, Folders, Level, LevelInputs, Levels, resolve_levels};
+pub use native::{Native, first_frame};
 pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
 };
 pub use person::{Density, Layer, Person};
+pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
-pub use schema::{SCHEMA_URL, schema, schema_text};
+pub use schema::{schema, schema_text};
 pub use tint::{PALETTE, hue_of, tint_hex, tinted};
-use vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_token, names_geometry};
+pub use typed::Typed;
+use vocabulary::{
+    DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
+};
 
 #[cfg(test)]
 mod floors_tests;
@@ -100,16 +118,37 @@ mod geometry_tests;
 #[cfg(test)]
 mod icons_tests;
 #[cfg(test)]
+mod levels_tests;
+#[cfg(test)]
+mod native_tests;
+#[cfg(test)]
 mod options_tests;
 #[cfg(test)]
+mod published_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod typed_tests;
 
 /// Whether a theme is drawn on a dark window or a light one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
     Dark,
     Light,
+}
+
+/// **What contrast the operating system asks for** (#2328): more when the person turned on
+/// Increase contrast, or `prefers-contrast: more` says so. Asking for more draws a theme's
+/// appearance tagged high contrast, of the tag that would be drawn anyway, when it has one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Contrast {
+    /// Nothing asked: an appearance tagged high contrast is drawn only when it is the one chosen.
+    #[default]
+    Standard,
+    /// More contrast asked for.
+    More,
 }
 
 /// A theme's motion, complete: every duration and every easing has a value.
@@ -144,6 +183,9 @@ pub struct ResolvedTheme {
     pub values: BTreeMap<&'static str, String>,
     /// How the window moves.
     pub motion: Motion,
+    /// Each token that is not a colour (#2327): the syntax roles' italic and bold, and the
+    /// terminal's cursor, line height and bold text.
+    pub typed: Typed,
     /// The theme's icon set (#2337), the same in each of its appearances: empty when the rails
     /// draw the window's own marks, as Purlis Classic's do.
     #[serde(skip_serializing_if = "Icons::is_empty")]
@@ -210,6 +252,34 @@ impl Theme {
         tagged()
             .find(|one| !one.high_contrast)
             .or_else(|| tagged().next())
+    }
+
+    /// Its appearance tagged `appearance` for `contrast`: with more contrast asked for, the first
+    /// such tagged high contrast when it has one; otherwise, and with none asked, [`Self::of`].
+    pub fn of_for(&self, appearance: Appearance, contrast: Contrast) -> Option<&ResolvedTheme> {
+        let sharp = || {
+            self.appearances
+                .iter()
+                .find(|one| one.appearance == appearance && one.high_contrast)
+        };
+        match contrast {
+            Contrast::More => sharp().or_else(|| self.of(appearance)),
+            Contrast::Standard => self.of(appearance),
+        }
+    }
+
+    /// What the theme draws when nothing chose an appearance, for `contrast`: its first, or, with
+    /// more contrast asked for, its appearance of the first's tag that is tagged high contrast,
+    /// when it has one.
+    pub fn first_for(&self, contrast: Contrast) -> &ResolvedTheme {
+        let first = self.first();
+        match contrast {
+            Contrast::More if !first.high_contrast => self
+                .of_for(first.appearance, contrast)
+                .filter(|one| one.high_contrast)
+                .unwrap_or(first),
+            _ => first,
+        }
     }
 
     /// The theme as one appearance: what a format 1 file is.
@@ -371,12 +441,14 @@ fn built_in_of(text: &str) -> Theme {
                     let value = tokens
                         .and_then(|tokens| tokens.get(*token))
                         .and_then(Value::as_str)
-                        .filter(|value| is_colour(value))
+                        .filter(|value| is_colour(value) || is_platform(token, value))
                         .unwrap_or_else(|| panic!("the built-in theme {name} has no {token}"));
                     (*token, value.to_owned())
                 })
                 .collect();
             let motion = motion_of(one.get("motion"))
+                .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
+            let typed = typed::complete(tokens)
                 .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
             ResolvedTheme {
                 name: pick.to_owned(),
@@ -387,6 +459,7 @@ fn built_in_of(text: &str) -> Theme {
                 high_contrast: false,
                 values,
                 motion,
+                typed,
                 icons: Icons::default(),
                 // Core's geometry and fonts are Purlis Classic's: its folder names none.
                 geometry: geometry::classic(),
@@ -460,6 +533,12 @@ pub fn load(document: &Value) -> Resolved {
     Library::new().load(None, document)
 }
 
+/// Whether `name` is a theme folder's name a pick may name it by: lower-case letters, digits and
+/// dashes, starting with a letter, at most 32 long — the grammar of an appearance's id too.
+pub fn is_folder_name(name: &str) -> bool {
+    format::is_name(name)
+}
+
 /// Whether `document` is format 2: it names the schema, a parent, a palette or appearances,
 /// none of which format 1 has.
 fn is_format_2(document: &serde_json::Map<String, Value>) -> bool {
@@ -518,7 +597,14 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
         if is_token(given) {
             continue;
         }
-        if names_geometry(given) {
+        if typed::is_typed(given) {
+            notes.push(Complaint::about(
+                given,
+                format!(
+                    "{given} is set in a theme folder's theme.json (format 2), so it is left out"
+                ),
+            ));
+        } else if names_geometry(given) {
             complaints.push(Complaint::about(
                 given,
                 format!("{given} {GEOMETRY_IS_CORE}"),
@@ -594,6 +680,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             high_contrast: false,
             values,
             motion,
+            typed: base.typed.clone(),
             icons: Icons::default(),
             geometry: base.geometry.clone(),
             compact: base.compact.clone(),
@@ -732,6 +819,9 @@ pub struct Theirs {
     pub theme: Option<Theme>,
     /// What resolving it had to put right.
     pub complaints: Vec<Complaint>,
+    /// Whether it is a format 1 file in force, which purlis offers, once, to move into a theme
+    /// folder ([`levels::move_into_a_folder`]).
+    pub format_1: bool,
 }
 
 /// Reads the person's own theme under `config_root` and resolves it. A machine with no config
@@ -753,6 +843,11 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
     // The person's `theme.json` sits in their config folder, which is its theme folder: its
     // fonts are that folder's `fonts/`.
     let resolved = load_text_in(&text, Some(&crate::machine::dir(root)));
+    let format_1 = serde_json::from_str::<Value>(&text)
+        .ok()
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|document| !is_format_2(document));
     // A refused theme is not in force: the window draws Purlis and says why. What refused it is
     // kept as it was found, beside the sentence.
     if resolved.refused {
@@ -767,6 +862,7 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
             trouble: Some(format!("purlis cannot draw it: {}", why.join("; "))),
             theme: None,
             complaints: resolved.complaints,
+            format_1: false,
         };
     }
     Theirs {
@@ -775,6 +871,7 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
         trouble: None,
         complaints: resolved.complaints,
         theme: Some(resolved.theme),
+        format_1,
     }
 }
 

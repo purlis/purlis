@@ -16,31 +16,14 @@
 
 mod common;
 
-use common::drive::{call, find, open, red_pixels, ref_on, screenshot};
+use common::drive::{filled_and_blanked, find, open, red_pixels, ref_on, screenshot};
 use common::site::started;
-use purlis_browser_engine::drive::{Browser, Call, Field, Ref};
+use purlis_browser_engine::drive::{Browser, Ref};
 
 /// The reference of the field labelled "Say something" on `path`, opened.
 fn open_at_the_field(browser: &Browser, path: &str) -> Ref {
     open(browser, path);
     ref_on(&find(browser, "Say something"), "Say something")
-}
-
-/// `text` is typed into `field`, and the field blanked, as a login fills one: what it holds is
-/// kept out from then on.
-fn filled_and_blanked(browser: &Browser, field: Ref, text: &str) {
-    call(
-        browser,
-        Call::Type {
-            page: None,
-            fields: vec![Field {
-                into: Some(field.clone()),
-                text: text.into(),
-                replace: true,
-            }],
-        },
-    );
-    browser.blank(&field).unwrap();
 }
 
 #[test]

@@ -1220,6 +1220,8 @@ describe("the Project level of a read-only project (#826)", () => {
       "Network: Allowed for",
       "Network: Open that page",
       "Extensions: Go to Extensions…",
+      // The person's own theme, kept on this machine (#2323).
+      "Appearance: Your theme",
     ]);
   });
 

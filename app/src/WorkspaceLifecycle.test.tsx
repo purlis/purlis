@@ -476,6 +476,10 @@ describe("deleting a workspace", () => {
       // The workspace in front changed, so the theme it draws is asked of the core's theme
       // engine again (#2320): a read, from the survey the core keeps.
       "theme_in_force",
+      // And the workspace landed on has its in-plane theme pick mapped into the person's
+      // choices once (#2323): it writes machine config only where there is a pick to copy, and
+      // this plane picks none.
+      "theme_levels_adopt",
     ];
     const during = asked.slice(before).map((one) => one.cmd);
     expect(during.filter((cmd) => !READS.includes(cmd))).toEqual(["workspace_remove"]);

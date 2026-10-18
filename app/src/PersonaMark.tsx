@@ -53,7 +53,7 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
-import { commands, type PersonaImage, type PersonaMark as Mark, type PlaneId } from "./bindings";
+import type { PersonaImage, PersonaMark as Mark } from "./bindings";
 import { inForce, onDrawn, tintVariables, type Token } from "./theme/theme";
 import { PALETTE } from "./theme/tint";
 
@@ -148,37 +148,6 @@ export const PersonaMarks = createContext<ReadonlyMap<string, Mark>>(new Map());
 
 /** Reads that project's marks again: what the picker calls once a pick is written. */
 export const ReloadPersonaMarks = createContext<() => void>(() => undefined);
-
-/**
- * The marks of the plane's personas, read at once and again whenever `changed` moves (a
- * project view passes its count of changes on disk, so an `icon.png` a chat writes is drawn
- * without a restart). `reload` reads them again after a pick here.
- *
- * A read that fails leaves what was drawn: a mark is decoration, and every persona still has
- * its initials.
- */
-export function usePersonaMarks(
-  plane: PlaneId,
-  changed: number,
-): { marks: ReadonlyMap<string, Mark>; reload: () => void } {
-  const [marks, setMarks] = useState<ReadonlyMap<string, Mark>>(() => new Map());
-  const [asked, setAsked] = useState(0);
-  useEffect(() => {
-    let gone = false;
-    void commands
-      .personaMarks(plane)
-      .then((said) => {
-        if (gone || said.status !== "ok" || !Array.isArray(said.data)) return;
-        setMarks(new Map(said.data.map((one) => [one.name, one])));
-      })
-      .catch(() => undefined);
-    return () => {
-      gone = true;
-    };
-  }, [plane, changed, asked]);
-  const reload = useCallback(() => setAsked((was) => was + 1), []);
-  return { marks, reload };
-}
 
 /**
  * A persona's initials: the first letters of its first two words (`docs-writer` is DW), or

@@ -5,7 +5,7 @@
 //!
 //! ```json
 //! {
-//!   "$schema": "…/theme.schema.json",
+//!   "$schema": "…/v<version>/docs/schema/theme.v2.schema.json",
 //!   "name": "Dusk",
 //!   "extends": "purlis-classic",
 //!   "palette": { "lavender": "#b4a7f5" },
@@ -34,6 +34,9 @@
 //! this one does not yet. Tint (#2329) is not read yet, so naming it refuses the theme rather
 //! than drawing something other than what it says.
 //!
+//! - **A token that is not a colour** (#2327, [`super::typed`]) is given under `tokens` as a
+//!   colour is: a flag as `true` or `false`, the terminal cursor's shape by its name, the
+//!   terminal's line height as a number in its bound. A value of the wrong type refuses the theme.
 //! - **`icons`** names the theme's icon set (#2337): a file inside the theme's folder, read under
 //!   the same containment and cap as `theme.json` ([`super::icons`]). A view the set does not
 //!   draw is its parent's.
@@ -57,7 +60,8 @@ use super::fonts::Fonts;
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
 use super::options::{self, MOST_COMBINATIONS};
-use super::vocabulary::{TOKENS, is_colour};
+use super::typed::Typed;
+use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform};
 use super::{
     Appearance, CLASSIC, Complaint, Resolved, ResolvedTheme, Theme, built_in_for, classic,
     is_format_2, load_format_1, load_motion, stringify,
@@ -140,6 +144,10 @@ enum Beside {
     },
 }
 
+/// A theme folder as read: its `theme.json`, the icon set it names, parsed, or why not, and the
+/// folder itself, whose `fonts/` its fonts are read from.
+pub(crate) type FolderRead = (Value, Option<Result<Value, String>>, PathBuf);
+
 /// A theme read: the theme, and the names it gave that purlis left out.
 type Read = (Theme, Vec<Complaint>);
 
@@ -194,6 +202,21 @@ impl Library {
     pub fn with_folder(mut self, themes: &Path, name: &str) -> Self {
         self.folders
             .insert(name.to_owned(), read_folder(themes, name));
+        self
+    }
+
+    /// The library with the theme folder `name` as it was read: its `theme.json` and the icon
+    /// set it names (`None` when it names none), or why it could not be read
+    /// (`super::folders`, which reads a level's folders from handles).
+    #[must_use]
+    pub(crate) fn with_read(mut self, name: &str, read: Result<FolderRead, String>) -> Self {
+        self.folders.insert(
+            name.to_owned(),
+            read.map(|(document, icons, folder)| Held {
+                document,
+                beside: Beside::Folder { icons, folder },
+            }),
+        );
         self
     }
 
@@ -683,6 +706,13 @@ fn palette(raw: Option<&Value>, complaints: &mut Vec<Complaint>) -> BTreeMap<Str
             )));
             continue;
         }
+        if name == PLATFORM {
+            complaints.push(Complaint::said(format!(
+                "palette name \"{PLATFORM}\" is purlis's own word for what the platform draws, so \
+                 a palette cannot name a colour by it"
+            )));
+            continue;
+        }
         match value.as_str() {
             Some(hex) if is_colour(hex) => {
                 out.insert(name.clone(), hex.to_owned());
@@ -789,6 +819,8 @@ fn appearance(
     values.extend(given.colours);
     let mut sizes = base.geometry.clone();
     sizes.extend(given.geometry);
+    let mut typed = base.typed.clone();
+    given.typed.onto(&mut typed);
     let mut said = Vec::new();
     let motion = load_motion(one.get("motion"), &base.motion, &mut said, notes);
     complaints.extend(said);
@@ -802,6 +834,7 @@ fn appearance(
         high_contrast,
         values,
         motion,
+        typed,
         icons: Icons::default(),
         // The compact geometry, the theme's layer and its fonts are the whole theme's, set
         // once every appearance is read.
@@ -820,6 +853,8 @@ fn appearance(
 pub(super) struct Tokens {
     pub(super) colours: BTreeMap<&'static str, String>,
     pub(super) geometry: Geometry,
+    /// The tokens that are not colours (#2327): only those given.
+    pub(super) typed: Typed,
 }
 
 impl Tokens {
@@ -831,6 +866,7 @@ impl Tokens {
                 .iter()
                 .map(|(token, hex)| (*token, hex.clone())),
         );
+        self.typed.onto(&mut theme.typed);
         if !self.geometry.is_empty() {
             theme
                 .geometry
@@ -862,6 +898,13 @@ pub(super) fn tokens(
         }
     };
     for (token, value) in given {
+        // A flag, the terminal cursor's shape or its line height (#2327).
+        if let Some(read) = super::typed::read(token, value, &format!("in {at}"), &mut out.typed) {
+            if let Err(why) = read {
+                complaints.push(Complaint::about(token, why));
+            }
+            continue;
+        }
         if let Some(step) = geometry::step_of(token) {
             match geometry::number(step, value, &format!("in {at}")) {
                 Ok(number) => {
@@ -878,6 +921,14 @@ pub(super) fn tokens(
             ));
             continue;
         };
+        // What the platform draws may be left to it by name (#2327).
+        if value
+            .as_str()
+            .is_some_and(|given| is_platform(known, given))
+        {
+            out.colours.insert(known, PLATFORM.to_owned());
+            continue;
+        }
         match colour(value, palette) {
             Some(hex) => {
                 out.colours.insert(known, hex);

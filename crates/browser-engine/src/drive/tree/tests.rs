@@ -434,3 +434,145 @@ fn a_kept_text_and_its_beginnings_are_taken_out_whole_whatever_order_they_were_k
 
     assert_eq!(said, "Signed in as (blanked) today");
 }
+
+/// One node of an engine's tree: `id` is both its node id and its element's id.
+fn ax(id: i64, role: &str, name: &str, value: Option<&str>, children: &[i64]) -> Value {
+    let mut node = json!({
+        "nodeId": id.to_string(),
+        "ignored": false,
+        "role": { "type": "role", "value": role },
+        "name": { "type": "computedString", "value": name },
+        "properties": [],
+        "childIds": children.iter().map(i64::to_string).collect::<Vec<_>>(),
+        "backendDOMNodeId": id,
+        "frameId": "CODE-FRAME",
+    });
+    if let Some(value) = value {
+        node["value"] = json!({ "type": "string", "value": value });
+    }
+    node
+}
+
+/// A page asking for a code in six boxes of one character each (a dash between the third and
+/// the fourth), the code typed in, and the page then showing it whole: in its title, a line of
+/// its own and the address of a frame.
+fn code_page(boxes: [&str; 6], shows: &str) -> Vec<FrameAx> {
+    let mut nodes = vec![
+        ax(
+            1,
+            "RootWebArea",
+            &format!("Code {shows}"),
+            None,
+            &[2, 30, 40],
+        ),
+        ax(
+            2,
+            "group",
+            "Enter the code we sent",
+            None,
+            &[11, 12, 13, 20, 14, 15, 16],
+        ),
+        ax(20, "StaticText", "–", None, &[]),
+        ax(
+            30,
+            "paragraph",
+            &format!("You entered {shows}, thank you"),
+            None,
+            &[],
+        ),
+        ax(40, "Iframe", "", None, &[]),
+    ];
+    for (at, held) in boxes.iter().enumerate() {
+        let id = 11 + i64::try_from(at).unwrap();
+        nodes.push(ax(
+            id,
+            "textbox",
+            &format!("Digit {}", at + 1),
+            Some(held),
+            &[],
+        ));
+    }
+    vec![
+        FrameAx {
+            id: "CODE-FRAME".into(),
+            name: String::new(),
+            url: "http://fixture.test/code.html".into(),
+            parent: None,
+            owner: None,
+            nodes: Value::Array(nodes),
+        },
+        FrameAx {
+            id: "CHECK-FRAME".into(),
+            name: String::new(),
+            url: format!("http://fixture.test/check.html?code={shows}"),
+            parent: Some("CODE-FRAME".into()),
+            owner: Some(40),
+            nodes: Value::Array(Vec::new()),
+        },
+    ]
+}
+
+fn boxes() -> HashSet<NodeKey> {
+    (11..=16).map(|id| key("CODE-FRAME", id)).collect()
+}
+
+#[test]
+fn a_code_typed_across_several_boxes_is_taken_out_whole_wherever_the_page_shows_it() {
+    for shows in ["739214", "739–214"] {
+        let snapshot = build(
+            &code_page(["7", "3", "9", "2", "1", "4"], shows),
+            &boxes(),
+            &[],
+        );
+        let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
+
+        assert_eq!(snapshot.title(), "Code (blanked)", "{shows}");
+        assert!(
+            text.contains("- paragraph \"You entered (blanked), thank you\""),
+            "{shows}:\n{text}"
+        );
+        assert!(
+            text.contains("check.html?code=(blanked)"),
+            "{shows}:\n{text}"
+        );
+        for part in ["739", "214"] {
+            assert!(!text.contains(part), "{part} in\n{text}");
+        }
+        assert!(!snapshot.shows_text("739214"));
+        assert!(snapshot.blanked_text().texts().contains(&"739214"));
+    }
+}
+
+#[test]
+fn a_code_is_taken_out_with_any_spaces_or_dashes_the_page_puts_between_its_digits() {
+    let snapshot = build(
+        &code_page(["7", "3", "9", "2", "1", "4"], "7 3 9-2 1 4"),
+        &boxes(),
+        &[],
+    );
+    let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
+
+    assert!(
+        text.contains("- paragraph \"You entered (blanked), thank you\""),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_blanked_field_holding_a_value_of_its_own_next_to_the_boxes_is_no_part_of_their_code() {
+    let mut frames = code_page(["7", "3", "9", "2", "1", "4"], "739214");
+    let nodes = frames[0].nodes.as_array_mut().unwrap();
+    nodes.push(ax(17, "textbox", "Email", Some("ada@fixture.test"), &[]));
+    let group = nodes.iter_mut().find(|n| n["nodeId"] == "2").unwrap();
+    group["childIds"].as_array_mut().unwrap().push(json!("17"));
+    let mut excluded = boxes();
+    excluded.insert(key("CODE-FRAME", 17));
+
+    let snapshot = build(&frames, &excluded, &[]);
+    let text = snapshot.page(&all(), &mut Refs::default().of()).unwrap();
+
+    assert!(
+        text.contains("- paragraph \"You entered (blanked), thank you\""),
+        "{text}"
+    );
+}
