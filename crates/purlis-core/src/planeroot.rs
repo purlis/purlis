@@ -2172,10 +2172,10 @@ fn git_in(root: &str, args: &[&str]) -> Result<Answer, Unasked> {
     }
     let answer = git_asked(root, args)?;
     REMEMBERED.with(|r| {
-        if let Some(m) = r.borrow_mut().as_mut() {
-            if m.len() < MAX_REMEMBERED_ANSWERS {
-                m.insert(key, answer.clone());
-            }
+        if let Some(m) = r.borrow_mut().as_mut()
+            && m.len() < MAX_REMEMBERED_ANSWERS
+        {
+            m.insert(key, answer.clone());
         }
     });
     Ok(answer)
