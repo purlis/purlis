@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792351767890,
+  "lastUpdate": 1792353096639,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17304,6 +17304,48 @@ window.BENCHMARK_DATA = {
             "value": 103.7296715,
             "unit": "ms",
             "extra": "median of 5 runs: 102.116, 103.356, 103.730, 104.102, 104.756 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c443643defd0c8bea4a6e72bd8540888d6eb11a",
+          "message": "fix(guards): the root guards ask git each question once per command (#2651)\n\n* fix(guards): the root guards ask git each question once per command (#2619)\n\nCause: on the macOS nightly the whole-verdict linear-time test ran past\n300 s because the project-root branch and reset guards started a git\nprocess for every git on the line, asking the same question again each\ntime (the unpushed count for `HEAD`, the default branch, whether a word\nis a tracked path). A git process costs tens of milliseconds on a\nmacOS runner, so 124 KB of restores and ended operations took the two\nguards about 40 s, in a release build as in a debug one. It was linear,\nnot a hang or a lock, but 40 times the hook's budget.\n\nFix: one guard call keeps what git answered, by root and arguments, and\nasks again only for a question it has not put or one git could not be\nasked (so no refusal a retry would have made is lost). The memory ends\nwith the call. On a macos-latest probe that shape went from 45 s to\n1.6 s (debug) and 39 s to 0.3 s (release), and the whole-verdict test\nfrom failing at 533 s to passing in 141 s.\n\nThe test also judges a shape that nests nothing once rather than at\nboth depths, where it was the same command.\n\nRed: a_question_every_git_on_a_line_repeats_is_asked_of_git_once asked\nthe unpushed count 50 times on main.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* style: rustfmt the planeroot test (#2619)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* style: collapse the memory insert for clippy (#2619)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* test(guards): the memory's cap and a call inside another, shapes keyed by name (#2619)\n\nReview round: a test crosses the 1024-answer cap (the last that fits is\nkept; one past it is asked of git each time and answered the same), and\none nests a guard call inside another (the inner shares the outer's\nmemory and leaves it; the outer's end clears it). The whole-verdict\ntest's skip of a repeated command is keyed by the shape's name, not its\nplace in the list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* style: rustfmt the cap test (#2619)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* style: pass the closure itself, as clippy asks (#2619)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T23:44:50+04:00",
+          "tree_id": "87d35a19de590eceb88eb0507d517258ddb2c2ed",
+          "url": "https://github.com/purlis/purlis/commit/8c443643defd0c8bea4a6e72bd8540888d6eb11a"
+        },
+        "date": 1792353095420,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.516904,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.482, 0.512, 0.517, 0.523, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.179856,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.688, 17.000, 17.180, 17.280, 17.766 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.5634885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.203, 103.262, 104.563, 105.984, 106.080 ms"
           }
         ]
       }
