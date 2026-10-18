@@ -497,5 +497,68 @@ fn an_option_value_that_breaks_a_consent_floor_is_drawn_with_purlis_s_values_for
         );
         // What it was drawn with is still said.
         assert_eq!(theme.options[0].value, "on");
+        // And the Notice names the theme, the floor and the tokens drawn as purlis's own.
+        assert_eq!(
+            held.said(),
+            format!(
+                "Dusk ({}) breaks the consent floors (the danger colours contrast with what they \
+                 are drawn on), so purlis draws its own danger.surface, danger.text; the rest of \
+                 the theme draws as written",
+                one.id
+            )
+        );
     }
+}
+
+/// A dark theme whose `ember` toggle, on by default, draws the danger words into the danger
+/// surface: the option, not the appearance, breaks the floor.
+fn ember_on_by_default() -> Theme {
+    loaded(&json!({
+        "name": "Ember",
+        "appearances": [{ "id": "dark", "appearance": "dark" }],
+        "options": [{
+            "id": "ember", "kind": "toggle", "label": "Ember", "default": true,
+            "on": { "tokens": {
+                "danger.text": "#301010", "danger.surface": "#301010",
+                "accent.base": "#4fa3e0"
+            } }
+        }]
+    }))
+}
+
+#[test]
+fn the_window_draws_an_option_value_that_breaks_a_floor_with_purlis_s_values_and_a_notice() {
+    let theme = ember_on_by_default();
+    let ours = built_in_for(Appearance::Dark);
+    // As the window resolves it, whichever way it is reached: the person's own theme, and
+    // following the system.
+    let resolved = resolve(
+        &Inputs {
+            pick: None,
+            theirs: Some(&theme),
+            on: On::Every,
+            system: Appearance::Dark,
+            contrast: Contrast::Standard,
+        },
+        || unreachable!("the person's own theme needs no survey"),
+    );
+    for drawn in [resolved, follow(&theme, Appearance::Dark, Contrast::Standard)] {
+        let held = drawn.held.as_ref().expect("the floor was held");
+        assert_eq!(held.floors, [Floor::Danger]);
+        assert_eq!(held.tokens, ["danger.surface", "danger.text"]);
+        assert!(
+            held.said().starts_with("Ember breaks the consent floors"),
+            "{}",
+            held.said()
+        );
+        let theme = drawn.theme.as_ref().expect("drawn");
+        assert_eq!(theme.value("danger.text"), ours.value("danger.text"));
+        assert_eq!(theme.value("danger.surface"), ours.value("danger.surface"));
+        // The rest of the option's value draws as written.
+        assert_eq!(theme.value("accent.base"), "#4fa3e0");
+        assert_eq!(theme.options[0].value, "on");
+    }
+    // Turned off, the theme clears the floors and nothing is held.
+    let (off, _) = theme.with(&values(&[("ember", "off")]));
+    assert_eq!(draw(off.first()).held, None);
 }

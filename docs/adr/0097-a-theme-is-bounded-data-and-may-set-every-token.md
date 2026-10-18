@@ -93,9 +93,11 @@ floors. The window receives a resolved theme and its complaints and draws them.
   general floors, the engine's list holds that an ask contrasts with its surface, that Allow is
   distinguishable from Keep blocked, and that danger is distinguishable from primary. These are
   the consent floors.
-- **The consent floors hold for every theme**: when a theme's consent-surface or state-mark colours
-  break a consent floor, the engine draws purlis's own values for those tokens, with a Notice
-  naming the floor; the rest of the theme draws as written.
+- **The consent floors hold for every theme**, in every combination of its appearances and
+  option values: when a theme's consent-surface or state-mark colours break a consent floor, the
+  engine draws purlis's own values for those tokens, with a Notice naming the floor; the rest of
+  the theme draws as written. The floors are held after the option values are layered, so no
+  option value can bring a consent surface below its floor.
   Contrast between other tokens stays a warning.
 - **A consent surface's wording, icons and placement are purlis's**, and are not theme data. A
   theme colours a prompt; it cannot draw one.
