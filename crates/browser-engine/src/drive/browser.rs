@@ -1676,7 +1676,7 @@ impl Browser {
 
     /// Where frames with sessions of their own put `at`'s frame on the page, in CSS pixels;
     /// `None` when the engine does not say where a frame between them is drawn.
-    fn frame_place(&self, at: &Located, scroll: bool) -> Result<Option<FramePlace>, CallError> {
+    fn frame_place(&self, at: &Located) -> Result<Option<FramePlace>, CallError> {
         let mut place = FramePlace {
             corner: (0.0, 0.0),
             within: None,
@@ -1691,18 +1691,6 @@ impl Browser {
             let Some(owner) = owner.get("backendNodeId").and_then(Value::as_i64) else {
                 return Ok(None);
             };
-            if scroll {
-                let gone_on = self.gated(|| {
-                    self.devtools().call(
-                        "DOM.scrollIntoViewIfNeeded",
-                        json!({ "backendNodeId": owner }),
-                        Some(parent_session),
-                    )
-                });
-                if gone_on.is_err() {
-                    return Err(CallError::TimedOut);
-                }
-            }
             let model = self.devtools().call(
                 "DOM.getBoxModel",
                 json!({ "backendNodeId": owner }),
@@ -1763,25 +1751,59 @@ impl Browser {
         Ok(Some(place))
     }
 
-    /// The page point at the centre of `at`, brought into view first when `scroll`.
+    /// Scrolls each frame between the page and `at` into view, outermost first, then `at`
+    /// itself.
+    fn bring_into_view(&self, at: &Located) -> Result<(), Refusal> {
+        for (frame, parent_session) in &at.boundaries {
+            let owner = self
+                .devtools()
+                .call(
+                    "DOM.getFrameOwner",
+                    json!({ "frameId": frame }),
+                    Some(parent_session),
+                )
+                .ok()
+                .and_then(|owner| owner.get("backendNodeId").and_then(Value::as_i64));
+            // A frame whose owner is not known is not placed either, so the act is not shown.
+            let Some(owner) = owner else {
+                return Ok(());
+            };
+            let gone_on = self.gated(|| {
+                self.devtools().call(
+                    "DOM.scrollIntoViewIfNeeded",
+                    json!({ "backendNodeId": owner }),
+                    Some(parent_session),
+                )
+            });
+            if gone_on.is_err() {
+                return Err(refusal(CallError::TimedOut));
+            }
+        }
+        let _ = self.gated(|| {
+            self.devtools().call(
+                "DOM.scrollIntoViewIfNeeded",
+                json!({ "backendNodeId": at.backend }),
+                Some(&at.node_session),
+            )
+        })?;
+        Ok(())
+    }
+
+    /// The page point at the centre of `at`, brought into view first when `scroll`. Where the
+    /// frames between are drawn is read after every scroll, since scrolling an element into
+    /// view may scroll the documents around it too.
     fn point(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
         let shown = |why: CallError| match why {
             CallError::Engine { .. } => Refusal::NotShown(target.clone()),
             other => refusal(other),
         };
+        if scroll {
+            self.bring_into_view(at)?;
+        }
         let place = self
-            .frame_place(at, scroll)
+            .frame_place(at)
             .map_err(shown)?
             .ok_or_else(|| Refusal::NotShown(target.clone()))?;
-        if scroll {
-            let _ = self.gated(|| {
-                self.devtools().call(
-                    "DOM.scrollIntoViewIfNeeded",
-                    json!({ "backendNodeId": at.backend }),
-                    Some(&at.node_session),
-                )
-            })?;
-        }
         let quads = self
             .devtools()
             .call(
@@ -2449,7 +2471,7 @@ impl Browser {
                     backend,
                     boundaries: boundaries.to_vec(),
                 };
-                let place = match self.frame_place(&at, false) {
+                let place = match self.frame_place(&at) {
                     Ok(Some(place)) => Some(place),
                     Ok(None) => {
                         return Err(Refusal::Withheld(
@@ -2674,11 +2696,11 @@ impl FramePlace {
     }
 }
 
-/// Whether (`x`, `y`) of a document lies within the `shows` (width and height) of it its frame
-/// shows, to within half a pixel.
+/// Whether (`x`, `y`) of a document lies inside the `shows` (width and height) of it its frame
+/// shows, at least half a pixel in from every edge.
 fn shown(x: f64, y: f64, shows: (f64, f64)) -> bool {
     const EDGE: f64 = 0.5;
-    (-EDGE..=shows.0 + EDGE).contains(&x) && (-EDGE..=shows.1 + EDGE).contains(&y)
+    (EDGE..=shows.0 - EDGE).contains(&x) && (EDGE..=shows.1 - EDGE).contains(&y)
 }
 
 /// Whether `border`, an element's border box as drawn, is upright and the size the element is

@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A click, a hover or a drag the agent aims at an element inside a frame from another site lands where
-//! the element is drawn, however the page lays the frame out: turned and scaled, or zoomed
-//! (#2557).
+//! A click, a hover or a drag the agent aims at an element inside a frame from another site
+//! lands where the element is drawn, however the page lays the frame out: turned and scaled, or
+//! zoomed, or taller than the page's window so that the element is below the fold (#2557).
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -70,6 +70,11 @@ fn a_hover_in_a_frame_the_page_turns_and_scales_comes_onto_its_element() {
 #[test]
 fn a_click_in_a_frame_the_page_turns_and_scales_presses_the_button() {
     assert!(the_click_counts("turned-pad.html"));
+}
+
+#[test]
+fn a_click_in_a_frame_taller_than_the_window_presses_a_button_below_the_fold() {
+    assert!(the_click_counts("tall-pad.html"));
 }
 
 #[test]

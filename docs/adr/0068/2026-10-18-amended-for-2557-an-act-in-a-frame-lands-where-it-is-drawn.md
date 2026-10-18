@@ -20,6 +20,8 @@ not.
    behind the eye of a perspective, the act is answered "not shown" and nothing is sent to the
    page. *D-2557-3, decided in implementation, to be confirmed.*
 4. **Only inside the frame that shows the element.** An act lands only inside the frame that
-   shows its element: when the element's centre lies outside what any frame between the page and
-   the element shows of its document, to within half a pixel, the act is answered "not shown" and
-   nothing is sent to the page. *D-2557-4, decided in review.*
+   shows its element: when the element's centre is not at least half a pixel inside what each
+   frame between the page and the element shows of its document, the act is answered "not shown"
+   and nothing is sent to the page. Where each frame is drawn is read after the element and the
+   frames around it are scrolled into view. *D-2557-4, decided in implementation, to be
+   confirmed.*

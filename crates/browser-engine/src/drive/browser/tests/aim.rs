@@ -200,12 +200,23 @@ fn a_click_on_an_element_beyond_its_turned_frames_edge_is_answered_not_shown() {
 }
 
 #[test]
-fn a_click_at_the_very_edge_of_a_frame_is_carried_out() {
+fn a_click_on_an_element_centred_on_its_frames_edge_is_answered_not_shown() {
     let (browser, engine) = browser();
-    // Centred on the frame's right edge, at x 200 of its 200 pixels.
+    // Centred on the frame's right edge, at x 200 of its 200 pixels: the edge is not inside.
     the_button_at(
         &engine,
         vec![190.0, 10.0, 210.0, 10.0, 210.0, 20.0, 190.0, 20.0],
+    );
+    refused_with_nothing_sent(&browser, &engine);
+}
+
+#[test]
+fn a_click_a_pixel_inside_its_frames_edge_is_carried_out() {
+    let (browser, engine) = browser();
+    // Centred at x 199 of the frame's 200 pixels.
+    the_button_at(
+        &engine,
+        vec![189.0, 10.0, 209.0, 10.0, 209.0, 20.0, 189.0, 20.0],
     );
     let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
 
@@ -214,10 +225,36 @@ fn a_click_at_the_very_edge_of_a_frame_is_carried_out() {
     assert_eq!(
         presses_and_releases(&engine),
         vec![
-            ("mousePressed".into(), 300.0, 215.0),
-            ("mouseReleased".into(), 300.0, 215.0),
+            ("mousePressed".into(), 299.0, 215.0),
+            ("mouseReleased".into(), 299.0, 215.0),
         ]
     );
+}
+
+#[test]
+fn where_a_frame_is_drawn_is_read_after_the_element_is_scrolled_into_view() {
+    let (browser, engine) = browser();
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+    let before = engine.all_sent().len();
+
+    browser.call(&id(2), Call::Click { target: pay }).unwrap();
+
+    let order: Vec<String> = engine
+        .all_sent()
+        .into_iter()
+        .skip(before)
+        .filter(|s| s.method == "DOM.scrollIntoViewIfNeeded" || s.method == "DOM.getBoxModel")
+        .map(|s| s.method)
+        .collect();
+    let last_scroll = order
+        .iter()
+        .rposition(|m| m == "DOM.scrollIntoViewIfNeeded")
+        .expect("the element is scrolled into view");
+    let first_read = order
+        .iter()
+        .position(|m| m == "DOM.getBoxModel")
+        .expect("where the frame is drawn is read");
+    assert!(last_scroll < first_read, "{order:?}");
 }
 
 #[test]

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A tall pad</title>
+<style>
+  body { margin: 0; background: white; height: 2400px; position: relative; }
+  .at { position: absolute; margin: 0; }
+</style></head>
+<body>
+  <p id="count" class="at" style="left: 10px; top: 2000px">Count: 0</p>
+  <button class="at" style="left: 100px; top: 2100px; width: 80px; height: 36px" onclick="const c = document.getElementById('count'); c.textContent = 'Count: ' + (Number(c.textContent.slice(7)) + 1)">Add one</button>
+</body></html>
