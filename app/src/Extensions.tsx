@@ -491,8 +491,7 @@ function adoptOnce(plane: PlaneId, workspace: string | null) {
       sayAboutThisMachine("theme choice", {
         severity: "warn",
         detail: said.data.join(" "),
-        remedy:
-          "change it in Settings › Theme, which says where the theme drawn comes from",
+        remedy: "change it in Settings › Theme, which says where the theme drawn comes from",
       });
       projectThemeChanged(plane);
     })
