@@ -565,3 +565,27 @@ fn the_window_draws_an_option_value_that_breaks_a_floor_with_purlis_s_values_and
     let (off, _) = theme.with(&values(&[("ember", "off")]));
     assert_eq!(draw(off.first()).held, None);
 }
+
+#[test]
+fn the_check_holds_the_consent_floors_in_each_combination_as_the_window_draws_it() {
+    let theme = loaded(&with_options(json!([
+        borders(false),
+        {
+            "id": "ember", "kind": "toggle", "label": "Ember", "default": false,
+            "on": { "tokens": { "danger.text": "#301010", "danger.surface": "#301010" } }
+        }
+    ])));
+    let checked = check_every(&theme);
+    assert_eq!(checked.len(), 8);
+    for one in &checked {
+        let (drawn, _) = theme.with(&one.options);
+        let appearance = drawn
+            .appearances
+            .iter()
+            .find(|it| it.id == one.appearance)
+            .expect("the appearance checked");
+        // What the check says is held is what the window holds when it draws the combination.
+        assert_eq!(one.held, draw(appearance).held, "{one:?}");
+        assert_eq!(one.held.is_some(), one.options["ember"] == "on", "{one:?}");
+    }
+}

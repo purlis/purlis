@@ -104,10 +104,13 @@ warnings (2):
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
 ```
 
-Then `floors held:`, what the window draws of the theme: each consent floor it breaks in a
-combination, and the tokens the window draws as purlis's own for it (`danger is
-distinguishable from primary — purlis draws its own danger.base`), or `none`. A last `hard
-floors:` line follows. Until purlis keeps hard floors (#2332), it says they are not checked by
+Then `consent floors:`, what the window draws of the theme. Every combination of appearance
+and option values is checked against the consent floors as the window draws it, with the option
+values layered first, and the line says in how many of them the window holds one (`none held
+in 4 combinations`, `held in 1 of 4 combinations:`). Under it, each combination that breaks one names the floors it breaks and
+the tokens the window draws as purlis's own for them (`dark, ember on: danger is
+distinguishable from primary — purlis draws its own danger.base`). A last `hard floors:` line
+follows. Until purlis keeps hard floors (#2332), it says they are not checked by
 this purlis yet.
 
 - **Refused**: a theme that breaks its grammar anywhere is not drawn at all, and each value
@@ -124,10 +127,11 @@ this purlis yet.
   value in the theme's order of its options (`dark, borders on: …`). A theme with options says
   them on an `options:` line under its name, with how many combinations were checked. A warning
   is the author's call; the theme is drawn.
-- **Floors held** are the consent floors (an ask contrasts with its surface, Allow is
-  distinguishable from Keep blocked, the danger colours contrast with what they are drawn on,
-  danger is distinguishable from primary, the state marks meet the mark floor). A theme that
-  breaks one is drawn with purlis's own values for those tokens and the rest as written.
+- **Consent floors** (an ask contrasts with its surface, Allow is distinguishable from Keep
+  blocked, the danger colours contrast with what they are drawn on, danger is distinguishable
+  from primary, the state marks meet the mark floor) hold in every combination. A combination
+  that breaks one, an option value's included, is drawn with purlis's own values for those
+  tokens and the rest as written, and the window says so in a Notice.
 - **Hard floors** are the few rules a theme can never break. This purlis does not check them
   yet (#2332), and says so rather than reporting a pass.
 
