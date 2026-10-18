@@ -236,6 +236,25 @@ pub fn made_for_pool(held: Option<&ObjectMeta>, pool: &Pool, claims: &[&Claim]) 
     }
 }
 
+/// The names of the Claims among `claims`, the ones the operator knows in `held`'s namespace on
+/// `pool`, that own `held`, sorted. For an object [`made_for_pool`] finds in the way when given
+/// only the Claims the operator acts on, these are Claims it now refuses: the object was made
+/// for them, and goes with them.
+pub fn claims_holding(held: &ObjectMeta, pool: &Pool, claims: &[&Claim]) -> Vec<String> {
+    let pool_name = pool.name_any();
+    let namespace = held.namespace.as_deref();
+    let mut names: Vec<String> = held
+        .owner_references
+        .iter()
+        .flatten()
+        .filter(|reference| names_a_known_claim(reference, namespace, &pool_name, claims))
+        .map(|reference| reference.name.clone())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// The template of a pool's runners in `namespace`, owned by `owners` ([`owners_with`]): one
 /// container running the pool's image with its own entrypoint (`purlis serve` under an init,
 /// the runner image contract), as a user who is not root, with no added privilege, no
