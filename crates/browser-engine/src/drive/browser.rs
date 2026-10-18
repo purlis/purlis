@@ -118,6 +118,9 @@ const POLL: Duration = Duration::from_millis(50);
 const READ_AGAIN: Duration = Duration::from_millis(250);
 /// How many moves a drag makes between its ends.
 const DRAG_STEPS: usize = 10;
+/// How long a drag waits after its last move for the engine to say its own drag started
+/// (#2136).
+const DRAG_STARTS_WITHIN: Duration = Duration::from_millis(150);
 /// The most form submissions, and links followed, remembered until their request is seen
 /// (#2018).
 const FORMS_KEPT: usize = 16;
@@ -302,6 +305,9 @@ struct State {
     /// A text was kept out on a page on no site with no opener: every page's screenshot paints
     /// over what cannot be read.
     kept_off_site: bool,
+    /// What the engine's own drag carries, once a drag of the agent's started one (#2136), by
+    /// the session it started on.
+    dragged: Option<(String, Value)>,
 }
 
 impl State {
@@ -901,6 +907,18 @@ impl Browser {
     /// of `target`'s page** (#2018): each judged as something sent to its site. Where the judge
     /// asks about any, nothing is sent to the page, and the answer says so.
     fn typing_held(&self, target: &str, addresses: &[String]) -> Option<Answer> {
+        let site = self.sends_to_a_new_site(addresses)?;
+        let mut answer = self.answer_now(target, Content::Nothing);
+        answer.note = Some(format!(
+            "nothing was typed: this page shows {site}, a site new to this project, where this \
+             would have gone, and purlis asked the person whether this browser may send to it"
+        ));
+        Some(answer)
+    }
+
+    /// **Whether sending to the documents at `addresses` waits on the person** (#2018): each is
+    /// judged as something sent to its site; the first site the judge asks about, now asked.
+    fn sends_to_a_new_site(&self, addresses: &[String]) -> Option<String> {
         let judge = self.inner.judge.as_ref()?;
         let site = addresses.iter().find_map(|address| {
             let outbound = Outbound {
@@ -915,12 +933,7 @@ impl Browser {
             }
         })?;
         lock(&self.inner.state).ask(&site);
-        let mut answer = self.answer_now(target, Content::Nothing);
-        answer.note = Some(format!(
-            "nothing was typed: this page shows {site}, a site new to this project, where this \
-             would have gone, and purlis asked the person whether this browser may send to it"
-        ));
-        Some(answer)
+        Some(site)
     }
 
     /// The addresses what is typed into the element `written` names goes to: its document's.
@@ -2007,17 +2020,192 @@ impl Browser {
                 (DragTo::Element(r), None) => return Err(Refusal::NoSuchRef(r.clone())),
             };
             let session = &start_at.page_session;
-            self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
-            self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
-            for step in 1..=DRAG_STEPS {
-                let part = step as f64 / DRAG_STEPS as f64;
-                let x = start.0 + (end.0 - start.0) * part;
-                let y = start.1 + (end.1 - start.1) * part;
-                self.mouse(session, "mouseMoved", x, y, 0, 1)?;
-            }
-            self.mouse(session, "mouseReleased", end.0, end.1, 1, 0)?;
-            Ok(None)
+            // Where what a native drag carries may go when it drops (#2018): into whichever
+            // document is drawn at the drop, which may be any of the page's, whatever element
+            // the drag aims at.
+            let drops_into = lock(&self.inner.state).every_document(&page);
+            // A native drag source starts the engine's own drag, which the engine hands over
+            // while this drag lasts, and never after (#2136): once asked to, it is told to stop
+            // however the drag ends.
+            lock(&self.inner.state).dragged = None;
+            let dragged = self
+                .devtools()
+                .call(
+                    "Input.setInterceptDrags",
+                    json!({ "enabled": true }),
+                    Some(session),
+                )
+                .map_err(refusal)
+                .and_then(|_| self.dragging(&page, session, start, end, &drops_into));
+            let handed_back = self.devtools().call(
+                "Input.setInterceptDrags",
+                json!({ "enabled": false }),
+                Some(session),
+            );
+            lock(&self.inner.state).dragged = None;
+            let note = dragged?;
+            handed_back.map_err(refusal)?;
+            Ok(note)
         })
+    }
+
+    /// Presses at `start`, moves to `end` with the button held and releases there; once the
+    /// engine's own drag starts on the way, the rest of the way is its drag events, the drop at
+    /// `end` into the documents at `drops_into`. A drag that fails on the way, or is cut by the
+    /// person taking over, is cancelled and its button let go.
+    fn dragging(
+        &self,
+        target: &str,
+        session: &str,
+        start: (f64, f64),
+        end: (f64, f64),
+        drops_into: &[String],
+    ) -> Result<Option<String>, Refusal> {
+        self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
+        self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
+        let mut carried = None;
+        let dragged = self.dragged_on(session, start, end, drops_into, target, &mut carried);
+        if dragged.is_err() || matches!(dragged, Ok(Some(_))) {
+            self.let_go(session, end, carried.as_ref());
+        }
+        dragged
+    }
+
+    /// [`Browser::dragging`] once the button is pressed: `carried` is what the engine's own
+    /// drag carries, once it has started. A note where the drop was held back.
+    fn dragged_on(
+        &self,
+        session: &str,
+        start: (f64, f64),
+        end: (f64, f64),
+        drops_into: &[String],
+        target: &str,
+        carried: &mut Option<Value>,
+    ) -> Result<Option<String>, Refusal> {
+        let at = |step: usize| {
+            let part = step as f64 / DRAG_STEPS as f64;
+            (
+                start.0 + (end.0 - start.0) * part,
+                start.1 + (end.1 - start.1) * part,
+            )
+        };
+        let mut step = 1;
+        while step <= DRAG_STEPS {
+            let (x, y) = at(step);
+            self.mouse(session, "mouseMoved", x, y, 0, 1)?;
+            step += 1;
+            *carried = self.engine_drag(session, Duration::ZERO);
+            if carried.is_some() {
+                break;
+            }
+        }
+        // The engine says its drag started a moment after the move that started it.
+        if carried.is_none() {
+            *carried = self.engine_drag(session, DRAG_STARTS_WITHIN);
+        }
+        if let Some(data) = carried.as_mut() {
+            // A drag of an element carries what the page put in it, never files.
+            if let Some(data) = data.as_object_mut() {
+                data.remove("files");
+            }
+            if self.carries_kept_text(target, data) {
+                return Err(Refusal::DragKeptOut);
+            }
+            if let Some(site) = self.sends_to_a_new_site(drops_into) {
+                return Ok(Some(format!(
+                    "nothing was dropped: the drop would have gone to {site}, a site new to this \
+                     project, and purlis asked the person whether this browser may send to it"
+                )));
+            }
+            let data = data.clone();
+            let mut kind = "dragEnter";
+            for step in step..=DRAG_STEPS {
+                let (x, y) = at(step);
+                self.drag_event(session, kind, x, y, &data)?;
+                kind = "dragOver";
+            }
+            self.drag_event(session, kind, end.0, end.1, &data)?;
+            self.drag_event(session, "drop", end.0, end.1, &data)?;
+        }
+        self.mouse(session, "mouseReleased", end.0, end.1, 1, 0)?;
+        Ok(None)
+    }
+
+    /// Cancels the engine's own drag where one carries `carried`, and lets the button go at
+    /// `end`: whoever drives next starts from nothing held.
+    fn let_go(&self, session: &str, end: (f64, f64), carried: Option<&Value>) {
+        if let Some(data) = carried {
+            let _ = self.devtools().call(
+                "Input.dispatchDragEvent",
+                json!({ "type": "dragCancel", "x": end.0, "y": end.1, "modifiers": 0, "data": data }),
+                Some(session),
+            );
+        }
+        let _ = self.devtools().call(
+            "Input.dispatchMouseEvent",
+            json!({
+                "type": "mouseReleased", "x": end.0, "y": end.1, "modifiers": 0, "buttons": 0,
+                "button": "left", "clickCount": 1,
+            }),
+            Some(session),
+        );
+    }
+
+    /// Whether what a drag on `target`'s page carries holds a text kept out of the agent's
+    /// answers.
+    fn carries_kept_text(&self, target: &str, data: &Value) -> bool {
+        let state = lock(&self.inner.state);
+        let mut kept = state.kept.clone();
+        if let Some(page) = state.page(target) {
+            kept.take_in(&page.scrubbed);
+        }
+        let scrub = Scrub::of(&kept);
+        data["items"].as_array().into_iter().flatten().any(|item| {
+            ["data", "title", "baseURL"]
+                .iter()
+                .filter_map(|field| item[*field].as_str())
+                .any(|text| scrub.holds(text))
+        })
+    }
+
+    /// What the engine's own drag on `session` carries, once it has started, waiting up to
+    /// `within` for it.
+    fn engine_drag(&self, session: &str, within: Duration) -> Option<Value> {
+        let deadline = Instant::now() + within;
+        let mut state = lock(&self.inner.state);
+        loop {
+            if let Some((on, data)) = &state.dragged
+                && on == session
+            {
+                return Some(data.clone());
+            }
+            let now = Instant::now();
+            if now >= deadline || state.ended {
+                return None;
+            }
+            state = self
+                .inner
+                .changed
+                .wait_timeout(state, deadline - now)
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+        }
+    }
+
+    /// One of the engine's own drag events at (`x`, `y`), carrying `data`.
+    fn drag_event(
+        &self,
+        session: &str,
+        kind: &str,
+        x: f64,
+        y: f64,
+        data: &Value,
+    ) -> Result<(), Refusal> {
+        self.input(
+            "Input.dispatchDragEvent",
+            json!({ "type": kind, "x": x, "y": y, "modifiers": 0, "data": data }),
+            session,
+        )
     }
 
     fn scroll(
@@ -2704,6 +2892,13 @@ impl Inner {
                         && let Some(target) = state.page_of_session(session)
                     {
                         state.frame_gone(&target, &frame);
+                    }
+                }
+                // A drag of the agent's started the engine's own (#2136): it is carried on by
+                // drag events from here.
+                "Input.dragIntercepted" => {
+                    if let Some(session) = &event.session_id {
+                        state.dragged = Some((session.clone(), params["data"].clone()));
                     }
                 }
                 _ => {}
