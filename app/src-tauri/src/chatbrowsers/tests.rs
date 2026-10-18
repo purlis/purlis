@@ -1299,6 +1299,7 @@ fn a_stuck_browser_is_ended_off_the_calls_path_once_the_host_answers_and_its_row
     assert_ne!(browsers.listing(), before, "its row moves");
     assert!(browsers.listed().is_empty());
     until(|| *told.lock().unwrap() > 0);
+}
 
 // ---- Logins purlis performs (#2016) ----
 
