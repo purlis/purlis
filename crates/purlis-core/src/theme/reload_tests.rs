@@ -608,3 +608,57 @@ fn the_extensions_watched_are_the_installed_ones_of_themes_alone() {
         }]
     );
 }
+
+/// Every path the platform names for one save of `file`, by the shapes notify reports: a plain
+/// write (the file), an atomic save (a scratch file, then the rename onto the file), the file
+/// made, and its metadata changed — each as the level spells the root and as the disk does.
+fn shapes_of_a_save(file: &Path, real: &Path, given: &Path) -> Vec<Vec<PathBuf>> {
+    let respelled = real.join(file.strip_prefix(given).unwrap());
+    let mut shapes = Vec::new();
+    for one in [file.to_path_buf(), respelled] {
+        let scratch = one.with_file_name("theme.json.tmp-4182");
+        shapes.push(vec![one.clone()]);
+        shapes.push(vec![scratch.clone(), one.clone()]);
+        shapes.push(vec![scratch]);
+        shapes.push(vec![one.parent().unwrap().to_path_buf(), one.clone()]);
+    }
+    shapes
+}
+
+#[test]
+fn every_shape_of_a_save_in_a_theme_folder_redraws_even_one_made_after_the_watch_was_set() {
+    let places = Places::new();
+    // What the window watches, set while no level has a `themes/` yet.
+    let watched = watched(&places);
+    let real = places.plane.canonicalize().unwrap();
+    let home = places.plane.parent().unwrap().to_path_buf();
+    let real_home = home.canonicalize().unwrap();
+    for themes in [places.machine(), places.project(), places.workspace()] {
+        put(&themes, "made-later", &dark("Later", json!({})));
+        for file in [
+            themes.join("made-later/theme.json"),
+            themes.join("made-later/fonts/ui.woff2"),
+            themes.join("made-later/icons/set.json"),
+        ] {
+            for shape in shapes_of_a_save(&file, &real_home, &home) {
+                assert_eq!(
+                    watched.decide(shape.iter().map(PathBuf::as_path), false),
+                    redraw(),
+                    "{shape:?}"
+                );
+            }
+        }
+    }
+    // An editor's own scratch file alone, and anything outside a level's `themes/`, is not.
+    for path in [
+        places.project().join("made-later/.theme.json.swp"),
+        real.join("README.md"),
+        places.plane.join("workspaces/alpha/workspace.json"),
+    ] {
+        assert_eq!(
+            watched.decide([path.as_path()], false),
+            Reload::Nothing,
+            "{path:?}"
+        );
+    }
+}

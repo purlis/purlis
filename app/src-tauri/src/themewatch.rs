@@ -195,16 +195,18 @@ impl<W: notify::Watcher + Send + 'static> ThemeWatch<W> {
     }
 
     /// The window `label` draws its theme from `target` now.
+    /// Its folders are found again at every ask, so a watch that went stale (a folder made or
+    /// taken that no change told) is put right by the window's next draw.
     fn set(&self, label: &str, target: Target) {
+        let watched = target.watched();
         let mut inner = self.lock();
         if inner
             .windows
             .get(label)
-            .is_some_and(|(was, _)| *was == target)
+            .is_some_and(|(was, now)| *was == target && *now == watched)
         {
             return;
         }
-        let watched = target.watched();
         if watched.left_out() > 0 {
             tracing::warn!(
                 "purlis: {} theme folders are not watched for this window, past the {} watched",
@@ -501,14 +503,54 @@ mod tests {
         assert!(got.contains(&other.join("themes/b")), "{got:?}");
     }
 
+    /// The handler each [`Injected`] watcher was made with, by the test that made it: what a
+    /// test tells the watch, in the shapes the platform reports, with no platform's timing.
+    static INJECT: Mutex<Option<Box<dyn notify::EventHandler>>> = Mutex::new(None);
+
+    /// A platform watcher that watches every folder it is asked to and reports only what a test
+    /// injects ([`inject`]).
+    struct Injected;
+
+    impl notify::Watcher for Injected {
+        fn new<F: notify::EventHandler>(handler: F, _: notify::Config) -> notify::Result<Self> {
+            *INJECT.lock().unwrap_or_else(PoisonError::into_inner) = Some(Box::new(handler));
+            Ok(Self)
+        }
+        fn watch(&mut self, _: &Path, _: notify::RecursiveMode) -> notify::Result<()> {
+            Ok(())
+        }
+        fn unwatch(&mut self, _: &Path) -> notify::Result<()> {
+            Ok(())
+        }
+        fn kind() -> notify::WatcherKind {
+            notify::WatcherKind::NullWatcher
+        }
+    }
+
+    /// Reports a change of `kind` to `paths`, as the platform would.
+    fn inject(kind: notify::EventKind, paths: &[PathBuf]) {
+        let mut event = notify::Event::new(kind);
+        for path in paths {
+            event = event.add_path(path.clone());
+        }
+        if let Some(handler) = INJECT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            handler.handle_event(Ok(event));
+        }
+    }
+
     #[test]
     fn a_theme_folder_made_where_a_level_had_none_is_heard_and_every_save_after_it() {
+        use notify::event::{CreateKind, DataChange, EventKind, ModifyKind, RenameMode};
         let home = tempfile::tempdir().unwrap();
         let config = home.path().join("config");
         let machine = purlis_core::machine::dir(&config);
         std::fs::create_dir_all(&machine).unwrap();
         let told = Arc::new(Told::default());
-        let watch = ThemeWatch::<notify::PollWatcher>::start(told.tell());
+        let watch = ThemeWatch::<Injected>::start(told.tell());
         watch.set(
             "main",
             Target {
@@ -519,20 +561,44 @@ mod tests {
         );
         let folder = machine.join("themes/live");
         std::fs::create_dir_all(&folder).unwrap();
-        std::fs::write(folder.join("theme.json"), "{\"n\":0}").unwrap();
+        std::fs::write(folder.join("theme.json"), "{}").unwrap();
+        let file = folder.join("theme.json");
+        // The folder made: the platform names `themes` in the folder that was watched.
+        inject(
+            EventKind::Create(CreateKind::Folder),
+            &[machine.join("themes")],
+        );
         assert!(
-            told.until(1, Duration::from_secs(20)),
+            told.until(1, Duration::from_secs(5)),
             "the folder made was never told"
         );
-        for n in 1..=3 {
-            std::thread::sleep(GAP * 2);
-            std::fs::write(folder.join("theme.json"), format!("{{\"n\":{n}}}")).unwrap();
+        assert!(watching(&watch).contains(&folder), "{:?}", watching(&watch));
+        // Each later save, in each shape the platform reports one, is told once more.
+        let saves = [
+            (
+                EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+                vec![file.clone()],
+            ),
+            (
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+                vec![folder.join("theme.json.tmp-1"), file.clone()],
+            ),
+            (EventKind::Create(CreateKind::File), vec![file.clone()]),
+            (
+                EventKind::Modify(ModifyKind::Metadata(notify::event::MetadataKind::WriteTime)),
+                vec![file.clone()],
+            ),
+        ];
+        for (n, (kind, paths)) in saves.into_iter().enumerate() {
+            std::thread::sleep(GAP);
+            inject(kind, &paths);
             assert!(
-                told.until(n + 1, Duration::from_secs(20)),
-                "save {n} was never told: {:?}",
-                watching(&watch)
+                told.until(n + 2, Duration::from_secs(5)),
+                "save {n} was never told"
             );
         }
+        drop(watch);
+        *INJECT.lock().unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     #[test]

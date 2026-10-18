@@ -64,6 +64,10 @@ pub struct Watched {
     awaiting: BTreeSet<PathBuf>,
     /// The folders of the extensions that contribute only themes: a change in one is a survey's.
     extensions: BTreeSet<PathBuf>,
+    /// Each level's `themes/`, there or not, in every spelling: a change anywhere inside one is
+    /// the theme's, so a folder made after the watch was set, and the files in it, redraw
+    /// before the watch is found again.
+    levels: BTreeSet<PathBuf>,
     /// How many folders were not watched, past [`MOST_WATCHED`].
     left_out: usize,
 }
@@ -182,6 +186,17 @@ impl Watched {
 
     fn one(&self, path: &Path) -> Reload {
         let redraw = |survey| Reload::Redraw { survey };
+        // An editor's scratch file is not a save.
+        if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with('.'))
+        {
+            return Reload::Nothing;
+        }
+        // Anything inside a level's `themes/`, at any depth, or the folder itself.
+        if self.levels.iter().any(|level| path.starts_with(level)) {
+            return redraw(false);
+        }
         // A folder watched changing itself: made, moved or gone.
         if self.theme.contains(path) {
             return redraw(false);
@@ -237,6 +252,7 @@ impl Watched {
     fn level(&mut self, level: &ThemesFolder) {
         match walk::level(level) {
             Found::Themes(inside) => {
+                self.levels.extend(spellings(&level.root, &level.below));
                 if !self.take(&level.root, &level.below, Kind::Theme) {
                     return;
                 }
@@ -253,6 +269,7 @@ impl Watched {
                 }
             }
             Found::Awaiting(parent) => {
+                self.levels.extend(spellings(&level.root, &level.below));
                 self.take(&level.root, &parent, Kind::Awaiting);
             }
             Found::Nothing => {}
