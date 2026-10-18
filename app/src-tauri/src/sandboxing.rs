@@ -2571,7 +2571,7 @@ fn revoke(
     // A chat is named for a one-chat grant alone, and every one-chat grant names its chat
     // (#2653): a grant for me, for every project or for everyone is removed where it is kept,
     // never as one chat's.
-    if chat.is_some() != matches!(level, Level::Once | Level::Chat) {
+    if chat.is_some() != level.one_chat() {
         return Err(gone());
     }
     let grant = match GrantWhat::of_word(what).ok_or_else(gone)? {
