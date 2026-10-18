@@ -456,6 +456,37 @@ fn three_tasks_blocked_on_one_host_are_each_allowed_on_their_own_by_one_answer()
     );
 }
 
+/// #2629: "Allow once" on a Notice listing several tasks is a one-chat Allow for each of
+/// them, as "Allow for this chat" is: each task keeps it, each is audited by its own keep, and
+/// none is only noted.
+#[test]
+fn allow_once_for_several_tasks_keeps_it_for_each_of_them() {
+    let app = App::blocked(&[4, 5, 7]);
+    let helper = What::Service("com.example.helper".to_owned());
+    let allowed = app
+        .answer(
+            1,
+            &on_npm(&[4, 5, 7]),
+            GrantLevel::Once,
+            &|_, _| Ok((helper.clone(), Level::Once)),
+            &[],
+        )
+        .expect("allowed");
+    assert_eq!(
+        app.kept(),
+        [4, 5, 7].map(|task| (task, "com.example.helper".to_owned(), "once"))
+    );
+    assert!(
+        app.noted.borrow().is_empty(),
+        "each audited by its own keep"
+    );
+    assert!(
+        app.owed().is_empty(),
+        "each owed its restart by its own keep"
+    );
+    assert_eq!(allowed.answered, [4, 5, 7]);
+}
+
 #[test]
 fn an_answer_for_everyone_is_kept_once_and_audited_and_owed_for_every_listed_task() {
     let app = App::blocked(&[4, 5, 6]);
@@ -935,4 +966,64 @@ fn a_socket_that_changed_under_several_tasks_question_keeps_nothing_and_is_told_
     .expect_err("refused");
     assert!(told.borrow().is_empty());
     assert!(chats.blocks().holds(4, &held(&seen[0])));
+}
+
+/// Needs a terminal. #2629: "Allow once" on a Notice listing two tasks blocked on one
+/// service gives each task the grant for its next run, audits it for each, and owes each the
+/// restart that takes it; the session that asked holds none of it.
+#[test]
+fn allow_once_on_a_notice_listing_two_tasks_gives_each_of_them_the_grant() {
+    let dir = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let (session, tasks) = started(&chats, dir.path(), &["talk", "sweep"]);
+    let seen: Vec<SeenBlock> = tasks
+        .iter()
+        .map(|task| SeenBlock {
+            task: *task,
+            operation: "lookup".to_owned(),
+            kind: "system-service".to_owned(),
+            what: GrantWhat::Service,
+            target: "com.example.helper".to_owned(),
+        })
+        .collect();
+    for one in &seen {
+        chats.blocks().heard(one.task, held(one));
+    }
+    let audited = RefCell::new(Vec::new());
+    let done = allow_for_tasks(
+        &plane_of(dir.path()),
+        &purlis_core::sandbox::Machine::this(),
+        &chats,
+        (session, &seen, GrantLevel::Once),
+        &|number, made| {
+            audited
+                .borrow_mut()
+                .push((number, made.level.word(), made.granted));
+            Ok(())
+        },
+        (4, &|_| {}),
+    )
+    .expect("allowed");
+    assert_eq!(done.answered, tasks);
+    let helper = What::Service("com.example.helper".to_owned());
+    for task in &tasks {
+        assert!(chats.holds(&id_of(&chats, *task), &helper), "task {task}");
+    }
+    assert!(
+        !chats.holds(&id_of(&chats, session), &helper),
+        "not the session"
+    );
+    assert_eq!(
+        *audited.borrow(),
+        tasks
+            .iter()
+            .map(|task| (Some(*task), "once", true))
+            .collect::<Vec<_>>()
+    );
+    let mut owed = chats.owed_restarts();
+    owed.sort_unstable();
+    assert_eq!(owed, tasks);
+    for chat in tasks.iter().chain([&session]) {
+        chats.close(*chat).ok();
+    }
 }

@@ -12,7 +12,8 @@
 //! word and line in it is the page's own fixture.
 //!
 //! This module is the tool's half that needs no app: what it takes ([`asked`]), which resolved
-//! theme each specimen draws ([`chosen`], the theme engine's answer), and what the model is told
+//! theme each specimen draws ([`chosen`], the theme engine's answer, drawn by [`drawn`] with the
+//! consent floors held as the window holds them), and what the model is told
 //! ([`said`]). The app draws; the MCP server carries the ask over the chat's hook socket
 //! ([`crate::hookwire::Ask::ThemePreview`]) and the pictures back as images on the framed
 //! stream.
@@ -218,6 +219,13 @@ pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
         )),
         _ => Ok(found),
     }
+}
+
+/// **What `specimen` draws, as the window draws it**: the theme [`chosen`] names, through the
+/// theme engine's [`theme::draw`], so the consent floors hold in the specimen as they hold in
+/// the window, and [`theme::Drawn::held`] says which, when one is held.
+pub fn drawn(specimen: &Specimen) -> Result<theme::Drawn, String> {
+    chosen(specimen).map(theme::draw)
 }
 
 /// An appearance as the tool's arguments spell it.

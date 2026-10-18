@@ -278,7 +278,7 @@ fn purlis_classic_checks_clean_in_both_appearances_and_exits_zero() {
         "Purlis Classic — built-in, dark, light\n\
          left out: nothing\n\
          warnings: none\n\
-         floors held: none\n\
+         consent floors: none held in 2 combinations\n\
          hard floors: not checked by this purlis yet\n"
     );
 }
@@ -956,7 +956,7 @@ fn the_check_says_the_consent_floors_the_window_holds_and_is_not_clean() {
     assert_eq!(ran.code, 0, "a held floor is drawn: {}{}", ran.out, ran.err);
     let (_, held) = ran
         .out
-        .split_once("floors held (1):\n")
+        .split_once("consent floors: held:\n")
         .unwrap_or_else(|| panic!("{}", ran.out));
     assert!(
         held.starts_with("  danger is distinguishable from primary — purlis draws its own ")
@@ -981,6 +981,59 @@ fn the_check_says_the_consent_floors_the_window_holds_and_is_not_clean() {
             .as_array()
             .is_some_and(|tokens| tokens.contains(&serde_json::json!("danger.base"))),
         "{first}"
+    );
+    assert_eq!(json["clean"], false, "a held floor is not clean");
+}
+
+#[test]
+fn the_check_says_the_consent_floors_held_in_each_option_combination_that_breaks_one() {
+    let rig = Rig::new();
+    // An option value, not an appearance, draws the danger words into the danger surface.
+    rig.folder(
+        &rig.project_themes(),
+        "ember",
+        &serde_json::json!({
+            "name": "Ember",
+            "appearances": [
+                { "id": "dark", "appearance": "dark" },
+                { "id": "light", "appearance": "light" }
+            ],
+            "options": [{
+                "id": "ember", "kind": "toggle", "label": "Ember", "default": false,
+                "on": { "tokens": { "danger.text": "#301010", "danger.surface": "#301010" } }
+            }]
+        }),
+    );
+
+    let ran = rig.run(&["check", "project:ember"]);
+
+    assert_eq!(ran.code, 0, "a held floor is drawn: {}{}", ran.out, ran.err);
+    let (_, held) = ran
+        .out
+        .split_once("consent floors: held in 2 of 4 combinations:\n")
+        .unwrap_or_else(|| panic!("{}", ran.out));
+    assert_eq!(
+        held,
+        "  dark, ember on: the danger colours contrast with what they are drawn on — purlis \
+         draws its own danger.surface, danger.text\n  \
+         light, ember on: the danger colours contrast with what they are drawn on — purlis \
+         draws its own danger.surface, danger.text\n\
+         hard floors: not checked by this purlis yet\n"
+    );
+
+    let json = rig.run(&["check", "project:ember", "--json"]).json();
+    assert_eq!(
+        json["held"],
+        serde_json::json!([
+            {
+                "appearance": "dark", "options": { "ember": "on" },
+                "floors": ["danger"], "tokens": ["danger.surface", "danger.text"]
+            },
+            {
+                "appearance": "light", "options": { "ember": "on" },
+                "floors": ["danger"], "tokens": ["danger.surface", "danger.text"]
+            }
+        ])
     );
     assert_eq!(json["clean"], false, "a held floor is not clean");
 }
