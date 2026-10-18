@@ -25,6 +25,16 @@ struct Server {
     asked: Arc<Mutex<Vec<(Method, String)>>>,
 }
 
+/// The controller's image at `tag`, as the install names it: the pinned release by its digest.
+fn installed(tag: &str) -> String {
+    use purlis_cluster_operator::upstream::{CONTROLLER_DIGEST, CONTROLLER_IMAGE, VERSION};
+    if tag == VERSION {
+        format!("{CONTROLLER_IMAGE}@{CONTROLLER_DIGEST}")
+    } else {
+        format!("{CONTROLLER_IMAGE}:{tag}")
+    }
+}
+
 fn status(code: u16, reason: &str) -> (u16, Value) {
     (
         code,
@@ -77,7 +87,7 @@ impl Server {
                            "metadata": {"name": "agent-sandbox-controller", "namespace": "agent-sandbox-system"},
                            "spec": {"selector": {}, "template": {"spec": {"containers": [
                                {"name": "agent-sandbox-controller",
-                                "image": format!("registry.k8s.io/agent-sandbox/agent-sandbox-controller:{tag}")}]}}},
+                                "image": installed(tag)}]}}},
                            "status": {"readyReplicas": 1}}),
                 ),
             },
