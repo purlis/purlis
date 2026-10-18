@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { askOfDispatch } from "./test-asks";
-import type { DispatchPending, OpenChat, RelaunchQuestion } from "./bindings";
+import type { DispatchPending, OpenChat, PlaneContribution, RelaunchQuestion } from "./bindings";
 import { type Interrupts, countInterrupts, withinTheBudget } from "./interruptBudget";
 import type { Ending } from "./QuitWarning";
 import { stripNamed } from "./test-strips";
@@ -87,12 +87,13 @@ const START_OPTIONS = {
 };
 
 /** What a teammate's project declares: a plugin and a start, so the trust question is asked. */
-const CONTRIBUTES = {
+const CONTRIBUTES: PlaneContribution = {
   plugins: [["superpowers@market", "true"]],
   env: [],
   starts: [['{"program":"/bin/sh","args":[],"cwd":"/home/dev/teammate"}', ""]],
   profiles: [],
   grants: [],
+  fonts: [],
 };
 
 /** The trust question for `path`: a first look, or an approved project that does more now. */

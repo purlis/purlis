@@ -48,6 +48,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::choices::{self, Choices};
+pub(crate) use super::folders::plane_fonts;
 pub use super::folders::{Folders, Found, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
 use super::{Appearance, Complaint, Contrast, Theme, built_in, classic, default_theme};

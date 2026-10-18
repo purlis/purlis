@@ -1164,3 +1164,413 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// A theme folder's fonts (#2555): read through the folder's handle, and a project's only
+// as approved.
+// ---------------------------------------------------------------------------------------
+
+/// A woff2 file's bytes: the signature, then `body`.
+fn woff2(body: &str) -> Vec<u8> {
+    let mut bytes = b"wOF2".to_vec();
+    bytes.extend_from_slice(body.as_bytes());
+    bytes
+}
+
+fn digest(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A theme folder `folder` in `themes` whose UI font is one face, `fonts/Plex.woff2`, of `face`.
+fn put_with_a_face(themes: &Path, folder: &str, face: &[u8]) {
+    let mut document = named(folder, "#101010");
+    document["fonts"] = json!({ "ui": { "family": "Plex", "faces": [
+        { "file": "fonts/Plex.woff2" }
+    ] } });
+    put(themes, folder, &document);
+    std::fs::create_dir_all(themes.join(folder).join("fonts")).unwrap();
+    std::fs::write(themes.join(folder).join("fonts/Plex.woff2"), face).unwrap();
+}
+
+fn complaints_of(resolved: &Resolved) -> Vec<String> {
+    resolved
+        .complaints
+        .iter()
+        .map(|one| one.said.clone())
+        .collect()
+}
+
+/// The machine level's `plex`, read; then `swap` done to the disk; then the theme drawn from
+/// what was read: what a swap between reading `theme.json` and reading its fonts reaches.
+#[cfg(unix)]
+fn read_then(places: &Places, swap: impl FnOnce(&Path)) -> Resolved {
+    let level = places.folders(None).machine.unwrap();
+    let mut said = Vec::new();
+    let held = super::folders::read_level(&level, &mut said);
+    assert_eq!(said, Vec::new());
+    swap(&places.machine_themes());
+    Library::new()
+        .with_read("plex", held["plex"].clone())
+        .load_id("plex")
+}
+
+#[cfg(unix)]
+#[test]
+fn a_face_is_read_through_the_folder_s_handle_when_the_folder_becomes_a_link() {
+    let places = Places::new();
+    let read = woff2("the folder purlis read, #2555");
+    put_with_a_face(&places.machine_themes(), "plex", &read);
+    let elsewhere = tempfile::tempdir().unwrap();
+    put_with_a_face(elsewhere.path(), "plex", &woff2("another folder, #2555"));
+    let resolved = read_then(&places, |themes| {
+        std::fs::rename(themes.join("plex"), themes.join("plex-before")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path().join("plex"), themes.join("plex")).unwrap();
+    });
+    assert!(!resolved.refused, "{:?}", complaints_of(&resolved));
+    let face = &resolved.theme.first().fonts.ui.faces[0];
+    assert_eq!(face.asset, digest(&read));
+    // And it is served from the same handles, not from the link.
+    assert_eq!(served(&face.asset).unwrap(), read);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_face_is_read_through_the_folder_s_handle_when_its_fonts_become_a_link() {
+    let places = Places::new();
+    let elsewhere = tempfile::tempdir().unwrap();
+    put_with_a_face(
+        &places.machine_themes(),
+        "plex",
+        &woff2("fonts purlis read, #2555"),
+    );
+    put_with_a_face(elsewhere.path(), "plex", &woff2("other fonts, #2555"));
+    let resolved = read_then(&places, |themes| {
+        let folder = themes.join("plex");
+        std::fs::remove_dir_all(folder.join("fonts")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path().join("plex/fonts"), folder.join("fonts"))
+            .unwrap();
+    });
+    // `fonts/` is opened from the folder's handle refusing a link: nothing behind it is read.
+    assert!(resolved.refused);
+    assert_eq!(
+        complaints_of(&resolved),
+        [
+            "fonts/Plex.woff2 is reached through a link or something that is not a plain file, \
+             so it is not read"
+        ]
+    );
+}
+
+/// The face `fonts/Plex.woff2` of the theme `name` drawn from `folders`, within `reach`.
+fn found(folders: &Folders, name: &str, reach: levels::Reach) -> Resolved {
+    let levels::Found::Read(resolved) = folders.find(name, reach) else {
+        panic!("{name} is read");
+    };
+    resolved
+}
+
+/// This machine approves the project at `plane` as it contributes now.
+fn approve(places: &Places) {
+    let contributes = crate::machine::Contribution::of(&places.plane);
+    crate::machine::update(&places.config, |store| {
+        store.approve(&places.plane, 1, contributes);
+    })
+    .unwrap();
+}
+
+#[test]
+fn a_project_s_and_a_workspace_s_fonts_are_read_only_as_approved() {
+    let places = Places::new();
+    put_with_a_face(&places.project_themes(), "team", &woff2("team, #2555"));
+    put_with_a_face(
+        &places.workspace_themes(),
+        "client",
+        &woff2("client, #2555"),
+    );
+    put_with_a_face(&places.machine_themes(), "mine", &woff2("mine, #2555"));
+    let cases = [
+        (
+            "team",
+            levels::Reach::Project,
+            "themes/team/fonts/Plex.woff2",
+        ),
+        (
+            "client",
+            levels::Reach::Workspace,
+            "workspaces/alpha/themes/client/fonts/Plex.woff2",
+        ),
+    ];
+    // Not approved here: no face of the project's or the workspace's is read.
+    for (name, reach, file) in cases {
+        let held = found(&places.folders(Some("alpha")), name, reach);
+        assert!(held.refused, "{name}");
+        assert_eq!(
+            complaints_of(&held),
+            [format!(
+                "{file} is not a font file you approved with this project, so it is not read"
+            )]
+        );
+    }
+    // The person's own fonts need no approval.
+    let mine = found(
+        &places.folders(Some("alpha")),
+        "mine",
+        levels::Reach::Machine,
+    );
+    assert!(!mine.refused, "{:?}", complaints_of(&mine));
+    assert_eq!(mine.theme.first().fonts.ui.faces.len(), 1);
+
+    approve(&places);
+    for (name, reach, _) in cases {
+        let drawn = found(&places.folders(Some("alpha")), name, reach);
+        assert!(!drawn.refused, "{name}: {:?}", complaints_of(&drawn));
+        assert_eq!(drawn.theme.first().fonts.ui.faces.len(), 1, "{name}");
+    }
+
+    // A face that changed after the approval is not read until it is approved again.
+    std::fs::write(
+        places.project_themes().join("team/fonts/Plex.woff2"),
+        woff2("team, changed, #2555"),
+    )
+    .unwrap();
+    let changed = found(&places.folders(None), "team", levels::Reach::Project);
+    assert!(changed.refused);
+    approve(&places);
+    assert!(!found(&places.folders(None), "team", levels::Reach::Project).refused);
+}
+
+#[test]
+fn a_project_that_brings_only_theme_fonts_is_asked_about_and_asked_again_when_one_changes() {
+    use crate::machine::{Change, Consent, Contribution, Store};
+    let places = Places::new();
+    // Nothing else: no settings, no personas, no record.
+    put_with_a_face(
+        &places.project_themes(),
+        "team",
+        &woff2("only fonts, #2555"),
+    );
+    let contributes = Contribution::of(&places.plane);
+    let face = woff2("only fonts, #2555");
+    assert_eq!(
+        contributes.fonts,
+        [(
+            "themes/team/fonts/Plex.woff2".to_owned(),
+            format!("{} {}", digest(&face), face.len())
+        )]
+        .into_iter()
+        .collect()
+    );
+    assert_ne!(contributes, Contribution::default());
+
+    // Approved before it brought a font: the font is new, and asks.
+    let mut store = Store::default();
+    store.approve(&places.plane, 1, Contribution::default());
+    let consent = store.consent(&places.plane, &contributes);
+    assert!(consent.must_ask());
+    assert_eq!(
+        consent.changes(),
+        [Change::FontAdded("themes/team/fonts/Plex.woff2".to_owned())]
+    );
+    assert_eq!(
+        consent.changes()[0].to_string(),
+        "the font file themes/team/fonts/Plex.woff2 is new"
+    );
+
+    // Approved with it: unchanged until a face changes, which asks again.
+    store.approve(&places.plane, 2, contributes.clone());
+    assert_eq!(
+        store.consent(&places.plane, &contributes),
+        Consent::Unchanged
+    );
+    std::fs::write(
+        places.project_themes().join("team/fonts/Plex.woff2"),
+        woff2("only fonts, changed, #2555"),
+    )
+    .unwrap();
+    let consent = store.consent(&places.plane, &Contribution::of(&places.plane));
+    assert!(consent.must_ask());
+    assert_eq!(
+        consent.changes(),
+        [Change::FontChanged(
+            "themes/team/fonts/Plex.woff2".to_owned()
+        )]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_served_face_is_read_through_the_handles_it_was_registered_with() {
+    let places = Places::new();
+    let read = woff2("registered, #2555");
+    put_with_a_face(&places.machine_themes(), "plex", &read);
+    let elsewhere = tempfile::tempdir().unwrap();
+    put_with_a_face(elsewhere.path(), "plex", &woff2("not registered, #2555"));
+    let drawn = found(&places.folders(None), "plex", levels::Reach::Machine);
+    let asset = drawn.theme.first().fonts.ui.faces[0].asset.clone();
+    let folder = places.machine_themes().join("plex");
+
+    // `fonts/` swapped for a link once registered: the face still comes from the folder read.
+    std::fs::rename(folder.join("fonts"), folder.join("fonts-before")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("plex/fonts"), folder.join("fonts")).unwrap();
+    assert_eq!(served(&asset).unwrap(), read);
+
+    // The face file itself become a link: it is not served.
+    let kept = folder.join("fonts-before/Plex.woff2");
+    std::fs::remove_file(&kept).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("plex/fonts/Plex.woff2"), &kept).unwrap();
+    let refused = served(&asset).unwrap_err();
+    assert!(refused.contains("is reached through a link"), "{refused}");
+}
+
+#[test]
+fn a_folder_named_to_the_library_brings_its_fonts_only_when_asked_to() {
+    let dir = tempfile::tempdir().unwrap();
+    put_with_a_face(dir.path(), "plex", &woff2("named, #2555"));
+    let unasked = Library::new().load_folder(dir.path(), "plex");
+    assert!(unasked.refused);
+    assert_eq!(
+        complaints_of(&unasked),
+        [
+            "a theme folder's fonts are read when it is one of your theme folders, or one you name \
+          yourself"
+        ]
+    );
+    let asked = Library::new()
+        .reading_named_fonts()
+        .load_folder(dir.path(), "plex");
+    assert!(!asked.refused, "{:?}", complaints_of(&asked));
+}
+
+/// A theme folder `folder` in `themes` whose UI font is the face `face`, with each of `files`
+/// in its `fonts/`.
+fn put_with_files(themes: &Path, folder: &str, face: &str, files: &[(String, Vec<u8>)]) {
+    let mut document = named(folder, "#101010");
+    document["fonts"] = json!({ "ui": { "family": "Plex", "faces": [
+        { "file": format!("fonts/{face}") }
+    ] } });
+    put(themes, folder, &document);
+    let fonts = themes.join(folder).join("fonts");
+    std::fs::create_dir_all(&fonts).unwrap();
+    for (file, bytes) in files {
+        std::fs::write(fonts.join(file), bytes).unwrap();
+    }
+}
+
+/// `count` small faces named `F00.woff2`, `F01.woff2`, …, each its own bytes.
+fn faces(tag: &str, count: usize) -> Vec<(String, Vec<u8>)> {
+    (0..count)
+        .map(|at| {
+            (
+                format!("F{at:02}.woff2"),
+                woff2(&format!("{tag} {at}, #2555")),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_chat_s_record_write_vouches_without_reading_a_font_file() {
+    use crate::machine::Contribution;
+    let places = Places::new();
+    put_with_a_face(&places.project_themes(), "team", &woff2("vouched, #2555"));
+    assert_eq!(Contribution::of(&places.plane).fonts.len(), 1);
+    // What a vouch reads is the record's half alone: no font file, no settings, no persona.
+    let record = Contribution::of_record(&places.plane);
+    assert!(record.fonts.is_empty());
+    assert_eq!(record, Contribution::default());
+}
+
+#[test]
+fn a_project_s_font_files_are_listed_under_one_budget_and_one_past_it_is_never_drawn() {
+    use crate::machine::Contribution;
+    let places = Places::new();
+    let themes = places.project_themes();
+    // 25 in one folder: the 25th by name is past the folder's 24.
+    put_with_files(&themes, "a-wide", "F24.woff2", &faces("wide", 25));
+    // 24 and 24 more: 48 listed in all with the first folder's, then 16 of the third's.
+    put_with_files(&themes, "b-full", "F00.woff2", &faces("full", 24));
+    put_with_files(&themes, "c-last", "F20.woff2", &faces("last", 24));
+    let listed = Contribution::of(&places.plane).fonts;
+    assert_eq!(listed.len(), 64);
+    assert!(!listed.contains_key("themes/a-wide/fonts/F24.woff2"));
+    assert!(listed.contains_key("themes/c-last/fonts/F15.woff2"));
+    assert!(!listed.contains_key("themes/c-last/fonts/F16.woff2"));
+
+    approve(&places);
+    assert!(!found(&places.folders(None), "b-full", levels::Reach::Project).refused);
+    let wide = found(&places.folders(None), "a-wide", levels::Reach::Project);
+    assert_eq!(
+        complaints_of(&wide),
+        [
+            "themes/a-wide/fonts/F24.woff2 is past the 24 font files purlis lists in a theme \
+          folder's fonts/, so it is not read"
+        ]
+    );
+    let last = found(&places.folders(None), "c-last", levels::Reach::Project);
+    assert_eq!(
+        complaints_of(&last),
+        [
+            "themes/c-last/fonts/F20.woff2 is past the 64 font files (32 MiB) purlis lists in a \
+          project, so it is not read"
+        ]
+    );
+}
+
+#[test]
+fn a_project_s_font_files_are_listed_up_to_32_mib_in_all() {
+    use crate::machine::Contribution;
+    let places = Places::new();
+    // Seventeen faces at the 2 MiB cap: sixteen fill the budget, the seventeenth is not listed.
+    let big = |at: usize| {
+        let mut bytes = woff2(&format!("big {at}, #2555"));
+        bytes.resize(usize::try_from(MOST_FONT_BYTES).unwrap(), 0);
+        bytes
+    };
+    let files: Vec<(String, Vec<u8>)> = (0..17)
+        .map(|at| (format!("F{at:02}.woff2"), big(at)))
+        .collect();
+    put_with_files(&places.project_themes(), "big", "F16.woff2", &files);
+    let listed = Contribution::of(&places.plane).fonts;
+    assert_eq!(listed.len(), 16);
+    assert!(!listed.contains_key("themes/big/fonts/F16.woff2"));
+    approve(&places);
+    let drawn = found(&places.folders(None), "big", levels::Reach::Project);
+    assert!(drawn.refused);
+    assert!(complaints_of(&drawn)[0].contains("past the 64 font files (32 MiB)"));
+}
+
+#[test]
+fn the_window_never_reads_a_named_folder_s_fonts() {
+    // `Library::reading_named_fonts` is for a folder the person names on the command line. The
+    // window reads theme folders through `Folders`, whose project fonts are read as approved.
+    fn sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|it| it == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/src");
+    let mut files = Vec::new();
+    sources(&app, &mut files);
+    assert!(
+        files.len() > 10,
+        "the app's sources are at {}",
+        app.display()
+    );
+    for file in files {
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            !text.contains("reading_named_fonts"),
+            "{} reads a named folder's fonts",
+            file.display()
+        );
+    }
+}
