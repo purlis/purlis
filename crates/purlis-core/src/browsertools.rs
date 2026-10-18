@@ -678,8 +678,9 @@ pub const TOOLS: [Tool; 20] = [
         name: "browser_snapshot",
         description: "The page as a tree of elements, each with a reference (e12) the other \
                       tools act on. Long pages come a part at a time: the last line says where \
-                      the next part starts. An element the page lays out beyond what it shows \
-                      is marked (out of view): scroll to it.",
+                      the next part starts. An element the page, or a box or frame it is in, \
+                      lays out beyond what it shows is marked (out of view): scroll to it, or \
+                      scroll over the box it is in.",
         schema: s_snapshot,
         read_only: true,
     },

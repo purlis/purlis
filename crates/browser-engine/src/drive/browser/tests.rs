@@ -633,6 +633,41 @@ fn a_snapshot_marks_what_is_on_the_page_but_out_of_view() {
     );
 }
 
+#[test]
+fn a_snapshot_marks_what_a_scrolling_box_in_view_does_not_show() {
+    // #2564: "Read more" (node 12) is placed inside the viewport, but the engine lays it out
+    // below the bottom of the list that scrolls it.
+    let (browser, engine) = browser();
+    super::lock(&engine.model).drawn.insert(
+        "S-PAGE-1".to_owned(),
+        json!({
+            "strings": ["#document", "HTML", "BODY", "DIV", "A", "visible", "static", "auto"],
+            "documents": [{
+                "nodes": {
+                    "parentIndex": [-1, 0, 1, 2, 3],
+                    "nodeName": [0, 1, 2, 3, 4],
+                    "backendNodeId": [1, 2, 3, 4, 12],
+                },
+                "layout": {
+                    "nodeIndex": [1, 2, 3, 4],
+                    "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 100, 30], [40, 40, 20, 10]],
+                    "styles": [[5, 5, 6], [5, 5, 6], [7, 7, 6], [5, 5, 6]],
+                },
+            }],
+        }),
+    );
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} in\n{text}"))
+            .to_owned()
+    };
+    assert!(line("Read more").ends_with(" (out of view)"), "{text}");
+    assert!(line("Below the fold").ends_with(" (out of view)"), "{text}");
+    assert!(!line("Remember me").contains("out of view"), "{text}");
+}
+
 /// Renames the main frame's link, as a page that changed it would show it.
 fn rename_the_link(engine: &Engine, to: &str) {
     let mut model = super::lock(&engine.model);
