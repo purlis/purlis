@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
@@ -357,7 +357,7 @@ describe("finding text in a chat's terminal (SI-4)", () => {
     await openPane();
     await new Promise<void>((done) => made[0].write("one fish\r\ntwo fish\r\nred fish\r\n", done));
     press({ key: "f", keyCode: 70, metaKey: true });
-    const status = () => screen.getByRole("status").textContent;
+    const status = () => within(screen.getByRole("search")).getByRole("status").textContent;
 
     act(() => {
       fireInput(field(), "fish");

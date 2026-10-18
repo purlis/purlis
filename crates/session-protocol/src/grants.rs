@@ -19,7 +19,7 @@
 //! | `answer` an ask that elicits a secret | yes | | | | | |
 //! | `stop` | yes | yes | yes | yes | | yes |
 //! | `start_program`, and 1.0's `start` | yes | yes | | | | yes |
-//! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes |
+//! | `subscribe`, `unsubscribe`, and the pushed `link_down` and `link_back` a relaying host says to every subscriber (1.17) | yes | yes | yes | yes | | yes |
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
 //! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | relayed |
