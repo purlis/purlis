@@ -458,6 +458,7 @@ theme purlis writes.
   holds too (`tools/theme-schema-since-release.sh`); such a change is a new format, with a file
   of its own. Under `not`, `if` and a `oneOf` whose branches no constant tells apart, a wider
   schema can accept less, so whatever a reference there reaches stays as it was.
+  The check reads `patternProperties` with Rust's `regex` semantics, not ECMA-262's.
 - **Why GitHub's raw file and not the docs site.** The tag is what a release is, and a raw file
   at a tag cannot change after the release; the docs site is one version, the newest, and is not
   published yet. purlis never fetches the address (ADR 0083's amendments of 2026-10-17): the

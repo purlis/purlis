@@ -422,3 +422,17 @@ fn a_removal_carried_by_the_committed_file_is_held_by_the_last_release_s() {
     // And the release's own schema, as this engine generates it, narrows nothing.
     assert_eq!(since_release(&schema_text()), Vec::<String>::new());
 }
+
+#[test]
+fn constants_equal_as_json_schema_counts_them_do_not_tell_branches_apart() {
+    // `1` and `1.0` are one value to a JSON Schema validator.
+    let holder = json!({ "oneOf": [
+        { "type": "object", "required": ["kind"],
+          "properties": { "kind": { "const": 1 }, "on": { "$ref": "#/$defs/wide" } } },
+        { "type": "object", "required": ["kind"], "properties": { "kind": { "const": 1.0 } } },
+    ] });
+    let before = reached_through(holder);
+    let mut after = before.clone();
+    after["$defs"]["wide"] = json!({ "type": ["integer", "string"] });
+    assert_eq!(narrowings(&before, &after).len(), 1);
+}

@@ -16,9 +16,11 @@ import { fileURLToPath } from "node:url";
 
 const script = join(dirname(fileURLToPath(import.meta.url)), "theme-schema-since-release.sh");
 const FILE = "docs/schema/theme.v2.schema.json";
+const MODULE = "crates/purlis-core/src/theme/published.rs";
 
-// `tags`: each tag `origin` has, with the schema it holds (or null for none). `exit`: what the
-// test command exits with.
+// `tags`: each tag `origin` has, with the schema it holds, or null for a release from before
+// format 2's schema (neither the file nor the module that publishes it), or `{ module: true }`
+// for a release that holds the module and not the file. `exit`: what the test command exits with.
 function run({ tags = {}, exit = 0, env = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "theme-schema-since-release-"));
   const bin = join(root, "bin");
@@ -27,8 +29,10 @@ function run({ tags = {}, exit = 0, env = {} } = {}) {
   mkdirSync(files);
   const log = join(root, "git.log");
   const ran = join(root, "ran");
-  for (const [tag, schema] of Object.entries(tags)) {
-    if (schema !== null) writeFileSync(join(files, tag), schema);
+  for (const [tag, held] of Object.entries(tags)) {
+    mkdirSync(join(files, tag));
+    if (typeof held === "string") writeFileSync(join(files, tag, "schema"), held);
+    if (typeof held === "string" || held?.module) writeFileSync(join(files, tag, "module"), "");
   }
   const write = (name, body) => {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
@@ -44,15 +48,27 @@ case "$1" in
   ls-remote) printf '%s\\n' "${listing}" ;;
   rev-parse) exit 1 ;;
   fetch) exit 0 ;;
-  cat-file) tag="\${3%%:*}"; [ -e "${files}/$tag" ] ;;
-  show) tag="\${2%%:*}"; cat "${files}/$tag" ;;
+  ls-tree)
+    [ -d "${files}/$3" ] || { echo "fatal: Not a valid object name $3" >&2; exit 128; }
+    case "$5" in
+      ${FILE}) [ -e "${files}/$3/schema" ] && echo "$5" ;;
+      ${MODULE}) [ -e "${files}/$3/module" ] && echo "$5" ;;
+    esac
+    exit 0 ;;
+  show) tag="\${2%%:*}"; cat "${files}/$tag/schema" ;;
   *) exit 9 ;;
 esac`,
   );
   write("the-test", `{ echo "$PURLIS_THEME_SCHEMA_RELEASED"; cat "$PURLIS_THEME_SCHEMA_RELEASED"; } > "${ran}"; exit ${exit}`);
   const result = spawnSync("bash", [script, "the-test"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: root, ...env },
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      RUNNER_TEMP: root,
+      GITHUB_REPOSITORY: "someone/fork",
+      ...env,
+    },
   });
   return {
     status: result.status,
@@ -63,11 +79,35 @@ esac`,
   };
 }
 
-test("with no release yet, it says so and passes without running the test", () => {
+test("a repository with no release tag says so and passes without running the test", () => {
   const out = run({ tags: { dev: "{}" } });
   assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /::notice title=Theme schema since the last release::No release yet/);
+  assert.match(
+    out.stdout,
+    /::notice title=Theme schema since the last release::origin \(someone\/fork\) lists no vX\.Y\.Z tag/,
+  );
   assert.equal(out.ran, null);
+});
+
+test("purlis/purlis listing no release tag fails", () => {
+  const out = run({ tags: { dev: "{}" }, env: { GITHUB_REPOSITORY: "purlis/purlis" } });
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /::error title=Theme schema since the last release::origin lists no vX\.Y\.Z tag/);
+  assert.equal(out.ran, null);
+});
+
+test("a release that publishes format 2 and holds no schema file fails", () => {
+  const out = run({ tags: { "v0.4.1": null, "v0.5.0": { module: true } } });
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, new RegExp(`::error .*v0\\.5\\.0 publishes format 2 \\(${MODULE.replaceAll(".", "\\.")}\\) but holds no`));
+  assert.equal(out.ran, null);
+});
+
+test("a tag git cannot read fails, never passes", () => {
+  const out = run({ tags: {}, env: { PURLIS_RELEASE_TAG: "v9.9.9" } });
+  assert.notEqual(out.status, 0);
+  assert.equal(out.ran, null);
+  assert.doesNotMatch(out.stdout, /Passes/);
 });
 
 test("before the first release with a v2 schema, it says so and passes", () => {

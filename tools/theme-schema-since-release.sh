@@ -14,8 +14,13 @@
 # The last release is the highest `vX.Y.Z` tag on `origin` (`dev` and pre-release tags are not
 # releases); PURLIS_RELEASE_TAG names another tag or ref to compare with. The tag's
 # `docs/schema/theme.v2.schema.json` is fetched with git and written to a file, and the test
-# command runs with PURLIS_THEME_SCHEMA_RELEASED naming it. When there is no release yet, or the
-# last one has no v2 schema, the script says so and passes without running the command.
+# command runs with PURLIS_THEME_SCHEMA_RELEASED naming it.
+#
+# It passes without running the command only when no release has published format 2's schema
+# yet: the last release holds neither the file nor `crates/purlis-core/src/theme/published.rs`,
+# the module that publishes it. A release that holds the module and not the file fails, and so
+# does purlis/purlis listing no release tag at all; any other git failure fails too. In another
+# repository (a fork with no tags) no release tag passes, and the notice says so.
 #
 # CI's `rust` job runs it with
 #     cargo nextest run ... --run-ignored only -E 'test(/the_schema_only_grows_since_the_last_release$/)'
@@ -25,6 +30,7 @@
 set -euo pipefail
 
 file=docs/schema/theme.v2.schema.json
+module=crates/purlis-core/src/theme/published.rs
 
 if [ "$#" -eq 0 ]; then
   echo "usage: tools/theme-schema-since-release.sh <the test command...>" >&2
@@ -35,6 +41,11 @@ say() {
   echo "::notice title=Theme schema since the last release::$1"
 }
 
+fail() {
+  echo "::error title=Theme schema since the last release::$1"
+  exit 1
+}
+
 tag="${PURLIS_RELEASE_TAG:-}"
 if [ -z "$tag" ]; then
   tag=$(git ls-remote --tags --refs origin 'v*' \
@@ -43,7 +54,10 @@ if [ -z "$tag" ]; then
     | sort -V \
     | tail -n 1)
   if [ -z "$tag" ]; then
-    say "No release yet, so nothing to compare $file with. Passes."
+    if [ "${GITHUB_REPOSITORY:-}" = "purlis/purlis" ]; then
+      fail "origin lists no vX.Y.Z tag, and purlis/purlis has releases: nothing to compare $file with."
+    fi
+    say "origin (${GITHUB_REPOSITORY:-this clone}) lists no vX.Y.Z tag, so there is no release to compare $file with. Passes."
     exit 0
   fi
 fi
@@ -52,7 +66,14 @@ if ! git rev-parse --quiet --verify "$tag^{commit}" > /dev/null; then
   git fetch --quiet --no-tags --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
 fi
 
-if ! git cat-file -e "$tag:$file" 2> /dev/null; then
+# `ls-tree` prints a path the tag holds and nothing for one it does not; a bad tag or any other
+# failure exits non-zero, which ends the script.
+held=$(git ls-tree --name-only "$tag" -- "$file")
+if [ -z "$held" ]; then
+  publishes=$(git ls-tree --name-only "$tag" -- "$module")
+  if [ -n "$publishes" ]; then
+    fail "$tag publishes format 2 ($module) but holds no $file."
+  fi
   say "$tag has no $file: no release has published format 2's schema yet. Passes."
   exit 0
 fi

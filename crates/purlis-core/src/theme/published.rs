@@ -281,7 +281,7 @@ mod promise {
                 && constants
                     .iter()
                     .enumerate()
-                    .all(|(n, one)| !constants[..n].contains(one))
+                    .all(|(n, one)| !constants[..n].iter().any(|it| same(it, one)))
             {
                 return true;
             }
@@ -293,10 +293,30 @@ mod promise {
         if at.is_empty() { "/" } else { at }
     }
 
+    /// **Whether two JSON values are equal as JSON Schema counts it**: numbers by their value,
+    /// so `1` and `1.0` are one constant.
+    fn same(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Number(a), Value::Number(b)) => a.as_f64() == b.as_f64(),
+            (Value::Array(a), Value::Array(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
+            }
+            (Value::Object(a), Value::Object(b)) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .all(|(key, one)| b.get(key).is_some_and(|it| same(one, it)))
+            }
+            _ => a == b,
+        }
+    }
+
     /// **What an object schema asks of the property `name`**, as the schemas that all hold for
     /// its value: its entry in `properties` and each `patternProperties` schema whose pattern
     /// matches the name, or else `additionalProperties`. A pattern this check cannot read is a
-    /// narrowing, and is taken to match.
+    /// narrowing, and is taken to match. That narrowing is pushed here, during the lookup,
+    /// because only the lookup compiles the pattern; both schemas' lookups may push the same
+    /// line, and [`narrowings`] dedups it. Patterns are matched with the `regex` crate's syntax
+    /// and semantics, not ECMA-262's (`\d` and `\w` are Unicode-aware there).
     fn property<'a>(
         schema: &'a Map<String, Value>,
         name: &str,
