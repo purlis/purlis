@@ -587,3 +587,178 @@ fn the_views_of_a_window_link_that_was_replaced_are_followed_no_more() {
     assert_eq!(followed, [(replaced.id(), view)]);
     assert_ne!(old, replaced.id());
 }
+
+// ---- the person sends their browser to an address (#2176) -----------------------------------
+
+fn reaching(host: &str) -> purlis_session_protocol::browsing::BrowserReach {
+    purlis_session_protocol::browsing::BrowserReach {
+        listed: vec![purlis_session_protocol::session::Listed {
+            host: host.into(),
+            layer: purlis_session_protocol::session::Layer::Project,
+        }],
+        ..Default::default()
+    }
+}
+
+fn a_page(page: &str, address: &str) -> purlis_session_protocol::browsing::PageSaid {
+    purlis_session_protocol::browsing::PageSaid {
+        page: page.into(),
+        address: address.into(),
+        title: String::new(),
+        current: true,
+    }
+}
+
+#[test]
+fn a_browser_the_person_opened_goes_to_their_address_on_its_current_page_reaching_what_it_is_given()
+{
+    use purlis_session_protocol::browsing::{Act, Browsed};
+
+    let window = window();
+    let program = window
+        .browsers
+        .open_reaching(&window.root, Some(reaching("api.example")))
+        .unwrap();
+    let screen = window.started.started()[0].clone();
+    assert_eq!(screen.shown().reach, Some(reaching("api.example")));
+    screen.answers(Ok(Browsed {
+        settled: true,
+        pages: vec![a_page("p1", "about:blank")],
+        ..Default::default()
+    }));
+    screen.answers(Ok(Browsed {
+        settled: true,
+        page: Some(a_page("p1", "https://api.example/")),
+        ..Default::default()
+    }));
+
+    let went = window
+        .browsers
+        .go(&program, "https://api.example/", &reaching("api.example"))
+        .unwrap();
+
+    assert_eq!(
+        went,
+        crate::browsers::Went::Went {
+            address: Some("https://api.example/".into())
+        }
+    );
+    let acts: Vec<Act> = screen
+        .shown()
+        .acts
+        .iter()
+        .map(|(_, act)| act.clone())
+        .collect();
+    assert_eq!(
+        acts,
+        [
+            Act::Pages,
+            Act::Navigate {
+                page: Some("p1".into()),
+                address: "https://api.example/".into()
+            }
+        ]
+    );
+}
+
+#[test]
+fn a_browser_with_no_page_opens_one_at_the_address() {
+    use purlis_session_protocol::browsing::Act;
+
+    let window = window();
+    let program = window
+        .browsers
+        .open_reaching(&window.root, Some(reaching("api.example")))
+        .unwrap();
+    let screen = window.started.started()[0].clone();
+
+    window
+        .browsers
+        .go(&program, "https://api.example/", &reaching("api.example"))
+        .unwrap();
+
+    assert_eq!(
+        screen.shown().acts.last().map(|(_, act)| act.clone()),
+        Some(Act::Open {
+            address: "https://api.example/".into()
+        })
+    );
+}
+
+#[test]
+fn a_site_new_to_the_project_held_back_is_named_to_ask_about() {
+    use purlis_session_protocol::browsing::Browsed;
+
+    let window = window();
+    let program = window
+        .browsers
+        .open_reaching(&window.root, Some(reaching("api.example")))
+        .unwrap();
+    let screen = window.started.started()[0].clone();
+    screen.answers(Ok(Browsed::default()));
+    screen.answers(Ok(Browsed {
+        settled: true,
+        asked: vec!["example.com:443".into()],
+        ..Default::default()
+    }));
+
+    let went = window
+        .browsers
+        .go(&program, "https://example.com/", &reaching("api.example"))
+        .unwrap();
+
+    assert_eq!(
+        went,
+        crate::browsers::Went::Asks {
+            sites: vec!["example.com:443".into()]
+        }
+    );
+}
+
+#[test]
+fn a_browser_the_person_drives_is_handed_back_and_goes_and_each_act_has_an_id_of_its_own() {
+    let window = window();
+    let program = window
+        .browsers
+        .open_reaching(&window.root, Some(reaching("api.example")))
+        .unwrap();
+    let screen = window.started.started()[0].clone();
+    window.browsers.take_over(&program).unwrap();
+
+    window
+        .browsers
+        .go(&program, "https://api.example/a", &reaching("api.example"))
+        .unwrap();
+    window
+        .browsers
+        .go(&program, "https://api.example/b", &reaching("api.example"))
+        .unwrap();
+
+    assert!(!screen.shown().taken_over, "handed back to go");
+    let ids: Vec<String> = screen
+        .shown()
+        .acts
+        .iter()
+        .map(|(id, _)| id.clone())
+        .collect();
+    assert_eq!(ids.len(), 4);
+    let unique: std::collections::HashSet<&String> = ids.iter().collect();
+    assert_eq!(unique.len(), 4, "{ids:?}");
+}
+
+#[test]
+fn a_browser_that_has_ended_says_so() {
+    let window = window();
+    let program = window
+        .browsers
+        .open_reaching(&window.root, Some(reaching("api.example")))
+        .unwrap();
+    window.browsers.close(&program).unwrap();
+
+    let gone = window
+        .browsers
+        .go(&program, "https://api.example/", &reaching("api.example"))
+        .unwrap_err();
+
+    assert!(gone.contains("has ended"), "{gone}");
+}

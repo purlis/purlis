@@ -313,6 +313,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // browser a site.
     "allow_browser_sites",
     "keep_browser_sites_blocked",
+    // The sites a browser the person opened asked about (#2176): their answer alone.
+    "allow_person_browser_sites",
     // Apply and Dismiss on a chat's proposed change (#1975): only the person applies a change to
     // purlis's own configuration, and no chat answers its own proposal (PC-3).
     "apply_proposed_change",
@@ -584,6 +586,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "hand_back_browser",
     "browser_input",
     "size_browser",
+    // The person sends a browser of their own to an address they typed (#2176): theirs, from
+    // its view tab, as their window shows it.
+    "go_browser",
     // A chat's browsers, listed to be watched (#2024): the window's alone, as watching is.
     "chat_browsers",
     // The person's own theme choice, and the move of their old theme file into a theme folder

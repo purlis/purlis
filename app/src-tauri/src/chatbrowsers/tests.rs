@@ -2230,3 +2230,101 @@ fn a_kept_store_is_never_opened_where_its_login_is_not_allowed_now() {
         "nothing opened from a store"
     );
 }
+
+// ---- a browser the person opens (#2176) ------------------------------------------------------
+
+/// A project held by a window, whose `charter.toml` is `text`: it holds the project and its
+/// hook socket, which a sandboxed run may not, so CI runs these first.
+fn held_project(
+    text: &str,
+) -> (
+    tempfile::TempDir,
+    crate::planes::Planes,
+    crate::planes::PlaneId,
+) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    std::fs::write(purlis_core::names::manifest(&root), text).expect("its manifest");
+    let planes = crate::planes::Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    (dir, planes, id)
+}
+
+/// #2176: a browser the person opens reaches what the project's settings list for a chat on no
+/// persona, and the browser sites allowed here, never a persona's hosts nor the floor's reach.
+#[test]
+fn a_browser_the_person_opens_reaches_the_projects_hosts_and_its_browser_sites() {
+    let (_dir, planes, id) = held_project(
+        "schema = 1\n[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example\"]\n\
+         [sandbox.personas.devops]\nhosts = [\"ops.example\"]\n",
+    );
+    let held = planes.held(&id).expect("held");
+    purlis_core::sandbox::local::grant_browser_site(held.root(), &site("docs.example:443"))
+        .expect("kept");
+
+    let reach = super::person_reach(&held);
+
+    use purlis_session_protocol::session::Layer;
+    let hosts: Vec<(&str, Layer)> = reach
+        .listed
+        .iter()
+        .map(|one| (one.host.as_str(), one.layer))
+        .collect();
+    assert!(hosts.contains(&("api.example", Layer::Open)), "{hosts:?}");
+    assert!(
+        hosts.contains(&("docs.example:443", Layer::You)),
+        "{hosts:?}"
+    );
+    assert!(
+        !hosts.iter().any(|(host, _)| *host == "ops.example"),
+        "{hosts:?}"
+    );
+    assert!(!reach.open_web);
+}
+
+/// #2176: the Allow on a person's browser's sites names only what it asked about, and keeps
+/// each as a browser site of this machine's, audited, never a host of the chats' own commands.
+#[test]
+fn allow_on_a_browser_the_person_opened_keeps_only_the_sites_it_asked_about() {
+    use purlis_core::sandbox::{self, grant::Level};
+    let (_dir, planes, id) = held_project("schema = 1\n");
+    let held = planes.held(&id).expect("held");
+    let audited: Mutex<Vec<String>> = Mutex::default();
+    let audit = |chat: Option<u32>, one: &sandbox::grant::Audited<'_>| {
+        assert_eq!(chat, None, "no chat's");
+        audited.lock().unwrap().push(one.target.to_owned());
+        Ok(())
+    };
+    let allow = |sites: &[&str], level| {
+        let sites: Vec<String> = sites.iter().map(|one| (*one).to_owned()).collect();
+        super::person_sites_allowed(&held, "B1", &sites, level, &audit, 7)
+    };
+
+    assert!(
+        allow(&["example.com:443"], Level::You).is_err(),
+        "nothing waits"
+    );
+    held.browsers()
+        .theirs_asked("B1", &["example.com:443".to_owned()]);
+    assert!(
+        allow(&["other.example:443"], Level::You).is_err(),
+        "not what it asked"
+    );
+    assert!(
+        allow(&["example.com:443"], Level::Chat).is_err(),
+        "no chat to keep it for"
+    );
+    allow(&["example.com:443"], Level::You).expect("allowed");
+
+    assert_eq!(*audited.lock().unwrap(), ["example.com:443"]);
+    assert_eq!(
+        sandbox::local::browser_sites(held.root()),
+        [site("example.com:443")]
+    );
+    assert!(held.browsers().theirs_waiting("B1").is_empty());
+    assert!(
+        allow(&["example.com:443"], Level::You).is_err(),
+        "answered once"
+    );
+}

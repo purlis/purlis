@@ -14,14 +14,6 @@ import { contentsOf, openViewBeside, type Tabs, type ViewRef } from "./tabs";
  * closing a tab that shows it only closes the view: it ends with its chat.
  */
 
-/**
- * **Whether the palette offers New browser.** Not yet: until a browser the person opens can go
- * somewhere (#2176), it could show only a blank page, after the engine's first download. The
- * view, its commands and their tests are all here; #2176 turns this on where it adds the
- * address.
- */
-export const BROWSERS_OFFERED: boolean = false;
-
 /** The view a browser is drawn in. */
 export const BROWSER_VIEW = "browser";
 

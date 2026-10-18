@@ -30,9 +30,14 @@
       "by": ["allowBrowserSites"]
     },
     {
-      "at": "chatbrowsers.rs sites_allowed",
+      "at": "chatbrowsers.rs allow_person_browser_sites",
+      "writes": "this machine's network record",
+      "by": ["allowPersonBrowserSites"]
+    },
+    {
+      "at": "chatbrowsers.rs sites_kept",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["allowBrowserSites"]
+      "by": ["allowBrowserSites", "allowPersonBrowserSites"]
     },
     {
       "at": "chatbrowsers.rs allowed_always",
