@@ -2004,7 +2004,8 @@ impl Chats {
 
     /// **The person allowed `host` at `level`, from the window** (#1666): every open chat whose
     /// proxy asks live and whom it reaches takes it now, with nothing restarting: chat
-    /// `session` alone for this chat, every chat of the project for the other two. Each chat a
+    /// `session` alone at a one-chat level (once, this chat), and no chat where none is named;
+    /// every chat of the project at the others. Each chat a
     /// held connection of had given up on it is told, in purlis's fixed words, to retry.
     pub fn allow_live(
         &self,
@@ -2012,11 +2013,11 @@ impl Chats {
         host: &purlis_core::sandbox::hosts::Host,
         level: purlis_core::sandbox::grant::Level,
     ) -> Live {
-        use purlis_core::sandbox::grant::Level;
+        // A one-chat Allow reaches only its chat (#2629): with no chat named, none.
         let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
             let open = lock(&self.open);
             open.iter()
-                .filter(|(number, _)| level != Level::Chat || Some(**number) == session)
+                .filter(|(number, _)| !level.one_chat() || Some(**number) == session)
                 .filter_map(|(number, running)| {
                     Some((*number, running.confinement.as_ref()?.asks()?.clone()))
                 })
@@ -2045,8 +2046,9 @@ impl Chats {
     }
 
     /// **An Allow of `host` at `level` was removed**, from the window (#1666): what it allowed
-    /// live reaches nothing again in the chats it reached: the chat whose id is `chat` for this
-    /// chat, every open chat for the other two.
+    /// live reaches nothing again in the chats it reached: the chat whose id is `chat`, and at a
+    /// one-chat level (once, this chat) no chat where none is named; every open chat at the
+    /// others.
     pub fn forget_live(
         &self,
         chat: Option<&str>,
@@ -2057,8 +2059,10 @@ impl Chats {
             let open = lock(&self.open);
             let reached: Vec<(&u32, &Running)> = open
                 .iter()
-                .filter(|(_, running)| {
-                    chat.is_none() || running.chat.identity.id.as_deref() == chat
+                .filter(|(_, running)| match chat {
+                    Some(chat) => running.chat.identity.id.as_deref() == Some(chat),
+                    // A one-chat Allow reaches only its chat (#2629): with no chat named, none.
+                    None => !level.one_chat(),
                 })
                 .collect();
             (
@@ -2373,11 +2377,15 @@ impl Chats {
     /// Decided by comparing what each chat's sandbox was compiled to as it started
     /// ([`Running::confines`]) with what the same start compiles now, never by a settings file
     /// having been written: a change that compiles to the same sandbox leaves nothing behind.
+    ///
+    /// git is asked once about the project's local file for every chat compared (#2179).
     pub fn on_older_sandbox(&self) -> Option<OlderSandbox> {
-        self.on_older_sandbox_on(
-            &purlis_core::sandbox::Machine::this(),
-            &purlis_core::sandbox::backend::installed,
-        )
+        purlis_core::profiles::git_asked_once(|| {
+            self.on_older_sandbox_on(
+                &purlis_core::sandbox::Machine::this(),
+                &purlis_core::sandbox::backend::installed,
+            )
+        })
     }
 
     /// [`Self::on_older_sandbox`], on `machine` with `has` saying what is installed.

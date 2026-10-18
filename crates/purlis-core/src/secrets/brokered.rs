@@ -2558,8 +2558,10 @@ pub(crate) fn profile_on(
     // own credential files and folders, which purlis made in the vaults folder for it alone.
     // Each under both names the kernel may give it, as the vaults are denied under both: across
     // a macOS firmlink, `/private/var/…` is also `/System/Volumes/Data/private/var/…` (#2489).
+    // A file is given back by its own name, never followed: a run's named link is read and
+    // started by the link's name, and what it points at is given nothing (#2617).
     for file in files {
-        for name in seatbelt::kernel_strings(file)? {
+        for name in seatbelt::kernel_strings_itself(file)? {
             profile.push_str(&format!("(allow file-read* (literal {name}))\n"));
         }
     }

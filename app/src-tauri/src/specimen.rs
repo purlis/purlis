@@ -112,9 +112,11 @@ pub fn painted(
     specimens
         .iter()
         .map(|specimen| {
-            let theme = themepreview::chosen(specimen)?;
+            // Drawn as the window draws it: the consent floors held (ADR 0097 §6).
+            let drawn = themepreview::drawn(specimen)?;
+            let theme = drawn.theme.ok_or_else(|| NO_THEME.to_owned())?;
             let started = Instant::now();
-            let picture = painter.paint(&WindowTheme::from(theme))?;
+            let picture = painter.paint(&WindowTheme::from(&theme))?;
             Ok(Painted {
                 theme: specimen.theme.clone(),
                 appearance: theme.appearance,
@@ -126,6 +128,8 @@ pub fn painted(
         })
         .collect()
 }
+
+const NO_THEME: &str = "purlis has no theme to draw this specimen in";
 
 const NO_PAINTER: &str = "this purlis window cannot draw the theme specimen yet: it is still \
                           starting, or this platform's webview takes no picture of a page";
