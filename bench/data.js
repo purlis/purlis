@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792305100621,
+  "lastUpdate": 1792306385128,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16674,6 +16674,48 @@ window.BENCHMARK_DATA = {
             "value": 104.40980300000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.265, 103.426, 104.410, 105.664, 106.596 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "52549263c0891d32b10926edcfbdfc889a95bb14",
+          "message": "Allow and Keep blocked are told apart at a glance (#2543)\n\n* Allow and Keep blocked are told apart; the needs-you mark reads on a hovered control\n\nEvery Allow on an ask of Allow and Keep blocked is the primary button and\nKeep blocked the plain one. A fifth consent floor holds them apart in any\ntheme: the Allow's edge and Keep blocked's at least 0.1 apart in OKLab, and\nthe Allow's edge contrasting with its ground; the Allow's words on its\nbutton join the ask's floor.\n\nThe needs-you mark on control.hover is a contrast pair held by the state\nmarks floor. Purlis Classic dark's needs-you.base moves from #b85050 to\n#bd5654 (2.79:1 to 3.00:1 on control.hover; white on it 4.54:1).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Format the new tests and the Inbox's answer style\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Allow and Keep blocked carry equal weight; a grant is edged and locked\n\nPer the operator's ruling on #2503: both answers are plain buttons, and\neach Allow is `.ui-button-grants`, on control.base with an accent edge\nand a leading open lock. The primary style stays the answer purlis\nsuggests and is never a grant's. A persona's grants and hosts, what a\nproject expects, and Settings' dispatch grants take it too.\n\nAllow apart from Keep blocked holds the accent edge against\nborder.strong and the accent visible on control.base and control.hover.\nThe Ask floor holds the answers' words on control.hover.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A grant's lock is sized as every icon is\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Every granting press is drawn as a grant\n\nAn away refusal's Allow from now on, a proposed change's Apply (its\nNotice and its tab), the socket or service a sandbox block chooses, and a\nprofile's Approve and start take `.ui-button-grants` and the open lock.\nNone of them is the suggested answer's primary style any more.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T10:37:41+04:00",
+          "tree_id": "e6e92110d12914153bf03d1f979f4243af8c5b90",
+          "url": "https://github.com/purlis/purlis/commit/52549263c0891d32b10926edcfbdfc889a95bb14"
+        },
+        "date": 1792306384032,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.481768,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.456, 0.460, 0.482, 0.485, 0.499 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.322815499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.215, 16.320, 16.323, 16.545, 16.710 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1363025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.942, 100.966, 101.136, 101.137, 102.486 ms"
           }
         ]
       }
