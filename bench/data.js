@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792340466532,
+  "lastUpdate": 1792341896181,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16968,6 +16968,48 @@ window.BENCHMARK_DATA = {
             "value": 102.22401149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.803, 101.977, 102.224, 102.477, 103.223 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b124c2271f314d33f005c0b6bc5f8bd76d3c9a1",
+          "message": "docs(sandbox): what enableWeakerNetworkIsolation opens, and why the service chooser stays (#2628)\n\nADR 0093 gains a dated note (#1927): Claude Code 2.1.302's switch adds\nexactly the one trustd mach-lookup purlis's own profile adds, and nothing\nelse to the profile; outside it, Claude Code's device tools refuse on a\nsandbox with the switch on.\n\nThe window's service chooser is kept for the next grantable service, and\nGRANTABLE_SERVICES and hooks::choosable now say what listing one needs.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T20:40:20+04:00",
+          "tree_id": "81f315dab4cef2bd41a9be2295c4e2a7f3938959",
+          "url": "https://github.com/purlis/purlis/commit/9b124c2271f314d33f005c0b6bc5f8bd76d3c9a1"
+        },
+        "date": 1792341894521,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48815,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.470, 0.487, 0.488, 0.496, 0.497 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.018159999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.659, 16.751, 17.018, 17.209, 17.657 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.2206075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.174, 103.969, 104.221, 104.294, 105.385 ms"
           }
         ]
       }
