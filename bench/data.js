@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792365155360,
+  "lastUpdate": 1792367413204,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17724,6 +17724,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2658705,
             "unit": "ms",
             "extra": "median of 5 runs: 99.664, 101.005, 101.266, 102.338, 103.708 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5eded4f658ffb97ff0fdd6154d5589813b7fae3e",
+          "message": "Browsers: idle stop and the memory budget (#2573)\n\n* Browsers: tests for a stuck browser retried off the call's path\n\nA browser call answers at once while a browser of the project is stuck,\nand a stuck browser being retried still counts toward the project's three.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a stuck browser is retried off the call's path\n\nA browser purlis could not end yet is retried by one thread per project,\non a backoff from 1 s to 60 s, never inside a browser call. It moves from\nits chat to the ending list under both locks, so the project's count\nnever drops below the browsers still running. The window is told when\nthe retry ends one; Stop all wakes the retry at once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: idle stop and the memory budget\n\nA chat's browser unused for ten minutes stops, and the chat's next call\nis told; one the person drives or that an Ask waits on never stops so.\nThe device runs at most a budget of browsers from its memory class\n(16 GB: 4, 32 GB: 8, 64 GB: 16), counted from the session host's own\nlist and checked one start at a time, beside the three per project.\nA refusal past either says which limit it met.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Memory pressure: its tests move to a file of their own\n\nMove only: the tests that were inline before #2023 go to\nmemorypressure/tests.rs unchanged. The test #2023 added comes back in\nthe next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Machine store: its tests move to a file of their own\n\nMove only: the inline test block goes to machine/tests.rs unchanged,\nunder the same cfg attributes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the limits in Settings, and the idle stop follows the host\n\nThe person's ruling of 2026-10-18: browsers.per_project,\nbrowsers.on_this_device and browsers.idle_minutes in this machine's\nstore, set in Settings > This machine > Browsers and read at each\nbrowser call. A refusal past a limit names the setting.\n\nThe idle sweep never stops a browser the session host lists with a\ndriver, and stops nothing when the host cannot say. A login, and an Ask\nraised about a browser, count as a use. Test placement as the\ncontributing guide says.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: bindings for main's commands and the limits together\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the palette's rows count the Browsers settings group\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T03:34:29+04:00",
+          "tree_id": "a90575df1fd116c735be9a2d43c2c9b8d86dad39",
+          "url": "https://github.com/purlis/purlis/commit/5eded4f658ffb97ff0fdd6154d5589813b7fae3e"
+        },
+        "date": 1792367411948,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5315920000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.470, 0.510, 0.532, 0.544, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.231764499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 17.051, 17.066, 17.232, 17.272, 17.558 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.35561100000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.696, 103.740, 104.356, 104.755, 105.390 ms"
           }
         ]
       }
