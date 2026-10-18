@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792313041387,
+  "lastUpdate": 1792339158819,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16884,6 +16884,48 @@ window.BENCHMARK_DATA = {
             "value": 104.4185325,
             "unit": "ms",
             "extra": "median of 5 runs: 103.249, 103.810, 104.419, 105.174, 105.761 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9c6e6872b81f085a642fa1632cc1501ecc4d28be",
+          "message": "Linux wrap: starts with a fixed environment purlis builds (#2548)\n\n* Linux wrap: starts with a fixed environment purlis builds\n\npurlis's own wrap (purlis _sandbox) and the chat's side it starts begin\nwith an environment purlis builds. The program's environment is carried\nin the wrap's own under names of the wrap's own (purlis_linux_sandbox::\ncarried), read back whole and given to the program alone. A wrap whose\nown environment is anything else starts nothing.\n\nA chat's terminal (chatspec::spec, in the window and in a session host)\nand a brokered secret exec start the wrap this way. The teller reads the\nchat's hook settings from the carried environment.\n\nCloses #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Carry what a profile hands a chat past the Linux wrap\n\nThe window sets a profile's handed variables after the chat's spec is\nbuilt. chatspec::with_handed sets them last in the program's environment\nand carries them with the rest when the chat runs on purlis's own wrap.\ncarried::read builds on every system.\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Let the terminal's SHELL be beside what the Linux wrap carries\n\nThe pseudo-terminal sets SHELL on every program it starts, as the session\nsets TERM. The wrap lets both be and hands neither on; a terminal test\npins what a session sets.\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Sort the Linux wrap's refusals by the project and temp folder it carries\n\nThe supervisor starts with none of the chat's environment, so it sorts\neach refusal against the project the carried PURLIS_ROOT names (held to\nthe fence as a resolve is; the walk from where the wrap started only\nwithout one) and the carried TMPDIR. sorter_in is the seam the teller\ntells through. with_handed decides by the chat's line, as spec does.\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Clippy: the chat's temp folder is already a reference\n\nRefs #2460\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T19:57:59+04:00",
+          "tree_id": "0dd88d39086e2fd9cd16470cc9982e0c6ce6470d",
+          "url": "https://github.com/purlis/purlis/commit/9c6e6872b81f085a642fa1632cc1501ecc4d28be"
+        },
+        "date": 1792339157024,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5275304999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.516, 0.519, 0.528, 0.533, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.977597499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.664, 16.851, 16.978, 17.097, 17.214 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.44889749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.684, 105.096, 105.449, 105.839, 106.278 ms"
           }
         ]
       }
