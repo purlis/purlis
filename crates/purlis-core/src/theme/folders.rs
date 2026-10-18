@@ -184,20 +184,23 @@ impl Folders {
     }
 
     /// **The theme folder `name` of the level `at` itself**, read exactly as a choice made at
-    /// that level reads it ([`Self::find`]). `Missing` when that level has no folder of that
-    /// name: a farther level's folder of the name is not read in its place.
+    /// that level reads it ([`Self::find`]), but only to check ([`Library::checking`]): it is
+    /// what `purlis theme check` and `export` read, never what the window draws, so none of its
+    /// faces is registered to be served. `Missing` when that level has no folder of that name:
+    /// a farther level's folder of the name is not read in its place.
     pub fn find_at(&self, name: &str, at: Reach) -> Found {
         let (levels, said) = self.read_within(at);
         match levels.first() {
             Some(held) if self.level(at).is_some() && held.contains_key(name) => {
-                Found::Read(load(&library_of(&levels), name, said))
+                Found::Read(load(&library_of(&levels).checking(), name, said))
             }
             _ => Found::Missing(said),
         }
     }
 
     /// **Every theme folder of the level `at` itself**, by name, each read exactly as
-    /// [`Self::find_at`] reads it: what `purlis theme list` lists for that level. Empty when
+    /// [`Self::find_at`] reads it, only to check: what `purlis theme list` lists for that
+    /// level. Empty when
     /// the level has no `themes/`.
     pub fn every_at(&self, at: Reach) -> Vec<(String, Resolved)> {
         if self.level(at).is_none() {
@@ -207,7 +210,7 @@ impl Folders {
         let Some(nearest) = levels.first() else {
             return Vec::new();
         };
-        let library = library_of(&levels);
+        let library = library_of(&levels).checking();
         nearest
             .keys()
             .map(|name| (name.clone(), load(&library, name, said.clone())))
@@ -437,18 +440,25 @@ mod read {
             .iter()
             .take(MOST_FOLDERS)
             .map(|name| {
-                let read =
-                    theme_json(&at, &shown.to_string(), name).map(|(document, icons, dir)| {
-                        let path = folder.path().join(name);
-                        // Its fonts are read from the handle its `theme.json` was read through.
-                        let held = ThemeDir::held(path, dir);
-                        let held = match &folder.fonts {
-                            FontGate::Own => held,
-                            FontGate::Approved(files) => held
-                                .approved_only(files.clone(), in_project(&folder.below.join(name))),
-                        };
-                        (document, icons, held)
-                    });
+                // A name Windows cannot hold is refused, said, and never read.
+                let read = match crate::theme::portable::refusal(name, name) {
+                    Some(why) => Err(format!("{shown}/{why}")),
+                    None => {
+                        theme_json(&at, &shown.to_string(), name).map(|(document, icons, dir)| {
+                            let path = folder.path().join(name);
+                            // Its fonts are read from the handle its `theme.json` was read through.
+                            let held = ThemeDir::held(path, dir);
+                            let held = match &folder.fonts {
+                                FontGate::Own => held,
+                                FontGate::Approved(files) => held.approved_only(
+                                    files.clone(),
+                                    in_project(&folder.below.join(name)),
+                                ),
+                            };
+                            (document, icons, held)
+                        })
+                    }
+                };
                 (name.clone(), read)
             })
             .collect();
@@ -561,8 +571,9 @@ mod read {
         out
     }
 
-    /// The names in the folder `at` that are theme folders' names, sorted. A name starting with
-    /// `.` (a `.gitkeep`) and any other that is not a theme folder's name are left out.
+    /// The names in the folder `at` of a theme folder's grammar, sorted: one Windows cannot
+    /// hold among them, so it is refused with why. A name starting with `.` (a `.gitkeep`) and
+    /// any other that is not of the grammar are left out.
     fn names_in(at: &OwnedFd) -> rustix::io::Result<Vec<String>> {
         let mut names = Vec::new();
         for entry in Dir::read_from(at)? {
@@ -570,7 +581,7 @@ mod read {
             let Ok(name) = entry.file_name().to_str() else {
                 continue;
             };
-            if name.starts_with('.') || !crate::theme::is_folder_name(name) {
+            if name.starts_with('.') || !crate::theme::format::is_name(name) {
                 continue;
             }
             names.push(name.to_owned());
@@ -623,6 +634,9 @@ mod read {
                 "icons is {}, which is not a path inside the theme's folder",
                 serde_json::to_string(named).unwrap_or_default()
             ));
+        }
+        if let Some(why) = crate::theme::portable::path_refusal(named, named) {
+            return Err(format!("icons: {why}"));
         }
         let parts: Vec<_> = path.components().map(|part| part.as_os_str()).collect();
         let Some((last, on_the_way)) = parts.split_last() else {

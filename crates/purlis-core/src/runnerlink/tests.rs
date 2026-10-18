@@ -3,7 +3,6 @@
 
 use super::*;
 
-const RUNNER: &str = "01JB0RUNNER0000000000000000";
 const DESKTOP: &str = "01JA0DESKT0P00000000000000";
 
 fn desktop() -> Pinned {
@@ -17,10 +16,9 @@ fn desktop() -> Pinned {
 fn a_runners_pairing_makes_its_key_and_keeps_the_desktop_as_its_one_peer() {
     let folder = tempfile::tempdir().unwrap();
     let desktop = desktop();
-    let runner = pair(folder.path(), RUNNER, &desktop).unwrap();
-    assert_eq!(runner.device, RUNNER);
-    let (ours, peer) = answering(folder.path(), RUNNER).unwrap().expect("paired");
-    assert_eq!(ours.device, RUNNER);
+    let runner = pair(folder.path(), &desktop).unwrap();
+    let (ours, peer) = answering(folder.path()).unwrap().expect("paired");
+    assert_eq!(ours.device, runner.device);
     assert_eq!(ours.key.public(), runner.key);
     assert_eq!(peer, desktop);
 }
@@ -29,12 +27,12 @@ fn a_runners_pairing_makes_its_key_and_keeps_the_desktop_as_its_one_peer() {
 fn a_runner_is_paired_once_whichever_desktop_asks_again() {
     let folder = tempfile::tempdir().unwrap();
     let first = desktop();
-    let runner = pair(folder.path(), RUNNER, &first).unwrap();
+    let runner = pair(folder.path(), &first).unwrap();
     for again in [first.clone(), desktop()] {
-        let refused = pair(folder.path(), RUNNER, &again).unwrap_err();
+        let refused = pair(folder.path(), &again).unwrap_err();
         assert!(refused.contains("already holds"), "{refused}");
     }
-    let (ours, peer) = answering(folder.path(), RUNNER).unwrap().unwrap();
+    let (ours, peer) = answering(folder.path()).unwrap().unwrap();
     assert_eq!((ours.key.public(), peer), (runner.key, first));
 }
 
@@ -50,7 +48,7 @@ fn a_home_that_already_holds_a_link_key_or_a_peers_file_is_not_paired() {
             .unwrap()
             .replace_file(name, b"brought by the image")
             .unwrap();
-        let refused = pair(folder.path(), RUNNER, &desktop()).unwrap_err();
+        let refused = pair(folder.path(), &desktop()).unwrap_err();
         assert!(refused.contains("already holds"), "{name}: {refused}");
     }
 }
@@ -58,14 +56,14 @@ fn a_home_that_already_holds_a_link_key_or_a_peers_file_is_not_paired() {
 #[test]
 fn a_runner_that_was_never_paired_answers_no_link() {
     let folder = tempfile::tempdir().unwrap();
-    assert!(answering(folder.path(), RUNNER).unwrap().is_none());
+    assert!(answering(folder.path()).unwrap().is_none());
 }
 
 #[test]
 fn the_runners_key_and_peer_are_kept_for_its_user_alone() {
     use std::os::unix::fs::PermissionsExt;
     let folder = tempfile::tempdir().unwrap();
-    pair(folder.path(), RUNNER, &desktop()).unwrap();
+    pair(folder.path(), &desktop()).unwrap();
     for file in [
         crate::machine::charterd(folder.path()).join(KEY_FILE),
         crate::machine::dir(folder.path()).join(PEERS_FILE),
@@ -80,24 +78,24 @@ fn the_runners_key_and_peer_are_kept_for_its_user_alone() {
 fn a_kept_key_others_may_read_is_refused() {
     use std::os::unix::fs::PermissionsExt;
     let folder = tempfile::tempdir().unwrap();
-    pair(folder.path(), RUNNER, &desktop()).unwrap();
+    pair(folder.path(), &desktop()).unwrap();
     std::fs::set_permissions(
         crate::machine::charterd(folder.path()).join(KEY_FILE),
         std::fs::Permissions::from_mode(0o644),
     )
     .unwrap();
-    assert!(answering(folder.path(), RUNNER).is_err());
+    assert!(answering(folder.path()).is_err());
 }
 
 #[test]
 fn a_kept_key_that_is_not_one_key_is_refused() {
     let folder = tempfile::tempdir().unwrap();
-    pair(folder.path(), RUNNER, &desktop()).unwrap();
+    pair(folder.path(), &desktop()).unwrap();
     purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(folder.path()))
         .unwrap()
         .replace_file(KEY_FILE, b"not a key")
         .unwrap();
-    assert!(answering(folder.path(), RUNNER).is_err());
+    assert!(answering(folder.path()).is_err());
 }
 
 #[test]
@@ -128,7 +126,7 @@ fn write_peers(folder: &std::path::Path, text: &str) {
 fn the_runners_peers_file_names_its_one_desktop_with_when_it_was_paired() {
     let folder = tempfile::tempdir().unwrap();
     let desktop = desktop();
-    pair(folder.path(), RUNNER, &desktop).unwrap();
+    pair(folder.path(), &desktop).unwrap();
     let text =
         std::fs::read_to_string(crate::machine::dir(folder.path()).join(PEERS_FILE)).unwrap();
     let peers: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -148,7 +146,7 @@ fn the_runners_peers_file_names_its_one_desktop_with_when_it_was_paired() {
 #[test]
 fn a_peers_file_with_more_than_one_desktop_or_of_another_shape_links_nobody() {
     let folder = tempfile::tempdir().unwrap();
-    pair(folder.path(), RUNNER, &desktop()).unwrap();
+    pair(folder.path(), &desktop()).unwrap();
     let one = |device: &str| serde_json::json!({ "device": device, "key": "00".repeat(32), "paired": 1_800_000_000u64 });
     for text in [
         serde_json::json!({ "version": 1, "peers": [one(DESKTOP), one("01JC0OTHER")] }).to_string(),
@@ -158,8 +156,8 @@ fn a_peers_file_with_more_than_one_desktop_or_of_another_shape_links_nobody() {
         "not json".to_owned(),
     ] {
         write_peers(folder.path(), &text);
-        assert!(answering(folder.path(), RUNNER).is_err(), "{text} was taken");
-        assert!(pair(folder.path(), RUNNER, &desktop()).is_err(), "{text} let a pairing in");
+        assert!(answering(folder.path()).is_err(), "{text} was taken");
+        assert!(pair(folder.path(), &desktop()).is_err(), "{text} let a pairing in");
     }
 }
 
@@ -174,7 +172,7 @@ fn of_two_pairings_at_once_one_is_made_and_the_other_refused() {
             let (root, barrier) = (root.clone(), std::sync::Arc::clone(&barrier));
             std::thread::spawn(move || {
                 barrier.wait();
-                pair(&root, RUNNER, &desktop).map(|runner| (runner, desktop))
+                pair(&root, &desktop).map(|runner| (runner, desktop))
             })
         };
         let (first, second) = (racing(a), racing(b));
@@ -182,7 +180,97 @@ fn of_two_pairings_at_once_one_is_made_and_the_other_refused() {
         let made: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
         assert_eq!(made.len(), 1, "{results:?}");
         let (runner, desktop) = made[0];
-        let (ours, peer) = answering(&root, RUNNER).unwrap().unwrap();
+        let (ours, peer) = answering(&root).unwrap().unwrap();
         assert_eq!((ours.key.public(), &peer), (runner.key, desktop));
     }
+}
+
+#[test]
+fn a_runner_mints_its_device_id_at_its_pairing() {
+    let folder = tempfile::tempdir().unwrap();
+    assert_eq!(crate::machine::known_device_id(folder.path()), None);
+    let runner = pair(folder.path(), &desktop()).unwrap();
+    assert!(
+        ulid::Ulid::from_string(&runner.device).is_ok(),
+        "{}",
+        runner.device
+    );
+    assert_eq!(
+        crate::machine::known_device_id(folder.path()).as_deref(),
+        Some(runner.device.as_str())
+    );
+}
+
+#[test]
+fn a_home_that_came_with_a_device_id_is_not_paired_and_nothing_is_made() {
+    let folder = tempfile::tempdir().unwrap();
+    let brought = crate::machine::device_id(folder.path()).unwrap();
+    let refused = pair(folder.path(), &desktop()).unwrap_err();
+    assert!(
+        refused.contains("came with a device id") && refused.contains("remove the runner"),
+        "{refused}"
+    );
+    assert!(
+        !crate::machine::charterd(folder.path())
+            .join(KEY_FILE)
+            .exists()
+    );
+    assert!(!crate::machine::dir(folder.path()).join(PEERS_FILE).exists());
+    assert!(answering(folder.path()).unwrap().is_none());
+    assert_eq!(
+        crate::machine::known_device_id(folder.path()),
+        Some(brought),
+        "the id it came with is left as it was"
+    );
+}
+
+/// What Docker does with a new container's home volume: it starts as a copy of the image's.
+fn copy_home(from: &std::path::Path, to: &std::path::Path) {
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+            std::fs::set_permissions(&target, entry.metadata().unwrap().permissions()).unwrap();
+            copy_home(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn two_runners_from_one_image_never_pair_with_one_device_id() {
+    // An image whose build minted a device id: every home made from it holds that id.
+    let image = tempfile::tempdir().unwrap();
+    crate::machine::device_id(image.path()).unwrap();
+    for _ in 0..2 {
+        let home = tempfile::tempdir().unwrap();
+        copy_home(image.path(), home.path());
+        assert!(crate::machine::known_device_id(home.path()).is_some());
+        assert!(pair(home.path(), &desktop()).is_err());
+    }
+    // An image whose home holds none: each runner mints an id of its own.
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (a, b) = (
+        pair(a.path(), &desktop()).unwrap(),
+        pair(b.path(), &desktop()).unwrap(),
+    );
+    assert_ne!(a.device, b.device);
+}
+
+#[test]
+fn a_runner_asked_for_a_link_before_its_pairing_mints_no_device_id() {
+    let folder = tempfile::tempdir().unwrap();
+    assert!(answering(folder.path()).unwrap().is_none());
+    assert_eq!(crate::machine::known_device_id(folder.path()), None);
+    assert!(pair(folder.path(), &desktop()).is_ok());
+}
+
+#[test]
+fn a_paired_runner_whose_device_id_is_gone_links_nobody() {
+    let folder = tempfile::tempdir().unwrap();
+    pair(folder.path(), &desktop()).unwrap();
+    crate::machine::update(folder.path(), |store| store.device = None).unwrap();
+    assert!(answering(folder.path()).is_err());
 }
