@@ -82,6 +82,12 @@ pub(crate) const FIELD_HAS_FOCUS: &str = r"function () {
   return this.isConnected && this === document.activeElement && document.hasFocus();
 }";
 
+/// The function that says how long what the field it runs on holds is, in UTF-16 code units, as
+/// a page counts it: a constant.
+pub(crate) const FIELD_LENGTH: &str = r"function () {
+  return typeof this.value === 'string' ? this.value.length : -1;
+}";
+
 /// The function that empties a field purlis filled, run on the field: a constant.
 pub(crate) const CLEAR_FIELD: &str = r"function () {
   const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), 'value');
@@ -246,6 +252,16 @@ impl Browser {
         })?;
         let mut filled: Vec<NodeKey> = Vec::new();
         let done = self.fill_and_submit(&target, login, &mut filled);
+        // Focus is emulated for the fill alone.
+        if !lock(&self.inner.state).ended
+            && let Ok(session) = self.page_session(&target)
+        {
+            let _ = self.devtools().call(
+                "Emulation.setFocusEmulationEnabled",
+                json!({ "enabled": false }),
+                Some(&session),
+            );
+        }
         if done.is_err() {
             if self.cut() {
                 // The person took the browser over: what purlis filled is cleared as they hand
@@ -415,7 +431,8 @@ impl Browser {
     /// Fills `field` with `value`, while `target`'s page is on `origin`, the field blanked
     /// before the value goes in. Right before the value goes in, and right after, the page must
     /// still show the document it showed when the fill began, with the field focused in it and
-    /// the document focused: where it does not, the whole browser is ended
+    /// the document focused, and after, the field must hold exactly as much as was typed:
+    /// where it does not, the whole browser is ended
     /// ([`Refusal::NotLoggedIn`] says so) before anything reaches the agent.
     fn fill(&self, target: &str, origin: &str, field: &Found, value: &str) -> Result<(), Refusal> {
         if !self.on_origin(target, origin) {
@@ -450,7 +467,9 @@ impl Browser {
                 .call("Input.insertText", json!({ "text": value }), on)
         })?
         .map_err(|_| could_not())?;
-        if !self.still_filling(target, origin, document, field, on) {
+        if !self.still_filling(target, origin, document, field, on)
+            || !self.holds_as_typed(field, value, on)
+        {
             return Err(self.ended_for_a_changed_page(origin));
         }
         let _ = self.devtools().call(
@@ -498,6 +517,24 @@ impl Browser {
             .and_then(|read| read.pointer("/result/value").and_then(Value::as_bool))
             == Some(true);
         focused && self.document_of(target) == document
+    }
+
+    /// Whether `field` holds exactly as much as purlis typed into it, read from the field itself.
+    fn holds_as_typed(&self, field: &Found, value: &str, on: Option<&str>) -> bool {
+        let typed = value.encode_utf16().count() as i64;
+        self.devtools()
+            .call(
+                "Runtime.callFunctionOn",
+                json!({
+                    "objectId": field.object,
+                    "functionDeclaration": FIELD_LENGTH,
+                    "returnByValue": true,
+                }),
+                on,
+            )
+            .ok()
+            .and_then(|read| read.pointer("/result/value").and_then(Value::as_i64))
+            == Some(typed)
     }
 
     /// **Ends the whole browser** because its page changed while purlis filled it (module docs),

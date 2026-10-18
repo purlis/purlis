@@ -11,7 +11,9 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::super::login::{CLEAR_FIELD, FIELD_HAS_FOCUS, NAME_FIELD, PASSWORD_FIELD, origin_of};
+use super::super::login::{
+    CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, NAME_FIELD, PASSWORD_FIELD, origin_of,
+};
 use super::{Engine, browser_with, id, limits, snapshot};
 use crate::WebAddress;
 use crate::drive::{Call, Content, Driver, Limits, Login, Refusal};
@@ -45,12 +47,23 @@ fn login_at(origin: &str) -> Login {
 /// field, and reads bullets. `submitted` is set by an Enter, and with `goes`, the field goes.
 /// The page purlis opens for the login (`PAGE-2`) shows it once it is sent to its address.
 fn as_a_login_form(engine: &Arc<Engine>, goes: bool) -> Arc<AtomicBool> {
-    as_a_login_form_that(engine, goes, false)
+    as_a_login_form_that(engine, goes, Twist::None)
 }
 
-/// [`as_a_login_form`], whose page loads another document as purlis types into it, where
-/// `moves`.
-fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, moves: bool) -> Arc<AtomicBool> {
+/// What a login form does to purlis's fill, in a test that says so.
+#[derive(Clone, Copy, PartialEq)]
+enum Twist {
+    None,
+    /// The page loads another document as purlis types.
+    Moves,
+    /// The field keeps less than was typed into it.
+    Shortens,
+    /// The field cannot be asked whether it has the focus.
+    Unread,
+}
+
+/// [`as_a_login_form`], with `twist`.
+fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<AtomicBool> {
     {
         let mut model = super::super::lock(&engine.model);
         let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
@@ -66,6 +79,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, moves: bool) -> Arc<At
     }
     let submitted = Arc::new(AtomicBool::new(false));
     let seen = Arc::clone(&submitted);
+    let typed = Arc::new(AtomicUsize::new(0));
     let navigated = |engine: &Engine, session: &str, loader: &str, url: &str| {
         let frame = session.trim_start_matches("S-");
         engine.emit(
@@ -82,13 +96,29 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, moves: bool) -> Arc<At
                 navigated(engine, on, "LOADER-LOGIN", p["url"].as_str().unwrap_or_default());
                 Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": "LOADER-LOGIN" })))
             }
-            "Input.insertText" if moves => {
-                navigated(engine, on, "LOADER-ELSEWHERE", ADDRESS);
-                std::thread::sleep(Duration::from_millis(50));
+            "Input.insertText" => {
+                let text = p["text"].as_str().unwrap_or_default();
+                typed.store(text.encode_utf16().count(), Ordering::SeqCst);
+                if twist == Twist::Moves {
+                    navigated(engine, on, "LOADER-ELSEWHERE", ADDRESS);
+                    std::thread::sleep(Duration::from_millis(50));
+                }
                 Some(Ok(json!({})))
             }
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_HAS_FOCUS => {
-                Some(Ok(json!({ "result": { "type": "boolean", "value": true } })))
+                Some(if twist == Twist::Unread {
+                    Err(crate::cdp::CallError::Engine {
+                        code: -32000,
+                        message: "Cannot find context with specified id".into(),
+                    })
+                } else {
+                    Ok(json!({ "result": { "type": "boolean", "value": true } }))
+                })
+            }
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_LENGTH => {
+                let held = typed.load(Ordering::SeqCst);
+                let held = if twist == Twist::Shortens { held - 1 } else { held };
+                Some(Ok(json!({ "result": { "type": "number", "value": held } })))
             }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
                 Some(Ok(if goes && seen.load(Ordering::SeqCst) {
@@ -285,7 +315,7 @@ fn a_reference_dealt_before_a_login_is_void_after_it() {
 #[test]
 fn a_page_that_loads_another_document_as_purlis_fills_it_ends_the_browser() {
     let (browser, engine) = browser_with(quick());
-    as_a_login_form_that(&engine, true, true);
+    as_a_login_form_that(&engine, true, Twist::Moves);
     let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
     match ended.outcome {
         Err(Refusal::NotLoggedIn(why)) => {
@@ -375,4 +405,36 @@ fn an_address_is_on_the_origin_a_page_spells() {
     assert_eq!(origin_of("about:blank"), None);
     assert_eq!(origin_of("chrome-error://chromewebdata/"), None);
     assert_eq!(origin_of("https://user@shop.example.test/"), None);
+}
+
+/// A login whose fill could not be told to have gone in whole ends the browser.
+fn ends_the_browser(twist: Twist) {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, twist);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => assert!(why.contains("ended this browser"), "{why}"),
+        other => panic!("refused: {other:?}"),
+    }
+    assert_eq!(engine.sent("Browser.close").len(), 1);
+    let after = browser.call(
+        &id(9),
+        Call::Snapshot {
+            page: None,
+            within: None,
+            from: 1,
+            lines: None,
+        },
+    );
+    assert!(matches!(after, Err(Refusal::Ended)), "{after:?}");
+}
+
+#[test]
+fn a_field_that_keeps_less_than_purlis_typed_ends_the_browser() {
+    ends_the_browser(Twist::Shortens);
+}
+
+#[test]
+fn a_field_that_cannot_be_asked_whether_it_has_the_focus_ends_the_browser() {
+    ends_the_browser(Twist::Unread);
 }
