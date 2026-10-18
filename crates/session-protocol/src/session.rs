@@ -1665,7 +1665,8 @@ impl Lane {
             | Command::KillSwitch
             | Command::MidTurn { .. }
             | Command::Quit
-            | Command::TakeBack { .. } => None,
+            | Command::TakeBack { .. }
+            | Command::Unpair => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
