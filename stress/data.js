@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792344782467,
+  "lastUpdate": 1792344796974,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5352,6 +5352,42 @@ window.BENCHMARK_DATA = {
             "value": 380.2,
             "unit": "MB",
             "extra": "median of 6 samples: 372.5, 374.1, 379.4, 380.9, 381.3, 396.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "23d8a6fd941adb5d4de61fdefca98777c431f793",
+          "message": "A theme controls workspace tint (#2509)\n\nA theme's `tint` key is read (#2329): on or off, which tokens a\nworkspace's colour turns (from a closed list), and its own hues for the\neight workspace colours. The engine resolves the recipe on every\nappearance, the check and the consent floors measure every hue of it,\nand the window takes the recipe with the resolved theme and keeps only\nthe arithmetic (#2393). A tinted accent is held apart from the danger\ncolour: the tint keeps the hue and gives less colour, and draws untinted\nwhen no amount does. A token whose tint still breaks a consent floor is\ndrawn untinted, and the Notice says so.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\nAssisted-by: claude-code\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T20:42:05+04:00",
+          "tree_id": "a78856afc7d1be6833ad08dfae9b6e9add228f4c",
+          "url": "https://github.com/purlis/purlis/commit/23d8a6fd941adb5d4de61fdefca98777c431f793"
+        },
+        "date": 1792344795676,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1462,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1340.4, 1462, 1650.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 677.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 630.1, 660.5, 671, 683.3, 683.8, 765.5 MB; window 396 MB, session host 281.1 MB"
           }
         ]
       }
