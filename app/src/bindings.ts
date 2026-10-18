@@ -688,8 +688,9 @@ export const commands = {
 	/**
 	 *  **Allow on the sites a browser the person opened asked about** (#2176): `sites`, the sites
 	 *  its view showed, are browser sites at `level`: every browser of this project on this
-	 *  machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a chat's site Allow is: no chat's own commands reach
-	 *  them. Refused whole unless each waits on the person for that browser now.
+	 *  machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a
+	 *  chat's site Allow is: no chat's own commands reach them. Refused whole unless each waits on
+	 *  the person for that browser now.
 	 */
 	allowPersonBrowserSites: (plane: PlaneId, program: string, sites: string[], level: GrantLevel) => typedError<null, string>(__TAURI_INVOKE("allow_person_browser_sites", { plane, program, sites, level })),
 	/**
