@@ -103,7 +103,10 @@ pub use person::{Density, Layer, Person};
 pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
-pub use tint::{PALETTE, hue_of, tint_hex, tinted};
+pub use tint::{
+    APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of, tint_hex,
+    tint_hex_within, tinted,
+};
 pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
@@ -129,6 +132,8 @@ mod options_tests;
 mod published_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tint_tests;
 #[cfg(test)]
 mod typed_tests;
 
@@ -206,6 +211,9 @@ pub struct ResolvedTheme {
     /// empty for a theme with none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<OptionDrawn>,
+    /// How a workspace's colour tints the theme (#2329), the same in each of its appearances:
+    /// Purlis Classic's recipe unless the theme says otherwise.
+    pub tint: Tint,
 }
 
 impl ResolvedTheme {
@@ -469,6 +477,7 @@ fn built_in_of(text: &str) -> Theme {
                 tuned: Geometry::new(),
                 fonts: Fonts::classic(),
                 options: Vec::new(),
+                tint: Tint::default(),
             }
         })
         .collect();
@@ -689,6 +698,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             tuned: base.tuned.clone(),
             fonts: base.fonts.clone(),
             options: Vec::new(),
+            tint: Tint::default(),
         }),
         complaints: notes,
         refused: false,

@@ -118,9 +118,11 @@ pub fn status_of_an_object_in_the_way(kind: &str, name: &str) -> ClaimStatus {
     }
 }
 
-/// A Claim's status when its pool's `kind` named `name` in its namespace belongs only to
-/// `holders`, Claims the operator made it for and now refuses, since they were made before the
-/// policy on claims was in force: it is left as it is, and goes with them.
+/// A Claim's status when its pool's `kind` named `name` in its namespace has `holders`, and
+/// only them, as its owners: Claims the operator knows there on that pool, made it for and now
+/// refuses, since they were made before the policy on claims was in force
+/// ([`upstream::claims_holding`]). It is left as it is, and goes once they are deleted. An object
+/// with any other owner gets [`status_of_an_object_in_the_way`] instead.
 pub fn status_of_objects_held_by_refused_claims(
     kind: &str,
     name: &str,

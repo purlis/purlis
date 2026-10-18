@@ -14,8 +14,8 @@
 //! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): the two carry equal
 //!   weight on the control's own ground, and Allow is edged in `accent.base` where Keep blocked
 //!   is edged in `border.strong`. The two edges are at least [`ALLOW_APART`] apart as OKLab draws
-//!   colour, as the theme writes them, and the Allow's edge contrasts with its ground, at rest and
-//!   under the pointer;
+//!   colour, as the theme writes them and under each of its own tints, and the Allow's edge
+//!   contrasts with its ground, at rest and under the pointer;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
 //!   window draws it on;
@@ -27,12 +27,13 @@
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
-//! colour a workspace can name, as [`super::check`] measures.
+//! colour a workspace can name, by the theme's own tint recipe, as [`super::check`] measures.
 //!
 //! **A theme that breaks one is drawn with purlis's own values for those tokens**: Purlis
 //! Classic's of the same appearance, for the consent and state tokens of each pair that fails.
 //! When Classic's colour still fails on the ground the theme draws it on, the ground is drawn as
-//! Classic's too. The rest of the theme draws as written, and [`Held`] says which floors and
+//! Classic's too, and a token whose workspace tint still breaks the floor is drawn untinted
+//! ([`super::Tint`]). The rest of the theme draws as written, and [`Held`] says which floors and
 //! which tokens, for one Notice per theme.
 
 use std::collections::BTreeSet;
@@ -138,19 +139,42 @@ pub struct Held {
     pub floors: Vec<Floor>,
     /// The tokens drawn as Purlis Classic's of the same appearance.
     pub tokens: Vec<&'static str>,
+    /// The tokens drawn untinted in a tinted workspace, because a workspace's tint broke a floor
+    /// that purlis's own values could not hold ([`super::Tint`]).
+    pub untinted: Vec<&'static str>,
 }
 
 impl Held {
-    /// The Notice's sentence: the theme, the floors it breaks, and what purlis draws instead.
+    /// The Notice's sentence: the theme, the floors it breaks, and what purlis draws instead:
+    /// its own values of [`Self::tokens`], and [`Self::untinted`] untinted in a tinted
+    /// workspace. A clause with no tokens is left out.
     pub fn said(&self) -> String {
-        let floors: Vec<&str> = self.floors.iter().map(|floor| floor.says()).collect();
-        format!(
-            "{} breaks the consent floors ({}), so purlis draws its own {}; the rest of the \
-             theme draws as written",
-            self.theme,
-            floors.join("; "),
+        let floors = self
+            .floors
+            .iter()
+            .map(|floor| floor.says())
+            .collect::<Vec<_>>()
+            .join("; ");
+        let (theme, ours, untinted) = (
+            &self.theme,
             self.tokens.join(", "),
-        )
+            self.untinted.join(", "),
+        );
+        const REST: &str = "the rest of the theme draws as written";
+        match (ours.is_empty(), untinted.is_empty()) {
+            (false, true) => format!(
+                "{theme} breaks the consent floors ({floors}), so purlis draws its own {ours}; {REST}"
+            ),
+            (true, false) => format!(
+                "In a tinted workspace, {theme} would fall under the consent floors ({floors}), \
+                 so purlis draws {untinted} untinted there to keep its words readable; {REST}"
+            ),
+            (false, false) => format!(
+                "{theme} breaks the consent floors ({floors}), so purlis draws its own {ours}, \
+                 and {untinted} untinted in tinted workspaces; {REST}"
+            ),
+            (true, true) => format!("{theme} breaks the consent floors ({floors})"),
+        }
     }
 }
 
@@ -160,14 +184,16 @@ struct Failure {
     tokens: Vec<&'static str>,
 }
 
-/// Every consent floor `theme` breaks: the contrast floors as it is and tinted by every
-/// workspace colour, and Allow apart from Keep blocked and danger apart from primary as the
-/// theme writes them.
+/// Every consent floor `theme` breaks: the contrast floors and Allow apart from Keep blocked as
+/// it is and tinted by every workspace colour of its own recipe, and danger apart from primary
+/// as the theme writes them (the tint holds that one itself, [`tint::apart_chroma`]).
 fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
     let mut found = Vec::new();
-    let tints = tint::PALETTE
+    let tints = theme
+        .tint
+        .hues
         .iter()
-        .map(|(colour, _)| tint::tinted(theme, colour));
+        .map(|one| tint::tinted(theme, one.name));
     for drawn in std::iter::once(theme.clone()).chain(tints) {
         for (floor, pair) in pairs() {
             if ratio(&drawn, pair).is_some_and(|ratio| ratio < pair.floor) {
@@ -180,12 +206,14 @@ fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
                 });
             }
         }
-    }
-    if allow_apart(theme) < ALLOW_APART {
-        found.push(Failure {
-            floor: Floor::AllowApart,
-            tokens: vec!["accent.base", "border.strong"],
-        });
+        // Allow's edge and Keep blocked's under each of the theme's own tints too: its recipe
+        // may turn both to one hue.
+        if allow_apart(&drawn) < ALLOW_APART {
+            found.push(Failure {
+                floor: Floor::AllowApart,
+                tokens: vec!["accent.base", "border.strong"],
+            });
+        }
     }
     if apart(theme) < DANGER_APART {
         found.push(Failure {
@@ -201,11 +229,7 @@ fn apart_of(one: &str, other: &str) -> f64 {
     let (Some(one), Some(other)) = (tint::oklab_of(one), tint::oklab_of(other)) else {
         return 0.0;
     };
-    one.iter()
-        .zip(other)
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<f64>()
-        .sqrt()
+    tint::distance(one, other)
 }
 
 /// How far `danger.base` is from `accent.base` in OKLab, as the theme writes them.
@@ -227,6 +251,7 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
     let mut drawn = theme.clone();
     let mut floors = BTreeSet::new();
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();
+    let mut untinted: BTreeSet<&'static str> = BTreeSet::new();
     loop {
         let failing = failures(&drawn);
         if failing.is_empty() {
@@ -251,9 +276,20 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
             // Purlis's own consent colour first; the ground too only once that is not enough.
             take.extend(if consent.is_empty() { open } else { consent });
         }
-        // Every token a failing floor names is purlis's already: there is nothing more to draw.
+        // Every token a failing floor names is purlis's already, and a workspace's tint still
+        // breaks it: the tint leaves those tokens as they are drawn.
         if take.is_empty() {
-            break;
+            let tinted: Vec<&'static str> = failing
+                .iter()
+                .flat_map(|failure| failure.tokens.iter().copied())
+                .filter(|token| drawn.tint.tabs().contains(token))
+                .collect();
+            if tinted.is_empty() {
+                break;
+            }
+            drawn.tint.leave(&tinted);
+            untinted.extend(tinted);
+            continue;
         }
         for token in take {
             drawn.values.insert(token, ours.value(token).to_owned());
@@ -272,6 +308,7 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
         theme: theme_name(theme),
         floors: floors.into_iter().collect(),
         tokens,
+        untinted: untinted.into_iter().collect(),
     };
     (drawn, Some(held))
 }

@@ -881,7 +881,7 @@ describe("Appearance (charter-app#281)", () => {
       "Custom…",
     ]);
     expect(colour).toHaveAccessibleDescription(
-      /^Tints this workspace's tab, its chat strip, the title bar's mark and the accent while it is in front\. Text and the terminal keep the theme's own colours\./,
+      /^Tints this workspace's tab, its chat strip, the title bar's mark and the accent while it is in front, as the theme says\. The terminal keeps the theme's own colours\./,
     );
     expect(within(group).queryByLabelText("Custom colour")).toBeNull();
   });

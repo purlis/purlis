@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Redefined</title></head>
+<body>
+  <select id="colour" aria-label="Colour"><option>Red</option><option>Blue</option></select>
+  <p id="chose">Chose: nothing</p>
+  <script>
+    const colour = document.getElementById('colour');
+    colour.addEventListener('change', () => {
+      document.getElementById('chose').textContent = 'Chose: ' + colour.value;
+    });
+    // The page redefines what a script reading or choosing in it would use.
+    Object.defineProperty(document, 'readyState', { get: () => 'loading' });
+    Object.defineProperty(Document.prototype, 'readyState', { get: () => 'loading' });
+    window.HTMLSelectElement = function HTMLSelectElement() {};
+    Array.from = () => [];
+    EventTarget.prototype.dispatchEvent = () => true;
+    Object.defineProperty(HTMLOptionElement.prototype, 'selected', {
+      get: () => false,
+      set: () => {},
+    });
+  </script>
+</body></html>
