@@ -364,6 +364,15 @@ fn card_drawn_of(
         crate::extensions::contrast_of(more_contrast),
     )?;
     Some(ThemeInForce {
+        refused: drawn.refused.then(|| crate::extensions::ThemeTrouble {
+            name: id.to_owned(),
+            complaints: drawn
+                .complaints
+                .iter()
+                .map(|one| one.said.clone())
+                .collect(),
+            refused: true,
+        }),
         options: drawn
             .theme
             .as_ref()

@@ -2560,6 +2560,12 @@ export const commands = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light, moreContrast })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names

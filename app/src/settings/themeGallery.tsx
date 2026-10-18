@@ -11,7 +11,8 @@ import {
   type WindowOption,
   type YourTheme,
 } from "../bindings";
-import { drawWhatIsInForce } from "../Extensions";
+import { drawWhatIsInForce, THEME_FOLDERS_CHANGED } from "../Extensions";
+import { listen } from "../here";
 import { projectThemeChanged } from "../projectTheme";
 import { useTabStop } from "../roving";
 import { ask, putBack, putBackSoon, showWhileOn } from "../theme/hoverPreview";
@@ -79,9 +80,30 @@ const answers = new Map<string, Read>();
 const listeners = new Set<() => void>();
 const asking = new Set<string>();
 
+/** Each level a row shows, by its key, to ask again when a theme folder changes. */
+const places = new Map<string, ThemeAt | null>();
+
 /** The key a level's gallery is kept by. */
 function keyOf(at: ThemeAt | null): string {
   return at === null ? "" : `${at.plane}\u0000${at.workspace ?? ""}`;
+}
+
+/** Whether the gallery hears the theme folders change. */
+let following = false;
+
+/**
+ * **Every gallery shown is asked again when a theme folder changes on disk** (#2324): the core
+ * tells the window `theme-folders-changed`, and the cards, their specimens and what is drawn are
+ * read again as the core reads them. One listener for the life of the window.
+ */
+function followFolders(): void {
+  if (following) return;
+  following = true;
+  listen(THEME_FOLDERS_CHANGED, () => {
+    for (const [key, at] of places) if (interest.has(key)) reread(at);
+  }).catch(() => {
+    following = false;
+  });
 }
 
 function told() {
@@ -129,6 +151,8 @@ function useGallery(at: ThemeAt | null): Read {
     () => answers.get(key),
   );
   useEffect(() => {
+    followFolders();
+    places.set(key, at);
     interest.set(key, (interest.get(key) ?? 0) + 1);
     if (!answers.has(key)) reread(at);
     return () => {
@@ -141,6 +165,7 @@ function useGallery(at: ThemeAt | null): Read {
       // than the visit to the tab that shows it.
       interest.delete(key);
       answers.delete(key);
+      places.delete(key);
     };
     // `key` is `at`, as a value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,6 +181,8 @@ export function forgetGalleries(): void {
   answers.clear();
   asking.clear();
   interest.clear();
+  places.clear();
+  following = false;
 }
 
 /** Whether `read` is the core's answer. */

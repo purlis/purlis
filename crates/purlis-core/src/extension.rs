@@ -439,7 +439,18 @@ pub struct Manifest {
     pub events: Option<events::Declared>,
     /// Its section of the session-start briefing (the `briefing` capability, [`briefing`]).
     pub briefing: Option<briefing::Declared>,
+    /// Whether its manifest names no key but `version`, `id`, `name` and `contributes`, and
+    /// contributes under no key but `themes` and `icon_themes` ([`THEMES_ONLY_KEYS`]): what
+    /// [`Self::themes_only`] asks before anything else, so a key this purlis does not know never
+    /// counts as theme-only.
+    pub keys_themes_only: bool,
 }
+
+/// The manifest keys, and the `contributes` keys, an extension of themes alone may name.
+pub const THEMES_ONLY_KEYS: (&[&str], &[&str]) = (
+    &["version", "id", "name", "contributes"],
+    &["themes", "icon_themes"],
+);
 
 impl Manifest {
     /// **Whether it contributes only themes** (ADR 0098 §3): it asks for no capability, names
@@ -469,8 +480,10 @@ impl Manifest {
             cli,
             events,
             briefing,
+            keys_themes_only,
         } = self;
-        (!themes.is_empty() || !icon_themes.is_empty())
+        *keys_themes_only
+            && (!themes.is_empty() || !icon_themes.is_empty())
             && capabilities.is_empty()
             && panels.is_empty()
             && views.is_empty()
@@ -1406,7 +1419,11 @@ fn parse(text: &str) -> Result<Manifest, String> {
         Some(value) => cli::commands_of(value, program.as_deref(), !writes.is_empty())?,
     };
 
+    let (top, inside) = THEMES_ONLY_KEYS;
+    let keys_themes_only = doc.keys().all(|key| top.contains(&key.as_str()))
+        && contributes.keys().all(|key| inside.contains(&key.as_str()));
     Ok(Manifest {
+        keys_themes_only,
         protocol,
         capabilities,
         id: id.to_owned(),

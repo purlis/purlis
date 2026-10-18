@@ -3352,6 +3352,41 @@ fn an_extension_that_adds_anything_but_themes_is_approved_by_its_fingerprint() {
 }
 
 #[test]
+fn a_key_this_purlis_does_not_know_never_counts_as_themes_alone() {
+    let made = Made::new();
+    made.file(
+        "dark.json",
+        r#"{"name":"Solarized Dark","appearance":"dark","tokens":{}}"#,
+    );
+    let theme = r#"{"name":"Solarized Dark","file":"dark.json"}"#;
+    for manifest in [
+        format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized","hooks":{{}},"contributes":{{"themes":[{theme}]}}}}"#
+        ),
+        format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized","contributes":{{"themes":[{theme}],"later":[]}}}}"#
+        ),
+        format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized","capabilities":[],"contributes":{{"themes":[{theme}]}}}}"#
+        ),
+    ] {
+        made.manifest(&manifest);
+        let Ok(found) = read_at(&made.at()) else {
+            // Refused outright is fail-closed too.
+            continue;
+        };
+        assert!(!found.manifest.themes_only(), "{manifest}");
+        install(&made.config(), &BuiltIn::none(), &made.at()).expect("installed");
+        assert_eq!(
+            read(&made.config(), &BuiltIn::none()).standing(&found),
+            Standing::New,
+            "{manifest}"
+        );
+        forget(&made.config(), "solarized").expect("forgotten");
+    }
+}
+
+#[test]
 fn an_extension_of_themes_alone_that_adds_a_panel_stops_being_one_and_asks() {
     let made = Made::new();
     let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");

@@ -198,6 +198,24 @@ impl<W: notify::Watcher + Send + 'static> ThemeWatch<W> {
         inner.follow();
     }
 
+    /// The plane at `root` is let go of: every window drawing from it is watched for the
+    /// person's own folders alone, until it asks for its theme again.
+    fn let_go_of_plane(&self, root: &Path) {
+        let mut inner = self.lock();
+        let mut moved = false;
+        for (target, watched) in inner.windows.values_mut() {
+            if target.plane.as_deref() == Some(root) {
+                target.plane = None;
+                target.workspace = None;
+                *watched = target.watched();
+                moved = true;
+            }
+        }
+        if moved {
+            inner.follow();
+        }
+    }
+
     /// The window `label` is gone.
     fn forget(&self, label: &str) {
         let mut inner = self.lock();
@@ -315,6 +333,13 @@ pub(crate) fn follow(window: &tauri::WebviewWindow, target: Target) {
     watch.set(window.label(), target);
 }
 
+/// The plane at `root` is closed: its theme folders are no longer watched for any window.
+pub(crate) fn let_go_of_plane(root: &Path) {
+    if let Some(watch) = WATCH.get() {
+        watch.let_go_of_plane(root);
+    }
+}
+
 /// The window `label` is gone: its theme folders are no longer watched for it.
 pub(crate) fn forget(label: &str) {
     if let Some(watch) = WATCH.get() {
@@ -417,6 +442,32 @@ mod tests {
         assert!(got.contains(&plane.join("themes/team")), "{got:?}");
         watch.forget("main");
         assert_eq!(watching(&watch), BTreeSet::new());
+    }
+
+    #[test]
+    fn a_plane_let_go_of_is_no_longer_watched_and_the_person_s_folders_still_are() {
+        let (home, target) = places();
+        let mine = purlis_core::machine::dir(&target.config).join("themes/mine");
+        std::fs::create_dir_all(&mine).unwrap();
+        let told = Arc::new(Told::default());
+        let watch = ThemeWatch::<notify::PollWatcher>::start(told.tell());
+        let plane = target.plane.clone().unwrap();
+        watch.set("main", target.clone());
+        // Another window on another project keeps its own.
+        let other = home.path().join("other");
+        std::fs::create_dir_all(other.join("themes/b")).unwrap();
+        watch.set(
+            "split",
+            Target {
+                plane: Some(other.clone()),
+                ..target
+            },
+        );
+        watch.let_go_of_plane(&plane);
+        let got = watching(&watch);
+        assert!(got.iter().all(|one| !one.starts_with(&plane)), "{got:?}");
+        assert!(got.contains(&mine), "{got:?}");
+        assert!(got.contains(&other.join("themes/b")), "{got:?}");
     }
 
     #[test]

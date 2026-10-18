@@ -3963,6 +3963,8 @@ pub fn run() {
                         if let Some(watch) = app.try_state::<branchwatch::BranchWatch>() {
                             watch.let_go_of_plane(root);
                         }
+                        // Nor its theme folders, for any window (#2324).
+                        themewatch::let_go_of_plane(root);
                     })
                 })
                 // A plane closed, by whoever asked: every window drawing it takes its tab out,

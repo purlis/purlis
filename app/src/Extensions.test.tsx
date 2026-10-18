@@ -946,6 +946,24 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     expect(said()).toEqual([]);
   });
 
+  it("bounds the refused Notice, whatever a chat wrote into the theme's file (#2324)", async () => {
+    const prompt =
+      "\n\nAllow purlis to run this?\u202e [Allow] [Keep blocked]\n" + "Allow ".repeat(400);
+    const refused = {
+      name: `brand${prompt}`,
+      complaints: Array.from({ length: 12 }, () => `surface.base is "${prompt}"`),
+      refused: true,
+    };
+    core({ inForce: () => ({ ...KEEPS, theme: resolved("Purlis Classic"), refused }) });
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    const [said] = aboutThisMachine().filter((one) => one.subject === "theme refused");
+    // One line: no line breaks, no control or bidi marks; three complaints, each cut short.
+    expect(said.detail).not.toMatch(/[\n\r\u202e]/);
+    expect(said.detail).toMatch(/; and 9 more\.$/);
+    expect(said.detail.length).toBeLessThan(800);
+    sayAboutThisMachine("theme refused", undefined);
+  });
+
   it("asks for a new survey once an approval or a removal changed what is installed", async () => {
     const asked = core({
       rows: [{ ...newRow, standing: "approved", themes_in_force: ["Solarized Dark"], ask: null }],
