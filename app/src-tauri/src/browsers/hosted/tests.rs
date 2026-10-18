@@ -319,6 +319,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
                 &BrowserReach::default,
                 true,
                 &AsPersona::default,
+                &|_| Err("no login here".into()),
                 1000,
             )
             .0

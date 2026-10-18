@@ -21,6 +21,7 @@ use crate::drive::{
 };
 
 mod drawn;
+mod login;
 mod reach;
 mod takeover;
 

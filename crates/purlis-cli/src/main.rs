@@ -1032,20 +1032,6 @@ enum BrowserCommand {
         #[arg(long)]
         version: Option<String>,
     },
-    /// Internal: a persona's browser-login tool's run, which the app runs for a sandboxed chat
-    /// with the vault's login handed in two private files (D-PE-browser-1).
-    #[command(name = "_login", hide = true)]
-    Login {
-        /// Playwright's program, by the absolute path the app found it at.
-        #[arg(long)]
-        cli: std::path::PathBuf,
-        /// The declared login page.
-        #[arg(long)]
-        url: String,
-        /// The browser session the logged-in cookies are kept for.
-        #[arg(long, short = 's')]
-        session: String,
-    },
 }
 
 #[derive(Subcommand)]
@@ -3207,10 +3193,6 @@ fn run(command: Command) -> Result<u8, String> {
             print!("{said}");
             return Ok(code);
         }
-        // Run before any plane is read, in `main`.
-        Command::Browser(BrowserCommand::Login { .. }) => {
-            return Err("the browser login runs from the app alone".to_owned());
-        }
         Command::Browser(BrowserCommand::Install { version }) => {
             let path = std::env::var_os("PATH");
             let mut sink = speak;
@@ -4483,25 +4465,6 @@ fn main() -> ExitCode {
     // The secrets commands: each chooses its own exit status (2 for a refusal, the child's for
     // `exec`), and `exec` takes the command the argv split set aside.
     let command = match cli.command {
-        // Needs no plane: the app runs it where the chat runs, with everything on its line.
-        Command::Browser(BrowserCommand::Login { cli, url, session }) => {
-            let Ok(cwd) = std::env::current_dir() else {
-                eprintln!("purlis: cannot read the current directory");
-                return ExitCode::FAILURE;
-            };
-            let mut sink = speak;
-            return ExitCode::from(purlis_core::browser::login::run(
-                &purlis_core::browser::login::Asked {
-                    cli: &cli,
-                    url: &url,
-                    session: &session,
-                    cwd: &cwd,
-                },
-                &|name| std::env::var(name).ok(),
-                &mut purlis_core::browser::login::Cli,
-                &mut sink,
-            ));
-        }
         Command::Secret(c) => return with_here(|here| secret::secret(here, c, graft)),
         Command::Vault(c) => return with_here(|here| secret::vault(here, c)),
         Command::Persona(memory::PersonaCommand::Secret(c)) => {

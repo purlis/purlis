@@ -195,6 +195,20 @@ describe("the button", () => {
     );
   });
 
+  it("draws a grant as plain as the secondary, edged in the accent (ADR 0097 §6)", () => {
+    render(
+      <button type="button" tabIndex={0} className="ui-button ui-button-grants">
+        Allow
+      </button>,
+    );
+    const grant = screen.getByRole("button", { name: "Allow" });
+    heldToTheTokens(grant);
+    expect(drawnWith(grant, "background")).toBe("var(--control-base)");
+    expect(drawnWith(grant, "color")).toBe("var(--text-primary)");
+    expect(drawnWith(grant, "border-color")).toBe("var(--accent-base)");
+    expect(drawnWith(grant, "background", { hover: true })).toBe("var(--control-hover)");
+  });
+
   it("is reached by Tab and pressed by Enter and Space", async () => {
     const user = userEvent.setup();
     const pressed: string[] = [];

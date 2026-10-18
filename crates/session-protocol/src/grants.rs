@@ -19,7 +19,7 @@
 //! | `answer` an ask that elicits a secret | yes | | | | | |
 //! | `stop` | yes | yes | yes | yes | | yes |
 //! | `start_program`, and 1.0's `start` | yes | yes | | | | yes |
-//! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes |
+//! | `subscribe`, `unsubscribe`, and the pushed `link_down` and `link_back` a relaying host says to every subscriber (1.17) | yes | yes | yes | yes | | yes |
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
 //! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | relayed |
@@ -40,6 +40,7 @@
 //! | `programs_of` (1.13) | yes | | | | | |
 //! | `quit` (1.13) | yes | | | | | |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
+//! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -198,6 +199,9 @@ pub enum Power {
     Browser,
     /// `record` (1.8): a write in the event log the host holds.
     Record,
+    /// `log_in` (1.18, #2016): a login purlis performs in a browser, carrying the values from a
+    /// vault. The window's alone: a relayed link never carries a vault's value to another host.
+    LogIn,
     /// A start that opts its chat out of the sandbox (`without_sandbox`): the window's alone.
     OptOut,
     /// A start's `launch` that names a harness (#2217): a chat the window composed with the
