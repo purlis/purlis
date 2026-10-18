@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792348412443,
+  "lastUpdate": 1792350556558,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17220,6 +17220,48 @@ window.BENCHMARK_DATA = {
             "value": 104.190095,
             "unit": "ms",
             "extra": "median of 5 runs: 102.936, 103.312, 104.190, 104.602, 105.906 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "16fe0a2051be0825de17a8f6003b1c83b8bfb19d",
+          "message": "Sandbox: Allow once covers every task its Notice lists, and one-chat Allows reach only their chat (#2634)\n\n* Sandbox: Allow once covers every task its Notice lists (#2629)\n\nA one-chat Allow reaches only its chat. Level::one_chat names \"Allow\nonce\" and \"Allow for this chat\" together, and the live apply, the live\nforget and the answer to a Notice listing several tasks all read it:\neach task of such a Notice keeps the grant, is audited for it and is\nowed its restart by its own keep, and with no chat named a one-chat\nlevel changes no chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Tests read a pretend board's record directly (#2629)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T23:07:58+04:00",
+          "tree_id": "088fa6b31c5a4fd02f6ce4c2ad55987403a450a6",
+          "url": "https://github.com/purlis/purlis/commit/16fe0a2051be0825de17a8f6003b1c83b8bfb19d"
+        },
+        "date": 1792350554806,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4717655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.462, 0.469, 0.472, 0.488, 0.493 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.470762,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.198, 16.288, 16.471, 16.847, 16.847 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.732011,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.800, 101.266, 101.732, 102.038, 102.112 ms"
           }
         ]
       }
