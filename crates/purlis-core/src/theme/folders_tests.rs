@@ -222,3 +222,68 @@ fn the_check_says_which_consent_floors_the_window_holds_in_each_combination() {
         .expect("the light appearance");
     assert_eq!(light.held, None);
 }
+
+#[test]
+fn a_level_s_folder_named_as_a_windows_device_is_refused_with_why_and_never_read() {
+    let places = Places::new();
+    put(&places.project(), "con", &named("Console", None));
+    put(&places.project(), "team", &named("Team", None));
+
+    let every = places.folders().every_at(Reach::Project);
+
+    let names: Vec<&str> = every.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["con", "team"]);
+    let (_, con) = &every[0];
+    assert!(con.refused);
+    let said: Vec<&str> = con.complaints.iter().map(|it| it.said.as_str()).collect();
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].ends_with(
+            "con is a name Windows keeps for a device (CON, PRN, AUX, NUL, CONIN$, \
+             CONOUT$, COM0 to COM9, LPT0 to LPT9, with or without an extension), so no theme \
+             holds it"
+        ),
+        "{said:?}"
+    );
+    assert!(!every[1].1.refused);
+    assert!(matches!(
+        places.folders().find_at("con", Reach::Project),
+        levels::Found::Read(resolved) if resolved.refused
+    ));
+}
+
+#[test]
+fn a_level_s_folder_read_to_list_or_check_registers_none_of_its_faces() {
+    use sha2::Digest;
+    let places = Places::new();
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |it| it.as_nanos());
+    let font = format!("wOF2 a level's font, {} at {at}", std::process::id()).into_bytes();
+    let asset: String = sha2::Sha256::digest(&font)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let mut theme = named("Inked", None);
+    theme["fonts"] =
+        json!({ "ui": { "family": "Inked Sans", "faces": [{ "file": "fonts/ui.woff2" }] } });
+    // The person's own level, whose fonts are read as their own.
+    put(&places.machine(), "inked", &theme);
+    std::fs::create_dir_all(places.machine().join("inked/fonts")).unwrap();
+    std::fs::write(places.machine().join("inked/fonts/ui.woff2"), &font).unwrap();
+    let not_registered = Err("that is not a font of a theme purlis read".to_owned());
+
+    let found = places.folders().find_at("inked", Reach::Machine);
+    let listed = places.folders().every_at(Reach::Machine);
+
+    assert!(
+        matches!(found, levels::Found::Read(ref resolved) if !resolved.refused),
+        "{found:?}"
+    );
+    assert!(!listed[0].1.refused, "{:?}", listed[0].1.complaints);
+    assert_eq!(served(&asset), not_registered);
+    // What a choice there draws is read to draw, and serves it.
+    let drawn = places.folders().find("inked", Reach::Machine);
+    assert!(matches!(drawn, levels::Found::Read(ref resolved) if !resolved.refused));
+    assert_eq!(served(&asset), Ok(font));
+}

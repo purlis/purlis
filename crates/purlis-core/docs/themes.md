@@ -210,8 +210,9 @@ The new folder goes in `--into <folder>`, a `themes/` folder, or in your own the
 `themes/` in purlis's config folder, where `purlis theme list` lists it as `machine:<folder>`.
 It is named from the theme's name (`Solarized Dark` goes in
 `solarized-dark/`): a theme folder's id is lower-case letters, digits and dashes, starting with a
-letter, at most 32 long, and never one purlis keeps for its own themes (`purlis-classic`, the
-ids its appearances have had, `mine`, `system`). A folder of that name that is there is never
+letter, at most 32 long, never a name Windows keeps for a device (see below), and never one
+purlis keeps for its own themes (`purlis-classic`, the ids its appearances have had, `mine`,
+`system`). A folder of that name that is there is never
 replaced without `--force`, and with it, it is swapped for the new one in one step:
 
 ```
@@ -684,7 +685,11 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 
 `purlis theme export <theme folder>` writes the folder as a zip to hand to someone, at
 `--to <file.zip>` or as `<folder's name>.zip` here; a file there is replaced only with
-`--force`. `purlis theme export purlis-classic` writes Purlis Classic's own `theme.json` as the
+`--force`. A level's theme folder is named by its id, as `purlis theme list` shows it and
+`purlis theme check` takes it (`machine:<folder>`, `project:<folder>`,
+`workspace:<workspace>:<folder>`): the engine finds it at that level alone, as a choice made
+there finds it, and a level with no folder of that name is refused, naming the level's form,
+never taking a farther level's folder in its place. `purlis theme export purlis-classic` writes Purlis Classic's own `theme.json` as the
 folder `purlis-classic-copy`, which imports beside the built-in, never in its place.
 
 ```
@@ -704,6 +709,17 @@ root, is a link or is encrypted, a folder that is not a theme folder's id, two n
 filesystem writes as one file (in other case or other accents), and a zip whose end lists more
 entries than that are refused whole, and nothing of it is written. A zip holds at
 most 64 files, each at most 2 MiB (the most a font may be) and 16 MiB together.
+
+## Names every platform holds
+
+A theme made on one platform opens on every other, so on every platform purlis refuses a theme
+folder's name, and the name of a file in it, that Windows cannot hold: a device name (`CON`,
+`PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM0` to `COM9`, `LPT0` to `LPT9`, in any case, alone or before an
+extension, as `nul.json`), or a name ending in a dot or a space. Each refusal is one sentence that
+names the name. An import of a zip naming one is refused whole; a theme whose name would make
+such a folder is not imported; an export leaves such a file out and lists it under
+`not carried`; a level's folder named so is listed as refused, and a font or an icon set named
+so refuses the theme.
 
 ## An extension's theme
 

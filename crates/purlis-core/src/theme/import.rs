@@ -257,6 +257,12 @@ pub fn import(kind: SourceKind, file_name: &str, bytes: &[u8]) -> Result<Importe
              rename the theme in its source and import it again"
         ));
     }
+    if super::portable::not_held(&folder).is_some() {
+        return Err(format!(
+            "{name} would be the theme folder {folder}, a name Windows keeps for a device: \
+             rename the theme in its source and import it again"
+        ));
+    }
     let (document, left_out) = write(&name, kind, source);
     let mut text = serde_json::to_string_pretty(&document).unwrap_or_default();
     text.push('\n');
