@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792362258994,
+  "lastUpdate": 1792363811080,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17640,6 +17640,48 @@ window.BENCHMARK_DATA = {
             "value": 102.01599949999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.081, 101.425, 102.016, 102.084, 102.418 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c490df69038836d3fab64c72e4cc5b1a5f95747",
+          "message": "A runner chat is given the services its person allowed for it alone (#2558)\n\n* A runner starts a chat without a service allowed for it alone\n\nA relayed plan that gives a service the person allowed for one chat\nalone, which the runner's own sandbox for the project does not give, is\nstarted without that service rather than refused. The runner names what\nit left out in its answer (session protocol 1.17, confined.left_out),\nand the window says so on the chat's tab.\n\nPart of #2510\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A runner asks the person for a service left out for one chat\n\nAs ruled 2026-10-18: the runner keeps the services it left out of a\nrelayed plan, and only those, as ones that confinement's proxy asks\nabout. A connection to one, on the runner's loopback, is held while the\nperson is asked; the window asks it as a service by its port, and the\nAllow comes back as the existing change of reach, taken only for a port\nthat confinement left out, for that chat alone while it runs. The\nprotocol minor for confined.left_out is 1.20.\n\nCloses #2510\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A service asked for one chat is asked about by any loopback name\n\nlocalhost is never a host the sandbox can allow, so a connection to it\nwas refused before it could be asked about.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Take the new live-ask test out of asks_tests.rs before the move\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Move the live ask's tests to sandbox/asks/tests.rs\n\nA move alone (CONTRIBUTING.md, where tests live): only paths changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A runner's service is asked about as the runner's, for this chat alone\n\nThe block kind runner-service names a service on the runner a chat runs\non, by its port and the runner's name (confined.host_name, 1.20). Its\nNotice and its Ask offer Allow once and Allow for this chat; the Allow\nis audited, reaches only the chat whose confinement asked, and keeps no\ngrant on this machine, so the chat's next start runs on the runner\nagain. Keep blocked ends the hold at once, and Forget takes an Allow\nback. The tab line says what the runner left out, then whether the chat\nis asked about it there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Assert on a runner's Notice without printing it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Session protocol 1.23 for what a runner leaves out of a plan\n\n1.21 is on main and 1.22 is #2593's, so left_out and host_name are 1.23's:\nno host built at a minor before it has them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* A runner's ask is raised as the runner's service; an Allow it did not take is audited back\n\nA live ask about a port of the loopback interface comes only from a\nrunner's proxy, for a service it left out of the chat's plan: it is\nraised and held as a runner-service block, so its Notice and its Ask\noffer once and this chat, name the runner, and keep nothing on this\nmachine. The board's allow_left_out says when the runner did not take an\nAllow; the Allow is then audited as taken back and refused in words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Test that a runner's service grants nothing in the project, and say where loopback asks come from\n\nallow_held is the dispatch allow_sandbox_block runs, so the test answers\nin a real project folder, beside one that does grant. The proxy's one way\nto ask about a loopback port is named where the window relies on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Fill the left-out fields in main's new test board and placement\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A runner asks about a service left out only where its own policy allows one\n\nWhere the runner's administrator's policy forbids a chat a service on\nthe machine, turns the live ask off, or keeps an Allow at neither\none-chat scope, nothing left out of a relayed plan is asked about or\ntaken. 1.24 is noted as unused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T02:45:40+04:00",
+          "tree_id": "e507c76ccb29e4d9f7831cbdfc9dcaa2fcc883aa",
+          "url": "https://github.com/purlis/purlis/commit/8c490df69038836d3fab64c72e4cc5b1a5f95747"
+        },
+        "date": 1792363809448,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.447651,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.413, 0.431, 0.448, 0.448, 0.475 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6562695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.120, 16.245, 16.656, 16.663, 16.876 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.11363449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.717, 101.840, 102.114, 102.397, 103.819 ms"
           }
         ]
       }
