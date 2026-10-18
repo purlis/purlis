@@ -115,8 +115,12 @@ mod tests {
 
     #[test]
     fn an_upright_box_is_drawn_moved_only() {
-        let drawing = Drawing::of(&[10.0, 20.0, 110.0, 20.0, 110.0, 70.0, 10.0, 70.0], 100.0, 50.0)
-            .unwrap();
+        let drawing = Drawing::of(
+            &[10.0, 20.0, 110.0, 20.0, 110.0, 70.0, 10.0, 70.0],
+            100.0,
+            50.0,
+        )
+        .unwrap();
         assert!(near(drawing.on_page((30.0, 5.0)).unwrap(), (40.0, 25.0)));
     }
 
@@ -150,7 +154,10 @@ mod tests {
         }
         // The middle is where the diagonals cross, nearer the narrow edge than halfway down.
         let middle = drawing.on_page((5.0, 5.0)).unwrap();
-        assert!((middle.0 - 50.0).abs() < 1e-9 && middle.1 < 50.0, "{middle:?}");
+        assert!(
+            (middle.0 - 50.0).abs() < 1e-9 && middle.1 < 50.0,
+            "{middle:?}"
+        );
         assert!(near(drawing.in_box(middle).unwrap(), (5.0, 5.0)));
     }
 

@@ -14,8 +14,10 @@ use crate::drive::{Call, DragTo, Refusal};
 fn frame_drawn_as(engine: &super::Engine, content: Value, border: Value, width: f64, height: f64) {
     engine.on(move |sent, _| {
         (sent.method == "DOM.getBoxModel").then(|| {
-            Ok(json!({"model":{"content":content,"padding":content,"border":border,
-                "margin":border,"width":width,"height":height}}))
+            Ok(
+                json!({"model":{"content":content,"padding":content,"border":border,
+                "margin":border,"width":width,"height":height}}),
+            )
         })
     });
 }
@@ -134,7 +136,12 @@ fn a_click_in_a_frame_drawn_flat_to_a_line_is_answered_not_shown() {
     frame_drawn_as(&engine, line.clone(), line, 200.0, 60.0);
     let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
 
-    let answer = browser.call(&id(2), Call::Click { target: pay.clone() });
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: pay.clone(),
+        },
+    );
 
     assert_eq!(answer, Err(Refusal::NotShown(pay)));
     assert!(presses_and_releases(&engine).is_empty());
