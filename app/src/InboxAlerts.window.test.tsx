@@ -14,9 +14,11 @@ import {
   forgetTheirTheme,
   GLOBAL,
   sayAboutThisMachine,
+  THEME_FOLDER_OFFERED,
   theirThemeOnce,
   useAboutThisMachine,
 } from "./windowprefs";
+import { DEFAULT_THEME } from "./theme/theme";
 
 /**
  * **Each alert, a Notice in the Inbox, carries its way out** (NO-6, #1238; #1695: the Alerts
@@ -117,7 +119,8 @@ beforeEach(() => {
   forgetThisLaunch();
   forgetTheirTheme();
   // What `main.tsx` says about this machine at a launch, unsaid between tests.
-  for (const subject of ["theme", "layout", "dismissed"]) sayAboutThisMachine(subject, undefined);
+  for (const subject of ["theme", "layout", "dismissed", THEME_FOLDER_OFFERED])
+    sayAboutThisMachine(subject, undefined);
   rows = [];
   others = [];
   stopped = null;
@@ -163,6 +166,7 @@ beforeEach(() => {
       if (cmd === "open_plane") return { plane: null, ask: null };
       if (cmd === "use_built_in_theme") return "/home/op/.config/charter/theme.aside.json";
       if (cmd === "use_default_layout") return "/home/op/.config/charter/layout.aside.json";
+      if (cmd === "theme_move_into_a_folder") return "my-dusk";
       return null;
     },
     { shouldMockEvents: true },
@@ -396,6 +400,55 @@ function machineAlone(): HTMLElement {
   }
   return render(<Machine />).container;
 }
+
+/** The person's own theme file in force, in the old single-file format (#2323). */
+function anOldThemeFile() {
+  (globalThis as Record<string, unknown>)[GLOBAL] = {
+    layout: { path: "/home/op/.config/charter/layout.json", found: false, document: null },
+    theme: {
+      path: "/home/op/.config/charter/theme.json",
+      found: true,
+      trouble: null,
+      theme: { ...DEFAULT_THEME, name: "My Dusk" },
+      complaints: [],
+      format_1: true,
+    },
+  };
+  theirThemeOnce();
+}
+
+describe("an old single-file theme, offered once a move into a theme folder (#2323)", () => {
+  const offer = (from: HTMLElement) =>
+    from.querySelector(`[data-cause="alert:${THEME_FOLDER_OFFERED}"]`) as HTMLElement | null;
+
+  it("moves it on the person's press, and is not offered again", async () => {
+    anOldThemeFile();
+    const at = machineAlone();
+    await waitFor(() => expect(offer(at)).not.toBeNull());
+    await userEvent.click(
+      within(offer(at) as HTMLElement).getByRole("button", { name: "Move it into a theme folder" }),
+    );
+    await waitFor(() => expect(offer(at)).toBeNull());
+    expect(calls("theme_move_into_a_folder")).toHaveLength(1);
+    expect(calls("see_on_this_machine").map((one) => one.args)).toEqual([
+      { cause: THEME_FOLDER_OFFERED },
+    ]);
+  });
+
+  it("is dismissed for good, moving nothing", async () => {
+    anOldThemeFile();
+    const at = machineAlone();
+    await waitFor(() => expect(offer(at)).not.toBeNull());
+    await userEvent.click(
+      within(offer(at) as HTMLElement).getByRole("button", { name: /Dismiss/ }),
+    );
+    await waitFor(() => expect(offer(at)).toBeNull());
+    expect(calls("theme_move_into_a_folder")).toHaveLength(0);
+    expect(calls("see_on_this_machine").map((one) => one.args)).toEqual([
+      { cause: THEME_FOLDER_OFFERED },
+    ]);
+  });
+});
 
 describe("a row about this machine", () => {
   it("uses the built-in theme once asked, moving the file aside, and the row goes", async () => {

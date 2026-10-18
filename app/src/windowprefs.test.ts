@@ -30,6 +30,7 @@ const NO_THEME: TheirReading = {
   theme: null,
   complaints: [],
   floors: null,
+  format_1: false,
 };
 /** The person's theme as the core resolves it: complete, and named theirs. */
 const MINE = { ...DEFAULT_THEME, name: "Mine", values: { ...DEFAULT_THEME.values } };

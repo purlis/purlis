@@ -11,6 +11,7 @@ import {
   type InstalledExtensions,
   type ThemeTrouble,
   type WindowOption,
+  type PlaneId,
 } from "./bindings";
 import { extensionsChanged } from "./extensionsOn";
 import { Choice, SettingActions } from "./settings/components";
@@ -19,6 +20,7 @@ import { iconThemeComplaints, offeredIconThemes, projectThemeChanged } from "./p
 import {
   BUILT_IN,
   CLASSIC,
+  crossfadeIn,
   DEFAULT_THEME,
   drawIn,
   inForce,
@@ -28,7 +30,13 @@ import {
   THEME_ALIASES,
   type Theme,
 } from "./theme/theme";
-import { atCreation, forgetTheirTheme, sayTheFloors, theirThemeOnce } from "./windowprefs";
+import {
+  atCreation,
+  forgetTheirTheme,
+  sayAboutThisMachine,
+  sayTheFloors,
+  theirThemeOnce,
+} from "./windowprefs";
 import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
@@ -401,6 +409,14 @@ let allowed: ReadonlySet<string> | "every" = "every";
  *  `purlis-light` (or an id they had before), `system` or `<extension>/<theme>` — or `null`
  *  when it picked nothing. */
 let picked: string | null = null;
+/** The project and workspace in front (#2323), whose theme levels and theme folders the engine
+ *  reads; `null` with no project in front. A workspace of `null` is the plane root. */
+let where: { plane: PlaneId; workspace: string | null } | null = null;
+/** Whether the next theme drawn is a switch to another workspace's, which crossfades. */
+let switching = false;
+/** The projects and workspaces whose in-plane picks were mapped into the person's choices
+ *  this launch, so each is asked once. */
+const adopted = new Set<string>();
 /** Whether the core is to survey the extensions' themes again: an approval or a removal changes
  *  which there are. */
 let surveyAgain = false;
@@ -412,9 +428,20 @@ let drawing = 0;
  * (`extensionsOn.ts`, the core's `extension::project::resolve`), or `"every"` with no project in
  * front; `pick` is what it picked (`projectTheme.ts`, the core's `extension::project::theme`).
  */
-export function drawThemeFor(on: ReadonlySet<string> | "every", pick: string | null = null) {
+export function drawThemeFor(
+  on: ReadonlySet<string> | "every",
+  pick: string | null = null,
+  at?: { plane: PlaneId; workspace?: string },
+) {
+  const next = at === undefined ? null : { plane: at.plane, workspace: at.workspace ?? null };
+  // A switch to another workspace (or project) repaints with a short crossfade; the first draw
+  // of the launch is at once.
+  if (where !== null && next !== null)
+    switching ||= where.plane !== next.plane || where.workspace !== next.workspace;
   allowed = on;
   picked = pick;
+  where = next;
+  if (next !== null) adoptOnce(next.plane, next.workspace);
   return drawWhatIsInForce();
 }
 
@@ -427,7 +454,7 @@ export function drawThemeFor(on: ReadonlySet<string> | "every", pick: string | n
 export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
   const on = allowed === "every" ? null : [...allowed];
   try {
-    const answered = await commands.themeInForce(picked, on, systemIsLight(), false);
+    const answered = await commands.themeInForce(picked, on, systemIsLight(), false, where);
     if (answered.status !== "ok") return [];
     const given = answered.data as typeof answered.data | null;
     return Array.isArray(given?.options) ? given.options : [];
@@ -436,10 +463,38 @@ export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
   }
 }
 
+/**
+ * **Maps today's in-plane theme picks into the person's choices once** (#2323): the project's
+ * local file's pick and a LOCAL workspace's become the person's own, kept on this machine, so they
+ * survive a re-clone. The core copies only where nothing is kept yet, so it says something at most
+ * once; what it says is a Notice.
+ */
+function adoptOnce(plane: PlaneId, workspace: string | null) {
+  const key = `${plane}\u0000${workspace ?? ""}`;
+  if (adopted.has(key)) return;
+  adopted.add(key);
+  void commands
+    .themeLevelsAdopt(plane, workspace)
+    .then((said) => {
+      if (said.status !== "ok" || !Array.isArray(said.data) || said.data.length === 0) return;
+      sayAboutThisMachine("theme choice", {
+        severity: "warn",
+        detail: said.data.join(" "),
+        remedy:
+          "change it in Settings › Appearance › Your theme, which says where each theme drawn comes from",
+      });
+      projectThemeChanged(plane);
+    })
+    .catch(() => undefined);
+}
+
 /** For tests: forget what was asked and for whom. */
 export function forgetExtensionThemes() {
   allowed = "every";
   picked = null;
+  where = null;
+  switching = false;
+  adopted.clear();
   surveyAgain = false;
   following = false;
   unfollowSystem?.();
@@ -485,7 +540,11 @@ function handedFor(pick: string | null): Theme | undefined {
 /** Puts `theme` in force, unless it is already what is drawn — so the terminal is told only of
  *  a change. */
 function draw(theme: Theme) {
-  if (!sameTheme(theme, inForce())) drawIn(theme);
+  const crossfade = switching;
+  switching = false;
+  if (sameTheme(theme, inForce())) return;
+  if (crossfade) crossfadeIn(theme);
+  else drawIn(theme);
 }
 
 /**
@@ -522,7 +581,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   const on = allowed === "every" ? null : [...allowed];
   let answered: Awaited<ReturnType<typeof commands.themeInForce>>;
   try {
-    answered = await commands.themeInForce(picked, on, systemIsLight(), again);
+    answered = await commands.themeInForce(picked, on, systemIsLight(), again, where);
   } catch {
     return;
   }
