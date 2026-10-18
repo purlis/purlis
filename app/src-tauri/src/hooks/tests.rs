@@ -2685,3 +2685,97 @@ fn a_lookup_past_the_proxy_says_what_reaching_the_system_s_name_lookup_would_mea
         assert!(route.contains("look up any name past the proxy"), "{route}");
     }
 }
+
+/// #2424: on Linux, the wrap's supervisor sends the app the block a hook would send. Taken
+/// through `blocked_on` for a Codex chat, each kind it tells (a write of another workspace's
+/// file, a local socket, a service on this machine) gets the Notice macOS's kernel line of the
+/// same refusal gets: the same offer, target and levels.
+#[test]
+fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::denial::Denial;
+    use purlis_core::sandboxblock::supervised::{Refusal, block_of};
+    use purlis_core::sandboxblock::{Kind, Place};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let chat = root.join("workspaces/a/repo");
+    std::fs::create_dir_all(&chat).expect("the chat's folder");
+    std::fs::create_dir_all(root.join("workspaces/b")).expect("another workspace");
+    let home = root.join("home");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let place = Place {
+        root: &root,
+        chat: &chat,
+        cwd: &chat,
+        home: Some(&home),
+    };
+    let elsewhere = root.join("workspaces/b/notes.md").display().to_string();
+    let notice = |operation: &'static str, target: &str| {
+        let refusal = Refusal {
+            operation,
+            target: target.to_owned(),
+            process: Some("sh".to_owned()),
+        };
+        let (block, named) = block_of(&refusal, &place).expect("a block the supervisor tells");
+        let line = format!("Sandbox: sh(4120) deny(1) {operation} {target}");
+        let (on_macos, named_on_macos) =
+            Denial::of_line(&line).expect("a kernel line").block(&place);
+        assert_eq!((block, &named), (on_macos, &named_on_macos), "{line}");
+        let from_the_supervisor = blocked_on(
+            &plane,
+            7,
+            &block,
+            Some(Harness::Codex),
+            named.as_deref(),
+            false,
+        );
+        let from_the_kernel = blocked_on(
+            &plane,
+            7,
+            &on_macos,
+            Some(Harness::Codex),
+            named_on_macos.as_deref(),
+            false,
+        );
+        assert_eq!(from_the_supervisor, from_the_kernel, "{line}");
+        from_the_supervisor
+    };
+
+    // A write of another workspace's file: Allow on its folder, for this chat or always. A
+    // fixture made in a harness's own temp root is refused with it, as the test above says.
+    let write = notice("file-write-create", &elsewhere);
+    assert_eq!(write.kind, Kind::ProjectFiles.word());
+    assert_eq!(write.harness.as_deref(), Some("codex"));
+    let in_a_harness_temp_root = root
+        .strip_prefix("/private/tmp")
+        .ok()
+        .and_then(|below| below.components().next())
+        .is_some_and(|first| first.as_os_str().to_string_lossy().starts_with("claude-"));
+    if !in_a_harness_temp_root {
+        assert_eq!(write.offer, BlockOffer::Write);
+        assert_eq!(
+            write.target,
+            Some(root.join("workspaces/b").display().to_string())
+        );
+        assert!(
+            write.levels.contains(&crate::sandboxing::GrantLevel::Chat) && write.levels.len() > 1,
+            "{:?}",
+            write.levels
+        );
+    }
+
+    // A local socket: by its whole path; allowed where a socket's grant compiles (D-sock-7).
+    let socket = notice("network-outbound", "/var/run/purlis-test-none.sock");
+    assert_eq!(socket.kind, Kind::LocalSocket.word());
+    if !cfg!(target_os = "macos") {
+        assert_eq!(socket.offer, BlockOffer::Unsandboxed);
+    }
+
+    // A service on this machine: by its one port, which the person may allow.
+    let service = notice("network-outbound", "127.0.0.1:5432");
+    assert_eq!(service.kind, Kind::LocalService.word());
+    assert_eq!(service.offer, BlockOffer::Port);
+    assert_eq!(service.target.as_deref(), Some("5432"));
+    assert!(!service.levels.is_empty(), "{:?}", service.levels);
+}
