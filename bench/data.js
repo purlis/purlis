@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792297414717,
+  "lastUpdate": 1792298776288,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16422,6 +16422,48 @@ window.BENCHMARK_DATA = {
             "value": 104.0788135,
             "unit": "ms",
             "extra": "median of 5 runs: 101.606, 103.596, 104.079, 104.158, 106.490 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6f273b5b3f53f1a6deab61294716ca0156dfd8bd",
+          "message": "Browsers: a blanked field is painted over in a frame the page turns, scales or zooms (#2552)\n\n* Browsers: a blanked field is painted over in every frame, however the page lays it out (#2143)\n\nAn element inside a frame read in a session of its own is placed by\nwhere each frame between it and the page is drawn. When one of those\nframes is drawn other than upright at its laid-out size, the whole box\nit is drawn in is painted over. When the engine does not say where a\nframe is drawn, the screenshot is withheld.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a frame or blanked element drawn through a moving filter withholds the screenshot (#2143)\n\nThe layout read takes in each element's filter. A frame or a blanked\nelement drawn through one that may draw it away from its box, itself\nor by an element it is in, withholds the screenshot. frame_place\nanswers where a frame's document is drawn; the corner arithmetic and\nthe real-engine fill-and-blank helper are shared.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T08:35:23+04:00",
+          "tree_id": "b431c1244fc67b4947bf6fbc034d03d7d22c459f",
+          "url": "https://github.com/purlis/purlis/commit/6f273b5b3f53f1a6deab61294716ca0156dfd8bd"
+        },
+        "date": 1792298775113,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5210165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.496, 0.505, 0.521, 0.526, 0.539 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.056097,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.858, 17.043, 17.056, 17.077, 17.195 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.41441900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.956, 104.074, 104.414, 104.506, 105.793 ms"
           }
         ]
       }
