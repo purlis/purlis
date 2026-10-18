@@ -2720,7 +2720,7 @@ fn sites_kept(
 
 /// **Allow on the sites a browser the person opened asked about** (#2176): `sites`, the sites
 /// its view showed, are browser sites at `level`: every browser of this project on this
-/// machine. A grant for browsers alone, as a chat's site Allow is: no chat's own commands reach
+/// machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a chat's site Allow is: no chat's own commands reach
 /// them. Refused whole unless each waits on the person for that browser now.
 #[tauri::command]
 #[specta::specta]
@@ -2757,10 +2757,10 @@ pub fn person_sites_allowed(
 ) -> Result<(), String> {
     use purlis_core::sandbox::grant::Level;
     let sites = sites_sent(sites)?;
-    if level != Level::You {
+    if !matches!(level, Level::You | Level::Project) {
         return Err(
-            "purlis allows a site for your own browser on this machine, for every browser of \
-             this project here."
+            "purlis allows a site for your own browser for every browser of this project on \
+             this machine, or for everyone in the project."
                 .to_owned(),
         );
     }

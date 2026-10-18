@@ -2327,4 +2327,11 @@ fn allow_on_a_browser_the_person_opened_keeps_only_the_sites_it_asked_about() {
         allow(&["example.com:443"], Level::You).is_err(),
         "answered once"
     );
+
+    held.browsers().theirs_asked("B1", &["team.example:443".to_owned()]);
+    allow(&["team.example:443"], Level::Project).expect("allowed for everyone");
+    assert_eq!(
+        sandbox::browser_sites::in_force(held.root(), &sandbox::policy::Locks::of(held.root())),
+        [sandbox::hosts::Host::parse("team.example:443").unwrap()]
+    );
 }

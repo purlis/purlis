@@ -25,7 +25,8 @@ of the amendment *a browser's new sites are judged by its driver*.
    before it loads. *Decided in implementation, D-2176-2, to be confirmed.*
 3. **A site new to the project asks once**, as an address the agent writes does: the browser's
    judge holds it back, and the view asks under the field, with Allow on this machine (a browser
-   site of this project on this machine, listed in the Granted list) and Keep blocked. After an
+   site of this project on this machine, listed in the Granted list), Allow for everyone in the
+   project (a browser site committed to the project's settings, #2443), and Keep blocked. After an
    Allow the browser goes there. Where that address redirects while it loads is judged the same
    way. *Decided in implementation, D-2176-3, to be confirmed.*
 4. **The address goes on the browser's own lane.** A browser the person drives is handed back
