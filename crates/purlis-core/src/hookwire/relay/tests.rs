@@ -42,6 +42,8 @@ const ECHOES: u32 = 3;
 
 /// A chat whose `secret exec`, in a hearing that has one, waits for a test to let it end.
 const WAITS_FOR_THE_GATE: u32 = 5;
+/// The chat whose secret exec's run panics.
+const GOES_WRONG: u32 = 6;
 
 fn report(chat: u32) -> Report {
     Report {
@@ -137,6 +139,7 @@ fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
             if ask.chat == ENDS_UNREAD {
                 return;
             }
+            assert_ne!(ask.chat, GOES_WRONG, "the command's run went wrong");
             for line in reader.lines() {
                 let line = line.unwrap();
                 writeln!(writer, "ran {line}").unwrap();
@@ -164,12 +167,13 @@ fn relayed(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
                 relaying.replied(id, replied);
             });
             let heeding = Arc::clone(&heeding);
-            if !heeding.admit(LINK, id, &heard) {
-                reply(Replied::Ended);
-            } else if Heeding::waits(&heard) {
-                std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
-            } else {
-                heeding.hear(LINK, id, heard, reply);
+            // One not taken is answered already.
+            if heeding.admit(LINK, id, &heard, &reply) {
+                if Heeding::waits(&heard) {
+                    std::thread::spawn(move || heeding.hear(LINK, id, heard, reply));
+                } else {
+                    heeding.hear(LINK, id, heard, reply);
+                }
             }
             true
         })
@@ -357,7 +361,7 @@ fn an_exec(chat: u32) -> Heard {
 /// Takes the `secret exec` handed on as `id`, of chat `chat`, over link `link`, as the window's
 /// link does in the order the lines came, before it is heard: whether it was taken.
 fn admitted(heeding: &Heeding, link: u64, id: u64, chat: u32) -> bool {
-    heeding.admit(link, id, &an_exec(chat))
+    heeding.admit(link, id, &an_exec(chat), &nothing())
 }
 
 /// The window's link hears a `secret exec` on a thread of its own and its input in order on
@@ -849,6 +853,41 @@ fn passing_a_cap_is_warned_of_once_per_link_without_the_input() {
         assert_eq!(warnings(LINK), 0, "the same link again");
         assert_eq!(warnings(AGAIN), 2, "a new link");
     });
+}
+
+/// A `secret exec` whose run panics is still no longer tracked, and its host is still told it
+/// ended (#2571).
+#[test]
+fn a_secret_exec_whose_run_panics_ends_and_is_no_longer_tracked() {
+    let heeding = a_heeding();
+    assert!(admitted(&heeding, LINK, 1, GOES_WRONG));
+
+    assert_eq!(an_exec_heard(&heeding, 1, GOES_WRONG), [Replied::Ended]);
+    assert_eq!(tracked(&heeding), 0);
+}
+
+/// The asker of a `secret exec` not run for want of room is told why, then that it ended; one
+/// from a link that is not the current one is only told it ended (#2571).
+#[test]
+fn a_secret_exec_not_run_for_want_of_room_tells_its_asker_why() {
+    let heeding = a_heeding();
+    for exec in 1..=EXECS_A_CHAT_HAS_TRACKED_AT_MOST as u64 {
+        assert!(admitted(&heeding, LINK, exec, ECHOES));
+    }
+    let (replies, replied) = mpsc::channel();
+    let reply: Reply = Arc::new(move |r| {
+        let _ = replies.send(r);
+    });
+
+    assert!(!heeding.admit(LINK, 100, &an_exec(ECHOES), &reply));
+    let told: Vec<Replied> = replied.try_iter().collect();
+    let [Replied::Wrote { text }, Replied::Ended] = told.as_slice() else {
+        panic!("told {told:?}");
+    };
+    assert!(text.contains(TOO_MANY_SECRET_EXECS), "{text}");
+
+    assert!(!heeding.admit(AGAIN, 101, &an_exec(ENDS_UNREAD), &reply));
+    assert_eq!(replied.try_iter().collect::<Vec<_>>(), [Replied::Ended]);
 }
 
 #[test]

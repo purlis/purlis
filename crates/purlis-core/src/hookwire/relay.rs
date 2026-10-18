@@ -557,14 +557,10 @@ struct Inputs {
 }
 
 impl Inputs {
-    /// Tracks `input` for `exec`, where its chat and the link have room for one more and the
-    /// number is not tracked already: false where not, warned of once on the link where it is
-    /// for want of room, and nothing is tracked.
+    /// Tracks `input` for `exec`, a number not tracked, where its chat and the link have room
+    /// for one more: false where not, warned of once on the link, and nothing is tracked.
     fn track(&mut self, exec: u64, input: Input) -> bool {
-        // The host numbers each line once on a link: a number taken already is not taken again.
-        if self.by_exec.contains_key(&exec) {
-            return false;
-        }
+        debug_assert!(!self.by_exec.contains_key(&exec), "a number tracked twice");
         let chat = input.chat();
         let of_chat = self.of_chat.get(&chat).copied().unwrap_or(0);
         if self.by_exec.len() >= EXECS_A_LINK_TRACKS_AT_MOST
@@ -718,7 +714,11 @@ pub const EXECS_A_LINK_TRACKS_AT_MOST: usize = 256;
 
 /// The most `secret exec`s one chat has tracked on a link at once, so one chat's cannot crowd
 /// out another's: one past it is not run, and its host is told it ended.
-pub const EXECS_A_CHAT_HAS_TRACKED_AT_MOST: usize = 32;
+pub const EXECS_A_CHAT_HAS_TRACKED_AT_MOST: usize = 16;
+
+/// What the asker of a `secret exec` is told where it was not run for want of room.
+pub const TOO_MANY_SECRET_EXECS: &str =
+    "too many secret commands are running at once; run it again once one has ended";
 
 /// What a permission ask held in the window is told as it ends unanswered.
 type LetGo = Box<dyn FnOnce(Left) + Send + 'static>;
@@ -768,25 +768,41 @@ impl Heeding {
     /// **Takes line `id`, heard over link `link`, in the order the lines came**, before it is
     /// heard ([`Heeding::hear`]), which for a line that waits is on a thread of its own: a
     /// `secret exec` is tracked from here, so input that comes for it before it begins is kept
-    /// for it (#2571). False where it is not to be heard, and its host is to be told it ended:
-    /// an exec from a link other than the current one, or one its chat or the link has no room
-    /// for. Every other line is taken.
-    pub fn admit(&self, link: u64, id: u64, heard: &Heard) -> bool {
+    /// for it (#2571). False where it is not to be heard, and its host was told through `reply`
+    /// that it ended: an exec from a link other than the current one, one under a number taken
+    /// already, or one its chat or the link has no room for, whose asker is told why. Every
+    /// other line is taken.
+    pub fn admit(&self, link: u64, id: u64, heard: &Heard, reply: &Reply) -> bool {
         let Heard::SecretExec(ask) = heard else {
             return true;
         };
-        let Some((_on, mut inputs)) = self.inputs_on(link) else {
-            return false;
-        };
-        inputs.track(
-            id,
-            Input::Early {
-                chat: ask.chat,
-                lines: Vec::new(),
-                bytes: 0,
-                ending: Ending::Open,
-            },
-        )
+        let tracked = self.inputs_on(link).and_then(|(_on, mut inputs)| {
+            // The host numbers each line once on a link.
+            (!inputs.by_exec.contains_key(&id)).then(|| {
+                inputs.track(
+                    id,
+                    Input::Early {
+                        chat: ask.chat,
+                        lines: Vec::new(),
+                        bytes: 0,
+                        ending: Ending::Open,
+                    },
+                )
+            })
+        });
+        match tracked {
+            Some(true) => return true,
+            Some(false) => brokered::refused(
+                Box::new(Frames {
+                    reply: Arc::clone(reply),
+                    pending: Vec::new(),
+                }),
+                TOO_MANY_SECRET_EXECS.to_owned(),
+            ),
+            None => {}
+        }
+        reply(Replied::Ended);
+        false
     }
 
     /// The `secret exec` handed on as `id` over link `link` will not run here (the thread it was
@@ -950,11 +966,32 @@ impl Heeding {
             reply: Arc::clone(&reply),
             pending: Vec::new(),
         });
+        // Untracked and told ended however the command's run ends, a panic too.
+        let _finishing = Finishing {
+            heeding: self,
+            id,
+            exec,
+            reply,
+        };
         (self.hearing.secret_exec)(ask, reader, writer);
+    }
+}
+
+/// **What ends a `secret exec` run here** as it goes, however its run ends: it is no longer
+/// tracked, and its host is told it ended.
+struct Finishing<'a> {
+    heeding: &'a Heeding,
+    id: u64,
+    exec: u64,
+    reply: Reply,
+}
+
+impl Drop for Finishing<'_> {
+    fn drop(&mut self) {
         // Only this exec's own: a link to a host started again may have handed on another
         // under the same number since.
-        lock(&self.inputs).finished(id, exec);
-        reply(Replied::Ended);
+        lock(&self.heeding.inputs).finished(self.id, self.exec);
+        (self.reply)(Replied::Ended);
     }
 }
 
