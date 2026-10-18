@@ -1405,9 +1405,11 @@ fn an_alias_or_a_variable_git_after_a_substitution_is_followed(linked: bool) {
             let said = plane_root_branch_reason(&cmd, &s.clone, root).expect(&cmd);
             assert!(said.starts_with(unnamed), "{cmd:?}: {said}");
         }
-        // An alias that resolves to no branch move stays allowed.
+        // An alias that resolves to no branch move is still refused: the substitution is not
+        // quoted.
         let st = format!("git -c alias.st=status -C {echo} st");
-        assert_eq!(plane_root_branch_reason(&st, &s.clone, root), None);
+        let said = plane_root_branch_reason(&st, &s.clone, root).expect(&st);
+        assert!(said.contains("is not quoted"), "{said}");
     }
     for cmd in [
         "G=git; $G checkout -b x",
@@ -1583,12 +1585,10 @@ fn aliases_after_substitutions_are_read_once_per_line() {
         &["config", "alias.st", "status"],
     );
     let one = format!("git -C $(echo {root}) {}", "st ".repeat(40));
-    assert_eq!(plane_root_branch_reason(&one, &s.clone, root), None);
-    // After the first, each may have changed the configuration the next one's alias is read
-    // from: refused, and answered in time all the same.
+    // Unquoted, the substitution is refused, and the line is answered in time all the same.
     let cmd = vec![one; 200].join("; ");
     let started = std::time::Instant::now();
-    let _ = plane_root_branch_reason(&cmd, &s.clone, root);
+    assert!(plane_root_branch_reason(&cmd, &s.clone, root).is_some());
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(3), "{took:?}");
     // Past the budget of different aliases to follow, what git runs is unread, and refused.
@@ -1663,7 +1663,7 @@ fn many_inline_aliases_after_a_substitution_are_read_in_time() {
         "-c alias.zz=status zz ".repeat(6000)
     );
     let started = std::time::Instant::now();
-    assert_eq!(plane_root_branch_reason(&cmd, &s.clone, &s.root), None);
+    assert!(plane_root_branch_reason(&cmd, &s.clone, &s.root).is_some());
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(3), "{took:?}");
 }
@@ -2369,25 +2369,27 @@ fn taking_unpushed_commits_off_the_roots_branch_is_refused_in_any_mode() {
     }
 }
 
-/// What a command substitution among git's options prints is split into words git reads too:
-/// the first word after it must be a command of git's own, or an alias of one, else the command
-/// git runs is read as unknown.
+/// An unquoted command substitution among git's own options is split into words git reads as
+/// options and as its command: refused, saying to quote it. Quoted, it is one word, and the
+/// command after it is read as written.
 #[test]
-fn the_first_word_after_a_substitution_among_gits_options_is_a_command_of_gits_own() {
+fn an_unquoted_substitution_among_gits_options_is_refused_and_a_quoted_one_is_read() {
     let f = fixture();
     for cmd in [
-        "git -C $(echo \"$PWD x\") feature",
-        "git -C $(pwd) zznotacommand feature",
-        "git --git-dir=$(pwd)/.git zznotacommand",
+        "git -C $(git rev-parse --show-toplevel) status",
+        "git -C $(pwd)",
+        "git -C `pwd` log --oneline",
+        "git --git-dir=$(pwd)/.git log",
+        "git -c x.y=$(echo 1) status",
+        "git -C $(printf '%s\\x20che%s' \"$PWD\" ckout) status",
     ] {
         let said = branch(&f, cmd).expect(cmd);
-        assert!(said.starts_with("cannot tell what"), "{cmd:?}: {said}");
+        assert!(said.contains("`git -C \"$(…)\" …`"), "{cmd:?}: {said}");
     }
     for cmd in [
-        "git -C $(git rev-parse --show-toplevel) status",
-        "git -C $(pwd) log --oneline",
-        "git -c alias.st=status -C $(pwd) st",
-        "git -C $(pwd)",
+        "git -C \"$(git rev-parse --show-toplevel)\" status",
+        "git -C \"$(pwd)\" log --oneline",
+        "git --git-dir=\"$(pwd)/.git\" log",
     ] {
         assert_eq!(branch(&f, cmd), None, "{cmd:?}");
     }

@@ -3,9 +3,9 @@
 - **The project-root guards read a git command whose words the shell fills in as unknown.** A
   git subcommand, or one of git's own options, built from a variable, a quoted substitution or a
   function's arguments is refused in the project root unless a branch move or reset is spelled
-  among the words after it, which is then judged as written. After a command substitution among
-  git's own options, the first word must be one of git's own commands or an alias of one. A
-  function's body is read wherever the shell may call it. Spell the command out and purlis reads
+  among the words after it, which is then judged as written. An unquoted command substitution
+  among git's own options is refused: quote it (`git -C "$(…)" …`) and purlis reads it as one
+  word. A function's body is read wherever the shell may call it. Spell the command out and purlis reads
   it.
 
 - **An earlier command on the line that may change the repository makes the guards judge what
