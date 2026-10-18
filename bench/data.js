@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792293440122,
+  "lastUpdate": 1792294699095,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16296,6 +16296,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1759665,
             "unit": "ms",
             "extra": "median of 5 runs: 100.671, 101.081, 101.176, 101.241, 101.442 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6ac7b299795be6c79eba3dd2891dbb0fb3549d0e",
+          "message": "Keep a secret exec's input heard before the exec began (#2271) (#2534)\n\n* Keep a secret exec's input heard before the exec began (#2271)\n\nCause: a lost wakeup in the window's half of the relay (Heeding). The\nwindow's link hears a `secret exec` on a thread of its own and its input\nlines, and their end, in order on another. When the input (or just its\nend, as with piped input) was heard before the exec thread registered\nits input channel, Heeding dropped the lines and the end; the exec then\nregistered a channel whose sender stayed in the map forever, so its\nreader waited forever, and the host waited forever for its Ended. That\nis the 300 s timeout in\nhookwire::relay::tests::a_secret_exec_runs_in_the_window_on_what_its_asker_types.\n\nFix: each exec's input is one of Early (lines and the end kept until the\nexec begins), Running, or Ended (the exec ended before its input did:\nlate lines are dropped, not kept, until the host says the input ended).\nNo new wire message; what an exec may read is unchanged.\n\nTests: two forcing tests that hear the input before the exec, and input\nafter an exec ended; every secret-exec test now waits at most 10 s and\nfails naming what the exec replied.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Keep no secret exec input without a reader (#2271)\n\nReview round on the lost-wakeup fix. Input with no reader is not kept:\n\n- Heeding::linked / unlinked clear all kept input when the lines come\n  over a new link (a restarted host numbers them from 1 again) or the\n  link they came over ends; a running exec's input ends with its link.\n  The window calls them as it hears a project on a link and as the\n  link ends; a late end of a replaced link changes nothing.\n- Each exec carries its own number, so an old exec ending late cannot\n  mark a new exec under the same id as ended.\n- Heeding::not_begun: an exec whose thread cannot be had keeps none of\n  its input and its host is told it ended (hooks.rs used to drop it).\n- Input kept for an exec not yet begun is capped at 64 KiB; past it the\n  line is dropped and the exec's input ends there, logged without\n  content.\n\nOne test per case; each was shown red against a mutation of its rule,\nthe late-input test by assertion rather than by hanging.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Drop secret exec lines from another link; mark and bound early input (#2271)\n\nReview round 2:\n\n- Lines carry their link: Heeding::hear takes the link a line came\n  over, and an exec, its input or its end from a link other than the\n  current one is dropped (an exec from one is answered ended without\n  running), checked and changed under the link lock. Relayed::take and\n  its queues carry the link; HookLines knows its own.\n- Why an exec's early input ended is an Ending (Open, PastTheCap,\n  Told) instead of a bool, and Ended is now Dropped: an exec that\n  begins after its input passed the cap, or that could not begin,\n  leaves a mark, so what the host still sends for it is dropped rather\n  than kept again.\n- Early input is bounded per exec (64 KiB, a line bringing it to\n  exactly that is kept) and for all execs not begun on a link together\n  (4 x that); past either, the line is dropped and that exec's input\n  ends, logged without content.\n\nTests for the stale link, input after the cap (begun and not begun),\nthe per-exec boundary and the total.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Name the inputs held with their link as a type (#2271)\n\nclippy type_complexity on inputs_on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T07:36:40+04:00",
+          "tree_id": "4a362eb4cbf9829f4ec03d1aaa912a416f69ba28",
+          "url": "https://github.com/purlis/purlis/commit/6ac7b299795be6c79eba3dd2891dbb0fb3549d0e"
+        },
+        "date": 1792294697327,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.29006200000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.273, 0.286, 0.290, 0.293, 0.296 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.666407500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.481, 16.661, 16.666, 16.682, 16.724 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.56221199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.011, 101.103, 101.562, 101.609, 101.992 ms"
           }
         ]
       }
