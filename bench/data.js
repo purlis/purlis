@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792353096639,
+  "lastUpdate": 1792354358179,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17346,6 +17346,48 @@ window.BENCHMARK_DATA = {
             "value": 104.5634885,
             "unit": "ms",
             "extra": "median of 5 runs: 102.203, 103.262, 104.563, 105.984, 106.080 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d4b42e8f5954b13faa523a3b472bb651300ef885",
+          "message": "Sandbox: removing a host allowed for me always removes it from my hosts (#2661)\n\n* Sandbox: a host allowed for me is removed from my hosts (#2653)\n\nA Granted list id names a chat for a one-chat grant alone, and every\none-chat grant names its chat. Remove now checks that before anything\nis judged or audited, so a grant for me, for every project or for\neveryone is removed where it is kept, never as one chat's. A test\nremoves a for-me host from the personal hosts file and refuses each\nid that pairs a level with a chat it does not take.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Remove reads Level::one_chat (#2653)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T00:08:59+04:00",
+          "tree_id": "0ce3d08940eea50a531f183d656c8284a3a03d48",
+          "url": "https://github.com/purlis/purlis/commit/d4b42e8f5954b13faa523a3b472bb651300ef885"
+        },
+        "date": 1792354356130,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5264175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.485, 0.514, 0.526, 0.529, 0.535 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.091316,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.556, 16.605, 17.091, 17.183, 17.236 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.611066,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.782, 102.972, 103.611, 104.378, 104.539 ms"
           }
         ]
       }
