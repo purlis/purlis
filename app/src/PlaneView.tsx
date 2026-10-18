@@ -8027,7 +8027,8 @@ export const PlaneView = memo(function PlaneView({
         settle={settleNotices}
         onRestart={restartThem}
       />
-      {/* **The project's own hosts changed** (#1341): told once to each teammate. */}
+      {/* **The project's own hosts changed** (#1341): told once to each teammate. With them,
+          the project's browser sites (#2443), each told before it reaches their browsers. */}
       <ProjectHostsNotice
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
