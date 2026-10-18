@@ -16,6 +16,7 @@ import {
   ratchet,
   SRC,
   sourceFiles,
+  FOLLOW_LIMIT,
   type StyleSource,
   styleEntries,
   unprefixed,
@@ -109,11 +110,11 @@ const READS = /var\(\s*(--[\w-]+)/g;
  */
 export function checkedCustoms(
   sheets: readonly string[],
-  components: readonly string[] = [],
+  components: readonly Component[] = [],
 ): Set<string> {
   const all = [
     ...sheets.flatMap((css) => declarations(css)),
-    ...components.flatMap((source) => componentDeclarations(source)),
+    ...components.flatMap((component) => componentDeclarations(component)),
   ];
   const declared = new Set(
     all.filter(({ property }) => CUSTOM.test(property)).map((d) => d.property),
@@ -211,13 +212,13 @@ const BARE_LENGTH = new RegExp(String.raw`^-?(?:\d*\.?\d+(?:e[+-]?\d+)?)(${UNITS
  */
 export function lengthCustoms(
   sheets: readonly string[],
-  components: readonly string[],
+  components: readonly Component[],
   checked: ReadonlySet<string>,
 ): Map<string, string> {
   const lengths = new Map<string, string>();
   const all = [
     ...sheets.flatMap((css) => declarations(css)),
-    ...components.flatMap((source) => componentDeclarations(source)),
+    ...components.flatMap((component) => componentDeclarations(component)),
   ];
   for (const { property, value } of all) {
     const unit = BARE_LENGTH.exec(value.trim())?.[1];
@@ -277,20 +278,27 @@ function arbitrary(word: string): { property: string; value: string } | undefine
 
 /** What a component sets the way a stylesheet does, for `checkedCustoms`: each entry of its
  *  inline styles and `setProperty` calls, and each utility that writes a value of its own. */
-function componentDeclarations(source: string): Declaration[] {
-  const known = declared.get(source);
+function componentDeclarations(component: Component): Declaration[] {
+  const { file, source } =
+    typeof component === "string" ? { file: undefined, source: component } : component;
+  const key = `${file ?? ""}\0${source}`;
+  const known = declared.get(key);
   if (known) return known;
-  const found = readDeclarations(source);
-  declared.set(source, found);
+  const found = readDeclarations(source, file);
+  declared.set(key, found);
   return found;
 }
+
+/** A component's source, with its path from `src` when the guard knows it, so a complaint can
+ *  name the file. */
+type Component = string | { file: string; source: string };
 
 /** `componentDeclarations` once per source: it reads nothing but the source, and the guard asks
  *  for each file's several times in one pass. */
 const declared = new Map<string, Declaration[]>();
 
-function readDeclarations(source: string): Declaration[] {
-  const found: Declaration[] = styleEntries(source).map(({ property, value }) => ({
+function readDeclarations(source: string, file?: string): Declaration[] {
+  const found: Declaration[] = styleEntries(source, { file }).map(({ property, value }) => ({
     context: [],
     property,
     value: value.replace(/^["'`]|["'`]$/g, ""),
@@ -386,14 +394,13 @@ function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<str
   const byFile = new Map<string, string[]>();
   const css = new Map([...sheets().keys()].map((file) => [file, text(file)]));
   const views = new Map(sourceFiles(isScript).map((file) => [file, text(file)]));
-  const customs = checkedCustoms([...css.values()], [...views.values()]);
-  const lengths = lengthCustoms([...css.values()], [...views.values()], customs);
+  const components = [...views].map(([file, source]) => ({ file, source }));
+  const customs = checkedCustoms([...css.values()], components);
+  const lengths = lengthCustoms([...css.values()], components, customs);
   for (const [file, sheet] of css) byFile.set(file, cssLiterals(sheet, customs, lengths));
+  const others = windowFiles(planted);
   for (const [file, source] of views) {
-    byFile.set(
-      file,
-      componentLiterals(source, customs, lengths, { file, read: windowFiles(planted) }),
-    );
+    byFile.set(file, componentLiterals(source, customs, lengths, { file, read: others }));
   }
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
@@ -932,6 +939,133 @@ const given = { gap: "5px" };
 export const A = () => <div style={on.padding ? given : undefined} onClick={make} />;
 `;
     expect(componentLiterals(tsx)).toEqual(['style given.gap: "5px"']);
+  });
+
+  it("follows each spelling the review of #2659 planted, and leaves what the docs say it leaves (#2566)", () => {
+    const files: Record<string, string> = {
+      "s.ts": [
+        'export const box = { padding: "21px" };',
+        'export function make() { return { margin: "22px" }; }',
+        'export default function dflt() { return { gap: "23px" }; }',
+        'export const arrow = () => ({ padding: "24px" });',
+      ].join("\n"),
+      "d.ts": 'export default { padding: "25px" };',
+    };
+    const read = (file: string) => files[file];
+    const cases: Record<string, [string, string[]]> = {
+      bracketMember: [
+        'const styles = { box: { margin: "7px" } }; const A = () => <div style={styles["box"]} />;',
+        ['style styles.box.margin="7px"'],
+      ],
+      nsCall: [
+        'import * as s from "./s"; const A = () => <div style={s.make()} />;',
+        ['style s.make().margin="22px"'],
+      ],
+      defaultFn: [
+        'import dflt from "./s"; const A = () => <div style={dflt()} />;',
+        ['style dflt().gap="23px"'],
+      ],
+      jsSuffix: [
+        'import { box } from "./s.js"; const A = () => <div style={box} />;',
+        ['style box.padding="21px"'],
+      ],
+      defaultObj: [
+        'import d from "./d"; const A = () => <div style={d} />;',
+        ['style d.padding="25px"'],
+      ],
+      importedArrow: [
+        'import { arrow } from "./s"; const A = () => <div style={arrow()} />;',
+        ['style arrow().padding="24px"'],
+      ],
+      retType: [
+        'function f(): { padding: string } { return { padding: "7px" }; } const A = () => <div style={f()} />;',
+        ['style f().padding="7px"'],
+      ],
+      useCallback: [
+        'const f = useCallback(() => ({ padding: "7px" }), []); const A = () => <div style={f()} />;',
+        ['style f().padding="7px"'],
+      ],
+      aliasCast: [
+        'const st = el.style as CSSStyleDeclaration; st.padding = "7px";',
+        ['style.padding="7px"'],
+      ],
+      aliasParen: ['const st = (el.style); st.padding = "7px";', ['style.padding="7px"']],
+      aliasBracket: ['const st = el["style"]; st.padding = "7px";', ['style.padding="7px"']],
+      aliasChain: ['const a = el.style; const b = a; b.margin = "7px";', ['style.margin="7px"']],
+      styleIndex: ['el["style"].padding = "7px";', ['style.padding="7px"']],
+      assignTernary: [
+        'el.style.padding = on ? "7px" : "0";',
+        ['style.padding="7px"', 'style.padding="0"'],
+      ],
+      spreadCall: [
+        'const A = () => <div style={{ ...make(), gap: 0 }} />; function make() { return { padding: "7px" }; }',
+        ['style make().padding="7px"', "style gap=0"],
+      ],
+      satisfiesHeld: [
+        'const h = { padding: "7px" } satisfies CSSProperties;',
+        ['style h.padding="7px"'],
+      ],
+      objectAssignSpread: [
+        'Object.assign(el.style, { ...extra }); const extra = { padding: "7px" };',
+        ['style extra.padding="7px"'],
+      ],
+      setAttributeTemplate: [
+        "el.setAttribute('style', `padding: 7px`);",
+        ["style attribute padding=`7px`"],
+      ],
+      // Not followed, as "What the guards read in script" says.
+      aliasReassigned: ['let st; st = el.style; st.padding = "7px";', []],
+      aliasParameter: [
+        'function g(st: CSSStyleDeclaration) { st.padding = "7px"; } g(el.style);',
+        [],
+      ],
+      heldValue: ['const pad = "7px"; const A = () => <div style={{ padding: pad }} />;', []],
+      cssTextInterpolated: ["el.style.cssText = `padding: ${x}; margin: 7px`;", []],
+      cycle: ["const a = b; const b = a; const A = () => <div style={a} />;", []],
+    };
+    for (const [name, [source, expected]] of Object.entries(cases)) {
+      const found = styleEntries(source, { file: "a.tsx", read }).map(
+        ({ label, value }) => `${label}=${value}`,
+      );
+      expect(found, name).toEqual(expected);
+    }
+  });
+
+  it("fails a style handed on past the follow limit, naming it, in the real tree (#2566)", () => {
+    const chain = Array.from({ length: 30 }, (_, i) => `const plantedV${i + 1} = plantedV${i};`);
+    const tsx = `${read("LayoutPanes.tsx")}
+const plantedV0 = { padding: "7px" };
+${chain.join("\n")}
+export const PlantedDeep = () => <div style={plantedV30} />;
+`;
+    expect(() => literalsByFile({ "LayoutPanes.tsx": tsx })).toThrow(
+      `LayoutPanes.tsx: style plantedV30. is handed on more than ${FOLLOW_LIMIT} times`,
+    );
+  });
+
+  it("fails a style imported from a relative file the guard cannot open, in the real tree (#2566)", () => {
+    const planted = (spec: string) => ({
+      "LayoutPanes.tsx": `${read("LayoutPanes.tsx")}
+import { plantedFar } from "${spec}";
+export const PlantedFar = () => <div style={plantedFar} />;
+`,
+    });
+    expect(() => literalsByFile(planted("../outside/styles"))).toThrow(
+      'LayoutPanes.tsx: a style comes from "../outside/styles", outside src, which the guard cannot read',
+    );
+    expect(() => literalsByFile(planted("./theme/nowhere"))).toThrow(
+      'LayoutPanes.tsx: a style comes from "./theme/nowhere", which the guard cannot open',
+    );
+    expect(() => literalsByFile(planted("./theme/nowhere.css"))).toThrow(
+      'LayoutPanes.tsx: a style comes from "./theme/nowhere.css", which the guard cannot open',
+    );
+    // A script extension is the TypeScript file it resolves to.
+    const script = `${read("theme/theme.ts")}\nexport const plantedFar = { margin: "15px" };\n`;
+    expect(
+      complaints(literalsByFile({ ...planted("./theme/theme.js"), "theme/theme.ts": script })),
+    ).toEqual([
+      'LayoutPanes.tsx: new literal, take it from a core token: style plantedFar.margin: "15px"',
+    ]);
   });
 
   it("reads an offset (top, right, bottom, left, inset) as it reads a margin", () => {

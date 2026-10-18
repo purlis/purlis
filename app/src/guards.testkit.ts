@@ -28,18 +28,25 @@ export function sourceFiles(keep: (name: string) => boolean): string[] {
 }
 
 /** How a guard reads the window's other files (`StyleSource.read`): a file's text as planted
- *  (`planted`, by its path from `src`) or as it is, `undefined` when there is none. */
+ *  (`planted`, by its path from `src`) or as it is, `undefined` when there is none. Each file is
+ *  read once per reader, so make one per pass. */
 export function windowFiles(
   planted: Readonly<Record<string, string>> = {},
 ): (file: string) => string | undefined {
+  const known = new Map<string, string | undefined>();
   return (file) => {
     if (file in planted) return planted[file];
-    try {
-      const path = join(SRC, file);
-      return statSync(path).isFile() ? readFileSync(path, "utf8") : undefined;
-    } catch {
-      return undefined;
+    if (!known.has(file)) {
+      let text: string | undefined;
+      try {
+        const path = join(SRC, file);
+        text = statSync(path).isFile() ? readFileSync(path, "utf8") : undefined;
+      } catch {
+        text = undefined;
+      }
+      known.set(file, text);
     }
+    return known.get(file);
   };
 }
 
@@ -242,7 +249,32 @@ const NAME = String.raw`[A-Za-z_$][\w$]*`;
 const MEMBER = /\s*!?\s*\??\.\s*/;
 /** A name and its members, as an expression hands them over: `held`, `styles.box`,
  *  `frame?.style`, `frame!.style`. */
-const REFERENCE = new RegExp(String.raw`^${NAME}(?:${MEMBER.source}${NAME})*$`);
+const ROOT = new RegExp(String.raw`^${NAME}`);
+/** One step of a reference: `.box`, `?.box`, `!.box`, `["box"]`, `['box']`, `` [`box`] ``. */
+const STEP = new RegExp(
+  String.raw`^(?:${MEMBER.source}(${NAME})|\s*!?\s*(?:\?\.)?\s*\[\s*(?:"([^"]*)"|'([^']*)'|` +
+    "`([^`$]*)`" +
+    String.raw`)\s*\])`,
+);
+
+/** A reference as its root and members (`styles["box"].row` is `styles`, `box`, `row`), or
+ *  `undefined` when the expression is not one. */
+function referenceOf(written: string): string[] | undefined {
+  const root = ROOT.exec(written);
+  if (!root) return undefined;
+  const path = [root[0]];
+  let rest = written.slice(root[0].length);
+  while (rest.trim()) {
+    const step = STEP.exec(rest);
+    if (!step) return undefined;
+    path.push(step[1] ?? step[2] ?? step[3] ?? step[4]);
+    rest = rest.slice(step[0].length);
+  }
+  return path;
+}
+
+/** How far a style is followed, hop by hop, before the guard gives up and says so. */
+export const FOLLOW_LIMIT = 24;
 /** A call of a name or a member, up to its own `(`: `boxStyle(on)`, `React.useMemo(…)`. */
 const CALL = new RegExp(String.raw`^(${NAME}(?:\s*\.\s*${NAME})*)\s*(?:<[^<>()]*>)?\s*\(`);
 /** A variable declared, `const held = …`, `let held: CSSProperties = …`, or destructured,
@@ -458,13 +490,54 @@ interface Scope {
   stars: string[];
   /** What `export default` gives. */
   defaultExport: Span | undefined;
+  /** Where the parameters of `export default function` open. */
+  defaultFunction: number | undefined;
 }
 
-/** The body of the function whose parameters open at `open`: its block, past any return type. */
+/** The body of the function whose parameters open at `open`: its block, past any return type
+ *  (`function f(): { padding: string } { … }`). */
 function bodyAfter(text: string, open: number): Span | undefined {
-  const brace = text.indexOf("{", closingBracket(text, open) + 1);
+  let at = closingBracket(text, open) + 1;
+  while (/\s/.test(text[at] ?? "")) at++;
+  if (text[at] === ":") at = typeEnd(text, at + 1);
+  const brace = text.indexOf("{", at);
   if (brace < 0) return undefined;
   return { from: brace, to: closingBracket(text, brace) + 1 };
+}
+
+/** Where a type annotation that starts at `from` ends: at the `{` that follows a whole type, its
+ *  groups (`{ … }`, `[…]`, `(…)`, `<…>`) skipped and its words joined by `|`, `&` and `=>`. */
+function typeEnd(text: string, from: number): number {
+  let at = from;
+  let whole = false;
+  while (at < text.length) {
+    const char = text[at];
+    if (/\s/.test(char)) at++;
+    else if (char === "{" && whole) return at;
+    else if ("{[(".includes(char)) {
+      at = closingBracket(text, at) + 1;
+      whole = true;
+    } else if (char === '"' || char === "'" || char === "`") {
+      at = closingString(text, at) + 1;
+      whole = true;
+    } else if (char === "<") {
+      let depth = 0;
+      for (; at < text.length; at++) {
+        if (text[at] === "<") depth++;
+        else if (text[at] === ">" && text[at - 1] !== "=" && --depth === 0) break;
+      }
+      at++;
+      whole = true;
+    } else if (text.startsWith("=>", at) || char === "|" || char === "&") {
+      at += char === "=" ? 2 : 1;
+      whole = false;
+    } else {
+      const word = /^[\w$.]+/.exec(text.slice(at, at + 256));
+      at += word ? word[0].length : 1;
+      whole = word !== null;
+    }
+  }
+  return at;
 }
 
 /** A variable's initializer, found where it ends only when it is followed, since most of a file's
@@ -501,6 +574,7 @@ function scopeOf(file: string | undefined, source: string): Scope {
     exportsAs: new Map(),
     stars: [],
     defaultExport: undefined,
+    defaultFunction: undefined,
   };
   const hold = (name: string, held: Held) =>
     scope.holders.set(name, [...(scope.holders.get(name) ?? []), held]);
@@ -535,7 +609,13 @@ function scopeOf(file: string | undefined, source: string): Scope {
       else scope.exportsAs.set(local, name);
     }
   }
-  const byDefault = /\bexport\s+default\s+(?!function\b|class\b)/.exec(text);
+  const defaultFunction = new RegExp(
+    String.raw`\bexport\s+default\s+(?:async\s+)?function\b\s*\*?\s*(?:${NAME})?\s*(?:<[^<>()]*>)?\s*\(`,
+  ).exec(text);
+  if (defaultFunction) {
+    scope.defaultFunction = defaultFunction.index + defaultFunction[0].length - 1;
+  }
+  const byDefault = /\bexport\s+default\s+(?!(?:async\s+)?function\b|class\b)/.exec(text);
   if (byDefault) {
     const from = byDefault.index + byDefault[0].length;
     scope.defaultExport = { from, to: expressionEnd(text, from) };
@@ -559,16 +639,35 @@ export interface StyleSource {
   read?: (file: string) => string | undefined;
 }
 
-/** The file a relative import names, as a path from `src`, or `undefined`. */
+/**
+ * The file a relative import names, as a path from `src`: as written (`./s.ts`), with the script
+ * extension TypeScript resolves (`./s` or `./s.js` is `s.ts` or `s.tsx`), or the folder's
+ * `index`. `undefined` for a package's import, or with no way to read files. A relative import
+ * the guard cannot open, one above `src` or one not found, fails: the guard never skips a style
+ * it was handed.
+ */
 function importedFile(from: string | undefined, spec: string, source: StyleSource) {
   if (from === undefined || !spec.startsWith(".") || !source.read) return undefined;
   const base = posix.normalize(posix.join(posix.dirname(from), spec));
-  if (base.startsWith("..")) return undefined;
+  if (base.startsWith("..")) {
+    throw new Error(
+      `${from}: a style comes from "${spec}", outside src, which the guard cannot read`,
+    );
+  }
+  const stem = base.replace(/\.(?:[cm]?jsx?)$/, "");
   const tries = /\.tsx?$/.test(base)
     ? [base]
-    : [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
-  return tries.find((file) => source.read?.(file) !== undefined);
+    : [`${stem}.ts`, `${stem}.tsx`, `${stem}/index.ts`, `${stem}/index.tsx`, base];
+  const file = tries.find((one) => source.read?.(one) !== undefined);
+  if (file === undefined) {
+    throw new Error(`${from}: a style comes from "${spec}", which the guard cannot open`);
+  }
+  return file;
 }
+
+/** The files each reader has given, parsed once per reader: one guard pass shares a reader
+ *  (`windowFiles`), so a file many others import is parsed once in it. */
+const parsedBy = new WeakMap<(file: string) => string | undefined, Map<string, Scope>>();
 
 /** One key a style sets, as the follower finds it: how the complaint names it, the key as
  *  written, the property it sets, and its value's expression. */
@@ -590,7 +689,6 @@ interface StyleKey {
  * on twice counts once.
  */
 class StyleFollower {
-  private readonly scopes = new Map<string, Scope>();
   private readonly done = new Set<string>();
   readonly home: Scope;
 
@@ -600,6 +698,15 @@ class StyleFollower {
     private readonly found: (key: StyleKey) => void,
   ) {
     this.home = scopeOf(from.file, source);
+  }
+
+  /** Past `FOLLOW_LIMIT` hops the guard stops, and says where, rather than pass what it did not
+   *  read. */
+  private tooFar(scope: Scope, label: string, depth: number) {
+    if (depth <= FOLLOW_LIMIT) return;
+    throw new Error(
+      `${scope.file ?? "a source"}: ${label.trim()} is handed on more than ${FOLLOW_LIMIT} times; hand it on fewer times so the guard can read it`,
+    );
   }
 
   /** Each key of what `name` holds, as `style <name>.<key>`. */
@@ -613,16 +720,18 @@ class StyleFollower {
     for (const given of givenBy(scope.text, span)) {
       const written = scope.text.slice(given.from, given.to);
       const call = CALL.exec(written);
-      const label =
-        written.startsWith("{") || !call
-          ? `style ${written.startsWith("{") ? "" : `${written.split(MEMBER).join(".")}.`}`
-          : `style ${call[1].replace(/\s/g, "")}().`;
+      const reference = referenceOf(written);
+      const label = written.startsWith("{")
+        ? "style "
+        : call
+          ? `style ${call[1].replace(/\s/g, "")}().`
+          : `style ${reference ? reference.join(".") : written}.`;
       this.follow(scope, given, [], label, 0);
     }
   }
 
   private follow(scope: Scope, span: Span, path: string[], label: string, depth: number) {
-    if (depth > 24) return;
+    this.tooFar(scope, label, depth);
     const { text } = scope;
     for (const given of givenBy(text, span)) {
       const written = text.slice(given.from, given.to);
@@ -640,15 +749,16 @@ class StyleFollower {
           for (const back of this.returns(scope, first)) {
             this.follow(scope, back, path, label, depth + 1);
           }
-        } else if (!callee.includes(".")) {
-          for (const [where, back] of this.called(scope, callee, depth)) {
+        } else {
+          for (const [where, back] of this.called(scope, callee, label, depth)) {
             this.follow(where, back, path, label, depth + 1);
           }
         }
         continue;
       }
-      if (REFERENCE.test(written)) {
-        const [root, ...members] = written.split(MEMBER);
+      const reference = referenceOf(written);
+      if (reference) {
+        const [root, ...members] = reference;
         this.name(scope, root, [...members, ...path], label, depth + 1);
       }
     }
@@ -742,10 +852,17 @@ class StyleFollower {
     }
   }
 
-  /** What calling `name` in `scope` returns: a function's, an arrow's, or an imported one's. */
-  private called(scope: Scope, name: string, depth: number): [Scope, Span][] {
-    if (depth > 24) return [];
+  /** What calling `name` in `scope` returns: a function's, an arrow's, an imported one's, a
+   *  default-exported one's, or one called on a `* as` import (`s.make()`). */
+  private called(scope: Scope, name: string, label: string, depth: number): [Scope, Span][] {
+    this.tooFar(scope, label, depth);
     const backs: [Scope, Span][] = [];
+    const [first, member, ...more] = name.split(".");
+    if (member !== undefined) {
+      const all = scope.imports.get(first);
+      const there = more.length === 0 && all?.name === "*" && this.scope(scope, all.from);
+      return there ? this.called(there, member, label, depth + 1) : [];
+    }
     for (const open of scope.functions.get(name) ?? []) {
       const body = bodyAfter(scope.text, open);
       if (body) for (const back of this.returnsIn(scope.text, body)) backs.push([scope, back]);
@@ -757,9 +874,23 @@ class StyleFollower {
     const imported = scope.imports.get(name);
     const there = imported && imported.name !== "*" && this.scope(scope, imported.from);
     if (imported && there) {
-      const local =
-        [...there.exportsAs].find(([, as]) => as === imported.name)?.[0] ?? imported.name;
-      backs.push(...this.called(there, local, depth + 1));
+      if (imported.name === "default") {
+        const open = there.defaultFunction;
+        const body = open === undefined ? undefined : bodyAfter(there.text, open);
+        if (body) for (const back of this.returnsIn(there.text, body)) backs.push([there, back]);
+        const given =
+          there.defaultExport &&
+          there.text.slice(there.defaultExport.from, there.defaultExport.to).trim();
+        if (given && ROOT.exec(given)?.[0] === given) {
+          backs.push(...this.called(there, given, label, depth + 1));
+        } else if (there.defaultExport) {
+          for (const back of this.returns(there, there.defaultExport)) backs.push([there, back]);
+        }
+      } else {
+        const local =
+          [...there.exportsAs].find(([, as]) => as === imported.name)?.[0] ?? imported.name;
+        backs.push(...this.called(there, local, label, depth + 1));
+      }
     }
     return backs;
   }
@@ -768,6 +899,15 @@ class StyleFollower {
   private returns(scope: Scope, span: Span): Span[] {
     const { text } = scope;
     const { from, to } = trimmed(text, span);
+    const wrapped = CALL.exec(text.slice(from, to));
+    if (
+      wrapped &&
+      /^(?:React\.)?useCallback$/.test(wrapped[1].replace(/\s/g, "")) &&
+      closingBracket(text, from + wrapped[0].length - 1) === to - 1
+    ) {
+      const [fn] = partsOf(text, { from: from + wrapped[0].length, to: to - 1 });
+      return this.returns(scope, fn);
+    }
     const head = /^(?:async\s+)?/.exec(text.slice(from, to))?.[0].length ?? 0;
     let at = from + head;
     if (text.startsWith("function", at)) {
@@ -798,25 +938,31 @@ class StyleFollower {
     });
   }
 
-  /** The file `spec` names from `scope`, read once. */
+  /** The file `spec` names from `scope`, read and parsed once per reader. */
   private scope(scope: Scope, spec: string): Scope | undefined {
     const file = importedFile(scope.file, spec, this.from);
-    if (file === undefined) return undefined;
-    const known = this.scopes.get(file);
+    const read = this.from.read;
+    if (file === undefined || !read) return undefined;
+    const parsed = parsedBy.get(read) ?? new Map<string, Scope>();
+    parsedBy.set(read, parsed);
+    const known = parsed.get(file);
     if (known) return known;
-    const read = scopeOf(file, this.from.read?.(file) ?? "");
-    this.scopes.set(file, read);
-    return read;
+    const fresh = scopeOf(file, read(file) ?? "");
+    parsed.set(file, fresh);
+    return fresh;
   }
 }
 
-/** The names a file holds an element's style under: `const st = el.style`,
- *  `const { style } = el`, `const { style: s } = el`, and a name that holds one of those. */
+/** The names a file holds an element's style under: `const st = el.style`, `el["style"]`,
+ *  `(el.style)`, `const { style } = el`, `const { style: s } = el`, and a name that holds one of
+ *  those. */
 function styleAliases(scope: Scope): Set<string> {
   const aliases = new Set<string>();
   // Only a file that holds `.style` itself, or destructures `style`, can hold an alias.
   if (
-    !/\.style\s*(?:\bas\b|[;,)!?]|$)|\{[^{}=]*\bstyle\b[^{}=]*\}\s*(?::[^=]*)?=/m.test(scope.text)
+    !/\.style\s*(?:\bas\b|[;,)!?]|$)|\[\s*["'`]style["'`]\s*\]|\{[^{}=]*\bstyle\b[^{}=]*\}\s*(?::[^=]*)?=/m.test(
+      scope.text,
+    )
   ) {
     return aliases;
   }
@@ -826,10 +972,12 @@ function styleAliases(scope: Scope): Set<string> {
       if (aliases.has(name)) continue;
       const alias = held.some(({ span, member }) => {
         if (member !== undefined) return member === "style";
-        const value = scope.text
+        let value = scope.text
           .slice(span.from, span.to)
           .replace(/\s+as\s+[\w.]+\s*$/, "")
+          .replace(/\[\s*["'`]style["'`]\s*\]/g, ".style")
           .replace(/[\s!?]/g, "");
+        while (value.startsWith("(") && value.endsWith(")")) value = value.slice(1, -1);
         return /\.style$/.test(value) || aliases.has(value);
       });
       if (alias) {
@@ -898,9 +1046,9 @@ export function styleEntries(source: string, from: StyleSource = {}): StyleEntry
   const aliases = [...styleAliases(follower.home)].map((name) =>
     name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"),
   );
-  const receiver = String.raw`(?:\.style${aliases.length ? `|(?<![\\w$.])(?:${aliases.join("|")})(?![\\w$])` : ""})\s*(?:!\s*)?`;
+  const receiver = String.raw`(?:\.style|\[\s*["'${"`"}]style["'${"`"}]\s*\]${aliases.length ? `|(?<![\\w$.])(?:${aliases.join("|")})(?![\\w$])` : ""})\s*(?:!\s*)?`;
   const assigns = new RegExp(
-    String.raw`\bObject\.assign\(\s*(?:[\w$.?!]*\bstyle${aliases.length ? `|(?:${aliases.join("|")})` : ""})\s*,`,
+    String.raw`\bObject\.assign\(\s*(?:[\w$.?!]*(?:\bstyle|\[\s*["'${"`"}]style["'${"`"}]\s*\])${aliases.length ? `|(?:${aliases.join("|")})` : ""})\s*,`,
     "g",
   );
   for (const hit of text.matchAll(assigns)) {

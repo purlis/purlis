@@ -542,6 +542,7 @@ export function plant(row: HTMLElement) {
 import { plantedFace } from "./theme/theme";
 const plantedRoles = { title: { fontSize: "13px" } };
 const plantedHeld = { fontWeight: 600 };
+const plantedAssigned = { fontWeight: 500 };
 const plantedLine = () => ({ lineHeight: 1.3 });
 export const PlantedMember = () => <p style={plantedRoles.title} />;
 export const PlantedEither = ({ on }: { on: boolean }) => <p style={on ? plantedHeld : undefined} />;
@@ -552,7 +553,7 @@ export function plantAlias(row: HTMLElement) {
   style.fontSize = "15px";
   row.style.cssText += "font-weight: 500";
   row.style[\`font-size\`] = "11px";
-  Object.assign(row.style, plantedHeld);
+  Object.assign(row.style, plantedAssigned);
 }
 `;
     const script = `${read("theme/theme.ts")}\nexport const plantedFace = { fontFamily: "Menlo" };\n`;
@@ -562,6 +563,7 @@ export function plantAlias(row: HTMLElement) {
       "Inbox.tsx: new type literal: style plantedHeld.fontWeight: 600",
       "Inbox.tsx: new type literal: style plantedLine().lineHeight: 1.3",
       'Inbox.tsx: new type literal: style plantedFace.fontFamily: "Menlo"',
+      "Inbox.tsx: new type literal: style plantedAssigned.fontWeight: 500",
       'Inbox.tsx: new type literal: style.fontSize: "15px"',
       'Inbox.tsx: new type literal: style.font-size: "11px"',
       'Inbox.tsx: new type literal: style.cssText font-weight: "500"',

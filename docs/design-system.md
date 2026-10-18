@@ -1338,29 +1338,47 @@ objects `Object.assign` writes onto an element's style, and a style object typed
 
 - an object written there (`{{ … }}`, `{ … } as CSSProperties`), and each object it spreads;
 - a variable that holds it (`style={held}`), and a variable that holds that one;
-- a member of a local object (`style={styles.box}`) or of a destructuring
-  (`const { box } = styles; style={box}`);
+- a member of a local object, by name or by a written key (`style={styles.box}`,
+  `style={styles["box"]}`), or of a destructuring (`const { box } = styles; style={box}`);
 - each branch of a ternary (`style={on ? held : undefined}`), each side of `||` and `??`, the
   last of `&&`, and what is in parentheses or before `as`, `satisfies` or `!`;
-- what a local function returns, a declared function's every `return` or an arrow's
-  expression (`style={boxStyle(on)}`), and what `useMemo` returns;
-- what a relative import gives (`import { box }`, `import * as styles`, a default export), and
-  what that file re-exports (`export { box as panel }`, `export * from`).
+- what a local function returns, a declared function's every `return` (past a return type
+  such as `: { padding: string }`) or an arrow's expression (`style={boxStyle(on)}`), what
+  `useMemo` returns, and what a function `useCallback` holds returns when it is called;
+- what a relative import gives (`import { box }`, `import * as styles` and its members, a
+  default export, an object or a function), what an imported function returns, one called on a
+  `* as` import among them (`s.make()`), and what that file re-exports (`export { box as panel }`,
+  `export * from`). A relative import is the file TypeScript resolves it to: `./s`, `./s.ts`
+  and `./s.js` are `s.ts` or `s.tsx`, and a folder is its `index`. Each imported file is read
+  and parsed once in a guard's pass.
 
-In script it reads an element's style however the file holds it: `el.style` itself and a name
-that holds it (`const st = el.style`, `const { style } = el`, `const { style: s } = el`). An
+In script it reads an element's style however the file holds it: `el.style` and `el["style"]`
+themselves and a name declared to hold one (`const st = el.style`, `const st = (el.style)`,
+`const st = el.style as CSSStyleDeclaration`, `const { style } = el`, `const { style: s } = el`,
+and a name that holds one of those). An
 assignment to one of its properties (`st.padding = "7px"`, `st["padding-top"]`,
 ``st[`padding`]``), its CSS text set or added to (`st.cssText = "…"`, `st.cssText += "…"`), a
 `style` attribute set as text, and every `setProperty(…)` call are read, each declaration in
 CSS text on its own. A value is read where it is written out, and where a ternary picks
 between values written out.
 
+**The reader fails closed.** A style it cannot finish following fails the guard with a
+sentence that names the file and the style, and is never passed over:
+
+- a style handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it is used;
+- a style that comes from a relative import the guard cannot open: one above `src`, one whose
+  file is not found, or one in a file that is not script (`./box.css`).
+
 What they do not read: a value held in a variable on its own (`const pad = "7px"`, then
 `padding: pad`), or any other value worked out; a member reached by a computed key
-(`styles[name]`) or a method (`styles.box()`); a style a component is handed through its
-parameters, or hands on in a prop with another name (`boxStyle={…}`) or under an object's
-`style` key (`createElement("div", { style })`); an import from a package or through a path
-alias; CSS text assigned from a variable, or a template literal with `${…}` in it. The controls
+(`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
+`useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
+in a prop with another name (`boxStyle={…}`) or under an object's `style` key
+(`createElement("div", { style })`); an element's style handed to a function as a parameter
+(`g(el.style)`), or held by a name assigned after it is declared (`let st; st = el.style`);
+an import from a package or through a path alias; CSS text assigned from a variable, or a
+template literal with `${…}` in it. A cycle (`const a = b; const b = a`) holds nothing to read
+and is not a failure. The controls
 guard reads a control's `style` attribute only, not an assignment to an element's style in
 script, which names no control. The colour and motion guard (`theme/literals.test.ts`) reads
 every string a script writes, wherever it is handed, so it needs no reader of its own.

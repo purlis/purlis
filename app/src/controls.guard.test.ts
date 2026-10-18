@@ -733,6 +733,7 @@ const HEIGHT_EXCEPTIONS: Record<string, Record<string, string>> = {
  *  and its components. */
 function heightsByFile(planted: Readonly<Record<string, string>> = {}): Map<string, string[]> {
   const text = (file: string) => planted[file] ?? readFileSync(join(SRC, file), "utf8");
+  const others = windowFiles(planted);
   const views = sourceFiles(isView);
   const controls = new Set(views.flatMap((file) => controlClasses(text(file))));
   const sheets = sourceFiles((name) => name.endsWith(".css"))
@@ -741,8 +742,7 @@ function heightsByFile(planted: Readonly<Record<string, string>> = {}): Map<stri
   const held = heightCustoms(sheets.map(([, text]) => text));
   const byFile = new Map<string, string[]>();
   for (const [file, text] of sheets) byFile.set(file, cssHeights(text, controls, held));
-  for (const file of views)
-    byFile.set(file, componentHeights(text(file), { file, read: windowFiles(planted) }));
+  for (const file of views) byFile.set(file, componentHeights(text(file), { file, read: others }));
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
