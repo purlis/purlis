@@ -2585,3 +2585,101 @@ fn a_runners_service_is_offered_once_or_for_this_chat_and_named_by_its_runner() 
     assert!(route.contains("port 5432 of the runner runner-7"));
     assert!(route.contains("nothing on this Mac"));
 }
+
+/// Lines the host handed on before the window took its board are heard before any it hands on
+/// while they are heard (#2571): a secret exec that waited reads the input that comes for it
+/// then, to its end, rather than having it dropped as for no exec.
+#[test]
+fn a_secret_exec_that_waited_for_the_board_reads_input_handed_on_while_it_is_heard() {
+    use purlis_core::hookwire::relay::{Heard, Replied, Reply};
+    use std::io::{BufRead, Write};
+    use std::sync::TryLockError;
+    use std::time::{Duration, Instant};
+    const LINK: u64 = 1;
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+    hooks.exec_secrets_with(Arc::new(|_ask, reader, mut writer, _told| {
+        for line in reader.lines() {
+            let _ = writeln!(writer, "ran {}", line.unwrap_or_default());
+        }
+    }));
+    let relayed = hooks.relayed_from_the_host().expect("relayed");
+    relayed.linked(LINK);
+    let nothing: Reply = Arc::new(|_| {});
+    let (replies, replied) = std::sync::mpsc::channel();
+    let reply: Reply = Arc::new(move |r| {
+        let _ = replies.send(r);
+    });
+    relayed.take(
+        LINK,
+        1,
+        Heard::AskerGone { connection: 9 },
+        Arc::clone(&nothing),
+    );
+    relayed.take(
+        LINK,
+        2,
+        Heard::SecretExec(purlis_core::secrets::brokered::Ask {
+            chat: 3,
+            secret_exec: Default::default(),
+        }),
+        reply,
+    );
+
+    // The lines that waited are heard with the line in order held up, the first of them on it.
+    let held = relayed.in_order.lock().unwrap();
+    let keeping = std::thread::spawn({
+        let relayed = Arc::clone(&relayed);
+        move || relayed.keep_with(Arc::new(|_, _| {}), None)
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match relayed.waiting.try_lock() {
+            Err(TryLockError::WouldBlock) => break,
+            Ok(waiting) => assert!(
+                waiting.is_some(),
+                "the lines that waited are no longer held while they are heard: a line handed \
+                 on now would be heard first"
+            ),
+            Err(TryLockError::Poisoned(_)) => panic!("poisoned"),
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the lines that waited were never heard"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let handing_on = std::thread::spawn({
+        let relayed = Arc::clone(&relayed);
+        let nothing = Arc::clone(&nothing);
+        move || {
+            relayed.take(
+                LINK,
+                3,
+                Heard::Input {
+                    of: 2,
+                    line: "typed".into(),
+                },
+                Arc::clone(&nothing),
+            );
+            relayed.take(LINK, 4, Heard::InputEnded { of: 2 }, nothing);
+        }
+    });
+    drop(held);
+    keeping.join().expect("kept");
+    handing_on.join().expect("handed on");
+
+    let within = Duration::from_secs(10);
+    assert_eq!(
+        replied.recv_timeout(within),
+        Ok(Replied::Wrote {
+            text: "ran typed\n".into()
+        })
+    );
+    assert_eq!(replied.recv_timeout(within), Ok(Replied::Ended));
+}

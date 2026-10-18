@@ -11,6 +11,7 @@ import { commands, type PlaneId, type StartOptions, type WithoutSandbox } from "
 import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
 import { profileCommand, profilePage } from "./settings/profileAddress";
+import { GrantsMark } from "./primitives/Grants";
 
 /**
  * The value that stands for "no persona at all".
@@ -564,8 +565,10 @@ export function StartChat({
               closed. */}
           <SettingActions>
             {picked?.approval ? (
+              // Approving a profile's command grants it its run: drawn as every grant is
+              // (ADR 0097 §6), as plain as Cancel beside it.
               <button
-                className="ui-button ui-button-primary"
+                className="ui-button ui-button-grants"
                 type="button"
                 tabIndex={0}
                 onClick={() => {
@@ -582,6 +585,7 @@ export function StartChat({
                 }}
                 disabled={!picked || starting || blockedByPolicy}
               >
+                <GrantsMark />
                 {starting ? "Starting…" : `Approve and ${startWord.toLowerCase()}`}
               </button>
             ) : (

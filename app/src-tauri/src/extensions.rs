@@ -188,13 +188,16 @@ pub struct ExtensionTheme {
     pub text: String,
 }
 
-/// **The theme the window draws** (spec #2313): the core's theme engine resolves it
-/// ([`purlis_core::theme::resolve`]) and the window only applies what comes back.
+/// **The theme the window draws** (spec #2313): the core's theme engine resolves it from the six
+/// theme levels ([`purlis_core::theme::resolve_levels`], #2323) and the window only applies what
+/// comes back.
 ///
-/// `pick` is what the project or workspace in front picked (`project_theme_drawn`), `on` the
-/// extensions it has on (`extensions_on`), `None` with no project in front, when every approved
-/// extension's theme may be drawn. `light` is the operating system's appearance, which a
-/// `system` pick follows; the window asks again when it changes.
+/// `at` is the project and workspace in front ([`ThemeAt`]); the engine reads their levels and
+/// theme folders itself. With no project in front, `pick` is what the window was told to draw,
+/// and the person's machine default is beneath it. `on` is the extensions the project has on
+/// (`extensions_on`), `None` with no project in front, when every approved extension's theme may
+/// be drawn. `light` is the operating system's appearance, which `system` follows; the window
+/// asks again when it changes.
 ///
 /// The themes approved extensions contribute come from a survey, which reads and fingerprints
 /// every extension's files, so it is taken only when the answer needs one and kept until
@@ -203,21 +206,39 @@ pub struct ExtensionTheme {
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_in_force(
+    planes: tauri::State<'_, crate::planes::Planes>,
     pick: Option<String>,
     on: Option<Vec<String>>,
     light: bool,
+    more_contrast: bool,
     reread: bool,
+    at: Option<ThemeAt>,
 ) -> Result<ThemeInForce, String> {
     let root = config_root()?;
+    let (at, workspace) = match at {
+        Some(ThemeAt { plane, workspace }) => {
+            (Some(planes.held(&plane)?.root().to_path_buf()), workspace)
+        }
+        None => (None, None),
+    };
     tauri::async_runtime::spawn_blocking(move || {
         if reread {
             *offered_kept() = None;
         }
+        let workspace = workspace.as_deref();
+        let mut levels = purlis_core::theme::Levels::read(Some(&root), at.as_deref(), workspace);
+        if at.is_none() {
+            levels.project_default = pick
+                .as_deref()
+                .and_then(|pick| purlis_core::theme::Choice::new(pick, None));
+        }
         theme_in_force_of(
-            pick.as_deref(),
+            &levels,
+            &purlis_core::theme::Folders::of(Some(&root), at.as_deref(), workspace),
             on.as_deref(),
             crate::windowprefs::THEIRS.get(Some(&root)).theme.as_ref(),
             light,
+            contrast_of(more_contrast),
             || {
                 offered_kept()
                     .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
@@ -227,6 +248,121 @@ pub async fn theme_in_force(
     })
     .await
     .map_err(|err| format!("reading the theme in force did not finish: {err}"))
+}
+
+/// **Maps today's in-plane theme picks into the person's choices, once** (#2323,
+/// [`purlis_core::theme::levels::adopt`]): a sentence for each pick copied, which the window says
+/// in a Notice; none when there was nothing to copy.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_levels_adopt(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<Vec<String>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let config = config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        purlis_core::theme::levels::adopt(&config, &root, workspace.as_deref())
+            .map_err(|why| format!("purlis could not keep this project's theme choice: {why}"))
+    })
+    .await
+    .map_err(|err| format!("keeping this project's theme choice did not finish: {err}"))?
+}
+
+/// **Moves the person's format 1 `theme.json` into a theme folder of their own** and chooses it
+/// as the machine default where none is chosen (#2323,
+/// [`purlis_core::theme::levels::move_into_a_folder`]), on the person's press of the Notice that
+/// offers it, all or nothing. Answers what it did, in a sentence.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_move_into_a_folder() -> Result<String, String> {
+    let config = config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let moved = purlis_core::theme::levels::move_into_a_folder(&config);
+        // The file moved: the next ask reads the folder, not the file.
+        crate::windowprefs::THEIRS.forget();
+        moved.map(|moved| moved_said(&moved))
+    })
+    .await
+    .map_err(|err| format!("moving the theme did not finish: {err}"))?
+}
+
+/// What a move into a theme folder says it did.
+fn moved_said(moved: &purlis_core::theme::levels::Moved) -> String {
+    if moved.chosen {
+        format!(
+            "Your theme is in the theme folder {}, and it is your machine default.",
+            moved.name
+        )
+    } else {
+        format!(
+            "Your theme is in the theme folder {}. Your machine default stays the theme you \
+             chose before.",
+            moved.name
+        )
+    }
+}
+
+/// **The person's own theme choice** for the project at `plane`, or for `workspace` in it
+/// (#2323, [`purlis_core::theme::choices`]): `theme` and `appearance` as a pick names them, kept
+/// in machine config by the project's id and never in a project file; `theme` of `None` takes
+/// the choice away. What Settings › Appearance › Your theme writes.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_choose(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+    theme: Option<String>,
+    appearance: Option<String>,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let config = config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        theme_choose_of(
+            &config,
+            &root,
+            workspace.as_deref(),
+            theme.as_deref(),
+            appearance.as_deref(),
+        )
+    })
+    .await
+    .map_err(|err| format!("keeping your theme choice did not finish: {err}"))?
+}
+
+/// [`theme_choose`] without a runtime.
+fn theme_choose_of(
+    config: &std::path::Path,
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    theme: Option<&str>,
+    appearance: Option<&str>,
+) -> Result<(), String> {
+    use purlis_core::theme::{Choice, choices, levels};
+    let key = levels::project_key(root).ok_or_else(|| {
+        "purlis cannot tell which project this is, so it keeps no choice".to_owned()
+    })?;
+    let choice = match theme {
+        None => None,
+        Some(theme) => Some(Choice::new(theme, appearance).ok_or_else(|| {
+            format!("{theme} is not a theme a choice can name, so nothing was kept")
+        })?),
+    };
+    let slot = match workspace {
+        Some(name) => choices::Slot::Workspace(&key, name),
+        None => choices::Slot::Project(&key),
+    };
+    choices::set(config, slot, choice).map_err(|why| why.to_string())
+}
+
+/// **Where the window is**, for [`theme_in_force`] (#2323): the project in front and the
+/// workspace it is on, `None` at its plane root, which resolves from the project's levels down.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct ThemeAt {
+    pub plane: crate::planes::PlaneId,
+    pub workspace: Option<String>,
 }
 
 /// The extension themes the last survey found, until an approval or a removal asks again.
@@ -244,19 +380,31 @@ fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
         .collect()
 }
 
+/// What the window says the operating system asks for: more contrast when
+/// `prefers-contrast: more` matches (#2328).
+pub(crate) fn contrast_of(more: bool) -> purlis_core::theme::Contrast {
+    if more {
+        purlis_core::theme::Contrast::More
+    } else {
+        purlis_core::theme::Contrast::Standard
+    }
+}
+
 /// [`theme_in_force`] without a runtime.
 fn theme_in_force_of(
-    pick: Option<&str>,
+    levels: &purlis_core::theme::Levels,
+    folders: &purlis_core::theme::Folders,
     on: Option<&[String]>,
     theirs: Option<&purlis_core::theme::Theme>,
     light: bool,
+    contrast: purlis_core::theme::Contrast,
     offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
 ) -> ThemeInForce {
     use purlis_core::theme;
-    let pick = pick.and_then(extension::project::theme::Pick::parse);
-    let drawn = theme::resolve(
-        &theme::Inputs {
-            pick: pick.as_ref(),
+    let drawn = theme::resolve_levels(
+        &theme::LevelInputs {
+            levels,
+            folders,
             theirs,
             on: on.map_or(theme::On::Every, theme::On::Only),
             system: if light {
@@ -264,6 +412,7 @@ fn theme_in_force_of(
             } else {
                 theme::Appearance::Dark
             },
+            contrast,
         },
         offered,
     );
@@ -1288,6 +1437,31 @@ pub struct ProjectTheme {
     /// the drawn theme's (#1145).
     #[specta(optional)]
     pub icons_why: Option<String>,
+    /// **What the theme levels draw here** (#2323): the theme's name as the window draws it.
+    #[specta(optional)]
+    pub drawn: Option<String>,
+    /// Which level chose it (`workspace-choice`, `workspace-default`, `project-choice`,
+    /// `project-default`, `machine-default`, `purlis`).
+    #[specta(optional)]
+    pub level: Option<String>,
+    /// Where that level is, in a sentence's words: "your choice for this workspace on this
+    /// machine", "charter.toml", …
+    #[specta(optional)]
+    pub from: Option<String>,
+    /// The person's own choice here, kept on this machine: for the workspace when asked in
+    /// one, else for the project.
+    #[specta(optional)]
+    pub yours: Option<YourTheme>,
+    /// The theme folders a pick here may name, nearest level first.
+    #[specta(optional)]
+    pub folders: Option<Vec<String>>,
+}
+
+/// The person's own theme choice, as Settings shows it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct YourTheme {
+    pub theme: String,
+    pub appearance: Option<String>,
 }
 
 /// This project's theme, with every theme it may pick — in `workspace`, when one is named, whose
@@ -1304,14 +1478,105 @@ pub async fn project_theme(
     let config = config_root()?;
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = workspace.as_deref();
-        project_theme_of(
-            &extension::survey(&config, &built_in()),
-            &extension::project::Choices::read_in(&root, workspace),
-            &extension::project::theme::Said::read_in(&root, workspace),
+        let seen = extension::survey(&config, &built_in());
+        let choices = extension::project::Choices::read_in(&root, workspace);
+        let folders = purlis_core::theme::Folders::of(Some(&config), Some(&root), workspace);
+        let reach = purlis_core::theme::levels::Reach::Project;
+        let said = extension::project::theme::Said::read_in(&root, workspace).with_folders(
+            folders.names(reach),
+            folders.names(purlis_core::theme::levels::Reach::Workspace),
+        );
+        let theme = project_theme_of(&seen, &choices, &said);
+        let on = extension::project::resolve(
+            &extension::project::Installed::from_survey(&seen),
+            &choices,
+        );
+        let ids: Vec<String> = on
+            .iter()
+            .filter(|it| it.state == extension::project::State::On)
+            .map(|it| it.id.clone())
+            .collect();
+        with_levels(
+            theme,
+            &config,
+            &root,
+            workspace,
+            &ids,
+            crate::windowprefs::THEIRS.get(Some(&config)).theme.as_ref(),
+            offered_of(&seen),
         )
     })
     .await
     .map_err(|err| format!("reading this project's theme did not finish: {err}"))
+}
+
+/// `theme` with what the theme levels say here (#2323): what they draw, from which level, the
+/// person's own choice, and the theme folders within reach.
+fn with_levels(
+    theme: ProjectTheme,
+    config: &std::path::Path,
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    on: &[String],
+    theirs: Option<&purlis_core::theme::Theme>,
+    offered: Arc<[purlis_core::theme::Offered]>,
+) -> ProjectTheme {
+    use purlis_core::theme::{self, Folders, Level, LevelInputs, Levels, choices, levels};
+    let levels = Levels::read(Some(config), Some(root), workspace);
+    let folders = Folders::of(Some(config), Some(root), workspace);
+    let drawn = theme::resolve_levels(
+        &LevelInputs {
+            levels: &levels,
+            folders: &folders,
+            theirs,
+            on: theme::On::Only(on),
+            system: theme::Appearance::Dark,
+            // Which level chose, for Settings: the same whatever contrast is asked.
+            contrast: theme::Contrast::Standard,
+        },
+        || offered,
+    );
+    let level = drawn.level.unwrap_or(Level::Purlis);
+    let from = match level {
+        Level::WorkspaceChoice => "your choice for this workspace on this machine".to_owned(),
+        Level::WorkspaceDefault => workspace
+            .map(purlis_core::settings::workspace::named)
+            .unwrap_or_default(),
+        Level::ProjectChoice => "your choice for this project on this machine".to_owned(),
+        Level::ProjectDefault => {
+            extension::project::Source::file(extension::project::Source::Shared)
+                .unwrap_or_default()
+                .to_owned()
+        }
+        Level::MachineDefault => "your machine default".to_owned(),
+        Level::Purlis => "nothing chose one".to_owned(),
+    };
+    let held = choices::read(config);
+    let mine = levels::project_key(root).and_then(|key| held.projects.get(&key).cloned());
+    let yours = mine
+        .and_then(|mine| match workspace {
+            Some(name) => mine.workspaces.get(name).cloned(),
+            None => mine.project,
+        })
+        .map(|one| YourTheme {
+            theme: one.theme,
+            appearance: one.appearance,
+        });
+    let reach = if workspace.is_some() {
+        levels::Reach::Workspace
+    } else {
+        levels::Reach::Project
+    };
+    ProjectTheme {
+        drawn: drawn.theme.as_ref().map(|it| it.name.clone()),
+        level: serde_json::to_value(level)
+            .ok()
+            .and_then(|it| it.as_str().map(str::to_owned)),
+        from: Some(from),
+        yours,
+        folders: Some(folders.names(reach)),
+        ..theme
+    }
 }
 
 /// [`project_theme`] without a runtime.
@@ -1386,15 +1651,23 @@ fn project_theme_of(
             .collect(),
         local_left_out: said.local_left_out().map(str::to_owned),
         icons_why,
+        drawn: None,
+        level: None,
+        from: None,
+        yours: None,
+        folders: None,
     }
 }
 
 /// What the window draws while this project — and `workspace` in it, when one is named
-/// (charter-app#281) — is in front, as a file holds it: `null` leaves the window its own theme.
+/// (charter-app#281) — is in front, as the window is told it: the choice of the nearest theme
+/// level that made one (#2323, [`purlis_core::theme::Levels`]), `null` when none did and the
+/// window draws the person's own theme or asks the engine.
 ///
 /// **The record alone**, as [`extensions_on`] is, so it is cheap enough to ask for every project
-/// a window holds. A pick the extension does not contribute is left to the window, which only
-/// ever holds the themes a survey found, and draws the built-in when the pick is not among them.
+/// a window holds: an extension's theme the project has off is told as the built-in, and one the
+/// extension does not contribute is left to [`theme_in_force`], which reads the levels, their
+/// theme folders and the survey.
 #[tauri::command]
 #[specta::specta]
 pub async fn project_theme_drawn(
@@ -1409,7 +1682,7 @@ pub async fn project_theme_drawn(
         project_theme_drawn_of(
             &extension::read(&config, &built_in()),
             &extension::project::Choices::read_in(&root, workspace),
-            &extension::project::theme::Said::read_in(&root, workspace),
+            &purlis_core::theme::Levels::read(Some(&config), Some(&root), workspace),
         )
     })
     .await
@@ -1420,15 +1693,20 @@ pub async fn project_theme_drawn(
 fn project_theme_drawn_of(
     loaded: &extension::Loaded,
     choices: &extension::project::Choices,
-    said: &extension::project::theme::Said,
+    levels: &purlis_core::theme::Levels,
 ) -> Option<String> {
     use extension::project::theme;
-    let on =
-        extension::project::resolve(&extension::project::Installed::from_record(loaded), choices);
-    theme::resolve(&on, None, said)
-        .draws
-        .as_ref()
-        .map(theme::Pick::value)
+    let (_, choice) = levels.chosen()?;
+    if let Some(pick @ theme::Pick::Extension { .. }) = theme::Pick::parse(&choice.theme) {
+        let on = extension::project::resolve(
+            &extension::project::Installed::from_record(loaded),
+            choices,
+        );
+        if !theme::drawable(&on, &pick) {
+            return Some(theme::FALLBACK.to_owned());
+        }
+    }
+    Some(choice.told())
 }
 
 /// The icon theme the file trees draw while this project — and `workspace` in it — is in front
@@ -1473,6 +1751,7 @@ fn project_icons_drawn_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use purlis_core::theme::Contrast;
 
     fn made() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
         let dir = tempfile::tempdir().expect("a directory");
@@ -1798,6 +2077,62 @@ mod tests {
         );
     }
 
+    /// The levels what `said` says make, its workspace taken as LIVE, no choice of the person's.
+    fn levels_of(said: &extension::project::theme::Said) -> purlis_core::theme::Levels {
+        purlis_core::theme::Levels::of(
+            &Default::default(),
+            Some(purlis_core::theme::levels::Project {
+                key: None,
+                said,
+                workspace: said.workspace_name().map(|name| (name, true)),
+            }),
+        )
+    }
+
+    #[test]
+    fn your_theme_in_settings_is_kept_by_project_id_and_is_what_the_levels_draw() {
+        // #2323: Settings › Appearance › Your theme writes the person's choice into machine
+        // config, never a project file, and the levels read it back as the nearest level.
+        let home = tempfile::tempdir().expect("a directory");
+        let config = home.path().join("config");
+        let plane = home.path().join("plane");
+        std::fs::create_dir_all(plane.join("workspaces/alpha")).expect("a plane");
+        std::fs::write(
+            purlis_core::names::manifest(&plane),
+            "[project]\nid = \"01JABCDEFGHJKMNPQRSTVWXYZ0\"\n",
+        )
+        .expect("a manifest");
+        theme_choose_of(&config, &plane, Some("alpha"), Some("purlis-light"), None).expect("kept");
+        let levels = purlis_core::theme::Levels::read(Some(&config), Some(&plane), Some("alpha"));
+        assert_eq!(
+            levels
+                .chosen()
+                .map(|(level, choice)| (level, choice.theme.as_str())),
+            Some((purlis_core::theme::Level::WorkspaceChoice, "purlis-light"))
+        );
+        assert_eq!(
+            std::fs::read_to_string(purlis_core::names::manifest(&plane)).expect("read"),
+            "[project]\nid = \"01JABCDEFGHJKMNPQRSTVWXYZ0\"\n",
+            "a project file was written"
+        );
+        // Taken away, and a value that is no pick refused.
+        theme_choose_of(&config, &plane, Some("alpha"), None, None).expect("taken away");
+        assert!(
+            purlis_core::theme::Levels::read(Some(&config), Some(&plane), Some("alpha"))
+                .workspace_choice
+                .is_none()
+        );
+        assert!(theme_choose_of(&config, &plane, None, Some("Not A Theme"), None).is_err());
+    }
+
+    /// The levels with no project in front, the window having been told to draw `pick`.
+    fn picked(pick: Option<&str>) -> purlis_core::theme::Levels {
+        purlis_core::theme::Levels {
+            project_default: pick.and_then(|pick| purlis_core::theme::Choice::new(pick, None)),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn the_theme_in_force_resolves_the_person_s_theme_with_no_window_created_first() {
         // A link, or a window made after another, asks with no creation script of its own: the
@@ -1812,12 +2147,47 @@ mod tests {
         .expect("a theme");
         let kept = purlis_core::theme::TheirsKept::new();
         let theirs = kept.get(Some(home.path())).theme;
-        let drawn = theme_in_force_of(None, None, theirs.as_ref(), false, || unreachable!());
+        let drawn = theme_in_force_of(
+            &picked(None),
+            &Default::default(),
+            None,
+            theirs.as_ref(),
+            false,
+            Contrast::Standard,
+            || unreachable!(),
+        );
         let theme = drawn.theme.expect("the person's theme");
         assert_eq!(
             (theme.name.as_str(), theme.appearance.as_str()),
             ("Mine", "light")
         );
+    }
+
+    #[test]
+    fn more_contrast_asked_for_draws_the_person_s_appearance_tagged_high_contrast() {
+        // #2328: the window says `prefers-contrast: more`, and the engine draws the appearance of
+        // the drawn tag tagged high contrast.
+        let mine = purlis_core::theme::load_text(
+            r##"{"name":"Mine","appearances":[{"id":"dark","appearance":"dark"},
+                {"id":"sharp","appearance":"dark","high-contrast":true,
+                 "tokens":{"surface.base":"#000000"}}]}"##,
+        );
+        assert!(!mine.refused, "{:?}", mine.complaints);
+        let asked = |more| {
+            theme_in_force_of(
+                &picked(None),
+                &Default::default(),
+                None,
+                Some(&mine.theme),
+                false,
+                contrast_of(more),
+                || unreachable!(),
+            )
+            .theme
+            .expect("drawn")
+        };
+        assert_eq!(asked(true).values["surface.base"], "#000000");
+        assert_ne!(asked(false).values["surface.base"], "#000000");
     }
 
     #[test]
@@ -1829,7 +2199,15 @@ mod tests {
                     "on":{"tokens":{"border.subtle":"#777777"}}}]}"##,
         );
         assert!(!mine.refused, "{:?}", mine.complaints);
-        let drawn = theme_in_force_of(None, None, Some(&mine.theme), false, || unreachable!());
+        let drawn = theme_in_force_of(
+            &picked(None),
+            &Default::default(),
+            None,
+            Some(&mine.theme),
+            false,
+            Contrast::Standard,
+            || unreachable!(),
+        );
         assert_eq!(
             drawn.options,
             [WindowOption {
@@ -1855,7 +2233,15 @@ mod tests {
             "#777777"
         );
         // Purlis Classic has none.
-        let classic = theme_in_force_of(Some("purlis-dark"), None, None, false, || unreachable!());
+        let classic = theme_in_force_of(
+            &picked(Some("purlis-dark")),
+            &Default::default(),
+            None,
+            None,
+            false,
+            Contrast::Standard,
+            || unreachable!(),
+        );
         assert!(classic.options.is_empty());
     }
 
@@ -1899,7 +2285,15 @@ mod tests {
         extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
         let offered = || offered_of(&extension::survey(&config, &extension::BuiltIn::none()));
 
-        let drawn = theme_in_force_of(Some("solarized/Solarized Dark"), None, None, false, offered);
+        let drawn = theme_in_force_of(
+            &picked(Some("solarized/Solarized Dark")),
+            &Default::default(),
+            None,
+            None,
+            false,
+            Contrast::Standard,
+            offered,
+        );
         let theme = drawn.theme.expect("a theme");
         assert_eq!(theme.name, "Solarized Dark");
         assert_eq!(theme.appearance, "light");
@@ -1913,14 +2307,24 @@ mod tests {
         // Off in the project in front: the default, and no survey needed to say so for a
         // built-in pick or the system's.
         let off = theme_in_force_of(
-            Some("solarized/Solarized Dark"),
+            &picked(Some("solarized/Solarized Dark")),
+            &Default::default(),
             Some(&[]),
             None,
             false,
+            Contrast::Standard,
             offered,
         );
         assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("purlis-dark"));
-        let system = theme_in_force_of(Some("system"), None, None, true, || unreachable!());
+        let system = theme_in_force_of(
+            &picked(Some("system")),
+            &Default::default(),
+            None,
+            None,
+            true,
+            Contrast::Standard,
+            || unreachable!(),
+        );
         assert_eq!(
             system.theme.map(|it| it.name).as_deref(),
             Some("purlis-light")
@@ -2132,7 +2536,7 @@ mod tests {
             project_theme_drawn_of(
                 &extension::read(&config, &extension::BuiltIn::none()),
                 &choices,
-                &said
+                &levels_of(&said)
             )
             .as_deref(),
             Some("purlis-dark"),
@@ -2145,7 +2549,7 @@ mod tests {
             project_theme_drawn_of(
                 &extension::read(&config, &extension::BuiltIn::none()),
                 &choices,
-                &said
+                &levels_of(&said)
             )
             .as_deref(),
             Some("solarized/Solarized Dark")
@@ -2154,7 +2558,7 @@ mod tests {
             project_theme_drawn_of(
                 &extension::read(&config, &extension::BuiltIn::none()),
                 &choices,
-                &extension::project::theme::Said::default()
+                &levels_of(&extension::project::theme::Said::default())
             ),
             None,
             "a project that picks nothing leaves the window its own theme"
@@ -2231,7 +2635,7 @@ mod tests {
             project_theme_drawn_of(
                 &extension::read(&config, &extension::BuiltIn::none()),
                 &choices,
-                &said
+                &levels_of(&said)
             )
             .as_deref(),
             Some("purlis-dark"),
@@ -2239,8 +2643,10 @@ mod tests {
         );
 
         let manifest = r#"{"settings": {"theme": {"use": "dark"}}}"#;
+        // The project has no theme folders: `dark` names none (#2323).
         let said = extension::project::theme::Said::from_text(Some(shared), None)
-            .in_workspace("alpha", Some(manifest));
+            .in_workspace("alpha", Some(manifest))
+            .with_folders(Vec::new(), Vec::new());
         let theme = project_theme_of(
             &extension::survey(&config, &extension::BuiltIn::none()),
             &choices,

@@ -14,6 +14,7 @@ import {
   type Shown,
 } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
+import { GrantsMark } from "./primitives/Grants";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
@@ -973,7 +974,8 @@ function AllowNotice({
             <button
               key={option.id}
               type="button"
-              className="ui-button ui-button-sm"
+              // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
+              className="ui-button ui-button-sm ui-button-grants"
               tabIndex={0}
               disabled={
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)
@@ -981,6 +983,7 @@ function AllowNotice({
               title={option.id === "project" ? readOnly : undefined}
               onClick={() => allow(option.id, option.label)}
             >
+              <GrantsMark />
               {option.label}
             </button>
           ))}
@@ -998,6 +1001,7 @@ function AllowNotice({
             label: main.label,
             onPress: () => allow(main.id, main.label),
             off: main.id === "project" ? readOnly : undefined,
+            allows: true,
           },
         ]
       : []),
@@ -1006,6 +1010,7 @@ function AllowNotice({
           {
             label: everywhere.label,
             onPress: () => allow(everywhere.id, everywhere.label),
+            allows: true,
           },
         ]
       : []),

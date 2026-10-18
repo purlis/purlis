@@ -470,8 +470,16 @@ describe("any persona", () => {
             name: `${whom}: ${persona} may dispatch to any persona`,
           }),
         ).toBeInTheDocument();
+    // A yes that grants is the grants style, here and on its confirmation (ADR 0097 §6).
+    const mine = "Allow for me: steward may dispatch to any persona";
+    expect(screen.getByRole("button", { name: mine })).toHaveClass("ui-button-grants");
+    await userEvent.setup().click(screen.getByRole("button", { name: mine }));
+    const confirm = within(screen.getByRole("group", { name: "Confirm" }));
+    expect(confirm.getByRole("button", { name: "Allow for me" })).toHaveClass("ui-button-grants");
+    expect(confirm.getByRole("button", { name: "Cancel" })).not.toHaveClass("ui-button-grants");
+    await userEvent.setup().click(confirm.getByRole("button", { name: "Cancel" }));
 
-    const said = await press("Allow for me: steward may dispatch to any persona", "Allow for me");
+    const said = await press(mine, "Allow for me");
 
     expect(said).toBe(
       "Let steward dispatch to any persona, for you on this machine? steward chats will dispatch to every persona of this project without asking you, and to any persona added later.Allow for meCancel",

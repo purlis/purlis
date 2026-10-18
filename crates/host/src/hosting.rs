@@ -2067,12 +2067,26 @@ fn take_confinements(state: &mut State, whose: impl Fn(&Owner) -> bool) -> Vec<A
 }
 
 /// **The ids a start begins under** (#2171): the chat's own and its run, as the window names
-/// them, which it alone keeps for its chats (ADR 0066). From every other scope the host mints
-/// both, so what the host writes under a chat's id is only ever written for the chat the id was
-/// minted for.
+/// them, which it alone keeps for its chats (ADR 0066). On a runner the window's start comes
+/// over the link from its one paired desktop, which relays it for the window alone (#2446), so
+/// the runner keeps them too, and what it writes of the chat joins the window's own. From every
+/// other scope the host mints both, so what the host writes under a chat's id is only ever
+/// written for the chat the id was minted for. An id the host already holds is refused either
+/// way. A start from the link that names no run, as the desktop's relay sends on the start of
+/// a client that is not its window, begins a run the host mints, so its run is written as any
+/// other's.
 fn ids_of(start: StartProgram, scope: Scope) -> StartProgram {
-    if scope == Scope::LocalUi {
-        return start;
+    match scope {
+        Scope::LocalUi => return start,
+        Scope::RemoteLink => {
+            return StartProgram {
+                run: start
+                    .run
+                    .or_else(|| Some(ulid::Ulid::generate().to_string())),
+                ..start
+            };
+        }
+        _ => {}
     }
     StartProgram {
         program: None,

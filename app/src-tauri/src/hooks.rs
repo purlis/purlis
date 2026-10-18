@@ -401,7 +401,6 @@ impl Relayed {
         heard: purlis_core::hookwire::relay::Heard,
         reply: purlis_core::hookwire::relay::Reply,
     ) {
-        use purlis_core::hookwire::relay::Heeding;
         if let Some(waiting) = self
             .waiting
             .lock()
@@ -409,6 +408,23 @@ impl Relayed {
             .as_mut()
         {
             waiting.push((link, id, heard, reply));
+            return;
+        }
+        self.hand_on(link, id, heard, reply);
+    }
+
+    /// Hears line `id` as [`Self::take`] does, once no line waits for the host's board.
+    fn hand_on(
+        &self,
+        link: u64,
+        id: u64,
+        heard: purlis_core::hookwire::relay::Heard,
+        reply: purlis_core::hookwire::relay::Reply,
+    ) {
+        use purlis_core::hookwire::relay::Heeding;
+        // Taken in order, before a thread of its own hears it, so a secret exec's input that
+        // comes before it begins is kept for it (#2571). One not taken is answered already.
+        if !self.heeding.admit(link, id, &heard, &reply) {
             return;
         }
         if Heeding::waits(&heard) {
@@ -497,14 +513,12 @@ impl Relayed {
         for moved in told {
             (self.moved)(moved);
         }
-        let waited = self
-            .waiting
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .unwrap_or_default();
-        for (link, id, heard, reply) in waited {
-            self.take(link, id, heard, reply);
+        // Heard with the waiting held, so no line the host hands on now is heard before the
+        // ones that came before it (#2571): a secret exec's input would otherwise find its exec
+        // not yet taken, and be dropped.
+        let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        for (link, id, heard, reply) in waiting.take().unwrap_or_default() {
+            self.hand_on(link, id, heard, reply);
         }
     }
 

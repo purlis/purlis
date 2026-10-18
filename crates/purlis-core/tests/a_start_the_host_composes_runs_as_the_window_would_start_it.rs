@@ -466,6 +466,7 @@ fn a_sandboxed_opencode_start(project: &Project) -> purlis_core::start::Ready {
         notices: Vec::new(),
         agents_md: Vec::new(),
         sign_in: None,
+        first_message: None,
     }
 }
 

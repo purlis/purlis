@@ -57,6 +57,19 @@ pub const TABLE: &str = "theme";
 /// The key in [`TABLE`] that picks the theme.
 pub const USE: &str = "use";
 
+/// The key in [`TABLE`] that picks the theme's appearance (spec #2313, #2323): `system`, which
+/// follows the operating system, or the id of one of the theme's appearances (`dark`, `day`).
+pub const APPEARANCE: &str = "appearance";
+
+/// Whether `value` is an [`APPEARANCE`] a file may hold: `system`, or an appearance's id.
+pub fn is_appearance(value: &str) -> bool {
+    value == SYSTEM || crate::theme::is_folder_name(value)
+}
+
+/// What a value that is not an appearance is told.
+pub const NOT_AN_APPEARANCE: &str = "which is not system or the id of one of the theme's \
+                                     appearances";
+
 /// The key in [`TABLE`] that picks the icon theme (FM-3, #1106).
 pub const ICONS: &str = "icons";
 
@@ -88,6 +101,9 @@ pub enum Pick {
     System,
     /// A theme an extension contributes, by the extension's id and the theme's name.
     Extension { id: String, name: String },
+    /// A theme folder, by its folder's name: the nearest level's `themes/<name>/` (spec #2313,
+    /// #2323) — the workspace's, the project's, then the person's own.
+    Folder(String),
 }
 
 impl Pick {
@@ -114,6 +130,13 @@ impl Pick {
         {
             return Some(Self::BuiltIn(renamed.write));
         }
+        // A theme folder by its name; an icon theme's id, purlis's own or an old one, is never a
+        // colour theme's.
+        let an_icon_id =
+            BUILT_IN_ICON_THEMES.contains(&value) || crate::names::ICON_THEME.recognises(value);
+        if crate::theme::is_folder_name(value) && !an_icon_id {
+            return Some(Self::Folder(value.to_owned()));
+        }
         let (id, name) = value.split_once('/')?;
         (super::id_ok(id)
             && !name.trim().is_empty()
@@ -137,7 +160,7 @@ impl Pick {
         }
         match Self::parse(value)? {
             extension @ Self::Extension { .. } => Some(extension),
-            Self::BuiltIn(_) | Self::System => None,
+            Self::BuiltIn(_) | Self::System | Self::Folder(_) => None,
         }
     }
 
@@ -147,6 +170,7 @@ impl Pick {
             Self::BuiltIn(name) => (*name).to_owned(),
             Self::System => SYSTEM.to_owned(),
             Self::Extension { id, name } => format!("{id}/{name}"),
+            Self::Folder(name) => name.clone(),
         }
     }
 }
@@ -188,6 +212,18 @@ struct Layers {
     local: Option<toml::Value>,
 }
 
+impl Layers {
+    /// The layer `source`'s value; a source that is none of the three has none.
+    fn of(&self, source: Source) -> Option<&toml::Value> {
+        match source {
+            Source::Shared => self.shared.as_ref(),
+            Source::Local => self.local.as_ref(),
+            Source::Workspace => self.workspace.as_ref(),
+            Source::Default => None,
+        }
+    }
+}
+
 /// What a project's two files — and, in a workspace, its `workspace.json` — say about its theme:
 /// each layer's `use` as found, and the workspace's `colour`.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -198,6 +234,8 @@ pub struct Said {
     local: Option<toml::Value>,
     /// Each layer's [`ICONS`], as found, in the same order (FM-3).
     icons: Layers,
+    /// Each layer's [`APPEARANCE`], as found (#2323).
+    appearance: Layers,
     /// The workspace's `settings.theme.colour`, as found.
     colour: Option<toml::Value>,
     /// The workspace these were read in, when they were.
@@ -205,6 +243,19 @@ pub struct Said {
     /// Why `charter.local.toml` is not among these layers, when it is there and git would carry
     /// it (charter-app#319).
     local_left_out: Option<String>,
+    /// The theme folders a pick may name (#2323): `None` when the caller did not look, and a
+    /// folder's name is taken as it is; else those within the project's reach, and those within
+    /// the workspace's.
+    folders: Option<Reachable>,
+}
+
+/// The theme folders within each layer's reach (#2323, `crate::theme::folders`).
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Reachable {
+    /// What `charter.toml` and `charter.local.toml` may name: the project's and the person's.
+    project: Vec<String>,
+    /// What a workspace's `settings.theme` may name: the workspace's too.
+    workspace: Vec<String>,
 }
 
 impl Said {
@@ -223,6 +274,11 @@ impl Said {
                 local: local.and_then(|text| said(text, ICONS)),
                 workspace: None,
             },
+            appearance: Layers {
+                shared: shared.and_then(|text| said(text, APPEARANCE)),
+                local: local.and_then(|text| said(text, APPEARANCE)),
+                workspace: None,
+            },
             ..Self::default()
         }
     }
@@ -239,6 +295,7 @@ impl Said {
     fn with_workspace(mut self, name: &str, settings: Option<toml::Table>) -> Self {
         self.workspace = settings.as_ref().and_then(|top| said_in(top, USE));
         self.icons.workspace = settings.as_ref().and_then(|top| said_in(top, ICONS));
+        self.appearance.workspace = settings.as_ref().and_then(|top| said_in(top, APPEARANCE));
         self.colour = settings.as_ref().and_then(|top| said_in(top, COLOUR));
         self.workspace_name = Some(name.to_owned());
         self
@@ -286,6 +343,48 @@ impl Said {
                 project.with_workspace(name, crate::settings::workspace::read(root, name))
             }
         }
+    }
+
+    /// What the layer `source` picks, as text: its [`USE`] and its [`APPEARANCE`], each `None`
+    /// when the layer does not say it or says something that is not a string. The theme levels
+    /// read these (`crate::theme::levels`, #2323); a layer other than Shared, Local and the
+    /// workspace says nothing.
+    pub fn picked_in(&self, source: Source) -> (Option<&str>, Option<&str>) {
+        let used = match source {
+            Source::Shared => self.shared.as_ref(),
+            Source::Local => self.local.as_ref(),
+            Source::Workspace => self.workspace.as_ref(),
+            _ => None,
+        };
+        (
+            used.and_then(toml::Value::as_str),
+            self.appearance.of(source).and_then(toml::Value::as_str),
+        )
+    }
+
+    /// The same, knowing which theme folders each layer may name: a pick of a folder no level
+    /// within its reach has is passed over with a sentence, as a value that is not a pick is.
+    #[must_use]
+    pub fn with_folders(mut self, project: Vec<String>, workspace: Vec<String>) -> Self {
+        self.folders = Some(Reachable { project, workspace });
+        self
+    }
+
+    /// Whether the layer `source` may name the theme folder `name`.
+    fn reaches(&self, source: Source, name: &str) -> bool {
+        let Some(folders) = &self.folders else {
+            return true;
+        };
+        let within = match source {
+            Source::Workspace => &folders.workspace,
+            _ => &folders.project,
+        };
+        within.iter().any(|one| one == name)
+    }
+
+    /// The workspace these were read in, or `None` outside a workspace.
+    pub fn workspace_name(&self) -> Option<&str> {
+        self.workspace_name.as_deref()
     }
 
     /// The workspace's file as a sentence names it, or `None` outside a workspace.
@@ -432,14 +531,16 @@ fn resolve_key(
     mut ignored: Vec<Ignored>,
 ) -> Resolved {
     let workspace_file = said.workspace_file().unwrap_or_default();
+    // The theme levels' order (#2323): the workspace's, then the project's local file (the
+    // person's until it is mapped), then `charter.toml`.
     let mut candidates = [
-        (Source::Local, LOCAL_FILE, "", &layers.local),
         (
             Source::Workspace,
             workspace_file.as_str(),
             WORKSPACE_AT,
             &layers.workspace,
         ),
+        (Source::Local, LOCAL_FILE, "", &layers.local),
         (Source::Shared, COMMITTED_FILE, "", &layers.shared),
     ]
     .into_iter()
@@ -447,7 +548,13 @@ fn resolve_key(
     .peekable();
     let mut picked = None;
     while let Some((source, file, at, value)) = candidates.next() {
-        if let Some(pick) = value.as_str().and_then(|value| key.parse(value)) {
+        let pick = value.as_str().and_then(|value| key.parse(value));
+        let reached = match &pick {
+            Some(Pick::Folder(name)) => said.reaches(source, name),
+            _ => true,
+        };
+        let unreached = pick.is_some() && !reached;
+        if let Some(pick) = pick.filter(|_| reached) {
             picked = Some((pick, source, file));
             break;
         }
@@ -460,7 +567,11 @@ fn resolve_key(
             why: format!(
                 "{file} sets {at}{TABLE}.{} to {value}, {} — so {instead}",
                 key.name(),
-                key.not_a_pick()
+                if unreached {
+                    NO_SUCH_FOLDER
+                } else {
+                    key.not_a_pick()
+                }
             ),
         });
     }
@@ -521,8 +632,11 @@ pub fn colour_of(ws: &crate::workspaces::Workspace) -> Option<Colour> {
 }
 
 /// What a value that is not a pick is told.
-pub const NOT_A_PICK: &str = "which is not purlis-dark, purlis-light, system or \
-                              <extension>/<theme>";
+pub const NOT_A_PICK: &str = "which is not purlis-dark, purlis-light, system, a theme \
+                              folder's name or <extension>/<theme>";
+
+/// What a pick of a theme folder no level within its reach has is told (#2323).
+pub const NO_SUCH_FOLDER: &str = "which names no theme folder this layer reaches";
 
 /// What a value that is not an icon theme pick is told.
 pub const NOT_AN_ICON_PICK: &str = "which is not purlis-icons or <extension>/<icon theme>";
@@ -530,6 +644,13 @@ pub const NOT_AN_ICON_PICK: &str = "which is not purlis-icons or <extension>/<ic
 /// What a value that is not a colour is told.
 fn not_a_colour() -> String {
     format!("which is not {} or #rrggbb", PALETTE.join(", "))
+}
+
+/// **Whether `pick` can be drawn** in a project whose extensions are `extensions`, as far as the
+/// record says: an extension's theme only while its extension is on there (#2323's levels ask
+/// this of whichever level chose).
+pub fn drawable(extensions: &[Effective], pick: &Pick) -> bool {
+    unavailable(Key::Colours, pick, "", extensions, None).is_none()
 }
 
 /// Why `pick`, which `file` made, cannot be drawn in this project, or `None` when it can.
@@ -604,7 +725,13 @@ pub fn keyed(text: &str, file: &str) -> Vec<Refusal> {
                     &at,
                 ));
             }
-            USE | ICONS => {}
+            APPEARANCE if !value.as_str().is_some_and(is_appearance) => {
+                out.push(Refusal::at(
+                    format!("{TABLE}.{APPEARANCE} in {file} is {value}, {NOT_AN_APPEARANCE}"),
+                    &at,
+                ));
+            }
+            USE | APPEARANCE | ICONS => {}
             _ => {
                 let colour = if key == COLOUR {
                     "; a colour is a workspace's"
@@ -613,8 +740,8 @@ pub fn keyed(text: &str, file: &str) -> Vec<Refusal> {
                 };
                 out.push(Refusal::at(
                     format!(
-                        "{TABLE}.{} in {file} is not read — [{TABLE}] holds {USE} and {ICONS} \
-                         and nothing else{colour}",
+                        "{TABLE}.{} in {file} is not read — [{TABLE}] holds {USE}, {APPEARANCE} \
+                         and {ICONS} and nothing else{colour}",
                         toml_edit::Key::new(key.as_str()).display_repr()
                     ),
                     &at,
@@ -663,10 +790,13 @@ pub fn keyed_in_workspace(top: &toml::Table, file: &str) -> Vec<Refusal> {
             ICONS if value.as_str().and_then(Pick::parse_icons).is_none() => {
                 format!("{at} is {value}, {NOT_AN_ICON_PICK}")
             }
-            USE | COLOUR | ICONS => continue,
+            APPEARANCE if !value.as_str().is_some_and(is_appearance) => {
+                format!("{at} is {value}, {NOT_AN_APPEARANCE}")
+            }
+            USE | APPEARANCE | COLOUR | ICONS => continue,
             _ => format!(
-                "{at} is not read — a workspace's {TABLE} holds {USE}, {ICONS} and {COLOUR} and \
-                 nothing else"
+                "{at} is not read — a workspace's {TABLE} holds {USE}, {APPEARANCE}, {ICONS} and \
+                 {COLOUR} and nothing else"
             ),
         };
         out.push(Refusal::at(said, &[TABLE, key.as_str()]));

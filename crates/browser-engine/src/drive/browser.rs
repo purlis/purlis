@@ -30,8 +30,10 @@ use super::{
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
 
+mod changes;
 mod login;
 mod takeover;
+mod view;
 
 pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
@@ -668,6 +670,8 @@ pub struct Browser {
     /// What each login the person cut by taking the browser over filled, cleared as they hand
     /// it back (#2016): the page's target, the login's origin, and the fields.
     to_clear: Mutex<Vec<(String, String, Vec<NodeKey>)>>,
+    /// Each page's tree as it was last read, to say what changed since (#2137).
+    read_last: changes::ReadLast,
     /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
     /// call in flight.
     #[cfg(unix)]
@@ -825,6 +829,7 @@ impl Browser {
             acting_epoch: AtomicU64::new(0),
             typing: Mutex::new(Typing::default()),
             to_clear: Mutex::new(Vec::new()),
+            read_last: changes::ReadLast::default(),
             #[cfg(unix)]
             engine: Mutex::new(None),
         })
@@ -1045,16 +1050,25 @@ impl Browser {
                 let lines = lines
                     .unwrap_or(self.inner.limits.snapshot_lines)
                     .clamp(1, self.inner.limits.most_snapshot_lines);
-                self.reading(&target, |snapshot, state| {
+                let view = |state: &State| -> Result<View, Refusal> {
                     let scope = within
                         .as_ref()
                         .map(|r| live_ref(state, r).map(|(_, key)| key))
                         .transpose()?;
-                    let view = View {
+                    Ok(View {
                         within: scope,
                         from,
                         lines,
-                    };
+                    })
+                };
+                let shown = |snapshot: &Snapshot, state: &State| {
+                    Ok(view(state)
+                        .ok()
+                        .and_then(|view| snapshot.keys_in(&view).ok())
+                        .unwrap_or_default())
+                };
+                self.reading_shown(&target, shown, |snapshot, state| {
+                    let view = view(state)?;
                     let mut refer = refer_in(state, &target);
                     snapshot.page(&view, &mut refer).map_err(|_| {
                         Refusal::NotShown(within.clone().unwrap_or_else(|| Ref::new("the scope")))
@@ -1068,27 +1082,34 @@ impl Browser {
                 within,
             } => {
                 let target = self.target(page.as_ref())?;
-                self.reading(&target, |snapshot, state| {
-                    let scope = within
+                let query = Query { text, role };
+                let scope = |state: &State| {
+                    within
                         .as_ref()
                         .map(|r| live_ref(state, r).map(|(_, key)| key))
-                        .transpose()?;
+                        .transpose()
+                };
+                let shown = |snapshot: &Snapshot, state: &State| {
+                    Ok(scope(state)
+                        .ok()
+                        .and_then(|scope| snapshot.keys_found(&query, scope.as_ref()).ok())
+                        .unwrap_or_default())
+                };
+                self.reading_shown(&target, shown, |snapshot, state| {
+                    let scope = scope(state)?;
                     let mut refer = refer_in(state, &target);
                     snapshot
-                        .find(
-                            &Query {
-                                text: text.clone(),
-                                role: role.clone(),
-                            },
-                            scope.as_ref(),
-                            &mut refer,
-                        )
+                        .find(&query, scope.as_ref(), &mut refer)
                         .map_err(|_| {
                             Refusal::NotShown(
                                 within.clone().unwrap_or_else(|| Ref::new("the scope")),
                             )
                         })
                 })
+            }
+            Call::Changes { page } => {
+                let target = self.target(page.as_ref())?;
+                self.changes(&target)
             }
             Call::Click { target } => self.click(&target, 1),
             Call::DoubleClick { target } => self.click(&target, 2),
@@ -1472,10 +1493,12 @@ impl Browser {
         }
     }
 
-    /// Waits for `target` to settle, builds its snapshot and reads it with `read`.
-    fn reading(
+    /// Waits for `target` to settle, builds its snapshot and reads it with `read`, the elements
+    /// `shown` names (those `read` shows) marked where the page lays them out of view (#2137).
+    fn reading_shown(
         &self,
         target: &str,
+        shown: impl FnOnce(&Snapshot, &State) -> Result<Vec<NodeKey>, Refusal>,
         read: impl FnOnce(&Snapshot, &mut State) -> Result<String, Refusal>,
     ) -> Result<Answer, Refusal> {
         let dropped = self.devtools().dropped_events();
@@ -1486,8 +1509,10 @@ impl Browser {
             dropped,
             false,
         );
-        let snapshot = self.snapshot_of(target)?;
-        let text = {
+        let mut snapshot = self.snapshot_of(target)?;
+        let keys = shown(&snapshot, &lock(&self.inner.state))?;
+        snapshot.mark_out_of_view(self.out_of_view(target, &keys));
+        let (text, document) = {
             let mut state = lock(&self.inner.state);
             let body = read(&snapshot, &mut state)?;
             let page = state.page(target).ok_or(Refusal::NoPage)?;
@@ -1496,13 +1521,16 @@ impl Browser {
             } else {
                 snapshot.title().to_owned()
             };
-            format!(
+            let text = format!(
                 "page {} \"{}\" {}\n{body}",
                 page.id,
                 title.replace('"', "\\\""),
                 page.shown_address(&page.url)
-            )
+            );
+            (text, changes::document_of(&state, target))
         };
+        // What was read is what the next changes are told against (#2137).
+        self.read_last.remember(target, document, snapshot.seen());
         Ok(self.answer(target, settled, opened, Content::Text(text), None))
     }
 

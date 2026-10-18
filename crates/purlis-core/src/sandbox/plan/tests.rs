@@ -170,6 +170,26 @@ fn a_proxy_held_elsewhere_says_which_services_its_runner_left_out_and_what_comes
     assert_eq!(alone.said_of_what_was_left_out(), None);
 }
 
+/// **A proxy on another machine listens on that machine's ports** (#2446): a runner's ports
+/// are never judged against, nor taken as, this machine's.
+#[test]
+fn a_proxy_held_on_another_machine_takes_none_of_this_machine_s_ports() {
+    assert_eq!(localport::still_ports(&[50861]), [50861]);
+
+    let confinement = Confinement::held_on_another_machine(
+        placed(50861, 50862, None),
+        Box::new(Holding(Arc::default())),
+    );
+
+    assert_eq!(confinement.proxy_ports(), [50861, 50862]);
+    assert!(!localport::is_own(50861) && !localport::is_own(50862));
+    // A listener of purlis's here may take the other one while it is held.
+    assert!(localport::hold_elsewhere(&[50862]));
+    drop(confinement);
+    assert!(localport::is_own(50862), "its end lets go of nothing here");
+    localport::release(50862);
+}
+
 #[test]
 fn a_port_withdrawn_from_a_chat_held_elsewhere_reaches_its_holder() {
     let holder = Arc::new(Holder::default());

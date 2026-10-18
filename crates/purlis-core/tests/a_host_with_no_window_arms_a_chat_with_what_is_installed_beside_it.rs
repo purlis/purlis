@@ -127,6 +127,7 @@ impl Project {
             notices: Vec::new(),
             agents_md: Vec::new(),
             sign_in: None,
+            first_message: None,
         }
     }
 }

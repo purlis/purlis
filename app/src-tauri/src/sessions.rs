@@ -220,9 +220,7 @@ impl SessionHost for Sessions {
                 },
             );
         // What the chat's profile hands its program, set last (#2036).
-        let mut spec = spec;
-        spec.env =
-            purlis_core::profilesignin::handed_onto(std::mem::take(&mut spec.env), &opening.handed);
+        let spec = purlis_core::chatspec::with_handed(spec, &opening.handed);
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let engine = AlacrittyEngine::new(opening.size, SCROLLBACK as usize);

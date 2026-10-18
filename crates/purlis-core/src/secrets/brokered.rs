@@ -56,7 +56,9 @@
 //! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
-//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]). A
+//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]). On
+//! Linux, purlis's own wrap that holds it starts with none of these: the run's environment is
+//! carried past it to the tool alone ([`purlis_linux_sandbox::carried`]). A
 //! credentialed MCP server's line passes only as this machine approved it, wrapped by purlis
 //! from the approved entry. The person's own terminal and a chat the app did not start
 //! sandboxed never come here.
@@ -1797,11 +1799,17 @@ pub(crate) fn serve_recorded(
     // A process group of its own, so everything it starts is ended with it.
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut child, 0);
+    // purlis's own wrap starts with nothing but the run's environment carried for the command
+    // (#2460), and gives the command exactly that; `sandbox-exec` hands on its own.
+    let start_with = match &applying {
+        Applying::Purlis(_) => purlis_linux_sandbox::carried::carried(prepared.env.iter().cloned()),
+        _ => prepared.env.clone(),
+    };
     child
         .args(&command[1..])
         .current_dir(start_in)
         .env_clear()
-        .envs(prepared.env.iter().map(|(k, v)| (k, v)))
+        .envs(start_with)
         .stdin(if wanted.stdin {
             std::process::Stdio::piped()
         } else {

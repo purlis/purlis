@@ -158,9 +158,14 @@ use crate::view::{Limits, Views};
 /// 1.20 added what a host leaves out of a plan made on another machine (#2510): `confined` may
 /// name the services of the host's machine the plan gave the chat for it alone, which the host
 /// started it without (`left_out`), and the name of that machine (`host_name`).
+///
+/// 1.21 added what changed on a browser's page (#2137): the act `changes` answers the lines of
+/// the page's tree new or gone since it was last read; and a snapshot's or a find's lines mark
+/// each element laid out wholly outside what the page's viewport shows (`(out of view)`). A
+/// host before 1.21 refuses `changes`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 20,
+    minor: 21,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,

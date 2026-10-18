@@ -96,13 +96,16 @@ fn telling<T>(
     command
         .args(&words)
         .current_dir(chat)
-        .env("HOME", home)
-        .env(SANDBOXED_ENV, "1")
-        .env(SOCKET_ENV, &path)
-        .env(CHAT_ENV, "7")
-        .env(TOKEN_ENV, token.expose())
-        .env(HARNESS_ENV, "codex")
-        .env(CHAT_DIR_ENV, chat);
+        .env_clear()
+        .envs(support::carrying(support::unsteered_with(&[
+            ("HOME", home.as_os_str()),
+            (SANDBOXED_ENV, "1".as_ref()),
+            (SOCKET_ENV, path.as_os_str()),
+            (CHAT_ENV, "7".as_ref()),
+            (TOKEN_ENV, token.expose().as_ref()),
+            (HARNESS_ENV, "codex".as_ref()),
+            (CHAT_DIR_ENV, chat.as_os_str()),
+        ])));
     let answered = run(&mut command);
     let blocked = std::iter::from_fn(|| heard.recv_timeout(Duration::from_secs(2)).ok()).collect();
     (answered, blocked)

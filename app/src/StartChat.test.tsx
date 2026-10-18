@@ -318,7 +318,9 @@ describe("a chat that starts in a repo (GL-1)", () => {
     const approve = screen.getByRole("button", { name: "Approve and start" });
     // Approving is the form's act, not a confirm that ends something (D-1719-3): purlis can
     // take the chat back, and the command is said above it before the press (V69).
-    expect(approve).toHaveClass("ui-button-primary");
+    // It grants the command its run: the grant's style, not the suggested answer's (ADR 0097 §6).
+    expect(approve).toHaveClass("ui-button-grants");
+    expect(approve).not.toHaveClass("ui-button-primary");
     expect(approve).not.toHaveClass("ends-it");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   });
