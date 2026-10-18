@@ -6,11 +6,14 @@ import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { commands, type AlertRow, type AlertWay, type DoctorFixed, type PlaneId } from "./bindings";
 import type { AlertsReading } from "./alerts";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
+import { useSeenOnThisMachine } from "./dismissals";
 import { drawWhatIsInForce } from "./Extensions";
 import { Notice, type NoticeAction } from "./Notice";
 import { RequestMerge } from "./SavingMerge";
+import { projectThemeChanged } from "./projectTheme";
 import {
   sayAboutThisMachine,
+  THEME_FOLDER_OFFERED,
   usingTheBuiltIn,
   usingTheDefaultLayout,
   type MachineAlert,
@@ -56,9 +59,13 @@ export function InboxAlerts({
 }) {
   return (
     <>
-      {machine.map((alert) => (
-        <MachineRow key={alert.subject} alert={alert} onOpenSettings={does.openSettings} />
-      ))}
+      {machine.map((alert) =>
+        alert.themeFolder ? (
+          <ThemeFolderOffer key={alert.subject} alert={alert} />
+        ) : (
+          <MachineRow key={alert.subject} alert={alert} onOpenSettings={does.openSettings} />
+        ),
+      )}
       <ThisProject plane={plane} reading={reading} does={does} />
       {reading.at === "read" &&
         elsewhere.map(({ plane: other, name }) => {
@@ -368,6 +375,53 @@ const LAYOUT_ASIDE: Aside = {
   move: () => commands.useDefaultLayout(),
   moved: usingTheDefaultLayout,
 };
+
+/**
+ * **The offer to move an old single-file theme into a theme folder** (#2323), made once on this
+ * machine: Move it, which moves the file into a theme folder of the person's own and chooses
+ * that theme as the machine default, so the window draws what it drew; or Dismiss, which keeps
+ * the file where it is. Either way it is not offered again.
+ */
+function ThemeFolderOffer({ alert }: { alert: MachineAlert }) {
+  const { seen, see } = useSeenOnThisMachine(THEME_FOLDER_OFFERED);
+  const [said, setSaid] = useState<string>();
+  if (seen) return null;
+  const move = () => {
+    void commands
+      .themeMoveIntoAFolder()
+      .then((answer) => {
+        if (answer.status === "error") {
+          setSaid(answer.error);
+          return;
+        }
+        see();
+        // The window keeps drawing what it drew: the folder holds the same theme, now the
+        // machine default.
+        sayAboutThisMachine(alert.subject, undefined);
+        projectThemeChanged();
+      })
+      .catch((err: unknown) => setSaid(String(err)));
+  };
+  return (
+    <Notice
+      cause={`alert:${alert.subject}`}
+      tone={toneOf(alert.severity)}
+      fixes={[{ label: "Move it into a theme folder", onPress: move }]}
+      onDismiss={() => {
+        see();
+        sayAboutThisMachine(alert.subject, undefined);
+      }}
+    >
+      <Words
+        severity={alert.severity}
+        subject="theme"
+        detail={alert.detail}
+        then={alert.remedy}
+        said={said}
+      />
+    </Notice>
+  );
+}
 
 /**
  * A row about this machine: its Settings group, a file it can move aside (which asks first, in

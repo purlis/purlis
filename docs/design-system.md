@@ -465,6 +465,79 @@ exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such t
 with it** on its row in Extensions, beside the row's other complaints: why the engine refused
 it, or what it left out.
 
+### Theme levels: where themes and choices are kept
+
+Themes live at three levels besides the built-ins and extensions (spec #2313, #2323), each a
+reserved `themes/` folder of theme folders:
+
+| Level | Where | Committed? |
+|---|---|---|
+| The person's own | `themes/` in purlis's config folder (beside `machine.json`) | never |
+| The project's | `themes/` at the plane root | by `purlis save` |
+| A workspace's | `workspaces/<ws>/themes/` | by `purlis save` while LIVE; kept in the clone while LOCAL |
+
+A theme folder is picked by its folder's name. **A choice reaches its own level and the levels
+farther out, never a nearer one**: the machine default names the person's own folders only; the
+project's choice and committed default the project's and the person's; a workspace's choice and
+default the workspace's, the project's and the person's. Within that reach the nearest level
+that has a folder of the name is read, and a folder `extends` by the same rule. Each `themes/`
+folder is opened from its level's root one folder at a time refusing a link, and its folders,
+`theme.json` and icon set are read from those handles (`crates/purlis-core/src/theme/folders.rs`).
+
+**The precedence**, nearest first; at each level the person's choice beats the committed
+default (`purlis_core::theme::resolve_levels`):
+
+1. the person's choice for this workspace on this machine;
+2. the workspace's committed default (LIVE workspaces only): `settings.theme.use` and
+   `settings.theme.appearance` in its `workspace.json`;
+3. the person's choice for the project;
+4. the project's committed default: `[theme] use` and `[theme] appearance` in its manifest;
+5. the person's machine default, else their own `theme.json`;
+6. Purlis (Purlis Classic until the switch-over), or the first theme in force from an extension
+   the project has on.
+
+The plane root resolves from level 3 down. A choice names a theme and, optionally, an
+appearance: an appearance's id, or `system`, which follows the operating system with any theme
+that has a dark and a light appearance. A choice that names no folder within its reach nor any
+other theme is passed over with a sentence, and the next level's is used. A choice of a theme
+that is there and cannot be drawn (a refused folder, an extension's theme that is off) draws
+Purlis with a sentence saying why.
+
+**The person's choices** are made in Settings › Appearance › Your theme (and Your appearance),
+at the Project level and at each Workspace level, and kept in `theme-choices.json` beside
+`machine.json`, keyed by the project's id (`[project] id` where the manifest keeps one, so a
+re-clone finds them; otherwise the id purlis holds the project by, which a re-clone elsewhere
+does not find), never committed. Each project's entry keeps when it was last changed, and at the
+file's 64 KiB cap the projects changed longest ago are dropped first:
+
+```json
+{
+  "version": 1,
+  "machine": { "theme": "dusk", "appearance": "system" },
+  "projects": {
+    "<project id>": {
+      "theme": "purlis-classic", "appearance": "light",
+      "workspaces": { "alpha": { "theme": "brand" } }
+    }
+  }
+}
+```
+
+A project's `charter.local.toml` `[theme]` pick, and a LOCAL workspace's `settings.theme`, are
+the person's choice where that file holds none, and are copied into it once, with a Notice. A
+LIVE workspace's pick is its committed default; where it now comes before the person's choice
+for the project, which the local file's pick used to beat, the Notice says so once. A theme
+pick in a manifest is a proposed change when a chat makes it (ADR 0098 §4).
+
+**A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
+with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a
+transition of its own keeps it; reduced motion makes it immediate.
+
+**An old single-file `theme.json`** keeps working and is offered once, in the Inbox, a move into
+a theme folder of the person's own (`themes/<name>/theme.json`), chosen as the machine default
+where none is chosen, so the window draws what it drew. The move is all or nothing, and only the
+person's press in the window makes it.
+
 ### Where a user's theme lives
 
 `$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config` — then `charter/theme.json`.

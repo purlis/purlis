@@ -79,7 +79,7 @@ pub enum On<'a> {
 }
 
 impl On<'_> {
-    fn has(&self, extension: &str) -> bool {
+    pub(super) fn has(&self, extension: &str) -> bool {
         match self {
             Self::Every => true,
             Self::Only(ids) => ids.iter().any(|id| id == extension),
@@ -117,11 +117,14 @@ pub struct Drawn {
     /// The consent floors the theme breaks and the tokens drawn as purlis's own for them, for
     /// the one Notice that names them; `None` for a theme that clears them.
     pub held: Option<Held>,
+    /// Which level of the precedence chose it ([`super::resolve_levels`], #2323); `None` from
+    /// [`resolve`], which knows no levels.
+    pub level: Option<super::Level>,
 }
 
 impl Drawn {
     /// `theme` as it is drawn: with the consent floors held ([`super::floors`]).
-    fn of(theme: &ResolvedTheme) -> Self {
+    pub(super) fn of(theme: &ResolvedTheme) -> Self {
         let (theme, held) = super::floors::hold(theme);
         Self {
             theme: Some(theme),
@@ -129,6 +132,7 @@ impl Drawn {
             follows_system: false,
             note: None,
             held,
+            level: None,
         }
     }
 
@@ -191,6 +195,16 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
             return Drawn::of(built_in(id).unwrap_or_else(default_theme));
         }
         Some(Pick::Extension { .. }) => {}
+        // A theme folder is a level's: [`super::resolve_levels`] reads the levels' folders, and
+        // this, which has none, draws Purlis and says so.
+        Some(Pick::Folder(name)) => {
+            return Drawn {
+                complaints: vec![Complaint::said(format!(
+                    "\"{name}\" is not a theme purlis has"
+                ))],
+                ..Drawn::of(default_theme())
+            };
+        }
         None => {
             if let Some(theirs) = inputs.theirs {
                 return Drawn::of(theirs.first());

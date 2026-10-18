@@ -7,8 +7,10 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { drawThemeFor, Extensions, themeTroubleSaid, troubleSaid } from "./Extensions";
+import type { PlaneId } from "./bindings";
 import {
   BUILT_IN,
+  CROSSFADE,
   DEFAULT_THEME,
   drawIn,
   inForce,
@@ -684,9 +686,49 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark");
     await drawThemeFor("every");
     expect(asked.filter((call) => call.cmd === "theme_in_force").map((call) => call.args)).toEqual([
-      { pick: "solarized/Solarized Dark", on: ["solarized"], light: true, reread: false },
-      { pick: null, on: null, light: true, reread: false },
+      {
+        pick: "solarized/Solarized Dark",
+        on: ["solarized"],
+        light: true,
+        reread: false,
+        at: null,
+      },
+      { pick: null, on: null, light: true, reread: false, at: null },
     ]);
+  });
+
+  it("asks the core for the project and workspace in front, whose theme levels it reads (#2323)", async () => {
+    const asked = core({});
+    system(false);
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId });
+    expect(
+      asked.filter((call) => call.cmd === "theme_in_force").map((call) => call.args.at),
+    ).toEqual([
+      { plane: "p-1", workspace: "alpha" },
+      { plane: "p-1", workspace: null },
+    ]);
+    // Today's in-plane picks are mapped into the person's choices once for each place.
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    expect(
+      asked
+        .filter((call) => call.cmd === "theme_levels_adopt")
+        .map((call) => [call.args.plane, call.args.workspace]),
+    ).toEqual([
+      ["p-1", "alpha"],
+      ["p-1", null],
+    ]);
+  });
+
+  it("crossfades a switch to another workspace's theme, and draws the first at once (#2323)", async () => {
+    core({});
+    const root = document.documentElement;
+    await drawThemeFor(new Set(), "purlis-dark", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    expect(root.classList.contains(CROSSFADE)).toBe(false);
+    await drawThemeFor(new Set(), "purlis-light", { plane: "p-1" as PlaneId, workspace: "beta" });
+    expect(inForce().name).toBe("purlis-light");
+    expect(root.classList.contains(CROSSFADE)).toBe(true);
+    await vi.waitFor(() => expect(root.classList.contains(CROSSFADE)).toBe(false));
   });
 
   it("draws a built-in pick at once, from what the window was handed, asking the core nothing", () => {

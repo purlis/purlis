@@ -568,6 +568,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "size_browser",
     // A chat's browsers, listed to be watched (#2024): the window's alone, as watching is.
     "chat_browsers",
+    // The person's own theme choice, and the move of their old theme file into a theme folder
+    // (#2323): each writes how their window looks on this machine, and the move moves their
+    // file, so only their press in the window makes either.
+    "theme_choose",
+    "theme_move_into_a_folder",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -882,6 +887,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "theme_in_force",
     // The person's density and font override, read by the engine (#2326): no file, no state.
     "theme_person",
+    "theme_levels_adopt",
     "this_machine",
     "title_bar_room",
     "todo_add",
