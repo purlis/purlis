@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type HostsChanged, type PlaneId } from "./bindings";
+import { commands, type HostsChanged, type PlaneId, type SandboxState } from "./bindings";
 import { useChatStarts } from "./chatStarts";
 import { Notice } from "./Notice";
+import { ProjectBrowserSitesNotice } from "./ProjectBrowserSitesNotice";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { useWindowFocused } from "./windowFocused";
 
@@ -28,6 +29,12 @@ export function ProjectHostsNotice({
   onReview: () => void;
 }) {
   const [changed, setChanged] = useState<HostsChanged>();
+  // The project's browser sites (#2443), from the same read, so a switch asks nothing more.
+  const [sites, setSites] = useState<SandboxState["browser_sites_changed"]>();
+  const take = (state: SandboxState | null | undefined) => {
+    setChanged(state?.hosts_changed ?? undefined);
+    setSites(state?.browser_sites_changed ?? undefined);
+  };
 
   // Read again when the project's settings change on disk (a pull, a branch switched, a hand's
   // edit, #1550), so a change is told while the window is open, before more chats start.
@@ -44,7 +51,7 @@ export function ProjectHostsNotice({
     void commands
       .sandboxState(plane)
       .then((said) => {
-        if (live && said.status === "ok") setChanged(said.data?.hosts_changed ?? undefined);
+        if (live && said.status === "ok") take(said.data);
       })
       // A project whose state cannot be read says nothing here: the hosts still apply.
       .catch(() => {});
@@ -53,32 +60,39 @@ export function ProjectHostsNotice({
     };
   }, [plane, onDisk, focused, started]);
 
-  if (changed === undefined) return null;
+  const browserSites =
+    sites == null ? null : (
+      <ProjectBrowserSitesNotice plane={plane} changed={sites} onRead={take} onReview={onReview} />
+    );
+  if (changed === undefined) return browserSites;
 
   const read = () =>
     void commands
       .acknowledgeProjectHosts(plane, changed.now)
       .then((said) => {
-        if (said.status === "ok") setChanged(said.data.hosts_changed ?? undefined);
+        if (said.status === "ok") take(said.data);
       })
       // Not recorded: it is told again next time, which is the safe way to be wrong.
       .catch(() => {});
 
   return (
-    <Notice
-      cause="sandbox-hosts"
-      label="The project's hosts changed"
-      fixes={[
-        { label: "Got it", onPress: read },
-        { label: "Review the hosts", onPress: onReview },
-      ]}
-    >
-      <p>
-        The hosts chats in this project may reach have changed in the project's settings, which
-        everyone who opens it follows.
-        {changed.added.length > 0 && <> Added: {changed.added.join(", ")}.</>}
-        {changed.removed.length > 0 && <> Taken away: {changed.removed.join(", ")}.</>}
-      </p>
-    </Notice>
+    <>
+      <Notice
+        cause="sandbox-hosts"
+        label="The project's hosts changed"
+        fixes={[
+          { label: "Got it", onPress: read },
+          { label: "Review the hosts", onPress: onReview },
+        ]}
+      >
+        <p>
+          The hosts chats in this project may reach have changed in the project's settings, which
+          everyone who opens it follows.
+          {changed.added.length > 0 && <> Added: {changed.added.join(", ")}.</>}
+          {changed.removed.length > 0 && <> Taken away: {changed.removed.join(", ")}.</>}
+        </p>
+      </Notice>
+      {browserSites}
+    </>
   );
 }
