@@ -121,5 +121,7 @@
 {"call":{"id":84,"command":"log_in","program":"01J9ZQ8000000000000000000D","login":{"address":"https://shop.example.test/login","user":"fixture-user","password":"fixture-word"}}}
 {"call":{"id":85,"command":"log_in","program":"01J9ZQ8000000000000000000D","login":{"address":"https://shop.example.test/login","password":"fixture-word"}}}
 {"reply":{"re":85,"refused":{"code":"browser_refused","why":"the login did not go through: https://shop.example.test still asks for a password"}}}
+{"call":{"id":86,"command":"take_back","window":"01JA0WNDW0000000000000000"}}
+{"reply":{"re":86,"ok":{"taken_back":{"confinements":["01J9CNFNMNT0000000000000002"]}}}}
 {"call":{"id":91,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-12-changes","act":{"do":"changes","page":"p2"}}}
 {"reply":{"re":91,"ok":{"browsed":{"page":{"page":"p2","address":"https://docs.example.com/","title":"Docs","current":true},"settled":true,"text":"page p2 \"Docs\" https://docs.example.com/\nChanged since the page was last read: 1 new, 1 gone.\nnew: - text \"Saved\" [e14] (line 9)\ngone: - text \"Draft\"\n"}}}}

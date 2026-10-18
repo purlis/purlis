@@ -330,6 +330,11 @@ fn every_command() -> Vec<Command> {
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
             },
         },
+        // A relaying host names the window a link is for, and is named again the confinements
+        // of the chats that window started (1.19, #2511): over the link between hosts alone.
+        Command::TakeBack {
+            window: "01JA0WNDW0000000000000000".into(),
+        },
     ]
 }
 
@@ -406,7 +411,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
         // The window's own commands, relayed by its host over the link between hosts (ruled
         // 2026-10-15, #2042): a hold, a start with its launch, the numbers dealt, its reply to
         // what a project's hooks wrote, and a chat's confinement (#2217); never an answer or a
-        // re-arm.
+        // re-arm. And the relaying host's own take-back of its window's runner chats (#2511).
         Scope::RemoteLink => &[
             "list",
             "attach",
@@ -435,6 +440,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
+            "take_back",
         ],
         Scope::FleetMcp => &[
             "list",
@@ -494,7 +500,7 @@ async fn check_the_row(scope: Scope) {
 }
 
 #[tokio::test]
-async fn local_ui_may_call_every_command() {
+async fn local_ui_may_call_every_command_but_a_relaying_hosts_take_back() {
     check_the_row(Scope::LocalUi).await;
 }
 

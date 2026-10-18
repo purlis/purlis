@@ -155,6 +155,11 @@ use crate::view::{Limits, Views};
 /// that carry no value. The window's alone ([`crate::grants::Power::LogIn`]): no relayed link
 /// sends it.
 ///
+/// 1.19 added a window taking back its runner chats' sandboxes after a re-link (#2511, ruled
+/// 2026-10-17): `take_back`, sent by a relaying host on each link it makes for one window,
+/// names that window, and is answered `taken_back` with the confinements of the chats that
+/// window started over the links before, which the host names to this link.
+///
 /// 1.21 added what changed on a browser's page (#2137): the act `changes` answers the lines of
 /// the page's tree new or gone since it was last read; and a snapshot's or a find's lines mark
 /// each element laid out wholly outside what the page's viewport shows (`(out of view)`). A
@@ -457,6 +462,13 @@ pub enum Command {
         program: String,
         login: crate::browsing::LogIn,
     },
+    /// A relaying host's word on each link it makes to another host for one window (1.19,
+    /// #2511): this link is `window`'s, by the name the relaying host gives that window on
+    /// every link it makes for it. Answered [`Answer::TakenBack`] with the confinements of the
+    /// chats that window started over the links before, each named to this link from then on
+    /// ([`crate::grants::Power::TakeBack`]). A link names one window: another name is refused
+    /// [`MALFORMED`].
+    TakeBack { window: String },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -841,6 +853,8 @@ pub enum Answer {
     Browsed(Box<crate::browsing::Browsed>),
     /// Who drives a browser now: [`Command::TakeOver`] and [`Command::HandBack`] (1.14).
     Driving { driver: crate::browsing::Driver },
+    /// The confinements named to the link again, by id: [`Command::TakeBack`] (1.19).
+    TakenBack { confinements: Vec<String> },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -1034,7 +1048,8 @@ pub enum Pushed {
     /// What a confinement's proxy did (1.4). Pushed only to a link that may confine
     /// ([`crate::grants::Power::Confine`]) and that the host named the confinement to (#2444):
     /// the link that made it, one a start's `confinement` named it to (1.16), and a window that
-    /// took its chat back with [`Command::ProgramsOf`].
+    /// took its chat back with [`Command::ProgramsOf`], or a relayed window's link that took it
+    /// back with [`Command::TakeBack`] (1.19).
     Sandbox {
         confinement: String,
         #[serde(flatten)]
@@ -1114,6 +1129,7 @@ wire_words!(Command {
     BrowserInput => "browser_input",
     SizeBrowser => "size_browser",
     LogIn => "log_in",
+    TakeBack => "take_back",
 });
 
 impl Command {
@@ -1157,6 +1173,7 @@ impl Command {
             Command::LogIn { .. } => Power::LogIn,
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
+            Command::TakeBack { .. } => Power::TakeBack,
         }
     }
 }
@@ -1195,6 +1212,7 @@ wire_words!(Answer {
     KillSwitch => "kill_switch",
     Browsed => "browsed",
     Driving => "driving",
+    TakenBack => "taken_back",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -1618,7 +1636,8 @@ impl Lane {
             | Command::Rearm
             | Command::KillSwitch
             | Command::MidTurn { .. }
-            | Command::Quit => None,
+            | Command::Quit
+            | Command::TakeBack { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -2168,6 +2187,20 @@ impl Client {
             .await?
         {
             Answer::Programs(programs) => Ok(programs),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// This link is `window`'s (1.19): the confinements of the chats that window started over
+    /// the links before, named to this link again.
+    pub async fn take_back(&self, window: &str) -> Result<Vec<String>, CallError> {
+        match self
+            .call(Command::TakeBack {
+                window: window.into(),
+            })
+            .await?
+        {
+            Answer::TakenBack { confinements } => Ok(confinements),
             other => Err(unexpected(&other)),
         }
     }
