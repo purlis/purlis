@@ -157,12 +157,21 @@ fn make_split<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String>
         .ok_or("tauri.conf.json declares no main window")?;
     config.label = label.to_owned();
     let config_root = purlis_core::machine::config_root();
+    // The project moved in front of it, whose theme levels its first frame draws (#2602).
+    let front = app.try_state::<Showing>().and_then(|showing| {
+        let held = showing.holding(label)?;
+        let planes = app.try_state::<Planes>()?;
+        let root = planes.held(held.front()?).ok()?.root().to_path_buf();
+        Some(crate::windowprefs::CreatedOn::plane(&root))
+    });
+    let created = crate::windowprefs::at_creation(config_root.as_deref(), front.as_ref());
     crate::nativewindow::dressed(
         tauri::WebviewWindowBuilder::from_config(app, &config)
             .map_err(|err| format!("purlis could not make a window: {err}"))?,
-        crate::windowprefs::native_at_creation(config_root.as_deref()),
+        created.native,
+        created.follows_system,
     )
-    .initialization_script(crate::windowprefs::creation_script(config_root.as_deref()))
+    .initialization_script(created.script)
     .on_new_window(crate::navguard::no_new_window)
     .build()
     .map(|_| ())

@@ -13,22 +13,24 @@ import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./tex
 import { DEFAULT_THEME, drawIn, fetchFacesWith, personInForce } from "./theme/theme";
 import { sayAppearance } from "./appearance";
 import { fetchFace } from "./theme/faces";
-import { theirThemeOnce } from "./windowprefs";
+import { firstFollowsSystem, firstFrameOnce } from "./windowprefs";
 import { drawNatively } from "./theme/native";
 
 // The window's colours, before anything is rendered and therefore before anything is painted:
-// the operator's own `theme.json` when there is one, else the built-in. Both were resolved by the
-// core's theme engine before the window existed and handed to it with the window
-// (`windowprefs.ts`), the built-ins compiled into the core, so nothing is read or asked on the
-// way to the first frame — the only arrangement ADR 0026's 2 s cold start can afford.
+// the theme the levels choose for the project and workspace the window was created on (#2602),
+// resolved once by the core's theme engine before the window existed and handed to it with the
+// window (`windowprefs.ts`), so nothing is read or asked on the way to the first frame — the only
+// arrangement ADR 0026's 2 s cold start can afford. The native window was created in the same
+// answer, and the window's later ask of what is in force answers it again: nothing is repainted.
 // A theme's fonts are asked for by digest after the frame (`theme/faces.ts`, #2326): the first
 // frame is drawn in each family list's fallback, and nothing waits for a face.
 fetchFacesWith(fetchFace);
-const first = theirThemeOnce() ?? DEFAULT_THEME;
+const first = firstFrameOnce()?.theme ?? DEFAULT_THEME;
 drawIn(first);
 // The window was created in this theme's native appearance and colour (`nativewindow.rs`);
-// it is told again for the one thing only the page knows, more contrast (#2328).
-drawNatively(first);
+// it is told again, for what only the page knows: the system's appearance a theme that follows
+// it is drawn in, and `prefers-contrast` where the core read no contrast (#2328, #2582).
+drawNatively(first, firstFollowsSystem());
 // The person's density and fonts were drawn with it, as the engine read them from the layout
 // file (`appearance.ts`); what it had to put right is said.
 sayAppearance(personInForce().complaints);

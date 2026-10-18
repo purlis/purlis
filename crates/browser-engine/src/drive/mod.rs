@@ -21,7 +21,9 @@
 //! - **What changed, and what is not shown** (#2137). [`Call::Changes`] answers only the lines
 //!   new or gone since the page was last read, so an action need not be followed by a whole
 //!   snapshot; and a snapshot or a find marks each element the page lays out wholly outside
-//!   what its viewport shows `(out of view)`, so the agent knows to scroll to it.
+//!   what its viewport shows `(out of view)`, so the agent knows to scroll to it, and each one
+//!   wholly outside what a box it is in that scrolls, or the frame it is in, shows (#2564), so
+//!   it knows to scroll that box.
 //! - **Settling.** Every action answers once its page has settled (nothing loading, nothing
 //!   requested still open, quiet a while, its document complete), or says what it still waited
 //!   for when the time allowed ran out. An action that opens a page answers with that page,
@@ -54,6 +56,7 @@
 
 mod blank;
 mod browser;
+mod clipped;
 mod drawn;
 pub mod fit;
 mod kept;
