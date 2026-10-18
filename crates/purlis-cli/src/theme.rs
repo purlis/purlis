@@ -1196,6 +1196,8 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
             out.push_str(&format!("  {line}\n"));
         }
     }
+    // A combination is named on its lines only when there is more than one to tell apart.
+    let named = checked.len() > 1;
     let held: Vec<String> = checked
         .iter()
         .filter_map(|one| {
@@ -1207,7 +1209,7 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
                 held.tokens.join(", ")
             );
             Some(if named {
-                format!("{}: {line}", combination(theme, one))
+                format!("{}: {line}", theme::combination_said(theme, one))
             } else {
                 line
             })

@@ -32,9 +32,10 @@ pub fn said(theme: &Theme, checked: &[Checked]) -> Vec<String> {
         .collect()
 }
 
-/// What a combination is called on a warning's line: its appearance, and each option's value
-/// in the theme's order when the theme has options (`dark, borders on, accent teal`).
-fn combination(theme: &Theme, checked: &Checked) -> String {
+/// **What a combination is called** at the front of a line about it: its appearance, and each
+/// option's value in the theme's order when the theme has options (`dark, borders on, accent
+/// teal`).
+pub fn combination(theme: &Theme, checked: &Checked) -> String {
     let mut parts = vec![checked.appearance.clone()];
     parts.extend(theme.options.iter().filter_map(|option| {
         checked
