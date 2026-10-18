@@ -7,8 +7,10 @@
 //! itself and hands none of it out: what a caller gets is a snapshot of a page with a
 //! reference for each element, the elements a find matched, a screenshot, and the outcome of
 //! an action. No call runs script the caller wrote; the few small scripts purlis runs in a page
-//! (whether its document has loaded; choosing a drop-down's options) are constants in this
-//! module, and the caller's words reach them only as values.
+//! (whether its document has loaded; choosing a drop-down's options; what a field holds and
+//! whether something has the focus) are constants in this module, the caller's words reach them
+//! only as values, and they run in a world of purlis's own in the frame they act on (#2138), so
+//! what they read and do is the document's own, whatever the page's scripts redefine.
 //!
 //! - **References.** A snapshot deals each element a reference (`e12`). It names the same
 //!   element in every later snapshot of the same document, and dies when its frame loads
@@ -554,6 +556,10 @@ pub enum Refusal {
     NotLoggedIn(String),
     #[error("the page changed before this input reached it, so it was dropped")]
     Missed,
+    /// What the field being typed into holds could not be read (#2138): the key waits, since
+    /// what it puts in could not be kept out.
+    #[error("the field being typed into could not be read, so the key waits")]
+    FieldUnread,
 }
 
 /// How long and how much, all configurable (from Settings, by the session host).

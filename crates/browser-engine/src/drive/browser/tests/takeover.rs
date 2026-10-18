@@ -464,6 +464,34 @@ fn a_character_typed_with_alt_or_option_reaches_the_field_once_it_is_blanked() {
 }
 
 #[test]
+fn a_paste_into_a_field_that_cannot_be_read_waits() {
+    // #2138: the engine tells of no world purlis makes, so the field cannot be read.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.worlds_untold = true;
+        model.value = "pasted-Secret9".into();
+    }
+
+    let pasted = browser.person_input(&chord(&aim, "v", 4));
+
+    assert_eq!(pasted, Err(Refusal::FieldUnread));
+    assert!(
+        engine
+            .sent("Input.dispatchKeyEvent")
+            .iter()
+            .all(|s| s.params["key"] != "v"),
+        "the paste never reached the page"
+    );
+    browser.hand_back();
+    super::super::lock(&engine.model).worlds_untold = false;
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("pasted-Secret9"), "{text}");
+}
+
+#[test]
 fn what_the_person_pastes_stays_out_of_later_answers() {
     let (browser, engine) = browser();
     browser.take_over();

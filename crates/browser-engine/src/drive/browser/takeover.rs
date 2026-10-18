@@ -309,7 +309,7 @@ impl Browser {
                         Err(Refusal::NothingFocused) => {
                             // Nothing the tree shows has the focus: unless the document has
                             // nothing focused either, the key waits.
-                            if self.focus_unseen(&session) {
+                            if self.focus_unseen(&session, &target) {
                                 return Err(Refusal::FocusUnseen);
                             }
                             None
@@ -324,7 +324,8 @@ impl Browser {
                 let before = field
                     .as_ref()
                     .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
-                    .map(|(field, _)| self.field_holds(field));
+                    .map(|(field, _)| self.field_holds(field))
+                    .transpose()?;
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -339,7 +340,10 @@ impl Browser {
                 if let Some((field, read)) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
-                    let after = self.field_holds(&field);
+                    // Read again once if it could not be read: the key is in already.
+                    let after = self
+                        .field_holds(&field)
+                        .or_else(|_| self.field_holds(&field))?;
                     let mut held = Kept::default();
                     if let Some(before) = before {
                         // What the key put in is kept as it was put in, like a run, and so is
@@ -462,7 +466,10 @@ impl Browser {
         let mut latest = HashMap::new();
         let mut order = Vec::new();
         for field in &touched {
-            let now = self.field_holds(field);
+            // A field that cannot be read now keeps what it was last read to hold.
+            let Ok(now) = self.field_holds(field) else {
+                continue;
+            };
             held.field(&field.1, &[&now]);
             (latest, order) = lock(&self.typing).read(&field.1, &now);
         }
@@ -474,9 +481,9 @@ impl Browser {
         lock(&self.inner.state).keep_out_everywhere(&held);
     }
 
-    /// What `field` holds now, read from the field itself; empty where it cannot be read (it is
-    /// gone, or its page moved on).
-    fn field_holds(&self, (target, key): &(String, NodeKey)) -> String {
+    /// What `field` holds now, read from the field itself; empty where it is gone (it, or its
+    /// frame). Refused [`Refusal::FieldUnread`] where it is there and cannot be read.
+    fn field_holds(&self, (target, key): &(String, NodeKey)) -> Result<String, Refusal> {
         let session = {
             let state = lock(&self.inner.state);
             match state
@@ -484,54 +491,72 @@ impl Browser {
                 .and_then(|page| page.frames.get(&key.frame))
             {
                 Some(frame) => frame.session.clone(),
-                None => return String::new(),
+                None => return Ok(String::new()),
             }
         };
         let on = Some(session.as_str());
-        let Ok(resolved) = self.devtools().call(
-            "DOM.resolveNode",
-            json!({ "backendNodeId": key.backend }),
-            on,
-        ) else {
-            return String::new();
-        };
-        let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
-            return String::new();
-        };
-        let read = self.devtools().call(
-            "Runtime.callFunctionOn",
-            json!({ "objectId": object, "functionDeclaration": READ_VALUE, "returnByValue": true }),
-            on,
-        );
-        let _ = self
-            .devtools()
-            .call("Runtime.releaseObject", json!({ "objectId": object }), on);
-        read.ok()
-            .and_then(|read| {
-                read.pointer("/result/value")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_default()
+        // Read in the world the field was resolved into, by its unique id: an element of any
+        // other world is refused by the engine.
+        let read = self.in_world(&session, &key.frame, |world| {
+            let resolved = self.devtools().call(
+                "DOM.resolveNode",
+                json!({ "backendNodeId": key.backend, "executionContextId": world.id }),
+                on,
+            )?;
+            let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
+                return Ok(Value::Null);
+            };
+            let read = self.devtools().call(
+                "Runtime.callFunctionOn",
+                json!({
+                    "uniqueContextId": world.unique,
+                    "functionDeclaration": READ_VALUE,
+                    "arguments": [{ "objectId": object }],
+                    "returnByValue": true,
+                }),
+                on,
+            );
+            let _ =
+                self.devtools()
+                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+            read
+        });
+        match read {
+            Ok(read) => read
+                .pointer("/result/value")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or(Refusal::FieldUnread),
+            Err(CallError::Engine { message, .. }) if message.contains("No node") => {
+                Ok(String::new())
+            }
+            Err(_) => Err(Refusal::FieldUnread),
+        }
     }
 
-    /// Whether the document on `session` has an element focused (or one inside a frame), though
-    /// its tree shows none: then a key typed now would go where purlis cannot blank it.
-    fn focus_unseen(&self, session: &str) -> bool {
-        self.devtools()
-            .call(
+    /// Whether the document of `frame` on `session` has an element focused (or one inside a
+    /// frame), though its tree shows none: then a key typed now would go where purlis cannot
+    /// blank it.
+    fn focus_unseen(&self, session: &str, frame: &str) -> bool {
+        self.in_world(session, frame, |world| {
+            self.devtools().call(
                 "Runtime.evaluate",
-                json!({ "expression": ACTIVE_ELEMENT, "returnByValue": true }),
+                json!({
+                    "expression": ACTIVE_ELEMENT,
+                    "uniqueContextId": world.unique,
+                    "returnByValue": true,
+                }),
                 Some(session),
             )
-            .ok()
-            .and_then(|read| {
-                read.pointer("/result/value")
-                    .and_then(Value::as_str)
-                    .map(|tag| !tag.is_empty())
-            })
-            // A document that cannot say holds the key back too.
-            .unwrap_or(true)
+        })
+        .ok()
+        .and_then(|read| {
+            read.pointer("/result/value")
+                .and_then(Value::as_str)
+                .map(|tag| !tag.is_empty())
+        })
+        // A document that cannot say holds the key back too.
+        .unwrap_or(true)
     }
 }
 
