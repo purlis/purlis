@@ -531,17 +531,83 @@ impl Pane {
         Pane { seen }
     }
 
+    /// Waits until the pane has drawn `text`, read as the text the pane draws: a view is sent
+    /// the screen as it is first and then the output, so a line the program writes in two
+    /// pieces can reach it with the cursor moves that end the screen between them (#2375).
     fn shows(&self, text: &str) {
         let deadline = Instant::now() + PATIENCE;
-        while !self.seen.lock().expect("the pane").contains(text) {
+        loop {
+            // A copy, so a failed wait panics holding no lock: the view's sink still takes the
+            // lock on the host's thread, and a poisoned one would fail it there too.
+            let seen = self.seen.lock().expect("the pane").clone();
+            if drawn(&seen).contains(text) {
+                return;
+            }
             assert!(
                 Instant::now() < deadline,
-                "{text:?} was never drawn, only {:?}",
-                self.seen.lock().expect("the pane")
+                "{text:?} was never drawn, only {seen:?}"
             );
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+}
+
+/// `seen` as text, its escape sequences left out: a control sequence (`ESC [` to its final
+/// byte), a string (`ESC ]`, `P`, `^` or `_` to BEL or ST), or an escape with its intermediate
+/// bytes and final byte, such as saving the cursor (`ESC 7`).
+fn drawn(seen: &str) -> String {
+    let mut text = String::with_capacity(seen.len());
+    let mut chars = seen.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            text.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']' | 'P' | '^' | '_') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            Some(' '..='/') => {
+                for c in chars.by_ref() {
+                    if !(' '..='/').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    text
+}
+
+/// A pane opened while a chat writes a line is sent the screen with the line's first piece,
+/// then the rest as the program writes it: the end of the screen it is sent moves the cursor
+/// back between the two (#2375, as CI drew it).
+#[test]
+fn a_line_written_in_two_pieces_around_the_screen_a_pane_opens_on_is_shown_whole() {
+    let pane = Pane {
+        seen: Arc::new(Mutex::new(
+            "--name chat 1 without the sandbox\u{1b}[K\u{1b}[1;1H\u{1b}7\u{1b}[2 q\u{1b}[24;33H :END"
+                .to_owned(),
+        )),
+    };
+
+    pane.shows("without the sandbox :END");
 }
 
 /// How each chat ended, as the window is told.
