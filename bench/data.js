@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792306385128,
+  "lastUpdate": 1792307810376,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16716,6 +16716,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1363025,
             "unit": "ms",
             "extra": "median of 5 runs: 100.942, 100.966, 101.136, 101.137, 102.486 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34cc776d2cf0e003f50c851e4c5be215b5fe9716",
+          "message": "test(handoff): decide a full limit's Allow on a pretend host (#2554) (#2594)\n\nCause: the test filled the one slot with a task on the real stand-in\nharness, whose program ends after ten seconds. The Allow is decided again\non a thread of its own; on a loaded runner, a thread that ran its decision\nafter those ten seconds found the slot free and rightly started the\ndispatch, and one that ran later than the 30-second wait left the asking\nchat untold in time. Holding the Allow's thread back on CI proved it: 10 s\nor more fails the test, every time.\n\nOn the pretend host its sibling tests use, the task that fills the slot\nruns until the test ends, so the decision is the same whenever the thread\nruns (held back 0 to 20 s: green), and the wait for the word is unchanged.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T11:13:56+04:00",
+          "tree_id": "57287fcefb05658d36cb0b984ad1c1dff15116c9",
+          "url": "https://github.com/purlis/purlis/commit/34cc776d2cf0e003f50c851e4c5be215b5fe9716"
+        },
+        "date": 1792307809325,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.440216,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.433, 0.435, 0.440, 0.447, 0.460 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.509138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.403, 16.502, 16.509, 16.532, 16.711 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.54750200000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.981, 101.352, 101.548, 101.877, 101.980 ms"
           }
         ]
       }
