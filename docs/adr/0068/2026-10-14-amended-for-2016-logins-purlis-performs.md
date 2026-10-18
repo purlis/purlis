@@ -26,15 +26,23 @@ to 5 are **decided in implementation, to be confirmed** (D-2016-1 to D-2016-5).
    themselves are kept out of every answer about every page of the browser, a page opened later
    included, for as long as the browser lives; each field purlis fills is blanked before its
    value goes in. *D-2016-3, to be confirmed.*
-4. **It fills only on the declared origin**, as the engine records the page's own document,
-   checked before and after each field; only the page's own document is searched for the form.
-   It submits by Enter, and the login has gone through once the page, on the declared origin,
-   shows no password field; within the login's limit (thirty seconds for the form to show, and
-   again for the field to go, a setting like every browser limit), or it fails and what it filled
-   is cleared. *D-2016-4, to be confirmed.*
+4. **It fills only on the declared origin, in a page of its own.** purlis opens the login's page
+   itself, so no other page opened it, and fills only while the engine records that page's own
+   document on the declared origin; only that document is searched for the form. Right before
+   each value goes in and right after, the page must still show the same document with the field
+   focused in it; where it does not, purlis ends the whole browser before the agent has it again.
+   It submits by Enter. All it can tell is that the page, on the declared origin, shows no
+   password field in two reads in a row, and it says so, never that the person is signed in (a
+   page may ask for a second step); within the login's limit (thirty seconds for the form to
+   show, and again for the field to go, a setting like every browser limit), or it fails and what
+   it filled is cleared. A login the person cuts by taking the browser over has what it filled
+   cleared as they hand it back. *D-2016-4, to be confirmed.*
 5. **A browser holding a login reaches its login's site alone, from the first fill.** Just
    before the first value goes in, the browser's reach proxy is bound to the login's host and
    port, ends every connection it carried until then, and from then on carries nothing else for
    as long as the browser runs, whatever lists anything else; nobody is asked about another site,
-   since no Allow would carry it. A browser that holds a login at one site is not logged in at
-   another: the chat opens another browser. *D-2016-5, to be confirmed.*
+   since no Allow would carry it. The site is the login page's one host and port, which is
+   narrower than the ruling's "declared origins". A browser that holds a login at one site is not
+   logged in at another: the chat opens another browser. A login page's site is carried while its
+   login runs, and stays carried only once the browser is bound to it. *D-2016-5, to be
+   confirmed.*

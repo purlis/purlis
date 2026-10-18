@@ -1257,13 +1257,15 @@ enum Doing {
     LogIn(String),
 }
 
-/// What the chat is told once purlis performed its browser login `name` (#2016): that it went
-/// through, where, and what the browser reaches from now. Never a value.
+/// What the chat is told once purlis performed its browser login `name` (#2016): that its
+/// password field went, where, and what the browser reaches from now. Never that the person is
+/// signed in, which only the page can show (it may ask for a second step), and never a value.
 fn logged_in_said(name: &str, note: Option<&str>) -> String {
-    let at = note.unwrap_or("logged in");
+    let gone = note.unwrap_or("the password field is gone since purlis submitted the login");
     format!(
-        "{at}, with {name}: purlis filled and submitted it, and this browser now reaches that \
-         site alone. Open another with browser_new for any other site; take a snapshot to go on"
+        "{gone}, with {name}: take a snapshot to see whether the page asks for anything more. \
+         This browser now reaches that site alone; open another with browser_new for any other \
+         site"
     )
 }
 

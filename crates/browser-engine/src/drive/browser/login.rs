@@ -14,19 +14,25 @@
 //! the page's tree reads for the field, which for a password field is bullets. Each field is
 //! blanked before its value goes in, so a show-password toggle shows nothing either.
 //!
-//! **It fills only on the declared origin**, read from the engine's own record of the page's
-//! document, never from the page: before each field, and again after it. A page on any other
-//! origin has nothing filled, and the login fails with a sentence. Only the page's own document
-//! is searched for the form: a field inside a frame is never filled.
+//! **It fills only on the declared origin, in a page of its own**: a page purlis opens itself,
+//! which no other page opened, on the origin the engine records for its document, never what
+//! the page says. Right before each value goes in and right after, the page must still show the
+//! same document with the field focused in it; where it does not, purlis ends the whole browser
+//! before the agent has anything of it. A page on any other origin has nothing filled, and the
+//! login fails with a sentence. Only the page's own document is searched for the form: a field
+//! inside a frame is never filled.
 //!
 //! **The browser holds the login from the first fill**: `bind`, the caller's, holds what the
 //! browser reaches to the declared origin before the first value goes in. Where it cannot, no
 //! value goes in.
 //!
 //! **Then it submits, and waits for the password field to go.** A login that does not go
-//! through within [`crate::drive::Limits::login_within`] has every field it filled cleared, and fails. Either way the
-//! browser is handed back to the agent with a new lease, so every reference dealt before is
-//! void. No sentence it answers carries a value.
+//! through within [`crate::drive::Limits::login_within`] has every field it filled cleared,
+//! and fails; one the person cut by taking the browser over has them cleared as they hand it
+//! back. Either way the browser is handed back to the agent with a new lease, so every
+//! reference dealt before is void. A password field that went is all purlis can tell: it says
+//! so, and never that the person is signed in, since a page may ask for a second step. No
+//! sentence it answers carries a value.
 
 use std::time::{Duration, Instant};
 
@@ -35,8 +41,8 @@ use serde_json::{Value, json};
 use super::super::kept::Kept;
 use super::super::keys::key_events;
 use super::super::tree::NodeKey;
+use super::Browser;
 use super::takeover::Carrying;
-use super::{Browser, Why};
 use crate::drive::{Answer, Content, Driver, Login, Refusal, lock};
 
 /// How long a login waits for its form to show, and then for the password field to go, unless
@@ -68,6 +74,12 @@ pub(crate) const NAME_FIELD: &str = r#"(() => {
 pub(crate) const FOCUS_FIELD: &str = r"function () {
   this.focus();
   if (typeof this.select === 'function') this.select();
+}";
+
+/// The function that says whether the field it runs on has the focus in a document that has
+/// the focus: a constant.
+pub(crate) const FIELD_HAS_FOCUS: &str = r"function () {
+  return this.isConnected && this === document.activeElement && document.hasFocus();
 }";
 
 /// The function that empties a field purlis filled, run on the field: a constant.
@@ -235,7 +247,13 @@ impl Browser {
         let mut filled: Vec<NodeKey> = Vec::new();
         let done = self.fill_and_submit(&target, login, &mut filled);
         if done.is_err() {
-            self.clear(&target, origin, &filled);
+            if self.cut() {
+                // The person took the browser over: what purlis filled is cleared as they hand
+                // it back, before the agent has it again.
+                lock(&self.to_clear).push((target.clone(), origin.to_owned(), filled));
+            } else {
+                self.clear(&target, origin, &filled);
+            }
         }
         done
     }
@@ -305,24 +323,16 @@ impl Browser {
             .clone()
             .unwrap_or_else(|| target.to_owned());
         let mut answer = self.answer_now(&shown, Content::Nothing);
-        answer.note = Some(format!("logged in at {origin}"));
+        answer.note = Some(format!(
+            "the password field is gone from {origin} since purlis submitted the login"
+        ));
         Ok(answer)
     }
 
-    /// Sends the browser's current page to the login's address, or opens one there where it
-    /// has none: answers the page's target.
+    /// Opens a page of purlis's own at the login's address, which no other page opened, and
+    /// answers its target: it becomes the browser's current page.
     fn go_to(&self, login: &Login) -> Result<String, Refusal> {
-        let current = lock(&self.inner.state).current.clone();
-        match current {
-            Some(target) => {
-                let session = self.page_session(&target)?;
-                let _addressing = self.addressing(&target, Why::Addressed);
-                self.acting_on(&target, || self.navigate(&session, &login.address))?;
-            }
-            None => {
-                self.open(&login.address)?;
-            }
-        }
+        self.open(&login.address)?;
         lock(&self.inner.state)
             .current
             .clone()
@@ -403,17 +413,27 @@ impl Browser {
     }
 
     /// Fills `field` with `value`, while `target`'s page is on `origin`, the field blanked
-    /// before the value goes in.
+    /// before the value goes in. Right before the value goes in, and right after, the page must
+    /// still show the document it showed when the fill began, with the field focused in it and
+    /// the document focused: where it does not, the whole browser is ended
+    /// ([`Refusal::NotLoggedIn`] says so) before anything reaches the agent.
     fn fill(&self, target: &str, origin: &str, field: &Found, value: &str) -> Result<(), Refusal> {
         if !self.on_origin(target, origin) {
             return Err(not_logged_in(format!(
                 "the page left {origin} before the login was filled, so nothing more was filled"
             )));
         }
+        let document = self.document_of(target);
         self.blank_node(target, field.key.clone())?;
         let session = self.page_session(target)?;
         let on = Some(session.as_str());
         let could_not = || not_logged_in(format!("purlis could not fill the login on {origin}"));
+        // A page purlis drives behaves as one with the focus, whatever the window shows.
+        let _ = self.devtools().call(
+            "Emulation.setFocusEmulationEnabled",
+            json!({ "enabled": true }),
+            on,
+        );
         self.gated(|| {
             self.devtools().call(
                 "Runtime.callFunctionOn",
@@ -422,27 +442,79 @@ impl Browser {
             )
         })?
         .map_err(|_| could_not())?;
-        if !self.on_origin(target, origin) {
-            return Err(not_logged_in(format!(
-                "the page left {origin} before the login was filled, so nothing more was filled"
-            )));
+        if !self.still_filling(target, origin, document, field, on) {
+            return Err(self.ended_for_a_changed_page(origin));
         }
         self.gated(|| {
             self.devtools()
                 .call("Input.insertText", json!({ "text": value }), on)
         })?
         .map_err(|_| could_not())?;
+        if !self.still_filling(target, origin, document, field, on) {
+            return Err(self.ended_for_a_changed_page(origin));
+        }
         let _ = self.devtools().call(
             "Runtime.releaseObject",
             json!({ "objectId": field.object }),
             on,
         );
-        if !self.on_origin(target, origin) {
-            return Err(not_logged_in(format!(
-                "the page left {origin} as the login was filled"
-            )));
-        }
         Ok(())
+    }
+
+    /// The number of the document `target`'s page shows, as the engine recorded it.
+    fn document_of(&self, target: &str) -> Option<u64> {
+        lock(&self.inner.state).page(target).map(|page| page.shows)
+    }
+
+    /// Whether `target`'s page still shows `document`, on `origin`, with `field` focused in it
+    /// and the document focused: read from the field itself, so a field of a document gone is
+    /// never taken for one still there.
+    fn still_filling(
+        &self,
+        target: &str,
+        origin: &str,
+        document: Option<u64>,
+        field: &Found,
+        on: Option<&str>,
+    ) -> bool {
+        if document.is_none()
+            || self.document_of(target) != document
+            || !self.on_origin(target, origin)
+        {
+            return false;
+        }
+        let focused = self
+            .devtools()
+            .call(
+                "Runtime.callFunctionOn",
+                json!({
+                    "objectId": field.object,
+                    "functionDeclaration": FIELD_HAS_FOCUS,
+                    "returnByValue": true,
+                }),
+                on,
+            )
+            .ok()
+            .and_then(|read| read.pointer("/result/value").and_then(Value::as_bool))
+            == Some(true);
+        focused && self.document_of(target) == document
+    }
+
+    /// **Ends the whole browser** because its page changed while purlis filled it (module docs),
+    /// and answers what the agent is told.
+    fn ended_for_a_changed_page(&self, origin: &str) -> Refusal {
+        {
+            let mut state = lock(&self.inner.state);
+            state.ended = true;
+        }
+        self.inner.changed.notify_all();
+        let _ = self.devtools().call("Browser.close", json!({}), None);
+        #[cfg(unix)]
+        self.stop(std::time::Duration::ZERO);
+        not_logged_in(format!(
+            "the page changed while purlis filled the login on {origin}, so purlis ended this \
+             browser: open a new one with browser_new and log in again"
+        ))
     }
 
     /// Presses Enter in what has the focus on `target`'s page.
@@ -478,6 +550,15 @@ impl Browser {
                 return Err(Refusal::Unknown);
             }
             self.pause(LOOK_AGAIN)?;
+        }
+    }
+
+    /// Empties what each login the person cut by taking the browser over filled: called as they
+    /// hand it back.
+    pub(super) fn clear_cut_logins(&self) {
+        let cut = std::mem::take(&mut *lock(&self.to_clear));
+        for (target, origin, filled) in cut {
+            self.clear(&target, &origin, &filled);
         }
     }
 
@@ -525,33 +606,5 @@ fn or_said(why: Refusal, said: String) -> Refusal {
     match why {
         Refusal::Unknown => not_logged_in(said),
         other => other,
-    }
-}
-
-#[cfg(test)]
-mod origin_tests {
-    use super::origin_of;
-
-    #[test]
-    fn an_address_is_on_the_origin_a_page_spells() {
-        assert_eq!(
-            origin_of("https://Shop.Example.test/login?next=/").as_deref(),
-            Some("https://shop.example.test")
-        );
-        assert_eq!(
-            origin_of("https://shop.example.test:443/").as_deref(),
-            Some("https://shop.example.test")
-        );
-        assert_eq!(
-            origin_of("http://127.0.0.1:8123/login").as_deref(),
-            Some("http://127.0.0.1:8123")
-        );
-        assert_eq!(
-            origin_of("http://[::1]:8123/").as_deref(),
-            Some("http://[::1]:8123")
-        );
-        assert_eq!(origin_of("about:blank"), None);
-        assert_eq!(origin_of("chrome-error://chromewebdata/"), None);
-        assert_eq!(origin_of("https://user@shop.example.test/"), None);
     }
 }

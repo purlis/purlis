@@ -167,6 +167,8 @@ impl Browser {
             return self.epoch();
         }
         self.keep_typing_out();
+        // What a login the person cut had filled is emptied before the agent has the page.
+        self.clear_cut_logins();
         let mut lease = lock(&self.lease);
         if lease.driver == Driver::Person {
             lease.epoch += 1;

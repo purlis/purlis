@@ -112,7 +112,7 @@ impl Driver for Hosted {
             .push((program.to_owned(), login.address.clone()));
         Ok(Browsed {
             settled: true,
-            note: Some("logged in at https://shop.example.test".into()),
+            note: Some("the password field is gone from https://shop.example.test since purlis submitted the login".into()),
             ..Browsed::default()
         })
     }
@@ -1319,7 +1319,7 @@ fn a_browser_login_is_performed_in_the_chats_browser_and_no_value_reaches_the_ch
     assert_eq!(browser, "b1");
     let note = browsed.note.clone().unwrap_or_default();
     assert!(
-        note.contains("logged in at https://shop.example.test, with shop-login"),
+        note.contains("since purlis submitted the login, with shop-login: take a snapshot"),
         "{note}"
     );
     assert!(note.contains("reaches that site alone"), "{note}");

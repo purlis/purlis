@@ -29,9 +29,9 @@
 //! against, so one the take-over overtook is cut by the engine. While purlis performs a login
 //! (#2016) the engine holds the lease itself, refusing the agent's acts until it hands the
 //! browser back under a new epoch, which the host takes as the agent's lease from then on; a
-//! take-over meanwhile cuts the login and leaves the browser the person's. A view of a 1.14 link is sent
-//! frames that name what they show (`view::frames::AIMED_JPEG`), which the person's input names
-//! back.
+//! take-over meanwhile cuts the login and leaves the browser the person's. A view of a 1.14
+//! link is sent frames that name what they show (`view::frames::AIMED_JPEG`), which the
+//! person's input names back.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

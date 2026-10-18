@@ -55,7 +55,9 @@ fn a_declared_login_goes_through_and_no_value_reaches_the_agent() {
     assert_eq!(ended.driver, Driver::Agent);
     assert_eq!(
         answer.note.as_deref(),
-        Some("logged in at http://fixture.test")
+        Some(
+            "the password field is gone from http://fixture.test since purlis submitted the login"
+        )
     );
     let page = answer.page.expect("the page it left");
     // The page it landed on carries the values in its address: neither is shown.
@@ -108,6 +110,12 @@ fn a_login_that_does_not_go_through_is_cleared_and_its_toggle_shows_nothing() {
         other => panic!("refused: {other:?}"),
     }
     assert_eq!(ended.driver, Driver::Agent);
+    // What purlis filled is cleared: the page says its field holds nothing.
+    let shown = snapshot(&browser);
+    assert!(
+        shown.contains("the password field holds 0 characters"),
+        "{shown}"
+    );
     let show = ref_on(&find(&browser, "Show password"), "Show password");
     call(&browser, Call::Click { target: show });
     let shown = snapshot(&browser);

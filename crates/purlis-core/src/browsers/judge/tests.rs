@@ -290,3 +290,27 @@ fn a_browser_bound_to_one_login_is_not_bound_to_another() {
     );
     assert!(!bound.lets("mail.example.test", 443));
 }
+
+#[test]
+fn a_logins_site_is_let_on_for_good_only_once_the_browser_is_bound_to_it() {
+    let shop = Site::of("shop.example.test", 443);
+    let sites = sites(&["docs.example.com"], false);
+    sites.logging_in(&shop);
+    assert!(sites.new_sites().carries(&shop), "while the login runs");
+    sites.done_logging_in();
+    assert!(
+        !sites.new_sites().carries(&shop),
+        "a login that never filled lets nothing on"
+    );
+    assert_eq!(
+        sites.judge(&out("https://shop.example.test/?q=1", Why::Addressed)),
+        ask("shop.example.test:443")
+    );
+    sites.logging_in(&shop);
+    sites.bound_to(&shop);
+    sites.done_logging_in();
+    assert!(
+        sites.new_sites().carries(&shop),
+        "bound to it, the browser reaches it"
+    );
+}

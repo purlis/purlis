@@ -569,7 +569,13 @@ fn s_none() -> Value {
 
 fn s_login() -> Value {
     schema(
-        json!({ "login": { "type": "string", "description": "The browser login's name, as your persona declares it in the project's settings (shop-login)." } }),
+        json!({
+            "login": {
+                "type": "string",
+                "description": "The browser login's name, as your persona declares it in the \
+                                project's settings (shop-login).",
+            }
+        }),
         &["login"],
     )
 }

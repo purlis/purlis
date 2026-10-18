@@ -665,6 +665,9 @@ pub struct Browser {
     acting_epoch: AtomicU64,
     /// What the person typed while driving, kept out of later answers (#2014).
     typing: Mutex<Typing>,
+    /// What each login the person cut by taking the browser over filled, cleared as they hand
+    /// it back (#2016): the page's target, the login's origin, and the fields.
+    to_clear: Mutex<Vec<(String, String, Vec<NodeKey>)>>,
     /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
     /// call in flight.
     #[cfg(unix)]
@@ -821,6 +824,7 @@ impl Browser {
             lease: Mutex::new(Lease::default()),
             acting_epoch: AtomicU64::new(0),
             typing: Mutex::new(Typing::default()),
+            to_clear: Mutex::new(Vec::new()),
             #[cfg(unix)]
             engine: Mutex::new(None),
         })

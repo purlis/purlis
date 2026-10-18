@@ -47,7 +47,8 @@ pub struct Login {
 }
 
 /// **The origin a login page's `url` is on** (`https://host[:port]`, the port left out where it
-/// is the scheme's own, as a browser's `URL.origin` spells it), or why it may not be one: not
+/// is the scheme's own, and a name in its ASCII spelling, as a browser's `URL.origin` spells
+/// it), or why it may not be one: not
 /// `https` (plain `http` is taken for this machine's own loopback alone), a user or password in
 /// it, or a host that is not a plain lower-case name or address.
 pub fn origin_of(url: &str) -> Result<String, String> {
@@ -82,6 +83,17 @@ pub fn origin_of(url: &str) -> Result<String, String> {
             (host, Some(port))
         }
         _ => (authority, None),
+    };
+    // A name written in another script is the one a browser goes to by its ASCII spelling
+    // (IDNA), which is the spelling its page's address carries.
+    let ascii;
+    let host = if host.is_ascii() {
+        host
+    } else {
+        ascii = idna::domain_to_ascii(host).map_err(|_| {
+            format!("browser = {url:?} names a host purlis cannot spell as a browser does")
+        })?;
+        ascii.as_str()
     };
     let named = host
         .bytes()

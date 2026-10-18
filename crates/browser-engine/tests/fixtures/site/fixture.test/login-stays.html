@@ -12,7 +12,13 @@
     <button type="button" id="show">Show password</button>
     <button type="submit">Sign in</button>
   </form>
+  <p id="holds">the password field holds 0 characters</p>
   <script>
+    // How much the password field holds, never what: a field cleared says 0.
+    document.getElementById('password').addEventListener('input', (e) => {
+      document.getElementById('holds').textContent =
+        'the password field holds ' + e.target.value.length + ' characters';
+    });
     // A show-password toggle: the field's value as plain text.
     document.getElementById('show').addEventListener('click', () => {
       const field = document.getElementById('password');

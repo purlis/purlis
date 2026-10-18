@@ -98,14 +98,26 @@ impl SiteJudge {
         &self.bound
     }
 
-    /// **purlis is about to perform a login at `site`** (#2016): what it sends there while it
-    /// drives goes, and the proxy carries the site.
+    /// **purlis is about to perform a login at `site`** (#2016): while it runs, what purlis
+    /// sends there goes, and the proxy carries the site. The site is let on for good only once
+    /// the browser is bound to it ([`Self::bound_to`]); a login that never filled leaves nothing
+    /// let on ([`Self::done_logging_in`]).
     pub fn logging_in(&self, site: &Site) {
+        self.lock().login = Some(site.clone());
+    }
+
+    /// The browser is bound to its login's `site` (#2016): it is let on from now.
+    pub fn bound_to(&self, site: &Site) {
         let mut now = self.lock();
-        now.login = Some(site.clone());
         if now.let_on.len() < MOST_LET_ON {
             now.let_on.insert(site.clone());
         }
+    }
+
+    /// The login has answered (#2016): its site is carried from now only where the browser was
+    /// bound to it, or its reach carries it anyway.
+    pub fn done_logging_in(&self) {
+        self.lock().login = None;
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Now> {
@@ -181,6 +193,7 @@ impl SiteJudge {
         let now = self.lock();
         now.open_web
             || now.let_on.contains(site)
+            || now.login.as_ref() == Some(site)
             || [true, false].into_iter().any(|tunnel| {
                 matches!(
                     now.lane

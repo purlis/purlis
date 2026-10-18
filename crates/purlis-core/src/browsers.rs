@@ -303,7 +303,7 @@ impl Browsers for EngineBrowsers {
             sites,
             held: Mutex::new(Some(Held {
                 browser: Arc::new(browser),
-                proxy,
+                proxy: Arc::new(proxy),
             })),
         }))
     }
@@ -604,8 +604,10 @@ fn not_taken(refusal: drive::Refusal) -> NotTaken {
 pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
     let address = WebAddress::parse(&login.address)
         .map_err(|why| format!("the login's address is not one a browser opens: {why}"))?;
-    let (origin, (host, port)) = drive::origin_of(&login.address)
-        .zip(judge::site_of(&login.address))
+    // https, or plain http on this machine's loopback alone; a name in its ASCII spelling, as
+    // the engine records a page's address.
+    let origin = crate::sandbox::tools::login::origin_of(&login.address)?;
+    let (host, port) = judge::site_of(&origin)
         .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())?;
     Ok((
         drive::Login {
@@ -619,6 +621,42 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
         },
         Site::of(&host, port),
     ))
+}
+
+/// **A login purlis performs in a browser whose judge is `sites` and whose reach proxy is
+/// `proxy`** (#2016), at `site`, on `origin`: `run` performs it, and is handed what binds the
+/// browser to `site` alone just before the first value goes in. While it runs, what purlis sends
+/// to `site` goes; once bound, the proxy carries `site` alone for the browser's life, every
+/// connection it carried before ended. Refused, running nothing, for a browser that holds a login
+/// at another site already.
+pub fn performed<T>(
+    sites: &judge::SiteJudge,
+    proxy: &ReachProxy,
+    site: &Site,
+    origin: &str,
+    run: impl FnOnce(&dyn Fn() -> Result<(), String>) -> T,
+) -> Result<T, String> {
+    if let Some(held) = sites.bound().sites()
+        && !held.contains(site)
+    {
+        return Err(format!(
+            "this browser holds a login at {}, and reaches nothing else: open a new browser \
+             with browser_new and log in to {origin} there",
+            held.iter()
+                .map(Site::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+    }
+    sites.logging_in(site);
+    let bind = || -> Result<(), String> {
+        proxy.bind(site)?;
+        sites.bound_to(site);
+        Ok(())
+    };
+    let done = run(&bind);
+    sites.done_logging_in();
+    Ok(done)
 }
 
 /// Who drives a browser after a login, in the protocol's words: never purlis, which hands every
@@ -641,7 +679,7 @@ fn not_acted(refusal: drive::Refusal) -> NotActed {
 /// A running browser and its reach proxy, which lives exactly as long as it.
 struct Held {
     browser: Arc<Browser>,
-    proxy: ReachProxy,
+    proxy: Arc<ReachProxy>,
 }
 
 /// One browser on its engine, as the host drives it.
@@ -730,31 +768,16 @@ impl Screen for EngineScreen {
                     .to_owned(),
             ));
         };
-        if let Some(held) = sites.bound().sites()
-            && !held.contains(&site)
-        {
-            return Err(NotActed::Refused(format!(
-                "this browser holds a login at {}, and reaches nothing else: open a new browser \
-                 with browser_new and log in to {} there",
-                held.iter()
-                    .map(Site::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                login.origin
-            )));
-        }
-        let browser = self.with(Arc::clone).ok_or(NotActed::Ended)?;
-        sites.logging_in(&site);
-        // Bound by the proxy itself, which ends every connection it carried until now.
-        let bind = || -> Result<(), String> {
+        let (browser, proxy) = {
             let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
-            let proxy = &held
-                .as_ref()
-                .ok_or_else(|| "the browser has ended".to_owned())?
-                .proxy;
-            proxy.bind(&site)
+            let held = held.as_ref().ok_or(NotActed::Ended)?;
+            (Arc::clone(&held.browser), Arc::clone(&held.proxy))
         };
-        let ended = browser.log_in(&login, &bind).map_err(not_acted)?;
+        let ended = performed(sites, &proxy, &site, &login.origin, |bind| {
+            browser.log_in(&login, bind)
+        })
+        .map_err(NotActed::Refused)?
+        .map_err(not_acted)?;
         drop(login);
         Ok(LoginEnded {
             driver: driver_of(ended.driver),

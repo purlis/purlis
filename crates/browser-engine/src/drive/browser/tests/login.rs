@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::super::login::{CLEAR_FIELD, NAME_FIELD, PASSWORD_FIELD};
+use super::super::login::{CLEAR_FIELD, FIELD_HAS_FOCUS, NAME_FIELD, PASSWORD_FIELD, origin_of};
 use super::{Engine, browser_with, id, limits, snapshot};
 use crate::WebAddress;
 use crate::drive::{Call, Content, Driver, Limits, Login, Refusal};
@@ -43,7 +43,14 @@ fn login_at(origin: &str) -> Login {
 
 /// The frames page as a login form: the "Secret word" field (backend 21) is the password
 /// field, and reads bullets. `submitted` is set by an Enter, and with `goes`, the field goes.
+/// The page purlis opens for the login (`PAGE-2`) shows it once it is sent to its address.
 fn as_a_login_form(engine: &Arc<Engine>, goes: bool) -> Arc<AtomicBool> {
+    as_a_login_form_that(engine, goes, false)
+}
+
+/// [`as_a_login_form`], whose page loads another document as purlis types into it, where
+/// `moves`.
+fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, moves: bool) -> Arc<AtomicBool> {
     {
         let mut model = super::super::lock(&engine.model);
         let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
@@ -54,12 +61,35 @@ fn as_a_login_form(engine: &Arc<Engine>, goes: bool) -> Arc<AtomicBool> {
                 _ => {}
             }
         }
+        let login = model.ax["PAGE-1"].clone();
+        model.ax.insert("PAGE-2".into(), login);
     }
     let submitted = Arc::new(AtomicBool::new(false));
     let seen = Arc::clone(&submitted);
-    engine.on(move |sent, _| {
+    let navigated = |engine: &Engine, session: &str, loader: &str, url: &str| {
+        let frame = session.trim_start_matches("S-");
+        engine.emit(
+            "Page.frameNavigated",
+            json!({ "frame": { "id": frame, "loaderId": loader, "url": url, "name": "" } }),
+            Some(session),
+        );
+    };
+    engine.on(move |sent, engine| {
         let p = &sent.params;
+        let on = sent.session.as_deref().unwrap_or_default();
         match sent.method.as_str() {
+            "Page.navigate" => {
+                navigated(engine, on, "LOADER-LOGIN", p["url"].as_str().unwrap_or_default());
+                Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": "LOADER-LOGIN" })))
+            }
+            "Input.insertText" if moves => {
+                navigated(engine, on, "LOADER-ELSEWHERE", ADDRESS);
+                std::thread::sleep(Duration::from_millis(50));
+                Some(Ok(json!({})))
+            }
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_HAS_FOCUS => {
+                Some(Ok(json!({ "result": { "type": "boolean", "value": true } })))
+            }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
                 Some(Ok(if goes && seen.load(Ordering::SeqCst) {
                     json!({ "result": { "type": "object", "subtype": "null", "value": null } })
@@ -114,7 +144,9 @@ fn a_login_fills_the_declared_origin_and_its_value_is_in_no_later_answer() {
     let answer = ended.outcome.unwrap();
     assert_eq!(
         answer.note.as_deref(),
-        Some("logged in at http://fixture.test")
+        Some(
+            "the password field is gone from http://fixture.test since purlis submitted the login"
+        )
     );
     assert_eq!(ended.driver, Driver::Agent);
     assert_eq!(browser.driver(), Driver::Agent);
@@ -248,4 +280,99 @@ fn a_reference_dealt_before_a_login_is_void_after_it() {
         matches!(clicked, Err(Refusal::HandedBack(_))),
         "{clicked:?}"
     );
+}
+
+#[test]
+fn a_page_that_loads_another_document_as_purlis_fills_it_ends_the_browser() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, true);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => {
+            assert!(why.contains("ended this browser"), "{why}");
+            assert!(!why.contains(FILLED), "{why}");
+        }
+        other => panic!("refused: {other:?}"),
+    }
+    assert_eq!(engine.sent("Browser.close").len(), 1);
+    let after = browser.call(
+        &id(9),
+        Call::Snapshot {
+            page: None,
+            within: None,
+            from: 1,
+            lines: None,
+        },
+    );
+    assert!(matches!(after, Err(Refusal::Ended)), "{after:?}");
+}
+
+#[test]
+fn a_login_opens_a_page_of_its_own_and_leaves_the_agents_page_alone() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    assert!(ended.outcome.is_ok());
+    assert!(
+        engine
+            .sent("Page.navigate")
+            .iter()
+            .all(|sent| sent.session.as_deref() != Some("S-PAGE-1")),
+        "the agent's page is never sent anywhere"
+    );
+    assert_eq!(engine.sent("Target.createTarget").len(), 1);
+}
+
+#[test]
+fn a_login_the_person_cut_is_cleared_as_they_hand_the_browser_back() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, false);
+    let browser = Arc::new(browser);
+    let running = {
+        let browser = Arc::clone(&browser);
+        std::thread::spawn(move || browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap())
+    };
+    // Once the password is in, the person takes the browser over.
+    let start = std::time::Instant::now();
+    while inserted(&engine).is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(5), "never filled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    browser.take_over();
+    let ended = running.join().unwrap();
+    assert_eq!(ended.driver, Driver::Person);
+    assert!(matches!(ended.outcome, Err(Refusal::Interrupted)));
+    let cleared = || {
+        engine
+            .sent("Runtime.callFunctionOn")
+            .iter()
+            .filter(|sent| sent.params["functionDeclaration"] == CLEAR_FIELD)
+            .count()
+    };
+    assert_eq!(cleared(), 0, "nothing is cleared while the person drives");
+    browser.hand_back();
+    assert_eq!(cleared(), 1);
+}
+
+#[test]
+fn an_address_is_on_the_origin_a_page_spells() {
+    assert_eq!(
+        origin_of("https://Shop.Example.test/login?next=/").as_deref(),
+        Some("https://shop.example.test")
+    );
+    assert_eq!(
+        origin_of("https://shop.example.test:443/").as_deref(),
+        Some("https://shop.example.test")
+    );
+    assert_eq!(
+        origin_of("http://127.0.0.1:8123/login").as_deref(),
+        Some("http://127.0.0.1:8123")
+    );
+    assert_eq!(
+        origin_of("http://[::1]:8123/").as_deref(),
+        Some("http://[::1]:8123")
+    );
+    assert_eq!(origin_of("about:blank"), None);
+    assert_eq!(origin_of("chrome-error://chromewebdata/"), None);
+    assert_eq!(origin_of("https://user@shop.example.test/"), None);
 }

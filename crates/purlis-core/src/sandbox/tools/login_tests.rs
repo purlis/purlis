@@ -120,7 +120,6 @@ fn a_login_page_purlis_cannot_bind_to_one_host_is_refused_whole() {
         ("https://shop.example.test:0/", "no port"),
         ("https://shop.example.test:99999/", "no port"),
         ("https://shop.example.test/a b", "a space"),
-        ("https://bücher.example/", "names no host"),
     ] {
         let (tools, refused) = read(&format!(
             "tools = {{ shop = {{ vault = \"qa\", browser = {page:?}, key = \"password\" }} }}"
@@ -349,4 +348,16 @@ fn a_login_s_shim_names_the_browser_tool_and_runs_nothing() {
     assert!(text.ends_with(">&2\nexit 2\n"), "{text}");
     assert!(!text.contains("secret"), "{text}");
     assert!(!text.contains("exec "), "{text}");
+}
+
+#[test]
+fn a_login_page_named_in_another_script_is_bound_to_its_ascii_spelling() {
+    assert_eq!(
+        login::origin_of("https://bücher.example/login").as_deref(),
+        Ok("https://xn--bcher-kva.example")
+    );
+    // Plain http stays this machine's loopback's alone, whatever the host is written in.
+    assert!(login::origin_of("http://bücher.example/login").is_err());
+    assert!(login::origin_of("http://shop.example.test/login").is_err());
+    assert!(login::origin_of("http://127.0.0.1:8123/login").is_ok());
 }

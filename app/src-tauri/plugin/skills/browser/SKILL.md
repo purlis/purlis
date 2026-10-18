@@ -5,44 +5,18 @@ description: Drive a real browser for a task that needs one — a web login, an 
 
 # Driving a browser with vault credentials
 
-Two different projects own the two halves of this:
+**In a chat purlis started, use purlis's own browser tools.** They drive a real browser the
+person can watch and take over: `browser_open` and `browser_navigate`, `browser_snapshot` and
+`browser_find` for a page as a tree of elements with references, actions on those references
+(`browser_click`, `browser_type`, `browser_press`, …), and `browser_screenshot`. No tool runs
+script. The first browser tool asks the person what the browser may reach.
 
-- **How to drive a page** belongs to Playwright: snapshots, clicking, network mocking,
-  tracing. Generate its reference into this plane once:
+## One browser per worker
 
-  ```bash
-  purlis browser install          # writes .claude/skills/playwright-cli/
-  ```
-
-  purlis ships none of those pages. They are Apache-2.0, and they change far more often
-  than purlis releases. To update them, run that command again rather than editing them.
-  It runs `npx`, so it needs Node.js. `--version` pins an exact version.
-  In a sandboxed project, ask the operator to run `purlis browser install` in their own
-  terminal: a sandboxed chat may not write a project's skills.
-
-  The command also gitignores `.playwright-cli/`, which is where traces and snapshots land.
-  A trace holds the network traffic of whatever it recorded, logins included. Whether to
-  commit the generated pages and `.playwright/cli.config.json` is the plane's choice.
-
-- **Where credentials come from, and how parallel workers stay isolated** is what this
-  skill covers.
-
-## One session per worker
-
-Each worker passes its own `-s=<name>`. Sessions hold independent cookies, localStorage,
-IndexedDB, cache and tabs, so N workers can each be logged in as a different user at once.
-
-```bash
-npx @playwright/cli@<version> -s=owner  open https://example.test/
-npx @playwright/cli@<version> -s=viewer open https://example.test/
-npx @playwright/cli@<version> list          # live sessions
-npx @playwright/cli@<version> -s=owner close
-```
-
-**Pin the version in every command.** A session belongs to the *version* that opened it.
-Two commands that resolve different versions look at different daemons. The second then
-reports `The browser 'owner' is not open` while the first browser is still alive and logged
-in.
+Each browser has its own cookies, storage and pages, so workers that must be logged in as
+different users each use one of their own: `browser_new` opens another, and the tools use it
+from then on (pass `browser` to pick one by the name a tool answered with, `b1`, `b2`).
+`browser_close` ends one and everything it held.
 
 ## Credentials: never typed, never printed
 
