@@ -51,6 +51,12 @@ pub enum Planned {
 pub struct Hosted {
     confinement: Confinement,
     board: Option<Arc<Asks>>,
+    /// The services of this machine its plan gave the chat for it alone, which this machine's
+    /// sandbox for the project does not give, so it was started without them (#2510). Where
+    /// its proxy asks live, it asks about each, and the person may allow it for this chat.
+    left_out: Vec<u16>,
+    /// Where its plan was made.
+    planned: Planned,
 }
 
 /// **Starts the confinement `confine` plans, in the project at `project_path`**, its proxy
@@ -64,7 +70,16 @@ pub fn start(
     tell: Tell,
     askable: Askable,
 ) -> Result<Hosted, String> {
-    let plan = Plan::from_wire(&confine.plan)?;
+    let planned_as = Plan::from_wire(&confine.plan)?;
+    // A plan made elsewhere is started without what it gives for this chat alone and this
+    // machine does not give (#2510).
+    let (plan, left_out) = match planned {
+        Planned::Here => (planned_as, Vec::new()),
+        Planned::Elsewhere => {
+            let (plan, left_out) = planned_as.as_the_runner_starts_it(&given_here(project_path));
+            (plan, askable_here(project_path, left_out))
+        }
+    };
     let root = project_path.to_path_buf();
     let board = confine.asks.then(|| {
         Asking {
@@ -122,10 +137,17 @@ pub fn start(
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),
-        Planned::Elsewhere => plan.start_held(telling, Internal::of(project_path)),
+        Planned::Elsewhere => {
+            plan.start_held(telling, Internal::of(project_path), left_out.clone())
+        }
     }
     .map_err(|why| why.to_string())?;
-    Ok(Hosted { confinement, board })
+    Ok(Hosted {
+        confinement,
+        board,
+        left_out,
+        planned,
+    })
 }
 
 /// **Whether `wired`, a plan another machine made, fits the project at `project_path` on this
@@ -181,6 +203,47 @@ fn given_here(root: &Path) -> Vec<u16> {
     super::Widened::default().and_ports(&yours, &locks).ports
 }
 
+/// **The services left out of a relayed plan that may be asked about here** (#2510): `left_out`,
+/// unless this machine's own administrator's policy (`Locks::of(project_path)`) forbids a chat
+/// a service on it, turns the live ask off, or keeps an Allow at neither one-chat scope. Then
+/// none is asked about, none is said left out, and the chat does not reach it.
+fn askable_here(project_path: &Path, left_out: Vec<u16>) -> Vec<u16> {
+    use super::grant::Level;
+    let locks = super::policy::Locks::of(project_path);
+    let forbidden = locks.port_grants_refused().is_some()
+        || locks.forbids_live_asks()
+        || (!locks.keeps_scope(Level::Once) && !locks.keeps_scope(Level::Chat));
+    if forbidden { Vec::new() } else { left_out }
+}
+
+/// What the window's answer to an ask names ([`answered_about`]).
+#[derive(Debug, PartialEq, Eq)]
+enum Answered {
+    /// A host.
+    Host(Host),
+    /// The service on this port of this machine, left out of the chat's plan (#2510).
+    LeftOut(u16),
+}
+
+/// **What the window's answer about `typed` names, in a confinement planned `planned`** (#2510,
+/// ruled 2026-10-18). A host off this machine is as it says. A service of this machine's
+/// loopback is answered only in a confinement planned on another machine, and only where it is
+/// one the runner `left_out` of what the plan gave for this chat alone: allowed, it is carried
+/// for this chat for as long as the confinement runs. Any other is refused in a sentence, as a
+/// host of this machine always is.
+fn answered_about(planned: Planned, left_out: &[u16], typed: &str) -> Result<Answered, String> {
+    match super::localport::loopback_port(typed) {
+        Some(port) if planned == Planned::Elsewhere && left_out.contains(&port) => {
+            Ok(Answered::LeftOut(port))
+        }
+        Some(port) if planned == Planned::Elsewhere => Err(format!(
+            "the runner does not let this chat reach port {port} of its own: it was not \
+             allowed for this chat alone where the chat was planned"
+        )),
+        _ => Host::parse(typed).map(Answered::Host),
+    }
+}
+
 impl Hosted {
     /// Where it is: its proxy's ports and the folders beside it. The id is the host's to fill.
     pub fn confined(&self) -> Confined {
@@ -193,6 +256,9 @@ impl Hosted {
             tmp: shown(placed.tmp),
             routed: shown(placed.routed),
             ssh: shown(placed.ssh),
+            left_out: self.left_out.clone(),
+            // Named only where it left a service out, which the window then says it of.
+            host_name: (!self.left_out.is_empty()).then(crate::dispatch::host),
         }
     }
 
@@ -207,13 +273,25 @@ impl Hosted {
             return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());
         };
         Ok(match change {
-            ReachChange::Allow { host, layer } => board.allow(&Host::parse(host)?, by_of(*layer)),
+            ReachChange::Allow { host, layer } => {
+                match answered_about(self.planned, &self.left_out, host)? {
+                    Answered::Host(host) => board.allow(&host, by_of(*layer)),
+                    // For this chat alone, whatever scope it was sent at.
+                    Answered::LeftOut(port) => board.allow_left_out(port),
+                }
+            }
             ReachChange::Forget { host, layer } => {
-                board.forget(&Host::parse(host)?, by_of(*layer));
+                match answered_about(self.planned, &self.left_out, host)? {
+                    Answered::Host(host) => board.forget(&host, by_of(*layer)),
+                    Answered::LeftOut(port) => board.forget_left_out(port),
+                }
                 Vec::new()
             }
             ReachChange::KeepBlocked { host } => {
-                board.keep_blocked(&Host::parse(host)?);
+                match answered_about(self.planned, &self.left_out, host)? {
+                    Answered::Host(host) => board.keep_blocked(&host),
+                    Answered::LeftOut(port) => board.keep_left_out_blocked(port),
+                }
                 Vec::new()
             }
             ReachChange::WithdrawPort { .. } => Vec::new(),
@@ -238,3 +316,6 @@ impl Hosted {
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests;

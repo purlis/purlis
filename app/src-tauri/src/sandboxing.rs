@@ -2071,14 +2071,13 @@ pub async fn allow_sandbox_block(
     let tell = planes.block_teller();
     crate::off_the_window(ANSWERING_SANDBOX, move || {
         let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
-        let (what, target) = (shown.what, shown.target);
         let root = held.root().to_path_buf();
-        let allowed = match allow(
+        let allowed = match allow_held(
             &root,
             &sandbox::Machine::this(),
             held.chats(),
-            session,
-            (what, &target, level),
+            (session, &block),
+            level,
             &held.audit_then_record(network.as_ref()),
             now_secs(),
         ) {
@@ -2099,6 +2098,133 @@ pub async fn allow_sandbox_block(
     })
     .await
 }
+
+/// **Allows `block`, which chat `session` is held on, at `level`** (#1342), in the project at
+/// `root`: a service of the runner the chat runs on for this chat alone, there, with nothing
+/// kept on this machine ([`allow_on_its_runner`], #2510); anything else as [`allow`] grants it.
+pub(crate) fn allow_held(
+    root: &std::path::Path,
+    machine: &sandbox::Machine,
+    chats: &crate::chats::Chats,
+    (session, block): (u32, &crate::taskblocks::HeldBlock),
+    level: GrantLevel,
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<Allowed, NotJudged> {
+    if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word() {
+        return Ok(allow_on_its_runner(
+            chats,
+            session,
+            (&block.target, level),
+            audit,
+        )?);
+    }
+    allow(
+        root,
+        machine,
+        chats,
+        session,
+        (block.what, &block.target, level),
+        audit,
+        at,
+    )
+}
+
+/// **Allows the service on `port` of the runner chat `session` runs on, which that runner asked
+/// about** (#2510, ruled 2026-10-18): once or for this chat, never wider, for that chat alone
+/// while it runs there. The Allow is audited, and no grant is kept on this machine, so the
+/// chat's next start plans it as before and the runner asks again. Refused, with nothing done,
+/// at any other level, and where the chat's runner did not leave that port out.
+pub(crate) fn allow_on_its_runner(
+    chats: &crate::chats::Chats,
+    session: u32,
+    (port, level): (&str, GrantLevel),
+    audit: Audit<'_>,
+) -> Result<Allowed, String> {
+    allowed_on_its_runner(
+        session,
+        (port, level),
+        audit,
+        &|port| chats.runner_asks_about(session, port),
+        &|port| chats.allow_left_out_live(session, port),
+    )
+}
+
+/// [`allow_on_its_runner`], where `asks` says whether the chat's runner asks about a port and
+/// `reach` tells it the Allow. An Allow the runner did not take is audited as taken back, and
+/// refused in a sentence, so the audit never holds an Allow that did not reach the runner.
+pub(crate) fn allowed_on_its_runner(
+    session: u32,
+    (port, level): (&str, GrantLevel),
+    audit: Audit<'_>,
+    asks: &dyn Fn(u16) -> bool,
+    reach: &dyn Fn(u16) -> Result<crate::chats::Live, String>,
+) -> Result<Allowed, String> {
+    let level = sandbox::grant::Level::from(level);
+    if !matches!(
+        level,
+        sandbox::grant::Level::Once | sandbox::grant::Level::Chat
+    ) {
+        return Err(RUNNER_SERVICE_SCOPES.to_owned());
+    }
+    let port: u16 = port
+        .trim()
+        .parse()
+        .map_err(|_| format!("purlis did not allow {port}: it is not a port."))?;
+    if !asks(port) {
+        return Err(format!(
+            "purlis did not allow port {port}: the runner chat {session} runs on does not ask \
+             about it now."
+        ));
+    }
+    let target = port.to_string();
+    audit(
+        Some(session),
+        &sandbox::grant::Audited {
+            granted: true,
+            what: "port",
+            target: &target,
+            level,
+        },
+    )?;
+    let live = match reach(port) {
+        Ok(live) => live,
+        Err(why) => {
+            let undone = audit(
+                Some(session),
+                &sandbox::grant::Audited {
+                    granted: false,
+                    what: "port",
+                    target: &target,
+                    level,
+                },
+            );
+            return Err(match undone {
+                Ok(()) => {
+                    format!("purlis did not allow port {port}: the runner did not take it ({why}).")
+                }
+                Err(unsaid) => format!(
+                    "purlis did not allow port {port}: the runner did not take it ({why}). The \
+                     audit records it allowed, and could not record that it was not ({unsaid})."
+                ),
+            });
+        }
+    };
+    let kept = Kept {
+        retry: live.told_to_retry,
+        live: live.reached,
+        already: false,
+    };
+    Ok(Allowed {
+        said: allowed_said(Some(session), level, &kept),
+        live: true,
+    })
+}
+
+/// Why a service of a runner is not allowed past one chat (#2510).
+pub(crate) const RUNNER_SERVICE_SCOPES: &str = "purlis allows a service on the runner a chat \
+                                                runs on once or for this chat alone, never for \
+                                                more chats or on this Mac.";
 
 /// **Allow port** on Settings' Network page (#1970): the service on this Mac at `port`, for open
 /// chat `chat` alone or for every chat of this project on this machine, granted by
@@ -2179,6 +2305,12 @@ pub(crate) fn keep_block(
         && let Ok(host) = sandbox::grant::host(&block.target)
     {
         chats.keep_blocked_live(session, &host);
+    }
+    // A service of the runner the chat runs on (#2510): its hold ends at once.
+    if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word()
+        && let Ok(port) = block.target.parse::<u16>()
+    {
+        chats.keep_left_out_blocked_live(session, port);
     }
     crate::askoutcome::kept_blocked(chats, session, (block.what, &shown.target), reason);
     Some(block)

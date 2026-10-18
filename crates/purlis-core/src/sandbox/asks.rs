@@ -78,6 +78,13 @@ pub type Tell = Arc<dyn Fn(Heard) + Send + Sync + 'static>;
 struct State {
     /// Hosts allowed while the chat runs, each with its scope, as a grant writes them.
     live: Vec<(String, By)>,
+    /// Ports of this machine left out of the chat's plan that the person allowed for it while
+    /// its confinement runs (#2510): never a grant, and never told as one
+    /// ([`Asks::allowed_live`]).
+    left_out_allowed: Vec<u16>,
+    /// Ports of this machine left out of the chat's plan that the person kept blocked, until an
+    /// Allow (#2510).
+    left_out_blocked: Vec<u16>,
     /// Hosts kept blocked, until an Allow.
     blocked: Vec<Host>,
     /// Targets held and given up on, which an Allow tells the chat to retry.
@@ -201,7 +208,7 @@ impl Asks {
         if let Some(by) = allowed_in(&state, &named, port, defaults) {
             return Answer::Allowed(by);
         }
-        if kept_blocked(&state, parsed.as_ref()) {
+        if kept_blocked(&state, parsed.as_ref(), &named, port) {
             return Answer::Refused;
         }
         if state.holding >= MOST_HELD {
@@ -225,7 +232,7 @@ impl Asks {
             if let Some(by) = allowed_in(&state, &named, port, defaults) {
                 break Answer::Allowed(by);
             }
-            if kept_blocked(&state, parsed.as_ref()) {
+            if kept_blocked(&state, parsed.as_ref(), &named, port) {
                 break Answer::Refused;
             }
             let now = Instant::now();
@@ -306,6 +313,31 @@ impl Asks {
         retry
     }
 
+    /// **The person allowed the service on `port` of this machine, left out of the chat's
+    /// plan, for this chat** (#2510): a connection held on it goes on now, and every later one
+    /// is carried while the confinement runs. Only a chat planned on another machine is asked
+    /// about one ([`super::egress::Serving::left_out`]). Answers the targets that were held on
+    /// it and gave up, which the chat is told to retry.
+    pub fn allow_left_out(&self, port: u16) -> Vec<String> {
+        let mut state = self.state();
+        if !state.left_out_allowed.contains(&port) {
+            state.left_out_allowed.push(port);
+        }
+        state.left_out_blocked.retain(|one| *one != port);
+        let covered = |target: &String| super::localport::loopback_port(target) == Some(port);
+        let retry: Vec<String> = state
+            .gave_up
+            .iter()
+            .filter(|t| covered(t))
+            .cloned()
+            .collect();
+        state.gave_up.retain(|target| !covered(target));
+        state.asked.retain(|target| !covered(target));
+        drop(state);
+        self.changed.notify_all();
+        retry
+    }
+
     /// **The person kept `host` blocked**, from the window: what is held on it is refused now,
     /// and so is every later connection to it, until an Allow.
     pub fn keep_blocked(&self, host: &Host) {
@@ -340,6 +372,30 @@ impl Asks {
     }
 }
 
+impl Asks {
+    /// **The person kept the service on `port` of this machine, left out of the chat's plan,
+    /// blocked** (#2510): what is held on it is refused now, and so is every later connection
+    /// to it, until an Allow.
+    pub fn keep_left_out_blocked(&self, port: u16) {
+        let mut state = self.state();
+        if !state.left_out_blocked.contains(&port) {
+            state.left_out_blocked.push(port);
+        }
+        state.left_out_allowed.retain(|one| *one != port);
+        let other = |target: &String| super::localport::loopback_port(target) != Some(port);
+        state.gave_up.retain(other);
+        state.asked.retain(other);
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    /// **An Allow of the service on `port` left out of the chat's plan was removed** (#2510): it
+    /// reaches nothing again, and is asked about again.
+    pub fn forget_left_out(&self, port: u16) {
+        self.state().left_out_allowed.retain(|one| *one != port);
+    }
+}
+
 /// Whether `host` covers one of `asked`, each a host and port a board asks about
 /// ([`Asks::asked`]): [`Asks::asks_about`], of a board read elsewhere (#1999).
 pub fn asks_about_among(asked: &[String], host: &Host) -> bool {
@@ -350,6 +406,9 @@ pub fn asks_about_among(asked: &[String], host: &Host) -> bool {
 
 /// The scope a live Allow in `state` carries `host` on `port` at.
 fn allowed_in(state: &State, host: &str, port: u16, defaults: &[u16]) -> Option<By> {
+    if state.left_out_allowed.contains(&port) && super::localport::names_loopback(host, port) {
+        return Some(By::Chat);
+    }
     state
         .live
         .iter()
@@ -357,9 +416,11 @@ fn allowed_in(state: &State, host: &str, port: u16, defaults: &[u16]) -> Option<
         .map(|(_, by)| *by)
 }
 
-/// Whether `target` is one kept blocked in `state`.
-fn kept_blocked(state: &State, target: Option<&Host>) -> bool {
+/// Whether `target`, `host` on `port`, is one kept blocked in `state`: a host, or a service
+/// left out of the chat's plan (#2510).
+fn kept_blocked(state: &State, target: Option<&Host>, host: &str, port: u16) -> bool {
     target.is_some_and(|target| state.blocked.iter().any(|one| one.covers(target)))
+        || (state.left_out_blocked.contains(&port) && super::localport::names_loopback(host, port))
 }
 
 /// Lets the oldest go past [`MOST_KEPT`].
@@ -369,3 +430,6 @@ fn keep_within(kept: &mut Vec<String>) {
         kept.drain(..over);
     }
 }
+
+#[cfg(test)]
+mod tests;
