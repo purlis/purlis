@@ -90,16 +90,11 @@
 
 /* **An answer that grants** (an Allow, an Accept; ADR 0097 §6): as plain as Keep blocked beside
    it, on the control's own ground, so neither is pressed for its weight. It is told apart by its
-   edge in the accent and the open lock it leads with (`GrantsMark`), a cue that is not colour.
+   edge in the accent and the open lock it leads with (`GrantsMark`, sized as every icon is by
+   `.lucide`), a cue that is not colour.
    The primary style stays the answer purlis suggests, and is not a grant's. */
 .ui-button-grants {
   border-color: var(--accent-base);
-}
-
-.ui-button-grants-mark {
-  flex-shrink: 0;
-  inline-size: 1em;
-  block-size: 1em;
 }
 
 /* A toggle (`aria-pressed`, DS-12): pressed, it stands on the accent's ground behind the accent's
