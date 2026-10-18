@@ -1281,6 +1281,12 @@ key refuses.
 
 ---
 
+### Files of the retired `purlis browser install`
+
+An older project may still carry `.claude/skills/playwright-cli/`, `.playwright/`, `.playwright-cli/`
+and an ``added by `purlis browser install` `` block in its `.gitignore`. They are Playwright's files;
+purlis neither writes nor reads them (#2575).
+
 ### `themes/` — the project's theme folders
 
 - **Format:** a directory of theme folders, one per theme: `themes/<name>/theme.json`, plus

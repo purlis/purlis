@@ -168,9 +168,9 @@ enum Command {
         verb: Option<GuardCommand>,
     },
 
-    /// Retired (#2575): a chat purlis starts drives a browser with purlis's own browser tools.
-    /// The words are still taken and answered with what to use instead
-    /// ([`purlis_core::browsertools::INSTALL_RETIRED`]).
+    // Retired (#2575): the words are still taken and answered with what to use instead
+    // (`purlis_core::personaverbs::retired::BROWSER_INSTALL`), before a plane is looked for.
+    /// A chat drives a browser with purlis's own browser tools, which the `browser` skill teaches.
     #[command(subcommand, hide = true)]
     Browser(BrowserCommand),
 
@@ -1027,8 +1027,10 @@ fn place() -> Result<purlis_core::plane::Place, String> {
 
 #[derive(Subcommand)]
 enum BrowserCommand {
-    /// Retired: answers what to use instead and writes nothing.
-    #[command(hide = true)]
+    // Retired (#2575): every word after it, `--help` included, is taken and not read, so it
+    // always answers with what to use instead.
+    /// A chat drives a browser with purlis's own browser tools, which the `browser` skill teaches.
+    #[command(hide = true, disable_help_flag = true)]
     Install {
         /// What the retired command was given. Taken and not read.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
@@ -4147,7 +4149,7 @@ fn main() -> ExitCode {
         &cli.command,
         Command::Browser(BrowserCommand::Install { .. })
     ) {
-        voice::err(purlis_core::browsertools::INSTALL_RETIRED);
+        voice::err(purlis_core::personaverbs::retired::BROWSER_INSTALL);
         return ExitCode::FAILURE;
     }
     // A project this charter cannot write is read-only to it (FR-24, V37a,

@@ -67,10 +67,15 @@ fn out(out: &Output) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-const RETIRED: &str = "✗ `purlis browser install` is retired, and nothing was written. A chat \
-                       purlis starts drives a real browser with purlis's own browser tools \
-                       (`browser_open`, `browser_snapshot`, `browser_click`, `browser_login` \
-                       and the rest), which purlis's `browser` skill teaches.\n";
+/// Whether `said` is the retirement's one sentence set: it says the command is retired, that
+/// nothing was written, and names what to use instead.
+fn retired(said: &str) -> bool {
+    said.starts_with("✗ `purlis browser install` is retired")
+        && said.contains("wrote nothing")
+        && said.contains("browser tools")
+        && said.contains("`browser` skill")
+        && said.lines().count() == 1
+}
 
 #[test]
 fn install_is_retired_and_says_what_to_use_instead_whatever_it_is_given() {
@@ -78,10 +83,11 @@ fn install_is_retired_and_says_what_to_use_instead_whatever_it_is_given() {
     for args in [
         vec!["browser", "install"],
         vec!["browser", "install", "--version", "0.1.18"],
+        vec!["browser", "install", "--help"],
     ] {
         let said = purlis(&s, &args);
         assert_eq!(said.status.code(), Some(1), "{args:?}: {}", err(&said));
-        assert_eq!(err(&said), RETIRED, "{args:?}");
+        assert!(retired(&err(&said)), "{args:?}: {}", err(&said));
         assert_eq!(out(&said), "", "{args:?}");
     }
     assert!(!s.log.exists(), "npx never ran");
@@ -93,9 +99,18 @@ fn install_is_retired_and_says_what_to_use_instead_whatever_it_is_given() {
 }
 
 #[test]
-fn the_retired_command_is_not_offered() {
+fn the_retired_command_is_not_offered_and_its_help_names_what_replaced_it() {
     let s = scene();
     let help = out(&purlis(&s, &["--help"]));
     assert!(help.contains("Usage"), "{help}");
     assert!(!help.contains("browser"), "{help}");
+    let said = purlis(&s, &["browser", "--help"]);
+    let help = out(&said);
+    assert!(
+        help.contains("browser tools") && help.contains("`browser` skill"),
+        "{help}"
+    );
+    for internal in ["#2575", "purlis_core", "install"] {
+        assert!(!help.contains(internal), "{internal:?} in {help}");
+    }
 }

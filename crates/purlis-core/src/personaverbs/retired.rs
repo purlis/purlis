@@ -37,6 +37,14 @@ pub const SYNC_AGENTS: &str = "`purlis persona sync-agents` is retired: a person
      dispatch --to <persona>`, and remove the helper files purlis wrote with `purlis doctor \
      --fix persona-agents`.";
 
+/// What the retired `purlis browser install` answers (#2575). It generated Playwright's own
+/// page-driving pages into a project, a second way for chats to drive a browser; its words are
+/// still taken, as `persona sync-agents` is.
+pub const BROWSER_INSTALL: &str = "`purlis browser install` is retired, and purlis wrote \
+     nothing. A chat purlis starts drives a real browser with purlis's own browser tools \
+     (`browser_open`, `browser_snapshot`, `browser_click`, `browser_login` and the rest). \
+     purlis's `browser` skill teaches them.";
+
 /// What a sub-agent call named for the persona `name` is refused with.
 ///
 /// It names the route, `purlis dispatch --to <persona>`, and says a helper with no persona's
