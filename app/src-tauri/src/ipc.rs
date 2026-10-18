@@ -289,6 +289,33 @@ mod tests {
     }
 
     #[test]
+    fn the_theme_specimen_s_window_may_invoke_nothing() {
+        // #2330: the specimen page is handed its theme before it runs and asks the core for
+        // nothing, so its window is granted nothing: no app command, and none of Tauri's own.
+        let app = app();
+        for n in [0, 1, 27] {
+            let label = crate::specimen::label(n);
+            let specimen = window(&app, &label);
+            let allowed: Vec<_> = every_listed()
+                .into_iter()
+                .filter(|command| invoke(&specimen, command).is_ok())
+                .collect();
+            assert!(allowed.is_empty(), "{label} may invoke {allowed:?}");
+            for core in [
+                "plugin:event|listen",
+                "plugin:event|emit",
+                "plugin:window|title",
+                "plugin:webview|get_all_webviews",
+            ] {
+                assert!(
+                    invoke(&specimen, core).is_err(),
+                    "{label} may invoke {core}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_capability_grants_the_main_window_and_the_split_windows_alike() {
         // The two capability files are one decision: a split window gets exactly what the main
         // window gets. One naming a window the other does not would be a window with half the

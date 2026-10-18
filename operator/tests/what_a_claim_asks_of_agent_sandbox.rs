@@ -44,7 +44,11 @@ fn json_of(value: &impl serde::Serialize) -> Value {
 
 #[test]
 fn a_claims_runner_runs_the_pools_image_and_its_own_command_as_a_user_who_is_not_root() {
-    let template = json_of(&upstream::template_for(&pool(), "ada"));
+    let template = json_of(&upstream::template_for(
+        &pool(),
+        "ada",
+        upstream::owners_with(None, &claim(), &[&claim()]),
+    ));
     let pod = &template["spec"]["podTemplate"]["spec"];
     let containers = pod["containers"].as_array().expect("containers");
     assert_eq!(containers.len(), 1, "{pod}");
@@ -62,34 +66,112 @@ fn a_claims_runner_runs_the_pools_image_and_its_own_command_as_a_user_who_is_not
 
 #[test]
 fn a_runner_gets_no_kubernetes_credential_and_no_service_addresses() {
-    let template = json_of(&upstream::template_for(&pool(), "ada"));
+    let template = json_of(&upstream::template_for(
+        &pool(),
+        "ada",
+        upstream::owners_with(None, &claim(), &[&claim()]),
+    ));
     let pod = &template["spec"]["podTemplate"]["spec"];
     assert_eq!(pod["automountServiceAccountToken"], false, "{pod}");
     assert_eq!(pod["enableServiceLinks"], false, "{pod}");
 }
 
+fn another_claim() -> Claim {
+    let mut claim = claim();
+    claim.metadata.name = Some("ada-2".into());
+    claim.metadata.uid = Some("another-claim-uid".into());
+    claim
+}
+
 #[test]
-fn a_pools_template_and_warm_pool_live_in_the_claims_namespace_and_belong_to_the_pool() {
+fn a_pools_template_and_warm_pool_live_in_the_claims_namespace_and_belong_to_its_claims_there() {
+    // The second claim joins the first, which owns the object as the cluster holds it.
+    let first = upstream::template_for(
+        &pool(),
+        "ada",
+        upstream::owners_with(None, &claim(), &[&claim()]),
+    );
+    let owners = upstream::owners_with(
+        Some(&first.metadata),
+        &another_claim(),
+        &[&claim(), &another_claim()],
+    );
     for object in [
-        json_of(&upstream::template_for(&pool(), "ada")),
-        json_of(&upstream::warm_pool_for(&pool(), "ada")),
+        json_of(&upstream::template_for(&pool(), "ada", owners.clone())),
+        json_of(&upstream::warm_pool_for(&pool(), "ada", owners.clone())),
     ] {
         assert_eq!(object["metadata"]["namespace"], "ada", "{object}");
         assert_eq!(object["metadata"]["name"], "purlis-pool-team", "{object}");
         let owners = object["metadata"]["ownerReferences"]
             .as_array()
             .expect("owners");
-        assert_eq!(owners.len(), 1, "{object}");
-        assert_eq!(owners[0]["kind"], "Pool");
-        assert_eq!(owners[0]["apiVersion"], "runners.purlis.dev/v1alpha1");
-        assert_eq!(owners[0]["name"], "team");
-        assert_eq!(owners[0]["uid"], "pool-uid");
+        // Each claim on the pool in the namespace, and none of them its controller: the garbage
+        // collector removes the object once every one of them is gone, and not before, whatever
+        // becomes of the pool.
+        assert_eq!(owners.len(), 2, "{object}");
+        for (owner, (name, uid)) in owners
+            .iter()
+            .zip([("ada-1", "claim-uid"), ("ada-2", "another-claim-uid")])
+        {
+            assert_eq!(owner["kind"], "Claim");
+            assert_eq!(owner["apiVersion"], "runners.purlis.dev/v1alpha1");
+            assert_eq!(owner["name"], name);
+            assert_eq!(owner["uid"], uid);
+            assert!(owner.get("controller").is_none(), "{object}");
+        }
+    }
+}
+
+#[test]
+fn a_claim_joins_the_claims_that_own_its_pools_objects_once_and_only_purlis_claims_stay() {
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
+    let reference = |api_version: &str, kind: &str, name: &str, uid: &str| OwnerReference {
+        api_version: api_version.into(),
+        kind: kind.into(),
+        name: name.into(),
+        uid: uid.into(),
+        controller: Some(true),
+        block_owner_deletion: Some(true),
+    };
+    let held = ObjectMeta {
+        owner_references: Some(vec![
+            reference(
+                "runners.purlis.dev/v1alpha1",
+                "Claim",
+                "ada-2",
+                "another-claim-uid",
+            ),
+            // The claim itself already: it is named once.
+            reference("runners.purlis.dev/v1alpha1", "Claim", "ada-1", "claim-uid"),
+            // The pool, as the operator made them before its claims owned them, and anything
+            // else: neither stays.
+            reference("runners.purlis.dev/v1alpha1", "Pool", "team", "pool-uid"),
+            reference("example.com/v1", "Claim", "ada-3", "foreign-uid"),
+        ]),
+        ..ObjectMeta::default()
+    };
+    let owners = upstream::owners_with(Some(&held), &claim(), &[&claim(), &another_claim()]);
+    let named: Vec<(&str, &str)> = owners
+        .iter()
+        .map(|owner| (owner.name.as_str(), owner.uid.as_str()))
+        .collect();
+    assert_eq!(
+        named,
+        [("ada-1", "claim-uid"), ("ada-2", "another-claim-uid")]
+    );
+    for owner in &owners {
+        assert_eq!(owner.controller, None, "{owner:?}");
+        assert_eq!(owner.block_owner_deletion, None, "{owner:?}");
     }
 }
 
 #[test]
 fn a_pool_keeps_no_runner_warm() {
-    let warm = json_of(&upstream::warm_pool_for(&pool(), "ada"));
+    let warm = json_of(&upstream::warm_pool_for(
+        &pool(),
+        "ada",
+        upstream::owners_with(None, &claim(), &[&claim()]),
+    ));
     assert_eq!(warm["spec"]["replicas"], 0, "{warm}");
     assert_eq!(
         warm["spec"]["sandboxTemplateRef"]["name"],
@@ -195,12 +277,20 @@ fn an_owner_reference_never_blocks_its_owners_deletion() {
     // Blocking would need update rights on the owner's finalizers wherever the cluster enforces
     // owner-reference permissions; the garbage collector removes the dependents either way.
     for object in [
-        json_of(&upstream::template_for(&pool(), "ada")),
-        json_of(&upstream::warm_pool_for(&pool(), "ada")),
+        json_of(&upstream::template_for(
+            &pool(),
+            "ada",
+            upstream::owners_with(None, &claim(), &[&claim()]),
+        )),
+        json_of(&upstream::warm_pool_for(
+            &pool(),
+            "ada",
+            upstream::owners_with(None, &claim(), &[&claim()]),
+        )),
         json_of(&upstream::sandbox_claim_for(&claim())),
     ] {
         let owner = &object["metadata"]["ownerReferences"][0];
-        assert_eq!(owner["controller"], true, "{object}");
+        assert_eq!(owner["kind"], "Claim", "{object}");
         assert!(owner.get("blockOwnerDeletion").is_none(), "{object}");
     }
 }

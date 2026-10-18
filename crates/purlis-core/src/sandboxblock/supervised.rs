@@ -21,9 +21,9 @@
 //! that cannot be told (no app listening, a chat not started sandboxed) is a refusal all the
 //! same.
 //!
-//! **One refusal, one Notice.** A connection to an internet address is left to purlis's proxy
-//! ([`super::is_the_proxys`]), which tells each host it refuses by name; the supervisor tells
-//! only this machine's own loopback address, and an address a program dialled past the proxy
+//! **One refusal, one Notice.** A host is purlis's proxy's to tell ([`super::is_the_proxys`]),
+//! by name. The supervisor sees no host, only the address a program dialled past the proxy:
+//! that is told as an address ([`Kind::Address`], #2423), at most once a minute a chat, and
 //! names no host to allow. A chat purlis wraps on Linux has its files, sockets and services told here, so its
 //! hook leaves those to the supervisor ([`super::the_hooks_own`]).
 
@@ -35,9 +35,9 @@ use super::denial::{Denial, Witness};
 use super::{Block, CHAT_DIR_ENV, Kind, Operation, Place};
 
 /// **The block `refusal` is, and what a grant would name for it**, sorted against `place` as
-/// macOS's kernel line of the same refusal is. None for what purlis's proxy tells by host
-/// ([`super::is_the_proxys`]); the supervisor tells no internet address, and this holds if it
-/// ever did.
+/// macOS's kernel line of the same refusal is, but for an internet address: what the proxy
+/// would tell by host ([`super::is_the_proxys`]) is, from the supervisor, an address dialled past
+/// it ([`Kind::Address`]), named by that address alone. None where it is not one.
 pub fn block_of(refusal: &Refusal, place: &Place<'_>) -> Option<(Block, Option<String>)> {
     let denial = Denial {
         witness: Witness::Kernel,
@@ -46,8 +46,27 @@ pub fn block_of(refusal: &Refusal, place: &Place<'_>) -> Option<(Block, Option<S
         target: &refusal.target,
     };
     let (block, target) = denial.block(place);
-    (!super::is_the_proxys(&block)).then_some((block, target))
+    // The supervisor sees no host, only the address a program dialled: one past the proxy,
+    // since the proxy's own port is what the chat reaches (#2423). It names that address.
+    if super::is_the_proxys(&block) {
+        let address = refusal.target.parse::<std::net::SocketAddr>().ok()?;
+        let block = Block {
+            kind: Kind::Address,
+            ..block
+        };
+        return Some((block, Some(address.to_string())));
+    }
+    // A file no longer linked is named by the kernel with " (deleted)" after its last name
+    // (#2425): what Allow would name is the name it had. Its kind is as that refusal sorts.
+    let target = match refusal.target.strip_suffix(UNLINKED) {
+        Some(had) if !block.ours => super::target_of(&block, had, place),
+        _ => target,
+    };
+    Some((block, target))
 }
+
+/// What the kernel puts after the last name of a file that is no longer linked.
+const UNLINKED: &str = " (deleted)";
 
 /// Whether the supervisor tells blocks such as `block` itself: every refused file operation,
 /// local socket and service on this machine. A lookup past the proxy it never sees.
@@ -55,7 +74,10 @@ pub fn tells(block: &Block) -> bool {
     matches!(
         (block.operation, block.kind),
         (Operation::Write | Operation::Read | Operation::File, _)
-            | (Operation::Connect, Kind::LocalSocket | Kind::LocalService)
+            | (
+                Operation::Connect,
+                Kind::LocalSocket | Kind::LocalService | Kind::Address
+            )
     )
 }
 

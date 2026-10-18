@@ -958,11 +958,14 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "persona_where",
             "dispatch_list",
             "dispatch_read",
+            // The theme specimen's pictures (#2330, ADR 0064 amended 2026-10-17).
+            "theme_preview",
         ]
     );
     for name in PRE_ALLOWED {
         let tool = TOOLS
             .iter()
+            .chain(crate::themepreview::TOOLS.iter())
             .find(|tool| tool.name == name)
             .unwrap_or_else(|| panic!("{name} is not a tool"));
         assert!(tool.read_only, "{name} writes");

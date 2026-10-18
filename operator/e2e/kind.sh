@@ -4,7 +4,8 @@
 
 # The operator's end-to-end tests on a kind cluster (#2054, #2237): a cluster of the oldest
 # Kubernetes purlis supports, a registry beside it so images are named by digest as a Pool names
-# them, doctor before and after the pinned upstream agent-sandbox, then purlis's definitions,
+# them, doctor before and after the pinned upstream agent-sandbox (its controller by the digest
+# recorded beside the vendored release, checked against the registry), then purlis's definitions,
 # policy and operator installed by the Helm chart (charts/purlis-cluster-operator/), as
 # docs/cluster-operator.md installs them. The cluster then shows the plain manifests in deploy/
 # would change nothing, and `tests/on_a_kind_cluster.rs` runs. Everything it started is removed
@@ -28,7 +29,17 @@ port=${REGISTRY_PORT:-5001}
 # The oldest Kubernetes purlis supports (spec #2041), as kind v0.33.0 publishes it.
 node=kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
 registry_image=registry:3@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
-upstream=$here/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
+# The pinned upstream release, applied as its kustomization there applies it: the vendored
+# manifest with the controller named by the release's digest (#2261).
+upstream=$here/vendor/agent-sandbox/v1.0.6
+# The controller's image, tag and digest, as that record names them.
+controller_image=$(sed -n 's/^ *- name: //p' "$upstream/kustomization.yaml")
+controller_tag=$(sed -n 's/^ *newTag: //p' "$upstream/kustomization.yaml")
+recorded=$(sed -n 's/^ *digest: //p' "$upstream/kustomization.yaml")
+if [ -z "$controller_image" ] || [ -z "$controller_tag" ] || [ -z "$recorded" ]; then
+  echo "$upstream/kustomization.yaml names no controller image, tag and digest" >&2
+  exit 1
+fi
 context=kind-$cluster
 # A kubeconfig of the run's own: the person's own is never read or written.
 KUBECONFIG=$(mktemp "${TMPDIR:-/tmp}/purlis-operator-e2e.XXXXXX")
@@ -117,9 +128,29 @@ echo "$found" | grep -q "^missing: upstream agent-sandbox v1.0.6: not installed"
   exit 1
 }
 
-step "upstream agent-sandbox v1.0.6"
-kubectl --context "$context" apply --server-side -f "$upstream" >/dev/null
+step "the recorded digest is what the registry holds under the pinned tag"
+docker pull -q "$controller_image:$controller_tag" >/dev/null
+published=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$controller_image:$controller_tag" |
+  grep "^$controller_image@sha256:" | head -n 1)
+if [ "${published#*@}" != "$recorded" ]; then
+  what="$controller_image:$controller_tag is ${published#*@} in the registry; the record beside the vendored release names $recorded"
+  echo "$what" >&2
+  annotate "the recorded controller digest is not the pinned release's" "$what"
+  exit 1
+fi
+
+step "upstream agent-sandbox v1.0.6, its controller by digest"
+kubectl --context "$context" apply --server-side -k "$upstream" >/dev/null
 kubectl --context "$context" -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
+running=$(kubectl --context "$context" -n agent-sandbox-system get deployment/agent-sandbox-controller \
+  -o jsonpath='{.spec.template.spec.containers[0].image}')
+case $running in
+  "$controller_image@$recorded" | "$controller_image:$controller_tag@$recorded") echo "controller image: $running" ;;
+  *)
+    echo "upstream's controller runs $running, not $controller_image by $recorded" >&2
+    exit 1
+    ;;
+esac
 
 step "doctor with the pinned upstream: nothing missing"
 doctor

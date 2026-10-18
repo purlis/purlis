@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Enter your code</title>
+<style>
+  body { font: 20px sans-serif; }
+  .boxes input { width: 1.5em; text-align: center; font: 24px monospace; }
+</style></head>
+<body>
+  <div class="boxes" role="group" aria-label="The code we sent you">
+    <input maxlength="1" aria-label="Digit 1" inputmode="numeric">
+    <input maxlength="1" aria-label="Digit 2" inputmode="numeric">
+    <input maxlength="1" aria-label="Digit 3" inputmode="numeric">
+    <span aria-hidden="false">–</span>
+    <input maxlength="1" aria-label="Digit 4" inputmode="numeric">
+    <input maxlength="1" aria-label="Digit 5" inputmode="numeric">
+    <input maxlength="1" aria-label="Digit 6" inputmode="numeric">
+  </div>
+  <p id="said">Nothing entered yet</p>
+  <script>
+    // Once every box holds its digit, the page shows the whole code: in a line of its own, in
+    // its title and in its address.
+    const boxes = Array.from(document.querySelectorAll('.boxes input'));
+    for (const box of boxes) {
+      box.addEventListener('input', () => {
+        const code = boxes.map((b) => b.value).join('');
+        if (code.length !== boxes.length) return;
+        document.getElementById('said').textContent = 'You entered ' + code + ', thank you';
+        document.title = 'Code ' + code;
+        history.replaceState(null, '', '?code=' + code);
+      });
+    }
+  </script>
+</body></html>

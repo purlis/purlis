@@ -3,12 +3,14 @@
 
 //! **The published JSON Schema of format 2**, generated from the engine's own vocabulary
 //! (spec #2313, ADR 0097 §3.1): the token and motion names, the colour grammar, the bounds. A
-//! theme's `$schema` names [`SCHEMA_URL`], so an editor completes token names and flags a
-//! mistake as it is typed.
+//! theme's `$schema` names it by [`super::SCHEMA_URL`], so an editor completes token names and
+//! flags a mistake as it is typed.
 //!
-//! The schema is published as a file in the repository, `docs/schema/theme.schema.json`, which
-//! a test holds equal to [`schema_text`]; `PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p
-//! purlis-core the_published_schema` writes it again after the vocabulary changes. The engine,
+//! The schema is published as a file in the repository, [`super::published::SCHEMA_FILE`],
+//! which a test holds equal to [`schema_text`]; `PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p
+//! purlis-core the_published_schema` writes it again after the vocabulary changes, and refuses
+//! a change that takes anything away (`theme::published`). It carries no `$id`: the file is the
+//! format's, and its address is the release's. The engine,
 //! not the schema, is what a theme is held to: the schema describes the same grammar for an
 //! editor, and a test proves each name in it is the engine's.
 
@@ -18,11 +20,10 @@ use super::fonts::{MOST_FACES, SLOTS};
 use super::format::{MOST_APPEARANCES, MOST_ICONS_PATH, THEME_JSON};
 use super::geometry::{STEPS, Step, Unit};
 use super::options::{MOST_COMBINATIONS, MOST_DESCRIPTION, MOST_LABEL, MOST_OPTIONS};
-use super::vocabulary::{DURATIONS, EASINGS, LONGEST, TOKENS};
-
-/// Where the schema is published: the file in the repository, as GitHub serves it.
-pub const SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json";
+use super::vocabulary::{
+    CURSOR_STYLE, CURSOR_STYLES, DURATIONS, EASINGS, FLAGS, LINE_HEIGHT, LINE_HEIGHTS, LONGEST,
+    PLATFORM, PLATFORM_DRAWN, TOKENS,
+};
 
 /// The colour grammar as a pattern: `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`
 /// ([`super::vocabulary::is_colour`]).
@@ -68,8 +69,36 @@ const FACE_FILE: &str = "^fonts/[A-Za-z0-9_-][A-Za-z0-9._-]*\\.woff2$";
 pub fn schema() -> Value {
     let mut tokens: Map<String, Value> = TOKENS
         .iter()
-        .map(|token| ((*token).to_owned(), json!({ "$ref": "#/$defs/colour" })))
+        .map(|token| {
+            let colour = if PLATFORM_DRAWN.contains(token) {
+                json!({
+                    "description": format!("A colour, or \"{PLATFORM}\" to leave it to what draws it by default."),
+                    "anyOf": [{ "$ref": "#/$defs/colour" }, { "const": PLATFORM }]
+                })
+            } else {
+                json!({ "$ref": "#/$defs/colour" })
+            };
+            ((*token).to_owned(), colour)
+        })
         .collect();
+    // The tokens that are not colours (#2327), each of its own type.
+    for flag in FLAGS {
+        tokens.insert((*flag).to_owned(), json!({ "type": "boolean" }));
+    }
+    tokens.insert(
+        CURSOR_STYLE.to_owned(),
+        json!({ "description": "The terminal cursor's shape.", "enum": CURSOR_STYLES }),
+    );
+    let (least, most) = LINE_HEIGHTS;
+    tokens.insert(
+        LINE_HEIGHT.to_owned(),
+        json!({
+            "description": "The terminal's line height, a multiple of its text size.",
+            "type": "number",
+            "minimum": least,
+            "maximum": most
+        }),
+    );
     let sizes: Map<String, Value> = STEPS
         .iter()
         .map(|step| (step.token.to_owned(), geometry(step)))
@@ -112,7 +141,6 @@ pub fn schema() -> Value {
     }
     let mut schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": SCHEMA_URL,
         "title": format!("A purlis theme folder's {THEME_JSON} (format 2)"),
         "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, and its options. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
         "type": "object",
@@ -192,7 +220,7 @@ pub fn schema() -> Value {
                 }
             },
             "tokens": {
-                "description": "Token values: a colour for a colour token, a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance.",
+                "description": "Token values: a colour for a colour token; for a flag, the terminal cursor's shape or its line height, a value of that type; a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance.",
                 "type": "object",
                 "additionalProperties": false,
                 "properties": tokens

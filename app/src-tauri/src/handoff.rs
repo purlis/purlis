@@ -294,6 +294,13 @@ pub fn answer(
         // A browser tool's call (#2013): no ticket, for the record's reason. The line names a
         // browser of the chat whose token it carries, looked up among that chat's alone.
         Ask::Browse(browse) => crate::chatbrowsers::answered(held, &browse),
+        // The theme specimen (#2330): no ticket, for the record's reason. The line names a theme
+        // and an appearance; the picture is of the specimen's own sample content.
+        Ask::ThemePreview(asks) => crate::specimen::answered(
+            &|chat| is_open(held, chat),
+            crate::specimen::painter().as_deref(),
+            &asks,
+        ),
     }
 }
 
