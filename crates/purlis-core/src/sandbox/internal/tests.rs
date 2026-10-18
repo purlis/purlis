@@ -120,12 +120,13 @@ fn the_loopback_is_left_to_the_services_this_machine_gives() {
     assert!(listing(&[]).carries("localhost", at("127.0.0.1:5432"), Some(&[])));
 }
 
+/// Where this machine's addresses cannot be read, any address may be one of its own, so only
+/// an entry naming that address and port exactly carries it.
 #[test]
-fn where_this_machines_addresses_cannot_be_read_only_what_policy_lists_is_carried() {
-    let listed = listing(&["api.example.com"]);
-
-    assert!(!listed.carries("other.example.com", at("203.0.113.7:443"), None));
-    assert!(listed.carries("api.example.com", at("203.0.113.7:443"), None));
+fn where_this_machines_addresses_cannot_be_read_only_an_exact_address_and_port_is_carried() {
+    assert!(!listing(&["api.example.com"]).carries("api.example.com", at("203.0.113.7:443"), None));
+    assert!(!listing(&["203.0.113.0/24"]).carries("api.example.com", at("203.0.113.7:443"), None));
+    assert!(listing(&["203.0.113.7:443"]).carries("api.example.com", at("203.0.113.7:443"), None));
 }
 
 /// Only `127.0.0.1` and `::1` are the services a chat is given: the rest of `127/8` is held.
@@ -225,9 +226,9 @@ fn a_range_carries_every_address_in_it_and_nothing_more() {
 fn a_range_lists_a_planned_address_in_it_and_never_a_name() {
     let range = listing(&["10.96.0.0/12"]);
 
-    assert!(range.lists_entry("10.96.0.10:53"));
-    assert!(!range.lists_entry("10.112.0.10:53"));
-    assert!(!range.lists_entry("kube-dns.example:53"));
+    assert!(range.lists_entry("10.96.0.10:53", Some(&[])));
+    assert!(!range.lists_entry("10.112.0.10:53", Some(&[])));
+    assert!(!range.lists_entry("kube-dns.example:53", Some(&[])));
 }
 
 #[test]
@@ -324,4 +325,41 @@ fn the_runners_own_nat64_prefix_is_read_from_the_machine() {
 #[test]
 fn an_address_nat64s_local_use_prefix_carries_at_48_is_private() {
     assert!(private_address(ip("64:ff9b:1:a00:0:500::")));
+}
+
+/// The runner's own address is in the network a range names (#2530), yet only an entry naming
+/// that address and port exactly carries it: a range, a name or an address with no port never.
+#[test]
+fn a_range_of_the_runners_network_never_carries_the_runners_own_address() {
+    let own = [Network::of(ip("10.244.1.5"), 24)];
+    let pods = listing(&["10.244.0.0/16", "*.svc.cluster.local", "10.244.1.5"]);
+
+    assert!(!pods.carries(
+        "runner.svc.cluster.local",
+        at("10.244.1.5:8080"),
+        Some(&own)
+    ));
+    assert!(pods.carries("other.svc.cluster.local", at("10.244.2.9:443"), Some(&own)));
+    assert!(!pods.lists_entry("10.244.1.5:8080", Some(&own)));
+    assert!(pods.lists_entry("10.244.2.9:443", Some(&own)));
+    let exact = listing(&["10.244.1.5:8080"]);
+    assert!(exact.carries("runner.example", at("10.244.1.5:8080"), Some(&own)));
+    assert!(!exact.carries("runner.example", at("10.244.1.5:22"), Some(&own)));
+    assert!(exact.lists_entry("10.244.1.5:8080", Some(&own)));
+}
+
+/// An address under this machine's own NAT64 prefix is listed as the IPv4 address it carries
+/// (#2530): an IPv4 range covers it, and an IPv6 range around the prefix covers nothing behind it.
+#[test]
+fn an_address_this_machines_nat64_carries_is_listed_as_the_ipv4_one() {
+    let ours = Nat64::new("fd00:64:1::".parse().unwrap(), 96).expect("a prefix");
+    let ula = listing(&["[fd00:64::/32]"]).with_nat64(vec![ours]);
+    let services = listing(&["10.96.0.0/12"]).with_nat64(vec![ours]);
+    // 10.0.0.5 and 10.96.0.1 under fd00:64:1::/96.
+    assert!(!ula.carries("db.example", at("[fd00:64:1::a00:5]:443"), Some(&[])));
+    assert!(ula.carries("v6.example", at("[fd00:64:2::5]:443"), Some(&[])));
+    assert!(services.carries("api.example", at("[fd00:64:1::a60:1]:443"), Some(&[])));
+    assert!(!services.carries("db.example", at("[fd00:64:1::a00:5]:443"), Some(&[])));
+    assert!(services.lists_entry("[fd00:64:1::a60:1]:443", Some(&[])));
+    assert!(!ula.lists_entry("[fd00:64:1::a00:5]:443", Some(&[])));
 }

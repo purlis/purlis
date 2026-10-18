@@ -271,12 +271,20 @@ fn what_the_row_says_stays_on_one_line() {
 #[test]
 fn a_relayed_internal_entry_not_taken_is_a_warning_naming_it() {
     let row = relayed_internal_row(&[
-        "its relayed-internal entry \"10.0.0.5/8\" is not taken: it has bits set".to_owned(),
+        "\"10.0.0.5/8\": 10.0.0.5/8 has bits set past its prefix.".to_owned(),
+        "7: an entry is written as text in quotes.".to_owned(),
     ])
     .expect("a row");
 
     assert_eq!(row.name, "sandbox relayed internal");
     assert_eq!(row.status, Status::Warn);
-    assert!(row.detail.contains("\"10.0.0.5/8\""), "{}", row.detail);
+    assert!(
+        row.detail.contains("relayed-internal")
+            && row
+                .detail
+                .contains("\"10.0.0.5/8\": 10.0.0.5/8 has bits set past its prefix. 7:"),
+        "{}",
+        row.detail
+    );
     assert_eq!(relayed_internal_row(&[]), None);
 }

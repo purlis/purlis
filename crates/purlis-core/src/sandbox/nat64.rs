@@ -97,8 +97,8 @@ fn at(ip: Ipv6Addr, length: u8) -> Ipv4Addr {
 }
 
 /// **This machine's own NAT64 prefixes**, as its resolver answers `ipv4only.arpa` (RFC 7050):
-/// none where it answers with no IPv6 address or not at all. A reading is kept for five
-/// minutes. A test build answers what its test set, never the network.
+/// none where it answers with no IPv6 address or not at all. An answer is kept for five
+/// minutes, and a failed lookup for thirty seconds. A test build answers what its test set, never the network.
 pub fn of_this_machine() -> Vec<Nat64> {
     #[cfg(any(test, feature = "test-support"))]
     {
@@ -110,39 +110,45 @@ pub fn of_this_machine() -> Vec<Nat64> {
     }
 }
 
-/// How long a reading of this machine's prefixes is kept.
+/// How long an answer about this machine's prefixes is kept.
 #[cfg(not(any(test, feature = "test-support")))]
 const READ_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// How long a lookup that failed is kept before it is asked again.
+#[cfg(not(any(test, feature = "test-support")))]
+const ASK_AGAIN_AFTER_A_FAILURE: std::time::Duration = std::time::Duration::from_secs(30);
 
 #[cfg(not(any(test, feature = "test-support")))]
 fn read_now_and_then() -> Vec<Nat64> {
     use std::sync::Mutex;
     use std::time::Instant;
-    static READ: Mutex<Option<(Instant, Vec<Nat64>)>> = Mutex::new(None);
+    static READ: Mutex<Option<(Instant, std::time::Duration, Vec<Nat64>)>> = Mutex::new(None);
     let kept = READ
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
-    if let Some((when, prefixes)) = kept
-        && when.elapsed() < READ_AGAIN_AFTER
+    if let Some((when, kept_for, prefixes)) = kept
+        && when.elapsed() < kept_for
     {
         return prefixes;
     }
-    let prefixes = read();
+    let (kept_for, prefixes) = match read() {
+        Some(prefixes) => (READ_AGAIN_AFTER, prefixes),
+        None => (ASK_AGAIN_AFTER_A_FAILURE, Vec::new()),
+    };
     *READ
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) =
-        Some((Instant::now(), prefixes.clone()));
+        Some((Instant::now(), kept_for, prefixes.clone()));
     prefixes
 }
 
-/// What this machine's resolver answers for `ipv4only.arpa`, now.
+/// What this machine's resolver answers for `ipv4only.arpa`, now: `None` where the lookup
+/// failed.
 #[cfg(not(any(test, feature = "test-support")))]
-fn read() -> Vec<Nat64> {
+fn read() -> Option<Vec<Nat64>> {
     use std::net::{IpAddr, ToSocketAddrs};
-    let Ok(found) = ("ipv4only.arpa", 0).to_socket_addrs() else {
-        return Vec::new();
-    };
+    let found = ("ipv4only.arpa", 0).to_socket_addrs().ok()?;
     let mut prefixes: Vec<Nat64> = Vec::new();
     for answer in found {
         if let IpAddr::V6(answer) = answer.ip() {
@@ -153,7 +159,7 @@ fn read() -> Vec<Nat64> {
             }
         }
     }
-    prefixes
+    Some(prefixes)
 }
 
 #[cfg(any(test, feature = "test-support"))]

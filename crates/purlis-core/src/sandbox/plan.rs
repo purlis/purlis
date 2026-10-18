@@ -273,11 +273,14 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
     }
     let Ok(ip) = name.parse::<IpAddr>() else {
         // A name: what it resolves to on the runner, held as the address would be.
-        let listed = here.internal.lists_entry(entry);
+        let listed = here.internal.lists_entry(entry, Some(here.own));
         return match (here.resolve)(name, port.unwrap_or(HTTPS))
             .into_iter()
             .find(|ip| {
-                here.internal.holds(*ip, Some(here.own)) && (!listed || here.internal.metadata(*ip))
+                here.internal.holds(*ip, Some(here.own))
+                    && (!listed
+                        || here.internal.metadata(*ip)
+                        || here.internal.is_own(*ip, Some(here.own)))
             }) {
             Some(ip) => Err(not_taken_said(
                 format!(
@@ -299,7 +302,8 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
             )),
         };
     }
-    if here.internal.holds(ip, Some(here.own)) && !here.internal.lists_entry(entry) {
+    if here.internal.holds(ip, Some(here.own)) && !here.internal.lists_entry(entry, Some(here.own))
+    {
         return Err(not_taken_said(
             format!(
                 "it lets the chat reach {entry}, an internal address the runner's policy does not \
@@ -311,14 +315,18 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
     Ok(())
 }
 
-/// `why`, and each entry of the runner's `relayed-internal` it does not take, in its own
+/// `why`, and each entry of the runner's `relayed-internal` it does not take, each in its own
 /// sentence (#2530).
 fn not_taken_said(why: String, here: &Here<'_>) -> String {
     let not_taken = here.internal.not_taken();
     if not_taken.is_empty() {
         return why;
     }
-    format!("{why} ({})", not_taken.join("; "))
+    format!(
+        "{why}. Some entries in the runner's policy's relayed-internal are not taken, so relayed \
+         chats reach nothing through them: {}",
+        not_taken.join(" ")
+    )
 }
 
 /// The port a listed name without one is resolved on: the name's addresses are the same on any.

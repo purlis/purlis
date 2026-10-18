@@ -11,8 +11,12 @@ implementation, to be confirmed** (D-2530-1 to D-2530-4).
      from `/48`. An address in it is read at each of them, and it is internal where any reading
      is. A reading in `0.0.0.0/8` is left out, because no NAT64 translates one.
    - The runner's own NAT64 prefixes are read from the runner, as its resolver answers
-     `ipv4only.arpa` (RFC 7050), and each is read at the length that answer shows. A reading is
-     kept five minutes.
+     `ipv4only.arpa` (RFC 7050), and each is read at the length that answer shows. An answer is
+     kept five minutes, and a failed lookup thirty seconds.
+
+   What the policy lists is judged against each IPv4 address such an address carries, never
+   against the IPv6 address itself. So an IPv4 range covers the NAT64 form of an address in
+   it, and an IPv6 range around the runner's NAT64 prefix covers nothing behind it.
 
    The well-known forms keep their one reading. *Rejected:* reading the local-use prefix as a
    `/96` alone, which misses an address its NAT64 put at another length. *Rejected:* trusting a
@@ -29,10 +33,18 @@ implementation, to be confirmed** (D-2530-1 to D-2530-4).
    - a cloud metadata address;
    - an IPv6 form that carries an IPv4 address (mapped, SIIT, compatible, NAT64 or 6to4).
 
-   So `0.0.0.0/0` is never an entry. *D-2530-2.*
+   So `0.0.0.0/0` is never an entry.
+
+   **The runner's own addresses are never covered by a range.** An address of the runner's own
+   interfaces is carried only where an entry names that address and that port exactly; a
+   range, a name, or the address without a port never carries it. So a range of the runner's
+   pod network carries the other pods and not the runner. Where the runner's addresses
+   cannot be read, any address may be its own, and the same holds for all of them.
+   *D-2530-2.*
 3. **One bad entry is refused alone.** An entry of `relayed-internal` that is neither a host nor
-   a range, or is not text, carries nothing and is said in a sentence naming it. The rest of the
-   list and every other lock of the file stand as written. Two places say the sentences:
+   a range, or is not text, carries nothing and is said on one line, as the file wrote it, and
+   why. The rest of the list and every other lock of the file stand as written. Two places say
+   them:
    - the runner's refusal of a plan that lists an internal address its policy does not list;
    - `purlis doctor`'s `sandbox relayed internal` row, a warning.
 

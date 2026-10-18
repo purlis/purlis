@@ -54,6 +54,16 @@ impl Entry {
     }
 }
 
+impl Entry {
+    /// Whether this entry is the host `ip` on `port` exactly: an address, with that port.
+    pub fn names_exactly(&self, ip: IpAddr, port: Option<u16>) -> bool {
+        match self {
+            Self::Host(host) => host.address() == Some(ip) && port.is_some() && host.port() == port,
+            Self::Range(_) => false,
+        }
+    }
+}
+
 impl fmt::Display for Entry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

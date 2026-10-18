@@ -275,9 +275,9 @@ fn relayed_internal_row(refused: &[String]) -> Option<Row> {
     Some(Row::warn(
         "sandbox relayed internal",
         format!(
-            "this machine's policy has entries a chat planned on another machine reaches \
-             nothing by: {}",
-            refused.join("; ")
+            "Some entries in this machine's policy's relayed-internal are not taken, so relayed \
+             chats reach nothing through them: {}",
+            refused.join(" ")
         ),
         "Ask the administrator who set this machine's policy to correct those entries.",
     ))

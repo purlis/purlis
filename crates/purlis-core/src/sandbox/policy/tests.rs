@@ -1524,6 +1524,15 @@ fn a_bad_relayed_internal_entry_is_refused_alone_and_locks_nothing_else() {
     assert!(refused[0].contains("\"10.0.0.5/8\"") && refused[0].contains("10.0.0.0/8"));
     assert!(refused[1].contains("7") && refused[1].contains("text"));
     assert!(refused[2].contains("\"0.0.0.0/0\""));
+    let control = Locks::parse(
+        "{\"sandbox\": {\"relayed-internal\": [\"10.0.0.5/8\\nx\"]}}",
+        Path::new("/etc/purlis/policy.json"),
+    );
+    let said = control.relayed_internal_refused();
+    assert!(
+        said.len() == 1 && !said[0].chars().any(char::is_control),
+        "{said:?}"
+    );
     assert!(!locks.forbids_personal_hosts());
     assert!(!locks.forbids_write_grants());
     assert!(!locks.forbids_opt_out());

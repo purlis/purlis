@@ -155,6 +155,9 @@ const MOST_BYTES: u64 = 64 * 1024;
 /// The longest `owner` kept, in characters.
 const MOST_OWNER_CHARS: usize = 120;
 
+/// The longest sentence kept for why an entry is not taken, in characters.
+const MOST_REFUSAL_CHARS: usize = 240;
+
 /// Who an administrator is called where the policy names nobody.
 const NOBODY_NAMED: &str = "this machine's administrator";
 
@@ -200,7 +203,7 @@ pub struct Locks {
     never_hosts: Vec<Host>,
     /// The internal services a chat planned on another machine reaches on this one (#2445).
     relayed_internal: Vec<Entry>,
-    /// Each entry of `relayed-internal` that is not taken, in a sentence naming it (#2530).
+    /// Each entry of `relayed-internal` that is not taken, and why (#2530).
     relayed_internal_refused: Vec<String>,
     /// The most each dispatch limit may be, where the policy says (#1440).
     dispatch: crate::dispatchlimits::Level,
@@ -466,8 +469,8 @@ impl Locks {
         &self.relayed_internal
     }
 
-    /// **Each entry of `relayed-internal` not taken** (#2530), in a sentence naming it and
-    /// saying why: it carries nothing, and nothing else is locked for it.
+    /// **Each entry of `relayed-internal` not taken** (#2530): the entry, as the file wrote it,
+    /// and why, on one line. It carries nothing, and nothing else is locked for it.
     pub fn relayed_internal_refused(&self) -> &[String] {
         &self.relayed_internal_refused
     }
@@ -893,8 +896,9 @@ fn relayed_internal(
     for item in items {
         let said = |why: &str| {
             format!(
-                "its relayed-internal entry {} is not taken: {why}",
-                clip(&item.to_string())
+                "{}: {}",
+                clip(&item.to_string()),
+                crate::shown::one_line(why, MOST_REFUSAL_CHARS)
             )
         };
         match item.as_str().map(Entry::parse) {

@@ -148,9 +148,10 @@ impl Internal {
     }
 
     /// **Whether `host`, reached at `at`, is carried**: an address that is not internal is, and
-    /// an internal one only where this machine's policy lists `host` or that address on that
-    /// port. A cloud metadata service is never carried. `own` is this machine's networks; where
-    /// they could not be read, every address but `127.0.0.1` and `::1` is held as internal.
+    /// an internal one only where this machine's policy lists it ([`Self::covers`]). A cloud
+    /// metadata service is never carried. `own` is this machine's networks; where they could
+    /// not be read, every address but `127.0.0.1` and `::1` is held as internal, and as one of
+    /// this machine's own.
     pub fn carries(&self, host: &str, at: SocketAddr, own: Option<&[Network]>) -> bool {
         if !self.holds(at.ip(), own) {
             return true;
@@ -158,21 +159,80 @@ impl Internal {
         if self.metadata(at.ip()) {
             return false;
         }
-        let listed = self.listed();
-        let covered = |asked: &str| {
-            Host::parse(asked).is_ok_and(|asked| listed.iter().any(|one| one.covers(&asked)))
-        };
-        covered(&super::egress::host_and_port(host, at.port())) || covered(&at.to_string())
+        let name = Host::parse(&super::egress::host_and_port(host, at.port())).ok();
+        self.covers(name.as_ref(), at.ip(), Some(at.port()), own)
     }
 
-    /// **Whether this machine's policy lists `entry`**, a host as a plan lists one: never one
-    /// that is or names a cloud metadata service's address.
-    pub fn lists_entry(&self, entry: &str) -> bool {
-        Host::parse(entry).is_ok_and(|asked| {
-            !asked.address().is_some_and(|ip| self.metadata(ip))
-                && self.listed().iter().any(|one| one.covers(&asked))
+    /// **Whether this machine's policy lists `entry`**, a host as a plan lists one, with `own`
+    /// this machine's networks: a name as [`Entry::covers`] says, and an address as
+    /// [`Self::covers`] says; never one that is or carries a cloud metadata service's address.
+    pub fn lists_entry(&self, entry: &str, own: Option<&[Network]>) -> bool {
+        let Ok(asked) = Host::parse(entry) else {
+            return false;
+        };
+        match asked.address() {
+            Some(ip) => !self.metadata(ip) && self.covers(None, ip, asked.port(), own),
+            None => self.listed().iter().any(|one| one.covers(&asked)),
+        }
+    }
+
+    /// **Whether the listing covers `ip` on `port`, asked for by `name`** (#2530). An address
+    /// under this machine's own NAT64 prefix is judged as each IPv4 address it carries, and
+    /// every one of them must be covered. An address of this machine's own, or one where its
+    /// addresses could not be read, is covered only by an entry naming that address and that
+    /// port exactly, never by a range, a name or an address without a port. Any other address
+    /// is covered by an entry that covers it, or the name asked for.
+    fn covers(
+        &self,
+        name: Option<&Host>,
+        ip: IpAddr,
+        port: Option<u16>,
+        own: Option<&[Network]>,
+    ) -> bool {
+        let listed = self.listed();
+        let readings = self.through_nat64(ip);
+        let judged = if readings.is_empty() {
+            vec![ip]
+        } else {
+            readings
+        };
+        judged.iter().all(|one| {
+            if self.is_own(*one, own) {
+                return listed.iter().any(|entry| entry.names_exactly(*one, port));
+            }
+            let by_address = host_at(*one, port)
+                .is_some_and(|asked| listed.iter().any(|entry| entry.covers(&asked)));
+            by_address || name.is_some_and(|asked| listed.iter().any(|entry| entry.covers(asked)))
         })
     }
+
+    /// **Whether `ip` is, or carries, one of this machine's own addresses**: every address,
+    /// where they could not be read (`own` `None`).
+    pub(crate) fn is_own(&self, ip: IpAddr, own: Option<&[Network]>) -> bool {
+        let Some(own) = own else {
+            return true;
+        };
+        let mine = |ip: IpAddr| own.iter().any(|one| one.address == ip);
+        let carried = match ip {
+            IpAddr::V4(_) => Vec::new(),
+            IpAddr::V6(v6) => carried_v4(v6)
+                .into_iter()
+                .map(IpAddr::V4)
+                .chain(self.through_nat64(ip))
+                .collect(),
+        };
+        mine(ip) || carried.into_iter().any(mine)
+    }
+}
+
+/// `ip` as a host, on `port` where there is one; none where it is never a host.
+fn host_at(ip: IpAddr, port: Option<u16>) -> Option<Host> {
+    let written = match (ip, port) {
+        (IpAddr::V4(ip), None) => ip.to_string(),
+        (IpAddr::V6(ip), None) => format!("[{ip}]"),
+        (ip, Some(port)) => SocketAddr::new(ip, port).to_string(),
+    };
+    Host::parse(&written).ok()
 }
 
 /// Whether `ip` is internal (module docs): not `127.0.0.1` or `::1`, and an address of this
