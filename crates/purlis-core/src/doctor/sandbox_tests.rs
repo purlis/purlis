@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use super::{grants_held_row, kept_for, kept_row, local_ports_row};
+use super::{grants_held_row, kept_for, kept_row, local_ports_row, relayed_internal_row};
 use crate::doctor::Row;
 use crate::doctor::Status;
 use crate::sandbox::HeldGrant;
@@ -265,4 +265,26 @@ fn what_the_row_says_stays_on_one_line() {
     };
     let row = kept_row(Some(&untold), &[], true).expect("a row");
     assert!(!row.detail.contains('\n'), "{:?}", row.detail);
+}
+
+/// An entry of the policy's `relayed-internal` that is not taken is said on its own (#2530).
+#[test]
+fn a_relayed_internal_entry_not_taken_is_a_warning_naming_it() {
+    let row = relayed_internal_row(&[
+        "\"10.0.0.5/8\": 10.0.0.5/8 has bits set past its prefix.".to_owned(),
+        "7: an entry is written as text in quotes.".to_owned(),
+    ])
+    .expect("a row");
+
+    assert_eq!(row.name, "sandbox relayed internal");
+    assert_eq!(row.status, Status::Warn);
+    assert!(
+        row.detail.contains("relayed-internal")
+            && row
+                .detail
+                .contains("\"10.0.0.5/8\": 10.0.0.5/8 has bits set past its prefix. 7:"),
+        "{}",
+        row.detail
+    );
+    assert_eq!(relayed_internal_row(&[]), None);
 }

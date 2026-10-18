@@ -236,7 +236,7 @@ pub fn autolaunched_address(printed: &str) -> Option<String> {
 
 /// What came of asking something on a thread of its own, within a budget ([`in_time`]).
 #[cfg(target_os = "linux")]
-enum Asked<T> {
+pub(crate) enum Asked<T> {
     /// It answered in time.
     Answered(T),
     /// No answer in time. The thread still waiting is left behind, and ends with the process.
@@ -247,7 +247,7 @@ enum Asked<T> {
 
 /// Runs `ask` on a thread of its own and gives it `budget`.
 #[cfg(target_os = "linux")]
-fn in_time<T: Send + 'static>(
+pub(crate) fn in_time<T: Send + 'static>(
     budget: Duration,
     ask: impl FnOnce() -> T + Send + 'static,
 ) -> Asked<T> {

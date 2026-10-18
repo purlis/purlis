@@ -4849,10 +4849,24 @@ pub struct Launch {
 ///
 /// After this, the working directory is never consulted again: a plane is named explicitly
 /// from here on.
-pub fn at_launch(planes: &Planes, cwd: std::io::Result<PathBuf>) -> Launch {
+///
+/// `root` is [`launch_root`] of `cwd`, resolved before the window was built so the window opens
+/// on the plane it names (#2602): resolved once, and taken here as it was answered.
+pub fn at_launch(
+    planes: &Planes,
+    cwd: std::io::Result<PathBuf>,
+    root: Option<Result<PathBuf, String>>,
+) -> Launch {
     resolving_with(planes, cwd, |cwd| {
-        purlis_core::plane::resolve(cwd).map_err(|why| why.to_string())
+        root.unwrap_or_else(|| purlis_core::plane::resolve(cwd).map_err(|why| why.to_string()))
     })
+}
+
+/// **The plane the launch's working directory `cwd` is in**, by the one resolver
+/// (`purlis_core::plane::resolve`), or why none; `None` when the directory could not be read.
+pub fn launch_root(cwd: &std::io::Result<PathBuf>) -> Option<Result<PathBuf, String>> {
+    let cwd = cwd.as_ref().ok()?;
+    Some(purlis_core::plane::resolve(cwd).map_err(|why| why.to_string()))
 }
 
 /// [`at_launch`], with the resolver named — so a test can drive the three states without

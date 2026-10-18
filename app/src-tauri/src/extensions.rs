@@ -414,7 +414,7 @@ pub(crate) fn contrast_of(more: bool) -> purlis_core::theme::Contrast {
 }
 
 /// [`theme_in_force`] without a runtime.
-fn theme_in_force_of(
+pub(crate) fn theme_in_force_of(
     levels: &purlis_core::theme::Levels,
     folders: &purlis_core::theme::Folders,
     on: Option<&[String]>,

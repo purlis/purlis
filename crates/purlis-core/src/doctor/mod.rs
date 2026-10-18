@@ -564,6 +564,7 @@ impl Doctor {
         rows.extend(sandbox::blocks(self));
         rows.extend(sandbox::local_ports(self));
         rows.extend(sandbox::grants_held(self));
+        rows.extend(sandbox::relayed_internal(self));
         rows.extend(sandbox::cache_home(self));
         rows.push(memory::memory_indexes(self));
         rows.push(personas::personas(self));
