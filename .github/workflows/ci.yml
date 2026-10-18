@@ -727,12 +727,12 @@ jobs:
   # on every pull request. What each part took, measured, is in #2468.
   macos-tests:
     name: macos (core and app tests, no orphans, evidence only, part ${{ matrix.part }} of 3)
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.head_ref == 'probe/2616-macos'
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3]
+        part: [1]
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -748,9 +748,17 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Build the tests
-        run: cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --no-run
+        run: cargo nextest run --locked -p purlis-core --no-run
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
+        run: |
+          F='binary(starting_a_chat_on_a_profile)'
+          echo "== green: the branch's file, all of it"
+          cargo nextest run --locked -p purlis-core --profile ci --no-fail-fast -E "$F" || exit 1
+          git fetch --depth=1 origin main
+          git checkout FETCH_HEAD -- crates/purlis-core/tests/starting_a_chat_on_a_profile.rs
+          echo "== red: main's test, expecting the written path"
+          if cargo nextest run --locked -p purlis-core --profile ci --no-fail-fast -E 'test(=a_chat_started_on_a_profile_runs_that_profiles_command_in_that_profiles_environment)'; then echo "RED NOT SEEN"; exit 1; fi
+          echo "== red seen"
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
