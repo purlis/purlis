@@ -1995,6 +1995,38 @@ fn a_chat_whose_link_back_went_missing_is_reconnected_once_it_draws_again() {
 }
 
 #[test]
+fn a_chat_with_no_pane_while_its_link_was_down_is_reconnected_once_a_pane_draws_it() {
+    let (runs, lines) = (StandIns::default(), purlis_host::standin::Lines::default());
+    let hosted = hosted_in(Between::new(a_relay_to_a_runner(&runs, &lines), true), runs);
+    let told = told_of_reconnecting(&hosted);
+    let id = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .unwrap();
+    hosted.runs.last().writes(b"ready> ");
+
+    lines.cut();
+    until("the chat is said to be reconnecting", || {
+        *told.lock().unwrap() == [(vec![id], Reconnection::Reconnecting)]
+    });
+    until("the runner is linked again", || {
+        hosted.sessions.input(id, b"typed").is_ok()
+    });
+    // Its link_back went missing, and no view of it drew: it is still dimmed.
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+
+    let (sink, seen) = a_pane();
+    hosted.sessions.watch(id, sink).expect("a view opens");
+    until("the screen is drawn", || {
+        seen.lock().unwrap().contains("ready> ")
+    });
+    until("the chat is said to be reconnected", || {
+        reconnected(&told) == [id].into()
+    });
+    assert!(hosted.sessions.reconnecting().is_empty());
+}
+
+#[test]
 fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
     let runs = StandIns::default();
     let host = Between::new(

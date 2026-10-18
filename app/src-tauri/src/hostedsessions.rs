@@ -443,8 +443,9 @@ enum Reconnect {
     /// The host says it is back; or the window cannot tell any more, because it fell behind and
     /// subscribed again from now, or its link to the host ended.
     Over,
-    /// The view the host numbers so drew again from a new snapshot.
-    Redrawn(u32),
+    /// The view the host numbers so drew a snapshot: a first one or a new one, which the host
+    /// opens only while the link to the runner is up.
+    Drawn(u32),
 }
 
 /// Told what a link hears of the runner its host relays it to.
@@ -841,20 +842,21 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     if let Some(sink) = frames {
         return draw_frames_from(reader, &shared, &sink).await;
     }
-    let mut again = reader.epoch().0 > 1;
+    let again = reader.epoch().0 > 1;
     let mut text = Utf8Stream::default();
     if again {
         give(&shared, view, RESET.to_owned());
     }
+    let mut first = true;
     while let Some(Ok(chunk)) = reader.next().await {
         let bytes = match chunk {
             Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
         };
         give(&shared, view, text.push(&bytes));
-        // It draws again from a new snapshot: whatever was said of its runner's link, it is
-        // reconnected (#2496).
-        if std::mem::take(&mut again) {
-            reconnect(&shared, Reconnect::Redrawn(view));
+        // It draws a snapshot, which comes only over a link that is up: whatever was said of its
+        // runner's link, it is reconnected (#2496).
+        if std::mem::take(&mut first) {
+            reconnect(&shared, Reconnect::Drawn(view));
         }
         if reader.ack(bytes.len()).await.is_err() {
             break;
@@ -1147,7 +1149,7 @@ impl HostedSessions {
     /// What tells whoever asked which of this project's chats are reconnecting (#2496). While
     /// the link the host relays the project's link over is down every chat is, because they
     /// all run where that link goes; each chat dimmed is reconnected once the link is back or
-    /// the window cannot tell, or alone once its view draws again from a new snapshot.
+    /// the window cannot tell, or alone once a view of it draws a snapshot.
     fn reconnects(&self) -> Reconnects {
         let (running, dimmed) = (Arc::clone(&self.running), Arc::clone(&self.reconnecting));
         Arc::new(move |heard| {
@@ -1161,7 +1163,7 @@ impl HostedSessions {
                     let chats = std::mem::take(&mut lock(&dimmed).chats);
                     (chats.into_iter().collect(), Reconnection::Reconnected)
                 }
-                Reconnect::Redrawn(view) => {
+                Reconnect::Drawn(view) => {
                     let chat = lock(&running)
                         .iter()
                         .find_map(|(id, program)| program.views.contains(&view).then_some(*id));
@@ -1818,10 +1820,11 @@ impl SessionHost for HostedSessions {
             Answer::Attached(attached) => attached,
             other => return Err(format!("the session host answered a view with {other:?}")),
         };
-        link.draw(attached.view, sink);
+        // Listed before it draws, so its first snapshot finds whose view it is (#2496).
         if let Some(program) = lock(&self.running).get_mut(&id) {
             program.views.push(attached.view);
         }
+        link.draw(attached.view, sink);
         Ok(Watching {
             view: attached.view,
             size: Size {

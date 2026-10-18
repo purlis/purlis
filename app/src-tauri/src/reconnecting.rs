@@ -8,11 +8,12 @@
 //! links again on its own when it drops. It tells the window when that link is down and when it
 //! is back, and the window says so on each of that runner's chats, quietly: "Reconnecting…" over
 //! the chat's last screen, one state and never a notice for each chat. A chat is reconnected
-//! once the link is back, once its view draws again from a new snapshot, or once the window can
-//! no longer tell (it fell behind its host and subscribed again, or its link to its host ended):
-//! a chat is never left dimmed on a word that did not come. The window keeps which chats it
-//! dimmed, so each of them is cleared, one that ended meanwhile among them, and a pane drawn
-//! during an outage asks ([`chats_reconnecting`]) and starts dimmed.
+//! once the link is back, once a view of it draws a snapshot (which a host sends only while the
+//! link is up: a view drawn again, or one opened since), or once the window can no longer tell
+//! (it fell behind its host and subscribed again, or its link to its host ended): a chat is
+//! never left dimmed on a word that did not come. The window keeps which chats it dimmed, so
+//! each of them is cleared, one that ended meanwhile among them, and a pane drawn during an
+//! outage asks ([`chats_reconnecting`]) and starts dimmed.
 
 use crate::planes::{PlaneId, Planes};
 

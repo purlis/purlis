@@ -29,8 +29,8 @@
 //! down**, pushed `link_down` once each time no link is up, and `link_back` once one is up again
 //! and carries what its link stands on (#2496): a link renewed ahead of its limit is neither, and
 //! a relay made with [`Relay::new`] tells its client both as a kept one does. Both are this
-//! host's own words: the other host's are never handed on, and neither waits on a client that
-//! has stopped reading. A view the other host will not attach again has ended for good, and the
+//! host's own words: the other host's are never handed on, and neither holds up linking again
+//! for a client that has stopped reading. A view the other host will not attach again has ended for good, and the
 //! client is told so. What the other host named to the link that ended, a chat's confinement
 //! among them, is not named again by this: the other host names a link only what that link made
 //! or took back (#2511).
@@ -409,10 +409,12 @@ impl LinkTold {
     }
 
     /// A link is up and carries what the client's link stands on: a client told it was down is
-    /// told it is back.
-    fn back(&mut self, client: &ClientLink) {
+    /// told it is back. One word for each outage, so it waits for room, on a task of its own,
+    /// and never holds up the link.
+    fn back(&mut self, client: &Arc<ClientLink>) {
         if std::mem::replace(self, LinkTold::Up) == LinkTold::Down {
-            client.tell_now(Pushed::LinkBack {});
+            let client = Arc::clone(client);
+            tokio::spawn(async move { client.tell(Pushed::LinkBack {}).await });
         }
     }
 }
