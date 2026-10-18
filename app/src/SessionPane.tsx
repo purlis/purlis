@@ -35,7 +35,14 @@ import {
   type TerminalRowId,
 } from "./terminalRows";
 import { onTextSizes, textSizes } from "./textSize";
-import { inForce, onDrawn, onTerminalFont, terminalFont, xtermTheme } from "./theme/theme";
+import {
+  inForce,
+  onDrawn,
+  onTerminalFont,
+  terminalFont,
+  xtermLook,
+  xtermTheme,
+} from "./theme/theme";
 import { drawTerminalFont } from "./theme/terminalFont";
 import { scrollByDistance } from "./wheel";
 import { useProjectShown } from "./projectShown";
@@ -170,6 +177,9 @@ export function SessionPane({
       // nothing keeping them equal — and which left the other eighteen colours a terminal
       // has to the library's defaults.
       theme: xtermTheme(inForce()),
+      // The cursor's shape and blink, the line height and bold in the bright colours are the
+      // theme's too (#2327).
+      ...xtermLook(inForce()),
       // The search addon draws every match as a decoration, which xterm.js 6.0.0 still calls
       // proposed API (`registerDecoration` throws without this). Nothing else here uses it.
       allowProposedApi: true,
@@ -271,6 +281,11 @@ export function SessionPane({
     // now that xterm's stylesheet sits in a layer below charter's (M6.8).
     const unfollow = onDrawn((theme) => {
       pane.options.theme = xtermTheme(theme);
+      const look = xtermLook(theme);
+      const lineHeightChanged = look.lineHeight !== pane.options.lineHeight;
+      Object.assign(pane.options, look);
+      // A new line height is a new cell size, so the rows that fit the pane are new.
+      if (lineHeightChanged) fit.fit();
     });
     // **And so is a text size changed while it is up** (charter-app#283), then a refit: the
     // cells are a new size, so the rows and columns that fit the pane are new, and `fit` is
