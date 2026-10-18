@@ -992,6 +992,12 @@ impl Allowed {
     /// **Whether `host` on `port` is a service left out of this chat's plan** (#2510): one of
     /// [`Serving::left_out`], on this machine's loopback by any name the proxy carries one by,
     /// not withdrawn, and never a port purlis's own proxies listen on.
+    ///
+    /// **The one way a proxy asks about a port of its machine's loopback.** `left_out` is
+    /// filled only for a plan made on another machine, on the runner that starts it
+    /// ([`super::hosted::start`], [`super::plan::Plan::start_held`]); a proxy planned here never
+    /// asks about one. The window relies on that: it raises every loopback ask as the runner's
+    /// service (`chats::asked_as` in the app), never as one on the person's own machine.
     fn left_out_at(&self, host: &str, port: u16) -> bool {
         self.left_out.contains(&port)
             && localport::names_loopback(host, port)

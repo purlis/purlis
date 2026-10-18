@@ -2848,3 +2848,45 @@ fn a_runners_service_its_runner_did_not_take_is_audited_back_and_refused() {
     assert!(allowed.live);
     assert_eq!(*audited.borrow(), [(true, "5432".to_owned())]);
 }
+
+/// #2510: a block on a runner's service, answered with Allow for you in a project, grants
+/// nothing in that project on this machine; the same Allow of a service on this Mac does, so
+/// the project's granted ports are where such a grant would land.
+#[test]
+fn allow_for_you_on_a_runners_service_grants_nothing_in_the_project_here() {
+    use crate::taskblocks::HeldBlock;
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| Ok(());
+    let block = |kind: &str| HeldBlock {
+        operation: "connect".to_owned(),
+        kind: kind.to_owned(),
+        what: GrantWhat::Port,
+        target: "5432".to_owned(),
+    };
+
+    let refused = allow_held(
+        project.path(),
+        &machine(),
+        &chats,
+        (3, &block("runner-service")),
+        GrantLevel::You,
+        &audit,
+        100,
+    )
+    .expect_err("refused");
+    assert_eq!(refused.to_string(), RUNNER_SERVICE_SCOPES);
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+
+    allow_held(
+        project.path(),
+        &machine(),
+        &chats,
+        (3, &block("local-service")),
+        GrantLevel::You,
+        &audit,
+        100,
+    )
+    .expect("a service on this Mac is allowed for you");
+    assert_eq!(sandbox::local::granted_ports(project.path()), [5432]);
+}

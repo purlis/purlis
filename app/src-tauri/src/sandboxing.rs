@@ -2022,26 +2022,13 @@ pub async fn allow_sandbox_block(
     let tell = planes.block_teller();
     crate::off_the_window(ANSWERING_SANDBOX, move || {
         let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
-        // A service of the runner the chat runs on (#2510): for this chat alone, there, and
-        // nothing kept on this machine.
-        if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word() {
-            let allowed = allow_on_its_runner(
-                held.chats(),
-                session,
-                (&shown.target, level),
-                &held.audit_then_record(network.as_ref()),
-            )?;
-            held.chats().blocks().answered(session, &block);
-            return Ok(allowed);
-        }
-        let (what, target) = (shown.what, shown.target);
         let root = held.root().to_path_buf();
-        let allowed = match allow(
+        let allowed = match allow_held(
             &root,
             &sandbox::Machine::this(),
             held.chats(),
-            session,
-            (what, &target, level),
+            (session, &block),
+            level,
             &held.audit_then_record(network.as_ref()),
             now_secs(),
         ) {
@@ -2061,6 +2048,37 @@ pub async fn allow_sandbox_block(
         Ok(allowed)
     })
     .await
+}
+
+/// **Allows `block`, which chat `session` is held on, at `level`** (#1342), in the project at
+/// `root`: a service of the runner the chat runs on for this chat alone, there, with nothing
+/// kept on this machine ([`allow_on_its_runner`], #2510); anything else as [`allow`] grants it.
+pub(crate) fn allow_held(
+    root: &std::path::Path,
+    machine: &sandbox::Machine,
+    chats: &crate::chats::Chats,
+    (session, block): (u32, &crate::taskblocks::HeldBlock),
+    level: GrantLevel,
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<Allowed, NotJudged> {
+    if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word() {
+        return Ok(allow_on_its_runner(
+            chats,
+            session,
+            (&block.target, level),
+            audit,
+        )?);
+    }
+    allow(
+        root,
+        machine,
+        chats,
+        session,
+        (block.what, &block.target, level),
+        audit,
+        at,
+    )
 }
 
 /// **Allows the service on `port` of the runner chat `session` runs on, which that runner asked

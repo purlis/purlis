@@ -5521,8 +5521,9 @@ fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) ->
 
 /// **What a live ask about `target`, a host and port, is raised as**: a host, or, for a port
 /// of the loopback interface, a service of the runner the chat runs on, by its port (#2510).
-/// Only a runner's proxy asks about a loopback port, for one it left out of the chat's plan;
-/// never a service on this Mac, so no answer to it grants anything on this machine.
+/// Only a runner's proxy asks about a loopback port, for one it left out of the chat's plan
+/// (`purlis_core::sandbox::egress`'s `left_out_at`, the one way a proxy asks about one); never a
+/// service on this Mac, so no answer to it grants anything on this machine.
 fn asked_as(target: String) -> (purlis_core::sandboxblock::Kind, String) {
     use purlis_core::sandboxblock::Kind;
     match purlis_core::sandbox::localport::named_port(&target) {

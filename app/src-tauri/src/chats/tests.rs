@@ -7434,17 +7434,4 @@ fn a_runners_ask_about_its_loopback_is_raised_and_held_as_the_runners_service() 
         asked_as("api.example.com:443".to_owned()),
         (Kind::Host, "api.example.com:443".to_owned())
     );
-    let project = tempfile::tempdir().expect("a project");
-    let chats = Chats::new();
-    let refused = crate::sandboxing::allow_on_its_runner(
-        &chats,
-        4,
-        ("5432", crate::sandboxing::GrantLevel::You),
-        &|_, _| Ok(()),
-    );
-    assert_eq!(
-        refused,
-        Err(crate::sandboxing::RUNNER_SERVICE_SCOPES.to_owned())
-    );
-    assert!(purlis_core::sandbox::local::granted_ports(project.path()).is_empty());
 }
