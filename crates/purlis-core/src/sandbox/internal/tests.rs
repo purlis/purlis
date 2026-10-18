@@ -362,4 +362,10 @@ fn an_address_this_machines_nat64_carries_is_listed_as_the_ipv4_one() {
     assert!(!services.carries("db.example", at("[fd00:64:1::a00:5]:443"), Some(&[])));
     assert!(services.lists_entry("[fd00:64:1::a60:1]:443", Some(&[])));
     assert!(!ula.lists_entry("[fd00:64:1::a00:5]:443", Some(&[])));
+    // The runner's own IPv6 address under its NAT64 prefix is its own, whatever it carries.
+    assert!(!services.carries(
+        "me.example",
+        at("[fd00:64:1::a60:1]:443"),
+        Some(&[Network::host(ip("fd00:64:1::a60:1"))])
+    ));
 }

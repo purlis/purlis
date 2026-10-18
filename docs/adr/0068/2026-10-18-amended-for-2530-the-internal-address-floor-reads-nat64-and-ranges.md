@@ -2,7 +2,7 @@
 
 This note adds to the amendment for #2445 (a relayed plan fits the runner) and changes none of
 its rulings. Its items 1 and 2 stand, with what follows. Each item is **decided in
-implementation, to be confirmed** (D-2530-1 to D-2530-4).
+implementation, to be confirmed** (D-2530-1 to D-2530-5).
 
 1. **An IPv6 address under a NAT64 prefix is judged as the IPv4 address it carries, wherever
    the prefix puts it.** RFC 6052 places the IPv4 address after a prefix of 32, 40, 48, 56, 64
@@ -16,7 +16,9 @@ implementation, to be confirmed** (D-2530-1 to D-2530-4).
 
    What the policy lists is judged against each IPv4 address such an address carries, never
    against the IPv6 address itself. So an IPv4 range covers the NAT64 form of an address in
-   it, and an IPv6 range around the runner's NAT64 prefix covers nothing behind it.
+   it, and an IPv6 range around the runner's NAT64 prefix covers nothing behind it. An address
+   that is internal as itself, such as one under a unique-local NAT64 prefix, stays internal
+   whatever IPv4 address it carries. *D-2530-5.*
 
    The well-known forms keep their one reading. *Rejected:* reading the local-use prefix as a
    `/96` alone, which misses an address its NAT64 put at another length. *Rejected:* trusting a

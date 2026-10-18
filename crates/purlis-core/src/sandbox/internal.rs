@@ -190,6 +190,9 @@ impl Internal {
         own: Option<&[Network]>,
     ) -> bool {
         let listed = self.listed();
+        if self.is_own(ip, own) && !listed.iter().any(|entry| entry.names_exactly(ip, port)) {
+            return false;
+        }
         let readings = self.through_nat64(ip);
         let judged = if readings.is_empty() {
             vec![ip]
