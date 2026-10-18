@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792294699095,
+  "lastUpdate": 1792296224047,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16338,6 +16338,48 @@ window.BENCHMARK_DATA = {
             "value": 101.56221199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.011, 101.103, 101.562, 101.609, 101.992 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3d94995b3a734c8a23f18e14eabddffa096d09a2",
+          "message": "Cluster operator: change only upstream objects it made (#2258) (#2544)\n\nBefore writing a pool's template and warm pool or a Claim's upstream claim, the operator reads\nwhat the cluster holds under that name. An object that does not name the operator's owner (the\nPool or the Claim) as its controller, by uid, is left as it is, and the Claim's Ready says\nUpstreamObjectInTheWay with the object's kind and name; it looks again every 15 seconds. An\nabsent object is created rather than applied, and an object it made is applied by its uid.\n\nThe ClusterRole gains get on the three upstream kinds, to read them by name first.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T08:02:17+04:00",
+          "tree_id": "199286b1ac71c73cdd4aca616520c5a38a4a229b",
+          "url": "https://github.com/purlis/purlis/commit/3d94995b3a734c8a23f18e14eabddffa096d09a2"
+        },
+        "date": 1792296222297,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5302855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.527, 0.529, 0.530, 0.534, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.905811,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.346, 16.796, 16.906, 16.963, 17.105 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.5033115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.194, 103.437, 103.503, 103.810, 106.181 ms"
           }
         ]
       }
