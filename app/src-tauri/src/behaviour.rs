@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use purlis_core::engine::Size;
+use purlis_core::engine::{AlacrittyEngine, Engine as _, Size};
 use purlis_core::sandbox::hosts::Host;
 use purlis_core::sandbox::plan::{self, Asking, Hearing, Plan};
 use purlis_core::sandbox::reach::{By, Reach};
@@ -518,9 +518,36 @@ fn a_program(program: &str, args: &[&str]) -> Opening {
     }
 }
 
-/// A pane: what its view is sent, as it is sent.
+/// A pane: what its view is sent, as it is sent, and the terminal of its own that draws it.
 struct Pane {
-    seen: Arc<Mutex<String>>,
+    seen: Arc<Mutex<Seen>>,
+}
+
+/// What a pane's view has been sent, and its terminal drawing it.
+struct Seen {
+    sent: String,
+    terminal: AlacrittyEngine,
+}
+
+impl Seen {
+    fn new(size: Size) -> Seen {
+        Seen {
+            sent: String::new(),
+            terminal: AlacrittyEngine::new(size, crate::sessions::SCROLLBACK as usize),
+        }
+    }
+
+    fn take(&mut self, text: &str) {
+        self.sent.push_str(text);
+        self.terminal.advance(text.as_bytes());
+    }
+
+    /// Whether `wanted`, as text, is drawn: in what the pane was sent, or on its terminal,
+    /// its scrollback included.
+    fn draws(&mut self, wanted: &str) -> bool {
+        drawn(&self.sent).contains(wanted)
+            || drawn(&String::from_utf8_lossy(&self.terminal.snapshot())).contains(wanted)
+    }
 }
 
 impl Pane {
@@ -530,26 +557,127 @@ impl Pane {
 
     /// A pane of chat `id`, which `sessions` runs.
     fn of(sessions: &dyn SessionHost, id: u32) -> Pane {
-        let seen = Arc::new(Mutex::new(String::new()));
+        // A pane sized as the window's first is: the view says the size its screen was
+        // drawn for only once it opens, after its first bytes may have been sent.
+        let seen = Arc::new(Mutex::new(Seen::new(SIZE)));
         let sink: Sink = {
             let seen = Arc::clone(&seen);
-            Box::new(move |text: String| seen.lock().expect("the pane").push_str(&text))
+            Box::new(move |text: String| seen.lock().expect("the pane").take(&text))
         };
         sessions.watch(id, sink).expect("a view opens");
         Pane { seen }
     }
 
+    /// A pane that was sent `bytes`, on a screen of [`SIZE`].
+    #[cfg(test)]
+    fn sent(bytes: &str) -> Pane {
+        let mut seen = Seen::new(SIZE);
+        seen.take(bytes);
+        Pane {
+            seen: Arc::new(Mutex::new(seen)),
+        }
+    }
+
+    /// Waits until the pane draws `text`, read as the text it draws. A view is sent the screen
+    /// as it is first and then the output, so a line the program writes in two pieces can
+    /// reach it with the rest of the screen and a cursor move between them (#2375): a
+    /// terminal draws that as the line, and so does the pane's.
     fn shows(&self, text: &str) {
         let deadline = Instant::now() + PATIENCE;
-        while !self.seen.lock().expect("the pane").contains(text) {
+        let wanted = drawn(text);
+        loop {
+            // The lock is let go before a failed wait panics: the view's sink takes it on the
+            // host's thread, and a poisoned one would fail it there too.
+            let sent = {
+                let mut seen = self.seen.lock().expect("the pane");
+                if seen.draws(&wanted) {
+                    return;
+                }
+                seen.sent.clone()
+            };
             assert!(
                 Instant::now() < deadline,
-                "{text:?} was never drawn, only {:?}",
-                self.seen.lock().expect("the pane")
+                "{text:?} was never drawn, only {sent:?}"
             );
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+}
+
+/// `seen` as text, its escape sequences left out: a control sequence (`ESC [` to its final
+/// byte), a string (`ESC ]`, `P`, `^` or `_` to BEL or ST), or an escape with its intermediate
+/// bytes and final byte, such as saving the cursor (`ESC 7`).
+fn drawn(seen: &str) -> String {
+    let mut text = String::with_capacity(seen.len());
+    let mut chars = seen.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            text.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']' | 'P' | '^' | '_') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            Some(' '..='/') => {
+                for c in chars.by_ref() {
+                    if !(' '..='/').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    text
+}
+
+/// A pane opened while a chat writes a line is sent the screen with the line's first piece,
+/// then the rest as the program writes it: the end of the screen it is sent moves the cursor
+/// back between the two (#2375, as CI drew it).
+#[test]
+fn a_line_written_in_two_pieces_around_the_screen_a_pane_opens_on_is_shown_whole() {
+    let pane = Pane::sent(
+        "--name chat 1 without the sandbox\u{1b}[K\u{1b}[1;1H\u{1b}7\u{1b}[2 q\u{1b}[24;33H :END",
+    );
+
+    pane.shows("without the sandbox :END");
+}
+
+/// The same, with the line high on the screen: the screen a pane opens on draws the rows below
+/// the line before its cursor goes back to the line's end.
+#[test]
+fn a_line_written_in_two_pieces_high_on_the_screen_a_pane_opens_on_is_shown_whole() {
+    let mut chat = AlacrittyEngine::new(SIZE, 0);
+    chat.advance(b"\r\nwithout the sandbox");
+    let screen = String::from_utf8(chat.snapshot()).expect("the screen as text");
+    let pane = Pane::sent(&format!("{screen} :END"));
+
+    pane.shows("without the sandbox :END");
+}
+
+/// What a pane is told when its program ends carries escape sequences of its own, and is
+/// shown as it is drawn.
+#[test]
+fn the_end_a_pane_is_told_is_shown_as_it_is_drawn() {
+    let pane = Pane::sent(&format!("HARNESS-READY\u{1b}[K\r\n{ENDED}"));
+
+    pane.shows(ENDED);
 }
 
 /// How each chat ended, as the window is told.

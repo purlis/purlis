@@ -519,6 +519,8 @@ pub struct WindowTheme {
     pub fonts: WindowFonts,
     /// The tokens that are not colours (#2327).
     pub typed: WindowTyped,
+    /// How a workspace's colour tints it (#2329, #2393): the window keeps only the arithmetic.
+    pub tint: WindowTint,
 }
 
 /// A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers.
@@ -527,6 +529,36 @@ pub struct WindowTyped {
     pub flags: std::collections::BTreeMap<String, bool>,
     pub choices: std::collections::BTreeMap<String, String>,
     pub numbers: std::collections::BTreeMap<String, f64>,
+}
+
+/// A theme's tint recipe as the window draws it (`purlis_core::theme::Tint`): both lists are
+/// empty for a theme a workspace's colour does not tint.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowTint {
+    /// The tokens the colour of the workspace in front turns on the whole window.
+    pub window: Vec<String>,
+    /// The tokens a workspace's colour turns on its own tab and its chat strip.
+    pub tabs: Vec<String>,
+    /// Each workspace colour's name and the OKLCH hue it gives, in the palette's order.
+    pub hues: Vec<WindowHue>,
+    /// The rules every tint holds, whatever the hue.
+    pub apart: Vec<WindowApart>,
+}
+
+/// A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint
+/// draws it (`purlis_core::theme::apart_chroma`), giving less colour at that hue when it must.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowApart {
+    pub token: String,
+    pub from: String,
+    pub distance: f64,
+}
+
+/// One workspace colour's hue in a theme, in degrees.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowHue {
+    pub name: String,
+    pub hue: f64,
 }
 
 /// One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes.
@@ -679,6 +711,27 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                     .map(|(key, number)| ((*key).to_owned(), *number))
                     .collect(),
             },
+            tint: WindowTint {
+                window: owned_names(&theme.tint.window()),
+                tabs: owned_names(theme.tint.tabs()),
+                hues: theme
+                    .tint
+                    .hues
+                    .iter()
+                    .map(|one| WindowHue {
+                        name: one.name.to_owned(),
+                        hue: one.hue,
+                    })
+                    .collect(),
+                apart: purlis_core::theme::APART
+                    .iter()
+                    .map(|rule| WindowApart {
+                        token: rule.token.to_owned(),
+                        from: rule.from.to_owned(),
+                        distance: rule.distance,
+                    })
+                    .collect(),
+            },
         }
     }
 }
@@ -743,6 +796,10 @@ pub async fn theme_person(appearance: Option<String>) -> PersonInForce {
         serde_json::from_str::<serde_json::Value>(&text).unwrap_or(serde_json::Value::String(text))
     });
     PersonInForce::of(value.as_ref())
+}
+
+fn owned_names(tokens: &[&str]) -> Vec<String> {
+    tokens.iter().map(|token| (*token).to_owned()).collect()
 }
 
 /// Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
