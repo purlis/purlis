@@ -637,15 +637,25 @@ drawn, the gallery says so.
 - **Each card shows the theme specimen in each of its appearances** (up to three, then a
   count): the specimen #2330 draws for a chat's `theme_preview`, asked by the window with
   `theme_specimen` and the level, one at a time, and kept for the window's life by the card's
-  `stamp`, which changes whenever anything the theme draws does.
+  `stamp`, which changes whenever anything the theme draws does. While a chat's
+  `theme_preview` holds the painter, the app answers `SPECIMEN_BUSY`, and the window asks again
+  after a wait longer than one specimen's budget, a few times; a picture that could not be
+  drawn is never kept.
 - **Pointing at a card, or moving to it with the arrow keys, draws its theme in the window**,
   and leaving puts the person's theme back (`theme/hoverPreview.ts`). The engine resolves the
   card in the appearance a choice of it would draw (`theme_card_drawn`), with the consent floors
   held, and nothing is written. A theme the window draws while a card is shown is what goes
-  back; a move from one card to the next never shows the person's theme between them.
+  back; a move from one card to the next never shows the person's theme between them. The
+  pointer and the keyboard share one preview: it goes back when neither is on a card, when the
+  window is hidden or loses the focus, on Escape, and once the cards are out of the document (a
+  project switch). An answer that arrives after its card was left, pressed or closed draws
+  nothing, and a card whose theme is the one drawn draws nothing either.
 - **Pressing a card, or Enter or Space on it, writes the person's choice at the level**, and
-  the row offers Undo. A line over the cards says what is drawn here, with the source badge the
-  rest of Settings uses: the person's choice, or the level that decided.
+  the row offers Undo. **Not chosen** takes the choice at the level away, so the levels
+  underneath decide again. A line over the cards says what is drawn here, with the source badge
+  the rest of Settings uses: the person's choice, or the level that decided. Appearance is
+  offered only for a choice made at the level, so picking one never quietly makes a choice. A
+  refused card chooses nothing and says why as its description.
 - **Under the cards**: the chosen theme's appearances (one by id, its first, or Follow the
   system, which says when a theme of one tag stays in it); its options, each value with its
   badge; the theme check's findings, in the words `purlis theme check` prints

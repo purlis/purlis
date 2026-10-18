@@ -2814,6 +2814,9 @@ fn commands() -> Builder<tauri::Wry> {
         // The event a launch without the session bus is told the bus answers on (`portal.rs`),
         // named once for both sides.
         .constant("SESSION_BUS_ANSWERS", portal::ANSWERS)
+        // What `theme_specimen` answers while the painter draws another specimen (#2331): the
+        // window asks again later, matching it whole.
+        .constant("SPECIMEN_BUSY", specimen::BUSY)
 }
 
 /// Where the generated TypeScript lives.

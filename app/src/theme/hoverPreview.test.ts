@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { putBack, putBackSoon, showing, showWhileOn } from "./hoverPreview";
+import { ask, putBack, putBackSoon, showing, showWhileOn } from "./hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme";
 
 /**
@@ -24,7 +24,7 @@ afterEach(() => {
 describe("the hover preview", () => {
   it("draws the card's theme and puts the one in force back", () => {
     drawIn(DEFAULT_THEME);
-    showWhileOn(LIGHT);
+    showWhileOn(LIGHT, ask());
     expect(inForce()).toBe(LIGHT);
     expect(showing()).toBe(true);
     putBack();
@@ -37,14 +37,14 @@ describe("the hover preview", () => {
     drawIn(DEFAULT_THEME);
     const drawn: string[] = [];
     const stop = onDrawn((theme) => drawn.push(theme.name));
-    showWhileOn(LIGHT);
+    showWhileOn(LIGHT, ask());
     putBackSoon();
-    showWhileOn(OTHER);
-    vi.runAllTimers();
+    showWhileOn(OTHER, ask());
+    vi.advanceTimersByTime(1);
     expect(inForce()).toBe(OTHER);
     expect(drawn).toEqual([LIGHT.name, "another"]);
     putBackSoon();
-    vi.runAllTimers();
+    vi.advanceTimersByTime(1);
     expect(inForce()).toBe(DEFAULT_THEME);
     stop();
   });
@@ -53,7 +53,7 @@ describe("the hover preview", () => {
     drawIn(DEFAULT_THEME);
     let followed: Theme | undefined;
     const stop = onDrawn((theme) => (followed = theme));
-    showWhileOn(LIGHT);
+    showWhileOn(LIGHT, ask());
     // The window draws a theme of its own while the card is shown.
     drawIn(OTHER);
     await Promise.resolve();
@@ -63,5 +63,28 @@ describe("the hover preview", () => {
     expect(inForce()).toBe(OTHER);
     expect(followed).toBe(OTHER);
     stop();
+  });
+});
+
+describe("what the hover preview draws nothing for", () => {
+  it("draws nothing for the theme already drawn, so no terminal redraws", () => {
+    drawIn(DEFAULT_THEME);
+    let told = 0;
+    const stop = onDrawn(() => told++);
+    expect(showWhileOn({ ...DEFAULT_THEME }, ask())).toBe(false);
+    expect(told).toBe(0);
+    expect(showing()).toBe(false);
+    stop();
+  });
+
+  it("draws nothing for a ticket a newer ask or a put-back made stale", () => {
+    drawIn(DEFAULT_THEME);
+    const old = ask();
+    ask();
+    expect(showWhileOn(LIGHT, old)).toBe(false);
+    const left = ask();
+    putBack();
+    expect(showWhileOn(LIGHT, left)).toBe(false);
+    expect(inForce()).toBe(DEFAULT_THEME);
   });
 });

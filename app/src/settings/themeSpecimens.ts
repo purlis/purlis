@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useSyncExternalStore } from "react";
-import { commands, type ThemeAt } from "../bindings";
+import { commands, SPECIMEN_BUSY, type ThemeAt } from "../bindings";
 
 /**
  * **The pictures on Settings › Theme's cards** (#2331): the theme specimen (#2330), drawn by the
@@ -12,9 +12,10 @@ import { commands, type ThemeAt } from "../bindings";
  *
  * **One at a time, in the order the cards asked**: the app draws one specimen at a time and
  * answers a second ask that finds one being drawn with a refusal, so the window queues its own
- * and never sends two at once. A specimen the app could not draw is said on the card in the
- * app's words; one refused because the painter was busy (a chat's `theme_preview`) is asked
- * again once.
+ * and never sends two at once. One refused because the painter was busy (a chat's
+ * `theme_preview`, which holds it for up to its budget) is asked again after a wait longer than
+ * that, a few times. A specimen the app could not draw is said on the card in the app's words,
+ * and is never kept: the card asks again the next time it is shown.
  */
 
 /** A card's picture: a data URL, being drawn, or why there is none. */
@@ -26,8 +27,12 @@ const listeners = new Set<() => void>();
 const queue: { key: string; ask: () => Promise<Picture> }[] = [];
 let drawing = false;
 
-/** What the painter answers while another specimen is being drawn. */
-const BUSY = "busy";
+/** How long a busy painter is waited for before asking again: longer than one specimen's
+ *  budget (`themepreview::BUDGET`, 5 s), which is the most a chat's ask holds it. */
+export const BUSY_WAIT_MS = 6_000;
+
+/** How many times a busy painter is asked in all. */
+export const BUSY_TRIES = 3;
 
 function told() {
   for (const listener of listeners) listener();
@@ -61,18 +66,20 @@ function next() {
     });
 }
 
-/** Asks the app for the specimen of `theme` in `appearance`, once more when it was busy. */
+/** Asks the app for the specimen of `theme` in `appearance`, again after a wait while the
+ *  painter is busy, {@link BUSY_TRIES} times at most. */
 async function asked(at: ThemeAt | null, theme: string, appearance: string): Promise<Picture> {
-  for (let tries = 0; ; tries++) {
+  for (let tries = 1; ; tries++) {
     try {
       const answer = await commands.themeSpecimen(theme, appearance, at);
       if (answer.status === "ok")
         return { state: "drawn", src: `data:image/png;base64,${answer.data.png}` };
-      if (tries === 0 && answer.error.includes(BUSY)) continue;
-      return { state: "none", why: answer.error };
+      if (answer.error !== SPECIMEN_BUSY || tries >= BUSY_TRIES)
+        return { state: "none", why: answer.error };
     } catch (why) {
       return { state: "none", why: String(why) };
     }
+    await new Promise((done) => setTimeout(done, BUSY_WAIT_MS));
   }
 }
 
@@ -92,7 +99,9 @@ export function useSpecimen(
     () => pictures.get(key),
   );
   useEffect(() => {
-    if (pictures.has(key)) return;
+    // A picture drawn or being drawn is kept; one that could not be drawn is asked again.
+    const kept = pictures.get(key);
+    if (kept !== undefined && kept.state !== "none") return;
     pictures.set(key, DRAWING);
     queue.push({ key, ask: () => asked(at, theme, appearance) });
     told();

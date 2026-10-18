@@ -1825,6 +1825,8 @@ export const commands = {
 /* Constants */
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
+export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
+
 /* Types */
 /**  What charter says about itself. */
 export type About = {

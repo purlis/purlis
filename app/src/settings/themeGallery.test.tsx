@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { GalleryCard, ThemeAt, ThemeGallery } from "../bindings";
-import { putBack } from "../theme/hoverPreview";
+import { SPECIMEN_BUSY, type GalleryCard, type ThemeAt, type ThemeGallery } from "../bindings";
+import { putBack, showing } from "../theme/hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
 import { forgetGalleries, themeRows } from "./themeGallery";
-import { forgetSpecimens } from "./themeSpecimens";
+import { BUSY_WAIT_MS, forgetSpecimens } from "./themeSpecimens";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -71,18 +71,34 @@ const GALLERY: ThemeGallery = {
 };
 
 /** The core: the gallery, what each card draws, and every write, recorded. */
-function core(gallery: ThemeGallery = GALLERY) {
+function core(
+  gallery: ThemeGallery = GALLERY,
+  {
+    held = false,
+    painter = () => undefined as string | undefined,
+  }: {
+    /** Each card's answer waits for `release`. */
+    held?: boolean;
+    /** The painter's refusal of the `n`th specimen asked, or none. */
+    painter?: (n: number) => string | undefined;
+  } = {},
+) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+  const waiting: (() => void)[] = [];
   let painting = 0;
   let most = 0;
+  let painted = 0;
   mockIPC(async (cmd, args) => {
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     switch (cmd) {
       case "theme_gallery":
         return gallery;
       case "theme_card_drawn":
+        if (held) await new Promise<void>((done) => waiting.push(done));
         return { theme: LIGHT, complaints: [], follows_system: false, floors: null, options: [] };
       case "theme_specimen": {
+        const refused = painter(++painted);
+        if (refused !== undefined) throw refused;
         painting++;
         most = Math.max(most, painting);
         await new Promise((done) => setTimeout(done, 1));
@@ -104,16 +120,23 @@ function core(gallery: ThemeGallery = GALLERY) {
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
     most: () => most,
+    /** Answers every card asked for so far. */
+    release: () => waiting.splice(0).forEach((done) => done()),
   };
 }
 
 /** One row of the group as Settings draws it: its label and its control. */
 function Row({ setting }: { setting: LiveSetting }) {
-  const { control, undo, error } = setting.useControl();
+  const { control, undo, error, reset } = setting.useControl();
   return (
     <section aria-label={setting.label}>
       <span id={`${setting.id}-label`}>{setting.label}</span>
       {control({ id: setting.id, labelledBy: `${setting.id}-label` })}
+      {reset && (
+        <button type="button" disabled={reset.disabled} onClick={reset.onReset}>
+          {reset.label}
+        </button>
+      )}
       {undo && (
         <button type="button" onClick={undo}>
           Undo
@@ -344,5 +367,166 @@ describe("a card left for good", () => {
     await waitFor(() => expect(inForce()).toBe(LIGHT));
     act(() => unmount());
     expect(inForce()).toBe(before);
+  });
+});
+
+describe("a preview never outlives its card (#2331 review)", () => {
+  it("draws nothing for an answer that arrives after the tab went", async () => {
+    const { release } = core(GALLERY, { held: true });
+    const { unmount } = render(<Group at={null} />);
+    await cards();
+    const before = inForce();
+    fireEvent.pointerEnter(named("Dusk"));
+    act(() => unmount());
+    await act(async () => release());
+    expect(inForce()).toBe(before);
+    expect(showing()).toBe(false);
+  });
+
+  it("draws nothing for an answer that arrives after the card was pressed", async () => {
+    const { asked, release } = core(GALLERY, { held: true });
+    render(<Group at={null} />);
+    await cards();
+    const before = inForce();
+    fireEvent.pointerEnter(named("Dusk"));
+    fireEvent.click(named("Dusk"));
+    await waitFor(() => expect(asked("theme_choose_machine")).toHaveLength(1));
+    await act(async () => release());
+    expect(inForce()).toBe(before);
+    expect(showing()).toBe(false);
+  });
+
+  it("puts yours back once the cards are out of the document without unmounting", async () => {
+    core();
+    const { container } = render(<Group at={null} />);
+    await cards();
+    const before = inForce();
+    fireEvent.pointerEnter(named("Dusk"));
+    await waitFor(() => expect(inForce()).toBe(LIGHT));
+    // A project switch takes its view out of the document and keeps it mounted.
+    const parent = container.parentElement;
+    container.remove();
+    await waitFor(() => expect(inForce()).toBe(before));
+    parent?.append(container);
+  });
+
+  it.each([
+    [
+      "the window is hidden",
+      () => {
+        Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      },
+    ],
+    ["the window loses the focus", () => window.dispatchEvent(new Event("blur"))],
+    [
+      "Escape is pressed",
+      () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    ],
+  ])("puts yours back when %s", async (_, happens) => {
+    core();
+    render(<Group at={null} />);
+    await cards();
+    const before = inForce();
+    fireEvent.pointerEnter(named("Dusk"));
+    await waitFor(() => expect(inForce()).toBe(LIGHT));
+    act(happens);
+    expect(inForce()).toBe(before);
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+  });
+
+  it("keeps the card drawn while the keyboard is still on it after the pointer leaves", async () => {
+    core();
+    render(<Group at={null} />);
+    await cards();
+    act(() => named("Dusk").focus());
+    await waitFor(() => expect(inForce()).toBe(LIGHT));
+    fireEvent.pointerEnter(named("Dusk"));
+    fireEvent.pointerLeave(screen.getByRole("listbox"));
+    await new Promise((done) => setTimeout(done, 5));
+    expect(inForce()).toBe(LIGHT);
+  });
+});
+
+describe("choosing nothing, and a refused card (#2331 review)", () => {
+  it("takes the choice here away with Not chosen, and Undo brings it back", async () => {
+    const { asked } = core({
+      ...GALLERY,
+      yours: { theme: "dusk", appearance: "dark" },
+      drawn: "dusk",
+    });
+    render(<Group at={null} />);
+    await cards();
+    fireEvent.click(screen.getByRole("button", { name: "Not chosen" }));
+    await waitFor(() =>
+      expect(asked("theme_choose_machine")).toEqual([{ theme: null, appearance: null }]),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(asked("theme_choose_machine")[1]).toEqual({ theme: "dusk", appearance: "dark" }),
+    );
+  });
+
+  it("offers no Not chosen, and no appearance to pick, while nothing is chosen here", async () => {
+    const { asked } = core();
+    render(<Group at={null} />);
+    await cards();
+    expect(screen.getByRole("button", { name: "Not chosen" })).toBeDisabled();
+    const appearance = await screen.findByRole("radiogroup");
+    for (const radio of within(appearance).getAllByRole("radio")) expect(radio).toBeDisabled();
+    expect(asked("theme_choose_machine")).toEqual([]);
+  });
+
+  it("chooses nothing on a refused card, and says why it is refused", async () => {
+    const BROKEN = card({
+      id: "broken",
+      name: "Broken",
+      refused: true,
+      said: ["surface.base is not a colour"],
+      appearances: [],
+    });
+    const { asked } = core({ ...GALLERY, cards: [CLASSIC, BROKEN] });
+    render(<Group at={null} />);
+    await cards();
+    const broken = named("Broken");
+    expect(broken).toHaveAttribute("aria-disabled", "true");
+    expect(broken).toHaveAccessibleDescription("surface.base is not a colour");
+    fireEvent.click(broken);
+    fireEvent.keyDown(broken, { key: "Enter" });
+    await new Promise((done) => setTimeout(done, 5));
+    expect(asked("theme_choose_machine")).toEqual([]);
+  });
+});
+
+describe("a card's pictures when the painter is busy (#2331 review)", () => {
+  it("asks again after the wait on the app's own busy answer, and keeps no failure", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Busy for the first ask, then every picture is drawn.
+    const { asked } = core(
+      { ...GALLERY, cards: [DUSK] },
+      { painter: (n) => (n === 1 ? SPECIMEN_BUSY : undefined) },
+    );
+    render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BUSY_WAIT_MS);
+    });
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(2));
+    await waitFor(() => expect(document.querySelector("img")).not.toBeNull());
+  });
+
+  it("asks again for a picture that could not be drawn the next time its card is shown", async () => {
+    const { asked } = core(
+      { ...GALLERY, cards: [DUSK] },
+      { painter: (n) => (n === 1 ? "no webview here" : undefined) },
+    );
+    const first = render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    first.unmount();
+    render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(2));
   });
 });

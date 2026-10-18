@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import {
   commands,
@@ -14,7 +14,7 @@ import {
 import { drawWhatIsInForce } from "../Extensions";
 import { projectThemeChanged } from "../projectTheme";
 import { useTabStop } from "../roving";
-import { putBack, putBackSoon, showWhileOn } from "../theme/hoverPreview";
+import { ask, putBack, putBackSoon, showWhileOn } from "../theme/hoverPreview";
 import {
   BUILT_IN,
   CLASSIC,
@@ -256,20 +256,27 @@ function appearanceFor(card: GalleryCard, yours: YourTheme | null): string | nul
 
 /** Each card's theme as the core answered it, by level, card and stamp. */
 const drawnThemes = new Map<string, Theme | null>();
-/** Bumped by every card entered: an answer for one already left draws nothing. */
-let entering = 0;
 
-/** Draws `card` while it is pointed at or focused, in the appearance it would be chosen in. */
-function enter(at: ThemeAt | null, card: GalleryCard, yours: YourTheme | null): void {
-  if (card.refused) return;
-  const mine = ++entering;
+/** Draws `card` while it is pointed at or focused, in the appearance it would be chosen in.
+ *  `cards` is the listbox: a preview is put back once it is out of the document. */
+function enter(
+  at: ThemeAt | null,
+  card: GalleryCard,
+  yours: YourTheme | null,
+  cards: Element | null,
+): void {
+  const ticket = ask();
+  if (card.refused) {
+    putBackSoon();
+    return;
+  }
   const appearance = appearanceFor(card, yours) ?? SYSTEM;
   const light = systemIsLight();
   const more = systemAsksMoreContrast();
   const key = `${keyOf(at)}\u0000${card.id}\u0000${card.stamp}\u0000${appearance}\u0000${light}\u0000${more}`;
   const kept = drawnThemes.get(key);
   if (kept) {
-    showWhileOn(kept);
+    showWhileOn(kept, ticket, cards);
     return;
   }
   void commands
@@ -279,16 +286,10 @@ function enter(at: ThemeAt | null, card: GalleryCard, yours: YourTheme | null): 
         answer.status === "ok" && answer.data?.theme
           ? (answer.data.theme as unknown as Theme)
           : null;
-      drawnThemes.set(key, theme);
-      if (theme !== null && mine === entering) showWhileOn(theme);
+      if (theme !== null) drawnThemes.set(key, theme);
+      if (theme !== null) showWhileOn(theme, ticket, cards);
     })
     .catch(() => undefined);
-}
-
-/** The card was left: the person's theme goes back once the move is over. */
-function leave(): void {
-  entering++;
-  putBackSoon();
 }
 
 // ---------------------------------------------------------------------------------------
@@ -318,9 +319,23 @@ function galleryRow(group: string, at: ThemeAt | null): LiveSetting {
           setBefore(why === undefined ? { was } : undefined);
         });
       };
+      const yours = answered(read) ? read.yours : null;
       return {
         grouped: true,
         error,
+        // Back to no choice here: the levels underneath decide, as the badge then says.
+        reset: {
+          label: "Not chosen",
+          disabled: yours === null,
+          onReset: () => {
+            const was = yours;
+            putBack();
+            void choose(at, null, null).then((why) => {
+              setError(why === undefined ? undefined : [why]);
+              setBefore(why === undefined ? { was } : undefined);
+            });
+          },
+        },
         undo:
           before === undefined
             ? undefined
@@ -350,6 +365,12 @@ function Cards({
 }) {
   const gallery = answered(read) ? read : undefined;
   const chosen = gallery === undefined ? undefined : chosenCard(gallery);
+  const list = useRef<HTMLDivElement>(null);
+  const owner = useRef<{
+    pointer: GalleryCard | null;
+    focus: GalleryCard | null;
+    aimed: string | null;
+  }>({ pointer: null, focus: null, aimed: null });
   const stop = useTabStop(
     chosen?.id,
     (gallery?.cards ?? []).map((card) => card.id),
@@ -367,6 +388,23 @@ function Cards({
     event.preventDefault();
     onPick(card);
   };
+  // One preview for the pointer and the keyboard: the card the pointer is on, else the one
+  // the focus is on; the person's theme goes back only when neither is on a card.
+  const aim = () => {
+    const on = owner.current.pointer ?? owner.current.focus;
+    if (on?.id === owner.current.aimed) return;
+    owner.current.aimed = on?.id ?? null;
+    if (on === null) putBackSoon();
+    else enter(at, on, gallery.yours, list.current);
+  };
+  const point = (card: GalleryCard | null) => {
+    owner.current.pointer = card;
+    aim();
+  };
+  const focus = (card: GalleryCard | null) => {
+    owner.current.focus = card;
+    aim();
+  };
   const badge = levelBadge(gallery, chosen);
   return (
     <div className="flex flex-col gap-2">
@@ -376,12 +414,13 @@ function Cards({
       </p>
       <RovingFocusGroup.Root asChild loop {...stop}>
         <div
+          ref={list}
           id={ids.id}
           role="listbox"
           aria-labelledby={ids.labelledBy}
           aria-describedby={ids.describedBy}
           className="grid grid-cols-2 gap-3"
-          onPointerLeave={leave}
+          onPointerLeave={() => point(null)}
         >
           {gallery.cards.map((card) => {
             const isChosen = card.id === chosen?.id;
@@ -399,18 +438,20 @@ function Cards({
                   role="option"
                   aria-selected={isChosen}
                   aria-disabled={card.refused || undefined}
+                  aria-describedby={card.refused ? `${ids.id}-${card.id}-refused` : undefined}
                   data-theme-card={card.id}
                   className={
                     "flex flex-col gap-1 rounded-md border border-border-subtle p-2 " +
                     "hover:bg-surface-hover aria-selected:border-accent-base"
                   }
-                  onPointerEnter={() => enter(at, card, gallery.yours)}
-                  onFocus={() => enter(at, card, gallery.yours)}
-                  onBlur={leave}
-                  onClick={() => onPick(card)}
-                  onKeyDown={keyed(card)}
+                  onPointerEnter={() => point(card)}
+                  onFocus={() => focus(card)}
+                  onBlur={() => focus(null)}
+                  // A refused theme draws Purlis: there is nothing to choose.
+                  onClick={card.refused ? undefined : () => onPick(card)}
+                  onKeyDown={card.refused ? undefined : keyed(card)}
                 >
-                  <Pictures at={at} card={card} />
+                  <Pictures at={at} card={card} refusedId={`${ids.id}-${card.id}-refused`} />
                   <span className="text-text-primary">{card.name}</span>
                   <span className="text-sm text-text-secondary">
                     {[fromSaid(card), ...marks].join(" · ")}
@@ -439,9 +480,22 @@ function SourceBadge({ badge }: { badge: Badge }) {
 const MOST_PICTURES = 3;
 
 /** A card's pictures: the specimen in each of its appearances. */
-function Pictures({ at, card }: { at: ThemeAt | null; card: GalleryCard }) {
+function Pictures({
+  at,
+  card,
+  refusedId,
+}: {
+  at: ThemeAt | null;
+  card: GalleryCard;
+  /** The id of the line saying why a refused card is refused: the card's description. */
+  refusedId: string;
+}) {
   if (card.refused)
-    return <p className="text-sm text-text-secondary">{card.said[0] ?? "purlis refused it"}</p>;
+    return (
+      <p id={refusedId} className="text-sm text-text-secondary">
+        {card.said[0] ?? "purlis refused it"}
+      </p>
+    );
   const shown = card.appearances.slice(0, MOST_PICTURES);
   const more = card.appearances.length - shown.length;
   return (
@@ -494,10 +548,11 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
       const gallery = answered(read) ? read : undefined;
       const card = gallery === undefined ? undefined : chosenCard(gallery);
       const yours = gallery?.yours ?? null;
-      const value =
-        gallery !== undefined && yours !== null && cardNamed(gallery, yours.theme) === card
-          ? (yours.appearance ?? "")
-          : "";
+      // Only a choice made here has an appearance to change: with none, the levels underneath
+      // decide, and picking an appearance would quietly choose the card drawn.
+      const chosenHere =
+        gallery !== undefined && yours !== null && cardNamed(gallery, yours.theme) === card;
+      const value = chosenHere ? (yours?.appearance ?? "") : "";
       return {
         grouped: true,
         error,
@@ -510,9 +565,15 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
             </p>
           ) : (
             <div className="flex flex-col gap-1">
+              {!chosenHere && (
+                <p className="ui-setting-help">
+                  Nothing is chosen here: choose a theme above to pick its appearance.
+                </p>
+              )}
               <Choice
                 kind="radio"
                 ids={ids}
+                disabled={!chosenHere}
                 options={[
                   {
                     value: "",

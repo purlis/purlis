@@ -329,7 +329,14 @@ pub fn duplicate(config_root: &Path, shelf: &Shelf<'_>, id: &str) -> Result<Stri
         "{}\n",
         serde_json::to_string_pretty(&document).map_err(|why| why.to_string())?
     );
-    write::new_folder(config_root, &candidates(&card.id), &text)
+    let names = candidates(&card.id);
+    if names.is_empty() {
+        return Err(format!(
+            "{} has no folder name a duplicate can be given, so nothing was made",
+            card.id
+        ));
+    }
+    write::new_folder(config_root, &names, &text)
 }
 
 /// The names a duplicate of `id` may have, in the order they are tried.
@@ -434,25 +441,36 @@ mod write {
                 Err(Errno::EXIST) => continue,
                 Err(why) => return Err(format!("purlis could not make {shown}/{name}: {why}")),
             }
-            let folder = openat(&at, name.as_str(), DIRECTORY, Mode::empty())
-                .map_err(|why| format!("purlis could not open {shown}/{name}: {why}"))?;
-            let file = openat(
-                &folder,
-                THEME_JSON,
-                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                FILE,
-            )
-            .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))?;
-            std::fs::File::from(file)
-                .write_all(text.as_bytes())
-                .map_err(|why| {
-                    format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}")
-                })?;
-            return Ok(name.clone());
+            let written = write_in(&at, name, text, &shown);
+            if written.is_err() {
+                // The folder was made for this file alone: both go, so no empty or half-written
+                // theme is left behind.
+                if let Ok(folder) = openat(&at, name.as_str(), DIRECTORY, Mode::empty()) {
+                    let _ = rustix::fs::unlinkat(&folder, THEME_JSON, rustix::fs::AtFlags::empty());
+                }
+                let _ = rustix::fs::unlinkat(&at, name.as_str(), rustix::fs::AtFlags::REMOVEDIR);
+            }
+            return written.map(|()| name.clone());
         }
         Err(format!(
             "{shown} has a folder of every name a duplicate tries, so nothing was made"
         ))
+    }
+
+    /// Writes `text` as the `theme.json` of the folder `name` in `at`, just made, created new.
+    fn write_in(at: &OwnedFd, name: &str, text: &str, shown: &str) -> Result<(), String> {
+        let folder = openat(at, name, DIRECTORY, Mode::empty())
+            .map_err(|why| format!("purlis could not open {shown}/{name}: {why}"))?;
+        let file = openat(
+            &folder,
+            THEME_JSON,
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            FILE,
+        )
+        .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))?;
+        std::fs::File::from(file)
+            .write_all(text.as_bytes())
+            .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))
     }
 }
 
