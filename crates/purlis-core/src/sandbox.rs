@@ -6077,6 +6077,7 @@ pub mod internal;
 pub mod kubeconfig;
 pub mod local;
 pub mod localport;
+pub mod nat64;
 pub mod opencode;
 pub mod persona;
 pub mod personal;

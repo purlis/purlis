@@ -571,6 +571,140 @@ fn an_allow_keeps_only_what_stands_as_the_question_drew_it() {
     assert!(sandbox::local::granted_sockets(root).is_empty());
 }
 
+/// **A folder of yours that no chat may write, for a real socket** (#2626): under your home,
+/// where `SocketGround` refuses neither, and short, as a socket's whole path must fit the
+/// kernel's 104 bytes (`sun_path` on macOS). The temp folder is a chat's to write, so a socket
+/// there is refused by design, and a checkout's path is often too long. On CI
+/// (`GITHUB_ACTIONS=true`) a home that cannot hold it fails the test; anywhere else, a sandboxed
+/// agent's home among them, the test says why it did not run and passes.
+#[cfg(unix)]
+fn a_folder_of_yours_no_chat_writes() -> Option<tempfile::TempDir> {
+    let on_ci = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true");
+    let made = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .ok_or_else(|| std::io::Error::other("HOME is not set"))
+        .and_then(|home| {
+            tempfile::Builder::new()
+                .prefix(".socket-check-")
+                .tempdir_in(home)
+        });
+    match made {
+        Ok(folder) if folder.path().join("b.sock").as_os_str().len() < 100 => Some(folder),
+        Ok(folder) => {
+            assert!(
+                !on_ci,
+                "{} is too long for a socket",
+                folder.path().display()
+            );
+            println!(
+                "not run: {} is too long for a socket",
+                folder.path().display()
+            );
+            None
+        }
+        Err(err) => {
+            assert!(!on_ci, "CI runs this in the runner's home: {err}");
+            println!(
+                "not run: no folder of yours can be made in your home here ({err}); CI runs it"
+            );
+            None
+        }
+    }
+}
+
+/// **#2626, against real sockets** (ADR 0093, #1923, #1936): a project declares a path that is
+/// a link to socket A. The up-front Notice names A, the socket an Allow would keep, beside the
+/// path as written. The link moves to socket B: an Allow pressed for what was drawn keeps
+/// nothing, audits nothing and says it changed; the question is asked again, after a "Not
+/// now", naming B; and an Allow for B as drawn then keeps B.
+#[cfg(unix)]
+#[test]
+fn a_declared_link_to_a_real_socket_is_named_and_kept_only_as_the_notice_drew_it() {
+    use std::os::unix::net::UnixListener;
+    let Some(mine) = a_folder_of_yours_no_chat_writes() else {
+        return;
+    };
+    let (a, b) = (mine.path().join("a.sock"), mine.path().join("b.sock"));
+    let _a = UnixListener::bind(&a).expect("socket A");
+    let _b = UnixListener::bind(&b).expect("socket B");
+    let a = a.canonicalize().expect("A as the kernel names it");
+    let b = b.canonicalize().expect("B as the kernel names it");
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    // The link is in the project, a folder a chat may write: what it leads to can change.
+    let link = root.join("dev.sock");
+    std::os::unix::fs::symlink(&a, &link).expect("the link to A");
+    let written = link.display().to_string();
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("[sandbox]\nmode = \"on\"\nexpects = [\"{written}\"]\n"),
+    )
+    .expect("toml");
+    let chats = crate::chats::Chats::new();
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        seen.lock().unwrap().push(audited.target.to_owned());
+        Ok(())
+    };
+    let named = |expects: &ProjectExpects| -> Vec<(String, String, Option<String>)> {
+        expects
+            .items
+            .iter()
+            .map(|item| {
+                (
+                    item.target.clone(),
+                    item.named.clone(),
+                    item.refused.clone(),
+                )
+            })
+            .collect()
+    };
+    let path = |socket: &std::path::Path| socket.display().to_string();
+
+    // The Notice, up front: socket A, the one an Allow would keep, beside the path as written.
+    let drawn = state_of(root).expects.expect("asked up front");
+    assert!(drawn.asked);
+    assert_eq!(named(&drawn), [(written.clone(), path(&a), None)]);
+    let as_drawn = |expects: &ProjectExpects| -> Vec<ExpectedShown> {
+        expects
+            .items
+            .iter()
+            .map(|item| ExpectedShown {
+                target: item.target.clone(),
+                named: Some(item.named.clone()),
+            })
+            .collect()
+    };
+    let shown = as_drawn(&drawn);
+    let declined = decline_expects(root, &shown)
+        .expect("Not now")
+        .expects
+        .expect("still awaited");
+    assert!(!declined.asked, "answered for A");
+
+    // The link moves to socket B.
+    std::fs::remove_file(&link).expect("the link goes");
+    std::os::unix::fs::symlink(&b, &link).expect("the link to B");
+
+    // An Allow pressed for what was drawn (A) keeps nothing, audits nothing, and says so.
+    let refused = allow_expects(root, &chats, &shown, &audit, 100)
+        .expect_err("the path no longer names what was drawn");
+    assert_eq!(refused, EXPECTS_CHANGED);
+    assert!(seen.lock().unwrap().is_empty());
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+
+    // The question is asked again, naming B.
+    let again = state_of(root).expects.expect("asked again");
+    assert!(again.asked, "B was never answered");
+    assert_eq!(named(&again), [(written.clone(), path(&b), None)]);
+
+    // An Allow for B as drawn keeps B, and nothing waits after it.
+    allow_expects(root, &chats, &as_drawn(&again), &audit, 101).expect("B is kept");
+    assert_eq!(*seen.lock().unwrap(), [path(&b)]);
+    assert_eq!(sandbox::local::granted_sockets(root), [b]);
+    assert_eq!(state_of(root).expects, None);
+}
+
 /// ADR 0093, ruling 2: what a project declares it expects is asked about up front and
 /// grants nothing by itself. Each state: declared and not allowed (asked, with each item's
 /// own words); "Not now" (remembered here, still offered in Settings); a new declared item

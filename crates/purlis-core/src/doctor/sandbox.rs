@@ -260,6 +260,29 @@ fn local_ports_row(binding: &crate::sandbox::claude::LocalBinding) -> Option<Row
     }
 }
 
+/// The `sandbox relayed internal` row (#2530): each entry of this machine's policy's
+/// `relayed-internal` that is not taken, which a chat planned on another machine reaches
+/// nothing by. Only where one is not: any other machine prints the rows it always printed.
+pub(super) fn relayed_internal(d: &Doctor) -> Option<Row> {
+    relayed_internal_row(crate::sandbox::policy::Locks::of(&d.root).relayed_internal_refused())
+}
+
+/// The row [`relayed_internal`] prints for `refused`, each entry's sentence.
+fn relayed_internal_row(refused: &[String]) -> Option<Row> {
+    if refused.is_empty() {
+        return None;
+    }
+    Some(Row::warn(
+        "sandbox relayed internal",
+        format!(
+            "Some entries in this machine's policy's relayed-internal are not taken, so relayed \
+             chats reach nothing through them: {}",
+            refused.join(" ")
+        ),
+        "Ask the administrator who set this machine's policy to correct those entries.",
+    ))
+}
+
 /// The `sandbox grants held` row (#1927): what a person allowed on this machine, for this
 /// project or for every project, that an administrator's policy holds now, so it reaches no
 /// chat ([`crate::sandbox::held_by_policy`]). Only where the sandbox is in force here and
