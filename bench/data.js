@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792350556558,
+  "lastUpdate": 1792351767890,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17262,6 +17262,48 @@ window.BENCHMARK_DATA = {
             "value": 101.732011,
             "unit": "ms",
             "extra": "median of 5 runs: 100.800, 101.266, 101.732, 102.038, 102.112 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c1f5621192b3de00cd7d17ba28977b850c0479ac",
+          "message": "The consent floors hold for every theme option combination (#2633)\n\n* The theme specimen is drawn with the consent floors held, as the window draws\n\nEvery draw with option values passes through the consent floors after the\nvalues are layered. The specimen now goes through the engine's draw too\n(themepreview::drawn). An engine test draws a theme whose option value breaks\na floor through resolve and follow: purlis's own values for those tokens, and\nthe Notice.\n\nPart of #2528\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Format the new floor tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* purlis theme check says the consent floors of every combination\n\nThe consent floors line names how many combinations of appearance and\noption values were checked and in how many the window holds one, under\n#2600's held shape. An engine test holds check_every's held to what draw\nholds for each combination; a CLI test checks an option value that breaks\na floor in two of four combinations.\n\nPart of #2528\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T23:14:17+04:00",
+          "tree_id": "a14a51ec18beee57d35339f921096d9815233424",
+          "url": "https://github.com/purlis/purlis/commit/c1f5621192b3de00cd7d17ba28977b850c0479ac"
+        },
+        "date": 1792351766364,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5105615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.486, 0.508, 0.511, 0.517, 0.525 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4469025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.285, 16.360, 16.447, 16.469, 17.111 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.7296715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.116, 103.356, 103.730, 104.102, 104.756 ms"
           }
         ]
       }
