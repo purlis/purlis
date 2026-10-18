@@ -2647,7 +2647,8 @@ pub fn sites_allowed(
 }
 
 /// Whether `sites` may be kept as browser sites at `level` in the project at `root`: refused
-/// where policy removes that scope or never allows a site's host.
+/// where policy removes that scope or never allows a site's host, and for everyone in the
+/// project where the project's sandbox is not on (#2443).
 fn sites_grantable(
     root: &Path,
     sites: &[Site],
@@ -2655,6 +2656,10 @@ fn sites_grantable(
 ) -> Result<(), String> {
     use purlis_core::sandbox;
     let locks = sandbox::policy::Locks::of(root);
+    // A committed browser site reaches a browser only where the project's sandbox is on (#2443).
+    if level == sandbox::grant::Level::Project && !everyone_counts(root, &locks) {
+        return Err(EVERYONE_COUNTS_NOT.to_owned());
+    }
     if let Some(why) = locks.scope_removed(level) {
         return Err(why);
     }
@@ -2782,9 +2787,15 @@ pub fn theirs_asked(
     (named, answers)
 }
 
+/// What an Allow for everyone in the project is refused with where the project's sandbox is not
+/// in force (#2443): it would reach no browser.
+const EVERYONE_COUNTS_NOT: &str = "Nothing was allowed: a browser site for everyone in the \
+                                   project reaches browsers only where the project's sandbox is \
+                                   on, and it is not on here. Allow it on this machine instead.";
+
 /// Whether a browser site for everyone in the project reaches anything here: only where the
 /// project's sandbox is in force (#2443).
-fn everyone_counts(root: &Path, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+pub fn everyone_counts(root: &Path, locks: &purlis_core::sandbox::policy::Locks) -> bool {
     purlis_core::sandbox::Plane::read(root)
         .in_force(locks)
         .is_some()
@@ -2805,19 +2816,6 @@ pub fn person_sites_allowed(
         return Err(
             "purlis allows a site for your own browser for every browser of this project on \
              this machine, or for everyone in the project."
-                .to_owned(),
-        );
-    }
-    if level == Level::Project
-        && !everyone_counts(
-            held.root(),
-            &purlis_core::sandbox::policy::Locks::of(held.root()),
-        )
-    {
-        return Err(
-            "Nothing was allowed: a browser site for everyone in the project reaches browsers \
-             only where the project's sandbox is on, and it is not on here. Allow it on this \
-             machine instead."
                 .to_owned(),
         );
     }

@@ -2455,3 +2455,25 @@ fn a_chat_not_recorded_as_started_without_the_sandbox_is_given_nothing_listed() 
     assert!(reach.listed.is_empty(), "{:?}", reach.listed);
     assert!(!reach.open_web);
 }
+
+/// #2443: a browser site for everyone in the project is refused, for a chat's Ask and for the
+/// person's own browser alike, where the project's sandbox is not on: it would reach no browser.
+#[test]
+fn everyone_in_the_project_is_refused_where_the_projects_sandbox_is_not_on() {
+    use purlis_core::sandbox::grant::Level;
+    let off = tempfile::tempdir().expect("a project");
+    std::fs::write(purlis_core::names::manifest(off.path()), "schema = 1\n").expect("written");
+    let on = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        purlis_core::names::manifest(on.path()),
+        "schema = 1\n[sandbox]\nmode = \"on\"\negress = []\n",
+    )
+    .expect("written");
+    let sites = [site("news.example.org:443")];
+
+    let why = super::sites_grantable(off.path(), &sites, Level::Project).unwrap_err();
+
+    assert!(why.contains("sandbox is"), "{why}");
+    assert!(super::sites_grantable(off.path(), &sites, Level::You).is_ok());
+    assert!(super::sites_grantable(on.path(), &sites, Level::Project).is_ok());
+}

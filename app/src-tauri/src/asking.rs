@@ -1042,7 +1042,9 @@ fn browser_sites_key(session: u32) -> String {
 /// **The browser sites adapter** (#2018): one ask per chat, naming the sites new to the project
 /// its browser held back what it would open, send or type on, oldest first, each whole. Allow
 /// for this chat; Allow always here, on this machine; Allow for everyone in this project
-/// (#2443), each unless an administrator's policy leaves its scope out; Keep blocked. Every word
+/// (#2443) where `everyone`, that is where the project's sandbox is in force, the one place a
+/// committed browser site reaches a browser; each unless an administrator's policy leaves its
+/// scope out; Keep blocked. Every word
 /// is purlis's, and the line says an Allow is the browser's alone (the chat's own commands still
 /// need their own Allow for a host) and what it does (#2364): the browser reaches the site from
 /// its next act, and nothing restarts.
@@ -1052,9 +1054,10 @@ fn browser_sites_key(session: u32) -> String {
 pub fn browser_sites(
     waits: &crate::chatbrowsers::SitesWait,
     locks: &purlis_core::sandbox::policy::Locks,
+    everyone: bool,
 ) -> Shown {
     let all: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
-    let (sites, says, options) = browser_site_answers(&all, locks, true, true);
+    let (sites, says, options) = browser_site_answers(&all, locks, true, everyone);
     Shown {
         session: waits.session,
         ask: browser_sites_key(waits.session),
@@ -1408,6 +1411,9 @@ pub struct Waiting<'a> {
     pub browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
+    /// Whether a browser site for everyone in the project reaches a browser here: only where the
+    /// project's sandbox is in force (#2443). A browser sites ask offers it only then.
+    pub everyone: bool,
     /// What the project's committed file declares it expects (ADR 0093): a socket's or a
     /// service's ask says so. It grants nothing.
     pub declared: &'a purlis_core::sandbox::services::Declared,
@@ -1472,7 +1478,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         waiting
             .browser_sites
             .iter()
-            .map(|one| browser_sites(one, waiting.locks)),
+            .map(|one| browser_sites(one, waiting.locks, waiting.everyone)),
     );
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
@@ -1675,6 +1681,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             .map(|(session, block, _)| (session, block))
             .collect(),
         locks: &locks,
+        everyone: crate::chatbrowsers::everyone_counts(root, &locks),
         declared: &declared,
         name_of: &|session| chats.shown_name(session),
         asker_of: &|session| asker_in(chats, session),
