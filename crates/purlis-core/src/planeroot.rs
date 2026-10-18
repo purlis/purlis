@@ -154,7 +154,8 @@ pub const RESTORE_SHORTS: &str = "fmpq23";
 pub const MAX_CHECKOUT_OPERANDS: usize = 32;
 
 /// `git reset` modes that overwrite the WORKING TREE as they move HEAD — `_RESET_TREE_MODES`.
-/// `--soft` and `--mixed` leave every byte on disk for the next `charter save` to re-land.
+/// `--soft` and `--mixed` leave every byte on disk, but take commits off the branch all the
+/// same, so [`plane_root_reset_reason`] judges every mode and only the denial's words differ.
 pub const RESET_TREE_MODES: [&str; 3] = ["--hard", "--merge", "--keep"];
 
 /// The environment spellings of the two global options that NAME A REPOSITORY — `_GIT_DIR_ENV`.
@@ -434,6 +435,39 @@ pub struct RootInvocation {
     /// newline rather than `&&`, so the directory the shell was in stayed in play (#345). The
     /// denial says to join it with `&&` ([`LOOSE_CD_HINT`], #1326).
     pub after_loose_cd: bool,
+    /// A command that may write comes before it on the line ([`Elsewhere::after_a_writer`]): an
+    /// alias, what a word names, the commit HEAD is at and the commits no upstream has may all
+    /// have changed by the time it runs, so the guards judge none of them from what they read
+    /// before the line ran.
+    pub after_a_writer: bool,
+    /// An unquoted command substitution stands among git's own options: what it prints is
+    /// split into words git reads as options and as its command. Refused, with the quoted
+    /// spelling the guard reads as one word.
+    pub unquoted_substitution: bool,
+    /// The shell fills in its command word (`git $S …`, `git "$@"`), so a word after it that
+    /// reads as a command may be an option or an operand of another: refused as unknown unless
+    /// a more specific reason applies.
+    pub command_filled: bool,
+}
+
+impl RootInvocation {
+    /// The subcommand git runs and its words, its aliases followed
+    /// ([`resolve_git_alias_to_its_end`]). After a command that may write, a word that is not
+    /// git's own may be an alias that command defined: it is [`AliasEnd::Unread`].
+    pub fn resolved(&self, root: &str) -> (String, Vec<String>, AliasEnd) {
+        let own = |sub: &str| BRANCH_MOVERS.contains(&sub) || GIT_KNOWN_SUBCOMMANDS.contains(&sub);
+        if self.after_a_writer && !own(&self.sub) {
+            return (self.sub.clone(), self.post.clone(), AliasEnd::Unread);
+        }
+        resolve_git_alias_to_its_end(
+            root,
+            &self.sub,
+            &self.post,
+            &self.pre,
+            &self.env,
+            &self.own_env,
+        )
+    }
 }
 
 /// What a named denial adds when a `cd` earlier on the line was not joined by `&&`: agents met
@@ -1127,6 +1161,13 @@ fn read_line(cmd: &str, cwd: &str, root: &str) -> (Vec<RootInvocation>, bool) {
 /// The walk of `cmd`, gathering the git invocations that act elsewhere too where `elsewhere`
 /// is a list to put them in.
 fn walked(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -> Walk {
+    // What the walk asks git — the line's aliases, whether a word is a tracked path — is asked
+    // once for the line, whichever guard reads it ([`remembering`]).
+    remembering(|| walked_once(cmd, cwd, root, elsewhere))
+}
+
+/// [`walked`], inside its memory.
+fn walked_once(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -> Walk {
     let shared = Shared {
         root,
         the_root: std::cell::OnceCell::new(),
@@ -1138,6 +1179,9 @@ fn walked(cmd: &str, cwd: &str, root: &str, elsewhere: Option<Vec<Elsewhere>>) -
         out: Vec::new(),
         elsewhere,
         wrote: false,
+        changed: false,
+        git_wrote: false,
+        configures_git: false,
         too_deep: false,
         budget: STRING_BUDGET_PER_BYTE
             .saturating_mul(cmd.len())
@@ -1348,6 +1392,17 @@ struct Walk {
     elsewhere: Option<Vec<Elsewhere>>,
     /// A command that may write has been met ([`Elsewhere::after_a_writer`]).
     wrote: bool,
+    /// A command that may change what the guards read of the repository — a ref, a commit,
+    /// configuration — has been met ([`RootInvocation::after_a_writer`]): [`Self::wrote`] less
+    /// the gits in the root that only put files back ([`touches_only_files`]).
+    changed: bool,
+    /// A git that may write has been met, or a program that may be git told to `config`: a
+    /// word after a program only the shell can name may then be an alias it defined.
+    git_wrote: bool,
+    /// A segment so far sets or exports a variable that points git at configuration (a
+    /// `GIT_*` variable, `HOME`, `XDG_CONFIG_HOME`): no git after it is taken to only put files
+    /// back ([`touches_only_files`]).
+    configures_git: bool,
     /// A string was handed on past [`guardcaps::MAX_NESTING`], or past the budget, where it
     /// may name git.
     too_deep: bool,
@@ -1483,10 +1538,30 @@ fn walk_line(
         if fish_heredocs {
             ever.merge(here.clone());
         }
+        // A function's body runs wherever, and with whatever arguments, the shell calls it:
+        // read as a line of its own from a directory the guard cannot name.
+        if let Some(body) = function_body(&seg.argv) {
+            let line: Vec<String> = body.iter().map(|w| crate::handoff::quote(w)).collect();
+            walk_line(
+                &line.join(" "),
+                Whereabouts::unnamed(),
+                &Outer::default(),
+                depth + 1,
+                shared,
+                walk,
+            );
+        }
         let before = exported_chain.freeze(&exported);
         let assigned_before = assigned_chain.freeze(&assigned);
+        walk.configures_git |= seg.argv.iter().any(|w| sets_git_configuration(w));
         let (out, made) = (&mut walk.out, &mut walk.made);
-        let (elsewhere, wrote) = (&mut walk.elsewhere, &mut walk.wrote);
+        let (elsewhere, wrote, changed, git_wrote, configures_git) = (
+            &mut walk.elsewhere,
+            &mut walk.wrote,
+            &mut walk.changed,
+            &mut walk.git_wrote,
+            &walk.configures_git,
+        );
         // Whether the segment is one of git's, which answers for itself below.
         let mut gits = false;
         let call = shellwrap::split_env_chdir(&seg.argv);
@@ -1553,17 +1628,38 @@ fn walk_line(
             } else {
                 (config_env(), own_env_of())
             };
+            // After a git that may write, any word may be an alias it defined.
+            let after_a_writer = *changed;
+            let configured = *git_wrote;
+            // Its first word after git's own options, filled in by the shell: a later word that
+            // reads as a command is not taken to be the one git runs.
+            let command_filled = {
+                let (pre, rest) = shellwrap::git_globals(&args);
+                shell_fills_the_command(&pre, &rest)
+            };
             let found = match literal_mover_after(words) {
                 Some((sub, post)) => Some((sub, post, Vec::new(), false)),
                 None if words.is_empty() => None,
                 None => {
                     let (pre, rest) = shellwrap::git_globals(&args);
-                    subcommand_after_splice(&pre, &rest, &env.to_vec(), &own_env, aliases, false)
-                        .map(|(sub, post, unread)| (sub, post, pre, unread))
+                    subcommand_after_splice(
+                        &pre,
+                        &rest,
+                        &env.to_vec(),
+                        &own_env,
+                        aliases,
+                        configured,
+                        configured,
+                    )
+                    .map(|(sub, post, unread)| (sub, post, pre, unread))
                 }
             };
             gits = true;
             *wrote |= !words.is_empty();
+            *changed |= !words.is_empty();
+            // It may be no git at all: only a word that sets configuration makes the words
+            // after the next such program read as aliases.
+            *git_wrote |= words.iter().any(|w| w == "config");
             if let Some((sub, post, pre, unread)) = found {
                 out.push(RootInvocation {
                     sub,
@@ -1575,6 +1671,9 @@ fn walk_line(
                     env,
                     own_env,
                     after_loose_cd: loose_cd,
+                    after_a_writer,
+                    unquoted_substitution: false,
+                    command_filled,
                 });
             }
         } else if let Some(at) = spliced_before_program(&seg.argv, &prog) {
@@ -1584,10 +1683,19 @@ fn walk_line(
             let (pre, rest) = shellwrap::git_globals(&seg.argv[at..]);
             let (env, own_env) = (config_env(), own_env_of());
             gits = true;
+            let after_a_writer = *changed;
             *wrote = true;
-            if let Some((sub, post, unread)) =
-                subcommand_after_splice(&pre, &rest, &env.to_vec(), &own_env, aliases, true)
-            {
+            *changed = true;
+            *git_wrote = true;
+            if let Some((sub, post, unread)) = subcommand_after_splice(
+                &pre,
+                &rest,
+                &env.to_vec(),
+                &own_env,
+                aliases,
+                true,
+                after_a_writer,
+            ) {
                 out.push(RootInvocation {
                     sub,
                     post,
@@ -1598,6 +1706,9 @@ fn walk_line(
                     env,
                     own_env,
                     after_loose_cd: loose_cd,
+                    after_a_writer,
+                    unquoted_substitution: false,
+                    command_filled: false,
                 });
             }
         } else if shellwrap::base_lower(&prog) == "git" {
@@ -1607,17 +1718,46 @@ fn walk_line(
             // A substitution among git's own options (#1354): its words, and every option after
             // it, are spread through what follows, so neither the directory nor the subcommand
             // can be read from their places.
-            let spliced = pre.iter().any(|t| t.ends_with('$'));
+            // And a command word, or an option of git's own, that the shell fills in: which
+            // command git runs, and where, is the shell's to say. A branch move or reset among
+            // the words after it is judged as written; else the command is unread.
+            let filled = shell_fills_the_command(&pre, &rest);
+            let unquoted = pre.iter().any(|t| t.ends_with('$'));
+            let spliced = filled || unquoted;
             let (env, own_env) = (config_env(), own_env_of());
-            let words = if spliced {
-                subcommand_after_splice(&pre, &rest, &env.to_vec(), &own_env, aliases, true)
-            } else {
+            let after_wrote = *wrote;
+            let after_a_writer = *changed;
+            let first = || {
                 rest.split_first()
                     .map(|(sub, post)| (sub.clone(), post.to_vec(), false))
             };
+            let words = if spliced {
+                // A branch move or reset among the words after it is judged as written; else
+                // a command word the shell fills in is unread, and an unquoted substitution is
+                // kept for the branch guard to refuse ([`RootInvocation::unquoted_substitution`]).
+                let found = subcommand_after_splice(
+                    &pre,
+                    &rest,
+                    &env.to_vec(),
+                    &own_env,
+                    aliases,
+                    true,
+                    after_a_writer,
+                );
+                match found {
+                    Some(found) => Some(found),
+                    None if filled || unquoted => {
+                        let (sub, post, _) = first().unwrap_or_default();
+                        Some((sub, post, filled))
+                    }
+                    None => None,
+                }
+            } else {
+                first()
+            };
             if let Some((sub, post, unread)) = words {
-                let after_a_writer = *wrote;
-                *wrote |= spliced || !GIT_READS.contains(&sub.as_str());
+                let writes = spliced || !GIT_READS.contains(&sub.as_str());
+                *wrote |= writes;
                 // `before + env`, in that order: an assignment on THIS invocation overrides an
                 // export.
                 // `env -C ~/x` hands the shell a word of its own; `env --chdir=~/x` does not.
@@ -1652,6 +1792,20 @@ fn walk_line(
                     (Some(readings), true) => Some((dirs, more_dirs, pointed_by_name(readings))),
                     _ => None,
                 };
+                // One in the root that only puts files back changes nothing the guards read of
+                // the repository after it.
+                // Once the line has changed it, nothing more is asked of git for it.
+                // Not where the line sets git configuration, which can run a program
+                // (`core.fsmonitor`, a clean filter) as files are put back.
+                let changes = writes
+                    && !(!*changed
+                        && !*configures_git
+                        && !carries_config(&pre)
+                        && (named || unnamed)
+                        && !spliced
+                        && touches_only_files(&sub, &post, shared.root));
+                *changed |= changes;
+                *git_wrote |= changes;
                 let inv = RootInvocation {
                     sub,
                     post,
@@ -1662,6 +1816,9 @@ fn walk_line(
                     env,
                     own_env,
                     after_loose_cd: loose_cd,
+                    after_a_writer,
+                    unquoted_substitution: unquoted,
+                    command_filled: filled,
                 };
                 if named || unnamed {
                     out.push(inv);
@@ -1672,7 +1829,7 @@ fn walk_line(
                         dirs,
                         more_dirs,
                         pointed,
-                        after_a_writer,
+                        after_a_writer: after_wrote,
                     });
                 }
             }
@@ -1718,8 +1875,10 @@ fn walk_line(
         // what they run answers for itself.
         let moves_the_shell = cd_call(&seg.argv, &prog, &args).is_some();
         let read_through = gits || moves_the_shell || handed.is_some() || evals;
-        walk.wrote |=
+        let writes =
             writes_a_file(&seg.argv) || (!read_through && may_write(&seg.argv, &prog, &args));
+        walk.wrote |= writes;
+        walk.changed |= writes;
         // Each string is read now, so what it makes reaches the segments after it, and where an
         // `eval` leaves this shell is where they run.
         let mut evaled = Left::at(Whereabouts::default());
@@ -1833,6 +1992,74 @@ fn walk_line(
         assigned,
         allexport: allexport_own || allexport_given,
     }
+}
+
+/// Whether a word sets or exports a variable that points git at configuration: any `GIT_*`
+/// variable, `HOME` or `XDG_CONFIG_HOME`, read wide, since it can only add a refusal.
+fn sets_git_configuration(word: &str) -> bool {
+    let name = word.split_once('=').map_or(word, |(name, _)| name);
+    name.starts_with("GIT_") || matches!(name, "HOME" | "XDG_CONFIG_HOME")
+}
+
+/// Whether git's own options set configuration for this one invocation (`-c`, `--config-env`).
+fn carries_config(pre: &[String]) -> bool {
+    pre.iter().any(|w| {
+        w == "-c"
+            || w.starts_with("--config-env")
+            || (w.starts_with("-c") && w.len() > 2 && !w.starts_with("--"))
+    })
+}
+
+/// Whether `git <sub> <post…>` run in the root only puts files back in the index or the working
+/// tree, changing no ref, commit or configuration: `add`, `rm`, `mv`, `restore`, a `reset` to
+/// the commit HEAD is at, and a `checkout` the branch guard reads as a file restore (every
+/// option restore-only, and paths after a `--` or every operand a tracked path git cannot
+/// read as a commit). Asked of git in `root` as the branch guard asks it.
+fn touches_only_files(sub: &str, post: &[String], root: &str) -> bool {
+    let cut = post.iter().position(|a| a == "--");
+    let before = &post[..cut.unwrap_or(post.len())];
+    let operands: Vec<&String> = before.iter().filter(|a| !a.starts_with('-')).collect();
+    match sub {
+        "add" | "rm" | "mv" | "restore" => true,
+        "reset" => operands
+            .first()
+            .is_none_or(|target| matches!(target.as_str(), "HEAD" | "@")),
+        "checkout" => {
+            let restore_only = before
+                .iter()
+                .filter(|a| a.starts_with('-') && *a != "-")
+                .all(|a| checkout_opt_kind(a) == OptKind::Restore);
+            let paths_follow = cut.is_some_and(|at| at + 1 < post.len());
+            restore_only
+                && (paths_follow
+                    || (!operands.is_empty()
+                        && operands.len() <= MAX_CHECKOUT_OPERANDS
+                        && operands
+                            .iter()
+                            .all(|w| checkout_operand_kind(root, w) == OperandKind::Path)))
+        }
+        _ => false,
+    }
+}
+
+/// The first command of a function's body, where `argv` defines one (`f() { …`, `f() ( …`,
+/// `function f { …`): the reader hands the definition over as one segment whose words begin
+/// with the name. `None` for any other segment.
+fn function_body(argv: &[String]) -> Option<&[String]> {
+    let opens = |w: &String| matches!(w.as_str(), "{" | "(");
+    let after_name = match argv {
+        [kw, _, rest @ ..] if kw == "function" => match rest {
+            [open, close, rest @ ..] if open == "(" && close == ")" => rest,
+            _ => rest,
+        },
+        [_, open, close, rest @ ..] if open == "(" && close == ")" => rest,
+        _ => return None,
+    };
+    let body = match after_name {
+        [open, rest @ ..] if opens(open) => rest,
+        rest => rest,
+    };
+    (!body.is_empty()).then_some(body)
 }
 
 /// Whether a segment redirects into a file: any writing redirection but one to the null
@@ -1958,7 +2185,11 @@ fn spliced_before_program(argv: &[String], prog: &str) -> Option<usize> {
 ///
 /// `any_word` is whether a config source the guard does not read may make ANY word an alias:
 /// so after git itself, but not after a program only the shell can name, which may be no git
-/// at all and whose every argument would be refused on a line that sets `HOME` (#1326).
+/// at all and whose every argument would be refused on a line that sets `HOME` (#1326) —
+/// unless a git that may write came before it on the line.
+///
+/// `configured` is whether an earlier command on the line may have changed git's
+/// configuration: then any word that is not git's own may be an alias, and is unread.
 fn subcommand_after_splice(
     pre: &[String],
     rest: &[String],
@@ -1966,6 +2197,7 @@ fn subcommand_after_splice(
     own_env: &[String],
     aliases: &AliasBook<'_>,
     any_word: bool,
+    configured: bool,
 ) -> Option<(String, Vec<String>, bool)> {
     if let Some((sub, post)) = literal_mover_after(rest) {
         return Some((sub, post, false));
@@ -1979,6 +2211,7 @@ fn subcommand_after_splice(
     // `--config-env` pair joins them once both its words are behind (built once rather than
     // per word), over what the environment defines (#1358).
     let mut inline = LineConfig::of(pre, env, own_env);
+    inline.unsure_all |= configured;
     let mut prev: Option<&String> = pre.last();
     // What an alias is now: the line's body first, then the config's.
     let body_now = |inline: &LineConfig, name: &str| -> Result<String, AliasEnd> {
@@ -2107,6 +2340,22 @@ fn literal_mover_after(words: &[String]) -> Option<(String, Vec<String>)> {
         .iter()
         .position(|t| BRANCH_MOVERS.contains(&t.as_str()) || t == "reset")?;
     Some((words[at].clone(), words[at + 1..].to_vec()))
+}
+
+/// Whether the shell fills in git's command word or the name of one of git's own options
+/// (`git $A …`, `git "$@"`, `git --$X …`): then which command git runs, and where, cannot be
+/// read. An option's value is read where it stands (a directory, a configuration entry).
+fn shell_fills_the_command(pre: &[String], rest: &[String]) -> bool {
+    let mut i = 0usize;
+    while i < pre.len() {
+        let word = pre[i].as_str();
+        let name = word.split_once('=').map_or(word, |(name, _)| name);
+        if shell_fills(name) {
+            return true;
+        }
+        i += if GIT_VALUE_OPTS.contains(&word) { 2 } else { 1 };
+    }
+    rest.first().is_some_and(|word| shell_fills(word))
 }
 
 /// `Path(config.ROOT).resolve()` — the string every subject is compared to.
@@ -2871,232 +3120,324 @@ fn branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
         return Some(guardcaps::too_deep_refusal());
     }
     for inv in invocations {
-        if inv.unread && inv.program_unnamed {
+        if let Some(why) = branch_move_reason(&inv, &root) {
+            return Some(why);
+        }
+        // Read as nothing the guard refuses, but the words git reads are not the ones on the
+        // line: refused all the same, with the spelling purlis reads.
+        if inv.command_filled {
             return Some(format!(
-                "cannot tell what this command does: its program is named only when the shell \
+                "cannot tell what this `git` command does: the shell fills in its command word \
+                 (a variable, a function's arguments), so a word after it that reads as a \
+                 command may be an option or an operand of another. Spell the command out and \
+                 purlis checks it. {}",
+                root_tail(default_branch(&root).as_deref())
+            ));
+        }
+        if inv.unquoted_substitution {
+            return Some(format!(
+                "cannot tell which repository this `git` command acts on, or which command it \
+                 runs: a command substitution among git's own options is not quoted, so what it \
+                 prints is split into words git reads as options and as its command. Quote it \
+                 and purlis reads it as one word: `git -C \"$(…)\" …`. {}",
+                root_tail(default_branch(&root).as_deref())
+            ));
+        }
+    }
+    None
+}
+
+/// What [`plane_root_branch_reason`] says of one invocation, or `None`.
+fn branch_move_reason(inv: &RootInvocation, root: &str) -> Option<String> {
+    let root = root.to_string();
+    if inv.unread && inv.program_unnamed {
+        return Some(format!(
+            "cannot tell what this command does: its program is named only when the shell \
                  runs it (a variable, a command substitution), so it may be git, and purlis \
                  could not work out which of the words after it git would run as its command — \
                  a guard that opened because it could not tell is no guard. Spell the program \
                  out and purlis checks it: `git -C <path> …` and `cd <path> && git …` are both \
                  read. {}",
-                root_tail(default_branch(&root).as_deref())
-            ));
-        }
-        if inv.unread {
+            root_tail(default_branch(&root).as_deref())
+        ));
+    }
+    if inv.unread {
+        return Some(format!(
+            "cannot tell what this `git` command does: a variable or command substitution \
+                 in its command's place or among its options hides which repository it acts \
+                 on, and purlis could not work out which of the words after it git would run \
+                 as its command — a guard that opened because it could not tell is no guard. \
+                 Spell the command and the path out and purlis checks them: `git -C <path> …` \
+                 and `cd <path> && git …` are both read. {}",
+            root_tail(default_branch(&root).as_deref())
+        ));
+    }
+    let (mut sub, mut post) = (inv.sub.clone(), inv.post.clone());
+    if !BRANCH_MOVERS.contains(&sub.as_str()) {
+        // `co = checkout` moves the root's HEAD exactly as far (#461, round two).
+        let end;
+        (sub, post, end) = inv.resolved(&root);
+        if end == AliasEnd::Unread && inv.after_a_writer {
             return Some(format!(
-                "cannot tell what this `git` command does: a command substitution among its \
-                 options hides which repository it acts on, and purlis could not work out which \
-                 of the words after it git would run as its command — a guard that opened \
-                 because it could not tell is no guard. Spell the path out and purlis checks \
-                 it: `git -C <path>` and `cd <path> && git …` are both read. {}",
+                "cannot tell what `git {}` does: it may be an alias, and an earlier command \
+                     on the line may change git's configuration before it runs, so where the \
+                     alias leads is out of sight. Run it as a command of its own and purlis \
+                     reads it, or run the command the alias stands for. {}",
+                inv.sub,
                 root_tail(default_branch(&root).as_deref())
             ));
         }
-        let (mut sub, mut post) = (inv.sub.clone(), inv.post.clone());
-        if !BRANCH_MOVERS.contains(&sub.as_str()) {
-            // `co = checkout` moves the root's HEAD exactly as far (#461, round two).
-            let end;
-            (sub, post, end) =
-                resolve_git_alias_to_its_end(&root, &sub, &post, &inv.pre, &inv.env, &inv.own_env);
-            if end == AliasEnd::Unread {
-                return Some(format!(
-                    "cannot tell what `git {}` does: it may be an alias, and this command sets \
+        if end == AliasEnd::Unread {
+            return Some(format!(
+                "cannot tell what `git {}` does: it may be an alias, and this command sets \
                      git configuration purlis does not read — a config file it names, a value \
                      only the shell fills in, or one an earlier command on the line sets, which \
                      may not reach git — so where the alias leads is out of sight. \
                      Run the command the alias stands for, or leave that setting off. {}",
-                    inv.sub,
-                    root_tail(default_branch(&root).as_deref())
-                ));
-            }
-            if end == AliasEnd::TooDeep {
-                // The same confusion as any named denial's (#1093): a loose `cd` before it.
-                let hint = if inv.after_loose_cd && !inv.unnamed {
+                inv.sub,
+                root_tail(default_branch(&root).as_deref())
+            ));
+        }
+        if end == AliasEnd::TooDeep {
+            // The same confusion as any named denial's (#1093): a loose `cd` before it.
+            let hint = if inv.after_loose_cd && !inv.unnamed {
+                LOOSE_CD_HINT
+            } else {
+                ""
+            };
+            return Some(format!(
+                "cannot tell what `git {}` does in the PLANE ROOT: it is an alias that leads \
+                     to another alias more than {MAX_ALIAS_HOPS} times, past where purlis \
+                     follows them, and the end of a chain it cannot see may move HEAD. Run the \
+                     command it stands for instead. {hint}{}",
+                inv.sub,
+                root_tail(default_branch(&root).as_deref())
+            ));
+        }
+        if sub == "symbolic-ref" {
+            if let Some(to) = head_pointed_at(&post) {
+                let hint = if inv.unnamed {
+                    "It may be the PLANE ROOT: a directory it is sent to is named only when \
+                         the shell runs it. "
+                } else if inv.after_loose_cd {
                     LOOSE_CD_HINT
                 } else {
                     ""
                 };
                 return Some(format!(
-                    "cannot tell what `git {}` does in the PLANE ROOT: it is an alias that leads \
-                     to another alias more than {MAX_ALIAS_HOPS} times, past where purlis \
-                     follows them, and the end of a chain it cannot see may move HEAD. Run the \
-                     command it stands for instead. {hint}{}",
-                    inv.sub,
+                    "would point HEAD in the PLANE ROOT at '{to}': `git symbolic-ref HEAD \
+                         <ref>` moves the root to another branch without touching a file, so \
+                         the working tree no longer matches the branch it is on. {hint}{}",
                     root_tail(default_branch(&root).as_deref())
                 ));
             }
-            if !BRANCH_MOVERS.contains(&sub.as_str()) {
-                continue;
+            return None;
+        }
+        if !BRANCH_MOVERS.contains(&sub.as_str()) {
+            return None;
+        }
+    }
+    // Every option classified before anything reads an operand: what an operand MEANS
+    // depends on the options beside it.
+    let opts: Vec<String> = post
+        .iter()
+        .filter(|a| a.starts_with('-') && *a != "-" && *a != "--")
+        .cloned()
+        .collect();
+    let classes: Vec<OptKind> = opts.iter().map(|o| checkout_opt_kind(o)).collect();
+    let creating = classes.contains(&OptKind::Create);
+    let detaching = classes.contains(&OptKind::Detach);
+    let restore_shaped = classes.iter().all(|c| *c == OptKind::Restore);
+    let unplaced = opts
+        .iter()
+        .zip(&classes)
+        .find(|(_, c)| **c == OptKind::Unknown)
+        .map(|(o, _)| o.clone());
+
+    // What FOLLOWS `--` makes a path form, not its presence; and `git switch` has no path
+    // half for a `--` to introduce, so only `checkout` reads it this way.
+    let separator = post.iter().position(|a| a == "--");
+    if let (true, Some(cut)) = (sub == "checkout", separator) {
+        if cut + 1 < post.len() {
+            if restore_shaped {
+                return None; // paths follow: a restore, HEAD does not move
             }
+        } else {
+            post.truncate(cut); // a trailing bare `--` still switches
         }
-        // Every option classified before anything reads an operand: what an operand MEANS
-        // depends on the options beside it.
-        let opts: Vec<String> = post
-            .iter()
-            .filter(|a| a.starts_with('-') && *a != "-" && *a != "--")
-            .cloned()
-            .collect();
-        let classes: Vec<OptKind> = opts.iter().map(|o| checkout_opt_kind(o)).collect();
-        let creating = classes.contains(&OptKind::Create);
-        let detaching = classes.contains(&OptKind::Detach);
-        let restore_shaped = classes.iter().all(|c| *c == OptKind::Restore);
-        let unplaced = opts
-            .iter()
-            .zip(&classes)
-            .find(|(_, c)| **c == OptKind::Unknown)
-            .map(|(o, _)| o.clone());
+    }
+    // A bare `-` is a REF (the previous branch), not a flag.
+    let wants: Vec<String> = post
+        .iter()
+        .filter(|a| *a == "-" || !a.starts_with('-'))
+        .cloned()
+        .collect();
+    if wants.is_empty() && !(creating || detaching) && restore_shaped {
+        return None; // bare `git checkout` moves nothing
+    }
 
-        // What FOLLOWS `--` makes a path form, not its presence; and `git switch` has no path
-        // half for a `--` to introduce, so only `checkout` reads it this way.
-        let separator = post.iter().position(|a| a == "--");
-        if let (true, Some(cut)) = (sub == "checkout", separator) {
-            if cut + 1 < post.len() {
-                if restore_shaped {
-                    continue; // paths follow: a restore, HEAD does not move
-                }
-            } else {
-                post.truncate(cut); // a trailing bare `--` still switches
-            }
-        }
-        // A bare `-` is a REF (the previous branch), not a flag.
-        let wants: Vec<String> = post
-            .iter()
-            .filter(|a| *a == "-" || !a.starts_with('-'))
-            .cloned()
-            .collect();
-        if wants.is_empty() && !(creating || detaching) && restore_shaped {
-            continue; // bare `git checkout` moves nothing
-        }
+    let default = default_branch(&root);
+    // The documented remedy stays runnable — and what makes a command the remedy is that it
+    // leaves HEAD ATTACHED to the default branch, not that the name is beside it.
+    if restore_shaped
+        && default
+            .as_deref()
+            .is_some_and(|d| wants.first().map(String::as_str) == Some(d))
+    {
+        return None;
+    }
 
-        let default = default_branch(&root);
-        // The documented remedy stays runnable — and what makes a command the remedy is that it
-        // leaves HEAD ATTACHED to the default branch, not that the name is beside it.
-        if restore_shaped
-            && default
-                .as_deref()
-                .is_some_and(|d| wants.first().map(String::as_str) == Some(d))
-        {
-            continue;
+    let mut kind = OperandKind::Rev;
+    // A file restore read off what the repository holds before the line ran: an earlier
+    // command on it that may write may make the word a branch first.
+    let mut unmeasured = false;
+    if let (true, Some(first)) = (sub == "checkout" && restore_shaped, wants.first()) {
+        kind = checkout_operand_kind(&root, first);
+        let restore = if wants.len() == 1 {
+            kind == OperandKind::Path
+        } else {
+            // Every trailing operand RESOLVED, not assumed a path: the tokeniser flattens
+            // `git checkout $(echo feature)` into several tokens.
+            let rest = &wants[1..];
+            rest.len() <= MAX_CHECKOUT_OPERANDS
+                && rest
+                    .iter()
+                    .all(|w| checkout_operand_kind(&root, w) == OperandKind::Path)
+        };
+        if restore && !inv.after_a_writer {
+            return None; // `git restore <path>`, spelled the old way
         }
+        unmeasured = restore;
+    }
 
-        let mut kind = OperandKind::Rev;
-        if let (true, Some(first)) = (sub == "checkout" && restore_shaped, wants.first()) {
-            kind = checkout_operand_kind(&root, first);
-            let restore = if wants.len() == 1 {
-                kind == OperandKind::Path
-            } else {
-                // Every trailing operand RESOLVED, not assumed a path: the tokeniser flattens
-                // `git checkout $(echo feature)` into several tokens.
-                let rest = &wants[1..];
-                rest.len() <= MAX_CHECKOUT_OPERANDS
-                    && rest
-                        .iter()
-                        .all(|w| checkout_operand_kind(&root, w) == OperandKind::Path)
-            };
-            if restore {
-                continue; // `git restore <path>`, spelled the old way
-            }
-        }
-
-        let want0 = wants.first().cloned().unwrap_or_default();
-        let opening = if inv.unnamed {
-            format!(
-                "cannot tell which repository this `git {sub}` acts on: a directory it is sent \
+    let want0 = wants.first().cloned().unwrap_or_default();
+    let opening = if inv.unnamed {
+        format!(
+            "cannot tell which repository this `git {sub}` acts on: a directory it is sent \
                  to is named only when the shell runs it (a variable, a command substitution, a \
                  glob, `~user`, `cd -`), so it may be the PLANE ROOT. Spell the path out and \
                  purlis checks it: `git -C <path>` and `cd <path> && git …` are both read. "
-            )
-        } else {
-            match kind {
-                OperandKind::Both => format!(
-                    "cannot tell what `git checkout {want0}` does in the PLANE ROOT — it is \
+        )
+    } else if unmeasured {
+        format!(
+            "cannot tell whether this `git checkout` restores a file or switches branches \
+                 in the PLANE ROOT: an earlier command on the line may change the repository \
+                 before it runs, and what '{want0}' names with it. Run the restore as a command \
+                 of its own and purlis reads it, or spell it `git restore {want0}` or \
+                 `git checkout -- {want0}`, which purlis allows here. "
+        )
+    } else {
+        match kind {
+            OperandKind::Both => format!(
+                "cannot tell what `git checkout {want0}` does in the PLANE ROOT — it is \
                  AMBIGUOUS: '{want0}' is both a tracked path here and a name git \
                  resolves to a commit, so it could be a file restore or a ref move, and \
                  git breaks that tie in favour of the REF — this would switch the root. \
                  Say which you meant and it runs: `git restore {want0}` (or \
                  `git checkout -- {want0}`) restores the file, and purlis allows that \
                  here in either spelling. "
-                ),
-                OperandKind::Neither => format!(
-                    "would move HEAD in the PLANE ROOT: '{want0}' is not a path this tree \
+            ),
+            OperandKind::Neither => format!(
+                "would move HEAD in the PLANE ROOT: '{want0}' is not a path this tree \
                  tracks, so `git checkout` reads it as a revision — and a branch of that \
                  name on a remote is checked out here as a new local branch. (Meant the \
                  file? `git restore {want0}` is allowed, and would tell you git has \
                  never heard of that path either.) "
-                ),
-                OperandKind::Unknown => format!(
-                    "would move HEAD in the PLANE ROOT — purlis could not ask git whether \
+            ),
+            OperandKind::Unknown => format!(
+                "would move HEAD in the PLANE ROOT — purlis could not ask git whether \
                  '{want0}' is a path or a revision here, and a guard that opened \
                  because it failed to ask is no guard. "
-                ),
-                _ => match &unplaced {
-                    Some(unplaced) if !creating && !detaching => {
-                        let hint = if wants.is_empty() {
-                            String::new()
-                        } else {
-                            format!(
-                                "(A restore needs no options here: `git restore {want0}` and \
-                             `git checkout -- {want0}` are both allowed.) "
-                            )
-                        };
+            ),
+            _ => match &unplaced {
+                Some(unplaced) if !creating && !detaching => {
+                    let hint = if wants.is_empty() {
+                        String::new()
+                    } else {
                         format!(
-                            "cannot read this `git {sub}` as a file restore in the PLANE ROOT: it does \
+                            "(A restore needs no options here: `git restore {want0}` and \
+                             `git checkout -- {want0}` are both allowed.) "
+                        )
+                    };
+                    format!(
+                        "cannot read this `git {sub}` as a file restore in the PLANE ROOT: it does \
                          not recognise the option '{unplaced}', and an option purlis cannot place \
                          is one that may move HEAD — `git checkout --orphan <file>` reads exactly \
                          like a restore and creates a branch. Only a form purlis can show is a \
                          restore opens that gate. {hint}"
-                        )
-                    }
-                    // `git checkout HEAD` with its paths out of sight: still read as a move,
-                    // and told the spelling that cannot move HEAD (qw346).
-                    _ if sub == "checkout"
-                        && !creating
-                        && !detaching
-                        && wants.len() == 1
-                        && matches!(want0.as_str(), "HEAD" | "@") =>
-                    {
-                        format!(
-                            "cannot read this `git checkout {want0}` as a file restore in the \
+                    )
+                }
+                // `git checkout HEAD` with its paths out of sight: still read as a move,
+                // and told the spelling that cannot move HEAD (qw346).
+                _ if sub == "checkout"
+                    && !creating
+                    && !detaching
+                    && wants.len() == 1
+                    && matches!(want0.as_str(), "HEAD" | "@") =>
+                {
+                    format!(
+                        "cannot read this `git checkout {want0}` as a file restore in the \
                          PLANE ROOT: no path follows a `--` on the line, and paths git is handed \
                          from a file or by `xargs` are out of purlis's sight, so '{want0}' reads \
                          as a ref to move to. To put files back as the current commit has them, \
                          use the spelling that cannot move HEAD, which purlis allows here: \
                          `git restore --source=HEAD --worktree -- <paths>`, or with \
                          `--pathspec-from-file=<file>` in place of the paths. "
-                        )
-                    }
-                    _ => {
-                        let created = if creating {
-                            created_branch(&opts, &classes, &wants).filter(|c| !c.is_empty())
-                        } else {
-                            None
-                        };
-                        let moving = if let Some(created) = created {
-                            format!("create '{created}'")
-                        } else if creating {
-                            "create a branch".to_string()
-                        } else if detaching && !wants.is_empty() {
-                            format!("detach HEAD at '{want0}'")
-                        } else if detaching {
-                            "detach HEAD".to_string()
-                        } else if !wants.is_empty() {
-                            format!("switch to '{want0}'")
-                        } else {
-                            "switch branches".to_string()
-                        };
-                        format!("would {moving} in the PLANE ROOT. ")
-                    }
-                },
-            }
-        };
-        let hint = if inv.after_loose_cd && !inv.unnamed {
-            LOOSE_CD_HINT
-        } else {
-            ""
-        };
-        return Some(format!("{opening}{hint}{}", root_tail(default.as_deref())));
+                    )
+                }
+                _ => {
+                    let created = if creating {
+                        created_branch(&opts, &classes, &wants).filter(|c| !c.is_empty())
+                    } else {
+                        None
+                    };
+                    let moving = if let Some(created) = created {
+                        format!("create '{created}'")
+                    } else if creating {
+                        "create a branch".to_string()
+                    } else if detaching && !wants.is_empty() {
+                        format!("detach HEAD at '{want0}'")
+                    } else if detaching {
+                        "detach HEAD".to_string()
+                    } else if !wants.is_empty() {
+                        format!("switch to '{want0}'")
+                    } else {
+                        "switch branches".to_string()
+                    };
+                    format!("would {moving} in the PLANE ROOT. ")
+                }
+            },
+        }
+    };
+    let hint = if inv.after_loose_cd && !inv.unnamed {
+        LOOSE_CD_HINT
+    } else {
+        ""
+    };
+    Some(format!("{opening}{hint}{}", root_tail(default.as_deref())))
+}
+
+/// The ref a `git symbolic-ref <post…>` points HEAD at, or `None` for one that reads a symbolic
+/// ref, deletes one, or sets one other than HEAD. A name only the shell can name may be HEAD.
+fn head_pointed_at(post: &[String]) -> Option<String> {
+    let mut words: Vec<&String> = Vec::new();
+    let mut i = 0usize;
+    while i < post.len() {
+        match post[i].as_str() {
+            "-d" | "--delete" => return None,
+            "-m" => i += 1, // its reason
+            w if w.starts_with('-') => {}
+            _ => words.push(&post[i]),
+        }
+        i += 1;
     }
-    None
+    match words.as_slice() {
+        // Folded, as a volume that folds case reads `head` as `HEAD`.
+        [name, to, ..] if name.eq_ignore_ascii_case("HEAD") || shell_fills(name) => {
+            Some(to.to_string())
+        }
+        _ => None,
+    }
 }
 
 /// What every branch-guard denial ends with: why the root is guarded, where branch work goes,
@@ -3183,14 +3524,20 @@ fn py_int(text: &str) -> Option<i128> {
     Some(if neg { -n } else { n })
 }
 
-/// Deny a `git reset` that would DESTROY unpushed commits in the plane root (#401) —
-/// `_plane_root_reset_reason`. `root` is the plane root as charter's config holds it.
+/// Deny a `git reset` or `git update-ref` that would take unpushed commits off the plane root's
+/// branch (#401) — `_plane_root_reset_reason`. `root` is the plane root as charter's config
+/// holds it.
 ///
-/// Only the modes that overwrite the tree ([`RESET_TREE_MODES`]); only a reset that measurably
-/// drops something unpublished ([`unpushed_at_risk`] is the whole condition); and the denial
-/// clears itself the moment `charter save` pushes the commits. It follows ALIASES as the branch
-/// guard does (#467), so its hot-path filter is `git`, never `reset`: `wipe = reset --hard`
-/// destroys commits without the word. The filter folds and reads through quoting
+/// A reset in any mode that moves HEAD, and a ref update of HEAD or the branch the root is on:
+/// `--soft` and `--mixed` keep the files, but the commits are left with the reflog as their
+/// only copy, and the next reset loses what the working tree kept. Only a command that
+/// measurably drops something unpublished ([`unpushed_at_risk`] is the condition), and the
+/// denial clears itself the moment `charter save` pushes the commits. A command whose answer
+/// cannot be measured — an earlier command on the line that may write changes what it is
+/// measured against, a commit only the shell can name on a branch with unpushed commits, refs
+/// read from standard input — is refused as unknown. It follows ALIASES as the branch guard
+/// does (#467), so its hot-path filter is `git`, never `reset`: `wipe = reset --hard` destroys
+/// commits without the word. The filter folds and reads through quoting
 /// ([`shellwrap::may_name`]), because the walk behind it does: `GIT` and `g''it` are git.
 pub fn plane_root_reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     if !shellwrap::may_name(cmd, "git") {
@@ -3202,39 +3549,50 @@ pub fn plane_root_reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<Strin
 /// [`plane_root_reset_reason`], each git question asked once.
 fn reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
+    let on = std::cell::OnceCell::new();
+    let branch_on = || on.get_or_init(|| current_branch(&root)).clone();
     for inv in plane_root_git(cmd, cwd, &root) {
-        let tree_mode =
-            |post: &[String]| post.iter().any(|a| RESET_TREE_MODES.contains(&a.as_str()));
-        let mut post = inv.post.clone();
-        if inv.sub != "reset" {
-            // Any reading that is a working-tree reset is the one measured (#1358).
-            let (s, p, _) = resolve_git_alias_to_its_end(
-                &root,
-                &inv.sub,
-                &inv.post,
-                &inv.pre,
-                &inv.env,
-                &inv.own_env,
-            );
-            if s != "reset" {
-                continue;
-            }
-            post = p;
-        }
-        if !tree_mode(&post) {
-            continue;
-        }
-        // What FOLLOWS `--` makes it a path form (`git reset <ref> -- <paths>` moves no HEAD).
-        if let Some(cut) = post.iter().position(|a| a == "--") {
-            if cut + 1 < post.len() {
-                continue;
-            }
-            post.truncate(cut);
-        }
-        let Some(target) = post.iter().find(|a| !a.starts_with('-')) else {
-            continue; // `git reset --hard` with no ref moves HEAD nowhere: no commit dies
+        let (sub, post) = if matches!(inv.sub.as_str(), "reset" | "update-ref") {
+            (inv.sub.clone(), inv.post.clone())
+        } else {
+            // Any reading that is a reset is the one measured (#1358).
+            let (s, p, _) = inv.resolved(&root);
+            (s, p)
         };
-        let Some((n, upstream)) = unpushed_at_risk(&root, target) else {
+        let lands = match sub.as_str() {
+            "reset" => reset_lands_on(&post),
+            "update-ref" => ref_update_lands_on(&post, inv.after_a_writer, &branch_on),
+            _ => None,
+        };
+        let (target, tree) = match lands {
+            None => continue,
+            Some(Lands::Unread) => return Some(REFS_FROM_INPUT.to_string()),
+            Some(Lands::On(target, tree)) => (target, tree),
+        };
+        let hint = if inv.after_loose_cd && !inv.unnamed {
+            format!(" {}", LOOSE_CD_HINT.trim_end())
+        } else {
+            String::new()
+        };
+        let filled = shell_fills(&target);
+        // A commit only the shell can name may be any of them: measured as the furthest back.
+        let measured = if filled {
+            "@{upstream}"
+        } else {
+            target.as_str()
+        };
+        // What is at risk as the repository stands is said as measured; where nothing is, an
+        // earlier command on the line that may write may still put something at risk.
+        let Some((n, upstream)) = unpushed_at_risk(&root, measured) else {
+            if inv.after_a_writer && !matches!(target.as_str(), "HEAD" | "@") {
+                return Some(format!(
+                    "cannot tell what this `git {sub}` would take off the PLANE ROOT's branch: an \
+                     earlier command on the line may change the repository before it runs — the \
+                     commit HEAD is at, the commits no upstream has, what '{target}' names — and \
+                     purlis measures it against the repository as it stands. Run it as a command of \
+                     its own and purlis measures it.{hint}"
+                ));
+            }
             continue;
         };
         let (commits, are) = if n == 1 {
@@ -3242,14 +3600,41 @@ fn reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
         } else {
             ("commits", "are")
         };
+        let loses = if tree {
+            "overwriting the working tree"
+        } else {
+            "leaving them with the reflog as their only copy"
+        };
         if inv.unnamed {
             return Some(format!(
-                "cannot tell which repository this `git reset` acts on: a directory it is sent \
+                "cannot tell which repository this `git {sub}` acts on: a directory it is sent \
                  to is named only when the shell runs it (a variable, a command substitution, a \
-                 glob, `~user`, `cd -`), so it may be the PLANE ROOT — and there it would delete \
-                 {n} {commits} that {are} not on {upstream}, overwriting the working tree. Spell \
+                 glob, `~user`, `cd -`), so it may be the PLANE ROOT — and there it may take \
+                 {n} {commits} that {are} not on {upstream} off the branch, {loses}. Spell \
                  the path out and purlis checks it: `git -C <path>` and `cd <path> && git …` are \
                  both read."
+            ));
+        }
+        let keep = format!(
+            "See exactly what would go: `git -C {root} log --oneline '@{{upstream}}..HEAD'`. \
+             Keep it: `purlis save` pushes it, and this {sub} stops being refused the moment it \
+             lands.{hint}"
+        );
+        if filled {
+            return Some(format!(
+                "cannot tell what this `git {sub}` would take off the PLANE ROOT's branch: \
+                 '{target}' is named only when the shell runs it, and the branch holds {n} \
+                 {commits} that {are} not on {upstream}. Spell the commit out and purlis \
+                 measures it. {keep}"
+            ));
+        }
+        if !tree {
+            return Some(format!(
+                "would take {n} {commits} that {are} not on {upstream} off the PLANE ROOT's \
+                 branch: the working tree keeps the files, but the commits are left with the \
+                 reflog as their only copy, and the next reset or checkout loses them. An \
+                 unpushed commit here is usually a memory commit whose push a protected branch \
+                 refused. {keep}"
             ));
         }
         return Some(format!(
@@ -3259,15 +3644,103 @@ fn reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
              usually a memory commit whose push a protected branch refused, which is how \
              eleven of them were lost. See exactly what would go: \
              `git -C {root} log --oneline '@{{upstream}}..HEAD'`. Keep it: `purlis save` \
-             pushes it, and this reset stops being refused the moment it lands.{}",
-            if inv.after_loose_cd {
-                format!(" {}", LOOSE_CD_HINT.trim_end())
-            } else {
-                String::new()
-            }
+             pushes it, and this reset stops being refused the moment it lands.{hint}"
         ));
     }
     None
+}
+
+/// Where one judged command leaves the root's branch.
+enum Lands {
+    /// At this commit, and whether it overwrites the working tree as it goes.
+    On(String, bool),
+    /// Where refs read from standard input say.
+    Unread,
+}
+
+/// What a `git update-ref` reading its refs from standard input is told.
+const REFS_FROM_INPUT: &str = "cannot tell what this `git update-ref --stdin` does in the PLANE \
+     ROOT: the refs it moves are read from its input, out of purlis's sight, and moving the \
+     root's branch may take commits no upstream has off it. Name the ref and the commit on the \
+     line and purlis measures it.";
+
+/// The commit a `git reset <post…>` moves HEAD to, and whether it overwrites the working tree:
+/// `None` for one that moves no HEAD — no commit named, or a path form (`<commit> -- <paths>`,
+/// `<commit> <paths>`, `--patch`, `--pathspec-from-file`).
+fn reset_lands_on(post: &[String]) -> Option<Lands> {
+    let tree = post.iter().any(|a| RESET_TREE_MODES.contains(&a.as_str()));
+    let mut post = post.to_vec();
+    // What FOLLOWS `--` makes it a path form (`git reset <ref> -- <paths>` moves no HEAD).
+    if let Some(cut) = post.iter().position(|a| a == "--") {
+        if cut + 1 < post.len() {
+            return None;
+        }
+        post.truncate(cut);
+    }
+    // A mode that keeps the tree has path forms of its own; a tree mode is judged as it was.
+    if !tree
+        && post
+            .iter()
+            .any(|a| a == "-p" || a == "--patch" || a.starts_with("--pathspec-from-file"))
+    {
+        return None;
+    }
+    let operands: Vec<&String> = post.iter().filter(|a| !a.starts_with('-')).collect();
+    // `git reset --hard` with no ref moves HEAD nowhere: no commit dies.
+    let target = operands.first()?;
+    if !tree && operands.len() > 1 {
+        return None; // `git reset <commit> <paths…>` resets the index only
+    }
+    Some(Lands::On(target.to_string(), tree))
+}
+
+/// The commit a `git update-ref <post…>` moves HEAD or the root's branch to — `@{upstream}`
+/// for one that deletes it, which takes every unpushed commit — or `None` for one that moves
+/// another ref. `branch_on` is the branch the root is on (`refs/heads/<name>`). After a command
+/// that may write, which branch that is may have changed: any branch counts.
+fn ref_update_lands_on(
+    post: &[String],
+    after_a_writer: bool,
+    branch_on: &dyn Fn() -> Option<String>,
+) -> Option<Lands> {
+    let mut words: Vec<&String> = Vec::new();
+    let mut delete = false;
+    let mut i = 0usize;
+    while i < post.len() {
+        match post[i].as_str() {
+            "--stdin" => return Some(Lands::Unread),
+            "-d" => delete = true,
+            "-m" => i += 1, // its reason
+            w if w.starts_with('-') => {}
+            _ => words.push(&post[i]),
+        }
+        i += 1;
+    }
+    let name = words.first()?;
+    // Folded: on a volume that folds case (macOS's, by default) `refs/heads/MAIN` is the file
+    // `refs/heads/main`; where it does not, folding only adds a refusal.
+    let ours = name.eq_ignore_ascii_case("HEAD")
+        || name.as_str() == "@"
+        || shell_fills(name)
+        || (after_a_writer && name.to_ascii_lowercase().starts_with("refs/heads/"))
+        || branch_on().is_some_and(|on| on.eq_ignore_ascii_case(name));
+    if !ours {
+        return None;
+    }
+    let target = if delete {
+        "@{upstream}".to_string()
+    } else {
+        words.get(1)?.to_string()
+    };
+    Some(Lands::On(target, false))
+}
+
+/// The branch the root is on, as `refs/heads/<name>`, or `None` for a detached HEAD or a
+/// question that could not be asked.
+fn current_branch(root: &str) -> Option<String> {
+    let a = git_in(root, &["symbolic-ref", "--quiet", "HEAD"]).ok()?;
+    let name = py_strip(&a.out);
+    (a.ok && !name.is_empty()).then(|| name.to_string())
 }
 
 #[cfg(test)]
