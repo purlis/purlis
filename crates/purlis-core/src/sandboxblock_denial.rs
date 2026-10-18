@@ -37,7 +37,7 @@
 //! A harness hands its report over in the text of a result, so a program can still print one:
 //! what that buys is what any block line buys ([`super::Throttle`]).
 
-use super::{Block, Kind, Operation, Place, kind_of, target_of};
+use super::{Block, Kind, Operation, Place, target_of};
 use std::path::Path;
 
 /// Who said a denial.
@@ -113,6 +113,11 @@ impl<'a> Denial<'a> {
     /// not a file's (a device class, a kernel setting, this machine's own port) is never read
     /// as a path. purlis's own denial names nothing to grant.
     pub fn block(&self, place: &Place<'_>) -> (Block, Option<String>) {
+        self.block_in(place, &std::env::temp_dir())
+    }
+
+    /// [`Self::block`], with `temp` the chat's temporary folder ([`super::kind_of_in`]).
+    pub fn block_in(&self, place: &Place<'_>, temp: &Path) -> (Block, Option<String>) {
         let operation = Operation::of_seatbelt(self.operation);
         let kind = match operation {
             // The certificate check's own service by its whole name, never a part of one
@@ -131,7 +136,7 @@ impl<'a> Denial<'a> {
             Operation::Connect => Kind::Host,
             Operation::Other => Kind::System,
             _ if self.target.is_empty() => Kind::System,
-            _ => kind_of(Path::new(self.target), place),
+            _ => super::kind_of_in(Path::new(self.target), place, temp),
         };
         let ours = self.is_purlis_own();
         let block = Block {
