@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792358016243,
+  "lastUpdate": 1792360222997,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2766,6 +2766,42 @@ window.BENCHMARK_DATA = {
             "value": 372.5,
             "unit": "MB",
             "extra": "median of 6 samples: 362.5, 373, 377.5, 372.1, 372.8, 317.6 MB; window 197.8 MB, session host 175.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "67dfd81deb9b6953db74d2decdec129eec1b4187",
+          "message": "Theme import and export: follow-ups (#2587, #2588, #2612) (#2660)\n\n- A staged import is read only to check (Library::checking, Staged::read;\n  Staged::path is private): no font of the stage is registered to be\n  served. Folders::find_at and every_at read only to check too.\n- One rule for names Windows cannot hold (theme::portable, on contain's\n  device table, now with CONIN$ and CONOUT$): device names and names\n  ending in a dot or a space are refused with a sentence in import,\n  export, the stage, the level reader and the files a theme names.\n- purlis theme export takes a level id and finds it with Folders::find_at,\n  never a farther level's folder. A level id takes the name grammar, so\n  the engine says why a folder like `con` is refused.\n\nCloses #2587\nCloses #2588\nCloses #2612\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T01:12:28+04:00",
+          "tree_id": "5610e224f7b53899c4e6c990c5ebbeea3de25cf4",
+          "url": "https://github.com/purlis/purlis/commit/67dfd81deb9b6953db74d2decdec129eec1b4187"
+        },
+        "date": 1792360221713,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 905,
+            "unit": "MB",
+            "extra": "median of 3 samples: 753, 905, 1282 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 386.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 302, 397.6, 396.3, 386.5, 387.3, 309.9 MB; window 200 MB, session host 190.5 MB"
           }
         ]
       }
