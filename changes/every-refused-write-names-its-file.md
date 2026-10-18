@@ -6,7 +6,7 @@
   log folder and undo, the default workspace, a removed workspace or clone, a harness plugin's
   files, and the app's git and shell shims. A refusal a hook or the MCP server meets in a Claude
   Code chat is no longer told as the chat's sandbox's, since Claude Code's sandbox holds only
-  its Bash tool. `purlis init`, `browser install` and a handoff's warning keep saying "this
+  its Bash tool. `purlis init` and a handoff's warning keep saying "this
   chat's sandbox refused it" in a sandboxed chat, and a refused `.gitignore` reached through a
   link names the file the link leads to as well. A sandbox's refusal of purlis's own write says
   that purlis does not grant its own writes to a chat, so the operator runs the command outside
