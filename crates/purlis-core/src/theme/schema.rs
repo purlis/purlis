@@ -3,12 +3,14 @@
 
 //! **The published JSON Schema of format 2**, generated from the engine's own vocabulary
 //! (spec #2313, ADR 0097 §3.1): the token and motion names, the colour grammar, the bounds. A
-//! theme's `$schema` names [`SCHEMA_URL`], so an editor completes token names and flags a
-//! mistake as it is typed.
+//! theme's `$schema` names it by [`super::SCHEMA_URL`], so an editor completes token names and
+//! flags a mistake as it is typed.
 //!
-//! The schema is published as a file in the repository, `docs/schema/theme.schema.json`, which
-//! a test holds equal to [`schema_text`]; `PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p
-//! purlis-core the_published_schema` writes it again after the vocabulary changes. The engine,
+//! The schema is published as a file in the repository, [`super::published::SCHEMA_FILE`],
+//! which a test holds equal to [`schema_text`]; `PURLIS_THEME_SCHEMA_WRITE=1 cargo test -p
+//! purlis-core the_published_schema` writes it again after the vocabulary changes, and refuses
+//! a change that takes anything away (`theme::published`). It carries no `$id`: the file is the
+//! format's, and its address is the release's. The engine,
 //! not the schema, is what a theme is held to: the schema describes the same grammar for an
 //! editor, and a test proves each name in it is the engine's.
 
@@ -22,10 +24,6 @@ use super::vocabulary::{
     CURSOR_STYLE, CURSOR_STYLES, DURATIONS, EASINGS, FLAGS, LINE_HEIGHT, LINE_HEIGHTS, LONGEST,
     PLATFORM, PLATFORM_DRAWN, TOKENS,
 };
-
-/// Where the schema is published: the file in the repository, as GitHub serves it.
-pub const SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json";
 
 /// The colour grammar as a pattern: `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`
 /// ([`super::vocabulary::is_colour`]).
@@ -143,7 +141,6 @@ pub fn schema() -> Value {
     }
     let mut schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": SCHEMA_URL,
         "title": format!("A purlis theme folder's {THEME_JSON} (format 2)"),
         "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, and its options. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
         "type": "object",

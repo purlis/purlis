@@ -145,6 +145,16 @@ use crate::view::{Limits, Views};
 /// the host then names to the link the start came on, whose proxy asks that link, and whose
 /// place `program_started` answers (`confined`).
 ///
+/// 1.17 added a relaying host telling its client when its link to the other host is down and
+/// when it is back (#2496, ADR 0078 as amended 2026-10-17): the pushed notices `link_down`, with
+/// why, and `link_back`.
+///
+/// 1.18 added logins purlis performs in a chat's browser (#2016): `log_in` carries a declared
+/// login, the address and the values from the vault ([`crate::browsing::LogIn`]), to a browser,
+/// answered `browsed` once the browser is handed back, or refused `browser_refused` in words
+/// that carry no value. The window's alone ([`crate::grants::Power::LogIn`]): no relayed link
+/// sends it.
+///
 /// 1.20 added what a host leaves out of a plan made on another machine (#2510): `confined` may
 /// name the services of the host's machine the plan gave the chat for it alone, which the host
 /// started it without (`left_out`), and the name of that machine (`host_name`).
@@ -435,6 +445,16 @@ pub enum Command {
         program: String,
         width: u16,
         height: u16,
+    },
+    /// purlis performs a login in browser `program` (1.18, #2016): it takes the browser from the
+    /// agent, goes to the login's address, fills it only on that address's origin, submits,
+    /// waits for the password field to go, and hands the browser back, which then reaches that
+    /// origin alone. Answered [`Answer::Browsed`] with the page it left, or refused
+    /// [`BROWSER_REFUSED`] in words that carry no value. The values never show in this
+    /// command's `Debug`. The window's alone ([`crate::grants::Power::LogIn`]).
+    LogIn {
+        program: String,
+        login: crate::browsing::LogIn,
     },
 }
 
@@ -1046,6 +1066,17 @@ pub enum Pushed {
         project: String,
         workspace: String,
     },
+    /// The link a relaying host reaches the other host over is down, and why (1.17, #2496):
+    /// what the client has there, its chats and browsers among them, is on that other host,
+    /// which this host is linking to again. Until [`Pushed::LinkBack`] every command it would
+    /// send on is refused; nothing is sent later in its place. Pushed once for each time the
+    /// link goes down, to every subscriber of the relaying host.
+    LinkDown {
+        why: String,
+    },
+    /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
+    /// client's link stands on carried over to it: its views draw again, each from a snapshot.
+    LinkBack {},
 }
 
 wire_words!(Command {
@@ -1090,6 +1121,7 @@ wire_words!(Command {
     HandBack => "hand_back",
     BrowserInput => "browser_input",
     SizeBrowser => "size_browser",
+    LogIn => "log_in",
 });
 
 impl Command {
@@ -1130,6 +1162,7 @@ impl Command {
             | Command::HandBack { .. }
             | Command::BrowserInput { .. }
             | Command::SizeBrowser { .. } => Power::Browser,
+            Command::LogIn { .. } => Power::LogIn,
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
         }
@@ -1148,7 +1181,9 @@ impl Pushed {
             Pushed::Event(_)
             | Pushed::Missed { .. }
             | Pushed::Ended { .. }
-            | Pushed::ViewEnded { .. } => None,
+            | Pushed::ViewEnded { .. }
+            | Pushed::LinkDown { .. }
+            | Pushed::LinkBack {} => None,
         }
     }
 }
@@ -1193,6 +1228,8 @@ wire_words!(Pushed {
     Sandbox => "sandbox",
     Saving => "saving",
     WhoIsMidTurn => "who_is_mid_turn",
+    LinkDown => "link_down",
+    LinkBack => "link_back",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -1619,7 +1656,10 @@ impl Lane {
             Command::BoardMoved { project, .. }
             | Command::Board { project }
             | Command::ProgramsOf { project } => Some(Lane::Board(project.clone())),
-            Command::Browse { program, .. } => Some(Lane::Browsing(program.clone())),
+            // A login is one more of the browser's acts, in their order.
+            Command::Browse { program, .. } | Command::LogIn { program, .. } => {
+                Some(Lane::Browsing(program.clone()))
+            }
             // The person's take-over, input and hand-back keep their order with each other and
             // with the browser's views, never waiting behind an act in flight, which the
             // take-over cuts.
@@ -2243,6 +2283,25 @@ impl Client {
         }
     }
 
+    /// purlis performs `login` in browser `program` (1.18, #2016): the page it left once it
+    /// handed the browser back, or why the login did not go through ([`BROWSER_REFUSED`]).
+    pub async fn log_in(
+        &self,
+        program: &str,
+        login: crate::browsing::LogIn,
+    ) -> Result<crate::browsing::Browsed, CallError> {
+        match self
+            .call(Command::LogIn {
+                program: program.into(),
+                login,
+            })
+            .await?
+        {
+            Answer::Browsed(browsed) => Ok(*browsed),
+            other => Err(unexpected(&other)),
+        }
+    }
+
     /// The person takes browser `program` over (1.14): who drives it now.
     pub async fn take_over(&self, program: &str) -> Result<crate::browsing::Driver, CallError> {
         self.driving(Command::TakeOver {
@@ -2407,7 +2466,9 @@ impl Subscribed {
                 | Pushed::Heard { .. }
                 | Pushed::Sandbox { .. }
                 | Pushed::Saving { .. }
-                | Pushed::WhoIsMidTurn { .. } => {}
+                | Pushed::WhoIsMidTurn { .. }
+                | Pushed::LinkDown { .. }
+                | Pushed::LinkBack {} => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

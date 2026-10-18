@@ -232,6 +232,9 @@ pub enum Kind {
     System,
     /// An internet host the project does not allow.
     Host,
+    /// An internet address a program connected to directly, past the sandbox's proxy (#2423):
+    /// no host a grant could name, since no host is allowed but through the proxy.
+    Address,
     /// A local socket.
     LocalSocket,
     /// A service on this Mac: whatever listens on one port of the loopback interface, which a
@@ -249,7 +252,7 @@ pub enum Kind {
 
 impl Kind {
     /// Every kind, in the order they are listed.
-    pub const ALL: [Kind; 16] = [
+    pub const ALL: [Kind; 17] = [
         Self::ProjectFiles,
         Self::ProjectState,
         Self::ProtectedFile,
@@ -261,6 +264,7 @@ impl Kind {
         Self::SystemCache,
         Self::System,
         Self::Host,
+        Self::Address,
         Self::LocalSocket,
         Self::LocalService,
         Self::CertificateCheck,
@@ -282,6 +286,7 @@ impl Kind {
             Self::SystemCache => "system-cache",
             Self::System => "system",
             Self::Host => "host",
+            Self::Address => "address",
             Self::LocalSocket => "local-socket",
             Self::LocalService => "local-service",
             Self::CertificateCheck => "certificate-check",
@@ -322,6 +327,7 @@ impl Kind {
             }
             Self::System => "a system folder",
             Self::Host => "an internet host this project does not allow",
+            Self::Address => "an internet address, dialled past the sandbox's proxy",
             Self::LocalSocket => "a local socket",
             Self::LocalService => "a service on this Mac",
             Self::CertificateCheck => "the system's certificate check",
@@ -351,6 +357,12 @@ impl Block {
         if (self.operation, self.kind) == (Operation::Lookup, Kind::Host) {
             return "a lookup of an internet host by a program that does not go through the \
                     sandbox's proxy"
+                .to_owned();
+        }
+        // Likewise a connection to an address dialled past the proxy (#2423).
+        if (self.operation, self.kind) == (Operation::Connect, Kind::Address) {
+            return "a connection to an internet address by a program that does not go through \
+                    the sandbox's proxy"
                 .to_owned();
         }
         format!("{} {}", self.operation.phrase(), self.kind.phrase())

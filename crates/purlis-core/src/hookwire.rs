@@ -1381,6 +1381,12 @@ pub enum Browsing {
     /// raises an Ask under Needs you whose source is the browser and answers at once; the chat
     /// is told when the person hands the browser back, and never what they did in it.
     NeedsYou { question: String },
+    /// **Log the browser named in with one of its persona's declared browser logins** (#2016),
+    /// by the login's name: the one thing the chat chooses. The app checks the chat's start
+    /// armed that login, reads its values from the vault itself and hands them to the session
+    /// host, whose browser fills them only on the login's own origin. The chat is answered
+    /// with the page the login left, never a value.
+    LogIn { login: String },
 }
 
 /// **A proposed change** a chat hands the app ([`Ask::Propose`], #1975): the file, by its path

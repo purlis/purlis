@@ -12,19 +12,18 @@
 //! ```
 //!
 //! `browser` is the login page, and makes the tool this kind; `key` is the password's key and
-//! `user` the user name's, which a page that asks for a password alone leaves out. A chat runs
-//! `shop-login` (or `shop-login -s=<session>`), and purlis does the rest itself, with no shell
-//! between: the app runs `purlis browser _login` ([`words`]) by its absolute path, which runs
-//! Playwright's `playwright-cli` ([`PROGRAM`]), found as any tool's program is, where no chat
-//! writes. It opens the declared page in a browser of its own and fills the login only while
-//! that page is on the declared origin ([`crate::browser::login`]). The chat gets the logged-in
-//! session's cookies to load into its own browser, never the login.
+//! `user` the user name's, which a page that asks for a password alone leaves out.
 //!
-//! **What the chat chooses: the session's name, and nothing else** ([`session_of`]). Not the
-//! page, the host, the program or its arguments: those are the committed tool's, allowed on
-//! this machine with the persona's hosts (D-PE-ruling-1).
-
-use std::path::Path;
+//! **purlis performs it, in the chat's own browser** (#2016, spec #2008). The chat calls the
+//! `browser_login` tool with the login's name; the app checks that the chat's start armed it
+//! (declared, and allowed on this machine with the persona's hosts, D-PE-ruling-1), reads its
+//! values from the vault itself, and hands them to the session host, whose browser goes to the
+//! declared page, fills them only while that page is on the declared origin, submits, and hands
+//! the browser back. The chat gets the logged-in browser, never the login, and no file of the
+//! session is written anywhere it reads. Run as a command, the tool runs nothing and says so.
+//!
+//! **What the chat chooses: which declared login, and nothing else.** Not the page, the host or
+//! the values: those are the committed tool's and the vault's.
 
 /// The key that makes a tool a browser login: the login page's URL.
 pub const KEY: &str = "browser";
@@ -32,24 +31,11 @@ pub const KEY: &str = "browser";
 /// The key of a browser login's user name, beside `key`, the password's.
 pub const USER_KEY: &str = "user";
 
-/// The program a browser login runs, found where no chat writes: Playwright's own command line
-/// (`npm install -g @playwright/cli@<version>`).
-pub const PROGRAM: &str = "playwright-cli";
-
 /// The variable a browser login's password file is handed in (`secret exec --file`).
 pub const PASS_VAR: &str = "BROWSER_LOGIN_PASS";
 
 /// The variable a browser login's user-name file is handed in (`secret exec --file`).
 pub const USER_VAR: &str = "BROWSER_LOGIN_USER";
-
-/// The purlis words that run a login: `purlis browser _login`.
-pub const SUBCOMMAND: [&str; 2] = ["browser", "_login"];
-
-/// The session a login is loaded for when the chat names none: `playwright-cli`'s own default.
-pub const DEFAULT_SESSION: &str = "default";
-
-/// The longest session name taken.
-const MOST_SESSION: usize = 64;
 
 /// **A browser login**: the page it opens and the origin it fills only on. Its keys are the
 /// tool's values ([`super::Tool::values`]): the password's file in [`PASS_VAR`], and the user
@@ -61,7 +47,8 @@ pub struct Login {
 }
 
 /// **The origin a login page's `url` is on** (`https://host[:port]`, the port left out where it
-/// is the scheme's own, as a browser's `URL.origin` spells it), or why it may not be one: not
+/// is the scheme's own, and a name in its ASCII spelling, as a browser's `URL.origin` spells
+/// it), or why it may not be one: not
 /// `https` (plain `http` is taken for this machine's own loopback alone), a user or password in
 /// it, or a host that is not a plain lower-case name or address.
 pub fn origin_of(url: &str) -> Result<String, String> {
@@ -96,6 +83,17 @@ pub fn origin_of(url: &str) -> Result<String, String> {
             (host, Some(port))
         }
         _ => (authority, None),
+    };
+    // A name written in another script is the one a browser goes to by its ASCII spelling
+    // (IDNA), which is the spelling its page's address carries.
+    let ascii;
+    let host = if host.is_ascii() {
+        host
+    } else {
+        ascii = idna::domain_to_ascii(host).map_err(|_| {
+            format!("browser = {url:?} names a host purlis cannot spell as a browser does")
+        })?;
+        ascii.as_str()
     };
     let named = host
         .bytes()
@@ -135,50 +133,4 @@ pub fn origin_of(url: &str) -> Result<String, String> {
         Some(port) => format!("{scheme}://{host}:{port}"),
         None => format!("{scheme}://{host}"),
     })
-}
-
-/// **The session a chat's arguments to a login name**: none, `-s=<name>`, `-s <name>` or
-/// `--session=<name>`, a name of letters, digits, `.`, `_` and `-`. Anything else is refused:
-/// the page, the host and the program are the declared tool's, never the chat's.
-pub fn session_of(args: &[String], tool: &str, url: &str) -> Result<String, String> {
-    let named = match args {
-        [] => Some(DEFAULT_SESSION),
-        [one] => one
-            .strip_prefix("-s=")
-            .or_else(|| one.strip_prefix("--session=")),
-        [flag, name] if flag == "-s" || flag == "--session" => Some(name.as_str()),
-        _ => None,
-    };
-    let ok = named.filter(|name| {
-        !name.is_empty()
-            && name.len() <= MOST_SESSION
-            && name.starts_with(|c: char| c.is_ascii_alphanumeric())
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
-    });
-    ok.map(str::to_owned).ok_or_else(|| {
-        format!(
-            "{tool} logs in to {url}, the page its declaration names, and takes only the browser \
-             session to log in: `{tool}` or `{tool} -s=<session>`, a name of letters, digits, \
-             '.', '_' and '-'. No page, host or program is the chat's to choose, so nothing ran"
-        )
-    })
-}
-
-/// **The run of a login**, after the vault's files are handed: `purlis browser _login`, by
-/// `purlis`'s absolute path, with Playwright's program `cli` (found where no chat writes), the
-/// declared page and the chat's session.
-pub fn words(purlis: &Path, cli: &Path, login: &Login, session: &str) -> Vec<String> {
-    let mut words = vec![purlis.display().to_string()];
-    words.extend(SUBCOMMAND.iter().map(|word| (*word).to_owned()));
-    words.extend([
-        "--cli".to_owned(),
-        cli.display().to_string(),
-        "--url".to_owned(),
-        login.url.clone(),
-        "--session".to_owned(),
-        session.to_owned(),
-    ]);
-    words
 }

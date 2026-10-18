@@ -43,6 +43,9 @@ png = "0.18"
 psl = "2.1"
 # A screenshot arrives from the engine as base64. The workspace's version.
 base64 = "0.23"
+# A login's values are wiped from memory when the login is dropped (#2016). The workspace's
+# version, already in the tree through `secrecy`.
+zeroize = "1"
 
 [target."cfg(unix)".dependencies]
 # A data folder is this user's alone: the repo's one copy of that check.

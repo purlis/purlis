@@ -673,6 +673,18 @@ pub struct ChatBlocked {
     pub suggested: Option<String>,
 }
 
+/// The way round a connection to an address dialled past the proxy (#2423).
+const PAST_THE_PROXY_ROUTE: &str = "This program connects to an internet address itself \
+                                    instead of going through the sandbox's proxy, so no host \
+                                    can be allowed for it. A client that goes through the \
+                                    sandbox's proxy, such as curl, gh or kubectl, reaches a host \
+                                    this project allows.";
+
+/// What the quiet line of a connection dialled past the proxy says of it (#2423): nothing
+/// waits on it, since nothing the person allows lets it through.
+const PAST_THE_PROXY_SAID: &str = "A program connected to an internet address directly, \
+                                       so nothing waits on your answer.";
+
 /// What a quiet line says of where its block came from ([`ChatBlocked::quiet`]).
 pub const READ_BACK_SAID: &str = "It was in the output of a command that ran earlier, so \
                                   nothing waits on your answer.";
@@ -800,10 +812,21 @@ pub fn blocked_holding(plane: &PlaneId, heard: &HeardBlock, has_check: bool) -> 
     );
     ChatBlocked {
         vault: heard.vault.as_deref().map(vault_said),
-        quiet: blocked.read_back.then(|| READ_BACK_SAID.to_owned()),
+        quiet: if blocked.read_back {
+            Some(READ_BACK_SAID.to_owned())
+        } else {
+            past_the_proxy(&blocked.sandbox_blocked).then(|| PAST_THE_PROXY_SAID.to_owned())
+        },
         suggested: suggested_port(&told, blocked.suggested.as_deref()),
         ..told
     }
+}
+
+/// Whether `block` is a connection a program dialled past the proxy, which no answer lets
+/// through (#2423).
+fn past_the_proxy(block: &purlis_core::sandboxblock::Block) -> bool {
+    use purlis_core::sandboxblock::{Kind, Operation};
+    !block.ours && (block.operation, block.kind) == (Operation::Connect, Kind::Address)
 }
 
 /// The port `suggested` by a command's output, for a Notice that asks the person to type one
@@ -1306,6 +1329,15 @@ fn offered_to(
                  proxy, such as curl, gh or kubectl, reaches a host this project allows."
                     .to_owned(),
             ),
+        ),
+        // A program that connects to an address itself, past the proxy (#2423): as a lookup
+        // past it, no host grant would let it through. The address is shown, never offered.
+        (Operation::Connect, Kind::Address) => (
+            BlockOffer::Unsandboxed,
+            target
+                .and_then(|address| address.parse::<std::net::SocketAddr>().ok())
+                .map(|address| address.to_string()),
+            Some(PAST_THE_PROXY_ROUTE.to_owned()),
         ),
         // A local socket (D-sock-1): Allow, naming it whole, with what allowing it means.
         (Operation::Connect, Kind::LocalSocket) => {

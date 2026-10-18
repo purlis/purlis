@@ -1213,18 +1213,79 @@ pub(crate) fn chat_writes(asker: &Asker, confines: &Confines) -> Vec<PathBuf> {
     writable
 }
 
-/// Whether `name` is a variable a browser login's run is handed by the app alone: its files'
-/// and its folder's.
-fn login_var(name: &str) -> bool {
-    use crate::sandbox::tools::login;
-    [
-        login::PASS_VAR,
-        login::USER_VAR,
-        crate::browser::login::DIR_VAR,
-    ]
-    .iter()
-    .any(|var| name.eq_ignore_ascii_case(var))
-        || crate::envvar::same(name, crate::browser::login::DIR_VAR)
+/// **The login chat `asker`'s browser login `name` fills** (#2016): the declared page, and the
+/// values from its vault, for purlis to fill in the chat's browser itself, so none reaches the
+/// chat. Exactly what a declared tool's run is held to (D-PE-ruling-2): a tool the chat's start
+/// armed, allowed on this machine with its persona's hosts, whose vault the registry, or your
+/// grant on this machine, lets that persona use. Refused, with a sentence and no value, for
+/// anything else, and for a chat the app did not start sandboxed.
+pub fn login_for(
+    asker: &Asker,
+    name: &str,
+) -> Result<purlis_session_protocol::browsing::LogIn, String> {
+    use purlis_session_protocol::browsing::{LogIn, Secret};
+    let Some(confines) = &asker.confines else {
+        return Err(format!(
+            "this chat was started without the sandbox, so purlis performs no browser login for \
+             it: {name} logs in only in a chat of its persona started with the sandbox"
+        ));
+    };
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let not_a_login = || {
+        format!(
+            "{name} is {persona}'s tool, not a browser login: run it as a command; \
+             browser_login takes a tool declared with browser = \"https://…\""
+        )
+    };
+    let Some(ready) = confines.tools.iter().find(|ready| ready.tool.name == name) else {
+        let listed = declared_now(&asker.root, persona);
+        return Err(match listed.iter().find(|tool| tool.name == name) {
+            Some(tool) if tool.login.is_some() => format!(
+                "{name} is {persona}'s browser login, and it is not armed in this chat: it logs \
+                 in only once {persona}'s hosts and tools are allowed on this machine (the \
+                 project's Notice, or Settings › Sandbox) and policy allows persona tools. Start \
+                 the chat again once it is ({})",
+                tool.whole()
+            ),
+            Some(_) => not_a_login(),
+            None => format!(
+                "{persona} declares no browser login {name}, so nothing was filled. A login is \
+                 declared in the project's settings, [sandbox.personas.{persona}] tools = {{ \
+                 {name} = {{ vault = \"<vault>\", browser = \"https://…\", key = \"<key>\" }} \
+                 }}, and allowed on this machine"
+            ),
+        });
+    };
+    let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
+    else {
+        return Err(not_a_login());
+    };
+    let ctx = Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref());
+    authorise(&ctx, asker.persona.as_deref(), &ready.tool.vault)?;
+    let vault = &ready.tool.vault;
+    let v = cmd::provider(&ctx, vault).map_err(|e| e.message)?;
+    let read = |key: &str| {
+        cmd::get_value(&ctx, &v, key).map(Secret::new).map_err(|e| {
+            format!(
+                "vault '{vault}' did not give {name}'s login, so nothing was filled ({})",
+                e.message
+            )
+        })
+    };
+    Ok(LogIn {
+        address: login.url.clone(),
+        user: user_key.map(read).transpose()?,
+        password: read(pass_key)?,
+    })
+}
+
+/// What a persona's browser login run as a command is refused with (#2016): purlis performs
+/// the login in the chat's own browser, through the browser tools.
+pub fn login_by_the_browser_tool(name: &str) -> String {
+    format!(
+        "{name} is a browser login, and purlis performs it in this chat's own browser: call the \
+         browser_login tool with login = \"{name}\". Nothing ran, and no session file is written"
+    )
 }
 
 /// `persona`'s tools as the project at `root` lists them now, under its policy: what a refusal
@@ -1420,7 +1481,6 @@ pub(crate) fn serve_recorded(
     // absolute path the app found where no chat writes, never one the chat's `PATH` names.
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
-    let mut a_login = false;
     let mut declared_as: Option<String> = None;
     match crate::sandbox::tools::declared(
         &confines.tools,
@@ -1434,25 +1494,19 @@ pub(crate) fn serve_recorded(
             program: &command[0],
         },
     ) {
-        // A browser login runs purlis's own login on the declared page, for the session the
-        // chat names and nothing more (D-PE-browser-1); any other tool, its own program.
-        Ok(ready) => {
-            let purlis = crate::sandbox::tools::purlis_binary_in(|name| asker.env.get(name));
-            match crate::sandbox::tools::run_words(
-                ready,
-                &command[1..],
-                purlis.as_deref(),
-                &asker.root,
-                &chat_writes(asker, confines),
-            ) {
-                Ok(words) => {
-                    a_login = ready.tool.login.is_some();
-                    declared_as = ready.argv0().map(str::to_owned);
-                    command = words;
-                }
-                Err(why) => return refuse(&mut *writer, 1, why),
-            }
+        // A browser login is purlis's to perform in the chat's own browser (#2016): run as a
+        // command, it runs nothing.
+        Ok(ready) if ready.tool.login.is_some() => {
+            return refuse(&mut *writer, 2, login_by_the_browser_tool(&ready.tool.name));
         }
+        // Any other tool, its own program.
+        Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
+            Ok(words) => {
+                declared_as = ready.argv0().map(str::to_owned);
+                command = words;
+            }
+            Err(why) => return refuse(&mut *writer, 1, why),
+        },
         // A persona's credentialed MCP server this machine approved, started by the chat's
         // harness, asks for its line as approved: the person's consent, as an Allow is.
         Err(_) if an_approved_server(&asker.root, persona, &wanted, &command) => {}
@@ -1547,11 +1601,7 @@ pub(crate) fn serve_recorded(
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            !not_handed_on(&k)
-                && !crate::sandbox::tools::loads_code(&k)
-                // A login's files and folder are the app's to name, never the chat's
-                // (D-PE-browser-1).
-                && !(a_login && login_var(&k))
+            !not_handed_on(&k) && !crate::sandbox::tools::loads_code(&k)
         })
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
@@ -1574,11 +1624,6 @@ pub(crate) fn serve_recorded(
     let floor = confines.level == crate::sandbox::Level::Floor;
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
         exec::set_var(&mut base, &k, v);
-    }
-    // A browser login finds its browser and its sessions under the person's own home, never
-    // one the chat's environment names (D-PE-browser-3).
-    if a_login && let Some(home) = asker.env.get("HOME") {
-        exec::set_var(&mut base, "HOME", home);
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
     // the chat's port, which the run's sandbox does not reach.
@@ -1626,36 +1671,7 @@ pub(crate) fn serve_recorded(
     };
     let _ = values.set(prepared.secret_values.clone());
     let mut prepared = prepared;
-    // A login's own folder, beside the credential files where every chat is denied, given back
-    // to the run alone; removed when the run ends.
-    let login_dir = if a_login {
-        match tempfile::Builder::new()
-            .prefix("login-")
-            .tempdir_in(&within)
-        {
-            Ok(dir) => {
-                exec::set_var(
-                    &mut prepared.env,
-                    crate::browser::login::DIR_VAR,
-                    dir.path().as_os_str().to_owned(),
-                );
-                Some(dir)
-            }
-            Err(e) => {
-                return refuse(
-                    &mut *writer,
-                    1,
-                    format!("purlis could not make the login's private folder ({e})"),
-                );
-            }
-        }
-    } else {
-        None
-    };
-    let given: Vec<PathBuf> = login_dir
-        .iter()
-        .map(|dir| dir.path().to_path_buf())
-        .collect();
+    let given: Vec<PathBuf> = Vec::new();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
     // one the chat may not reach is refused as the proxy refuses one (#1667).
     // No tunnel at the floor: nothing keeps the run from the host itself.

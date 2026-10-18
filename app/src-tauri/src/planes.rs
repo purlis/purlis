@@ -2002,6 +2002,8 @@ pub struct Planes {
     browser_driver: Option<Arc<dyn crate::chatbrowsers::Driver>>,
     /// Told each chat whose program ended with its session host (#2007).
     lost_with_the_host: crate::hostlost::Teller,
+    /// Told each plane's chats that start or stop reconnecting to their runner (#2496).
+    reconnecting: crate::reconnecting::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -2266,6 +2268,7 @@ impl Planes {
             browsers_listed: Arc::new(|_| {}),
             browser_driver: None,
             lost_with_the_host: Arc::new(|_| {}),
+            reconnecting: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2537,6 +2540,13 @@ impl Planes {
     /// registry holds, so the window can say so on the chat's pane, with Resume (#2007).
     pub fn telling_lost_chats(mut self, lost: crate::hostlost::Teller) -> Self {
         self.lost_with_the_host = lost;
+        self
+    }
+
+    /// Tells `reconnecting` each plane's chats that start or stop reconnecting while the link to
+    /// the runner they run on is down, so the window can say so over each one's screen (#2496).
+    pub fn telling_reconnecting(mut self, reconnecting: crate::reconnecting::Teller) -> Self {
+        self.reconnecting = reconnecting;
         self
     }
 
@@ -4011,6 +4021,21 @@ impl Planes {
                         // chat that asked is told, and its tab goes (#1448).
                         crate::stopping::exited(&held, session);
                     }
+                }));
+        }
+        // A runner's chats are reconnecting while its link is down, and drawn again once it is
+        // back (#2496).
+        {
+            let tell = Arc::clone(&self.reconnecting);
+            let plane = id.clone();
+            chats
+                .sessions()
+                .when_reconnecting(Arc::new(move |sessions, reconnection| {
+                    tell(crate::reconnecting::ChatsReconnecting {
+                        plane: plane.clone(),
+                        sessions,
+                        reconnection,
+                    });
                 }));
         }
 

@@ -95,7 +95,15 @@ pub struct Reference {
 /// The name of a pool's template and warm pool in a namespace. Prefixed, so an upstream object a
 /// person made by hand in their namespace is never taken for purlis's.
 pub fn name_for(pool: &str) -> String {
-    format!("purlis-pool-{pool}")
+    format!("{POOL_PREFIX}{pool}")
+}
+
+const POOL_PREFIX: &str = "purlis-pool-";
+
+/// The pool whose template or warm pool `name` would be, if it is named for one ([`name_for`]).
+pub fn pool_of(name: &str) -> Option<&str> {
+    name.strip_prefix(POOL_PREFIX)
+        .filter(|pool| !pool.is_empty())
 }
 
 /// What the cluster holds under the name an upstream object of the operator's takes.
@@ -226,6 +234,25 @@ pub fn made_for_pool(held: Option<&ObjectMeta>, pool: &Pool, claims: &[&Claim]) 
         (Some(uid), true) => Found::Ours { uid: uid.clone() },
         _ => made_for(Some(held), pool),
     }
+}
+
+/// The names of the Claims among `claims`, the ones the operator knows in `held`'s namespace on
+/// `pool`, that own `held`, sorted. For an object [`made_for_pool`] finds in the way when given
+/// only the Claims the operator acts on, these are Claims it now refuses: the object was made
+/// for them, and goes with them.
+pub fn claims_holding(held: &ObjectMeta, pool: &Pool, claims: &[&Claim]) -> Vec<String> {
+    let pool_name = pool.name_any();
+    let namespace = held.namespace.as_deref();
+    let mut names: Vec<String> = held
+        .owner_references
+        .iter()
+        .flatten()
+        .filter(|reference| names_a_known_claim(reference, namespace, &pool_name, claims))
+        .map(|reference| reference.name.clone())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 /// The template of a pool's runners in `namespace`, owned by `owners` ([`owners_with`]): one

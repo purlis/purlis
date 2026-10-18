@@ -190,3 +190,45 @@ fn a_listener_that_never_returns_holds_up_the_end_no_longer_than_the_moment() {
     teller.flush(Duration::from_millis(300));
     assert!(started.elapsed() < Duration::from_secs(2));
 }
+
+fn dialled(target: &str) -> Refusal {
+    Refusal {
+        operation: "network-outbound",
+        target: target.to_owned(),
+        process: Some("curl".to_owned()),
+    }
+}
+
+#[test]
+fn an_address_dialled_past_the_proxy_is_told_once_a_window_whatever_the_address() {
+    let (teller, heard) = heard();
+    let now = Instant::now();
+    for n in 0..50 {
+        teller.past_the_proxy(
+            format!("93.184.216.{n}:443"),
+            || Some("curl".to_owned()),
+            now,
+        );
+    }
+    assert_eq!(all(&heard), vec![dialled("93.184.216.0:443")]);
+    teller.past_the_proxy(
+        "93.184.216.9:443".to_owned(),
+        || Some("curl".to_owned()),
+        now + WINDOW,
+    );
+    assert_eq!(all(&heard), vec![dialled("93.184.216.9:443")]);
+}
+
+#[test]
+fn addresses_dialled_past_the_proxy_take_nothing_of_the_other_refusals_window() {
+    let (teller, heard) = heard();
+    let now = Instant::now();
+    for n in 0..50 {
+        teller.past_the_proxy(format!("10.0.0.{n}:443"), || None, now);
+    }
+    let _ = all(&heard);
+    for n in 0..PER_WINDOW {
+        refuse(&teller, &format!("/home/dev/{n}"), now);
+    }
+    assert_eq!(all(&heard).len(), PER_WINDOW);
+}

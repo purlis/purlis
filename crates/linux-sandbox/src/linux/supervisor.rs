@@ -72,7 +72,7 @@ impl From<Errno> for Answer {
 const REFUSED: Errno = Errno::EACCES;
 
 /// Seatbelt's word for a connection out, which a refused connect is told as.
-const CONNECT: &str = "network-outbound";
+const CONNECT: &str = crate::refusal::DIALLED;
 
 /// The longest path a call may name, as the kernel's own limit.
 const PATH_MAX: usize = 4096;
@@ -872,10 +872,17 @@ impl Supervisor {
                     ip: remote.ip(),
                     port: remote.port(),
                 })) {
-                    // A service on this machine; an internet address is the proxy's to tell, by
-                    // host.
+                    // A service on this machine; an internet address dialled past the proxy,
+                    // told apart, once a minute (#2423): the proxy tells each host by name.
                     if is_this_machine(remote.ip()) {
                         self.tell(chat, CONNECT, remote.to_string());
+                    } else if let Some(told) = &self.told {
+                        let tgid = chat.tgid;
+                        told.past_the_proxy(
+                            remote.to_string(),
+                            || process_name(tgid),
+                            std::time::Instant::now(),
+                        );
                     }
                     return Err(REFUSED);
                 }

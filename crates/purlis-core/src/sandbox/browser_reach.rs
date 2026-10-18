@@ -27,6 +27,10 @@
 //!   (`crate::browsers::judge`): it carries a site new to the project only where the browser's
 //!   driver judged a request to it to go. A browser started with no reach refuses every new
 //!   site ([`NewSites::refusing`]).
+//! - **A browser holding a login reaches its declared origin alone** (#2016): once purlis is
+//!   about to fill a login in it, its proxy is bound ([`Bound`]) and carries nothing but that
+//!   site, whatever lists anything else, for as long as the browser lives; every connection it
+//!   carried before is ended at that moment.
 //! - **It fails closed.** The engine resolves no name and sends every request to this proxy
 //!   (`purlis_browser_engine::launch`). When the proxy is dropped it stops listening and ends
 //!   every connection it carries, tunnels included, so every load fails; where this machine's
@@ -342,6 +346,60 @@ impl NewSites {
     }
 }
 
+/// **The sites a browser holding a login reaches, and nothing else** (#2016): unbound until
+/// purlis is about to fill a login in the browser, then bound to that login's site for as long
+/// as the browser lives. Shared by the browser's reach proxy, which refuses every other site,
+/// and its judge.
+#[derive(Clone, Default)]
+pub struct Bound(Arc<Mutex<Option<Vec<Site>>>>);
+
+impl std::fmt::Debug for Bound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Bound").field(&self.sites()).finish()
+    }
+}
+
+impl Bound {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Vec<Site>>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Binds the browser to `site`**, or why it may not be: one already bound to another
+    /// site stays bound to that one, since a browser holds one login's session at a time.
+    /// Binding again to the same site changes nothing.
+    pub fn to(&self, site: &Site) -> Result<(), String> {
+        let mut bound = self.lock();
+        match bound.as_ref() {
+            None => {
+                *bound = Some(vec![site.clone()]);
+                Ok(())
+            }
+            Some(sites) if sites.contains(site) => Ok(()),
+            Some(sites) => Err(format!(
+                "this browser holds a login at {}, and reaches nothing else",
+                sites
+                    .iter()
+                    .map(Site::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+
+    /// The sites it is bound to, where it is.
+    pub fn sites(&self) -> Option<Vec<Site>> {
+        self.lock().clone()
+    }
+
+    /// Whether a connection to `host` on `port` may go: always while unbound; once bound, only
+    /// to a site it is bound to.
+    pub fn lets(&self, host: &str, port: u16) -> bool {
+        self.lock()
+            .as_ref()
+            .is_none_or(|sites| sites.contains(&Site::of(host, port)))
+    }
+}
+
 /// How long a name's lookup may take before the connection is given up on.
 pub const LOOKUP_PATIENCE: Duration = Duration::from_secs(10);
 
@@ -404,6 +462,7 @@ pub struct ReachProxy {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
     live: Live,
+    bound: Bound,
     accepting: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -448,6 +507,14 @@ impl Live {
         };
         entry.hold(client);
         entry
+    }
+
+    /// Ends every connection open now; one that starts later goes on.
+    fn end_open(&self) {
+        let connections = self.lock();
+        for socket in connections.open.values().flatten() {
+            let _ = socket.shutdown(Shutdown::Both);
+        }
     }
 
     /// Ends every connection, and every one that starts from now.
@@ -496,6 +563,7 @@ impl std::fmt::Debug for ReachProxy {
 struct Served {
     lane: Lane,
     new_sites: NewSites,
+    bound: Bound,
     limits: Limits,
 }
 
@@ -506,8 +574,25 @@ impl ReachProxy {
         Self::within(lane, new_sites, LIMITS)
     }
 
+    /// [`Self::start`], carrying nothing but what `bound` lets go once it is bound (#2016).
+    pub fn bound_by(lane: Lane, new_sites: NewSites, bound: Bound) -> io::Result<Self> {
+        Self::serving(lane, new_sites, bound, LIMITS)
+    }
+
     /// [`Self::start`], within `limits`.
     pub fn within(lane: Lane, new_sites: NewSites, limits: Limits) -> io::Result<Self> {
+        Self::serving(lane, new_sites, Bound::default(), limits)
+    }
+
+    /// **Binds the browser to `site`** ([`Bound::to`]), and ends every connection it carries
+    /// now: from this moment it carries `site` alone, for as long as it runs.
+    pub fn bind(&self, site: &Site) -> Result<(), String> {
+        self.bound.to(site)?;
+        self.live.end_open();
+        Ok(())
+    }
+
+    fn serving(lane: Lane, new_sites: NewSites, bound: Bound, limits: Limits) -> io::Result<Self> {
         // Never a port a chat may be allowed, and kept as purlis's own while it listens.
         let listener = super::localport::bind_loopback()?;
         let address = listener.local_addr()?;
@@ -515,6 +600,7 @@ impl ReachProxy {
         let served = Arc::new(Served {
             lane,
             new_sites,
+            bound: bound.clone(),
             limits,
         });
         let open = Arc::new(AtomicUsize::new(0));
@@ -568,6 +654,7 @@ impl ReachProxy {
             address,
             stop,
             live,
+            bound,
             accepting: Some(accepting),
         })
     }
@@ -641,6 +728,10 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
         );
         return;
     }
+    if !served.bound.lets(host, port) {
+        answer(&mut client, "403 Forbidden", &bound_said(host, port));
+        return;
+    }
     let own = super::hosts::own_addresses_read();
     let tunnel = request.forward.is_none();
     let at = match served.lane.decide_here(host, port, tunnel, own.as_deref()) {
@@ -703,7 +794,8 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
         );
         return;
     };
-    if !entry.hold(&upstream) {
+    // Bound while it connected (#2016): every connection open then was ended, and so is this.
+    if !entry.hold(&upstream) || !served.bound.lets(host, port) {
         return;
     }
     let _ = client.set_write_timeout(Some(idle));
@@ -722,6 +814,14 @@ fn serve(mut client: TcpStream, served: &Served, entry: &Entry) {
         return;
     }
     splice(client, upstream, up_to - rest.len() as u64, idle);
+}
+
+/// Why a site was refused to a browser holding a login (#2016), as the browser is told.
+fn bound_said(host: &str, port: u16) -> String {
+    format!(
+        "purlis's reach proxy does not carry this browser to {host}:{port}: the browser holds a \
+         login, and reaches only the site it was logged in to"
+    )
 }
 
 /// Why a new site was refused, as the browser is told.
