@@ -2309,3 +2309,70 @@ fn what_git_answered_is_kept_for_one_call_and_refuses_as_it_did() {
     assert_eq!(reset(&f, wipe), None);
     assert_eq!(reset(&f, &behind), None);
 }
+
+/// A question about the fixture's `HEAD`, and what git answers it.
+const HEAD_COMMIT: [&str; 4] = ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"];
+
+/// The memory keeps at most [`MAX_REMEMBERED_ANSWERS`] answers: one more is asked of git each
+/// time and answered as git answers it, and the last one that fits is kept (#2619).
+#[test]
+fn past_the_most_answers_kept_git_is_asked_again_and_answers_the_same() {
+    let f = fixture();
+    let head = |a: Answer| (a.ok, a.out);
+    let truth = head(git_asked(&f.root, &HEAD_COMMIT).expect("git answers"));
+    assert!(truth.0 && !truth.1.is_empty());
+    for (kept_before, asked) in [
+        (MAX_REMEMBERED_ANSWERS - 1, 1),
+        (MAX_REMEMBERED_ANSWERS, 2),
+    ] {
+        remembering(|| {
+            REMEMBERED.with(|r| {
+                let mut r = r.borrow_mut();
+                let m = r.as_mut().expect("inside a call");
+                for n in 0..kept_before {
+                    let answer = Answer {
+                        ok: true,
+                        out: String::new(),
+                    };
+                    m.insert(("elsewhere".to_string(), vec![n.to_string()]), answer);
+                }
+            });
+            let before = asked_so_far(&f.root);
+            for _ in 0..2 {
+                let answer = git_in(&f.root, &HEAD_COMMIT).expect("git answers");
+                assert_eq!(head(answer), truth);
+            }
+            assert_eq!(
+                times_asked(&f.root, before, &HEAD_COMMIT),
+                asked,
+                "with {kept_before} answers kept"
+            );
+        });
+    }
+}
+
+/// A guard call inside another shares the outer's memory and leaves it standing; the outer's
+/// end clears it, and the next call asks git again (#2619).
+#[test]
+fn a_call_inside_another_shares_its_memory_and_only_the_outer_ends_it() {
+    let f = fixture();
+    let before = asked_so_far(&f.root);
+    let ask = || git_in(&f.root, &HEAD_COMMIT).expect("git answers").out;
+    remembering(|| {
+        let first = ask();
+        let inner = remembering(&ask);
+        assert_eq!(inner, first);
+        assert!(
+            REMEMBERED.with(|r| r.borrow().is_some()),
+            "the inner call ended the memory"
+        );
+        assert_eq!(ask(), first);
+    });
+    assert_eq!(times_asked(&f.root, before, &HEAD_COMMIT), 1);
+    assert!(
+        REMEMBERED.with(|r| r.borrow().is_none()),
+        "the outer call left its memory"
+    );
+    remembering(&ask);
+    assert_eq!(times_asked(&f.root, before, &HEAD_COMMIT), 2);
+}
