@@ -547,6 +547,8 @@ pub struct Shown {
     pub document: u64,
     /// Its pages' size.
     pub size: (u16, u16),
+    /// The address of each login purlis performed in it, in order (#2016): never its values.
+    pub logins: Vec<String>,
     /// What it answers its next acts with, in order; once none is left, a settled page.
     answers: std::collections::VecDeque<Result<purlis_session_protocol::browsing::Browsed, String>>,
     sink: Option<crate::browsers::FrameSink>,
@@ -717,6 +719,40 @@ impl crate::browsers::Screen for StandInScreen {
         }
         shown.size = (width, height);
         Ok(())
+    }
+
+    /// Logs in as an engine would: it takes the lease and hands it back two epochs on, and
+    /// answers its next act's answer.
+    fn log_in(
+        &self,
+        login: &purlis_session_protocol::browsing::LogIn,
+    ) -> Result<crate::browsers::LoginEnded, crate::browsers::NotActed> {
+        let mut shown = self.shown();
+        if shown.stopped {
+            return Err(crate::browsers::NotActed::Ended);
+        }
+        if shown.taken_over {
+            return Err(crate::browsers::NotActed::Refused(
+                crate::browsers::A_BROWSER_THE_PERSON_DRIVES.into(),
+            ));
+        }
+        shown.logins.push(login.address.clone());
+        shown.epoch += 2;
+        let outcome = shown
+            .answers
+            .pop_front()
+            .unwrap_or_else(|| {
+                Ok(purlis_session_protocol::browsing::Browsed {
+                    settled: true,
+                    ..Default::default()
+                })
+            })
+            .map_err(crate::browsers::NotActed::Refused);
+        Ok(crate::browsers::LoginEnded {
+            driver: purlis_session_protocol::browsing::Driver::Agent,
+            epoch: shown.epoch,
+            outcome,
+        })
     }
 }
 

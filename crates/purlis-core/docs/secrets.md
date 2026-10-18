@@ -275,25 +275,22 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
                            user = "username", key = "password" } }
   ```
 
-  The chat runs `shop-login -s=owner`. purlis, not the chat, then runs Playwright's
-  `playwright-cli` (installed where no chat writes, `npm install -g @playwright/cli@<version>`)
-  by its absolute path, with no shell between: it opens the declared page in a browser of its
-  own, fills the user name and password from the vault only while the page is on that page's
-  origin, with the browser's HTTP requests to other origins refused while a field is filled
-  (not its WebSockets, and not what the declared page's own scripts do), submits, and
-  closes that browser. Playwright's record of that browser is kept in the run's own private
-  folder, never under your cache folder, and goes with it. The chat gets the logged-in session's storage, 0600, in
-  `.playwright-cli/owner.login.json`, to load into its own browser (`state-load`) and delete.
-  It never gets the login, and its own browser never holds it, so no later step can type it
-  into another site. The chat chooses the session's name and nothing else: a page, a host or a
-  program of its own is refused, and so is `playwright-cli` named directly. The login waits
-  for the same Allow as the persona's hosts and tools, its digest covering the page and both
-  keys, and policy's `persona-tools` forbids it with the rest. What it does not cover: the
-  session's cookies are the chat's once loaded, which is what logging in is for; a page with a
-  captcha or a second factor does not log in this way, and neither does a page that first
-  sends the browser to a sign-in service on another origin: the login fails closed (declare
-  that service's page instead). The storage it hands over holds whatever the site keeps
-  there, which for a site that keeps a credential in its local storage is that credential.
+  The chat calls the `browser_login` tool with `login = "shop-login"`, and purlis performs the
+  login in the chat's own browser (#2016): the app reads the user name and password from the
+  vault for exactly the login the chat's start armed, and hands them to the session host, whose
+  browser goes to the declared page, fills them only while the page's document is on that
+  page's origin, submits, waits for the password field to go, and hands the browser back. A
+  login that does not go through has what it filled cleared, and the chat is told why. The chat
+  never gets the values: they are kept out of every snapshot, find, wait and screenshot of every
+  page of that browser for as long as it runs, and each field purlis filled is blanked, so a
+  show-password toggle shows nothing. From the first fill the browser reaches the login's
+  origin alone; a chat that needs another site opens another browser. No file of the session is
+  written. The chat chooses which declared login and nothing else; run as a command, the tool
+  runs nothing and names `browser_login`. The login waits for the same Allow as the persona's
+  hosts and tools, its digest covering the page and both keys, and policy's `persona-tools`
+  forbids it with the rest. A page with a captcha or a second factor does not log in this way,
+  and neither does a page that first sends the browser to a sign-in service on another origin:
+  the login fails closed (declare that service's page instead).
 - **`secret list <vault>`** prints the key names. In a sandboxed chat the app answers it, for
   a vault the chat's persona may use.
 - **`secret get <vault> <key>`** prints a size band and a keyed fingerprint —
