@@ -1583,9 +1583,12 @@ fn aliases_after_substitutions_are_read_once_per_line() {
         &["config", "alias.st", "status"],
     );
     let one = format!("git -C $(echo {root}) {}", "st ".repeat(40));
+    assert_eq!(plane_root_branch_reason(&one, &s.clone, root), None);
+    // After the first, each may have changed the configuration the next one's alias is read
+    // from: refused, and answered in time all the same.
     let cmd = vec![one; 200].join("; ");
     let started = std::time::Instant::now();
-    assert_eq!(plane_root_branch_reason(&cmd, &s.clone, root), None);
+    let _ = plane_root_branch_reason(&cmd, &s.clone, root);
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(3), "{took:?}");
     // Past the budget of different aliases to follow, what git runs is unread, and refused.
@@ -2363,5 +2366,51 @@ fn taking_unpushed_commits_off_the_roots_branch_is_refused_in_any_mode() {
         "git update-ref refs/heads/zznew HEAD",
     ] {
         assert_eq!(reset(&f, cmd), None, "{cmd:?}");
+    }
+}
+
+/// What a command substitution among git's options prints is split into words git reads too:
+/// the first word after it must be a command of git's own, or an alias of one, else the command
+/// git runs is read as unknown.
+#[test]
+fn the_first_word_after_a_substitution_among_gits_options_is_a_command_of_gits_own() {
+    let f = fixture();
+    for cmd in [
+        "git -C $(echo \"$PWD x\") feature",
+        "git -C $(pwd) zznotacommand feature",
+        "git --git-dir=$(pwd)/.git zznotacommand",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.starts_with("cannot tell what"), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "git -C $(git rev-parse --show-toplevel) status",
+        "git -C $(pwd) log --oneline",
+        "git -c alias.st=status -C $(pwd) st",
+        "git -C $(pwd)",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
+    }
+}
+
+/// `git symbolic-ref HEAD <ref>` moves the root to another branch as a checkout does, without
+/// touching a file: refused. Reading a symbolic ref, or setting one other than HEAD, is not.
+#[test]
+fn pointing_head_at_another_branch_is_a_branch_move() {
+    let f = fixture();
+    for cmd in [
+        "git symbolic-ref HEAD refs/heads/feature",
+        "git symbolic-ref -m why HEAD refs/heads/feature",
+        "git symbolic-ref $REF refs/heads/feature",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.contains("PLANE ROOT"), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "git symbolic-ref HEAD",
+        "git symbolic-ref --short HEAD",
+        "git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
     }
 }

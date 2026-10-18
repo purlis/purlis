@@ -1665,10 +1665,51 @@ fn walk_line(
             let words = if spliced {
                 subcommand_after_splice(&pre, &rest, &env, &own_env, aliases, true, after_a_writer)
                     .or_else(|| {
-                        filled.then(|| {
+                        let unread = || {
                             let (sub, post, _) = first().unwrap_or_default();
-                            (sub, post, true)
-                        })
+                            Some((sub, post, true))
+                        };
+                        if filled {
+                            return unread();
+                        }
+                        // What a substitution among git's options prints is split into words
+                        // git reads too: the first word after it must be a command of git's
+                        // own, or an alias of one, else the command git runs is unread.
+                        let after = words_after_a_substitution(&rest, &argvs[..i]);
+                        let Some(after) = after else {
+                            return unread();
+                        };
+                        // git reads its own options after it too.
+                        let words: Vec<String> = std::iter::once(String::new())
+                            .chain(after.iter().cloned())
+                            .collect();
+                        let (more, rest_after) = shellwrap::git_globals(&words);
+                        let Some((sub, post)) = rest_after.split_first() else {
+                            return None; // git runs no command
+                        };
+                        let own = |w: &str| GIT_KNOWN_SUBCOMMANDS.contains(&w);
+                        if own(sub) {
+                            return Some((sub.clone(), post.to_vec(), false));
+                        }
+                        if after_a_writer {
+                            return unread();
+                        }
+                        // An alias of one is taken as what it runs, read from the line's one
+                        // alias book.
+                        let all_pre: Vec<String> = pre.iter().chain(&more).cloned().collect();
+                        let inline = LineConfig::of(&all_pre, &env, &own_env);
+                        let (to, to_post, end) = expand_alias(sub, post, &mut |name| {
+                            let folded = name.to_lowercase();
+                            match inline.body(&folded) {
+                                Some(found) => found,
+                                None => aliases.body(&folded).ok_or(AliasEnd::Unasked),
+                            }
+                        });
+                        if end == AliasEnd::Resolved && own(&to) {
+                            Some((to, to_post, false))
+                        } else {
+                            unread()
+                        }
                     })
             } else {
                 first()
@@ -1886,6 +1927,30 @@ fn walk_line(
         assigned,
         allexport: allexport_own || allexport_given,
     }
+}
+
+/// How many segments before a git invocation are matched against the substitution among its
+/// options ([`words_after_a_substitution`]); past them its end is not found.
+const MAX_SUBSTITUTION_SEGMENTS: usize = 8;
+
+/// The words of a git invocation after the command substitution among its options, or `None`
+/// where its end cannot be found. The reader spreads a substitution's words through the argv
+/// it stands in and hands the substitution over as segments of its own just before it: the
+/// words after it are what follows the words of those segments.
+fn words_after_a_substitution<'a>(
+    rest: &'a [String],
+    earlier: &[Vec<String>],
+) -> Option<&'a [String]> {
+    let mut spread: Vec<&String> = Vec::new();
+    for argv in earlier.iter().rev().take(MAX_SUBSTITUTION_SEGMENTS) {
+        let mut next: Vec<&String> = argv.iter().collect();
+        next.extend(spread);
+        spread = next;
+        if spread.len() <= rest.len() && rest.iter().zip(&spread).all(|(a, b)| a == *b) {
+            return Some(&rest[spread.len()..]);
+        }
+    }
+    None
 }
 
 /// The first command of a function's body, where `argv` defines one (`f() { …`, `f() ( …`,
@@ -2950,6 +3015,25 @@ pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<Stri
                     root_tail(default_branch(&root).as_deref())
                 ));
             }
+            if sub == "symbolic-ref" {
+                if let Some(to) = head_pointed_at(&post) {
+                    let hint = if inv.unnamed {
+                        "It may be the PLANE ROOT: a directory it is sent to is named only when \
+                         the shell runs it. "
+                    } else if inv.after_loose_cd {
+                        LOOSE_CD_HINT
+                    } else {
+                        ""
+                    };
+                    return Some(format!(
+                        "would point HEAD in the PLANE ROOT at '{to}': `git symbolic-ref HEAD \
+                         <ref>` moves the root to another branch without touching a file, so \
+                         the working tree no longer matches the branch it is on. {hint}{}",
+                        root_tail(default_branch(&root).as_deref())
+                    ));
+                }
+                continue;
+            }
             if !BRANCH_MOVERS.contains(&sub.as_str()) {
                 continue;
             }
@@ -3134,6 +3218,26 @@ pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<Stri
         return Some(format!("{opening}{hint}{}", root_tail(default.as_deref())));
     }
     None
+}
+
+/// The ref a `git symbolic-ref <post…>` points HEAD at, or `None` for one that reads a symbolic
+/// ref, deletes one, or sets one other than HEAD. A name only the shell can name may be HEAD.
+fn head_pointed_at(post: &[String]) -> Option<String> {
+    let mut words: Vec<&String> = Vec::new();
+    let mut i = 0usize;
+    while i < post.len() {
+        match post[i].as_str() {
+            "-d" | "--delete" => return None,
+            "-m" => i += 1, // its reason
+            w if w.starts_with('-') => {}
+            _ => words.push(&post[i]),
+        }
+        i += 1;
+    }
+    match words.as_slice() {
+        [name, to, ..] if name.as_str() == "HEAD" || shell_fills(name) => Some(to.to_string()),
+        _ => None,
+    }
 }
 
 /// What every branch-guard denial ends with: why the root is guarded, where branch work goes,

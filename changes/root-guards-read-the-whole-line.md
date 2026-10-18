@@ -3,8 +3,10 @@
 - **The project-root guards read a git command whose words the shell fills in as unknown.** A
   git subcommand, or one of git's own options, built from a variable, a quoted substitution or a
   function's arguments is refused in the project root unless a branch move or reset is spelled
-  among the words after it, which is then judged as written. Spell the command out and purlis
-  reads it.
+  among the words after it, which is then judged as written. After a command substitution among
+  git's own options, the first word must be one of git's own commands or an alias of one. A
+  function's body is read wherever the shell may call it. Spell the command out and purlis reads
+  it.
 
 - **An earlier command on the line that may change the repository makes the guards judge what
   follows as unknown.** After it, an alias is not read from the configuration as it stood, a
@@ -20,3 +22,6 @@
   commits no upstream has with only the reflog is refused until `purlis save` pushes them. A
   commit only the shell can name is measured as the furthest back, and `git update-ref --stdin`
   in the root is refused.
+
+- **`git symbolic-ref HEAD <ref>` in the project root is refused as a branch move.** It points
+  the root at another branch without touching a file. Reading a symbolic ref stays allowed.
