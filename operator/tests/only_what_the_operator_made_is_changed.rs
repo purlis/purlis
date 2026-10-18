@@ -276,3 +276,71 @@ fn a_claim_names_the_object_in_its_way_and_what_frees_it() {
         ready.message
     );
 }
+
+#[test]
+fn only_claims_on_the_pool_there_that_the_operator_acts_on_can_own_its_objects() {
+    use k8s_openapi::api::admissionregistration::v1::{
+        ValidatingAdmissionPolicyBinding, ValidatingAdmissionPolicyBindingSpec,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::Time;
+    use purlis_cluster_operator::{POLICY, claims_that_may_own};
+    use std::sync::Arc;
+    let at = |time: &str| Time(time.parse().expect("a timestamp"));
+    let binding = ValidatingAdmissionPolicyBinding {
+        metadata: ObjectMeta {
+            name: Some(POLICY.into()),
+            creation_timestamp: Some(at("2026-10-17T10:00:00Z")),
+            ..ObjectMeta::default()
+        },
+        spec: ValidatingAdmissionPolicyBindingSpec {
+            policy_name: POLICY.into(),
+            validation_actions: vec!["Deny".into()],
+            ..ValidatingAdmissionPolicyBindingSpec::default()
+        },
+    };
+    let made = |name: &str, uid: &str, pool: &str, namespace: &str, time: &str| {
+        let mut claim = on_pool(name, uid, pool);
+        claim.metadata.namespace = Some(namespace.into());
+        claim.metadata.creation_timestamp = Some(at(time));
+        Arc::new(claim)
+    };
+    let this = made("ada-1", "claim-uid", "team", "ada", "2026-10-17T11:00:00Z");
+    let watched = vec![
+        this.clone(),
+        made("ada-2", "under-uid", "team", "ada", "2026-10-17T11:00:00Z"),
+        // Made before the policy was in force: refused, so never an owner.
+        made(
+            "ada-3",
+            "refused-uid",
+            "team",
+            "ada",
+            "2026-10-17T09:00:00Z",
+        ),
+        made(
+            "ada-4",
+            "other-pool-uid",
+            "other",
+            "ada",
+            "2026-10-17T11:00:00Z",
+        ),
+        made(
+            "bea-1",
+            "elsewhere-uid",
+            "team",
+            "bea",
+            "2026-10-17T11:00:00Z",
+        ),
+    ];
+    let mut uids: Vec<String> = claims_that_may_own(watched, &this, Some(&binding))
+        .iter()
+        .map(|claim| claim.metadata.uid.clone().unwrap_or_default())
+        .collect();
+    uids.sort();
+    assert_eq!(uids, ["claim-uid", "under-uid"]);
+    // With no binding in force, only the claim at hand, which reconcile acts on only under it.
+    let alone: Vec<_> = claims_that_may_own(vec![this.clone()], &this, None)
+        .iter()
+        .map(|claim| claim.metadata.uid.clone().unwrap_or_default())
+        .collect();
+    assert_eq!(alone, ["claim-uid"]);
+}

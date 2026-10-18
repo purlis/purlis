@@ -10,7 +10,7 @@
 //! [`upstream::made_for_pool`]). Each is read first: one it did not make is left as it is, and
 //! nothing is written for the Claim until that object is gone.
 
-use crate::admission::{POLICY, admission};
+use crate::admission::{Admission, POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::upstream::{
     self, Found, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
@@ -146,7 +146,20 @@ struct Context {
     conflicts: Mutex<HashMap<ObjectRef<Claim>, u32>>,
 }
 
+/// One pass over `claim`. Whenever it ends without an error, the Claim's run of conflicts is
+/// over, and the counts of Claims that are gone are dropped.
 async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, Error> {
+    let done = reconcile_claim(claim.clone(), context.clone()).await?;
+    let mut conflicts = context
+        .conflicts
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    conflicts.remove(&ObjectRef::from_obj(&*claim));
+    conflicts.retain(|claim, _| context.claims.get(claim).is_some());
+    Ok(done)
+}
+
+async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, Error> {
     let client = &context.client;
     let name = claim.name_any();
     let namespace = claim
@@ -188,7 +201,7 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
             let template_held = templates.get_opt(&pool_object).await?.map(meta);
             let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
             let claim_held = upstream_claims.get_opt(&name).await?.map(meta);
-            let known = claims_on_the_pool(&context.claims, &claim);
+            let known = claims_that_may_own(context.claims.state(), &claim, binding.as_ref());
             let known: Vec<&Claim> = known.iter().map(|known| &**known).collect();
             let template_found = made_for_pool(template_held.as_ref(), &pool, &known);
             let warm_found = made_for_pool(warm_held.as_ref(), &pool, &known);
@@ -241,11 +254,6 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
         }
     };
     write_status(client, &claim, &namespace, status).await?;
-    context
-        .conflicts
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .remove(&ObjectRef::from_obj(&*claim));
     Ok(Action::await_change())
 }
 
@@ -289,16 +297,22 @@ where
     }
 }
 
-/// The Claims the operator knows in `claim`'s namespace on its pool, `claim` among them: the
-/// only owners of the pool's template and warm pool there it takes for its own.
-fn claims_on_the_pool(claims: &Store<Claim>, claim: &Arc<Claim>) -> Vec<Arc<Claim>> {
-    claims
-        .state()
+/// The Claims among `watched`, the ones the operator's watch holds, that may own `claim`'s
+/// pool's template and warm pool: those in its namespace on its pool that the operator acts on
+/// under the policy's `binding`, and `claim` itself. A Claim the operator refused never vouches
+/// for an object.
+pub fn claims_that_may_own(
+    watched: impl IntoIterator<Item = Arc<Claim>>,
+    claim: &Arc<Claim>,
+    binding: Option<&ValidatingAdmissionPolicyBinding>,
+) -> Vec<Arc<Claim>> {
+    watched
         .into_iter()
         .filter(|other| {
             other.namespace() == claim.namespace()
                 && other.spec.pool == claim.spec.pool
                 && other.uid() != claim.uid()
+                && admission(other, binding) == Admission::UnderPolicy
         })
         .chain([claim.clone()])
         .collect()
