@@ -934,7 +934,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Update { .. }
         | Command::Version { .. }
         | Command::News(_)
-        // This machine's themes: nothing of a project's is read or written.
+        // This machine's themes and the theme folders of the plane and its workspaces: read
+        // through the theme engine, and nothing is written.
         | Command::Theme(_)
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
@@ -4289,8 +4290,8 @@ fn main() -> ExitCode {
             });
         }
         Command::Stop { .. } => return stop_every_agent(),
-        // `theme` reads this machine's themes and needs no plane; it chooses its own exit, a
-        // linter's (`theme.rs`).
+        // `theme` reads this machine's themes, and the plane's when it runs in one, and needs
+        // none; it chooses its own exit, a linter's (`theme.rs`).
         Command::Theme(command) => return theme::run(command),
         // `news` and `update` say several lines of their own on both streams and choose their
         // own exit status, exactly as `init` does.
