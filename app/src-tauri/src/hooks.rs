@@ -411,6 +411,12 @@ impl Relayed {
             waiting.push((link, id, heard, reply));
             return;
         }
+        // Taken in order, before a thread of its own hears it, so a secret exec's input that
+        // comes before it begins is kept for it (#2571).
+        if !self.heeding.admit(link, id, &heard) {
+            reply(purlis_core::hookwire::relay::Replied::Ended);
+            return;
+        }
         if Heeding::waits(&heard) {
             let heeding = Arc::clone(&self.heeding);
             let exec = matches!(heard, purlis_core::hookwire::relay::Heard::SecretExec(_));
