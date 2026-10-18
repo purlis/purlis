@@ -4597,6 +4597,18 @@ pub(crate) fn kernel_names(path: &Path) -> Vec<PathBuf> {
     both_firmlink_names(real(path))
 }
 
+/// `path` itself as the kernel names it, its last part never followed: its folder as the kernel
+/// names it ([`real`]) with its own name, and under its other name across a firmlink
+/// ([`firmlink_twin`]) where it has one. A rule on a link held to the link, never to what it
+/// points at (#2617).
+pub(crate) fn kernel_names_itself(path: &Path) -> Vec<PathBuf> {
+    let itself = match (path.parent(), path.file_name()) {
+        (Some(folder), Some(name)) => real(folder).join(name),
+        _ => real(path),
+    };
+    both_firmlink_names(itself)
+}
+
 /// `path` as it is spelled, and under its other name across a firmlink ([`firmlink_twin`])
 /// where it has one, the name off the data volume first.
 pub(crate) fn both_firmlink_names(path: PathBuf) -> Vec<PathBuf> {

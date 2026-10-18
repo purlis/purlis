@@ -114,6 +114,15 @@ pub fn kernel_strings(path: &Path) -> Result<Vec<String>, &'static str> {
         .collect()
 }
 
+/// `path` itself under every name the kernel may give it ([`super::kernel_names_itself`]), each
+/// as an SBPL string: a link by its own name, never by what it points at.
+pub fn kernel_strings_itself(path: &Path) -> Result<Vec<String>, &'static str> {
+    super::kernel_names_itself(path)
+        .iter()
+        .map(|name| string(&name.display().to_string()))
+        .collect()
+}
+
 /// The names a rule on `path` is written under: as the kernel names it, and, where its last part
 /// is a link, that link itself in the folder as the kernel names it. A rule on the target alone
 /// would let the link be removed and a file made in its place (#1336).
