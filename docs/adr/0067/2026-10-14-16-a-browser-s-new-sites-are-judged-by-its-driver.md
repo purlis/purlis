@@ -23,11 +23,11 @@ public site its browser's lane does not list.
    new to the project at its proxy.
 3. **A browser site is a grant of its own, for the browser alone** (ruled 2026-10-17, #2018,
    D-2018-1). A chat's sites wait as one Ask in the registry, with Allow for this chat, Always
-   allow in this project on this machine, and Keep blocked. *The Ask names whole, oldest first,
-   the sites its line has room for, and answers those alone; the others wait for the next. A
-   site too long to be named whole is offered Keep blocked alone, and an Allow is taken only for
-   a site the Ask names whole: decided in implementation, 2026-10-17 (D-2364-4), to be
-   confirmed.* An Allow
+   allow in this project on this machine, Allow for everyone in this project (#2443), and Keep
+   blocked. *The Ask names whole, oldest first, the sites its line has room for, and answers
+   those alone; the others wait for the next. A site too long to be named whole is offered Keep
+   blocked alone, and an Allow, at any of the three scopes, is taken only for a site the Ask
+   names whole: decided in implementation, 2026-10-17 (D-2364-4), to be confirmed.* An Allow
    lists the site in the browser's lane only: the judge and the reach proxy read it, and the
    chat's own commands never do, so they still need their own Allow for that host. It is listed
    apart in the Granted list and in the chat's Network view, under "Only its browser can reach",
@@ -36,8 +36,8 @@ public site its browser's lane does not list.
    administrator's policy later holds (a scope left out, a host never allowed) is kept and
    reaches no browser. This supersedes the sentence "nothing is listed for the browser alone"
    in item 1 of the amendment *a browser's reach is a lane of its chat's*. A browser site for
-   everyone in the project (committed) is not offered yet: it comes with #2443 (ruled
-   2026-10-17). *A host allowed for the chat's commands stays a listed site for
+   everyone in the project (committed) is offered too: see the amendment *a browser site can be
+   allowed for everyone in the project* (ruled 2026-10-17, #2443). *A host allowed for the chat's commands stays a listed site for
    its browser, as the lane was ruled on 2026-10-14 (D-2018-7): decided in implementation,
    2026-10-17, to be confirmed.*
 4. **Widening reaches a running browser at its next act.** Each act carries what the browser
