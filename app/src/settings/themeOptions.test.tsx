@@ -6,7 +6,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { WindowOption } from "../bindings";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "../theme/theme";
-import { themeOptionsRow } from "./themeOptions";
+import { OptionsList, useOptionsInForce } from "./themeOptions";
 
 /** The core's answer for a theme drawn with `options`. */
 function answering(options: () => WindowOption[]) {
@@ -45,10 +45,9 @@ const ACCENT: WindowOption = {
   chosen: true,
 };
 
-/** The row as a Settings group draws it: its control alone. */
+/** The options of the theme drawn, as Settings › Theme's Options row lists them. */
 function Row() {
-  const { control } = themeOptionsRow("workspace.appearance").useControl();
-  return <>{control({ id: "options" })}</>;
+  return <OptionsList options={useOptionsInForce()} ids={{ id: "options" }} />;
 }
 
 afterEach(() => {
@@ -57,7 +56,7 @@ afterEach(() => {
   drawIn(DEFAULT_THEME);
 });
 
-describe("Settings › Appearance › Theme options (#2325)", () => {
+describe("Settings › Theme › Options (#2325, #2331)", () => {
   it("shows each option of the theme drawn, its value and where the value comes from", async () => {
     answering(() => [BORDERS, ACCENT]);
     render(<Row />);

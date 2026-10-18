@@ -650,7 +650,13 @@ fn face_of(
     }
     let file = match given.get("file") {
         Some(Value::String(file)) => match face_file(file) {
-            Some(name) => Some(name.to_owned()),
+            Some(name) => match super::portable::refusal(file, name) {
+                Some(why) => {
+                    complaints.push(format!("a face of fonts.{slot}: {why}"));
+                    None
+                }
+                None => Some(name.to_owned()),
+            },
             None => {
                 complaints.push(format!(
                     "a face of fonts.{slot} names {}, which is not fonts/<name>.woff2 inside \

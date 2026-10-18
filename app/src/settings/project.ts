@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { yourTheme } from "./yourTheme";
+import { THEME_GROUP, themeRows } from "./themeGallery";
 import { useProjectThemeAnswers } from "../projectTheme";
 import {
   commands,
@@ -53,7 +53,6 @@ import type { Collection, FileSetting, SettingsFileId, SettingsGroup } from "./g
 import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
-import { themeOptionsRow } from "./themeOptions";
 import { discoverRow } from "./discover";
 import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
@@ -138,8 +137,8 @@ export function kept(file: Pick<SettingsFile, "which" | "file">): string {
  * of them may be kept in either file. `[plane] worktrees` is the Shared file's alone, and
  * `[harness]`, `[chat_env]` the Local file's: those are never offered the other.
  */
-// `[theme]` is not among them: the person's own theme is kept on this machine (Your theme,
-// #2323), and `charter.toml`'s is the project's committed default.
+// `[theme]` is not among them: the person's own theme is kept on this machine (Settings › Theme,
+// #2323, #2331), and `charter.toml`'s is the project's committed default.
 const EITHER = new Set(["plane", "repos", "extensions", "harness_plugins"]);
 
 /** Whether a key in `charter.toml` may be moved to `charter.local.toml` and back. */
@@ -730,20 +729,26 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       links: [EXTENSIONS_LINK],
       empty: "No extension is installed on this machine or named by this project.",
     },
+    // The person's own theme here, chosen from a card per theme (#2331): the nearest level
+    // the theme engine reads, kept on this machine.
+    ...(read.plane === undefined
+      ? []
+      : [
+          {
+            id: "project.theme",
+            label: "Theme",
+            ...THEME_GROUP,
+            settings: themeRows("project.theme", { plane: read.plane, workspace: null }),
+          },
+        ]),
     {
       id: "project.appearance",
       label: "Appearance",
-      help: "The theme and the icons the window draws while this project is in front.",
-      settings: [
-        // The person's own choice first: it is the nearest level the theme engine reads.
-        ...(read.plane === undefined
-          ? []
-          : yourTheme(read.plane, undefined, read.theme, reread ?? (() => undefined))),
-        ...fromShared("project.appearance", [
-          ...theme.controls,
-          iconsControl("project", read.iconThemes, read.extensions.extensions),
-        ]),
-      ],
+      help: "The theme the project commits as its default, and the icons the window draws while this project is in front.",
+      settings: fromShared("project.appearance", [
+        ...theme.controls,
+        iconsControl("project", read.iconThemes, read.extensions.extensions),
+      ]),
       notes: [
         ...theme.notes,
         // Local's pick wins over Shared's, while Local has its say at all.
@@ -753,8 +758,6 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
           read.iconThemes,
         ),
       ],
-      // The drawn theme's options and where each value comes from (#2325).
-      after: [themeOptionsRow("project.appearance")],
     },
     {
       id: "project.plugins",
