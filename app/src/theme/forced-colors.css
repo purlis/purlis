@@ -1,0 +1,165 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **Forced colours: the system's contrast colours win** (#2328, spec #2313). With Windows'
+   contrast themes, or any platform that forces colours, the browser draws every colour a theme
+   set in the system's palette instead: text, backgrounds and borders become `CanvasText`,
+   `Canvas`, `ButtonText` and the rest, and box shadows are not drawn. So what this window says
+   with a background or a shadow alone (the tab you are on, the row the keyboard is on, a filled
+   state mark, a switch's thumb, a focus ring drawn as a shadow) would be lost.
+
+   This sheet is core's, and holds only the system's colours: no theme token reaches it, because
+   a theme's colours are exactly what forced colours replace. It says each of those things again
+   in the system's palette and with a shape:
+
+   - **Focus** is a solid ring in `Highlight` wherever Tab lands, at the offset each control
+     already draws its own.
+   - **What is selected or current** is drawn in `SelectedItem` and `SelectedItemText`, the
+     system's own pair, and underlined (or, for an icon, edged), so it is told without colour.
+   - **What cannot be used** is `GrayText`.
+   - **A state mark keeps its shape** in `CanvasText`: a dot, a ring, a square, as the window
+     tells states apart already.
+   - **What needs you** (a count of chats that need you) is drawn in `Mark` and `MarkText`, the
+     system's pair for what is marked, apart from every plain count.
+   - **What ends or destroys** (a danger button, a danger row, a ground that says something is
+     wrong) is outlined dashed, so it is told from its neighbours by a shape.
+   - **What is opened over the window** (a dialog, a menu, a list, a tip) is outlined, because
+     the shadow that lifted it is gone.
+
+   It is imported last, in its own layer, `forced` (`styles.css`), the last of the window's layers,
+   so it is drawn over every rule a view, a control or a utility writes. `forced-colors.test.ts` holds it to the system's colours and to
+   each of the above; the WebView end-to-end suite (`e2e/specs/forced-colors.e2e.ts`) holds that
+   the built window carries it. */
+
+@media (forced-colors: active) {
+  /* What is selected or current: the system's pair, which forced colours leave alone only when
+     the element asks to keep what it is given. */
+  [role="tab"][aria-selected="true"],
+  [role="option"][aria-selected="true"],
+  [aria-current]:not([aria-current="false"]),
+  .ui-segmented-item[data-state="checked"],
+  .ui-menu-item[data-highlighted],
+  .ui-menu-item[data-state="open"] {
+    forced-color-adjust: none;
+    color: SelectedItemText;
+    background-color: SelectedItem;
+  }
+
+  /* And a shape, so it is told without the colour: a tab and a segment are underlined. */
+  [role="tab"][aria-selected="true"],
+  .ui-segmented-item[data-state="checked"] {
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.25em;
+  }
+
+  /* The activity bar's tab is an icon: its edge toward the side it opens is the shape. */
+  .activity-bar[data-side="left"] .activity-tab[aria-selected="true"] {
+    box-shadow: inset 2px 0 0 SelectedItemText;
+  }
+
+  .activity-bar[data-side="right"] .activity-tab[aria-selected="true"] {
+    box-shadow: inset -2px 0 0 SelectedItemText;
+  }
+
+  /* What cannot be used. */
+  :is(button, input, select, textarea):disabled,
+  [aria-disabled="true"],
+  .ui-menu-item[data-disabled] {
+    color: GrayText;
+  }
+
+  /* A switch: its thumb is the mark, on the side it is switched to, and on is filled. */
+  .ui-switch-thumb {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .ui-switch[data-state="checked"] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background-color: Highlight;
+  }
+
+  .ui-switch[data-state="checked"] .ui-switch-thumb {
+    background-color: HighlightText;
+  }
+
+  /* A radio's dot. A checkbox's tick is an icon in the text's colour, which forced colours draw. */
+  .ui-radio-mark {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  /* A chat's state mark keeps its shape: running a dot, waiting a dot with a ring, failed a
+     square, done and unknown a ring, which the border draws already. */
+  .state-running,
+  .state-waiting,
+  .state-failed,
+  .explorer .touch-mark {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .state-waiting {
+    box-shadow:
+      0 0 0 1px Canvas,
+      0 0 0 2px CanvasText;
+  }
+
+  /* What needs you: the system's pair for what is marked. */
+  .count-pill-needs,
+  .show-more-needs,
+  .activity-count[data-tone="needs-you"],
+  .needs-you-number,
+  .repo-instruction-text .invisible-char {
+    forced-color-adjust: none;
+    color: MarkText;
+    background-color: Mark;
+  }
+
+  /* What ends or destroys, and a ground that says something is wrong: a dashed outline inside
+     its edge, which takes no room. Focus, below, draws its solid ring over it. */
+  .ui-button-danger,
+  .ui-menu-item-danger,
+  .answer .ends-it,
+  .ui-setting-actions button.ends-it,
+  .title-kill-switch[data-stopped="yes"],
+  .trouble,
+  .ui-inline-surface-trouble,
+  .notice-list .notice-inbox.notice-trouble,
+  .ui-setting-error p {
+    outline: 2px dashed CanvasText;
+    outline-offset: -2px;
+  }
+
+  /* What is opened over the window, outlined in place of the shadow that lifted it. An outline
+     takes no room, so nothing moves. */
+  [role="dialog"],
+  [role="alertdialog"],
+  [role="menu"],
+  [role="listbox"],
+  [role="tooltip"],
+  .ui-menu {
+    outline: 1px solid CanvasText;
+  }
+
+  /* Focus: wherever Tab lands, a ring the system's palette draws. A menu's row says it by being
+     the highlighted one, above, and the terminal's textarea is off screen. Last in the block, and
+     more specific than each outline above, so it is drawn over all of them. */
+  :is(
+      button,
+      summary,
+      a,
+      input,
+      select,
+      textarea,
+      [role="tab"],
+      [role="separator"],
+      [tabindex]
+    ):not(.ui-menu-item, .xterm-helper-textarea):focus-visible {
+    outline-style: solid;
+    outline-width: 2px;
+    outline-color: Highlight;
+  }
+}

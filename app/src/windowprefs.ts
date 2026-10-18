@@ -3,7 +3,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { AlertRow } from "./bindings";
-import { AT_CREATION, type Complaint, type Theme } from "./theme/theme";
+import { AT_CREATION, type Complaint, type Theme, systemAsksMoreContrast } from "./theme/theme";
 
 /**
  * **What the window was handed as it was created**: the operator's layout file, and their theme
@@ -48,7 +48,13 @@ export type TheirReading = {
   floors: string | null;
   /** Whether it is a format 1 file in force, offered once a move into a theme folder (#2323). */
   format_1: boolean;
+  /** What is drawn in its place while the system asks for more contrast (#2328): its
+   *  appearance tagged high contrast, when it has one; `null` when that draws the same. */
+  more: TheirDrawn | null;
 };
+
+/** One appearance of the person's theme, as the engine drew it, and its floors' Notice. */
+export type TheirDrawn = { theme: Theme; floors: string | null };
 
 /** Both readings. */
 export type AtCreation = { layout: Reading; theme: TheirReading };
@@ -62,6 +68,7 @@ const NO_THEME: TheirReading = {
   complaints: [],
   floors: null,
   format_1: false,
+  more: null,
 };
 
 /**
@@ -77,25 +84,38 @@ export function atCreation(): AtCreation {
   return { layout: reading(held.layout), theme: theirReading(held.theme) };
 }
 
+/** `raw` as a theme the engine resolved, or `null` when it is not one. */
+function aTheme(raw: unknown): Theme | null {
+  const theme = raw as { values?: unknown } | null | undefined;
+  return theme !== null && typeof theme === "object" && typeof theme.values === "object"
+    ? (theme as Theme)
+    : null;
+}
+
+function theirDrawn(raw: unknown): TheirDrawn | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const from = raw as Record<string, unknown>;
+  const theme = aTheme(from.theme);
+  if (theme === null) return null;
+  return { theme, floors: typeof from.floors === "string" ? from.floors : null };
+}
+
 function theirReading(raw: unknown): TheirReading {
   if (raw === null || typeof raw !== "object") return NO_THEME;
   const from = raw as Record<string, unknown>;
-  const theme = from.theme as { values?: unknown } | null | undefined;
   const complaints = Array.isArray(from.complaints) ? (from.complaints as unknown[]) : [];
   return {
     path: typeof from.path === "string" ? from.path : "",
     found: from.found === true,
     trouble: typeof from.trouble === "string" ? from.trouble : null,
-    theme:
-      theme !== null && typeof theme === "object" && typeof theme.values === "object"
-        ? (theme as Theme)
-        : null,
+    theme: aTheme(from.theme),
     complaints: complaints.filter(
       (one): one is Complaint =>
         one !== null && typeof one === "object" && typeof (one as Complaint).said === "string",
     ),
     floors: typeof from.floors === "string" ? from.floors : null,
     format_1: from.format_1 === true,
+    more: theirDrawn(from.more),
   };
 }
 
@@ -177,12 +197,20 @@ export function useAboutThisMachine(): MachineAlert[] {
 }
 
 /** {@link theirTheme} of what the window was handed, read once: so drawing it again after a
- *  project's own theme is the same object, and repaints nothing that is already drawn. */
-let theirs: { theme: Theme | undefined } | undefined;
+ *  project's own theme is the same object, and repaints nothing that is already drawn. `more`
+ *  is what is drawn in its place while the system asks for more contrast (#2328). */
+let theirs: { theme: Theme | undefined; more: Theme | undefined } | undefined;
 
 export function theirThemeOnce(): Theme | undefined {
-  theirs ??= { theme: theirTheme() };
-  return theirs.theme;
+  theirs ??= { theme: theirTheme(), more: atCreation().theme.more?.theme };
+  if (theirs.theme === undefined) return undefined;
+  return systemAsksMoreContrast() && theirs.more !== undefined ? theirs.more : theirs.theme;
+}
+
+/** The Notice naming the consent floors the person's theme breaks as it is drawn now: for more
+ *  contrast, its appearance tagged high contrast's, when it has one. */
+export function theirFloors(reading: TheirReading = atCreation().theme): string | null {
+  return systemAsksMoreContrast() && reading.more !== null ? reading.more.floors : reading.floors;
 }
 
 /** For tests: read the handed theme again. */
@@ -195,7 +223,7 @@ export function forgetTheirTheme() {
  * of the operator's, and nothing more to say about one. The caller redraws what is in force.
  */
 export function usingTheBuiltIn() {
-  theirs = { theme: undefined };
+  theirs = { theme: undefined, more: undefined };
   sayAboutThisMachine("theme", undefined);
   sayTheFloors(null);
 }
@@ -268,7 +296,7 @@ export function theirTheme(reading: TheirReading = atCreation().theme): Theme | 
   }
   const { theme, complaints } = reading;
   if (theme === null) return undefined;
-  sayTheFloors(reading.floors, { theirs: where });
+  sayTheFloors(theirFloors(reading), { theirs: where });
   if (complaints.length > 0) {
     sayAboutThisMachine("theme", {
       severity: "warn",

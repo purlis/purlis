@@ -462,6 +462,8 @@ macro_rules! app_commands {
                 windowprefs::seen_on_this_machine,
                 windowprefs::use_built_in_theme,
                 windowprefs::use_default_layout,
+                nativewindow::draw_native_window,
+                nativewindow::native_window_drawn,
             ],
             vault_values: [
                 vaults::vault_secret_reveal,

@@ -3,7 +3,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ON_THIS_MACHINE, ONCE_ON_THIS_MACHINE } from "./dismissals";
 import { drawWhatIsInForce } from "./Extensions";
@@ -11,6 +11,7 @@ import { DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
 import {
   aboutThisMachine,
   atCreation,
+  forgetTheirTheme,
   GLOBAL,
   sayAboutThisMachine,
   theirTheme,
@@ -31,6 +32,7 @@ const NO_THEME: TheirReading = {
   complaints: [],
   floors: null,
   format_1: false,
+  more: null,
 };
 /** The person's theme as the core resolves it: complete, and named theirs. */
 const MINE = { ...DEFAULT_THEME, name: "Mine", values: { ...DEFAULT_THEME.values } };
@@ -155,6 +157,49 @@ describe("the operator's own theme", () => {
 
     expect(inForce()).toBe(theirs);
     expect(asked).not.toContain("theme_in_force");
+  });
+});
+
+describe("the operator's own theme, for more contrast (#2328)", () => {
+  /** The same theme's appearance tagged high contrast, as the core resolves it. */
+  const SHARP = { ...MINE, name: "Mine", values: { ...MINE.values } };
+  SHARP.values["surface.base"] = DEFAULT_THEME.values["text.primary"];
+  const floors = "Mine breaks the consent floors (an ask contrasts with its surface)";
+
+  /** The system asking for more contrast, or not. */
+  const asking = (more: boolean) =>
+    vi.stubGlobal("matchMedia", (media: string) => ({
+      matches: more && media === "(prefers-contrast: more)",
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    forgetTheirTheme();
+  });
+
+  it("is its appearance tagged high contrast while the system asks for more, with its floors", () => {
+    handed({ theme: MINE, more: { theme: SHARP, floors } });
+    asking(true);
+    forgetTheirTheme();
+
+    expect(theirThemeOnce()).toEqual(SHARP);
+    const [said] = aboutThisMachine();
+    expect(said.subject).toBe("consent floors");
+    expect(said.detail).toBe(floors);
+
+    asking(false);
+    expect(theirThemeOnce()).toEqual(MINE);
+  });
+
+  it("is the one theme there is when it has no appearance tagged high contrast", () => {
+    handed({ theme: MINE });
+    asking(true);
+    forgetTheirTheme();
+
+    expect(atCreation().theme.more).toBeNull();
+    expect(theirThemeOnce()).toEqual(MINE);
   });
 });
 

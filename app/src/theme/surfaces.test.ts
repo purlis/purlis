@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { nativeWindow } from "./native";
 import {
   BUILT_IN,
   PLATFORM_DRAWN,
@@ -20,7 +21,7 @@ import {
  * every token is read somewhere; this says where: the editor's highlighting reads each syntax
  * role, a markdown render each markdown token, the window's selection, caret, placeholder and
  * scrollbar rules the platform tokens, a chart's bar the first chart colour, and xterm the
- * terminal's extras. `window.background` is the native window's before the first frame, and no
+ * terminal's extras. `window.background` is the native window's (`native.ts`, #2328), and no
  * stylesheet reads it.
  */
 
@@ -112,6 +113,13 @@ describe("the window's stylesheet", () => {
   it("paints the window in its surface, and leaves its background to the native window", () => {
     expect(readers(app, "surface.base")).toContain(":root | background");
     expect(readers(app, "window.background")).toEqual([]);
+    // #2328: the native window is drawn in it, before the first frame and on every change.
+    for (const theme of Object.values(BUILT_IN))
+      expect(nativeWindow(theme)).toEqual({
+        appearance: theme.appearance,
+        background: theme.values["window.background"],
+        followsSystem: false,
+      });
   });
 });
 

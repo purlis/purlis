@@ -198,6 +198,7 @@ fn purlis_classic_by_its_own_id_is_its_first_appearance_for_a_pick_and_a_lookup(
             theirs: None,
             on: On::Every,
             system: Appearance::Light,
+            contrast: Contrast::Standard,
         },
         || unreachable!("no survey for a built-in"),
     );
@@ -801,6 +802,7 @@ fn follow(theirs: &Theme, system: Appearance) -> Drawn {
             theirs: Some(theirs),
             on: On::Every,
             system,
+            contrast: Contrast::Standard,
         },
         no_survey,
     )
@@ -822,7 +824,7 @@ fn following_the_system_with_a_two_appearance_theme_draws_the_one_the_system_has
 fn a_dark_only_theme_says_that_following_the_system_stays_dark() {
     let mine = load(&dark_only("Night Owl", json!({}))).theme;
     for system in [Appearance::Light, Appearance::Dark] {
-        let drawn = super::follow(&mine, system);
+        let drawn = super::follow(&mine, system, Contrast::Standard);
         assert_eq!(
             drawn.theme.as_ref().map(|it| it.appearance),
             Some(Appearance::Dark)
@@ -838,7 +840,7 @@ fn a_dark_only_theme_says_that_following_the_system_stays_dark() {
 #[test]
 fn a_light_only_theme_says_that_following_the_system_stays_light() {
     let mine = load(&json!({ "name": "Paper", "appearance": "light", "tokens": {} })).theme;
-    let drawn = super::follow(&mine, Appearance::Dark);
+    let drawn = super::follow(&mine, Appearance::Dark, Contrast::Standard);
     assert_eq!(
         drawn.note.as_deref(),
         Some("Paper has only a light appearance, so following the system stays light")
@@ -867,6 +869,7 @@ fn following_the_system_with_no_theme_of_the_person_s_follows_with_purlis_classi
                 theirs: None,
                 on: On::Every,
                 system,
+                contrast: Contrast::Standard,
             },
             || unreachable!("no survey for following the system"),
         );
@@ -884,6 +887,7 @@ fn with_no_pick_a_two_appearance_theme_draws_its_first_appearance() {
             theirs: Some(&mine),
             on: On::Every,
             system: Appearance::Light,
+            contrast: Contrast::Standard,
         },
         no_survey,
     );
@@ -914,6 +918,7 @@ fn an_extension_s_format_2_theme_is_read_like_any_other() {
             theirs: None,
             on: On::Every,
             system: Appearance::Dark,
+            contrast: Contrast::Standard,
         },
         || Arc::from(vec![Offered::of("acme".into(), "Packed".into(), &text)]),
     );

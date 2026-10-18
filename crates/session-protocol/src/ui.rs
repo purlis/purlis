@@ -208,6 +208,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // and closed. Drawn for the window and for the chats this app started, on their hook
     // socket; a link has no window of its own here to draw it for.
     "theme_specimen",
+    // The window's own native chrome (#2328): its appearance and colour, drawn as the theme the
+    // window draws, and read back. A link has no native window of its own here.
+    "draw_native_window",
+    "native_window_drawn",
     // Ends.
     "end_task",
     "task_ending",
