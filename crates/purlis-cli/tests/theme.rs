@@ -186,7 +186,13 @@ fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_in() {
     };
     assert_eq!(
         words(lines[2]),
-        ["mine", "Late", "dark", "machine", &path.display().to_string()]
+        [
+            "mine",
+            "Late",
+            "dark",
+            "machine",
+            &path.display().to_string()
+        ]
     );
     assert_eq!(
         words(lines[3]),
@@ -483,7 +489,11 @@ fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
     assert_eq!(first["pair"]["back"], "surface.base");
     assert_eq!(first["pair"]["floor"], 4.5);
     assert_eq!(first["ratio"], 2.38);
-    assert_eq!(said["held"], serde_json::json!([]), "no consent floor is broken");
+    assert_eq!(
+        said["held"],
+        serde_json::json!([]),
+        "no consent floor is broken"
+    );
     assert_eq!(
         said["hard_floors"],
         serde_json::Value::Null,
@@ -716,7 +726,11 @@ fn every_level(rig: &Rig) -> [PathBuf; 4] {
     let none = serde_json::json!({});
     std::fs::create_dir_all(rig.plane().join("workspaces/beta")).expect("a workspace");
     [
-        rig.folder(&rig.machine_themes(), "base", &a_folder("Base", None, &none)),
+        rig.folder(
+            &rig.machine_themes(),
+            "base",
+            &a_folder("Base", None, &none),
+        ),
         rig.folder(
             &rig.project_themes(),
             "team",
@@ -754,7 +768,14 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
     assert_eq!(
         rows,
         [
-            vec!["purlis-classic", "Purlis", "Classic", "dark,", "light", "built-in"],
+            vec![
+                "purlis-classic",
+                "Purlis",
+                "Classic",
+                "dark,",
+                "light",
+                "built-in"
+            ],
             vec!["machine:base", "Base", "dark", "machine", &shown(&base)],
             vec!["project:team", "Team", "dark", "project", &shown(&team)],
             vec![
@@ -829,8 +850,7 @@ fn outside_a_plane_only_the_machine_s_theme_folders_are_listed() {
         .output()
         .expect("the binary runs");
 
-    let json: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("the listing as JSON");
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("the listing as JSON");
     let ids: Vec<&str> = json["themes"]
         .as_array()
         .expect("the themes")
@@ -901,7 +921,12 @@ fn a_level_without_the_folder_named_is_not_read_in_a_farther_level_s_place() {
     let rig = Rig::new();
     every_level(&rig);
 
-    for asked in ["project:base", "workspace:alpha:team", "machine:team", "workspace:gamma:x"] {
+    for asked in [
+        "project:base",
+        "workspace:alpha:team",
+        "machine:team",
+        "workspace:gamma:x",
+    ] {
         let ran = rig.run(&["check", asked]);
 
         assert_eq!(ran.code, 2, "{asked}: {}{}", ran.out, ran.err);
@@ -933,7 +958,10 @@ fn the_check_says_the_consent_floors_the_window_holds_and_is_not_clean() {
         .unwrap_or_else(|| panic!("{}", ran.out));
     assert!(
         held.starts_with("  danger is distinguishable from primary — purlis draws its own ")
-            && held.lines().next().is_some_and(|line| line.contains("danger.base")),
+            && held
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("danger.base")),
         "{held}"
     );
 

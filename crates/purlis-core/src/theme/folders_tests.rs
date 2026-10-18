@@ -110,7 +110,11 @@ fn every_folder_of_a_level_is_read_as_a_choice_there_reads_it() {
     let places = Places::new();
     put(&places.machine(), "base", &named("Base", None));
     put(&places.project(), "team", &named("Team", Some("base")));
-    put(&places.workspace(), "client", &named("Client", Some("team")));
+    put(
+        &places.workspace(),
+        "client",
+        &named("Client", Some("team")),
+    );
     put(&places.workspace(), "broken", &json!({ "name": 7 }));
     let folders = places.folders();
 

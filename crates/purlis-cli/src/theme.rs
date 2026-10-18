@@ -879,8 +879,9 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
         out.push_str("floors held: none\n");
     } else {
         out.push_str(&format!("floors held ({}):\n", held.len()));
+        // The floors' words and the tokens are the engine's own; the combination is shown.
         for line in held {
-            out.push_str(&format!("  {}\n", shown::readable(&line, 480)));
+            out.push_str(&format!("  {line}\n"));
         }
     }
     out.push_str(&format!("hard floors: {FLOORS_NOT_CHECKED}\n"));
@@ -1051,10 +1052,8 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
             }))
         })
         .collect();
-    let clean = found.refused.is_none()
-        && found.notes.is_empty()
-        && warnings.is_empty()
-        && held.is_empty();
+    let clean =
+        found.refused.is_none() && found.notes.is_empty() && warnings.is_empty() && held.is_empty();
     json!({
         "schema": SCHEMA,
         "theme_schema": theme::SCHEMA_URL,
