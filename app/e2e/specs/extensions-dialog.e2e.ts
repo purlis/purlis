@@ -57,12 +57,16 @@ const folder = (() => {
 // the purlis spelling, which every shipped extension uses.
 const manifest = join(folder, "purlis-extension.json");
 
-/** A manifest this purlis reads: one theme, nothing else. */
+/** A manifest this purlis reads: one theme and a panel, so it is approved by its fingerprint
+ *  and asked about (an extension of themes alone asks nothing, ADR 0098 §3). */
 const READABLE = JSON.stringify({
   version: 1,
   id: ID,
   name: NAME,
-  contributes: { themes: [{ name: "E2E Dark", file: "dark.json" }] },
+  contributes: {
+    themes: [{ name: "E2E Dark", file: "dark.json" }],
+    panels: [{ id: "e2e", title: "E2E" }],
+  },
 });
 /** The same manifest asking for a capability no purlis has: the core refuses the whole of it. */
 const REFUSED = JSON.stringify({
@@ -75,6 +79,25 @@ const REFUSED = JSON.stringify({
 
 writeFileSync(manifest, READABLE);
 writeFileSync(join(folder, "dark.json"), "{}");
+
+/** An extension of the spec's own that brings one theme and nothing else (ADR 0098 §3). */
+const THEMES_ID = "e2e-extensions-dialog-themes";
+const THEMES_NAME = "E2E themes alone";
+const themesFolder = (() => {
+  const at = join(mkdtempSync(join(THE_RUNS_TREE, "extension-")), "ext");
+  mkdirSync(at, { recursive: true });
+  writeFileSync(
+    join(at, "purlis-extension.json"),
+    JSON.stringify({
+      version: 1,
+      id: THEMES_ID,
+      name: THEMES_NAME,
+      contributes: { themes: [{ name: "E2E Themes Dark", file: "dark.json" }] },
+    }),
+  );
+  writeFileSync(join(at, "dark.json"), "{}");
+  return at;
+})();
 
 /** The rows the dialog lists, by name, with what each says as a live region; one pass. */
 type Row = { name: string; statuses: string[] };
@@ -161,7 +184,9 @@ describe("the Extensions dialog", function () {
     await closeTheDialog();
     // The record as it was found: the spec's extension is not in it.
     await ask("forget_extension", { id: ID }).catch(() => undefined);
+    await ask("forget_extension", { id: THEMES_ID }).catch(() => undefined);
     rmSync(folder, { recursive: true, force: true });
+    rmSync(themesFolder, { recursive: true, force: true });
   });
 
   it("lists purlis's own themes", async () => {
@@ -216,6 +241,32 @@ describe("the Extensions dialog", function () {
       });
     expect(row?.statuses.join(" ")).toContain("e2e-no-such-capability");
     writeFileSync(manifest, READABLE);
+  });
+
+  it("adds an extension of themes alone with no question, and says it needs no approval", async () => {
+    theNextFolderPickAnswers(themesFolder);
+    await pressIn(DIALOG, "Add an extension…");
+    await browser
+      .waitUntil(async () => (await listed()).some((row) => row.name === THEMES_NAME), {
+        timeout: 30_000,
+      })
+      .catch(async () => {
+        throw new Error(
+          `the extension of themes alone was never listed; the folder pick's answer was ${anAnswerIsWaiting() ? "never read" : "read"}; the dialog says: ${await dialogSays()}`,
+        );
+      });
+    expect(await $(APPROVE).isExisting()).toBe(false);
+    const standing = await browser.execute(
+      (dialog: string, name: string) =>
+        [...document.querySelectorAll<HTMLElement>(`${dialog} .extension-rows > li`)]
+          .find((row) => row.querySelector(".name")?.textContent?.trim() === name)
+          ?.querySelector(".standing")
+          ?.textContent?.trim() ?? "",
+      DIALOG,
+      THEMES_NAME,
+    );
+    expect(standing).toBe("themes only — needs no approval");
+    await ask("forget_extension", { id: THEMES_ID });
   });
 
   it("offers Read again for a record it cannot read, and reads it again in place", async () => {

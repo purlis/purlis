@@ -104,6 +104,12 @@ impl<W: notify::Watcher> Inner<W> {
             Some(watcher) => crate::watchset::follow(watcher, &mut self.watching, wanted),
             None => wanted,
         };
+        tracing::info!(
+            "purlis: theme folders: {} watched, {} looked at instead, for {} window(s)",
+            self.watching.len(),
+            self.refused.len(),
+            self.windows.len()
+        );
     }
 
     /// Whether anything of `watched` is looked at rather than watched.
@@ -125,6 +131,15 @@ impl<W: notify::Watcher> Inner<W> {
         let mut again = everything;
         for (label, (_, watched)) in &self.windows {
             let asked = watched.decide(paths.iter().map(PathBuf::as_path), everything);
+            tracing::info!(
+                "purlis: theme folders: a burst of {} change(s){} asks {asked:?} of window {label}",
+                paths.len(),
+                if everything {
+                    " (anything may have moved)"
+                } else {
+                    ""
+                },
+            );
             again |= asked != Reload::Nothing;
             self.paces.entry(label.clone()).or_default().heard(asked);
         }
@@ -143,6 +158,9 @@ impl<W: notify::Watcher + Send + 'static> ThemeWatch<W> {
     fn start(tell: Tell) -> Self {
         let (sent, events) = mpsc::channel();
         let config = notify::Config::default().with_follow_symlinks(false);
+        // A poller in a test looks often; the platform's own watchers do not poll.
+        #[cfg(test)]
+        let config = config.with_poll_interval(Duration::from_millis(50));
         let watcher = match W::new(crate::watchset::sender(sent.clone()), config) {
             Ok(watcher) => Some(watcher),
             Err(why) => {
@@ -194,6 +212,10 @@ impl<W: notify::Watcher + Send + 'static> ThemeWatch<W> {
                 purlis_core::theme::reload::MOST_WATCHED
             );
         }
+        tracing::info!(
+            "purlis: theme folders: window {label} draws from {} folder(s)",
+            watched.folders().count()
+        );
         inner.windows.insert(label.to_owned(), (target, watched));
         inner.looks.remove(label);
         inner.follow();
@@ -277,6 +299,14 @@ fn run<W: notify::Watcher>(
         };
         for (label, asked) in due {
             if let Reload::Redraw { survey } = asked {
+                tracing::info!(
+                    "purlis: theme folders changed: window {label} reads its theme again{}",
+                    if survey {
+                        ", and the extensions' themes"
+                    } else {
+                        ""
+                    }
+                );
                 tell(&label, ThemeFoldersChanged { survey });
             }
         }
@@ -469,6 +499,40 @@ mod tests {
         assert!(got.iter().all(|one| !one.starts_with(&plane)), "{got:?}");
         assert!(got.contains(&mine), "{got:?}");
         assert!(got.contains(&other.join("themes/b")), "{got:?}");
+    }
+
+    #[test]
+    fn a_theme_folder_made_where_a_level_had_none_is_heard_and_every_save_after_it() {
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join("config");
+        let machine = purlis_core::machine::dir(&config);
+        std::fs::create_dir_all(&machine).unwrap();
+        let told = Arc::new(Told::default());
+        let watch = ThemeWatch::<notify::PollWatcher>::start(told.tell());
+        watch.set(
+            "main",
+            Target {
+                config,
+                plane: None,
+                workspace: None,
+            },
+        );
+        let folder = machine.join("themes/live");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("theme.json"), "{\"n\":0}").unwrap();
+        assert!(
+            told.until(1, Duration::from_secs(20)),
+            "the folder made was never told"
+        );
+        for n in 1..=3 {
+            std::thread::sleep(GAP * 2);
+            std::fs::write(folder.join("theme.json"), format!("{{\"n\":{n}}}")).unwrap();
+            assert!(
+                told.until(n + 1, Duration::from_secs(20)),
+                "save {n} was never told: {:?}",
+                watching(&watch)
+            );
+        }
     }
 
     #[test]

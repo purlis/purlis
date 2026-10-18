@@ -96,11 +96,16 @@ function save(folder: string, surface: string): void {
 async function savedAndDrawn(folder: string, surface: string): Promise<number> {
   const from = Date.now();
   save(folder, surface);
-  await browser.waitUntil(async () => (await surfaceDrawn()) === surface, {
-    timeout: DRAWN_WITHIN,
-    interval: 50,
-    timeoutMsg: `the window never drew ${surface} after ${folder} was saved`,
-  });
+  await browser
+    .waitUntil(async () => (await surfaceDrawn()) === surface, {
+      timeout: DRAWN_WITHIN,
+      interval: 50,
+    })
+    .catch(async () => {
+      throw new Error(
+        `the window never drew ${surface} after ${folder} was saved; it draws ${await surfaceDrawn()}`,
+      );
+    });
   return Date.now() - from;
 }
 
