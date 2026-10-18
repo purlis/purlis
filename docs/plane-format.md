@@ -1074,7 +1074,7 @@ key refuses.
     line each (`charter/util.py:499`). Headers seen: ``added by `purlis init` ``
     (`charter/commands.py:1152`), ``added by `purlis guard --local` ``
     (`charter/commands.py:1792`), ``added by `purlis reinit` — harness profiles stay on this machine``
-    (`charter/commands.py:1821`), ``added by `purlis browser install` `` (`charter/browser.py:173`).
+    (`charter/commands.py:1821`).
   - `charter/workspace.py:1408` `_write_live_block` rewrites the managed live-workspace block
     (markers `charter/workspace.py:1338`, `charter/workspace.py:1339`) — **workspaces area**,
     noted here only because it splices at the `!/workspaces/.gitkeep` anchor.
@@ -1281,26 +1281,13 @@ key refuses.
 
 ---
 
-### `purlis browser install` — three more plane-root paths
+### Files of the retired `purlis browser install`
 
-`purlis browser` installs a vendor CLI into the plane, and a plane reader meets its
-directories at the root. None is purlis's own format; all three are named because an
-enumerator that does not expect them has to guess.
+An older project may still carry `.claude/skills/playwright-cli/`, `.playwright/`, `.playwright-cli/`
+and an ``added by `purlis browser install` `` block in its `.gitignore`. They are Playwright's files;
+purlis neither writes nor reads them (#2575).
 
-- **Tier:** None — the vendor CLI's files, not purlis's; `.playwright-cli/` is gitignored output the vendor rewrites.
-- **`.claude/skills/playwright-cli/`** (`SKILL_DIR`, `charter/browser.py:79`) — the pages the
-  vendor's generator writes, read by Claude Code as project skills. **stable** in the sense
-  that matters here: a harness reads it. Written by the generator, not by purlis.
-- **`.playwright/`** (`CONFIG_DIR`, `charter/browser.py:96`) — created by `install` itself
-  (`initWorkspace`), holding `.playwright/cli.config.json`. Project configuration. purlis
-  deliberately says nothing about whether a plane commits it (ADR 0017), and writes no
-  `.gitignore` line for it.
-- **`.playwright-cli/`** (`OUTPUT_DIR`, `charter/browser.py:90`) — the vendor's output
-  directory: traces under `.playwright-cli/trace`, plus snapshots, screenshots and PDFs.
-  Created when something is written there, never by `install`. purlis **does** append
-  `.playwright-cli/` to the plane's `.gitignore` (`ensure_output_ignored`,
-  `charter/browser.py:151`, header at `charter/browser.py:173`) because a trace carries
-  authenticated network traffic — the one of the three purlis takes a position on.
+- **Tier:** None — Playwright's files, not purlis's.
 
 ### `themes/` — the project's theme folders
 

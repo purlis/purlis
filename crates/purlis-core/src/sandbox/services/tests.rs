@@ -1419,3 +1419,145 @@ fn the_services_offered_to_choose_are_the_ones_a_grant_may_name() {
     assert_eq!(Known::CertificateCheck.named(), "Certificate check");
     assert_eq!(Known::Containers.named(), "Container engine");
 }
+
+// ---- the system's name lookup (#2657) -------------------------------------------------------
+
+/// Each socket of the system's name lookup, as a person or a file might write it: whole, as a
+/// `unix://` address, and through `.` and `..`.
+fn lookup_spellings() -> Vec<String> {
+    NAME_LOOKUP_SOCKETS
+        .iter()
+        .flat_map(|path| {
+            let (folder, name) = path.rsplit_once('/').expect("a folder");
+            [
+                (*path).to_owned(),
+                format!("unix://{path}"),
+                format!("{folder}/./{name}"),
+                format!("{folder}/no-such-folder/../{name}"),
+            ]
+        })
+        .collect()
+}
+
+/// #2657: **a socket grant never names the system's name lookup**, Linux's or the Mac's own:
+/// each of its sockets, however written, is refused whether or not one is there, and one kept
+/// for it is never compiled in.
+#[test]
+fn a_socket_grant_never_names_the_systems_name_lookup() {
+    let (_dir, root) = project();
+    let ground = SocketGround::of(&root, &machine_at(&root), &[]);
+    for resolver in crate::sandboxblock::RESOLVER_SOCKETS {
+        assert!(NAME_LOOKUP_SOCKETS.contains(&resolver), "{resolver}");
+    }
+    assert!(NAME_LOOKUP_SOCKETS.contains(&"/var/run/mDNSResponder"));
+    for typed in lookup_spellings() {
+        assert_eq!(
+            socket(&typed, &ground),
+            Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned())),
+            "{typed}"
+        );
+        let typed = typed.strip_prefix("unix://").unwrap_or(&typed);
+        assert!(is_name_lookup(Path::new(typed)), "{typed}");
+    }
+    assert!(!is_name_lookup(Path::new("/var/run/docker.sock")));
+    assert!(!is_name_lookup(Path::new(
+        "/var/run/mDNSResponder/../docker.sock"
+    )));
+    let kept: Vec<PathBuf> = lookup_spellings()
+        .iter()
+        .filter(|one| !one.starts_with("unix://"))
+        .map(PathBuf::from)
+        .collect();
+    assert!(still_sockets(&kept, &ground).is_empty());
+}
+
+/// #2657: **a service grant never names the Mac's own name lookup**, in any case, and one kept
+/// for it is never compiled in.
+#[test]
+fn a_service_grant_never_names_the_macs_own_name_lookup() {
+    for typed in ["com.apple.dnssd.service", "COM.Apple.DNSSD.Service"] {
+        assert_eq!(
+            service(typed),
+            Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned())),
+            "{typed}"
+        );
+    }
+    assert!(still_services(&["com.apple.dnssd.service".to_owned()]).is_empty());
+    assert_eq!(
+        service("com.example.helper"),
+        Ok("com.example.helper".to_owned())
+    );
+}
+
+/// #2657: the refusal says the rule, then why, a sentence each, in purlis's own words.
+#[test]
+fn the_name_lookup_refusal_is_the_rule_then_why() {
+    assert!(NAME_LOOKUP_REFUSED.starts_with("purlis never allows"));
+    assert!(NAME_LOOKUP_REFUSED.ends_with('.'));
+    assert_eq!(
+        NAME_LOOKUP_REFUSED.matches(". ").count(),
+        1,
+        "two sentences"
+    );
+    for word in ["proxy", "socket", "mach", "port"] {
+        assert!(!NAME_LOOKUP_REFUSED.contains(word), "{word}");
+    }
+}
+
+/// #2657: Doctor counts a socket or a service of the system's name lookup kept for this
+/// project as held: it reaches no chat.
+#[test]
+fn doctor_counts_a_kept_name_lookup_as_held() {
+    let (_dir, root) = project();
+    let everywhere = tempfile::tempdir().expect("a config home");
+    local::everywhere_for_this_test(Some(everywhere.path().join(local::EVERY_PROJECT)));
+    local::grant_socket(&root, Path::new("/var/run/mDNSResponder")).expect("kept");
+    local::grant_service(&root, "com.apple.dnssd.service").expect("kept");
+    local::grant_socket_everywhere(Path::new("/run/nscd/socket"), None).expect("kept");
+    let held: Vec<(What, String)> = crate::sandbox::held_by_policy(&root)
+        .into_iter()
+        .map(|one| (one.what, one.why))
+        .collect();
+    assert_eq!(
+        held,
+        [
+            (
+                What::Socket("/var/run/mDNSResponder".into()),
+                NAME_LOOKUP_REFUSED.to_owned()
+            ),
+            (
+                What::Service("com.apple.dnssd.service".to_owned()),
+                NAME_LOOKUP_REFUSED.to_owned()
+            ),
+            (
+                What::Socket("/run/nscd/socket".into()),
+                NAME_LOOKUP_REFUSED.to_owned()
+            ),
+        ]
+    );
+    local::everywhere_for_this_test(None);
+}
+
+/// #2657: every name of the Mac's lookup socket is refused: its spellings on the data volume
+/// too, by a grant and by a start.
+#[cfg(target_os = "macos")]
+#[test]
+fn every_name_of_the_macs_lookup_socket_is_refused() {
+    let (_dir, root) = project();
+    let ground = SocketGround::of(&root, &machine_at(&root), &[]);
+    let spellings = [
+        "/System/Volumes/Data/private/var/run/mDNSResponder",
+        "/System/Volumes/Data/private/var/run/../run/mDNSResponder",
+        "/private/var/run/mDNSResponder",
+    ];
+    for typed in spellings {
+        assert!(is_name_lookup(Path::new(typed)), "{typed}");
+        assert_eq!(
+            socket(typed, &ground),
+            Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned())),
+            "{typed}"
+        );
+    }
+    let kept: Vec<PathBuf> = spellings.iter().map(PathBuf::from).collect();
+    assert!(still_sockets(&kept, &ground).is_empty());
+}

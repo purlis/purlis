@@ -386,6 +386,99 @@ impl SocketGround {
     }
 }
 
+/// **The local sockets of the system's name lookup** (#2657): Linux's
+/// ([`crate::sandboxblock::RESOLVER_SOCKETS`], which also sorts a refusal at one as a lookup)
+/// and the Mac's own. No socket grant names one.
+pub const NAME_LOOKUP_SOCKETS: [&str; 8] = [
+    "/run/systemd/resolve/io.systemd.Resolve",
+    "/run/nscd/socket",
+    "/var/run/nscd/socket",
+    "/var/lib/sss/pipes/nss",
+    "/run/avahi-daemon/socket",
+    "/var/run/avahi-daemon/socket",
+    "/run/systemd/resolve/io.systemd.Resolve.Monitor",
+    "/var/run/mDNSResponder",
+];
+
+/// **The system services of the Mac's own name lookup** (#2657): no service grant names one.
+pub const NAME_LOOKUP_SERVICES: [&str; 1] = ["com.apple.dnssd.service"];
+
+/// What purlis says where an Allow names the system's name lookup (#2657): the rule, then why,
+/// one sentence each.
+pub const NAME_LOOKUP_REFUSED: &str = "purlis never allows the system's name lookup. It would let \
+                                       a chat look up names its sandbox does not let it reach.";
+
+/// **Whether `path` is a socket of the system's name lookup** ([`NAME_LOOKUP_SOCKETS`], #2657),
+/// by any of its names: as written, with `.` and `..` read as written, as the path it leads to,
+/// across a firmlink, or as the same file: no grant names it, at any level, so what a Notice
+/// offers for it and what a grant keeps agree.
+pub fn is_name_lookup(path: &Path) -> bool {
+    let lexical = lexically(path);
+    let names = names_of(&lexical);
+    let file = same_file_key(&lexical);
+    NAME_LOOKUP_SOCKETS.iter().any(|lookup| {
+        let lookup = Path::new(lookup);
+        names_of(lookup).iter().any(|name| names.contains(name))
+            || file.is_some() && file == same_file_key(lookup)
+    })
+}
+
+/// Every name `path` goes by: as written, as the kernel names it, and across a firmlink
+/// ([`super::kernel_names`]).
+fn names_of(path: &Path) -> Vec<PathBuf> {
+    let mut names = super::kernel_names(path);
+    names.push(path.to_path_buf());
+    names
+}
+
+/// The device and file `path` is, where something is there: two names of one file share it.
+#[cfg(unix)]
+fn same_file_key(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|meta| (meta.dev(), meta.ino()))
+}
+
+/// No file key where there is no unix: the names alone are compared.
+#[cfg(not(unix))]
+fn same_file_key(_: &Path) -> Option<(u64, u64)> {
+    None
+}
+
+/// **Whether `name` is a service of the system's name lookup** ([`NAME_LOOKUP_SERVICES`],
+/// #2657), in any case.
+pub fn is_name_lookup_service(name: &str) -> bool {
+    NAME_LOOKUP_SERVICES
+        .iter()
+        .any(|lookup| lookup.eq_ignore_ascii_case(name.trim()))
+}
+
+/// [`NAME_LOOKUP_REFUSED`] where `what` is a socket or a service of the system's name lookup.
+pub fn name_lookup_refused(what: &What) -> Option<&'static str> {
+    match what {
+        What::Socket(path) if is_name_lookup(path) => Some(NAME_LOOKUP_REFUSED),
+        What::Service(name) if is_name_lookup_service(name) => Some(NAME_LOOKUP_REFUSED),
+        _ => None,
+    }
+}
+
+/// `path` with `.` dropped and `..` taking off the name before it, read from the words alone.
+fn lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 /// **`typed` as a local socket a grant names**, or why not: the path the kernel names it by,
 /// links resolved ([`super::real`]). It must be absolute, a socket now with one name alone (a
 /// second hard link could be one a chat made), outside every folder a chat may write, and
@@ -397,6 +490,9 @@ pub fn socket(typed: &str, ground: &SocketGround) -> Result<PathBuf, Refused> {
         return Err(Refused::Not(
             "purlis allows a local socket by its whole path, from /.".to_owned(),
         ));
+    }
+    if is_name_lookup(path) {
+        return Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned()));
     }
     let resolved = super::real(path);
     match shape(&resolved) {
@@ -563,6 +659,9 @@ pub fn service(typed: &str) -> Result<String, Refused> {
                 .to_owned(),
         ));
     }
+    if is_name_lookup_service(name) {
+        return Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned()));
+    }
     let lower = name.to_ascii_lowercase();
     if NEVER_SERVICES.iter().any(|part| lower.contains(part)) {
         return Err(Refused::Never(
@@ -581,6 +680,7 @@ pub fn still_sockets(sockets: &[PathBuf], ground: &SocketGround) -> Vec<PathBuf>
     sockets
         .iter()
         .filter(|path| path.is_absolute() && super::real(path) == **path)
+        .filter(|path| !is_name_lookup(path))
         .filter(|path| matches!(shape(path), Shape::Socket | Shape::Gone))
         .filter(|path| !exposed(path))
         .filter(|path| ground.refuses(path).is_none())
