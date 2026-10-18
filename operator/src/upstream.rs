@@ -237,17 +237,22 @@ pub fn made_for_pool(held: Option<&ObjectMeta>, pool: &Pool, claims: &[&Claim]) 
 }
 
 /// The names of the Claims among `claims`, the ones the operator knows in `held`'s namespace on
-/// `pool`, that own `held`, sorted. For an object [`made_for_pool`] finds in the way when given
-/// only the Claims the operator acts on, these are Claims it now refuses: the object was made
-/// for them, and goes with them.
+/// `pool`, that own `held`, sorted, when they are all its owners; none when it has any other
+/// owner, or none at all, since deleting those Claims would not free it then. For an object
+/// [`made_for_pool`] finds in the way when given only the Claims the operator acts on, these are
+/// Claims it now refuses: the object was made for them, and goes with them.
 pub fn claims_holding(held: &ObjectMeta, pool: &Pool, claims: &[&Claim]) -> Vec<String> {
     let pool_name = pool.name_any();
     let namespace = held.namespace.as_deref();
-    let mut names: Vec<String> = held
-        .owner_references
+    let owners = held.owner_references.as_deref().unwrap_or_default();
+    if !owners
         .iter()
-        .flatten()
-        .filter(|reference| names_a_known_claim(reference, namespace, &pool_name, claims))
+        .all(|reference| names_a_known_claim(reference, namespace, &pool_name, claims))
+    {
+        return Vec::new();
+    }
+    let mut names: Vec<String> = owners
+        .iter()
         .map(|reference| reference.name.clone())
         .collect();
     names.sort();
