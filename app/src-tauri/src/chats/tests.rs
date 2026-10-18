@@ -7568,6 +7568,12 @@ impl purlis_core::sandbox::Board for Told {
     fn allowed_live(&self) -> Vec<(String, purlis_core::sandbox::reach::By)> {
         lock(&self.allowed).clone()
     }
+
+    fn allow_left_out(&self, _: u16) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+
+    fn keep_left_out_blocked(&self, _: u16) {}
 }
 
 /// What holds a [`Told`] board, as the session host holds a chat's proxy.
@@ -7603,6 +7609,8 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 tmp: None,
                 routed: None,
                 ssh: None,
+                left_out: Vec::new(),
+                host_name: None,
             },
             Box::new(HeldWith(Arc::clone(board))),
         );
