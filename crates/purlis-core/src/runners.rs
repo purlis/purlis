@@ -189,6 +189,10 @@ impl Removed {
     }
 }
 
+/// Takes this desktop out of a kept runner's peers over its link (`unpair`, session protocol
+/// 1.25), for [`remove`].
+pub type Unpair<'a> = dyn Fn(&Kept) -> Result<(), String> + 'a;
+
 /// Remove the runner kept as `name`: the desktop from its peers over the link when `unpair`
 /// is given (the link is up), then its container and home volume with `docker`, whatever state
 /// they are in, and its row once both are gone. A peer that could not be taken out goes with
@@ -197,7 +201,7 @@ pub fn remove(
     config_root: &Path,
     docker: &Docker,
     name: &str,
-    unpair: Option<&dyn Fn(&Kept) -> Result<(), String>>,
+    unpair: Option<&Unpair<'_>>,
 ) -> Result<Removed, Refused> {
     let kept = named(config_root, name)?
         .ok_or_else(|| Refused::Other(format!("no runner named {name} is kept on this machine")))?;

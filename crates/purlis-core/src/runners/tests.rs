@@ -121,7 +121,7 @@ fn a_runner_answering_another_runners_or_this_machines_device_id_or_key_is_not_k
     let second = other_made("second", &"b".repeat(64));
     let same_key = Pinned {
         device: "01JC0SECOND0000000000000000".into(),
-        key: first.key.clone(),
+        key: first.key,
     };
     for refused in [
         answered("01JB0RUNNER0000000000000000"),
