@@ -2302,7 +2302,10 @@ fn what_git_answered_is_kept_for_one_call_and_refuses_as_it_did() {
         Some(moved.as_str())
     );
     // Once the commit is pushed, the next call reads the repository as it is then.
-    git(std::path::Path::new(&f.root), &["push", "-q", "origin", "main"]);
+    git(
+        std::path::Path::new(&f.root),
+        &["push", "-q", "origin", "main"],
+    );
     assert_eq!(reset(&f, wipe), None);
     assert_eq!(reset(&f, &behind), None);
 }
