@@ -1027,6 +1027,34 @@ describe("updates, after the asks (#1693)", () => {
     expect(row.dismiss).toHaveBeenCalledOnce();
   });
 
+  it("draws an away refusal's Allow from now on as a grant and Never for this pair plain (ADR 0097 §6)", () => {
+    core();
+    const [row] = rows([update("away:steward#devops#", 1, { kind: "refused-away", chain: [] })], {
+      answers: [
+        {
+          label: "Never for this pair",
+          name: "Never for this pair: steward",
+          title: "",
+          press: vi.fn(),
+        },
+        {
+          label: "Allow from now on",
+          name: "Allow from now on: steward to devops",
+          title: "",
+          allows: true,
+          press: vi.fn(),
+        },
+      ],
+    });
+    draw([], { updates: updates([row]) });
+    const allow = screen.getByRole("button", { name: "Allow from now on: steward to devops" });
+    const never = screen.getByRole("button", { name: "Never for this pair: steward" });
+    expect(allow).toHaveClass("ui-button", "inbox-answer", "allows", "ui-button-grants");
+    expect(allow.querySelector("svg.ui-button-grants-mark")).toHaveAttribute("aria-hidden", "true");
+    expect(never).not.toHaveClass("ui-button-grants");
+    expect(never).not.toHaveClass("ui-button-primary");
+  });
+
   it("is reached by ↓ from the last ask, its two buttons first, and Enter presses one", async () => {
     core();
     const these = updates(rows([update("task:a", 1)]));

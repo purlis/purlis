@@ -1342,13 +1342,17 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
               <Stop key={answer.label} id={`${key}:${at}`}>
                 <button
                   type="button"
+                  // An answer that allows is a grant, drawn as every grant is (ADR 0097 §6).
                   className={
-                    answer.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"
+                    answer.allows
+                      ? "ui-button inbox-answer allows ui-button-grants"
+                      : "ui-button inbox-answer"
                   }
                   aria-label={answer.name}
                   title={answer.title}
                   onClick={() => press(answer)}
                 >
+                  {answer.allows && <GrantsMark />}
                   {answer.label}
                 </button>
               </Stop>

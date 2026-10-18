@@ -501,9 +501,10 @@ ground, edged in the accent and led by an open lock (`primitives/Grants.tsx`, hi
 screen reader, so the button's name stays its words). Allow and Keep blocked carry equal weight;
 `.ui-button-primary` stays the answer purlis suggests and is never a grant's. It is on every ask
 of the two: a sandbox Notice (and its scopes), a several-tasks one, a dispatch's, a refused
-vault's, a persona's grants and hosts, what a project expects, Settings' dispatch grants (each
-yes that grants, and its confirmation), and in the Inbox a permission prompt, a sandbox block and
-a browser's sites. The consent floors keep the two looks apart in every theme; the order, the
+vault's, a persona's grants and hosts, what a project expects, a proposed change's Apply (its
+Notice and its tab), the socket or service a sandbox block chooses, a profile's Approve and start,
+Settings' dispatch grants (each yes that grants, and its confirmation), and in the Inbox a
+permission prompt, a sandbox block, a browser's sites and an away refusal's Allow from now on. The consent floors keep the two looks apart in every theme; the order, the
 words and the keyboard are the ask's. A press on its way
 (`aria-busy`) keeps the button reachable and shows the pointer as working.
 
