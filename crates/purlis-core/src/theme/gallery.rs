@@ -360,7 +360,7 @@ fn candidates(id: &str) -> Vec<String> {
 const MOST_TRIES: usize = 64;
 
 #[cfg(unix)]
-mod write {
+pub(in crate::theme) mod write {
     //! The one write: a new folder under the person's `themes/`, every step opened refusing a
     //! link, the file created new in it.
 
@@ -441,14 +441,10 @@ mod write {
                 Err(Errno::EXIST) => continue,
                 Err(why) => return Err(format!("purlis could not make {shown}/{name}: {why}")),
             }
-            let written = write_in(&at, name, text, &shown);
+            let mut created = false;
+            let written = write_in(&at, name, text, &shown, &mut created);
             if written.is_err() {
-                // The folder was made for this file alone: both go, so no empty or half-written
-                // theme is left behind.
-                if let Ok(folder) = openat(&at, name.as_str(), DIRECTORY, Mode::empty()) {
-                    let _ = rustix::fs::unlinkat(&folder, THEME_JSON, rustix::fs::AtFlags::empty());
-                }
-                let _ = rustix::fs::unlinkat(&at, name.as_str(), rustix::fs::AtFlags::REMOVEDIR);
+                discard(&at, name, created);
             }
             return written.map(|()| name.clone());
         }
@@ -457,8 +453,15 @@ mod write {
         ))
     }
 
-    /// Writes `text` as the `theme.json` of the folder `name` in `at`, just made, created new.
-    fn write_in(at: &OwnedFd, name: &str, text: &str, shown: &str) -> Result<(), String> {
+    /// Writes `text` as the `theme.json` of the folder `name` in `at`, just made, created new;
+    /// `created` says whether this call made the file, so a failure takes away only its own.
+    fn write_in(
+        at: &OwnedFd,
+        name: &str,
+        text: &str,
+        shown: &str,
+        created: &mut bool,
+    ) -> Result<(), String> {
         let folder = openat(at, name, DIRECTORY, Mode::empty())
             .map_err(|why| format!("purlis could not open {shown}/{name}: {why}"))?;
         let file = openat(
@@ -468,9 +471,20 @@ mod write {
             FILE,
         )
         .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))?;
+        *created = true;
         std::fs::File::from(file)
             .write_all(text.as_bytes())
             .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))
+    }
+
+    /// **Takes away what a failed duplicate made** in `at`: its `theme.json` only when this
+    /// duplicate created it (`created`), then the folder, which is removed only when empty. A
+    /// file purlis did not write is never removed.
+    pub(in crate::theme) fn discard(at: &OwnedFd, name: &str, created: bool) {
+        if created && let Ok(folder) = openat(at, name, DIRECTORY, Mode::empty()) {
+            let _ = rustix::fs::unlinkat(&folder, THEME_JSON, rustix::fs::AtFlags::empty());
+        }
+        let _ = rustix::fs::unlinkat(at, name, rustix::fs::AtFlags::REMOVEDIR);
     }
 }
 

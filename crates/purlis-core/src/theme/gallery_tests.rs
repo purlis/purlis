@@ -357,3 +357,27 @@ fn a_cards_stamp_changes_with_what_it_draws() {
     put(&places.machine(), "dusk", &dusk("Dusk", "#141415"));
     assert_ne!(gallery::cards(&at)[1].stamp, before);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_failed_duplicate_takes_away_only_what_it_made() {
+    let home = tempfile::tempdir().unwrap();
+    let at = rustix::fs::open(
+        home.path(),
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::DIRECTORY,
+        rustix::fs::Mode::empty(),
+    )
+    .unwrap();
+    // A theme.json someone else wrote is kept, and so is its folder.
+    put(home.path(), "theirs", &dusk("Theirs", "#141414"));
+    gallery::write::discard(&at, "theirs", false);
+    assert!(home.path().join("theirs").join(THEME_JSON).is_file());
+    // The duplicate's own file and folder both go.
+    put(home.path(), "mine", &dusk("Mine", "#141414"));
+    gallery::write::discard(&at, "mine", true);
+    assert!(!home.path().join("mine").exists());
+    // An empty folder it made goes.
+    std::fs::create_dir(home.path().join("empty")).unwrap();
+    gallery::write::discard(&at, "empty", false);
+    assert!(!home.path().join("empty").exists());
+}

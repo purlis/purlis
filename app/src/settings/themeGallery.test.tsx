@@ -449,7 +449,7 @@ describe("a preview never outlives its card (#2331 review)", () => {
 });
 
 describe("choosing nothing, and a refused card (#2331 review)", () => {
-  it("takes the choice here away with Not chosen, and Undo brings it back", async () => {
+  it("takes the choice here away with Use the default, and Undo brings it back", async () => {
     const { asked } = core({
       ...GALLERY,
       yours: { theme: "dusk", appearance: "dark" },
@@ -457,7 +457,7 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     });
     render(<Group at={null} />);
     await cards();
-    fireEvent.click(screen.getByRole("button", { name: "Not chosen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use the default" }));
     await waitFor(() =>
       expect(asked("theme_choose_machine")).toEqual([{ theme: null, appearance: null }]),
     );
@@ -467,13 +467,16 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
     );
   });
 
-  it("offers no Not chosen, and no appearance to pick, while nothing is chosen here", async () => {
+  it("offers no Use the default, and no appearance to pick, while nothing is chosen here", async () => {
     const { asked } = core();
     render(<Group at={null} />);
     await cards();
-    expect(screen.getByRole("button", { name: "Not chosen" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Use the default" })).toBeDisabled();
     const appearance = await screen.findByRole("radiogroup");
     for (const radio of within(appearance).getAllByRole("radio")) expect(radio).toBeDisabled();
+    expect(appearance).toHaveAccessibleDescription(
+      "Nothing is chosen here: choose a theme above to pick its appearance.",
+    );
     expect(asked("theme_choose_machine")).toEqual([]);
   });
 
@@ -528,5 +531,16 @@ describe("a card's pictures when the painter is busy (#2331 review)", () => {
     render(<Group at={null} />);
     await cards();
     await waitFor(() => expect(asked("theme_specimen")).toHaveLength(2));
+  });
+});
+
+describe("a choice of a theme the level no longer has (#2331 review)", () => {
+  it("says so on the appearance, rather than that nothing is chosen", async () => {
+    core({ ...GALLERY, yours: { theme: "gone", appearance: null } });
+    render(<Group at={null} />);
+    const appearance = await screen.findByRole("radiogroup");
+    expect(appearance).toHaveAccessibleDescription(
+      "Your choice here, gone, is no theme this level has, so the levels underneath decide: choose a theme above to pick its appearance.",
+    );
   });
 });

@@ -325,7 +325,7 @@ function galleryRow(group: string, at: ThemeAt | null): LiveSetting {
         error,
         // Back to no choice here: the levels underneath decide, as the badge then says.
         reset: {
-          label: "Not chosen",
+          label: "Use the default",
           disabled: yours === null,
           onReset: () => {
             const was = yours;
@@ -566,13 +566,23 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
           ) : (
             <div className="flex flex-col gap-1">
               {!chosenHere && (
-                <p className="ui-setting-help">
-                  Nothing is chosen here: choose a theme above to pick its appearance.
+                <p className="ui-setting-help" id={`${ids.id}-why`}>
+                  {yours !== null && gallery !== undefined && !cardNamed(gallery, yours.theme)
+                    ? `Your choice here, ${yours.theme}, is no theme this level has, so the levels underneath decide: choose a theme above to pick its appearance.`
+                    : "Nothing is chosen here: choose a theme above to pick its appearance."}
                 </p>
               )}
               <Choice
                 kind="radio"
-                ids={ids}
+                ids={
+                  chosenHere
+                    ? ids
+                    : {
+                        ...ids,
+                        // Why the radios are off, said with them.
+                        describedBy: [ids.describedBy, `${ids.id}-why`].filter(Boolean).join(" "),
+                      }
+                }
                 disabled={!chosenHere}
                 options={[
                   {

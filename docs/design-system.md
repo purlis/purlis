@@ -651,7 +651,7 @@ drawn, the gallery says so.
   project switch). An answer that arrives after its card was left, pressed or closed draws
   nothing, and a card whose theme is the one drawn draws nothing either.
 - **Pressing a card, or Enter or Space on it, writes the person's choice at the level**, and
-  the row offers Undo. **Not chosen** takes the choice at the level away, so the levels
+  the row offers Undo. **Use the default** takes the choice at the level away, so the levels
   underneath decide again. A line over the cards says what is drawn here, with the source badge
   the rest of Settings uses: the person's choice, or the level that decided. Appearance is
   offered only for a choice made at the level, so picking one never quietly makes a choice. A
