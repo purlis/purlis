@@ -1220,12 +1220,9 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), a
   **scroll margin or padding** (`scroll-margin*`, `scroll-padding*`, read as a margin or a
   padding) and the grid's names for a gap (`grid-gap`, `grid-row-gap`, `grid-column-gap`), in
-  any stylesheet but `theme/geometry.css`; in a component's or a script's style: an inline
-  `style` (`{{ … }}` or `{ … } as CSSProperties`), a style object held in a variable
-  (`const held = { … }; style={held}`, or one typed or cast as `CSSProperties`),
-  `Object.assign(el.style, { … })`, an assignment (`el.style.padding = "7px"`), `el.style.cssText`
-  or a `style` attribute set as text, and a `setProperty(…)` call (`el.style?.setProperty(…)`
-  too); or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
+  any stylesheet but `theme/geometry.css`; in a component's or a script's style, followed
+  wherever the file hands it on ([what the guards read in script](#what-the-guards-read-in-script));
+  or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
   past its variants (`md:`, `data-[open]:`, `[&>*]:`): off the core scale (`p-5`, `start-5`,
   `text-2xl`, `rounded-2xl`), with a value of its own (`p-[7px]`, `text-[13px]`,
   `rounded-[5px]`) or as an arbitrary property (`[padding:7px]`). A custom property that holds
@@ -1329,6 +1326,44 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
 
 Each snap is listed with its change in px in the pull request, and the window is looked at
 before and after.
+
+### What the guards read in script
+
+The geometry and type guards read a component's or a script's style through one reader,
+`styleEntries` in `guards.testkit.ts`, and the controls guard reads a control's `style` through
+the same one (`tagStyleKeys`), so the three see a style the same way (#2498, #2566). The reader
+starts where a style is handed: a `style={…}` expression, a spread in a style object, the
+objects `Object.assign` writes onto an element's style, and a style object typed or cast as
+`CSSProperties`. From there it follows the style wherever the file hands it on:
+
+- an object written there (`{{ … }}`, `{ … } as CSSProperties`), and each object it spreads;
+- a variable that holds it (`style={held}`), and a variable that holds that one;
+- a member of a local object (`style={styles.box}`) or of a destructuring
+  (`const { box } = styles; style={box}`);
+- each branch of a ternary (`style={on ? held : undefined}`), each side of `||` and `??`, the
+  last of `&&`, and what is in parentheses or before `as`, `satisfies` or `!`;
+- what a local function returns, a declared function's every `return` or an arrow's
+  expression (`style={boxStyle(on)}`), and what `useMemo` returns;
+- what a relative import gives (`import { box }`, `import * as styles`, a default export), and
+  what that file re-exports (`export { box as panel }`, `export * from`).
+
+In script it reads an element's style however the file holds it: `el.style` itself and a name
+that holds it (`const st = el.style`, `const { style } = el`, `const { style: s } = el`). An
+assignment to one of its properties (`st.padding = "7px"`, `st["padding-top"]`,
+``st[`padding`]``), its CSS text set or added to (`st.cssText = "…"`, `st.cssText += "…"`), a
+`style` attribute set as text, and every `setProperty(…)` call are read, each declaration in
+CSS text on its own. A value is read where it is written out, and where a ternary picks
+between values written out.
+
+What they do not read: a value held in a variable on its own (`const pad = "7px"`, then
+`padding: pad`), or any other value worked out; a member reached by a computed key
+(`styles[name]`) or a method (`styles.box()`); a style a component is handed through its
+parameters, or hands on in a prop with another name (`boxStyle={…}`) or under an object's
+`style` key (`createElement("div", { style })`); an import from a package or through a path
+alias; CSS text assigned from a variable, or a template literal with `${…}` in it. The controls
+guard reads a control's `style` attribute only, not an assignment to an element's style in
+script, which names no control. The colour and motion guard (`theme/literals.test.ts`) reads
+every string a script writes, wherever it is handed, so it needs no reader of its own.
 
 ## Text roles
 

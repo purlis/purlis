@@ -16,9 +16,11 @@ import {
   ratchet,
   SRC,
   sourceFiles,
+  type StyleSource,
   styleEntries,
   unprefixed,
   utilityOf,
+  windowFiles,
 } from "./guards.testkit";
 import { arithmeticLiteral, LENGTH_UNITS } from "./cssMath.testkit";
 
@@ -32,7 +34,8 @@ import { arithmeticLiteral, LENGTH_UNITS } from "./cssMath.testkit";
  * `style` object, `{{ … }}` or `{ … } as CSSProperties`; a style object held in a variable,
  * `style={held}`; `el.style.padding = "7px"`; `el.style.cssText` and a `style` attribute set as
  * text; `Object.assign(el.style, { … })`; a `setProperty(…)` call, `el.style?.setProperty(…)`
- * too), or a Tailwind class that sets a **padding**, a **margin**, a **gap**, a **corner**, a
+ * too; each followed wherever the file hands it on, #2566: `docs/design-system.md`, "What the
+ * guards read in script"), or a Tailwind class that sets a **padding**, a **margin**, a **gap**, a **corner**, a
  * **font size** or an **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms) takes
  * it from `theme/geometry.css`, as `var(--space-4)`, `var(--radius-md)` or
  * `var(--font-size-sm)`. A scroll margin or padding (`scroll-margin*`, `scroll-padding*`,
@@ -335,9 +338,10 @@ export function componentLiterals(
   source: string,
   customs: ReadonlySet<string> = new Set(),
   lengths: ReadonlyMap<string, string> = new Map(),
+  from: StyleSource = {},
 ): string[] {
   const found: string[] = [];
-  for (const { label, property, value } of styleEntries(source)) {
+  for (const { label, property, value } of styleEntries(source, from)) {
     if (!(CUSTOM.test(property) ? customs.has(property) : isGeometry(property))) {
       continue;
     }
@@ -374,7 +378,10 @@ function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<str
   const lengths = lengthCustoms([...css.values()], [...views.values()], customs);
   for (const [file, sheet] of css) byFile.set(file, cssLiterals(sheet, customs, lengths));
   for (const [file, source] of views) {
-    byFile.set(file, componentLiterals(source, customs, lengths));
+    byFile.set(
+      file,
+      componentLiterals(source, customs, lengths, { file, read: windowFiles(planted) }),
+    );
   }
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
@@ -814,12 +821,12 @@ export function plant(frame: HTMLElement | null) {
 `;
     expect(complaints(literalsByFile({ "LayoutPanes.tsx": tsx }))).toEqual(
       [
+        'style held.padding: "7px"',
+        'style spreadOnly.margin: "4px"',
         'style padding: "8px"',
         'style margin: "3px"',
-        'style held.padding: "7px"',
         'style typed.marginTop: "3px"',
         'style cast.scrollMarginTop: "5px"',
-        'style spreadOnly.margin: "4px"',
         'style paddingInline: "6px"',
         'style.padding: "7px"',
         "style.margin-left: '5px'",
@@ -840,6 +847,79 @@ export function plant(to: HTMLElement) {
       'theme/theme.ts: new literal, take it from a core token: style.marginTop: "3px"',
       'theme/theme.ts: new literal, take it from a core token: setProperty --planted-pad: "5px"',
     ]);
+  });
+
+  it("follows a style wherever the file hands it on, in the real tree (#2566)", () => {
+    const tsx = `${read("LayoutPanes.tsx")}
+import { plantedImported } from "./theme/theme";
+import * as plantedAll from "./theme/theme";
+const plantedStyles = { box: { padding: "7px" }, row: { margin: "3px", gap: 0 } };
+const { row: plantedRow } = plantedStyles;
+const plantedHeld = { marginTop: "5px" };
+function plantedBox(on: boolean) {
+  if (on) return { paddingTop: "6px" };
+  return { gap: 0 };
+}
+const plantedArrow = () => ({ marginLeft: "2px" });
+export const PlantedMember = () => <div style={plantedStyles.box} />;
+export const PlantedRow = () => <div style={plantedRow} />;
+export const PlantedEither = ({ on }: { on: boolean }) => <div style={on ? plantedHeld : undefined} />;
+export const PlantedCall = ({ on }: { on: boolean }) => <div style={plantedBox(on)} />;
+export const PlantedSpread = () => <div style={{ ...plantedArrow(), gap: 0 }} />;
+export const PlantedMemo = () => <div style={useMemo(() => ({ marginRight: "16px" }), [])} />;
+export const PlantedImported = () => <div style={plantedImported} />;
+export const PlantedAll = () => <div style={plantedAll.plantedFar} />;
+export function plantAlias(frame: HTMLElement) {
+  const st = frame.style;
+  st.padding = "9px";
+  st["margin-top"] = "4px";
+  const { style } = frame;
+  style.marginBottom = "8px";
+  const { style: held } = frame;
+  held.cssText = "gap: 17px";
+  frame.style.cssText += "padding: 10px";
+  frame.style[\`padding-right\`] = "11px";
+  const extra = { scrollMarginTop: "12px" };
+  Object.assign(frame.style, extra);
+  Object.assign(st, { marginInline: "13px" });
+}
+`;
+    const script = `${read("theme/theme.ts")}
+export const plantedImported = { padding: "14px" };
+export const plantedFar = { margin: "15px" };
+`;
+    expect(
+      complaints(literalsByFile({ "LayoutPanes.tsx": tsx, "theme/theme.ts": script })),
+    ).toEqual(
+      [
+        'style plantedStyles.box.padding: "7px"',
+        'style plantedRow.margin: "3px"',
+        'style plantedHeld.marginTop: "5px"',
+        'style plantedBox().paddingTop: "6px"',
+        'style plantedArrow().marginLeft: "2px"',
+        'style useMemo().marginRight: "16px"',
+        'style plantedImported.padding: "14px"',
+        'style plantedAll.plantedFar.margin: "15px"',
+        'style extra.scrollMarginTop: "12px"',
+        'style marginInline: "13px"',
+        'style.padding: "9px"',
+        'style.margin-top: "4px"',
+        'style.marginBottom: "8px"',
+        'style.padding-right: "11px"',
+        'style.cssText gap: "17px"',
+        'style.cssText padding: "10px"',
+      ].map((entry) => `LayoutPanes.tsx: new literal, take it from a core token: ${entry}`),
+    );
+  });
+
+  it("follows what a style expression gives, not its condition or a function it does not call (#2566)", () => {
+    const tsx = `
+const on = { padding: "7px" };
+const make = () => ({ margin: "3px" });
+const given = { gap: "5px" };
+export const A = () => <div style={on.padding ? given : undefined} onClick={make} />;
+`;
+    expect(componentLiterals(tsx)).toEqual(['style given.gap: "5px"']);
   });
 
   it("reads an offset (top, right, bottom, left, inset) as it reads a margin", () => {
