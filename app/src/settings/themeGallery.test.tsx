@@ -202,7 +202,7 @@ describe("Settings › Theme's cards (#2331)", () => {
     await waitFor(() => expect(inForce()).toBe(LIGHT));
     expect(surface()).toBe(LIGHT.values["surface.base"]);
     expect(asked("theme_card_drawn")).toEqual([
-      { at: null, theme: "dusk", appearance: "system", light: false },
+      { at: null, theme: "dusk", appearance: "system", light: false, moreContrast: false },
     ]);
     fireEvent.pointerLeave(named("Dusk"));
     await waitFor(() => expect(inForce()).toBe(before));

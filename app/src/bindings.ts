@@ -2490,13 +2490,13 @@ export const commands = {
 	/**
 	 *  **What the card `theme` draws** at the level `at` names, in `appearance` (an appearance's
 	 *  id, `system` to follow the operating system, which is light when `light`, or `null` for its
-	 *  first): what the window draws while the pointer or the keyboard is on the card, and puts
+	 *  first), with more contrast when the system asks for it: what the window draws while the pointer or the keyboard is on the card, and puts
 	 *  back when it leaves. Nothing is written. `null` when the gallery has no such card.
 	 */
 	themeCardDrawn: (at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, theme: string, appearance: string | null, light: boolean) => typedError<{
+} | null, theme: string, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
 	/**
 	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
 	 *  JSON at all, which nothing picked).
@@ -2516,7 +2516,7 @@ export const commands = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
-} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light })),
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light, moreContrast })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
 	 *  them, kept beside `machine.json` and never in a project file; `theme` of `null` takes the

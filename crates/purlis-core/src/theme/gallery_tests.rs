@@ -217,9 +217,22 @@ fn a_card_draws_in_the_appearance_asked_for_with_the_floors_held() {
     let at = shelf(&folders, Reach::Project, &[]);
     let team = gallery::drawn(&at, "team", None, Appearance::Light, Contrast::Standard).unwrap();
     assert_eq!(team.theme.unwrap().value("surface.base"), "#141414");
-    let light = gallery::drawn(&at, "purlis-classic", Some("light"), Appearance::Dark, Contrast::Standard).unwrap();
+    let light = gallery::drawn(
+        &at,
+        "purlis-classic",
+        Some("light"),
+        Appearance::Dark,
+        Contrast::Standard,
+    )
+    .unwrap();
     assert_eq!(light.theme.unwrap().appearance, Appearance::Light);
-    let followed = gallery::drawn(&at, "purlis-classic", Some("system"), Appearance::Light, Contrast::Standard);
+    let followed = gallery::drawn(
+        &at,
+        "purlis-classic",
+        Some("system"),
+        Appearance::Light,
+        Contrast::Standard,
+    );
     assert_eq!(
         followed.unwrap().theme.unwrap().appearance,
         Appearance::Light
@@ -266,7 +279,8 @@ fn duplicate_as_my_theme_makes_a_folder_of_my_own_that_extends_the_original() {
     let mine = cards.iter().find(|one| one.id == "dusk-mine").unwrap();
     assert_eq!(mine.name, "Dusk (mine)");
     assert!(!mine.refused, "{:?}", mine.said);
-    let drawn = gallery::drawn(&at, "dusk-mine", None, Appearance::Dark, Contrast::Standard).unwrap();
+    let drawn =
+        gallery::drawn(&at, "dusk-mine", None, Appearance::Dark, Contrast::Standard).unwrap();
     assert_eq!(drawn.theme.unwrap().value("surface.base"), "#141414");
     // A second duplicate takes the next free name; nothing is written over.
     assert_eq!(
@@ -283,7 +297,14 @@ fn purlis_classic_is_duplicated_into_a_themes_folder_made_for_it() {
     assert!(!places.machine().exists());
     let made = gallery::duplicate(&places.config, &at, "purlis-classic").unwrap();
     assert_eq!(made, "purlis-classic-mine");
-    let drawn = gallery::drawn(&at, &made, Some("light"), Appearance::Dark, Contrast::Standard).unwrap();
+    let drawn = gallery::drawn(
+        &at,
+        &made,
+        Some("light"),
+        Appearance::Dark,
+        Contrast::Standard,
+    )
+    .unwrap();
     assert_eq!(
         drawn.theme.unwrap().values,
         classic().of(Appearance::Light).unwrap().values

@@ -250,6 +250,8 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
             theirs,
             on: place.shelf().on,
             system: theme::Appearance::Dark,
+            // Which level chose, for Settings: the same whatever contrast is asked.
+            contrast: theme::Contrast::Standard,
         },
         || offered,
     );
