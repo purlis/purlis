@@ -1891,8 +1891,15 @@ pub fn printed_port(payload: &serde_json::Value) -> Option<u16> {
     .find_map(crate::sandbox::localport::refused_in)
 }
 
-/// The kind of `path`, read against `place` and never kept.
+/// The kind of `path`, read against `place` and never kept, with this process's temporary
+/// folder as the chat's.
 pub fn kind_of(path: &Path, place: &Place<'_>) -> Kind {
+    kind_of_in(path, place, &std::env::temp_dir())
+}
+
+/// [`kind_of`], with `temp` the chat's temporary folder: what the wrap's supervisor, which
+/// starts with none of the chat's environment, was told it is (#2460).
+pub fn kind_of_in(path: &Path, place: &Place<'_>, temp: &Path) -> Kind {
     let path = lexical(&place.cwd.join(path));
     if is_planted(&path) {
         return Kind::ProtectedFile;
@@ -1923,7 +1930,6 @@ pub fn kind_of(path: &Path, place: &Place<'_>) -> Kind {
     if within(place.root) {
         return Kind::ProjectFiles;
     }
-    let temp = std::env::temp_dir();
     // Before the temp folders: a hook whose own `TMPDIR` is the per-user folder itself would
     // otherwise take a tool's write there for the chat's own.
     if let Some(parts) = per_user_folder(&unprivate(&path))

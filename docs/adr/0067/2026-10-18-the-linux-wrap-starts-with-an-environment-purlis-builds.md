@@ -3,7 +3,7 @@
 Follows [purlis's own wrap on Linux](2026-10-16-purlis-s-own-wrap-on-linux.md) and
 [a brokered run on Linux runs in purlis's own wrap](2026-10-17-a-brokered-run-on-linux-runs-in-purlis-s-own-wrap.md).
 
-**Decided in implementation (#2460).** purlis's own wrap, `purlis _sandbox`, and the chat's side
+**Decided in implementation (#2460), to be confirmed.** purlis's own wrap, `purlis _sandbox`, and the chat's side
 it starts begin with an environment purlis builds, never the one the chat or the run is given.
 That environment is carried for the program instead: each of its variables under a name of the
 wrap's own, with one more that says how many. The wrap reads it back and gives the program
@@ -19,3 +19,6 @@ whatever a library of purlis's own program reads from its environment, a chat ne
 - **Not on its command line.** The environment holds a run's credentials and a chat's hook
   token, and a process's arguments are readable by every user of the machine; its environment
   is not.
+- **What the wrap tells is sorted by what it carries.** The supervisor sorts each refusal against
+  the project the chat's `PURLIS_ROOT` names (or, without one, the project found up from where
+  the wrap started) and the chat's own temporary folder, both read from the carried environment.

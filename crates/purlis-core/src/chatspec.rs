@@ -83,11 +83,21 @@ pub fn with_handed(mut spec: Spec, handed: &crate::profilesignin::Handed) -> Spe
         return spec;
     }
     let env = std::mem::take(&mut spec.env);
-    spec.env = match purlis_linux_sandbox::carried::read(env.iter().cloned()) {
-        Ok(carried) => purlis_linux_sandbox::carried::carried(crate::profilesignin::handed_onto(
+    // Decided as [`spec`] decided it, by the chat's line. A wrap whose environment could not be
+    // read back is handed its variables beside it, and refuses to start (fail closed).
+    let words: Option<Vec<String>> = spec
+        .args
+        .iter()
+        .map(|word| word.to_str().map(str::to_owned))
+        .collect();
+    let carried = words
+        .filter(|words| wraps(words))
+        .and_then(|_| purlis_linux_sandbox::carried::read(env.iter().cloned()).ok());
+    spec.env = match carried {
+        Some(carried) => purlis_linux_sandbox::carried::carried(crate::profilesignin::handed_onto(
             carried, handed,
         )),
-        Err(_) => crate::profilesignin::handed_onto(env, handed),
+        None => crate::profilesignin::handed_onto(env, handed),
     };
     spec
 }
