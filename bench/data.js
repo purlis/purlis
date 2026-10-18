@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792355639611,
+  "lastUpdate": 1792356900810,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17430,6 +17430,48 @@ window.BENCHMARK_DATA = {
             "value": 101.377347,
             "unit": "ms",
             "extra": "median of 5 runs: 100.582, 101.119, 101.377, 101.961, 102.056 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a48b1bb49f56e819c7499034f5e6ab5bde99e72f",
+          "message": "Ask the Keychain about a forge sign-in once per process (#2666)\n\n* Ask the Keychain about a forge sign-in once per process (#2656)\n\nEach forge caller went to the keyring itself: every accounts listing\nsearched for each item, and every request read its value. On macOS each\ncall can make the Keychain ask the person, and with ad-hoc signed builds\nit does after every update, so one start of the app (the window, the\nsession host, one credential helper per fetch) asked 3-5 times for one\nitem, the two questions alternating.\n\nThe store accounts::keyring_at hands out now remembers, per process, the\nvalue it read or wrote and that an item is there. It is wiped on drop and\nnever written, logged or handed on. git's credential helper lists from\nthe accounts file and reads the token without a separate search. A\nrenewal forgets the remembered pair and reads afresh under the lock, so\nanother process's renewal is seen and a spent refresh token never sent.\n\nADR 0070 amended (delegated, flagged).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Open the keychain-count tests with unsteered!() (#2656)\n\nThe guard every_test_here_runs_without_the_shells_steering requires it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Sign-out and renewal read afresh; one read answers presence (#2656)\n\nReview round:\n- Sign-out reads the item afresh under the refresh lock, so it always\n  revokes the grant that is current, not a pair another process renewed.\n- The memory's lock is held across the store's own call: a read racing a\n  delete never puts the deleted token back, and a failed write is\n  forgotten.\n- A 401 from the forge forgets the remembered token (TokenSource::refused),\n  so the next request reads the item again.\n- Where asking whether an item is there is a Keychain search of its own\n  (macOS, the fenced stub), a read answers it and keeps the value: one\n  start now asks the Keychain once in all.\n- Tests: two-thread race over a fake store, sign-out revokes the current\n  grant and clears this process's memory, 401 re-read over HTTP; the start\n  test now asserts reads + searches == 1.\n- ADR amendment: the refresh token is held in memory too; #2664 named.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T00:46:27+04:00",
+          "tree_id": "cb2d0ee5064277f6fd7d69486e8fe39bcef760e8",
+          "url": "https://github.com/purlis/purlis/commit/a48b1bb49f56e819c7499034f5e6ab5bde99e72f"
+        },
+        "date": 1792356898918,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.533498,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.531, 0.533, 0.533, 0.548, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.896274,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.467, 16.640, 16.896, 17.045, 17.080 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.814195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.223, 102.422, 104.814, 105.534, 107.448 ms"
           }
         ]
       }
