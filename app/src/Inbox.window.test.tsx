@@ -365,7 +365,7 @@ describe("answering in place", () => {
     );
   });
 
-  it("draws each Allow in the primary style and its refusal in the plain one (ADR 0097 §6)", async () => {
+  it("draws each Allow as a grant and its refusal plain, neither primary (ADR 0097 §6)", async () => {
     core();
     draw([permission(3, "p1", ["steward 3"]), HOST]);
     const answers = (who: string) =>
@@ -376,9 +376,11 @@ describe("answering in place", () => {
     ]) {
       const [first, second] = answers(who);
       expect(first).toHaveAccessibleName(allow);
-      expect(first).toHaveClass("ui-button", "ui-button-primary");
+      expect(first).toHaveClass("ui-button", "ui-button-grants");
+      expect(first).not.toHaveClass("ui-button-primary");
       expect(second).toHaveAccessibleName(keep);
       expect(second).toHaveClass("ui-button");
+      expect(second).not.toHaveClass("ui-button-grants");
       expect(second).not.toHaveClass("ui-button-primary");
     }
   });

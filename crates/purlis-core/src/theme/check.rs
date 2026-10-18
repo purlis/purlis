@@ -252,8 +252,7 @@ pub const PAIRS: &[Pair] = &[
     p("border.subtle", "surface.base", 1.2),
     p("border.strong", "surface.base", 1.5),
     // DS-6 (#629): the pairs the stylesheets draw in one rule.
-    // - A persona's mark is its initial, a word in the accent on the accent's surface. An
-    //   Allow's edge is the accent on the same ground (ADR 0097 §6).
+    // - A persona's mark is its initial, a word in the accent on the accent's surface.
     p("accent.base", "accent.surface", TEXT),
     // - A checklist's tick is a mark in the accent on a sunken box.
     p("accent.base", "surface.sunken", 3.0),
@@ -349,6 +348,10 @@ pub const PAIRS: &[Pair] = &[
     .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
+    // An Allow (`.ui-button-grants`, ADR 0097 §6) is edged in the accent on the control's own
+    // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
+    p("accent.base", "control.base", 3.0),
+    p("accent.base", "control.hover", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

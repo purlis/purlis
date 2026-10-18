@@ -468,7 +468,7 @@ still the settings set's own until Settings moves onto the primitives.
 
 | Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Button            | `.ui-button`                                                                                                                  | secondary is `.ui-button` alone; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`; small `.ui-button-sm` | `<button>`, or a Radix trigger (`asChild` or its own button)                                                    |
+| Button            | `.ui-button`                                                                                                                  | secondary is `.ui-button` alone; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`, `.ui-button-grants`; small `.ui-button-sm` | `<button>`, or a Radix trigger (`asChild` or its own button)                                                    |
 | Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged; `.ui-list-field` is the row's width and grows with its lines | `<input>`, `<textarea>`                                                                                         |
 | Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), through `primitives/Select.tsx`; no native `<select>` remains |
 | Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
@@ -495,11 +495,16 @@ buttons onto as many lines as they need, and a `.ui-button` in it may break its 
 when it alone is wider than the row, instead of being clipped: its height is then its least
 (`--size-control`, or `--size-chrome` for `.ui-button-sm`), not its only. Words before the buttons
 may stand in the row too. Every way out of a Notice is a `.ui-button-sm` in one (Dismiss is
-`.ui-button-ghost`), and so is "+N more" beside a pane's Notices. **An Allow is
-`.ui-button-primary` and Keep blocked the plain `.ui-button`** (ADR 0097 §6), on every ask that
-offers the two: a sandbox Notice, a dispatch's, a refused vault's, and a permission prompt, a
-sandbox block and a browser's sites in the Inbox. The consent floors keep the two looks apart in
-every theme; the order, the words and the keyboard are the ask's. A press on its way
+`.ui-button-ghost`), and so is "+N more" beside a pane's Notices. **An answer that grants is
+`.ui-button-grants`** (ADR 0097 §6): as plain as Keep blocked beside it, on the control's own
+ground, edged in the accent and led by an open lock (`primitives/Grants.tsx`, hidden from a
+screen reader, so the button's name stays its words). Allow and Keep blocked carry equal weight;
+`.ui-button-primary` stays the answer purlis suggests and is never a grant's. It is on every ask
+of the two: a sandbox Notice (and its scopes), a several-tasks one, a dispatch's, a refused
+vault's, a persona's grants and hosts, what a project expects, Settings' dispatch grants (each
+yes that grants, and its confirmation), and in the Inbox a permission prompt, a sandbox block and
+a browser's sites. The consent floors keep the two looks apart in every theme; the order, the
+words and the keyboard are the ask's. A press on its way
 (`aria-busy`) keeps the button reachable and shows the pointer as working.
 
 What every class holds to:

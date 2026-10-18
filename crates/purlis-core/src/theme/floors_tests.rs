@@ -72,8 +72,8 @@ fn every_ask_pair_is_one_the_check_measures() {
         asked.into_iter().collect::<Vec<_>>(),
         [
             ("needs-you.text", "needs-you.base"),
-            ("text.primary", "accent.surface"),
             ("text.primary", "control.base"),
+            ("text.primary", "control.hover"),
             ("text.primary", "danger.wash"),
             ("text.primary", "surface.overlay"),
         ]
@@ -326,13 +326,19 @@ fn faded_words_are_measured_at_the_opacity_they_are_drawn() {
 
 #[test]
 fn allow_and_keep_blocked_are_held_apart_by_the_allow_s_edge_and_its_ground() {
-    // Allow is the primary button, on `accent.surface` behind an `accent.base` edge; Keep
-    // blocked the plain one, on `control.base` behind a `border.strong` edge.
+    // Allow and Keep blocked are equal in weight on `control.base`: Allow behind an
+    // `accent.base` edge, Keep blocked behind a `border.strong` one.
     let held: Vec<(&str, &str)> = floors::pairs()
         .filter(|(floor, _)| *floor == Floor::AllowApart)
         .map(|(_, pair)| (pair.front, pair.back))
         .collect();
-    assert_eq!(held, [("accent.base", "accent.surface")]);
+    assert_eq!(
+        held,
+        [
+            ("accent.base", "control.base"),
+            ("accent.base", "control.hover")
+        ]
+    );
     for appearance in [Appearance::Dark, Appearance::Light] {
         assert!(floors::allow_apart(built_in_for(appearance)) >= ALLOW_APART);
     }
@@ -359,13 +365,25 @@ fn an_allow_edged_in_keep_blocked_s_colour_is_drawn_with_purlis_s_accent() {
 }
 
 #[test]
-fn an_allow_whose_ground_hides_its_edge_and_its_words_is_drawn_on_purlis_s_ground() {
-    let mine = theme("Mint", json!({ "accent.surface": ours("accent.base") }));
+fn an_allow_whose_edge_vanishes_on_the_control_s_ground_is_drawn_with_purlis_s_accent() {
+    // The accent drawn in the control's own colour: Allow would look as plain as Keep blocked.
+    let mine = theme("Hidden", json!({ "accent.base": ours("control.base") }));
     let (drawn, held) = drawn_of(&mine);
-    assert_eq!(drawn.value("accent.surface"), ours("accent.surface"));
+    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
+    assert_eq!(drawn.value("control.base"), ours("control.base"));
     let held = held.expect("the floor was held");
-    assert_eq!(held.floors, [Floor::Ask, Floor::AllowApart]);
-    assert_eq!(held.tokens, ["accent.surface"]);
+    assert_eq!(held.floors, [Floor::AllowApart]);
+    assert_eq!(held.tokens, ["accent.base"]);
+    assert_eq!(consent_failures(&drawn), []);
+}
+
+#[test]
+fn an_answer_s_words_lost_on_its_hovered_button_are_purlis_s() {
+    let mine = theme("Hover", json!({ "control.hover": ours("text.primary") }));
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("control.hover"), ours("control.hover"));
+    let held = held.expect("the floor was held");
+    assert!(held.floors.contains(&Floor::Ask), "{:?}", held.floors);
     assert_eq!(consent_failures(&drawn), []);
 }
 

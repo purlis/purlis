@@ -122,7 +122,7 @@ export function PersonaGrantsNotice({
       at="pane"
       label="Persona's hosts held"
       fixes={[
-        { label: "Allow", onPress: allow },
+        { label: "Allow", onPress: allow, allows: true },
         { label: "Keep", onPress: () => setKept(true) },
       ]}
     >

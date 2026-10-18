@@ -15,6 +15,7 @@ import {
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
+import { GrantsMark } from "./primitives/Grants";
 import { useNoticeSettle } from "./noticeSettle";
 
 /**
@@ -69,10 +70,11 @@ export type NoticeAction = {
    *  writes the project's files (#826). Drawn, said as its tooltip, and `aria-disabled` as a
    *  busy one is, so the keyboard stays on it; a press sends nothing. */
   off?: string;
-  /** **An answer that grants** (an Allow, an Accept): drawn in the primary style, apart from
-   *  Keep blocked and every other way out, which are the plain one, so the two are told apart
-   *  at a glance in every theme (ADR 0097 §6). Only the look: its place, its words and the
-   *  keyboard's order are the Notice's as they were. */
+  /** **An answer that grants** (an Allow, an Accept): drawn as `.ui-button-grants`, edged in
+   *  the accent and led by an open lock, beside Keep blocked and every other way out in the plain
+   *  style, so the two are told apart at a glance in every theme with equal weight (ADR 0097
+   *  §6). Only the look: its place, its words, its name and the keyboard's order are the
+   *  Notice's as they were. */
   allows?: boolean;
 };
 
@@ -194,7 +196,7 @@ export function Notice(props: NoticeProps) {
         <button
           key={fix.label}
           type="button"
-          className={`notice-fix ui-button ui-button-sm${fix.allows === true ? " ui-button-primary" : ""}`}
+          className={`notice-fix ui-button ui-button-sm${fix.allows === true ? " ui-button-grants" : ""}`}
           tabIndex={0}
           aria-expanded={fix.opens?.open}
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
@@ -203,6 +205,7 @@ export function Notice(props: NoticeProps) {
           title={fix.off}
           onClick={fix.busy || fix.off !== undefined ? undefined : fix.onPress}
         >
+          {fix.allows === true && <GrantsMark />}
           {fix.label}
         </button>
       ))}

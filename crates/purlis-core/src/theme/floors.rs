@@ -11,10 +11,11 @@
 //! - **an ask contrasts with its surface** ([`Floor::Ask`]): an ask's words on the dialog it is
 //!   asked in, its answers' words on their buttons, what it says on the danger wash, and the
 //!   needs-you count's number on its chip;
-//! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): Allow is the primary
-//!   button, edged in `accent.base` on `accent.surface`, and Keep blocked the plain one, edged in
-//!   `border.strong` on `control.base`. The two edges are at least [`ALLOW_APART`] apart as OKLab
-//!   draws colour, as the theme writes them, and the Allow's edge contrasts with its ground;
+//! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): the two carry equal
+//!   weight on the control's own ground, and Allow is edged in `accent.base` where Keep blocked
+//!   is edged in `border.strong`. The two edges are at least [`ALLOW_APART`] apart as OKLab draws
+//!   colour, as the theme writes them, and the Allow's edge contrasts with its ground, at rest and
+//!   under the pointer;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
 //!   window draws it on;
@@ -80,19 +81,22 @@ pub const DANGER_APART: f64 = 0.1;
 pub const ALLOW_APART: f64 = 0.1;
 
 /// The ask's pairs, by `front` on `back`: its words on the dialog it is asked in, its answers'
-/// words on their buttons (Allow's and Keep blocked's), what it says on the danger wash, and the
-/// needs-you count on its chip.
+/// words on their buttons (Allow's and Keep blocked's alike) at rest and under the pointer, what
+/// it says on the danger wash, and the needs-you count on its chip.
 const ASK: [(&str, &str); 5] = [
     ("text.primary", "surface.overlay"),
     ("text.primary", "control.base"),
-    ("text.primary", "accent.surface"),
+    ("text.primary", "control.hover"),
     ("text.primary", "danger.wash"),
     ("needs-you.text", "needs-you.base"),
 ];
 
 /// The pairs that keep Allow apart from Keep blocked, by `front` on `back`: the Allow's edge on
-/// its own ground, so the edge that tells it apart is seen.
-const ALLOW: [(&str, &str); 1] = [("accent.base", "accent.surface")];
+/// its own ground, at rest and under the pointer, so the edge that tells it apart is seen.
+const ALLOW: [(&str, &str); 2] = [
+    ("accent.base", "control.base"),
+    ("accent.base", "control.hover"),
+];
 
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
 /// first when a floor fails.

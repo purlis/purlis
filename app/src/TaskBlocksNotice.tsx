@@ -4,6 +4,7 @@
 import { useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
+import { GrantsMark } from "./primitives/Grants";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { RestartEndsLine } from "./RestartEnds";
 import { asksOf, inertly } from "./sandboxBlocks";
@@ -209,11 +210,12 @@ export function TaskBlocksNotice({
               key={level}
               type="button"
               // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
-              className="ui-button ui-button-sm ui-button-primary"
+              className="ui-button ui-button-sm ui-button-grants"
               tabIndex={0}
               disabled={busy}
               onClick={() => allow(level)}
             >
+              <GrantsMark />
               {scope[level]}
             </button>
           ))}

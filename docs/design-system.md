@@ -436,14 +436,16 @@ gives, and the theme the window is handed as it is created, is drawn by `draw`, 
 floors for any theme from any source:
 
 - **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
-  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` (Keep blocked's
-  button), on `accent.surface` (Allow's) and on `danger.wash` over the window and over a dialog,
-  and `needs-you.text` on `needs-you.base`;
-- **Allow is distinguishable from Keep blocked**: on every ask of the two, each Allow is the
-  primary button (`.ui-button-primary`, edged in `accent.base` on `accent.surface`) and Keep
-  blocked the plain one (`.ui-button`, edged in `border.strong` on `control.base`). The two edges
-  are at least 0.1 apart in OKLab as the theme writes them, and `accent.base` on
-  `accent.surface` clears its pair's floor, so the edge that tells them apart is seen;
+  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and `control.hover`
+  (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
+  `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
+- **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
+  weight. Keep blocked is the plain `.ui-button`, edged in `border.strong`; each Allow is
+  `.ui-button-grants`, on the same `control.base` ground, edged in `accent.base` and led by an
+  open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
+  writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
+  that tells them apart is seen. `.ui-button-primary` stays the answer purlis suggests and is
+  never a grant's;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart

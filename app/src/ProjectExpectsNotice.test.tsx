@@ -91,6 +91,11 @@ describe("what a project expects, asked up front", () => {
     expect(screen.getByText(/Not yet allowed on this machine/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Allow on this machine" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Not now" })).toBeTruthy();
+    // Allow is the grants style and Not now the plain one (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Allow on this machine" })).toHaveClass(
+      "ui-button-grants",
+    );
+    expect(screen.getByRole("button", { name: "Not now" })).not.toHaveClass("ui-button-grants");
   });
 
   it("allowed: sends what was shown through the window's own call, and the Notice goes", async () => {
