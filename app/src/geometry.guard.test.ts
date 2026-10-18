@@ -278,6 +278,18 @@ function arbitrary(word: string): { property: string; value: string } | undefine
 /** What a component sets the way a stylesheet does, for `checkedCustoms`: each entry of its
  *  inline styles and `setProperty` calls, and each utility that writes a value of its own. */
 function componentDeclarations(source: string): Declaration[] {
+  const known = declared.get(source);
+  if (known) return known;
+  const found = readDeclarations(source);
+  declared.set(source, found);
+  return found;
+}
+
+/** `componentDeclarations` once per source: it reads nothing but the source, and the guard asks
+ *  for each file's several times in one pass. */
+const declared = new Map<string, Declaration[]>();
+
+function readDeclarations(source: string): Declaration[] {
   const found: Declaration[] = styleEntries(source).map(({ property, value }) => ({
     context: [],
     property,

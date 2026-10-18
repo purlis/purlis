@@ -446,9 +446,9 @@ interface Scope {
   file: string | undefined;
   text: string;
   /** Each variable's initializer, with the member of it a destructuring takes. */
-  holders: Map<string, { span: Span; member?: string; typed: boolean }[]>;
-  /** Each function's body. */
-  functions: Map<string, Span[]>;
+  holders: Map<string, Held[]>;
+  /** Where each function's parameters open; its body is found when it is called. */
+  functions: Map<string, number[]>;
   /** Each name imported: the file it is imported from and its name there (`*` for the whole
    *  file, `default`). */
   imports: Map<string, { from: string; name: string }>;
@@ -467,6 +467,29 @@ function bodyAfter(text: string, open: number): Span | undefined {
   return { from: brace, to: closingBracket(text, brace) + 1 };
 }
 
+/** A variable's initializer, found where it ends only when it is followed, since most of a file's
+ *  variables never hold a style. */
+class Held {
+  private end: number | undefined;
+  constructor(
+    private readonly text: string,
+    private readonly from: number,
+    private readonly type: string | undefined,
+    readonly member?: string,
+  ) {}
+
+  get span(): Span {
+    this.end ??= expressionEnd(this.text, this.from);
+    return { from: this.from, to: this.end };
+  }
+
+  /** Whether it is typed or cast as `CSSProperties`. */
+  get typed(): boolean {
+    if (this.member !== undefined) return false;
+    return TYPED.test(this.type ?? "") || CAST.test(this.text.slice(this.from, this.span.to));
+  }
+}
+
 function scopeOf(file: string | undefined, source: string): Scope {
   const text = withoutComments(source, "ts");
   const scope: Scope = {
@@ -479,25 +502,23 @@ function scopeOf(file: string | undefined, source: string): Scope {
     stars: [],
     defaultExport: undefined,
   };
-  const hold = (name: string, held: { span: Span; member?: string; typed: boolean }) =>
+  const hold = (name: string, held: Held) =>
     scope.holders.set(name, [...(scope.holders.get(name) ?? []), held]);
   for (const hit of text.matchAll(DECLARES)) {
     const from = hit.index + hit[0].length;
-    const span = { from, to: expressionEnd(text, from) };
-    const typed = TYPED.test(hit[2] ?? "") || CAST.test(text.slice(span.from, span.to));
     if (!hit[1].startsWith("{")) {
-      hold(hit[1], { span, typed });
+      hold(hit[1], new Held(text, from, hit[2]));
       continue;
     }
     for (const part of hit[1].slice(1, -1).split(",")) {
       const [, member, local] =
         new RegExp(String.raw`^\s*(${NAME})\s*(?::\s*(${NAME}))?\s*$`).exec(part) ?? [];
-      if (member !== undefined) hold(local ?? member, { span, member, typed: false });
+      if (member !== undefined) hold(local ?? member, new Held(text, from, undefined, member));
     }
   }
   for (const hit of text.matchAll(FUNCTION)) {
-    const body = bodyAfter(text, hit.index + hit[0].length - 1);
-    if (body) scope.functions.set(hit[1], [...(scope.functions.get(hit[1]) ?? []), body]);
+    const open = hit.index + hit[0].length - 1;
+    scope.functions.set(hit[1], [...(scope.functions.get(hit[1]) ?? []), open]);
   }
   for (const [, named, all, some, from] of text.matchAll(IMPORTS)) {
     if (named !== undefined) scope.imports.set(named, { from, name: "default" });
@@ -725,8 +746,9 @@ class StyleFollower {
   private called(scope: Scope, name: string, depth: number): [Scope, Span][] {
     if (depth > 24) return [];
     const backs: [Scope, Span][] = [];
-    for (const body of scope.functions.get(name) ?? []) {
-      for (const back of this.returnsIn(scope.text, body)) backs.push([scope, back]);
+    for (const open of scope.functions.get(name) ?? []) {
+      const body = bodyAfter(scope.text, open);
+      if (body) for (const back of this.returnsIn(scope.text, body)) backs.push([scope, back]);
     }
     for (const held of scope.holders.get(name) ?? []) {
       if (held.member) continue;
@@ -792,6 +814,12 @@ class StyleFollower {
  *  `const { style } = el`, `const { style: s } = el`, and a name that holds one of those. */
 function styleAliases(scope: Scope): Set<string> {
   const aliases = new Set<string>();
+  // Only a file that holds `.style` itself, or destructures `style`, can hold an alias.
+  if (
+    !/\.style\s*(?:\bas\b|[;,)!?]|$)|\{[^{}=]*\bstyle\b[^{}=]*\}\s*(?::[^=]*)?=/m.test(scope.text)
+  ) {
+    return aliases;
+  }
   for (let grew = true; grew;) {
     grew = false;
     for (const [name, held] of scope.holders) {
@@ -862,10 +890,14 @@ export function styleEntries(source: string, from: StyleSource = {}): StyleEntry
     const open = hit.index + hit[0].length - 1;
     styleSite(follower, open);
   }
-  for (const [name, held] of holders) {
-    if (held.some(({ typed }) => typed)) follower.held(name);
+  if (TYPED.test(text)) {
+    for (const [name, held] of holders) {
+      if (held.some(({ typed }) => typed)) follower.held(name);
+    }
   }
-  const aliases = [...styleAliases(follower.home)].map((name) => name.replace(/\$/g, "\\$"));
+  const aliases = [...styleAliases(follower.home)].map((name) =>
+    name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"),
+  );
   const receiver = String.raw`(?:\.style${aliases.length ? `|(?<![\\w$.])(?:${aliases.join("|")})(?![\\w$])` : ""})\s*(?:!\s*)?`;
   const assigns = new RegExp(
     String.raw`\bObject\.assign\(\s*(?:[\w$.?!]*\bstyle${aliases.length ? `|(?:${aliases.join("|")})` : ""})\s*,`,
