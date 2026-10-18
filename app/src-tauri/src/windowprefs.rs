@@ -1092,6 +1092,22 @@ mod tests {
             theme::served(&digest).is_err(),
             "no face of it is registered"
         );
+        // And a window created on it while this machine's own store holds the stale approval
+        // (the store `open_if_approved` reads) is not handed its faces either: a project's face
+        // is read only as that approval holds it.
+        purlis_core::machine::update(&places.config, |store| {
+            store.approve(
+                &places.plane,
+                1,
+                purlis_core::machine::Contribution::default(),
+            );
+        })
+        .unwrap();
+        let _ = places.created(Some(&places.on(None)), Some(Contrast::Standard));
+        assert!(
+            theme::served(&digest).is_err(),
+            "no face of it is registered"
+        );
         // Approved for what it contributes now: its theme is drawn.
         let mut trusted = purlis_core::machine::Store::default();
         trusted.approve(
@@ -1102,6 +1118,14 @@ mod tests {
         window(&mut trusted);
         let on = CreatedOn::main_of(None, || Some(trusted));
         assert_eq!(on.as_ref().map(|on| &on.plane), Some(&places.plane));
+        purlis_core::machine::update(&places.config, |store| {
+            store.approve(
+                &places.plane,
+                2,
+                purlis_core::machine::Contribution::of(&places.plane),
+            );
+        })
+        .unwrap();
         let created = places.created(on.as_ref(), Some(Contrast::Standard));
         assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
         assert!(

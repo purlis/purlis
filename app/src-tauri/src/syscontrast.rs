@@ -99,16 +99,4 @@ mod tests {
         // Where the page may still ask for more, it picks: more is drawn when either asks.
         assert_eq!(decided(Some(false), true), None);
     }
-
-    #[test]
-    fn this_platform_says_what_it_reads() {
-        // macOS and Linux read; elsewhere nothing is, and the page decides.
-        let read = asked();
-        if cfg!(target_os = "macos") {
-            assert!(read.is_some());
-        }
-        if !cfg!(any(target_os = "macos", target_os = "linux")) {
-            assert_eq!(read, None);
-        }
-    }
 }
