@@ -85,6 +85,7 @@ pub mod levels;
 mod native;
 mod options;
 mod person;
+pub mod portable;
 mod published;
 mod resolve;
 mod schema;
@@ -570,8 +571,16 @@ pub fn load(document: &Value) -> Resolved {
 }
 
 /// Whether `name` is a theme folder's name a pick may name it by: lower-case letters, digits and
-/// dashes, starting with a letter, at most 32 long — the grammar of an appearance's id too.
+/// dashes, starting with a letter, at most 32 long — the grammar of an appearance's id too — and
+/// a name Windows holds ([`portable`]: not `con`, `nul`, `com1`, …).
 pub fn is_folder_name(name: &str) -> bool {
+    is_folder_spelling(name) && portable::not_held(name).is_none()
+}
+
+/// Whether `name` is spelled in a theme folder's name grammar, before [`portable`] is asked:
+/// what a level's id may name, so the engine finds a folder the platform rule refuses (`con`)
+/// and says why.
+pub fn is_folder_spelling(name: &str) -> bool {
     format::is_name(name)
 }
 
