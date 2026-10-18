@@ -298,7 +298,8 @@ async fn host_a_refuses_a_start_without_the_sandbox_from_any_client_but_its_wind
 #[tokio::test]
 async fn a_start_from_a_client_that_is_not_the_window_is_sent_on_without_its_ids() {
     let runs = StandIns::default();
-    let b = Hosting::running_with(Echo, runs.clone());
+    let log = Log::default();
+    let b = Hosting::running_with(WritesItsRun, runs.clone()).recording_with(log.clone());
     let relay = Relay::new(over_the_link(b));
     let window = Client::new(local_ui(relay.clone()).await).0;
     let project = tempfile::tempdir().unwrap();
@@ -319,6 +320,49 @@ async fn a_start_from_a_client_that_is_not_the_window_is_sent_on_without_its_ids
     assert_ne!(theirs, "01J9CHAT000000000000000000");
     assert_eq!(the_windows, "01J9CHAT000000000000000000");
     assert_eq!(runs.ran().len(), 2);
+    // Each began a run host B wrote: the terminal's under a run host B minted.
+    let written = log.0.lock().unwrap().clone();
+    let run_of = |chat: &str| {
+        written
+            .iter()
+            .find(|entry| entry["chat"] == chat)
+            .map(|entry| entry["run"].as_str().unwrap_or_default().to_owned())
+    };
+    let theirs_ran = run_of(&theirs).expect("the terminal's start wrote its run");
+    assert!(!theirs_ran.is_empty());
+    assert_ne!(theirs_ran, "01J9RUN0000000000000000000");
+    assert_eq!(
+        run_of("01J9CHAT000000000000000000").as_deref(),
+        Some("01J9RUN0000000000000000000")
+    );
+}
+
+/// Composes every start as `/bin/echo`, writing its run as a host's binary does
+/// (`purlis_core::hoststart`): a start that names no chat or run writes none.
+struct WritesItsRun;
+
+impl Compose for WritesItsRun {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        if let (Some(chat), Some(run)) = (&starting.start.program, &starting.start.run) {
+            starting
+                .beside
+                .record(serde_json::json!({ "kind": "run.started", "chat": chat, "run": run }))?;
+        }
+        Ok(Spec::new("/bin/echo", starting.size))
+    }
+}
+
+/// Host B's event log: what was written in it.
+#[derive(Clone, Default)]
+struct Log(Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
+
+impl purlis_host::Record for Log {
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        self.0.lock().unwrap().push(entry);
+        Ok(())
+    }
+
+    fn ended(&self, _ended: &purlis_host::Ended<'_>) {}
 }
 
 /// A client of host A whose scope may hold a project and reply to hook lines there, as a link
