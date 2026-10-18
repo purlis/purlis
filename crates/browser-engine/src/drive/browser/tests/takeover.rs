@@ -491,6 +491,80 @@ fn a_paste_into_a_field_that_cannot_be_read_waits() {
     assert!(!text.contains("pasted-Secret9"), "{text}");
 }
 
+/// Reads of what a field holds fail, by their number from the first (1), where `fails` says.
+fn field_reads_fail(engine: &super::Engine, fails: fn(usize) -> bool) {
+    let mut reads = 0;
+    engine.on(move |sent, _| {
+        if sent.method == "Runtime.callFunctionOn"
+            && sent.params["functionDeclaration"] == super::super::READ_VALUE
+        {
+            reads += 1;
+            if fails(reads) {
+                return Some(Err(crate::cdp::CallError::TimedOut));
+            }
+        }
+        None
+    });
+}
+
+#[test]
+fn a_field_read_that_fails_once_after_a_paste_is_read_again() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    super::super::lock(&engine.model).value = "pasted-Secret9".into();
+    // The read before the paste works; the first after it does not.
+    field_reads_fail(&engine, |read| read == 2);
+
+    browser.person_input(&chord(&aim, "v", 4)).unwrap();
+    let reads = engine
+        .sent("Runtime.callFunctionOn")
+        .iter()
+        .filter(|s| s.params["functionDeclaration"] == super::super::READ_VALUE)
+        .count();
+    assert_eq!(reads, 3, "read before, after, and again");
+    // Every later read fails: what the paste put in was kept as the key went in.
+    field_reads_fail(&engine, |_| true);
+    the_page_says(&engine, "PAGE-1", "You entered pasted-Secret9");
+    browser.hand_back();
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("pasted-Secret9"), "{text}");
+}
+
+#[test]
+fn a_field_that_cannot_be_read_after_a_paste_is_read_as_the_browser_is_handed_back() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    super::super::lock(&engine.model).value = "pasted-Secret9".into();
+    field_reads_fail(&engine, |read| read == 2 || read == 3);
+
+    let pasted = browser.person_input(&chord(&aim, "v", 4));
+    assert_eq!(pasted, Err(Refusal::FieldUnreadAfterKey));
+    the_page_says(&engine, "PAGE-1", "You entered pasted-Secret9");
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("pasted-Secret9"), "{text}");
+}
+
+#[test]
+fn a_field_that_cannot_be_read_at_the_hand_back_keeps_what_it_was_read_to_hold() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    super::super::lock(&engine.model).value = "pasted-Secret9".into();
+    // Read before and after the paste; never again.
+    field_reads_fail(&engine, |read| read > 2);
+
+    browser.person_input(&chord(&aim, "v", 4)).unwrap();
+    the_page_says(&engine, "PAGE-1", "You entered pasted-Secret9");
+    browser.hand_back();
+
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("pasted-Secret9"), "{text}");
+}
+
 #[test]
 fn what_the_person_pastes_stays_out_of_later_answers() {
     let (browser, engine) = browser();

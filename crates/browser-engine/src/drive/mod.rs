@@ -6,10 +6,10 @@
 //! A [`Browser`] takes typed [`Call`]s and gives [`Answer`]s. It speaks DevTools to its engine
 //! itself and hands none of it out: what a caller gets is a snapshot of a page with a
 //! reference for each element, the elements a find matched, a screenshot, and the outcome of
-//! an action. No call runs script the caller wrote; the few small scripts purlis runs in a page
-//! (whether its document has loaded; choosing a drop-down's options; what a field holds and
-//! whether something has the focus) are constants in this module, the caller's words reach them
-//! only as values, and they run in a world of purlis's own in the frame they act on (#2138), so
+//! an action. No call runs script the caller wrote; the small scripts purlis runs in a page are
+//! constants, and the caller's words reach them only as values. Those that say whether a
+//! document has loaded, choose a drop-down's options, read what a field holds and say whether
+//! something has the focus run in a world of purlis's own in the frame they act on (#2138), so
 //! what they read and do is the document's own, whatever the page's scripts redefine.
 //!
 //! - **References.** A snapshot deals each element a reference (`e12`). It names the same
@@ -560,6 +560,13 @@ pub enum Refusal {
     /// what it puts in could not be kept out.
     #[error("the field being typed into could not be read, so the key waits")]
     FieldUnread,
+    /// The key reached the field, and what the field held then could not be read (#2138): it
+    /// is read again as the browser is handed back.
+    #[error(
+        "the key reached the page, but the field it went into could not be read after it; it is \
+         read again when the browser is handed back"
+    )]
+    FieldUnreadAfterKey,
 }
 
 /// How long and how much, all configurable (from Settings, by the session host).

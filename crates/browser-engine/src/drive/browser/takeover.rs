@@ -338,12 +338,16 @@ impl Browser {
                     lock(&self.typing).dirty.insert(target.clone());
                 }
                 if let Some((field, read)) = field {
+                    // The field is read again as the browser is handed back, whatever this read
+                    // finds.
+                    lock(&self.typing).touched.insert(field.clone());
                     // What the field holds now, with this key in it (or what was pasted), is
-                    // kept out from this moment.
-                    // Read again once if it could not be read: the key is in already.
+                    // kept out from this moment. Read again once if it could not be read: the
+                    // key is in already.
                     let after = self
                         .field_holds(&field)
-                        .or_else(|_| self.field_holds(&field))?;
+                        .or_else(|_| self.field_holds(&field))
+                        .map_err(|_| Refusal::FieldUnreadAfterKey)?;
                     let mut held = Kept::default();
                     if let Some(before) = before {
                         // What the key put in is kept as it was put in, like a run, and so is
@@ -361,7 +365,6 @@ impl Browser {
                     }
                     held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);
-                    lock(&self.typing).touched.insert(field);
                 }
                 Ok(())
             }
