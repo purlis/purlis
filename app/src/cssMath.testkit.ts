@@ -4,7 +4,7 @@
 /**
  * **How the geometry guard reads CSS arithmetic** (#2450): the math functions in a value
  * (`calc()`, `min()`, `max()`, `clamp()`, `round()`, `mod()`, `rem()`, `abs()`, `sign()` and
- * the rest), parsed rather than matched, so a factor is read whatever it is spelled as (`3.5`,
+ * the rest, with or without a vendor's prefix: `-webkit-calc()`), parsed rather than matched, so a factor is read whatever it is spelled as (`3.5`,
  * `+0.5`, `(0.5)`, `calc(3.5)`, `35e-1`, `pi`).
  *
  * The rule it holds, in what the guard reads:
@@ -18,6 +18,8 @@
  *   literal alone; a multiple of it is a size written by hand.
  * - **A sum writes each length once**: two written lengths of the same unit and sign
  *   (`1px + 1px`, `1em + 1em`) are a literal written in parts.
+ * - A length is written in any unit of `LENGTH_UNITS`, the newer font-relative ones too
+ *   (`1rlh`, `1cap`, `1ic`): each is a length, not a share.
  * - A custom property whose value is a bare written length (`--hair: 1px`) is that length where
  *   it is read (`lengths`).
  */
@@ -81,24 +83,40 @@ const NUMERIC = new Set([
   "atan",
   "atan2",
 ]);
-const LENGTH_UNITS = new Set([
+/**
+ * The units a written length is in: the absolute ones, the font-relative ones of the element's
+ * own text (`em`, `ex`, `ch`, `ic`, `cap`, `lh`) and of the root's (`rem`, `rex`, `rch`, `ric`,
+ * `rcap`, `rlh`). A share of the box or the window (`%`, `vh`, `vw`, `vi`, `cqw`, `fr`) is not
+ * one. The geometry and type guards read a length by this list.
+ */
+export const LENGTH_UNITS: readonly string[] = [
   "px",
   "rem",
   "em",
   "ch",
+  "rch",
   "ex",
+  "rex",
+  "ic",
+  "ric",
+  "cap",
+  "rcap",
   "lh",
+  "rlh",
   "pt",
   "pc",
   "cm",
   "mm",
   "in",
   "q",
-]);
+];
+const LENGTH_UNIT = new Set(LENGTH_UNITS);
 
 const NUMBER = /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/iy;
 const UNIT = /%|[a-z]+/iy;
 const NAME = /-{0,2}[a-z_][\w-]*/iy;
+/** A vendor's prefix on a function's name: `-webkit-calc()` is `calc()`. */
+const VENDOR = /^-(?:webkit|moz|ms|o)-/;
 
 function tokens(value: string): Token[] {
   const found: Token[] = [];
@@ -130,7 +148,7 @@ function tokens(value: string): Token[] {
       i += name[0].length;
       if (value[i] === "(") {
         i++;
-        found.push({ t: "fn", name: name[0].toLowerCase() });
+        found.push({ t: "fn", name: name[0].toLowerCase().replace(VENDOR, "") });
       } else found.push({ t: "ident", name: name[0].toLowerCase() });
       continue;
     }
@@ -195,7 +213,7 @@ export function arithmeticLiteral(
         if (!Number.isInteger(token.v)) literal = true;
         return number(token.v);
       case "dim":
-        if (!LENGTH_UNITS.has(token.unit)) return plain;
+        if (!LENGTH_UNIT.has(token.unit)) return plain;
         return { ...plain, length: true, dim: `${token.negative ? "-" : "+"}${token.unit}` };
       case "ident":
         if (token.name === "pi" || token.name === "e") {
