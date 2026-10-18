@@ -2321,10 +2321,7 @@ fn past_the_most_answers_kept_git_is_asked_again_and_answers_the_same() {
     let head = |a: Answer| (a.ok, a.out);
     let truth = head(git_asked(&f.root, &HEAD_COMMIT).expect("git answers"));
     assert!(truth.0 && !truth.1.is_empty());
-    for (kept_before, asked) in [
-        (MAX_REMEMBERED_ANSWERS - 1, 1),
-        (MAX_REMEMBERED_ANSWERS, 2),
-    ] {
+    for (kept_before, asked) in [(MAX_REMEMBERED_ANSWERS - 1, 1), (MAX_REMEMBERED_ANSWERS, 2)] {
         remembering(|| {
             REMEMBERED.with(|r| {
                 let mut r = r.borrow_mut();
