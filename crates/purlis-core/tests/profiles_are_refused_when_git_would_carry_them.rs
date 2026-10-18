@@ -338,3 +338,173 @@ fn a_git_that_never_answers_refuses_too_because_a_hang_is_not_a_pass() {
         check.reason
     );
 }
+
+/// A git that answers `answer` and writes one line to `asked` each time it is run.
+fn a_git_that_counts(dir: &Path, asked: &Path, answer: &str) -> std::path::PathBuf {
+    a_git_that(
+        dir,
+        "git-that-counts",
+        &format!("echo asked >> '{}'\necho '{answer}'", asked.display()),
+    )
+}
+
+/// A plane with a local file, for a stand-in git that answers without a repository.
+fn a_plane() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("charter.toml"), "").unwrap();
+    fs::write(dir.path().join(profiles::LOCAL_FILE), "").unwrap();
+    dir
+}
+
+fn times_asked(asked: &Path) -> usize {
+    fs::read_to_string(asked).map_or(0, |text| text.lines().count())
+}
+
+#[test]
+fn one_start_asks_git_once_and_every_reader_in_it_gets_that_answer() {
+    purlis_core::unsteered!();
+    // #2179: a New tab read the Local file's git state seven times or so, each a `git status`
+    // of 140 ms on the macOS runner. Inside one start the answer is asked once and given to
+    // every reader, so each reader decides as before, on the same answer.
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let git = a_git_that_counts(dir.path(), &asked, "?? charter.local.toml");
+
+    let alone = profiles::ignore_check_with(dir.path(), &git);
+    let (first, second, third) = profiles::git_asked_once(|| {
+        (
+            profiles::ignore_check_with(dir.path(), &git),
+            profiles::ignore_check_with(dir.path(), &git),
+            profiles::ignore_check_with(dir.path(), &git),
+        )
+    });
+
+    assert!(!alone.passes(), "a file git would commit still refuses");
+    assert_eq!([&first, &second, &third], [&alone, &alone, &alone]);
+    assert_eq!(
+        times_asked(&asked),
+        2,
+        "once alone, once for the three inside"
+    );
+}
+
+/// A git that answers whatever `answer` holds when it is run, and counts its runs in `asked`.
+fn a_git_that_answers_from(dir: &Path, asked: &Path, answer: &Path) -> std::path::PathBuf {
+    a_git_that(
+        dir,
+        "git-that-answers-from",
+        &format!(
+            "echo asked >> '{}'\ncat '{}'",
+            asked.display(),
+            answer.display()
+        ),
+    )
+}
+
+/// What a stand-in git prints for a local file it ignores, and for one it would commit.
+const IGNORED: &str = "!! charter.local.toml\n";
+const COMMITTABLE: &str = "?? charter.local.toml\n";
+
+#[test]
+fn an_answer_is_kept_for_its_start_alone_and_never_for_the_next() {
+    purlis_core::unsteered!();
+    // Kept for one start, never for the run: git's answer changes when the person runs
+    // `git add -f` or `git rm --cached`, and the next start asks again and decides by it.
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let answer = dir.path().join("answer");
+    fs::write(&answer, IGNORED).unwrap();
+    let git = a_git_that_answers_from(dir.path(), &asked, &answer);
+
+    let first = profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
+    fs::write(&answer, COMMITTABLE).unwrap();
+    let second = profiles::git_asked_once(|| profiles::ignore_check_with(dir.path(), &git));
+
+    assert!(first.passes(), "{first:?}");
+    assert!(
+        !second.passes(),
+        "the next start kept the last one's answer"
+    );
+    assert_eq!(times_asked(&asked), 2);
+}
+
+#[test]
+fn a_local_file_changed_during_a_start_is_asked_about_again() {
+    purlis_core::unsteered!();
+    // A reader later in the start never judges content newer than its answer: the file changed
+    // after the first reader's answer, so the second reader asks git again, and refuses.
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let answer = dir.path().join("answer");
+    fs::write(&answer, IGNORED).unwrap();
+    let git = a_git_that_answers_from(dir.path(), &asked, &answer);
+
+    let (first, second) = profiles::git_asked_once(|| {
+        let first = profiles::ignore_check_with(dir.path(), &git);
+        fs::write(
+            dir.path().join(profiles::LOCAL_FILE),
+            "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+        )
+        .unwrap();
+        fs::write(&answer, COMMITTABLE).unwrap();
+        (first, profiles::ignore_check_with(dir.path(), &git))
+    });
+
+    assert!(first.passes(), "{first:?}");
+    assert!(
+        !second.passes(),
+        "a changed file was judged by the answer before the change"
+    );
+    assert_eq!(times_asked(&asked), 2);
+}
+
+#[test]
+fn a_start_that_panics_keeps_no_answer_for_the_next() {
+    purlis_core::unsteered!();
+    let dir = a_plane();
+    let asked = dir.path().join("asked");
+    let answer = dir.path().join("answer");
+    fs::write(&answer, IGNORED).unwrap();
+    let git = a_git_that_answers_from(dir.path(), &asked, &answer);
+
+    let panicked = std::panic::catch_unwind(|| {
+        profiles::git_asked_once(|| {
+            profiles::ignore_check_with(dir.path(), &git);
+            panic!("a start that fails part-way");
+        })
+    });
+    fs::write(&answer, COMMITTABLE).unwrap();
+    let after = profiles::ignore_check_with(dir.path(), &git);
+
+    assert!(panicked.is_err());
+    assert!(
+        !after.passes(),
+        "the answer of a start that panicked outlived it"
+    );
+    assert_eq!(times_asked(&asked), 2);
+}
+
+#[test]
+fn a_start_asks_again_for_a_file_that_appeared_during_it_or_another_plane() {
+    purlis_core::unsteered!();
+    // An absent file passes without asking git; one written during the start is asked about,
+    // and another plane's answer is its own.
+    let one = a_plane();
+    let other = a_plane();
+    fs::remove_file(one.path().join(profiles::LOCAL_FILE)).unwrap();
+    let asked = other.path().join("asked");
+    let git = a_git_that_counts(other.path(), &asked, "?? charter.local.toml");
+
+    let (absent, written, elsewhere) = profiles::git_asked_once(|| {
+        let absent = profiles::ignore_check_with(one.path(), &git);
+        fs::write(one.path().join(profiles::LOCAL_FILE), "").unwrap();
+        let written = profiles::ignore_check_with(one.path(), &git);
+        let elsewhere = profiles::ignore_check_with(other.path(), &git);
+        (absent, written, elsewhere)
+    });
+
+    assert!(absent.passes());
+    assert!(!written.passes());
+    assert!(!elsewhere.passes());
+    assert_eq!(times_asked(&asked), 2);
+}
