@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792354358179,
+  "lastUpdate": 1792355639611,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17388,6 +17388,48 @@ window.BENCHMARK_DATA = {
             "value": 103.611066,
             "unit": "ms",
             "extra": "median of 5 runs: 102.782, 102.972, 103.611, 104.378, 104.539 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "426db195ca137eaca9eaa9c16de6fbb1e54d87e2",
+          "message": "Runners: a project held again at another path during a carry-over is carried at that path (#2646)\n\n* A project held again at another path during a carry-over is carried at that path\n\nThe relay lets go of a project on the new link where it was carried before holding it where\nthe window holds it now. A hold is carried once the runner takes it: a refused hold is sent\nagain in the next pass, and one the last pass could not carry is no longer kept for the window.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Say what the window sees of a hold a re-link could not carry, and keep a refused let-go\n\nA project the new link could not hold is no longer kept for the window, which is not told yet\n(#2645). A let-go the runner refuses keeps the project where it was carried. Doc lines are\nwrapped to 100 columns.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T00:27:11+04:00",
+          "tree_id": "f6bd15270db3667b188d4a73a8aebec70c79a015",
+          "url": "https://github.com/purlis/purlis/commit/426db195ca137eaca9eaa9c16de6fbb1e54d87e2"
+        },
+        "date": 1792355637951,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.38863800000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.375, 0.383, 0.389, 0.392, 0.392 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5882795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.485, 16.505, 16.588, 16.653, 16.673 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.377347,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.582, 101.119, 101.377, 101.961, 102.056 ms"
           }
         ]
       }
