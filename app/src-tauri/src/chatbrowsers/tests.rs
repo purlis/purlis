@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
-use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, LogIn, Secret};
 
 use purlis_core::sandbox::persona::Browser;
 
@@ -27,6 +27,8 @@ struct Hosted {
     stopped: Mutex<Vec<String>>,
     /// Programs that have ended in the host.
     ended: Mutex<Vec<String>>,
+    /// The address of each login it performed, and its program (#2016).
+    logins: Mutex<Vec<(String, String)>>,
     /// How many closes, and how many stops by id, fail from now.
     closes_fail: Mutex<u32>,
     stops_fail: Mutex<u32>,
@@ -104,6 +106,18 @@ impl Driver for Hosted {
         Ok(Browsed {
             settled: true,
             asked: self.asks.lock().unwrap().clone(),
+            ..Browsed::default()
+        })
+    }
+
+    fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused> {
+        self.logins
+            .lock()
+            .unwrap()
+            .push((program.to_owned(), login.address.clone()));
+        Ok(Browsed {
+            settled: true,
+            note: Some("the password field is gone from https://shop.example.test since purlis submitted the login".into()),
             ..Browsed::default()
         })
     }
@@ -204,9 +218,25 @@ fn answered_confined(
         &|| reach(),
         confined,
         &|| as_persona.clone(),
+        &logins,
         1000,
     )
 }
+
+/// The one browser login a test chat has: `shop-login`, its values a test's own (#2016).
+fn logins(name: &str) -> Result<LogIn, String> {
+    if name != "shop-login" {
+        return Err(format!("the persona declares no browser login {name}"));
+    }
+    Ok(LogIn {
+        address: "https://shop.example.test/login".into(),
+        user: None,
+        password: Secret::new(LOGIN_VALUE.into()),
+    })
+}
+
+/// What the test login fills: a value no answer to the chat may carry.
+const LOGIN_VALUE: &str = "fixture-word";
 
 /// A chat running as `persona`, which declares `declared`, with Always kept as `always`.
 fn as_persona(persona: &str, declared: Option<Browser>, always: Option<bool>) -> AsPersona {
@@ -482,6 +512,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         &|| narrower.clone(),
         true,
         &AsPersona::default,
+        &logins,
         1000,
     );
     let Answer::Browsed { browsed, .. } = answer else {
@@ -546,6 +577,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 &|| reach(),
                 true,
                 &AsPersona::default,
+                &logins,
                 0,
             )
             .0,
@@ -1306,6 +1338,72 @@ fn a_stuck_browser_is_ended_off_the_calls_path_once_the_host_answers_and_its_row
     assert!(browsers.listed().is_empty());
     until(|| *told.lock().unwrap() > 0);
 }
+
+// ---- Logins purlis performs (#2016) ----
+
+fn log_in(name: &str) -> Browsing {
+    Browsing::LogIn { login: name.into() }
+}
+
+#[test]
+fn a_browser_login_is_performed_in_the_chats_browser_and_no_value_reaches_the_chat() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    browsers.allow(3, false);
+    let (answer, _) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    let Answer::Browsed { browser, browsed } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(browser, "b1");
+    let note = browsed.note.clone().unwrap_or_default();
+    assert!(
+        note.contains("since purlis submitted the login, with shop-login: take a snapshot"),
+        "{note}"
+    );
+    assert!(note.contains("reaches that site alone"), "{note}");
+    assert!(!format!("{browsed:?}").contains(LOGIN_VALUE));
+    assert_eq!(
+        *hosted.logins.lock().unwrap(),
+        [(
+            "program-1".to_owned(),
+            "https://shop.example.test/login".to_owned()
+        )]
+    );
+    assert!(
+        hosted.acts.lock().unwrap().is_empty(),
+        "a login is no act of the agent's"
+    );
+}
+
+#[test]
+fn a_login_the_chat_has_none_of_is_refused_and_nothing_is_filled() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, log_in("mail-login")));
+    browsers.allow(3, false);
+    let why = refusal(answered(&browsers, &hosted, &ask(3, log_in("mail-login"))).0);
+    assert!(
+        why.contains("declares no browser login mail-login"),
+        "{why}"
+    );
+    assert!(hosted.logins.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_login_waits_for_the_chats_browser_ask_like_any_browser_call() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let (first, raised) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    assert!(raised);
+    assert!(refusal(first).contains("asked the person"));
+    browsers.keep_off(3);
+    let (off, _) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    assert!(matches!(off, Answer::No { .. }));
+    assert!(hosted.logins.lock().unwrap().is_empty());
+    assert!(hosted.started.lock().unwrap().is_empty());
+}
+
 
 /// [`answered`] at `now`, in seconds since 1970.
 fn answered_at(

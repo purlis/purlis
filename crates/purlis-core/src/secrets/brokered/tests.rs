@@ -3414,145 +3414,107 @@ fn an_approved_servers_line_is_matched_exactly() {
     );
 }
 
-/// An armed browser-login tool (D-PE-browser-1): the app runs purlis's own login, by purlis's
-/// absolute path, on the declared page, with the vault's login in a private file, its own
-/// folder under the vaults directory every chat is denied, and the person's own home; the
-/// chat's environment names none of them. A chat that names any page, host or program of its
-/// own, or a login its persona does not declare, runs nothing.
-#[test]
-fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_else() {
-    use crate::sandbox::tools::login::Login;
+/// An armed browser-login tool, as `shop-login` with its password from `key` (and its user
+/// name from `user`, where given) in vault `vault`.
+fn shop_login_armed(vault: &str, key: &str, user: Option<&str>) -> crate::sandbox::tools::Ready {
+    use crate::sandbox::tools::login::{Login, PASS_VAR, USER_VAR};
     use crate::sandbox::tools::{Handed, Ready, Tool};
-    use std::os::unix::fs::PermissionsExt as _;
-    let project = project();
-    // A purlis outside every folder a chat writes: this test's temporary folders are not the
-    // ones the run judges by.
-    let elsewhere = tempfile::tempdir().unwrap();
-    let beside = elsewhere.path().join("bin");
-    std::fs::create_dir_all(&beside).unwrap();
-    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
-    let marker = beside.join("ran");
-    let fake = beside.join("purlis");
-    std::fs::write(
-        &fake,
-        format!(
-            "#!/bin/sh\ntouch '{}'\necho \"args: $*\"\n\
-             [ \"$(cat \"$BROWSER_LOGIN_PASS\")\" = '{TOKEN}' ] && echo 'pass handed'\n\
-             echo \"user: ${{BROWSER_LOGIN_USER:-none}}\"\n\
-             [ -d \"$PURLIS_LOGIN_DIR\" ] && echo \"dir: $PURLIS_LOGIN_DIR\"\n\
-             echo \"home: $HOME\"\n",
-            marker.display()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut asker = asker(project.path(), Some("devops"));
-    let fake_shown = fake.display().to_string();
-    asker.env = Env::of(&[
-        ("PATH", "/usr/bin:/bin"),
-        ("PURLIS_BINARY", &fake_shown),
-        ("HOME", "/Users/the-person"),
-    ]);
-    asker.confines.as_mut().unwrap().tools = vec![Ready {
+    let mut tool = Tool::one("shop-login", vault, PASS_VAR, Handed::File, key);
+    if let Some(user) = user {
+        tool.values.push(crate::sandbox::tools::Value {
+            var: USER_VAR.into(),
+            handed: Handed::File,
+            key: user.into(),
+        });
+    }
+    Ready {
         tool: Tool {
             login: Some(Login {
                 url: "https://shop.example.test/login".into(),
                 origin: "https://shop.example.test".into(),
             }),
-            ..Tool::one(
-                "shop-login",
-                "team",
-                "BROWSER_LOGIN_PASS",
-                Handed::File,
-                "TOKEN",
-            )
+            ..tool
         },
-        program: PathBuf::from("/opt/tools/bin/playwright-cli"),
-    }];
-    let work = project.path().join("work").display().to_string();
-    let ask = |asker: &Asker, command: &[&str]| {
-        let mut want = wanted(
-            project.path(),
-            "team",
-            command.iter().map(|word| (*word).to_owned()).collect(),
-        );
-        want.file = vec!["BROWSER_LOGIN_PASS=TOKEN".into()];
-        // What a chat might set to steer the login: none of it reaches the run.
-        want.environment.extend([
-            ("HOME".into(), work.clone().into()),
-            (
-                "BROWSER_LOGIN_USER".into(),
-                format!("{work}/chosen-user").into(),
-            ),
-            ("PURLIS_LOGIN_DIR".into(), work.clone().into()),
-        ]);
-        served_as_asked(asker, want)
-    };
-    let frames = ask(&asker, &["shop-login", "-s=owner"]);
-    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
-    let out = stdout(&frames);
-    assert!(
-        out.contains(
-            "args: browser _login --cli /opt/tools/bin/playwright-cli --url \
-             https://shop.example.test/login --session owner\n"
-        ),
-        "{out}"
-    );
-    assert!(out.contains("pass handed"), "{out}");
-    assert!(out.contains("user: none"), "{out}");
-    assert!(out.contains("home: /Users/the-person"), "{out}");
-    let vaults = Ctx::new(project.path(), Env::of(&[])).vaults_dir();
-    let dir = out
-        .lines()
-        .find_map(|line| line.strip_prefix("dir: "))
-        .expect("a private folder");
-    assert!(
-        Path::new(dir).starts_with(vaults.join(EXEC_DIR)),
-        "{dir} is under the vaults directory"
-    );
-    assert!(!Path::new(dir).exists(), "removed once the run ended");
-    std::fs::remove_file(&marker).unwrap();
-    // A page, a host or a program of the chat's own runs nothing.
-    for command in [
-        &["shop-login", "https://evil.example/"][..],
-        &["shop-login", "--url", "https://evil.example/"],
-        &["shop-login", "-s=owner", "--", "sh", "-c", "id"],
-        &[
-            "/opt/tools/bin/playwright-cli",
-            "open",
-            "https://evil.example/",
-        ],
-        &["playwright-cli", "open", "https://evil.example/"],
-    ] {
-        let frames = ask(&asker, command);
-        let [Frame::Refused { .. }] = frames.as_slice() else {
-            panic!("one refusal for {command:?}: {frames:?}");
-        };
-        assert!(!marker.exists(), "{command:?} ran");
+        program: PathBuf::new(),
     }
-    // A purlis in a folder the chat may write is never handed the login.
-    let mut planted = asker.clone();
-    planted
-        .confines
-        .as_mut()
-        .unwrap()
-        .writable
-        .push(beside.clone());
-    let frames = ask(&planted, &["shop-login", "-s=owner"]);
-    let [Frame::Refused { why, .. }] = frames.as_slice() else {
+}
+
+/// A browser login run as a command (#2016): purlis performs it in the chat's own browser, so
+/// the command runs nothing, writes no session file, and names the browser tool.
+#[test]
+fn a_browser_login_run_as_a_command_runs_nothing_and_names_the_browser_tool() {
+    let project = project();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", None)];
+    let mut want = wanted(project.path(), "team", vec!["shop-login".into()]);
+    want.file = vec!["BROWSER_LOGIN_PASS=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    let [Frame::Refused { why, code }] = frames.as_slice() else {
         panic!("one refusal: {frames:?}");
     };
-    assert!(why.contains("a folder a chat may write"), "{why}");
-    assert!(!marker.exists(), "nothing ran");
-    // Undeclared: a login no start armed is refused like any other program.
-    asker.confines.as_mut().unwrap().tools.clear();
-    let frames = ask(&asker, &["shop-login", "-s=owner"]);
-    let [Frame::Refused { why, .. }] = frames.as_slice() else {
-        panic!("one refusal: {frames:?}");
-    };
-    assert!(why.contains("shop-login is not one"), "{why}");
-    assert!(!marker.exists(), "nothing ran");
-    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert_eq!(*code, 2);
+    assert!(
+        why.contains("call the browser_login tool with login = \"shop-login\""),
+        "{why}"
+    );
+    assert!(!why.contains(TOKEN), "{why}");
+    assert!(!project.path().join("work/.playwright-cli").exists());
+}
+
+/// The login a chat's browser login fills (#2016): the declared page and the vault's values,
+/// read by the app for exactly the tool the chat's start armed.
+#[test]
+fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
+    let project = project();
+    std::fs::write(
+        project.path().join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN, "NAME": "qa-person"}).to_string(),
+    )
+    .unwrap();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", Some("NAME"))];
+    let login = login_for(&asker, "shop-login").expect("the login");
+    assert_eq!(login.address, "https://shop.example.test/login");
+    assert_eq!(login.password.expose(), TOKEN);
+    assert_eq!(
+        login.user.as_ref().map(|user| user.expose()),
+        Some("qa-person")
+    );
+    assert!(!format!("{login:?}").contains(TOKEN));
+}
+
+/// What no chat is handed a login for (#2016): a chat the app did not start sandboxed, a login
+/// its start did not arm, a tool that is no login, and a vault its persona may not use. Each
+/// refusal names no value.
+#[test]
+fn a_browser_login_is_refused_for_anything_but_its_armed_tool() {
+    let project = project();
+    let mut asker = asker(project.path(), Some("devops"));
+    let mut unsandboxed = asker.clone();
+    unsandboxed.confines = None;
+    let why = login_for(&unsandboxed, "shop-login").unwrap_err();
+    assert!(why.contains("started without the sandbox"), "{why}");
+    let why = login_for(&asker, "shop-login").unwrap_err();
+    assert!(
+        why.contains("devops declares no browser login shop-login"),
+        "{why}"
+    );
+    asker.confines.as_mut().unwrap().tools = vec![crate::sandbox::tools::Ready {
+        tool: crate::sandbox::tools::Tool::one(
+            "shop-login",
+            "team",
+            "X",
+            crate::sandbox::tools::Handed::File,
+            "TOKEN",
+        ),
+        program: PathBuf::from("/usr/bin/true"),
+    }];
+    let why = login_for(&asker, "shop-login").unwrap_err();
+    assert!(why.contains("not a browser login"), "{why}");
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("other", "TOKEN", None)];
+    let why = login_for(&asker, "shop-login").unwrap_err();
+    assert!(why.contains("vault 'other'"), "{why}");
+    assert!(!why.contains("n0t-yours") && !why.contains(TOKEN), "{why}");
 }
 
 /// A login's own folder is given back to its run, read and write, after the vaults directory's

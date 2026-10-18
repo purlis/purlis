@@ -282,3 +282,48 @@ fn nothing_is_told_from_a_chat_the_app_did_not_start_sandboxed_or_that_names_no_
         "a chat folder that is not absolute"
     );
 }
+
+/// #2460 review: the wrap starts with nothing of the chat's, so what a refusal is sorted against
+/// is read from the environment it carries for the chat, never its own: the project the chat's
+/// `PURLIS_ROOT` names, wherever its folder is, and the chat's own temporary folder.
+#[test]
+fn a_refusal_is_sorted_against_the_project_and_temp_folder_the_chat_was_started_with() {
+    let base = tempfile::tempdir().expect("a folder");
+    let base = base.path().canonicalize().expect("real");
+    let root = base.join("plane");
+    let chat = base.join("checkouts/repo");
+    let tmp = base.join("chat-tmp");
+    for folder in [&root, &chat, &tmp] {
+        std::fs::create_dir_all(folder).expect("a folder");
+    }
+    let (root_s, chat_s, tmp_s) = (
+        root.display().to_string(),
+        chat.display().to_string(),
+        tmp.display().to_string(),
+    );
+    let env = |name: &str| -> Option<String> {
+        match name {
+            crate::hookwire::SANDBOXED_ENV => Some("1".to_owned()),
+            crate::hookwire::SOCKET_ENV => Some("/run/purlis/hooks.sock".to_owned()),
+            crate::hookwire::CHAT_ENV => Some("7".to_owned()),
+            crate::hookwire::HARNESS_ENV => Some("codex".to_owned()),
+            "PURLIS_ROOT" => Some(root_s.clone()),
+            "TMPDIR" => Some(tmp_s.clone()),
+            CHAT_DIR_ENV => Some(chat_s.clone()),
+            _ => None,
+        }
+    };
+    // Started outside its project: a walk up from the wrap's folder finds no plane.
+    let sorted = sorter_in(&env, &chat).expect("a chat that tells");
+    let kind = |target: std::path::PathBuf| {
+        sorted(&refused(
+            "file-write-create",
+            &target.display().to_string(),
+            "sh",
+        ))
+        .map(|blocked| blocked.sandbox_blocked.kind)
+    };
+    assert_eq!(kind(root.join(".purlis/x")), Some(Kind::ProjectState));
+    assert_eq!(kind(root.join("notes.md")), Some(Kind::ProjectFiles));
+    assert_eq!(kind(tmp.join("x")), Some(Kind::Temp));
+}

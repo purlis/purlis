@@ -71,6 +71,9 @@ describe("a change a chat proposed", () => {
       "Apply",
       "Dismiss",
     ]);
+    // Apply is a grant and Dismiss plain (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("ui-button-grants");
+    expect(screen.getByRole("button", { name: "Dismiss" })).not.toHaveClass("ui-button-grants");
     await screen.findByTestId("ask-writes");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() =>

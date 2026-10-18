@@ -34,12 +34,36 @@ pub const PREFIX: &str = "browser_";
 const WAIT_SECONDS: u64 = 10;
 
 /// What a tool call asks, before the app hears it: which browser, the call's own id where the
-/// agent gave one, and the act.
+/// agent gave one, the act, and whether its answer is to say what changed on the page (#2137).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asked {
     pub browser: Option<String>,
     pub call_id: Option<String>,
     pub asked: Browsing,
+    /// Whether the act's answer is followed by [`Act::Changes`] of its page: the lines new or
+    /// gone since the page was last read.
+    pub changes: bool,
+}
+
+/// The tools whose answer may say what changed on the page (#2137): every one that acts on a
+/// page already open.
+const SAY_CHANGES: [&str; 10] = [
+    "browser_navigate",
+    "browser_click",
+    "browser_double_click",
+    "browser_hover",
+    "browser_type",
+    "browser_press",
+    "browser_select",
+    "browser_drag",
+    "browser_scroll",
+    "browser_back",
+];
+
+/// The call id of the changes that follow the act of `call_id`: its own, so a retry of the act
+/// answers its changes again too.
+pub fn changes_call_id(call_id: &str) -> String {
+    format!("{call_id}:changes")
 }
 
 /// A call id of its own for a call the agent gave none, so no two calls share one.
@@ -159,6 +183,7 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
                 browser: None,
                 call_id,
                 asked: Browsing::New,
+                changes: false,
             });
         }
         "browser_close" => {
@@ -166,14 +191,34 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
                 browser,
                 call_id,
                 asked: Browsing::Close,
+                changes: false,
+            });
+        }
+        "browser_login" => {
+            let login = required(args, "login")?.trim().to_owned();
+            if login.is_empty() {
+                return Err("give `login` the name of one of your persona's browser logins".into());
+            }
+            return Ok(Asked {
+                browser,
+                call_id,
+                asked: Browsing::LogIn { login },
+                changes: false,
             });
         }
         other => return Err(format!("purlis has no browser tool {other:?}")),
     };
+    let changes = flag(args, "changes")?;
+    if changes && !SAY_CHANGES.contains(&name) {
+        return Err(format!(
+            "{name} takes no `changes`: only a tool that acts on a page does"
+        ));
+    }
     Ok(Asked {
         browser,
         call_id,
         asked: Browsing::Act(act),
+        changes,
     })
 }
 
@@ -201,6 +246,7 @@ pub fn needs_you(args: &Map<String, Value>) -> Result<Asked, String> {
         browser: Some(browser),
         call_id: None,
         asked: Browsing::NeedsYou { question },
+        changes: false,
     })
 }
 
@@ -556,8 +602,64 @@ fn s_none() -> Value {
     schema(json!({}), &[])
 }
 
+fn s_login() -> Value {
+    schema(
+        json!({
+            "login": {
+                "type": "string",
+                "description": "The browser login's name, as your persona declares it in the \
+                                project's settings (shop-login).",
+            }
+        }),
+        &["login"],
+    )
+}
+
+/// `schema` with `changes`, for a tool in [`SAY_CHANGES`].
+fn saying_changes(mut schema: Value) -> Value {
+    schema["properties"]["changes"] = json!({
+        "type": "boolean",
+        "description": "Also answer what changed on the page: the lines of its snapshot new \
+                        or gone since it was last read, new ones with their references. \
+                        Saves a whole snapshot after the step.",
+    });
+    schema
+}
+
+fn c_navigate() -> Value {
+    saying_changes(s_navigate())
+}
+
+fn c_target() -> Value {
+    saying_changes(s_target())
+}
+
+fn c_type() -> Value {
+    saying_changes(s_type())
+}
+
+fn c_press() -> Value {
+    saying_changes(s_press())
+}
+
+fn c_select() -> Value {
+    saying_changes(s_select())
+}
+
+fn c_drag() -> Value {
+    saying_changes(s_drag())
+}
+
+fn c_scroll() -> Value {
+    saying_changes(s_scroll())
+}
+
+fn c_page_only() -> Value {
+    saying_changes(s_page_only())
+}
+
 /// **The browser tools**, in the order the spec names them.
-pub const TOOLS: [Tool; 19] = [
+pub const TOOLS: [Tool; 20] = [
     Tool {
         name: "browser_open",
         description: "Open a new page at an http or https address in this chat's browser; it \
@@ -569,14 +671,15 @@ pub const TOOLS: [Tool; 19] = [
     Tool {
         name: "browser_navigate",
         description: "Send a page to an http or https address.",
-        schema: s_navigate,
+        schema: c_navigate,
         read_only: false,
     },
     Tool {
         name: "browser_snapshot",
         description: "The page as a tree of elements, each with a reference (e12) the other \
                       tools act on. Long pages come a part at a time: the last line says where \
-                      the next part starts.",
+                      the next part starts. An element the page lays out beyond what it shows \
+                      is marked (out of view): scroll to it.",
         schema: s_snapshot,
         read_only: true,
     },
@@ -591,57 +694,57 @@ pub const TOOLS: [Tool; 19] = [
         name: "browser_click",
         description: "Click an element. Answers once the page has settled, or says what it \
                       still waits for.",
-        schema: s_target,
+        schema: c_target,
         read_only: false,
     },
     Tool {
         name: "browser_double_click",
         description: "Double-click an element.",
-        schema: s_target,
+        schema: c_target,
         read_only: false,
     },
     Tool {
         name: "browser_hover",
         description: "Move the pointer over an element.",
-        schema: s_target,
+        schema: c_target,
         read_only: false,
     },
     Tool {
         name: "browser_type",
         description: "Type text into one or more fields, in turn, or into whatever has the \
                       focus.",
-        schema: s_type,
+        schema: c_type,
         read_only: false,
     },
     Tool {
         name: "browser_press",
         description: "Press keys or chords, in turn.",
-        schema: s_press,
+        schema: c_press,
         read_only: false,
     },
     Tool {
         name: "browser_select",
         description: "Choose options in a drop-down.",
-        schema: s_select,
+        schema: c_select,
         read_only: false,
     },
     Tool {
         name: "browser_drag",
         description: "Drag an element onto another, or by a distance in pixels.",
-        schema: s_drag,
+        schema: c_drag,
         read_only: false,
     },
     Tool {
         name: "browser_scroll",
         description: "Scroll the page, or over an element, by a distance; or bring an element \
                       into view.",
-        schema: s_scroll,
+        schema: c_scroll,
         read_only: false,
     },
     Tool {
         name: "browser_back",
         description: "Go back to the page's previous address.",
-        schema: s_page_only,
+        schema: c_page_only,
         read_only: false,
     },
     Tool {
@@ -680,6 +783,15 @@ pub const TOOLS: [Tool; 19] = [
         name: "browser_close",
         description: "End one of this chat's browsers, and everything it held.",
         schema: s_none,
+        read_only: false,
+    },
+    Tool {
+        name: "browser_login",
+        description: "Log this chat's browser in with one of your persona's browser logins, by \
+                      its name. purlis goes to the login's page, fills it from the vault and \
+                      submits it: the login never reaches you. Once logged in, the browser \
+                      reaches the login's site alone; use browser_new for any other site.",
+        schema: s_login,
         read_only: false,
     },
 ];

@@ -30,7 +30,7 @@
    keyboard is on is the highlighted one, as in every native menu. */
 
 /* ---------------------------------------------------------------------------------------------
-   Button: `.ui-button`, secondary by default; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`; `.ui-button-sm`.
+   Button: `.ui-button`, secondary by default; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`, `.ui-button-grants`; `.ui-button-sm`.
    --------------------------------------------------------------------------------------------- */
 
 .ui-button {
@@ -86,6 +86,15 @@
 
 .ui-button-danger:hover:not(:disabled, [aria-disabled="true"]) {
   background-color: var(--danger-surface);
+}
+
+/* **An answer that grants** (an Allow, an Accept; ADR 0097 §6): as plain as Keep blocked beside
+   it, on the control's own ground, so neither is pressed for its weight. It is told apart by its
+   edge in the accent and the open lock it leads with (`GrantsMark`, sized as every icon is by
+   `.lucide`), a cue that is not colour.
+   The primary style stays the answer purlis suggests, and is not a grant's. */
+.ui-button-grants {
+  border-color: var(--accent-base);
 }
 
 /* A toggle (`aria-pressed`, DS-12): pressed, it stands on the accent's ground behind the accent's

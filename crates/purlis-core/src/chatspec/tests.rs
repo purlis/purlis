@@ -216,3 +216,106 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
         Some("the-chats-own")
     );
 }
+
+#[test]
+fn a_chat_on_purlis_s_own_wrap_starts_it_with_only_what_it_carries_for_the_chat() {
+    let set = [
+        ("PURLIS_ROOT".to_owned(), "/home/me/project".to_owned()),
+        ("LD_PRELOAD".to_owned(), "/home/me/project/x.so".to_owned()),
+    ];
+    let reporting = || {
+        Some(Reporting {
+            socket: std::path::Path::new("/run/purlis/hooks.sock"),
+            token: "chat-token",
+        })
+    };
+    let args = purlis_linux_sandbox::line(
+        "(version 1)\n",
+        "/usr/bin/codex".to_owned(),
+        vec!["--a".to_owned()],
+    );
+    let wrapped = spec(
+        app(),
+        &Terminal {
+            program: "/opt/purlis/bin/purlis",
+            args: &args,
+            ..a_chat(&set, reporting())
+        },
+    );
+    let plain = spec(app(), &a_chat(&set, reporting()));
+
+    assert!(wrapped.env_clear);
+    assert!(
+        wrapped.env.iter().all(|(name, _)| {
+            name.to_str()
+                .is_some_and(|name| name.starts_with(purlis_linux_sandbox::carried::COUNT))
+        }),
+        "the wrap's own environment names nothing a loader or a library reads: {:?}",
+        wrapped.env
+    );
+    // What the chat's program is given: the terminal's type, which its terminal set on the
+    // program before, then what it would have started with unwrapped, in that order.
+    let given = purlis_linux_sandbox::carried::read(wrapped.env).expect("carried");
+    let mut meant = vec![(OsString::from("TERM"), OsString::from("xterm-256color"))];
+    meant.extend(plain.env);
+    assert_eq!(given, meant);
+}
+
+#[test]
+fn a_chat_whose_words_only_look_like_the_wrap_s_is_started_as_it_is() {
+    let args = vec!["_sandbox".to_owned(), "--help".to_owned()];
+    let spec = spec(
+        app(),
+        &Terminal {
+            program: "/usr/bin/tool",
+            args: &args,
+            ..a_chat(&[], None)
+        },
+    );
+    assert_eq!(value(&spec, "PATH").as_deref(), Some("/usr/bin:/bin"));
+}
+
+#[test]
+fn what_a_profile_hands_a_chat_on_purlis_s_own_wrap_is_carried_to_its_program() {
+    let args = purlis_linux_sandbox::line("(version 1)\n", "/usr/bin/codex".to_owned(), Vec::new());
+    let set = [("API_KEY".to_owned(), "from-the-chat".to_owned())];
+    let wrapped = spec(
+        app(),
+        &Terminal {
+            program: "/opt/purlis/bin/purlis",
+            args: &args,
+            ..a_chat(&set, None)
+        },
+    );
+    let handed = crate::profilesignin::Handed::of(vec![(
+        "API_KEY".to_owned(),
+        "from-the-profile".to_owned(),
+    )]);
+    let wrapped = with_handed(wrapped, &handed);
+    assert!(
+        wrapped.env.iter().all(|(name, _)| name
+            .to_str()
+            .is_some_and(|name| name.starts_with(purlis_linux_sandbox::carried::COUNT))),
+        "{:?}",
+        wrapped.env
+    );
+    let given = purlis_linux_sandbox::carried::read(wrapped.env).expect("carried");
+    let keys: Vec<_> = given.iter().filter(|(name, _)| name == "API_KEY").collect();
+    assert_eq!(keys, [&("API_KEY".into(), "from-the-profile".into())]);
+}
+
+#[test]
+fn what_a_profile_hands_a_chat_is_set_last() {
+    let set = [("API_KEY".to_owned(), "from-the-chat".to_owned())];
+    let plain = spec(app(), &a_chat(&set, None));
+    let handed = crate::profilesignin::Handed::of(vec![(
+        "API_KEY".to_owned(),
+        "from-the-profile".to_owned(),
+    )]);
+    let plain = with_handed(plain, &handed);
+    assert_eq!(
+        value(&plain, "API_KEY").as_deref(),
+        Some("from-the-profile")
+    );
+    assert_eq!(value(&plain, "PATH").as_deref(), Some("/usr/bin:/bin"));
+}

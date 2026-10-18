@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use super::super::{Lane, NewSites, ReachProxy};
+use super::super::{Bound, Lane, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{By, Reach};
 
 /// A server on this machine's loopback, and its port.
@@ -274,4 +274,89 @@ fn a_tunnel_open_when_the_proxy_goes_is_ended_with_it() {
         !crate::sandbox::localport::is_own(proxy_port),
         "the port is let go once the proxy stopped listening"
     );
+}
+
+/// A proxy whose chat's reach lists each of `ports` of this machine, bound by `bound` once
+/// purlis logs its browser in (#2016).
+fn a_bound_proxy(ports: &[u16], bound: Bound) -> ReachProxy {
+    let reach = Reach::of(
+        ports
+            .iter()
+            .flat_map(|port| crate::sandbox::localport::reach_entries(*port))
+            .map(|entry| (entry, By::Chat))
+            .collect(),
+    );
+    ReachProxy::bound_by(Lane::of(reach), NewSites::refusing(), bound).expect("a reach proxy")
+}
+
+#[test]
+fn a_browser_holding_a_login_reaches_its_logins_site_alone_from_the_moment_it_is_bound() {
+    let (login_site, login_port) = a_server();
+    let (other, other_port) = a_server();
+    // The other site echoes until its client goes, then says it went.
+    let echo = std::thread::spawn(move || {
+        let (mut stream, _) = other.accept().expect("the proxy's connection");
+        let mut buf = [0u8; 64];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return other,
+                Ok(n) => {
+                    if stream.write_all(&buf[..n]).is_err() {
+                        return other;
+                    }
+                }
+            }
+        }
+    });
+    let proxy = a_bound_proxy(&[login_port, other_port], Bound::default());
+    let mut open = to(&proxy);
+    assert_eq!(
+        status(
+            &mut open,
+            &format!("CONNECT 127.0.0.1:{other_port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 200 Connection established"
+    );
+    open.write_all(b"ping").expect("sent");
+    let mut back = [0u8; 4];
+    open.read_exact(&mut back).expect("echoed");
+
+    proxy
+        .bind(&Site::of("127.0.0.1", login_port))
+        .expect("bound");
+
+    // The tunnel open before is ended at the bind.
+    open.set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("a timeout");
+    let mut more = [0u8; 4];
+    match open.read(&mut more) {
+        Ok(0) => {}
+        Err(err)
+            if !matches!(
+                err.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) => {}
+        other => panic!("the tunnel outlived the bind: {other:?}"),
+    }
+    let other = echo.join().expect("the other site");
+    // Another site the chat lists is refused from now, and never connected to.
+    let mut again = to(&proxy);
+    assert_eq!(
+        status(
+            &mut again,
+            &format!("CONNECT 127.0.0.1:{other_port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 403 Forbidden"
+    );
+    assert!(nobody_connected(&other));
+    // The login's own site goes on.
+    let mut login = to(&proxy);
+    assert_eq!(
+        status(
+            &mut login,
+            &format!("CONNECT 127.0.0.1:{login_port} HTTP/1.1\r\n\r\n")
+        ),
+        "HTTP/1.1 200 Connection established"
+    );
+    drop(login_site);
 }

@@ -152,6 +152,9 @@ graphql_client = "0.16"
 # already in this workspace's lockfile through `secrecy` and the app.
 secrecy = "0.10"
 zeroize = "1"
+# A browser login's host written in another script is compared in its ASCII spelling, as the
+# engine records a page's address (#2016). Already in the tree through `url`.
+idna = "1"
 uuid = { version = "1.26.1", features = ["v4"] }
 # RC-20's hand-off to your editor (`youreditor`): a file's path percent-encoded into a
 # `vscode://`, `zed://` or `idea://` URL, and `$VISUAL`/`$EDITOR` split into a program and its

@@ -4620,8 +4620,8 @@ h2.sidebar-title .node-icon {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-/* The mark may be `needs-you.base`; the WORDS may not. `#b85050` on `surface.base` measures
-   3.61:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
+/* The mark may be `needs-you.base`; the WORDS may not. `#bd5654` on `surface.base` measures
+   3.88:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
    the same distinction that split `needs-you` from `danger` in the first place. The number
    is loud by being filled, on the one pair the contrast test already measures. */
 .needs-you-button svg {

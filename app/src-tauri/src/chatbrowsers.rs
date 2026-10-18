@@ -27,6 +27,12 @@
 //!   chat's reach while it runs, its browsers end ([`ChatBrowsers::narrowed`]); the next call
 //!   opens one on what the chat reaches then, and says why.
 //! - **Keep off** refuses every call of the chat's, in words that say not to retry.
+//! - **A login is purlis's to perform** (#2016). `browser_login` names one of the chat's
+//!   persona's declared browser logins; the app reads its values for exactly the login the
+//!   chat's start armed (`purlis_core::secrets::brokered::login_for`) and hands them to the
+//!   session host ([`Driver::log_in`]), whose browser fills them on the login's own origin and
+//!   hands the browser back reaching that origin alone. The chat is told the page the login
+//!   left, never a value; it chooses which declared login, and nothing else.
 //! - **A site new to the project asks** (#2018). Where the browser's judge held something back
 //!   (an address the agent wrote for a site new to the project, a form or a body sent there, or
 //!   typing on a page of it), the act's answer names the site, the chat is told it was asked
@@ -52,7 +58,7 @@ use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::sandbox::browser_reach::Site;
-use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, LogIn};
 use purlis_session_protocol::session::{Layer, Listed};
 
 /// Why the session host did not carry an act out.
@@ -87,6 +93,9 @@ pub trait Driver: Send + Sync + 'static {
         act: Act,
         reach: BrowserReach,
     ) -> Result<Browsed, Refused>;
+    /// purlis performs `login` in browser `program` (#2016): the page it left once it handed
+    /// the browser back, or why it did not go through, in words that carry no value.
+    fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused>;
     /// Ends browser `program`, and forgets it.
     fn close(&self, program: &str) -> Result<(), String>;
     /// Ends browser `program` by its id, with its reach proxy: what is tried when a close did
@@ -1114,6 +1123,8 @@ impl ChatBrowsers {
     /// sandbox's record of its reach, without which nobody is asked about a site; `now` is in
     /// seconds since 1970. The chat is the one whose token the line carried. With no `driver`
     /// there is no session host, and so no browser.
+    /// A `browser_login` call's login, by its name, is `logins`'s to read (#2016): the
+    /// declared page and the vault's values, or why there are none.
     #[allow(clippy::too_many_arguments)]
     pub fn answer(
         &self,
@@ -1123,11 +1134,13 @@ impl ChatBrowsers {
         reach: &dyn Fn() -> BrowserReach,
         confined: bool,
         as_persona: &dyn Fn() -> AsPersona,
+        logins: &dyn Fn(&str) -> Result<LogIn, String>,
         now: u64,
     ) -> (Answer, bool) {
         let persona = as_persona();
         self.follow_always(driver, browse.chat, &persona);
-        let (mut answer, raised) = self.answer_now(driver, root, browse, reach, persona, now);
+        let (mut answer, raised) =
+            self.answer_now(driver, root, browse, reach, persona, logins, now);
         // What the browser held back for the person says so first (#2018).
         if let Answer::Browsed { browsed, .. } = &mut answer
             && !browsed.asked.is_empty()
@@ -1176,6 +1189,7 @@ impl ChatBrowsers {
         (answer, raised)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn answer_now(
         &self,
         driver: Option<&Arc<dyn Driver>>,
@@ -1183,6 +1197,7 @@ impl ChatBrowsers {
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
         as_persona: AsPersona,
+        logins: &dyn Fn(&str) -> Result<LogIn, String>,
         now: u64,
     ) -> (Answer, bool) {
         let no = |why: &str| Answer::No {
@@ -1311,7 +1326,8 @@ impl ChatBrowsers {
                     false,
                 );
             }
-            Browsing::Act(act) => act.clone(),
+            Browsing::Act(act) => Doing::Act(act.clone()),
+            Browsing::LogIn { login } => Doing::LogIn(login.clone()),
             // Answered before the browsers are (`crate::browserneedsyou::answered_first`).
             Browsing::NeedsYou { .. } => {
                 return (
@@ -1346,10 +1362,17 @@ impl ChatBrowsers {
             &chat_sites,
             &purlis_core::sandbox::policy::Locks::of(root),
         );
-        let acted = if ended {
-            Err(Refused::Gone)
-        } else {
-            driver.act(&program, &browse.call_id, act, reach_now)
+        let acted = match act {
+            _ if ended => Err(Refused::Gone),
+            Doing::Act(act) => driver.act(&program, &browse.call_id, act, reach_now),
+            // The login is read only now, for the browser it goes into, and handed on whole.
+            Doing::LogIn(declared) => match logins(&declared) {
+                Ok(login) => driver.log_in(&program, login).map(|mut browsed| {
+                    browsed.note = Some(logged_in_said(&declared, browsed.note.as_deref()));
+                    browsed
+                }),
+                Err(why) => Err(Refused::Said(why)),
+            },
         };
         match acted {
             Ok(browsed) => (
@@ -1366,6 +1389,25 @@ impl ChatBrowsers {
             }
         }
     }
+}
+
+/// What a chat's browser call asks of the browser itself: one of its acts, or a login of
+/// purlis's by the login's name (#2016).
+enum Doing {
+    Act(Act),
+    LogIn(String),
+}
+
+/// What the chat is told once purlis performed its browser login `name` (#2016): that its
+/// password field went, where, and what the browser reaches from now. Never that the person is
+/// signed in, which only the page can show (it may ask for a second step), and never a value.
+fn logged_in_said(name: &str, note: Option<&str>) -> String {
+    let gone = note.unwrap_or("the password field is gone since purlis submitted the login");
+    format!(
+        "{gone}, with {name}: take a snapshot to see whether the page asks for anything more. \
+         This browser now reaches that site alone; open another with browser_new for any other \
+         site"
+    )
 }
 
 /// The event the window hears a chat's browsers ended on, because the person narrowed its
@@ -1480,6 +1522,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     let reach = || reach_of(held, browse.chat);
     let confined = held.chats().confines_now(browse.chat).is_some();
     let as_persona = || as_persona_of(held, browse.chat);
+    let logins = |name: &str| login_of(held, browse.chat, name);
     let listing = held.browsers().listing();
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),
@@ -1488,6 +1531,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         &reach,
         confined,
         &as_persona,
+        &logins,
         now,
     );
     held.browsers_listed_since(listing);
@@ -1510,6 +1554,27 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         held.chats().asks_may_have_moved();
     }
     answer
+}
+
+/// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
+/// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
+fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<LogIn, String> {
+    let open = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .find(|open| open.session == session)
+        .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
+    let asker = purlis_core::secrets::brokered::Asker {
+        root: held.root().to_path_buf(),
+        env: purlis_core::secrets::Env::from_process(),
+        chat: session,
+        persona: open.persona,
+        folder: open.cwd,
+        confines: held.chats().confines_now(session),
+        harness: open.harness,
+    };
+    purlis_core::secrets::brokered::login_for(&asker, name)
 }
 
 /// The persona chat `session` runs with, from the app's own record of it, never from what
