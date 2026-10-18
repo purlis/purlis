@@ -5546,11 +5546,17 @@ version = "0.4.2"
 dependencies = [
  "arboard",
  "base64 0.23.1",
+ "block2",
  "bytes",
+ "cairo-rs",
  "changelog",
  "chrono",
  "dunce",
  "notify",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "purlis-core",
  "purlis-host",
  "purlis-linux-sandbox",
@@ -5576,6 +5582,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "webkit2gtk",
  "zbus",
 ]
 

@@ -1327,6 +1327,25 @@ pub enum Ask {
     /// Asked over the framed stream, so a screenshot comes back as an image. Boxed: it may carry
     /// the text the agent types.
     Browse(Box<BrowseAsk>),
+    /// Draw the theme specimen for this chat (#2330, [`crate::themepreview`]): what the
+    /// `theme_preview` tool hands over. The app draws a fixed page of sample content in a hidden
+    /// window of its own, in each theme and appearance asked, and answers
+    /// [`Answer::Previewed`], or [`Answer::No`] with why. Asked over the framed stream, so each
+    /// picture comes back as an image. No ticket, for a record's reason: nothing is made or
+    /// moved, and the picture is of the specimen's own content, never the window's.
+    ThemePreview(ThemePreviewAsk),
+}
+
+/// **The theme specimens a chat asks for** ([`Ask::ThemePreview`], #2330): one, or two side by
+/// side, each a theme by its id and an appearance. Nothing else travels: no workspace, no path,
+/// nothing of the window's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ThemePreviewAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// What to draw, in the order the pictures come back; at most
+    /// [`crate::themepreview::AT_MOST`].
+    pub specimens: Vec<crate::themepreview::Specimen>,
 }
 
 /// **An act a chat asks of one of its browsers** ([`Ask::Browse`], #2013).
@@ -1783,6 +1802,12 @@ pub enum Answer {
         browser: String,
         browsed: Box<purlis_session_protocol::browsing::Browsed>,
     },
+    /// The theme specimens drawn ([`Ask::ThemePreview`], #2330), in the order asked. On the
+    /// framed stream each picture travels as an image after the answer ([`framed::Reply`]),
+    /// never inside it.
+    Previewed {
+        painted: Vec<crate::themepreview::Painted>,
+    },
     /// The session record is written (#1332): where, plane-relative, and whether the chat's
     /// tab now closes, which it does only under a smart-close pass. `warnings` is what did not
     /// follow it ([`crate::sessionrecord::Recorded::warnings`]).
@@ -2047,6 +2072,7 @@ impl Ask {
             Self::Removal(removal) => removal.chat,
             Self::Propose(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,
+            Self::ThemePreview(asks) => asks.chat,
         }
     }
 }
@@ -6939,7 +6965,8 @@ mod tests {
                     | Ask::Task(_)
                     | Ask::Removal(_)
                     | Ask::Propose(_)
-                    | Ask::Browse(_) => Answer::No {
+                    | Ask::Browse(_)
+                    | Ask::ThemePreview(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }
