@@ -443,9 +443,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
-            "take_back",
             // The desktop removing the runner (1.25, #2525).
             "unpair",
+            "take_back",
         ],
         Scope::FleetMcp => &[
             "list",
