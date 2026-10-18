@@ -596,7 +596,7 @@ fn a_folder_of_yours_no_chat_writes() -> Option<tempfile::TempDir> {
                 "{} is too long for a socket",
                 folder.path().display()
             );
-            eprintln!(
+            println!(
                 "not run: {} is too long for a socket",
                 folder.path().display()
             );
@@ -604,7 +604,7 @@ fn a_folder_of_yours_no_chat_writes() -> Option<tempfile::TempDir> {
         }
         Err(err) => {
             assert!(!on_ci, "CI runs this in the runner's home: {err}");
-            eprintln!(
+            println!(
                 "not run: no folder of yours can be made in your home here ({err}); CI runs it"
             );
             None
