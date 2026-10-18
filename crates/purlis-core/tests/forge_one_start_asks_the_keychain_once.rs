@@ -68,6 +68,7 @@ fn asked(home: &Path) -> (usize, usize) {
 #[test]
 fn one_start_with_three_projects_reads_the_sign_in_once_and_asks_whether_it_is_there_at_most_once()
 {
+    purlis_core::unsteered!();
     let (home, account) = signed_in_by_an_earlier_run();
     let before = asked(home.path());
 
@@ -109,6 +110,7 @@ fn one_start_with_three_projects_reads_the_sign_in_once_and_asks_whether_it_is_t
 
 #[test]
 fn the_credential_helper_reads_the_token_once_and_asks_nothing_else() {
+    purlis_core::unsteered!();
     let (home, account) = signed_in_by_an_earlier_run();
     let before = asked(home.path());
 
