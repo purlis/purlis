@@ -139,7 +139,6 @@ fn a_write_the_wrap_of_a_chat_the_host_started_refuses_reaches_the_window_as_its
     let chat = root.join("workspaces/a/repo");
     std::fs::create_dir_all(&chat).unwrap();
     std::fs::write(root.join("charter.toml"), "").unwrap();
-    std::fs::create_dir_all(&chat).unwrap();
     std::fs::create_dir_all(root.join("workspaces/b")).unwrap();
     let elsewhere = root.join("workspaces/b/notes.md");
     // Where the host binds this project's hook channel, as the window's own does.
