@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792303598302,
+  "lastUpdate": 1792305100621,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16632,6 +16632,48 @@ window.BENCHMARK_DATA = {
             "value": 100.94511800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.676, 100.682, 100.945, 101.206, 101.471 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a0228deb4d4f8cf2ebc222b8ecc77c08d7030c66",
+          "message": "Cluster operator: a Claim held up by Claims made before the policy says so (#2580) (#2585)\n\nWhen a pool's template or warm pool in a namespace is in a Claim's way and its owners are Claims\nthe operator knows there on that pool, but refuses since they were made before the policy on\nclaims was in force, the Claim's Ready says HeldByClaimsMadeBeforePolicy, naming them, and to\ndelete them or wait for them to end (upstream::claims_holding). An object the operator never\nmade still gives UpstreamObjectInTheWay with its words.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T10:30:22+04:00",
+          "tree_id": "7238c18476b3bc64681f4624105ecd6e209eede3",
+          "url": "https://github.com/purlis/purlis/commit/a0228deb4d4f8cf2ebc222b8ecc77c08d7030c66"
+        },
+        "date": 1792305098941,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5357695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.514, 0.519, 0.536, 0.538, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.351986500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.859, 16.966, 17.352, 17.377, 17.426 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.40980300000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.265, 103.426, 104.410, 105.664, 106.596 ms"
           }
         ]
       }
