@@ -269,7 +269,8 @@ describe("the Notice of what a project expects", function () {
 
   it("asks once, and Allow keeps each item for this project on this machine", async () => {
     const said = await theNotice("the project declares two services and opened");
-    expect(said).toContain("This project expects more than this machine allows");
+    // Its own words, with each item: the label is the Notice's name, not its text.
+    expect(said).toContain("This project's settings say its chats expect what is listed here.");
     for (const one of FIRST) expect(said).toContain(one);
 
     await press(ALLOW);
