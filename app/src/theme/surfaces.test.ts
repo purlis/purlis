@@ -9,8 +9,8 @@ import { nativeWindow } from "./native";
 import {
   BUILT_IN,
   PLATFORM_DRAWN,
+  DEFAULT_THEME,
   SYNTAX_ROLES,
-  TINTED_WINDOW,
   property,
   xtermTheme,
   type Token,
@@ -102,7 +102,7 @@ describe("the window's stylesheet", () => {
   it("draws a chart's series in the first chart colour, which turns with the accent", () => {
     expect(readers(app, "chart.1")).toEqual([".chart-bar | background"]);
     expect(readers(app, "accent.base")).not.toContain(".chart-bar | background");
-    expect(TINTED_WINDOW).toEqual(expect.arrayContaining(["chart.1", "markdown.link"]));
+    expect(DEFAULT_THEME.tint.window).toEqual(expect.arrayContaining(["chart.1", "markdown.link"]));
   });
 
   it("keeps the light editor's own selection and caret: no window rule reaches inside it", () => {
