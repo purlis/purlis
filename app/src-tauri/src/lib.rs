@@ -109,6 +109,7 @@ mod projectsettings;
 mod proposals;
 mod readonly;
 mod rebrief;
+mod reconnecting;
 mod references;
 mod remotequestion;
 mod removalasks;
@@ -127,6 +128,7 @@ mod settings;
 mod silence;
 mod slowstart;
 mod smartclose;
+mod specimen;
 mod staleclones;
 mod stopping;
 mod taskblocks;
@@ -2793,6 +2795,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<chatbrowsers::BrowsersListed>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
+        // What `chats-reconnecting` carries (#2496).
+        .typ::<reconnecting::ChatsReconnecting>()
         // What `chat-stop` carries (#1448).
         .typ::<stopping::ChatStop>()
         // What `activity-line` carries (#1495).
@@ -3305,6 +3309,8 @@ pub fn run() {
         })
         .setup(|app| {
             reached("setup");
+            // The theme specimen's painter (#2330): hidden windows of this app's own.
+            specimen::install(app.handle());
             // One charter per user even without a session bus (`instance.rs`). After the
             // single-instance plugin, which has already handed an ordinary second launch over;
             // before the window and before any plane, whose hook socket `hookwire` removes
@@ -3853,6 +3859,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             hostlost::LOST,
+                            &told,
+                        );
+                    })
+                })
+                // A runner's chats while its link is down: the window says "Reconnecting" over
+                // each one's screen until it is back (#2496).
+                .telling_reconnecting({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: reconnecting::ChatsReconnecting| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            reconnecting::EVENT,
                             &told,
                         );
                     })

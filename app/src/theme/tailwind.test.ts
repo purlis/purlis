@@ -73,7 +73,9 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     // read the real DOM. Whoever turns it on does it as its own change, with its own evidence.
     const css = await stylesheet();
     expect(css).not.toContain("font-feature-settings");
-    expect(css).not.toMatch(/\bblockquote\b/);
+    // Preflight's first rule resets every element's box, down to the file picker's button. (A
+    // sheet of the window's own may name an element such as `blockquote`, #2327.)
+    expect(css).not.toContain("::file-selector-button");
   });
 
   it("gives a motion utility the motion token, and nothing of Tailwind's own", async () => {

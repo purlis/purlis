@@ -217,6 +217,299 @@ async fn a_pool_names_its_image_by_digest_and_a_claim_keeps_its_pool() {
     scratch.end().await;
 }
 
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_is_removed() {
+    use purlis_cluster_operator::upstream::{self, SandboxTemplate};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-in-the-way").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-in-the-way",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-in-the-way",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    // A template under the name the operator would use, made by hand: no owner.
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
+    let mut by_hand = upstream::template_for(&pool, &scratch.name, vec![]);
+    by_hand.metadata.owner_references = None;
+    let containers = &mut by_hand
+        .spec
+        .pod_template
+        .spec
+        .as_mut()
+        .expect("a pod")
+        .containers;
+    containers[0].name = "by-hand".into();
+    let made = templates
+        .create(&PostParams::default(), &by_hand)
+        .await
+        .expect("the template made by hand");
+    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-in-the-way"))
+        .await
+        .expect("the claim");
+
+    let message = eventually(
+        "the claim names the template in its way",
+        Duration::from_secs(60),
+        || async {
+            let claim = claims.get("ada-1").await.ok()?;
+            let ready = claim
+                .status?
+                .conditions
+                .into_iter()
+                .find(|c| c.type_ == "Ready")?;
+            (ready.reason == "UpstreamObjectInTheWay").then_some(ready.message)
+        },
+    )
+    .await;
+    assert!(
+        message.contains(&format!("SandboxTemplate {}", made.name_any())),
+        "{message}"
+    );
+    // A while later: still as it was made, and nothing asked of upstream for the claim.
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    let held = templates.get(&made.name_any()).await.expect("the template");
+    // Upstream's own controller labels every template; the operator writes nothing to it.
+    assert_eq!(held.spec, made.spec);
+    assert!(held.owner_references().is_empty(), "{held:?}");
+    assert!(
+        held.managed_fields()
+            .iter()
+            .all(|entry| entry.manager.as_deref() != Some(purlis_cluster_operator::FIELD_MANAGER)),
+        "{held:?}"
+    );
+    assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+
+    templates
+        .delete(&made.name_any(), &DeleteParams::default())
+        .await
+        .expect("the template removed");
+    eventually(
+        "with it gone, the claim goes on",
+        Duration::from_secs(300),
+        || async {
+            let claim = claims.get("ada-1").await.ok()?;
+            (ready_of(&claim)?.0 == "True").then_some(())
+        },
+    )
+    .await;
+    let ours = templates
+        .get(&made.name_any())
+        .await
+        .expect("the operator's template");
+    assert_eq!(
+        ours.owner_references().first().map(|o| o.kind.as_str()),
+        Some("Claim")
+    );
+
+    let _ = pools
+        .delete("e2e-in-the-way", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_says_so() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use purlis_cluster_operator::upstream::{SandboxTemplate, name_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-pool-gone").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-pool-gone",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-pool-gone",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-pool-gone"))
+        .await
+        .expect("the claim");
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("ada-1").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+    let running = pods.list(&ListParams::default()).await.expect("pods");
+    assert_eq!(running.items.len(), 1);
+    let pod = running.items[0].clone();
+
+    pools
+        .delete("e2e-pool-gone", &DeleteParams::foreground())
+        .await
+        .expect("the pool deleted");
+    eventually("the pool is gone", Duration::from_secs(60), || async {
+        pools
+            .get_opt("e2e-pool-gone")
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    eventually(
+        "the claim says its pool is gone and its runner is ready",
+        Duration::from_secs(60),
+        || async {
+            let claim = claims.get("ada-1").await.ok()?;
+            (ready_of(&claim)? == ("True".into(), "PoolDeleted".into())).then_some(())
+        },
+    )
+    .await;
+    // What the claim says is what the cluster shows: the same pod, still running, with the
+    // template it was made from and the network policy upstream makes of that template.
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let still = pods.get(&pod.name_any()).await.expect("the runner's pod");
+    assert_eq!(still.uid(), pod.uid());
+    assert_eq!(
+        still.status.and_then(|status| status.phase).as_deref(),
+        Some("Running")
+    );
+    let template = name_for("e2e-pool-gone");
+    Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name)
+        .get(&template)
+        .await
+        .expect("the runner's template");
+    Api::<NetworkPolicy>::namespaced(client.clone(), &scratch.name)
+        .get(&format!("{template}-network-policy"))
+        .await
+        .expect("the runner's network policy");
+    let claim = claims.get("ada-1").await.expect("the claim");
+    assert_eq!(
+        ready_of(&claim),
+        Some(("True".into(), "PoolDeleted".into()))
+    );
+
+    claims
+        .delete("ada-1", &DeleteParams::foreground())
+        .await
+        .expect("the claim deleted");
+    eventually(
+        "the runner goes with its claim",
+        Duration::from_secs(120),
+        || async {
+            let list = pods.list(&ListParams::default()).await.ok()?;
+            list.items.is_empty().then_some(())
+        },
+    )
+    .await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_pools_template_and_warm_pool_go_with_its_last_claim_in_a_namespace() {
+    use purlis_cluster_operator::upstream::{SandboxTemplate, SandboxWarmPool, name_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-last-claim").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-last-claim",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-last-claim",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &scratch.name);
+    let name = name_for("e2e-last-claim");
+    let ready = |claim: &'static str| {
+        let claims = claims.clone();
+        async move {
+            eventually(
+                &format!("{claim} is ready"),
+                Duration::from_secs(300),
+                || async {
+                    let claim = claims.get(claim).await.ok()?;
+                    (ready_of(&claim)?.0 == "True").then_some(())
+                },
+            )
+            .await
+        }
+    };
+
+    claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-last-claim"))
+        .await
+        .expect("the first claim");
+    ready("ada-1").await;
+    // The last claim goes, and another is made at the same moment: it is served.
+    claims
+        .delete("ada-1", &DeleteParams::default())
+        .await
+        .expect("the first claim deleted");
+    claims
+        .create(&PostParams::default(), &claim("ada-2", "e2e-last-claim"))
+        .await
+        .expect("a claim made as the last one goes");
+    ready("ada-2").await;
+    let template = templates.get(&name).await.expect("the template");
+    assert!(
+        template
+            .owner_references()
+            .iter()
+            .any(|owner| owner.kind == "Claim" && owner.name == "ada-2"),
+        "{template:?}"
+    );
+
+    claims
+        .delete("ada-2", &DeleteParams::default())
+        .await
+        .expect("the last claim deleted");
+    eventually(
+        "the template and warm pool go with the last claim",
+        Duration::from_secs(120),
+        || async {
+            let template = templates.get_opt(&name).await.ok()?;
+            let warm = warm_pools.get_opt(&name).await.ok()?;
+            (template.is_none() && warm.is_none()).then_some(())
+        },
+    )
+    .await;
+    // The pool is still there: a claim made now is served from it.
+    claims
+        .create(&PostParams::default(), &claim("ada-3", "e2e-last-claim"))
+        .await
+        .expect("a claim made after");
+    ready("ada-3").await;
+
+    let _ = pools
+        .delete("e2e-last-claim", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}
+
 async fn may(
     client: &Client,
     group: &str,
@@ -555,6 +848,144 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
     })
     .catch_unwind()
     .await;
+    restore_binding(&bindings, &installed).await;
+    // The tests after this one make claims at once: past the binding's settling time.
+    tokio::time::sleep(settled()).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+/// After the policy's binding is made again, a Claim made before it is refused but its runner
+/// runs on. Its pool's template, and the network policy upstream makes of it, stay as long as
+/// that Claim does: a Claim made under the new binding never takes them over or away.
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy() {
+    use futures::FutureExt;
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    use purlis_cluster_operator::POLICY;
+    use purlis_cluster_operator::upstream::{SandboxTemplate, name_for};
+
+    let client = Client::try_default().await.expect("the cluster");
+    let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
+    let installed = bindings.get(POLICY).await.expect("the installed binding");
+    let scratch = Scratch::new(&client, "e2e-refused-runs").await;
+    let pools = Api::<Pool>::all(client.clone());
+
+    let outcome = std::panic::AssertUnwindSafe(async {
+        let pool = Pool::new(
+            "e2e-refused-runs",
+            PoolSpec {
+                image: runner_image(),
+            },
+        );
+        pools
+            .patch(
+                "e2e-refused-runs",
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&pool),
+            )
+            .await
+            .expect("the pool");
+        let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+        claims
+            .create(&PostParams::default(), &claim("ada-1", "e2e-refused-runs"))
+            .await
+            .expect("the first claim");
+        eventually(
+            "the first claim is ready",
+            Duration::from_secs(300),
+            || async {
+                let claim = claims.get("ada-1").await.ok()?;
+                (ready_of(&claim)?.0 == "True").then_some(())
+            },
+        )
+        .await;
+        let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+        let running = pods.list(&ListParams::default()).await.expect("pods");
+        assert_eq!(running.items.len(), 1);
+        let runner = running.items[0].clone();
+
+        // The binding made again: the first claim was made before it.
+        bindings
+            .delete(POLICY, &DeleteParams::default())
+            .await
+            .expect("the binding deleted");
+        eventually("the binding is gone", Duration::from_secs(30), || async {
+            bindings.get_opt(POLICY).await.ok()?.is_none().then_some(())
+        })
+        .await;
+        restore_binding(&bindings, &installed).await;
+        eventually(
+            "the first claim is refused",
+            Duration::from_secs(60),
+            || async {
+                let claim = claims.get("ada-1").await.ok()?;
+                (ready_of(&claim)? == ("False".into(), "MadeBeforePolicy".into())).then_some(())
+            },
+        )
+        .await;
+        tokio::time::sleep(settled()).await;
+
+        // A claim made under the new binding: the template is owned only by a claim the
+        // operator refused, so it is not taken for the operator's, nothing is written, and the
+        // claim says whose it is.
+        claims
+            .create(&PostParams::default(), &claim("ada-2", "e2e-refused-runs"))
+            .await
+            .expect("a claim made under the new binding");
+        eventually(
+            "the new claim leaves the refused claim's template as it is",
+            Duration::from_secs(60),
+            || async {
+                let claim = claims.get("ada-2").await.ok()?;
+                let ready = claim
+                    .status?
+                    .conditions
+                    .into_iter()
+                    .find(|c| c.type_ == "Ready")?;
+                (ready.reason == "HeldByClaimsMadeBeforePolicy" && ready.message.contains("ada-1"))
+                    .then_some(())
+            },
+        )
+        .await;
+        claims
+            .delete("ada-2", &DeleteParams::foreground())
+            .await
+            .expect("the new claim deleted");
+        eventually("the new claim is gone", Duration::from_secs(60), || async {
+            claims.get_opt("ada-2").await.ok()?.is_none().then_some(())
+        })
+        .await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        let template = name_for("e2e-refused-runs");
+        let held = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name)
+            .get(&template)
+            .await
+            .expect("the refused claim's runner keeps its template");
+        assert!(
+            held.owner_references()
+                .iter()
+                .any(|owner| owner.kind == "Claim" && owner.name == "ada-1"),
+            "{held:?}"
+        );
+        Api::<NetworkPolicy>::namespaced(client.clone(), &scratch.name)
+            .get(&format!("{template}-network-policy"))
+            .await
+            .expect("and the network policy upstream makes of it");
+        let still = pods.get(&runner.name_any()).await.expect("the runner");
+        assert_eq!(still.uid(), runner.uid());
+
+        let _ = pools
+            .delete("e2e-refused-runs", &DeleteParams::default())
+            .await;
+    })
+    .catch_unwind()
+    .await;
+    scratch.end().await;
     restore_binding(&bindings, &installed).await;
     // The tests after this one make claims at once: past the binding's settling time.
     tokio::time::sleep(settled()).await;

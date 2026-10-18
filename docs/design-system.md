@@ -49,7 +49,8 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. Seventy-nine names in fifteen groups:
+means. A hundred and nineteen colour names in twenty-three groups, and the typed tokens below
+them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -68,6 +69,35 @@ means. Seventy-nine names in fifteen groups:
 | `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active` | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`) |
 | `terminal.ansi.*`                      | the eight, and the eight bright                                                                 |                                                                                                   |
 | `icon.*`                               | `folder` `motive` `grey` `red` `orange` `yellow` `green` `teal` `blue` `purple` `pink`          | a file's or a folder's icon in a tree; the only colours an icon theme names (FM-3)                 |
+| `terminal.*` (#2327)                   | `selection-foreground` `selection-inactive` `scrollbar` `scrollbar-hover` `scrollbar-active`    | selected text (`platform`: each cell keeps its colour), a selection while the pane is unfocused, and the terminal's scrollbar at rest, under the pointer and held |
+| `syntax.*`                             | `keyword` `string` `number` `constant` `comment` `function` `type` `property` `attribute` `tag` `heading` `invalid` `variable` `operator` `punctuation` | code in the light editor (`editor/look.ts`), one colour per role, each with an italic and a bold flag |
+| `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                    | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)       |
+| `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                             | the window's text selection and its words, a field's caret and its placeholder; `platform` leaves each to the platform |
+| `scrollbar.*`                          | `thumb` `track`                                                                                 | the window's scrollbars; a `platform` thumb is the platform's, and the track is drawn only with a thumb |
+| `chart.*`                              | `1` … `8`                                                                                       | a chart's series, a categorical palette: a chart draws one series today, in `chart.1`             |
+| `window.*`                             | `background`                                                                                    | the native window's colour before the first frame (#2328, #2331); the page itself is `surface.base` |
+
+**Tokens that are not colours** (#2327) sit in an appearance's `tokens` beside the colours, each
+held to its own type: `syntax.<role>.italic` and `syntax.<role>.bold` are `true` or `false`;
+`terminal.cursor-style` is `block`, `underline` or `bar`; `terminal.cursor-blink` and
+`terminal.bold-as-bright` are `true` or `false`; `terminal.line-height` is a number from 1 to 2.
+A value of the wrong type refuses the theme, as a colour that is not hex does.
+
+**Six tokens may be left to the platform** (#2327): `selection.background`, `selection.text`,
+`caret`, `placeholder`, `scrollbar.thumb` and `terminal.selection-foreground` take a colour or the
+word `"platform"`, which means "draw what purlis drew before a theme could say": the platform's
+selection, caret, placeholder and scrollbars, and each terminal cell's own colour when selected.
+The window writes no rule for one left to the platform (`data-theme-draws`), and the contrast
+check does not measure what the platform draws. A colour is drawn as given, so a transparent
+thumb hides the scrollbars. Selected text is coloured only on a selection the theme colours too,
+and the check says so when a theme colours one without the other. No palette may name a colour
+`platform`. The window's rules stop at the light editor, which draws its own selection and caret.
+Purlis Classic leaves all six to the platform.
+Purlis Classic gives every other new token the colour the window drew before it: a syntax role
+the ANSI colour the editor borrowed for it, a markdown link and `chart.1` the accent (and both
+turn with a workspace's colour, as the accent does), markdown's code, quotes and headings the
+words' colour, `window.background` the window's surface (the native window's colour, #2328), and the terminal's extras xterm's own
+defaults.
 
 **Two tokens may look like one token and are not.** `needs-you.base` and `danger.base` were a
 single value before this — `--stop`, `#c05c5c`, "purlis's red" — and splitting them by meaning
@@ -85,6 +115,12 @@ under the pointer, and a highlighted menu row), 4.90:1 on a menu's `surface.over
 on the window. `danger.wash` follows
 it, since a wash is its base at a low alpha. The badge kept `#b85050`; purlis-light's
 `#a83232` already cleared 4.5 on each of them and did not move.
+
+The mark moved once more (#2504): the title bar's needs-you hand is drawn on its button's
+`control.hover` under the pointer, where `#b85050` measured **2.79:1**, under the 3:1 a mark is
+held to. Purlis Classic dark's `needs-you.base` is now `#bd5654`, the same hue a step lighter:
+**3.00:1** on `control.hover`, and the count's white on it **4.54:1**. Classic light's
+`#a83232` measures 4.70:1 on its `control.hover` and did not move.
 
 **Every theme is held to a contrast floor.** The theme engine's check (`purlis_core::theme::check`,
 which runs on any theme) holds each pair that ends up as
@@ -249,7 +285,7 @@ rewrites the file; the next pick made in Settings writes the new id.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/purlis/purlis/main/docs/schema/theme.schema.json",
+  "$schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "name": "Dusk",
   "extends": "purlis-classic",
   "palette": { "lavender": "#b4a7f5" },
@@ -260,9 +296,10 @@ rewrites the file; the next pick made in Settings writes the new id.
 }
 ```
 
-- **`$schema`** names the published schema (`docs/schema/theme.schema.json`), which the theme
-  engine generates from its own vocabulary (`purlis_core::theme::schema`, held to the file by a
-  test): an editor completes every token name and flags a value outside the grammar.
+- **`$schema`** names the published schema, which the theme engine generates from its own
+  vocabulary (`purlis_core::theme::schema`, held to `docs/schema/theme.v2.schema.json` by a
+  test): an editor completes every token name and flags a value outside the grammar. See
+  [Which schema a theme names](#which-schema-a-theme-names).
 - **`extends`** names the theme this one starts from: `purlis-classic` (or an id a pick names
   one of its appearances by), or another theme folder by its name. The theme holds only what
   differs. A parent that is not there, a parent purlis cannot draw, and themes that extend one
@@ -343,6 +380,37 @@ appearance:
   a complete theme, because ADR 0026 holds cold start at 2 s and a window that will not come up
   because a colour was spelled wrong is worse than every possible wrong colour.
 
+### Which schema a theme names
+
+**Name the schema of the purlis the theme is for**, at its release:
+
+```
+https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json
+```
+
+`<version>` is the one `purlis --version` prints, and `purlis theme list --json` gives the whole
+address as `theme_schema`. Purlis Classic's folder names its own release's, and so does every
+theme purlis writes.
+
+- **Why a release, not `main`.** `main`'s schema has every token the next purlis will know, so
+  an editor pointed at it completes tokens an installed purlis leaves out. The address at a
+  release tag is that release's schema, and stays there for as long as the tag does: a theme
+  written for 0.4.2 still opens with 0.4.2's completions after 0.5 ships.
+- **Why the format is in the file's name.** Within one format the schema only grows: a release
+  adds tokens, keys and accepted values, and never takes one away or narrows one, so a theme
+  valid against an earlier release's schema is valid against every later one of that format.
+  A test (`theme::published`) refuses a schema that removes or narrows anything against the one
+  committed for its format; such a change is a new format, with a file of its own.
+- **Why GitHub's raw file and not the docs site.** The tag is what a release is, and a raw file
+  at a tag cannot change after the release; the docs site is one version, the newest, and is not
+  published yet. purlis never fetches the address (ADR 0083's amendments of 2026-10-17): the
+  theme engine reads a theme against its own vocabulary, and only an editor opening `theme.json`
+  reads the schema.
+- **A dev build** names the release it becomes, which is not tagged until it ships. Until then,
+  point `$schema` at `main`'s file (`…/purlis/purlis/main/docs/schema/theme.v2.schema.json`)
+  and expect it to offer tokens the dev build may not have yet; purlis says such a token and
+  leaves it out.
+
 ### The theme engine
 
 **One theme engine, in the Rust core, owns everything about a theme** (`purlis_core::theme`,
@@ -364,23 +432,34 @@ can be read. Its interface:
   finding with its ratio.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
-gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds four
+gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds five
 floors for any theme from any source:
 
 - **an ask contrasts with its surface**: `text.primary` on `surface.overlay` (solid, and at the
-  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and on `danger.wash`
-  over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
+  0.8 opacity a dialog's `.honest` words are drawn at), on `control.base` and `control.hover`
+  (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
+  `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
+- **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
+  weight. Keep blocked is the plain `.ui-button`, edged in `border.strong`; each Allow is
+  `.ui-button-grants`, on the same `control.base` ground, edged in `accent.base` and led by an
+  open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
+  writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
+  that tells them apart is seen. `.ui-button-primary` stays the answer purlis suggests and is
+  never a grant's;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
   in OKLab, five times the least difference a person can see, as the theme writes them;
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
-  token or `needs-you.base`.
+  token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
+  included.
 
 Each contrast floor is the pair's own floor in `PAIRS`, held as the theme is and tinted by every
 workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's values of the same
 appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
-for the pair's other token when Classic's colour still fails on it. The rest of the theme draws
+for the pair's other token when Classic's colour still fails on it. A floor between tokens none
+of which is a consent token (Allow apart from Keep blocked, an answer's words on its button) is
+held by drawing Classic's values for each of them. The rest of the theme draws
 as written, and one Notice in the Inbox names the theme and the floors it breaks.
 
 **The window only applies.** It is handed a resolved theme, every token's final value and the
@@ -985,9 +1064,15 @@ Three guards beside `designSet.guard.test.ts` keep the window from drifting agai
 third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 
 - **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**,
-  **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), in any
-  stylesheet but `theme/geometry.css`, in a component's inline `style` (`{{ … }}` or
-  `{ … } as CSSProperties`), in a `.style.setProperty(…)` call, or as a Tailwind class, read
+  **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), a
+  **scroll margin or padding** (`scroll-margin*`, `scroll-padding*`, read as a margin or a
+  padding) and the grid's names for a gap (`grid-gap`, `grid-row-gap`, `grid-column-gap`), in
+  any stylesheet but `theme/geometry.css`; in a component's or a script's style: an inline
+  `style` (`{{ … }}` or `{ … } as CSSProperties`), a style object held in a variable
+  (`const held = { … }; style={held}`, or one typed or cast as `CSSProperties`),
+  `Object.assign(el.style, { … })`, an assignment (`el.style.padding = "7px"`), `el.style.cssText`
+  or a `style` attribute set as text, and a `setProperty(…)` call (`el.style?.setProperty(…)`
+  too); or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
   past its variants (`md:`, `data-[open]:`, `[&>*]:`): off the core scale (`p-5`, `start-5`,
   `text-2xl`, `rounded-2xl`), with a value of its own (`p-[7px]`, `text-[13px]`,
   `rounded-[5px]`) or as an arbitrary property (`[padding:7px]`). A custom property that holds
@@ -996,9 +1081,15 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   font size or offset reads, or that nothing reads, counts, so `--pad: 7px` is no way round,
   set in a stylesheet, inline or by `setProperty`. Not literals: `0`, a `1px` hairline, `1em`,
   `1lh` or `1ch` (as big as the element's own text), a share (`%`, `vh`, `vw`), and a token, or
-  a token's whole multiple or whole share (`* 3`, `* -1`, `/ 2`). The guard reads the
+  a token's whole multiple or whole share (`* 3`, `* -1`, `/ 2`). A length is read in every
+  unit there is: the absolute ones and those of the text, the element's own (`em`, `ex`, `ch`,
+  `ic`, `cap`, `lh`) and the root's (`rem`, `rex`, `rch`, `ric`, `rcap`, `rlh`), so `2rlh` or
+  `1.5cap` is a literal as `7px` is, and a number with an exponent is read for the value it
+  gives (`7e0px` is `7px`; `1e0px` is a hairline). A property is read past its vendor's prefix
+  (`-webkit-border-radius`, `WebkitBorderRadius`), and a value a ternary picks, branch by branch
+  (`padding: on ? "7px" : 0`). The guard reads the
   arithmetic of every CSS math function (`calc()`, `min()`, `max()`, `clamp()`, `round()`,
-  `mod()`, `rem()`, `abs()`, `sign()` and the rest): a number in it that is not whole is a
+  `mod()`, `rem()`, `abs()`, `sign()` and the rest, `-webkit-calc()` too): a number in it that is not whole is a
   literal however it is spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`). A product's
   factors fold into one net factor, which is whole or a whole share (`* 7 / 2` is a literal,
   `/ 2` is not). A term that holds a written length takes a whole share and no multiple
@@ -1170,7 +1261,10 @@ window differ, the window was kept and the difference is recorded here for the m
 `app/src/type.guard.test.ts` refuses a `font-size`, `font-weight`, `line-height`,
 `font-family` or text `color` that is not its token (or `inherit`, or `currentColor` for a
 colour), and a `font` shorthand that is not `inherit`, in any stylesheet but
-`theme/geometry.css`, in a component's inline `style`, in a `setProperty` call in any script, and as a Tailwind
+`theme/geometry.css`, in a component's or a script's style as the geometry guard reads it (an
+inline `style`, a style object held in a variable, an assignment such as
+`el.style.fontSize = "13px"`, CSS text, `Object.assign`, a `setProperty` call, each branch of
+a ternary, a vendor's prefix read past), and as a Tailwind
 utility, read past its variants as the declarations it writes: a weight by name
 (`font-semibold`), a family of Tailwind's own (`font-mono`), a line height other than
 `leading-none` (and a size's `/7` or `/[1.3]`, as in `text-sm/7`), a value of its own

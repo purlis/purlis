@@ -72,8 +72,9 @@ impl ServerHandler for Server {
             ))
             .with_instructions(
                 "purlis's tools for this chat: the todos, memory, session records and changes \
-                 of the workspace it works in, a question for the operator, and a real browser \
-                 the person watches (the browser_ tools).",
+                 of the workspace it works in, a question for the operator, a real browser \
+                 the person watches (the browser_ tools), and the theme specimen \
+                 (theme_preview).",
             )
     }
 
@@ -86,6 +87,7 @@ impl ServerHandler for Server {
             chattools::TOOLS
                 .iter()
                 .chain(purlis_core::browsertools::TOOLS.iter())
+                .chain(purlis_core::themepreview::TOOLS.iter())
                 .map(tool)
                 .collect(),
         ))
@@ -107,6 +109,21 @@ impl ServerHandler for Server {
             let args = request.arguments.clone().unwrap_or_default();
             let (said, attached) =
                 tokio::task::spawn_blocking(move || crate::browsing::tool(&name, &args))
+                    .await
+                    .unwrap_or_else(|e| {
+                        (
+                            Err(format!("the tool failed inside purlis: {e}")),
+                            Vec::new(),
+                        )
+                    });
+            return Ok(done_with(said, attached));
+        }
+        // The theme specimen (#2330): handed to the app, which draws it in a hidden window of
+        // its own, each picture attached as an image.
+        if purlis_core::themepreview::is_one(name) {
+            let args = request.arguments.clone().unwrap_or_default();
+            let (said, attached) =
+                tokio::task::spawn_blocking(move || crate::themepreview::tool(&args))
                     .await
                     .unwrap_or_else(|e| {
                         (

@@ -18,7 +18,10 @@ Claim says whether it is ready.
 - **Kubernetes 1.36 or later.** The operator's tests run on kind's Kubernetes 1.36.4.
 - **Upstream agent-sandbox v1.0.6**, the release purlis is tested against. Its manifest,
   controller and definitions together, is vendored verbatim in
-  [`operator/vendor/agent-sandbox/v1.0.6/`](../operator/vendor/agent-sandbox/v1.0.6/).
+  [`operator/vendor/agent-sandbox/v1.0.6/`](../operator/vendor/agent-sandbox/v1.0.6/), with a
+  kustomization beside it that names the controller's image by the digest of the release, so a
+  tag moved in the registry never changes what runs. Install it with
+  `kubectl apply --server-side -k`, as below.
 - **A runner image**, named by digest: purlis's own or a team's that keeps the
   [runner image contract](runner-image.md).
 
@@ -71,9 +74,10 @@ It names the cluster it asked (your context and its API server), then checks, in
 
 - **Kubernetes 1.36 or later**, from the version the API server reports.
 - **Upstream agent-sandbox v1.0.6**: its four definitions, each serving `v1beta1`, and its
-  controller, `agent-sandbox-system/agent-sandbox-controller`, running the image tagged
-  `v1.0.6` with a ready replica. Not installed yet is a finding too, whose next step is step 1
-  below.
+  controller, `agent-sandbox-system/agent-sandbox-controller`, running the release's image by
+  its digest with a ready replica. The same release by its tag alone, or at another digest, is
+  a finding whose next step is to apply it by digest. Not installed yet is a finding too, whose
+  next step is step 1 below.
 - **Your right to apply the install's cluster-scoped objects**: create and patch on
   namespaces, custom resource definitions, cluster roles and their bindings, and validating
   admission policies and their bindings, and `escalate` and `bind` on cluster roles, as
@@ -90,7 +94,7 @@ nothing of. What you may not read, or may not ask, is a finding naming the right
 ok: asked context kind-team, API server https://127.0.0.1:6443/
 ok: Kubernetes v1.36.4
 ok: you may apply the install's cluster-scoped definitions
-missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of the install: kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml.
+missing: upstream agent-sandbox v1.0.6: not installed. Next: apply it, step 1 of the install: kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6.
 1 missing: install the cluster operator once doctor finds nothing missing
 ```
 
@@ -111,8 +115,9 @@ you set the real one.
 Helm 4, the version the tests use. Three steps, in order:
 
 ```bash
-# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
-kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
+# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller, named by
+#    the release's digest.
+kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
 # 2. The release's namespace. Only pods that meet the restricted Pod Security Standard are
 #    admitted in it; the operator's pod does.
@@ -154,8 +159,9 @@ The same steps with `kubectl`. The definitions and their policy are a step of th
 cluster admin can review and apply them apart from the controllers.
 
 ```bash
-# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller.
-kubectl apply --server-side -f operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml
+# 1. Upstream agent-sandbox, the pinned release: its definitions and its controller, named by
+#    the release's digest.
+kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
 # 2. The policy that admits a Claim only for someone who may use its Pool, then purlis's
 #    definitions, Pool and Claim. The policy goes first, so no Claim is admitted before it
@@ -198,11 +204,18 @@ spec:
   a tag can move.
 - **A Claim** lives in a namespace and names its `pool`, which never changes: another pool is
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
-  `PoolNotFound` when there is no such pool, `Starting` until upstream reports, and upstream's
-  own reason after that. `kubectl get claims` shows it.
-- **Deleting a Claim** deletes its runner. Deleting a Pool removes the template and warm pool
-  the operator made for it in each namespace, and its Claims then say `PoolNotFound`; each
-  runner goes when its Claim is deleted.
+  `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the
+  runner was asked for (below), `UpstreamObjectInTheWay` when an upstream object the operator
+  did not make has the name it would use (below), `HeldByClaimsMadeBeforePolicy` when the
+  pool's objects there belong to Claims made before the policy on Claims was in force
+  (below), `Starting` until upstream reports, and upstream's own reason after that. `kubectl get claims` shows it.
+- **Deleting a Claim** deletes its runner.
+- **Deleting a Pool stops nothing that runs.** A Claim whose runner was asked for keeps it,
+  running as the pool last defined it, until the Claim is deleted: its `Ready` is still what
+  upstream says of the runner, `True` while it runs, with the reason `PoolDeleted`. No new
+  Claim is served from a deleted pool: one made after says `PoolNotFound`. A pool made again
+  under the same name serves new Claims, and its definition is applied again to the template
+  the kept runners came from.
 
 `Pool` and `Claim` are `v1alpha1`: no stability promise before upstream agent-sandbox leaves
 beta.
@@ -236,11 +249,14 @@ So wait 30 seconds after installing before making the first Claims.
 
 Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses
 every Claim that already exists: each says `MadeBeforePolicy` and has to be deleted and made
-again.
+again. A runner such a Claim already has keeps running, with the template and warm pool it was
+made from, until the Claim is deleted. Only a Claim the operator acts on makes those objects
+count as the operator's, so a Claim made since, on that pool in that namespace, says
+`HeldByClaimsMadeBeforePolicy`, naming the older Claims, and waits until they are deleted.
 
 ## What it makes
 
-For a Claim in namespace `ns` on Pool `p`, the operator applies, server-side:
+For a Claim in namespace `ns` on Pool `p`, the operator makes, and then applies server-side:
 
 | Upstream object | Name | What it holds |
 |---|---|---|
@@ -248,9 +264,21 @@ For a Claim in namespace `ns` on Pool `p`, the operator applies, server-side:
 | `SandboxWarmPool` | `purlis-pool-p` in `ns` | no runner kept warm: every claim starts one |
 | `SandboxClaim` | the Claim's own name in `ns` | the claim on that warm pool |
 
-The template and the warm pool belong to the Pool and the upstream claim to the Claim, so the
-cluster's garbage collector removes each with its owner. Upstream's controller makes the pod
+The upstream claim belongs to the Claim, and the template and the warm pool in a namespace to
+the pool's Claims there, each Claim adding itself, so the cluster's garbage collector removes the
+upstream claim with its Claim and the template and warm pool with the last of their Claims, and
+never while a Claim in the namespace still has a runner from them. A Claim made as the last one
+goes is served all the same: if the garbage collector removes the template or warm pool it has
+just joined, the operator makes them again at once. Upstream's controller makes the pod
 from the template and writes the upstream claim's status, which the operator reads.
+
+**It changes only objects it made.** Before it writes any of the three, it reads what the
+cluster holds under that name. An upstream claim it made names its Claim as its controller, by
+uid, and a template or warm pool it made is owned by one of the pool's Claims in that
+namespace, by name and uid; any other object under that name, one made by hand or by another tool, is left
+exactly as it is. The Claim then says `UpstreamObjectInTheWay`, naming the object's kind and
+name, and nothing is made for it. Remove or rename that object and the Claim goes on at once: the
+operator watches all three kinds.
 
 ## What it may do
 
@@ -263,8 +291,7 @@ it holds:
 | `runners.purlis.dev` | `claims` | list, watch |
 | `runners.purlis.dev` | `claims/status` | patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
-| `extensions.agents.x-k8s.io` | `sandboxclaims` | create, list, patch, watch |
-| `extensions.agents.x-k8s.io` | `sandboxtemplates`, `sandboxwarmpools` | create, patch |
+| `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod, reads no Secret, and touches no
 pod at all; its Kubernetes client is built without the websocket support `exec` would need.
@@ -292,7 +319,8 @@ and memory included. Give cluster-admin and node access accordingly.
   `PURLIS_OPERATOR_BLESS=1 cargo test --test the_chart`.
 - [`operator/e2e/kind.sh`](../operator/e2e/kind.sh) `<runner image> <operator image>`: a kind
   cluster of Kubernetes 1.36 with a registry beside it, so images are named by digest; doctor,
-  which must name upstream agent-sandbox as missing; the pinned upstream, after which doctor
+  which must name upstream agent-sandbox as missing; the recorded controller digest checked
+  against the registry; the pinned upstream, its controller by that digest, after which doctor
   must find nothing missing; purlis's definitions, the policy and the operator installed by the
   chart in a namespace that enforces the restricted Pod Security Standard; `kubectl diff`
   showing the plain manifests would change nothing the chart made; then
@@ -305,6 +333,13 @@ and memory included. Give cluster-admin and node access accordingly.
 
 Upstream releases weekly. To move to another release: vendor its
 `sandbox-with-extensions.yaml` under `operator/vendor/agent-sandbox/<version>/` in place of the
-old one, set `VERSION` in `operator/src/upstream.rs` and the path in `operator/e2e/kind.sh`,
-and run the tests. `only_what_the_pinned_upstream_defines_is_written` fails when a field the
-operator writes is gone or renamed, before a cluster does.
+old one, with the old one's `kustomization.yaml` moved beside it; set `VERSION` in
+`operator/src/upstream.rs`, and the path and tag in `operator/e2e/kind.sh`; take the
+controller image's digest for the new tag from Kubernetes' image promoter
+([`registry.k8s.io/images/k8s-staging-agent-sandbox/images.yaml`](https://github.com/kubernetes/k8s.io/blob/main/registry.k8s.io/images/k8s-staging-agent-sandbox/images.yaml))
+and set it in the kustomization (`newTag` and `digest`) and as `CONTROLLER_DIGEST` in
+`upstream.rs`; then run the tests. `upstream_is_installed_by_digest` fails while the
+kustomization, the vendored manifest and `upstream.rs` disagree on the release or the digest,
+and the kind run fails when the registry holds another digest under the tag.
+`only_what_the_pinned_upstream_defines_is_written` fails when a field the operator writes is
+gone or renamed, before a cluster does.

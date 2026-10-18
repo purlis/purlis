@@ -22,7 +22,16 @@
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
-use super::{ResolvedTheme, tint, vocabulary::TOKENS};
+use super::vocabulary::{TOKENS, is_platform};
+use super::{ResolvedTheme, tint};
+
+/// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
+/// when it is drawn on something: selected text the theme leaves alone keeps the words' own
+/// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
+const STANDS_IN: &[(&str, &str)] = &[
+    ("selection.text", "text.primary"),
+    ("terminal.selection-foreground", "terminal.foreground"),
+];
 
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
 /// a `back` that is a wash with alpha. A `front` with alpha is measured laid over the `back`.
@@ -128,6 +137,8 @@ pub const PAIRS: &[Pair] = &[
     p("needs-you.base", "surface.base", 3.0),
     // The needs-you mark on the strip it sits on.
     p("needs-you.base", "surface.deep", 3.0),
+    // The title bar's needs-you hand on its button under the pointer.
+    p("needs-you.base", "control.hover", 3.0),
     p("text.muted", "surface.hover", 3.0),
     p("state.running", "surface.hover", 3.0),
     p("state.waiting", "surface.hover", 3.0),
@@ -266,6 +277,81 @@ pub const PAIRS: &[Pair] = &[
     p("text.secondary", "control.hover", TEXT),
     // - A vault's eye under the pointer: a muted mark on the control's hover.
     p("text.muted", "control.hover", 3.0),
+    // #2327: the tokens that are not the window's chrome.
+    // - The editor's code (`editor/look.ts`): each syntax role on the editor's ground. Held as
+    //   the ANSI colours they were drawn in before are held: a mark that has to be told apart, at
+    //   3:1.
+    p("syntax.keyword", "terminal.background", 3.0),
+    p("syntax.string", "terminal.background", 3.0),
+    p("syntax.number", "terminal.background", 3.0),
+    p("syntax.constant", "terminal.background", 3.0),
+    p("syntax.comment", "terminal.background", 3.0),
+    p("syntax.function", "terminal.background", 3.0),
+    p("syntax.type", "terminal.background", 3.0),
+    p("syntax.property", "terminal.background", 3.0),
+    p("syntax.attribute", "terminal.background", 3.0),
+    p("syntax.tag", "terminal.background", 3.0),
+    p("syntax.heading", "terminal.background", 3.0),
+    p("syntax.invalid", "terminal.background", 3.0),
+    p("syntax.variable", "terminal.background", 3.0),
+    p("syntax.operator", "terminal.background", 3.0),
+    p("syntax.punctuation", "terminal.background", 3.0),
+    // - A markdown render's link, code, quote and heading (`.release-notes`), words on the
+    //   window, a pane and a dialog.
+    p("markdown.link", "surface.base", TEXT),
+    p("markdown.link", "surface.raised", TEXT),
+    p("markdown.link", "surface.overlay", TEXT),
+    p("markdown.code", "surface.base", TEXT),
+    p("markdown.code", "surface.raised", TEXT),
+    p("markdown.code", "surface.overlay", TEXT),
+    p("markdown.code-block", "surface.base", TEXT),
+    p("markdown.code-block", "surface.raised", TEXT),
+    p("markdown.code-block", "surface.overlay", TEXT),
+    p("markdown.quote", "surface.base", TEXT),
+    p("markdown.quote", "surface.raised", TEXT),
+    p("markdown.quote", "surface.overlay", TEXT),
+    p("markdown.heading", "surface.base", TEXT),
+    p("markdown.heading", "surface.raised", TEXT),
+    p("markdown.heading", "surface.overlay", TEXT),
+    // - A release's notes in the Updates dialog sit on a sunken box.
+    p("markdown.link", "surface.sunken", TEXT),
+    p("markdown.code", "surface.sunken", TEXT),
+    p("markdown.code-block", "surface.sunken", TEXT),
+    p("markdown.quote", "surface.sunken", TEXT),
+    p("markdown.heading", "surface.sunken", TEXT),
+    // - The window's own text selection, caret and placeholder, on a field's ground. A token
+    //   left to the platform is not measured (`PLATFORM_DRAWN`); selected text left to it keeps
+    //   its own colour, measured as the window's words.
+    p("selection.text", "selection.background", TEXT).over("surface.base"),
+    p("placeholder", "surface.sunken", TEXT),
+    p("caret", "surface.sunken", 3.0),
+    // - A scrollbar's thumb on its track, laid over the window: a hairline's floor.
+    p("scrollbar.thumb", "scrollbar.track", 1.2).over("surface.base"),
+    // - A chart's bars, on the track they are drawn in: marks.
+    p("chart.1", "surface.sunken", 3.0),
+    p("chart.2", "surface.sunken", 3.0),
+    p("chart.3", "surface.sunken", 3.0),
+    p("chart.4", "surface.sunken", 3.0),
+    p("chart.5", "surface.sunken", 3.0),
+    p("chart.6", "surface.sunken", 3.0),
+    p("chart.7", "surface.sunken", 3.0),
+    p("chart.8", "surface.sunken", 3.0),
+    // - The terminal's selected text, focused and not, on the selection laid over the
+    //   terminal; left to the platform, it keeps the cells' own colour, measured as the
+    //   terminal's words.
+    p("terminal.selection-foreground", "terminal.selection", TEXT).over("terminal.background"),
+    p(
+        "terminal.selection-foreground",
+        "terminal.selection-inactive",
+        TEXT,
+    )
+    .over("terminal.background"),
+    // - The terminal's scrollbar, a hairline on the terminal.
+    p("terminal.scrollbar", "terminal.background", 1.2),
+    // An Allow (`.ui-button-grants`, ADR 0097 §6) is edged in the accent on the control's own
+    // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
+    p("accent.base", "control.base", 3.0),
+    p("accent.base", "control.hover", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.
@@ -331,12 +417,19 @@ pub enum Finding {
         tint: Option<&'static str>,
         other: &'static str,
     },
+    /// A colour for selected text with the selection left to the platform (#2327): the window
+    /// draws selected text only on a selection the theme colours too, so this one is never drawn.
+    SelectionTextAlone,
 }
 
 /// The check, as [`super::check`] describes it.
 pub(super) fn check(theme: &ResolvedTheme) -> Report {
     let mut findings = Vec::new();
     check_one(theme, None, &mut findings);
+    let platform = |token: &str| is_platform(token, theme.value(token));
+    if platform("selection.background") && !platform("selection.text") {
+        findings.push(Finding::SelectionTextAlone);
+    }
     for (colour, _) in tint::PALETTE {
         check_one(&tint::tinted(theme, colour), Some(colour), &mut findings);
     }
@@ -345,7 +438,9 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
 
 fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut Vec<Finding>) {
     for pair in PAIRS {
-        let ratio = ratio(theme, pair);
+        let Some(ratio) = ratio(theme, pair) else {
+            continue;
+        };
         if ratio < pair.floor {
             findings.push(Finding::Contrast {
                 tint,
@@ -376,19 +471,38 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
 }
 
 /// **The contrast `pair` has in `theme`**, to two places, as it is drawn: `back` laid over
-/// `under` when it names one, and a see-through `front` laid over that.
-pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> f64 {
-    let back = theme.value(pair.back);
+/// `under` when it names one, and a see-through `front` laid over that. `None` when the platform
+/// draws one of them ([`super::vocabulary::PLATFORM_DRAWN`]); a front left to the platform that
+/// keeps the words' own colour is measured as those words ([`STANDS_IN`]).
+pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
+    let (front, back) = measured(theme, pair)?;
+    let back = theme.value(back);
     let drawn = match pair.under {
         Some(under) => onto(back, theme.value(under)),
         None => back.to_owned(),
     };
-    let front = onto(theme.value(pair.front), &drawn);
+    let front = onto(theme.value(front), &drawn);
     let front = match pair.fade {
         Some(opacity) => mix(&front, &drawn, opacity),
         None => front,
     };
-    two_places(contrast(&front, &drawn))
+    Some(two_places(contrast(&front, &drawn)))
+}
+
+/// The tokens `pair` is measured between in `theme`: its own, a platform-drawn front's stand-in,
+/// or `None` when the platform draws one of them.
+fn measured(theme: &ResolvedTheme, pair: &Pair) -> Option<(&'static str, &'static str)> {
+    let unset = |token: &str| is_platform(token, theme.value(token));
+    if unset(pair.back) {
+        return None;
+    }
+    if !unset(pair.front) {
+        return Some((pair.front, pair.back));
+    }
+    STANDS_IN
+        .iter()
+        .find(|(token, _)| *token == pair.front)
+        .map(|(_, stand_in)| (*stand_in, pair.back))
 }
 
 /// A ratio to two places, as it is said and compared: 4.495 is under 4.5 only once rounded.

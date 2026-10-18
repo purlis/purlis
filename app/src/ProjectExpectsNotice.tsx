@@ -193,7 +193,7 @@ export function ProjectExpectsNotice({
               { label: "Review the sandbox", onPress: onReview },
             ]
           : canAnswer && some
-            ? [{ label: ALLOW_EXPECTS, onPress: () => answer(true), busy }, notNow]
+            ? [{ label: ALLOW_EXPECTS, onPress: () => answer(true), busy, allows: true }, notNow]
             : canAnswer
               ? [notNow, { label: "Review the sandbox", onPress: onReview }]
               : [{ label: "Review the sandbox", onPress: onReview }]

@@ -368,6 +368,16 @@ pub struct WindowTheme {
     pub geometry: WindowGeometry,
     /// The UI, mono and terminal fonts (#2326).
     pub fonts: WindowFonts,
+    /// The tokens that are not colours (#2327).
+    pub typed: WindowTyped,
+}
+
+/// A resolved theme's tokens that are not colours (#2327), by token: flags, choices, numbers.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct WindowTyped {
+    pub flags: std::collections::BTreeMap<String, bool>,
+    pub choices: std::collections::BTreeMap<String, String>,
+    pub numbers: std::collections::BTreeMap<String, f64>,
 }
 
 /// One icon of a theme's set (#2337): path data on a 24 grid, which the window strokes.
@@ -499,6 +509,26 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                 ui: (&theme.fonts.ui).into(),
                 mono: (&theme.fonts.mono).into(),
                 terminal: (&theme.fonts.terminal).into(),
+            },
+            typed: WindowTyped {
+                flags: theme
+                    .typed
+                    .flags
+                    .iter()
+                    .map(|(key, on)| ((*key).to_owned(), *on))
+                    .collect(),
+                choices: theme
+                    .typed
+                    .choices
+                    .iter()
+                    .map(|(key, chosen)| ((*key).to_owned(), (*chosen).to_owned()))
+                    .collect(),
+                numbers: theme
+                    .typed
+                    .numbers
+                    .iter()
+                    .map(|(key, number)| ((*key).to_owned(), *number))
+                    .collect(),
             },
         }
     }

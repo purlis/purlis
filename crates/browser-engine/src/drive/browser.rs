@@ -22,7 +22,7 @@ use super::ledger::{Begin, Ledger};
 use super::screencast::Screencast;
 use super::settle::{Activity, Settle, activity};
 use super::site::site;
-use super::tree::{FrameAx, NodeKey, Query, Snapshot, View, build, scrubbed, scrubbed_address};
+use super::tree::{FrameAx, NodeKey, Query, Scrub, Snapshot, View, build_kept};
 use super::{
     Aim, Answer, Call, CallId, Content, DragTo, Driver, Field, Gate, Judge, Limits, Outbound,
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
@@ -30,7 +30,10 @@ use super::{
 use crate::WebAddress;
 use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
 
+mod login;
 mod takeover;
+
+pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use takeover::{Lease, Typing};
 
@@ -158,12 +161,12 @@ struct Page {
 impl Page {
     /// `text` with what this page's blanked elements held taken out.
     fn shown(&self, text: &str) -> String {
-        scrubbed(text, &self.scrubbed.texts())
+        Scrub::of(&self.scrubbed).text(text)
     }
 
     /// [`Page::shown`] for an address, read as its reader would read it (decoded).
     fn shown_address(&self, address: &str) -> String {
-        scrubbed_address(address, &self.scrubbed.texts())
+        Scrub::of(&self.scrubbed).address(address)
     }
 
     /// The site this page is on: the one of the document it has loaded, not of an address it
@@ -610,6 +613,8 @@ pub(crate) struct Inner {
     judge: Option<Judge>,
     /// Whether the person drives (#2014): every request is then theirs (#2018).
     person_drives: AtomicBool,
+    /// Whether purlis drives, performing a login (#2016): every request is then purlis's.
+    purlis_drives: AtomicBool,
     /// Where each held request is sent to be judged, on a thread of its own (#2018).
     judging: Mutex<Option<std::sync::mpsc::Sender<(Paused, Outbound)>>>,
     /// Where a judged browser's other follow-ups are carried out, in order, on a thread of their
@@ -660,6 +665,9 @@ pub struct Browser {
     acting_epoch: AtomicU64,
     /// What the person typed while driving, kept out of later answers (#2014).
     typing: Mutex<Typing>,
+    /// What each login the person cut by taking the browser over filled, cleared as they hand
+    /// it back (#2016): the page's target, the login's origin, and the fields.
+    to_clear: Mutex<Vec<(String, String, Vec<NodeKey>)>>,
     /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
     /// call in flight.
     #[cfg(unix)]
@@ -715,6 +723,7 @@ impl Browser {
             ends: Mutex::new(None),
             judge,
             person_drives: AtomicBool::new(false),
+            purlis_drives: AtomicBool::new(false),
             judging: Mutex::new(None),
             following: Mutex::new(None),
         });
@@ -815,6 +824,7 @@ impl Browser {
             lease: Mutex::new(Lease::default()),
             acting_epoch: AtomicU64::new(0),
             typing: Mutex::new(Typing::default()),
+            to_clear: Mutex::new(Vec::new()),
             #[cfg(unix)]
             engine: Mutex::new(None),
         })
@@ -979,7 +989,7 @@ impl Browser {
     /// about its page while the page lasts. The hook a login, and the person's typing, fill.
     pub fn blank(&self, target: &Ref) -> Result<(), Refusal> {
         let (page, key) = live_ref(&lock(&self.inner.state), target)?;
-        self.blank_node(&page, key)
+        self.blank_node(&page, key).map(|_| ())
     }
 
     /// [`Browser::blank`] for the element that has the focus on `page` (the current page when
@@ -989,8 +999,12 @@ impl Browser {
         self.blank_what_has_focus(page).map(|_| ())
     }
 
-    /// [`Browser::blank_focused`], answering the element it blanked and its page's target.
-    fn blank_what_has_focus(&self, page: Option<&PageId>) -> Result<(String, NodeKey), Refusal> {
+    /// [`Browser::blank_focused`], answering the element it blanked and its page's target, and
+    /// the page as it was read once the element was blanked.
+    fn blank_what_has_focus(
+        &self,
+        page: Option<&PageId>,
+    ) -> Result<((String, NodeKey), Snapshot), Refusal> {
         let target = self.target(page)?;
         let snapshot = self.snapshot_of(&target)?;
         let key = match snapshot.focused() {
@@ -998,18 +1012,18 @@ impl Browser {
             [one] => one.clone(),
             _ => return Err(Refusal::FocusUnclear),
         };
-        self.blank_node(&target, key.clone())?;
-        Ok((target, key))
+        let read = self.blank_node(&target, key.clone())?;
+        Ok(((target, key), read))
     }
 
-    fn blank_node(&self, target: &str, key: NodeKey) -> Result<(), Refusal> {
+    fn blank_node(&self, target: &str, key: NodeKey) -> Result<Snapshot, Refusal> {
         {
             let mut state = lock(&self.inner.state);
             state.excluded.insert(key);
             state.kept_on(target);
         }
         // Read the page now, so what the element holds is kept out from this moment.
-        self.snapshot_of(target).map(|_| ())
+        self.snapshot_of(target)
     }
 
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
@@ -1575,7 +1589,7 @@ impl Browser {
             };
             trees.push(frame);
         }
-        let snapshot = build(&trees, &excluded, &scrub.texts());
+        let snapshot = build_kept(&trees, &excluded, &scrub);
         if let Some(page) = lock(&self.inner.state).page_mut(target) {
             page.keep_out(snapshot.blanked_text());
         }
@@ -1602,19 +1616,22 @@ impl Browser {
         })
     }
 
-    /// Where frames with sessions of their own put `at`'s frame on the page, in CSS pixels.
-    fn frame_offset(&self, at: &Located, scroll: bool) -> Result<(f64, f64), CallError> {
-        let (mut x, mut y) = (0.0, 0.0);
+    /// Where frames with sessions of their own put `at`'s frame on the page, in CSS pixels;
+    /// `None` when the engine does not say where a frame between them is drawn.
+    fn frame_place(&self, at: &Located, scroll: bool) -> Result<Option<FramePlace>, CallError> {
+        let mut place = FramePlace {
+            corner: (0.0, 0.0),
+            within: None,
+        };
         for (frame, parent_session) in &at.boundaries {
             let owner = self.devtools().call(
                 "DOM.getFrameOwner",
                 json!({ "frameId": frame }),
                 Some(parent_session),
             )?;
-            let owner = owner
-                .get("backendNodeId")
-                .and_then(Value::as_i64)
-                .unwrap_or_default();
+            let Some(owner) = owner.get("backendNodeId").and_then(Value::as_i64) else {
+                return Ok(None);
+            };
             if scroll {
                 let gone_on = self.gated(|| {
                     self.devtools().call(
@@ -1632,17 +1649,39 @@ impl Browser {
                 json!({ "backendNodeId": owner }),
                 Some(parent_session),
             )?;
-            let content = model.pointer("/model/content").and_then(Value::as_array);
-            let corner = |i: usize| {
-                content
-                    .and_then(|c| c.get(i))
-                    .and_then(Value::as_f64)
-                    .unwrap_or_default()
+            let quad = |name: &str| -> Option<[f64; 8]> {
+                let numbers: Vec<f64> = model
+                    .pointer(&format!("/model/{name}"))?
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_f64)
+                    .collect::<Option<_>>()?;
+                numbers.try_into().ok()
             };
-            x += corner(0);
-            y += corner(1);
+            let size = |name: &str| model.pointer(&format!("/model/{name}"))?.as_f64();
+            let (Some(content), Some(border), Some(width), Some(height)) = (
+                quad("content"),
+                quad("border"),
+                size("width"),
+                size("height"),
+            ) else {
+                return Ok(None);
+            };
+            // A frame drawn other than upright at its own size (turned, scaled, zoomed, by its
+            // element or anything around it) is painted over whole: what its document draws is
+            // drawn within its box.
+            if place.within.is_none() && !upright(&border, width, height) {
+                place.within = Some(place.on_page(quad_bounds(&border)));
+            }
+            let inner = place.on_page(Rect {
+                x: content[0],
+                y: content[1],
+                width: 0.0,
+                height: 0.0,
+            });
+            place.corner = (inner.x, inner.y);
         }
-        Ok((x, y))
+        Ok(Some(place))
     }
 
     /// The page point at the centre of `at`, brought into view first when `scroll`.
@@ -1651,7 +1690,11 @@ impl Browser {
             CallError::Engine { .. } => Refusal::NotShown(target.clone()),
             other => refusal(other),
         };
-        let (dx, dy) = self.frame_offset(at, scroll).map_err(shown)?;
+        let (dx, dy) = self
+            .frame_place(at, scroll)
+            .map_err(shown)?
+            .ok_or_else(|| Refusal::NotShown(target.clone()))?
+            .corner;
         if scroll {
             let _ = self.gated(|| {
                 self.devtools().call(
@@ -1743,7 +1786,7 @@ impl Browser {
                 None => None,
             });
         }
-        self.acting_on(&target, || {
+        let mut answer = self.acting_on(&target, || {
             let total = fields.len();
             for (done, (field, at)) in fields.iter().zip(&located).enumerate() {
                 let typed = self.type_field(field, at.as_ref(), &session);
@@ -1761,6 +1804,28 @@ impl Browser {
                 }
             }
             Ok(None)
+        })?;
+        // A blanked field holds what was just typed into it: once the page has settled it is
+        // read again, so that is kept out of this answer and every later one.
+        if self.blanks_on(&target) {
+            let _ = self.snapshot_of(&target);
+            let state = lock(&self.inner.state);
+            answer.page = answer.page.and_then(|page| {
+                let at = state.pages.iter().find(|p| p.id == page.id)?;
+                state.info(&at.target)
+            });
+        }
+        Ok(answer)
+    }
+
+    /// Whether any element of `target`'s page is blanked.
+    fn blanks_on(&self, target: &str) -> bool {
+        let state = lock(&self.inner.state);
+        state.page(target).is_some_and(|page| {
+            state
+                .excluded
+                .iter()
+                .any(|key| page.frames.contains_key(&key.frame))
         })
     }
 
@@ -2106,8 +2171,8 @@ impl Browser {
         boundaries: &[(String, String)],
         backend: i64,
     ) -> Result<Option<Rect>, Refusal> {
-        let offset = match placings.get(boundaries) {
-            Some(offset) => *offset,
+        let place = match placings.get(boundaries) {
+            Some(place) => *place,
             None => {
                 let at = Located {
                     target: String::new(),
@@ -2116,15 +2181,20 @@ impl Browser {
                     backend,
                     boundaries: boundaries.to_vec(),
                 };
-                let offset = match self.frame_offset(&at, false) {
-                    Ok(offset) => Some(offset),
+                let place = match self.frame_place(&at, false) {
+                    Ok(Some(place)) => Some(place),
+                    Ok(None) => {
+                        return Err(Refusal::Withheld(
+                            "where a frame of the page is drawn is not known".into(),
+                        ));
+                    }
                     Err(why) => undrawn(why)?,
                 };
-                placings.insert(boundaries.to_vec(), offset);
-                offset
+                placings.insert(boundaries.to_vec(), place);
+                place
             }
         };
-        let Some((dx, dy)) = offset else {
+        let Some(place) = place else {
             return Ok(None);
         };
         match self.devtools().call(
@@ -2132,11 +2202,9 @@ impl Browser {
             json!({ "backendNodeId": backend }),
             Some(session),
         ) {
-            Ok(quads) => Ok(bounds(&quads).map(|mut rect| {
-                rect.x += dx;
-                rect.y += dy;
-                rect
-            })),
+            Ok(quads) => {
+                Ok(bounds(&quads).map(|rect| place.within.unwrap_or_else(|| place.on_page(rect))))
+            }
             Err(why) => undrawn(why),
         }
     }
@@ -2151,7 +2219,7 @@ impl Browser {
         placings: &mut Placings,
         boxes: &mut Boxes,
     ) -> Result<(), Refusal> {
-        let (kept, greys, roots) = {
+        let (kept, greys, roots, blanked) = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             let greys = state.greys(target);
@@ -2183,8 +2251,19 @@ impl Browser {
                     boundaries: Vec::new(),
                 });
             }
-            (page.scrubbed.clone(), greys, roots)
+            // The blanked elements each session draws, by the engine's ids.
+            let mut blanked: HashMap<String, HashSet<i64>> = HashMap::new();
+            for key in &state.excluded {
+                if let Some(frame) = page.frames.get(&key.frame) {
+                    blanked
+                        .entry(frame.session.clone())
+                        .or_default()
+                        .insert(key.backend);
+                }
+            }
+            (page.scrubbed.clone(), greys, roots, blanked)
         };
+        let loose: Vec<&str> = kept.loose();
         let kept: Vec<&str> = kept.texts();
         // The frame elements whose documents are read in sessions of their own.
         let read_apart: HashSet<(String, i64)> = roots
@@ -2213,7 +2292,14 @@ impl Browser {
                     Some(&root.session),
                 )
                 .map_err(|why| Refusal::Withheld(why.to_string()))?;
-            let found = drawn(&answer, &kept).map_err(|why| Refusal::Withheld(why.to_string()))?;
+            let none = HashSet::new();
+            let found = drawn(
+                &answer,
+                &kept,
+                &loose,
+                blanked.get(&root.session).unwrap_or(&none),
+            )
+            .map_err(|why| Refusal::Withheld(why.to_string()))?;
             reads.push((root, found));
         }
         // What the page shows is the top document read, whatever address the page was last
@@ -2256,7 +2342,42 @@ type Boxes = HashMap<(String, i64), Rect>;
 
 /// Where each session sits on its page, by the frames between them, once asked: `None` where the
 /// engine says it is not drawn.
-type Placings = HashMap<Vec<(String, String)>, Option<(f64, f64)>>;
+type Placings = HashMap<Vec<(String, String)>, Option<FramePlace>>;
+
+/// Where a frame's document is drawn on its page, in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FramePlace {
+    /// Where the document's top left corner is.
+    corner: (f64, f64),
+    /// The box of the outermost frame between the page and the document that is drawn other
+    /// than upright at its own size: everything the document draws is drawn within it.
+    within: Option<Rect>,
+}
+
+impl FramePlace {
+    /// `rect`, a box in CSS pixels of the frame's document, on the page.
+    fn on_page(&self, rect: Rect) -> Rect {
+        Rect {
+            x: rect.x + self.corner.0,
+            y: rect.y + self.corner.1,
+            ..rect
+        }
+    }
+}
+
+/// Whether `border`, an element's border box as drawn, is upright and the size the element is
+/// laid out at (`width` by `height`), to within a pixel: drawn as laid out, not turned, scaled
+/// or zoomed.
+fn upright(border: &[f64; 8], width: f64, height: f64) -> bool {
+    let near = |a: f64, b: f64| (a - b).abs() <= 1.0;
+    let [x0, y0, x1, y1, x2, y2, x3, y3] = *border;
+    near(y0, y1)
+        && near(x1, x2)
+        && near(y2, y3)
+        && near(x3, x0)
+        && near(x1 - x0, width)
+        && near(y3 - y0, height)
+}
 
 /// `None` when `why` says a node is not drawn; any other failure withholds the screenshot.
 fn undrawn<T>(why: CallError) -> Result<Option<T>, Refusal> {
@@ -2477,6 +2598,8 @@ impl Inner {
                         });
                         let by = if self.person_drives.load(Ordering::SeqCst) {
                             Driver::Person
+                        } else if self.purlis_drives.load(Ordering::SeqCst) {
+                            Driver::Purlis
                         } else {
                             Driver::Agent
                         };
@@ -2806,25 +2929,27 @@ impl Placing {
 
 /// The box around every quad.
 fn bounds(answer: &Value) -> Option<Rect> {
-    let all = quads(answer);
-    if all.is_empty() {
-        return None;
-    }
+    quads(answer)
+        .iter()
+        .map(quad_bounds)
+        .reduce(|a, b| hull(&a, &b))
+}
+
+/// The box around one quad.
+fn quad_bounds(quad: &[f64; 8]) -> Rect {
     let (mut left, mut top, mut right, mut bottom) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-    for q in all {
-        for i in 0..4 {
-            left = left.min(q[2 * i]);
-            right = right.max(q[2 * i]);
-            top = top.min(q[2 * i + 1]);
-            bottom = bottom.max(q[2 * i + 1]);
-        }
+    for i in 0..4 {
+        left = left.min(quad[2 * i]);
+        right = right.max(quad[2 * i]);
+        top = top.min(quad[2 * i + 1]);
+        bottom = bottom.max(quad[2 * i + 1]);
     }
-    Some(Rect {
+    Rect {
         x: left,
         y: top,
         width: right - left,
         height: bottom - top,
-    })
+    }
 }
 
 #[cfg(test)]

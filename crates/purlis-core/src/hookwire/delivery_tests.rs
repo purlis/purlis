@@ -378,7 +378,7 @@ fn a_line_the_host_took_late_while_the_window_heard_it_and_its_hook_spooled_is_r
                     relaying.replied(id, replied);
                 });
                 let window = Arc::clone(&window);
-                std::thread::spawn(move || window.hear(id, heard, reply));
+                std::thread::spawn(move || window.hear(1, id, heard, reply));
                 true
             })
         },

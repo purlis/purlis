@@ -1,0 +1,21 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Upstream agent-sandbox v1.0.6 as purlis installs it (#2261): the vendored release manifest,
+# byte for byte as upstream published it, with its controller's image named by the digest of
+# the release, so a tag moved in the registry never changes what runs. Apply it with
+#
+#   kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
+#
+# The digest is the one Kubernetes' image promoter published for the tag (kubernetes/k8s.io,
+# registry.k8s.io/images/k8s-staging-agent-sandbox/images.yaml). CONTROLLER_DIGEST in
+# operator/src/upstream.rs names it too; operator/tests/upstream_is_installed_by_digest.rs holds
+# them equal, and operator/e2e/kind.sh checks the registry holds it under the tag.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - sandbox-with-extensions.yaml
+images:
+  - name: registry.k8s.io/agent-sandbox/agent-sandbox-controller
+    newTag: v1.0.6
+    digest: sha256:14c479c9e89ca87d05dfcf597840473c0196d6e6eec622a7959e72108d75b24e

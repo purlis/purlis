@@ -17,9 +17,10 @@ import {
   SRC,
   sourceFiles,
   styleEntries,
+  unprefixed,
   utilityOf,
 } from "./guards.testkit";
-import { arithmeticLiteral } from "./cssMath.testkit";
+import { arithmeticLiteral, LENGTH_UNITS } from "./cssMath.testkit";
 
 /**
  * **No spacing, corner or type size is written outside the core tokens** (DS-4, #1837;
@@ -27,11 +28,22 @@ import { arithmeticLiteral } from "./cssMath.testkit";
  *
  * Colour and motion stayed consistent because a guard refused a literal the day it was typed.
  * Geometry had no guard, and drifted to 132 paddings, 20 font sizes and 11 radii. This is that
- * guard for geometry: a stylesheet, a component's inline style (`{{ … }}` or `{ … } as
- * CSSProperties`), a `.style.setProperty(…)` call in any script, or a Tailwind class that sets a
- * **padding**, a **margin**, a **gap**, a **corner**, a **font size** or an **offset** (`top`,
- * `right`, `bottom`, `left`, `inset` and its forms) takes it from `theme/geometry.css`, as
- * `var(--space-4)`, `var(--radius-md)` or `var(--font-size-sm)`. A Tailwind class is read past
+ * guard for geometry: a stylesheet, a component's or a script's style (`styleEntries`: an inline
+ * `style` object, `{{ … }}` or `{ … } as CSSProperties`; a style object held in a variable,
+ * `style={held}`; `el.style.padding = "7px"`; `el.style.cssText` and a `style` attribute set as
+ * text; `Object.assign(el.style, { … })`; a `setProperty(…)` call, `el.style?.setProperty(…)`
+ * too), or a Tailwind class that sets a **padding**, a **margin**, a **gap**, a **corner**, a
+ * **font size** or an **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms) takes
+ * it from `theme/geometry.css`, as `var(--space-4)`, `var(--radius-md)` or
+ * `var(--font-size-sm)`. A scroll margin or padding (`scroll-margin*`, `scroll-padding*`,
+ * `scroll-mt-*`, `scroll-p-*`) is read as a margin or a padding, and the grid's names for a gap
+ * (`grid-gap`, `grid-row-gap`, `grid-column-gap`) as a gap. A length is read in every unit of
+ * `LENGTH_UNITS` (`cssMath.testkit.ts`): the absolute ones and those of the text, the element's
+ * own (`em`, `ex`, `ch`, `ic`, `cap`, `lh`) and the root's (`rem`, `rex`, `rch`, `ric`, `rcap`,
+ * `rlh`), and a number with an exponent is read for the value it gives (`7e0px` is `7px`). A
+ * property is read past its vendor's prefix (`-webkit-border-radius`, `WebkitBorderRadius`), and
+ * a value a ternary picks is read branch by branch (`padding: on ? "7px" : 0`). A Tailwind
+ * class is read past
  * its variants (`md:`, `data-[open]:`, `[&>*]:`) and its `!`, by the step it names (`p-5`,
  * `start-5`, `text-2xl/7` are off the scale), by a value of its own (`p-[7px]`,
  * `text-[13px]/7`, `rounded-[5px]`) or by an arbitrary property (`[padding:7px]`), each read as
@@ -47,7 +59,7 @@ import { arithmeticLiteral } from "./cssMath.testkit";
  * element's own text (`1em`, `1lh`, `1ch`: an icon as big as the words beside it); a share of
  * the box or the window (`%`, `vh`, `vw`, `fr`); a keyword; and a token, or a token's whole
  * multiple or whole share (`* 3`, `* -1`, `/ 2`). The arithmetic of every CSS math function is
- * read (`cssMath.testkit.ts`): a number in it that is not whole is a literal, however it is
+ * read (`cssMath.testkit.ts`), a vendor's spelling too (`-webkit-calc()`): a number in it that is not whole is a literal, however it is
  * spelled (`* 3.5`, `* +0.5`, `* calc(3.5)`, `* 35e-1`); a product's factors fold into one net
  * factor, which is whole or a whole share (`* 7 / 2` is a literal, `/ 2` is not); a term that
  * holds a written length takes a whole share and no multiple (`calc(1px * 7)`,
@@ -73,9 +85,15 @@ const THE_CORE = "theme/geometry.css";
 
 /** A property that sets a step of the scale: a padding, margin, gap, corner, or font size (with
  *  the `font` shorthand, which carries one), and an offset (`top`, `right`, `bottom`, `left`,
- *  `inset` and its forms), which places a box as a margin does. */
+ *  `inset` and its forms), which places a box as a margin does. A scroll margin or padding
+ *  (`scroll-margin*`, `scroll-padding*`) is read as a margin or a padding, and the grid's old
+ *  names for a gap (`grid-gap`, `grid-row-gap`, `grid-column-gap`) as a gap. */
 const GEOMETRY_PROPERTY =
-  /^(?:padding(?:-[\w-]+)?|margin(?:-[\w-]+)?|(?:row-|column-)?gap|border(?:-[\w-]+)?-radius|font-size|font|top|right|bottom|left|inset(?:-[\w-]+)?)$/;
+  /^(?:(?:scroll-)?padding(?:-[\w-]+)?|(?:scroll-)?margin(?:-[\w-]+)?|(?:grid-)?(?:row-|column-)?gap|border(?:-[\w-]+)?-radius|font-size|font|top|right|bottom|left|inset(?:-[\w-]+)?)$/;
+
+/** Whether a property is one this guard reads, a vendor's prefix read past
+ *  (`-webkit-border-radius` is `border-radius`). */
+const isGeometry = (property: string) => GEOMETRY_PROPERTY.test(unprefixed(property));
 
 const CUSTOM = /^--[\w-]+$/;
 const READS = /var\(\s*(--[\w-]+)/g;
@@ -103,7 +121,7 @@ export function checkedCustoms(
   for (const { property, value } of all) {
     for (const name of readBy(value)) {
       read.add(name);
-      if (GEOMETRY_PROPERTY.test(property)) checked.add(name);
+      if (isGeometry(property)) checked.add(name);
     }
   }
   for (let grew = true; grew;) {
@@ -122,13 +140,16 @@ export function checkedCustoms(
   return checked;
 }
 
-/** A length written as a number: `7px`, `.35rem`, `-0.25rem`, `1.5em`. Not inside a name, so
- *  `--space-2` or `h2em` is not one. */
-const LENGTH = /(?<![\w.#-])-?(\d*\.?\d+)(px|rem|em|ch|ex|lh|pt|pc|cm|mm|in|q)\b/gi;
+/** The units a length is written in (`LENGTH_UNITS`), as an alternation. */
+const UNITS = LENGTH_UNITS.join("|");
+
+/** A length written as a number, in any unit of `LENGTH_UNITS`: `7px`, `.35rem`, `-0.25rem`,
+ *  `1.5em`, `2rlh`, `1.5cap`, `7e0px`, `70e-1px` (an exponent is read for the value it gives). Not inside a name, so `--space-2` or `h2em` is not one. */
+const LENGTH = new RegExp(String.raw`(?<![\w.#-])-?(\d*\.?\d+(?:e[+-]?\d+)?)(${UNITS})\b`, "gi");
 
 /** The lengths that are not a literal size: nothing, a hairline, or one of the text's own. */
 function isLiteral(length: string): boolean {
-  const [, number, unit] = /^-?(\d*\.?\d+)([a-z]+)$/i.exec(length) ?? [];
+  const [, number, unit] = /^-?(\d*\.?\d+(?:e[+-]?\d+)?)([a-z]+)$/i.exec(length) ?? [];
   const value = Number(number);
   if (value === 0) return false;
   if (value === 1 && ["px", "em", "lh", "ch"].includes(unit.toLowerCase())) return false;
@@ -178,7 +199,7 @@ export function writesALiteral(
 }
 
 /** A value that is one length written out and nothing else: `1px`, `-0.5rem`. */
-const BARE_LENGTH = /^-?(?:\d*\.?\d+)(px|rem|em|ch|ex|lh|pt|pc|cm|mm|in|q)$/i;
+const BARE_LENGTH = new RegExp(String.raw`^-?(?:\d*\.?\d+(?:e[+-]?\d+)?)(${UNITS})$`, "i");
 
 /**
  * The checked custom properties whose value is a bare written length (`--hair: 1px`, or a
@@ -212,8 +233,7 @@ export function cssLiterals(
 ): string[] {
   return declarations(css)
     .filter(
-      ({ property }) =>
-        (GEOMETRY_PROPERTY.test(property) || customs.has(property)) && !/shadow/.test(property),
+      ({ property }) => (isGeometry(property) || customs.has(property)) && !/shadow/.test(property),
     )
     .filter(({ context, property, value }) =>
       writesALiteral(withoutReserve(context, property, value), lengths),
@@ -223,6 +243,8 @@ export function cssLiterals(
 
 /** The property a Tailwind utility sets from a value of its own, by the utility's name. */
 function utilityProperty(utility: string): string {
+  if (/^scroll-p/.test(utility)) return "scroll-padding";
+  if (/^scroll-m/.test(utility)) return "scroll-margin";
   if (/^p/.test(utility)) return "padding";
   if (/^(?:m|space)/.test(utility)) return "margin";
   if (/^gap/.test(utility)) return "gap";
@@ -238,7 +260,7 @@ function utilityProperty(utility: string): string {
  * writes (`_` is a space). Its variants (`md:`, `data-[open]:`, `[&>*]:`) are read past.
  */
 const ARBITRARY =
-  /^-?(p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|rounded(?:-[trblse]{1,2})?|text)-(?:\[([^\]]+)\]|\((--[\w-]+)\))(?:\/.+)?$/;
+  /^-?((?:scroll-)?p[xytrblse]?|(?:scroll-)?m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|rounded(?:-[trblse]{1,2})?|text)-(?:\[([^\]]+)\]|\((--[\w-]+)\))(?:\/.+)?$/;
 
 function arbitrary(word: string): { property: string; value: string } | undefined {
   const utility = utilityOf(word);
@@ -277,7 +299,7 @@ function componentDeclarations(source: string): Declaration[] {
  */
 const ON_THE_SCALE = new Set(["0", "px", "0.5", "1", "1.5", "2", "3", "4", "6", "8"]);
 const SPACING_UTILITY =
-  /^-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-(?:x|y)|inset(?:-[xy])?|top|right|bottom|left|start|end)-(\d+(?:\.\d+)?|px)$/;
+  /^-?(?:(?:scroll-)?p[xytrblse]?|(?:scroll-)?m[xytrblse]?|gap(?:-[xy])?|space-(?:x|y)|inset(?:-[xy])?|top|right|bottom|left|start|end)-(\d+(?:\.\d+)?|px)$/;
 const TEXT_UTILITY = /^text-(\d?xs|sm|md|base|lg|xl|[2-9]xl)(?:\/.+)?$/;
 const CORE_TEXT = new Set(["xs", "sm", "md", "base", "lg", "xl"]);
 const RADIUS_UTILITY = /^rounded(?:-[trblse]{1,2})?(?:-(xs|sm|md|lg|xl|2xl|3xl|4xl|none|full))?$/;
@@ -292,9 +314,7 @@ export function offTheScale(
 ): boolean {
   const own = arbitrary(word);
   if (own) {
-    const read = CUSTOM.test(own.property)
-      ? customs.has(own.property)
-      : GEOMETRY_PROPERTY.test(own.property);
+    const read = CUSTOM.test(own.property) ? customs.has(own.property) : isGeometry(own.property);
     return read && writesALiteral(own.value, lengths);
   }
   const utility = utilityOf(word);
@@ -318,7 +338,7 @@ export function componentLiterals(
 ): string[] {
   const found: string[] = [];
   for (const { label, property, value } of styleEntries(source)) {
-    if (!(CUSTOM.test(property) ? customs.has(property) : GEOMETRY_PROPERTY.test(property))) {
+    if (!(CUSTOM.test(property) ? customs.has(property) : isGeometry(property))) {
       continue;
     }
     const literal = /^-?\d/.test(value)
@@ -615,6 +635,213 @@ export const Planted = () => <div style={{ "--planted-line": "1px", padding: "ca
     ]);
   });
 
+  it("fails a literal in each newer unit of length planted in the window's own stylesheet (#2498)", () => {
+    const css = `${read("App.css")}
+.planted-own { padding: 2lh; margin: 1.5ic; gap: 2cap; top: 0.5lh; }
+.planted-root { padding: 1rlh; margin: 2rch; gap: 1rex; left: 3ric; right: 1rcap; }
+.planted-math { padding: calc(1rlh * 3); margin: calc(1cap + 1cap); gap: calc(var(--space-1) + 2ic); }
+.planted-shares { padding: 2vi; margin: 3cqw; gap: 1lh; top: 1ch; }
+`;
+    const tsx = `${read("PlaneView.tsx")}
+export const Planted = () => <div className="p-[2rlh] mt-[1.5cap]" style={{ gap: "2ic" }} />;
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "PlaneView.tsx": tsx }))).toEqual(
+      [
+        ".planted-own | padding: 2lh",
+        ".planted-own | margin: 1.5ic",
+        ".planted-own | gap: 2cap",
+        ".planted-own | top: 0.5lh",
+        ".planted-root | padding: 1rlh",
+        ".planted-root | margin: 2rch",
+        ".planted-root | gap: 1rex",
+        ".planted-root | left: 3ric",
+        ".planted-root | right: 1rcap",
+        ".planted-math | padding: calc(1rlh * 3)",
+        ".planted-math | margin: calc(1cap + 1cap)",
+        ".planted-math | gap: calc(var(--space-1) + 2ic)",
+      ]
+        .map((entry) => `App.css: new literal, take it from a core token: ${entry}`)
+        .concat([
+          'PlaneView.tsx: new literal, take it from a core token: style gap: "2ic"',
+          "PlaneView.tsx: new literal, take it from a core token: class p-[2rlh]",
+          "PlaneView.tsx: new literal, take it from a core token: class mt-[1.5cap]",
+        ]),
+    );
+  });
+
+  it("reads the grid's gaps and the scroll margins and paddings as gaps, margins and paddings (#2498)", () => {
+    const css = `${read("App.css")}
+.planted-grid { grid-gap: 7px; grid-row-gap: 3px; grid-column-gap: 0.3rem; }
+.planted-scroll { scroll-margin: 7px; scroll-margin-top: 3px; scroll-margin-inline-end: 0.3rem; }
+.planted-snap { scroll-padding: 5px; scroll-padding-block: 0 9px; scroll-padding-left: 2px; }
+.planted-held { --planted-pad: 7px; width: var(--planted-pad); }
+.planted-reads { scroll-padding-inline: var(--planted-pad); }
+.planted-ok { grid-gap: var(--space-2); scroll-margin-block: var(--space-4) 0; scroll-padding: 1px; }
+`;
+    const tsx = `${read("PlaneView.tsx")}
+export const Planted = () => (
+  <div
+    style={{ gridGap: "7px", gridRowGap: 3, scrollMarginTop: "0.3rem", scrollPaddingInline: "5px", scrollMargin: 0 }}
+    className="scroll-mt-5 scroll-p-[7px] -scroll-mx-[3px] scroll-px-2 scroll-m-0 md:scroll-pb-7"
+  />
+);
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "PlaneView.tsx": tsx }))).toEqual(
+      [
+        ".planted-grid | grid-gap: 7px",
+        ".planted-grid | grid-row-gap: 3px",
+        ".planted-grid | grid-column-gap: 0.3rem",
+        ".planted-scroll | scroll-margin: 7px",
+        ".planted-scroll | scroll-margin-top: 3px",
+        ".planted-scroll | scroll-margin-inline-end: 0.3rem",
+        ".planted-snap | scroll-padding: 5px",
+        ".planted-snap | scroll-padding-block: 0 9px",
+        ".planted-snap | scroll-padding-left: 2px",
+        ".planted-held | --planted-pad: 7px",
+      ]
+        .map((entry) => `App.css: new literal, take it from a core token: ${entry}`)
+        .concat(
+          [
+            'style gridGap: "7px"',
+            "style gridRowGap: 3",
+            'style scrollMarginTop: "0.3rem"',
+            'style scrollPaddingInline: "5px"',
+            "class scroll-mt-5",
+            "class scroll-p-[7px]",
+            "class -scroll-mx-[3px]",
+            "class md:scroll-pb-7",
+          ].map((entry) => `PlaneView.tsx: new literal, take it from a core token: ${entry}`),
+        ),
+    );
+  });
+
+  it("reads a length written with an exponent for the value it gives (#2498)", () => {
+    const css = `${read("App.css")}
+.planted { padding: 7e0px; margin: .7e1px; gap: 70e-1px; top: calc(7e0px); right: -0.3E1rem; }
+.planted-ok { left: 1e0px; bottom: 0e5px; padding-block: 1e0em; }
+`;
+    const tsx = `${read("PlaneView.tsx")}
+export const Planted = () => <div style={{ padding: 7e0, margin: 0e0 }} />;
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "PlaneView.tsx": tsx }))).toEqual([
+      "App.css: new literal, take it from a core token: .planted | padding: 7e0px",
+      "App.css: new literal, take it from a core token: .planted | margin: .7e1px",
+      "App.css: new literal, take it from a core token: .planted | gap: 70e-1px",
+      "App.css: new literal, take it from a core token: .planted | top: calc(7e0px)",
+      "App.css: new literal, take it from a core token: .planted | right: -0.3E1rem",
+      "PlaneView.tsx: new literal, take it from a core token: style padding: 7e0",
+    ]);
+  });
+
+  it("reads a geometry property past its vendor's prefix (#2498)", () => {
+    const css = `${read("App.css")}
+.planted { -webkit-border-radius: 7px; -moz-padding-start: 3px; -webkit-margin-before: 2px; }
+.planted-ok { -webkit-border-radius: var(--radius-md); -webkit-text-stroke-width: 7px; }
+`;
+    const tsx = `${read("PlaneView.tsx")}
+export const Planted = () => (
+  <div style={{ WebkitBorderRadius: "7px", MozPaddingStart: 3, msScrollPaddingTop: "5px", WebkitTextStrokeWidth: "7px" }} />
+);
+`;
+    expect(complaints(literalsByFile({ "App.css": css, "PlaneView.tsx": tsx }))).toEqual(
+      [
+        "App.css: new literal, take it from a core token: .planted | -webkit-border-radius: 7px",
+        "App.css: new literal, take it from a core token: .planted | -moz-padding-start: 3px",
+        "App.css: new literal, take it from a core token: .planted | -webkit-margin-before: 2px",
+      ].concat(
+        [
+          'style WebkitBorderRadius: "7px"',
+          "style MozPaddingStart: 3",
+          'style msScrollPaddingTop: "5px"',
+        ].map((entry) => `PlaneView.tsx: new literal, take it from a core token: ${entry}`),
+      ),
+    );
+  });
+
+  it("reads each branch of a ternary a style picks its value by (#2498)", () => {
+    const tsx = `${read("LayoutPanes.tsx")}
+export const Either = ({ on, size }: { on: boolean; size: string }) => (
+  <div style={{ padding: on ? "7px" : 0, margin: on ? size : "3px", gap: on ? (size ? "2px" : "0") : size }} />
+);
+export function plant(frame: HTMLElement, on: boolean) {
+  frame.style.padding = on ? "9px" : "0";
+  frame.style.margin = frame?.dataset.x ?? "0";
+  frame.onclick = () => (frame.style.marginTop = on ? "5px" : "0");
+}
+`;
+    expect(complaints(literalsByFile({ "LayoutPanes.tsx": tsx }))).toEqual(
+      [
+        'style padding: "7px"',
+        'style margin: "3px"',
+        'style gap: "2px"',
+        'style.padding: "9px"',
+        'style.marginTop: "5px"',
+      ].map((entry) => `LayoutPanes.tsx: new literal, take it from a core token: ${entry}`),
+    );
+  });
+
+  it("reads a vendor's spelling of a math function as the function (#2498)", () => {
+    const css = `${read("App.css")}
+.planted { margin: -webkit-calc(var(--space-1) * 3.5); padding: -webkit-calc(1px * 7); }
+.planted-ok { gap: -webkit-calc(var(--space-2) / 2); margin: -moz-calc(var(--space-4) * 2); }
+`;
+    expect(complaints(literalsByFile({ "App.css": css }))).toEqual([
+      "App.css: new literal, take it from a core token: .planted | margin: -webkit-calc(var(--space-1) * 3.5)",
+      "App.css: new literal, take it from a core token: .planted | padding: -webkit-calc(1px * 7)",
+    ]);
+  });
+
+  it("reads a style a component holds in a variable, picks by a condition, assigns or writes as text, in the real tree (#2498)", () => {
+    const tsx = `${read("LayoutPanes.tsx")}
+const held = { padding: "7px", gap: 0 };
+const typed: CSSProperties = { marginTop: "3px" };
+const cast = { scrollMarginTop: "5px" } as CSSProperties;
+const unread = { padding: "9px" };
+export const Held = () => <div style={held} />;
+export const Spread = () => <div style={{ ...spreadOnly, gap: 0 }} />;
+export const Either = ({ on }: { on: boolean }) => <div style={on ? { padding: "8px" } : { margin: "3px" }} />;
+const spreadOnly = { margin: "4px" };
+export function plant(frame: HTMLElement | null) {
+  frame?.style?.setProperty("padding-top", "3px");
+  frame!.style.padding = "7px";
+  frame!.style["margin-left"] = '5px';
+  frame!.style.gap = "0";
+  frame!.style.cssText = "padding: 9px; width: 30px";
+  frame!.setAttribute("style", "margin: 2px");
+  Object.assign(frame!.style, { paddingInline: "6px" });
+  if (frame!.style.padding === "7px") return unread;
+}
+`;
+    expect(complaints(literalsByFile({ "LayoutPanes.tsx": tsx }))).toEqual(
+      [
+        'style padding: "8px"',
+        'style margin: "3px"',
+        'style held.padding: "7px"',
+        'style typed.marginTop: "3px"',
+        'style cast.scrollMarginTop: "5px"',
+        'style spreadOnly.margin: "4px"',
+        'style paddingInline: "6px"',
+        'style.padding: "7px"',
+        "style.margin-left: '5px'",
+        'style.cssText padding: "9px"',
+        'style attribute margin: "2px"',
+        'setProperty padding-top: "3px"',
+      ].map((entry) => `LayoutPanes.tsx: new literal, take it from a core token: ${entry}`),
+    );
+    // A script that is no component sets a style the same ways.
+    const script = `${read("theme/theme.ts")}
+export function plant(to: HTMLElement) {
+  to.style.marginTop = "3px";
+  to.style?.setProperty("--planted-pad", "5px");
+}
+`;
+    const css = `${read("App.css")}\n.planted { padding: var(--planted-pad); }\n`;
+    expect(complaints(literalsByFile({ "theme/theme.ts": script, "App.css": css }))).toEqual([
+      'theme/theme.ts: new literal, take it from a core token: style.marginTop: "3px"',
+      'theme/theme.ts: new literal, take it from a core token: setProperty --planted-pad: "5px"',
+    ]);
+  });
+
   it("reads an offset (top, right, bottom, left, inset) as it reads a margin", () => {
     const css = `
       .a { top: 3px; right: 8px; bottom: -2px; left: 0.5rem; }
@@ -795,9 +1022,7 @@ export const Planted = () => <div style={{ "--planted-line": "1px", padding: "ca
     expect(sourceFiles(isView)).toContain("PlaneView.tsx");
     expect(sourceFiles(isView).some((file) => file.includes(".test."))).toBe(false);
     expect(declarations(readFileSync(join(SRC, "App.css"), "utf8")).length).toBeGreaterThan(1000);
-    const checked = declarations(read("App.css")).filter(({ property }) =>
-      GEOMETRY_PROPERTY.test(property),
-    );
+    const checked = declarations(read("App.css")).filter(({ property }) => isGeometry(property));
     expect(checked.length).toBeGreaterThan(500);
   });
 });

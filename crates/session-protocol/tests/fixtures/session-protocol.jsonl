@@ -116,3 +116,8 @@
 {"reply":{"re":82,"ok":{"browsed":{"page":{"page":"p1","address":"https://docs.example.com/","title":"Docs","current":true},"settled":true,"note":"the page did not load: net::ERR_BLOCKED_BY_CLIENT","asked":["news.example.org:443"]}}}}
 {"call":{"id":90,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":10,"persona":"steward","confinement":"01J9CNFNMNT0000000000000002"}}
 {"reply":{"re":90,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000E","number":10,"process":4243,"confined":{"confinement":"01J9CNFNMNT0000000000000002","http":50811,"socks":50812,"tmp":"/tmp/purlis-chat-10"}}}}}
+{"pushed":{"link_down":{"why":"the link to it ended"}}}
+{"pushed":{"link_back":{}}}
+{"call":{"id":84,"command":"log_in","program":"01J9ZQ8000000000000000000D","login":{"address":"https://shop.example.test/login","user":"fixture-user","password":"fixture-word"}}}
+{"call":{"id":85,"command":"log_in","program":"01J9ZQ8000000000000000000D","login":{"address":"https://shop.example.test/login","password":"fixture-word"}}}
+{"reply":{"re":85,"refused":{"code":"browser_refused","why":"the login did not go through: https://shop.example.test still asks for a password"}}}

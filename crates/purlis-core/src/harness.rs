@@ -996,6 +996,7 @@ mod tests {
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
+                "mcp__purlis__theme_preview",
                 // And the browser tools, on the chat's browser Ask (#2245).
                 "mcp__purlis__browser_open",
                 "mcp__purlis__browser_navigate",
@@ -1016,6 +1017,7 @@ mod tests {
                 "mcp__purlis__browser_screenshot",
                 "mcp__purlis__browser_new",
                 "mcp__purlis__browser_close",
+                "mcp__purlis__browser_login",
             ]})
         );
     }
@@ -1199,6 +1201,7 @@ mod tests {
                 "mcp__purlis__browser_screenshot",
                 "mcp__purlis__browser_new",
                 "mcp__purlis__browser_close",
+                "mcp__purlis__browser_login",
             ]
         );
         // And each names a tool the server serves, so a renamed tool fails here, not quietly.
@@ -1507,6 +1510,7 @@ mod tests {
                 "mcp__purlis__persona_where",
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
+                "mcp__purlis__theme_preview",
                 "mcp__purlis__browser_open",
                 "mcp__purlis__browser_navigate",
                 "mcp__purlis__browser_snapshot",
@@ -1526,6 +1530,7 @@ mod tests {
                 "mcp__purlis__browser_screenshot",
                 "mcp__purlis__browser_new",
                 "mcp__purlis__browser_close",
+                "mcp__purlis__browser_login",
             ])
         );
         assert_eq!(

@@ -3006,6 +3006,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Keys { .. } => 12,
             Ask::Propose(_) => 13,
             Ask::Browse(_) => 14,
+            Ask::ThemePreview(_) => 15,
         }
     }
     let asks = vec![
@@ -3082,10 +3083,18 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 purlis_session_protocol::browsing::Act::Pages,
             ),
         })),
+        // The theme specimen (#2330): it names a theme, and draws sample content only.
+        Ask::ThemePreview(purlis_core::hookwire::ThemePreviewAsk {
+            chat,
+            specimens: vec![purlis_core::themepreview::Specimen {
+                theme: "purlis-classic".to_owned(),
+                appearance: None,
+            }],
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=14).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=15).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

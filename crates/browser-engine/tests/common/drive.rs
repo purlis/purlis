@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use purlis_browser_engine::WebAddress;
-use purlis_browser_engine::drive::{Answer, Browser, Call, CallId, Content, Ref};
+use purlis_browser_engine::drive::{Answer, Browser, Call, CallId, Content, Field, Ref};
 
 pub fn next_id() -> CallId {
     static NEXT: AtomicU32 = AtomicU32::new(1);
@@ -101,4 +101,21 @@ pub fn screenshot(browser: &Browser) -> Vec<u8> {
         Content::Image(png) => png,
         other => panic!("a screenshot is an image: {other:?}"),
     }
+}
+
+/// `text` is typed into `field`, and the field blanked, as a login fills one: what it holds is
+/// kept out from then on.
+pub fn filled_and_blanked(browser: &Browser, field: Ref, text: &str) {
+    call(
+        browser,
+        Call::Type {
+            page: None,
+            fields: vec![Field {
+                into: Some(field.clone()),
+                text: text.into(),
+                replace: true,
+            }],
+        },
+    );
+    browser.blank(&field).unwrap();
 }

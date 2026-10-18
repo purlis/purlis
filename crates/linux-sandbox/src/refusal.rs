@@ -21,6 +21,8 @@
 //! **No flood.** The same operation on the same target is told once a [`WINDOW`], and at most
 //! [`PER_WINDOW`] different ones are told in one: a build that fails on a thousand files is
 //! one pattern, not a thousand Notices. The app's own throttle holds each chat to the same.
+//! An internet address a program dialled past purlis's proxy is told once a window whatever the
+//! address, apart from the rest ([`Teller::past_the_proxy`]).
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
@@ -32,6 +34,9 @@ pub const WINDOW: Duration = Duration::from_secs(60);
 
 /// The most different refusals told in one [`WINDOW`].
 pub const PER_WINDOW: usize = 10;
+
+/// The operation a connection is told as, in Seatbelt's word for it.
+pub const DIALLED: &str = "network-outbound";
 
 /// The most refusals waiting to be told.
 pub const QUEUED: usize = PER_WINDOW;
@@ -54,6 +59,8 @@ pub type Tell = Box<dyn Fn(&Refusal) + Send + Sync + 'static>;
 /// [`PER_WINDOW`] a window, without ever waiting on it.
 pub struct Teller {
     seen: Mutex<Vec<(&'static str, String, Instant)>>,
+    /// When an address dialled past the proxy was last told ([`Teller::past_the_proxy`]).
+    dialled: Mutex<Option<Instant>>,
     queue: SyncSender<Refusal>,
     /// Refusals queued and not yet told, the one being told among them.
     pending: Arc<AtomicUsize>,
@@ -68,6 +75,7 @@ impl Teller {
         std::thread::spawn(move || tell_each(&told, &tell, &left));
         Teller {
             seen: Mutex::new(Vec::new()),
+            dialled: Mutex::new(None),
             queue,
             pending,
         }
@@ -101,6 +109,42 @@ impl Teller {
                 | std::sync::mpsc::TrySendError::Disconnected(it) => it,
             };
             self.forget(refusal.operation, &refusal.target);
+        }
+    }
+
+    /// **Tells a connection to `target`, an internet address a program dialled past purlis's
+    /// proxy, refused at `now`** (#2423): once a [`WINDOW`], whatever the address, and apart
+    /// from every other refusal's window, so addresses take nothing of what a file or a socket
+    /// is told. Returns at once whatever the listener does.
+    pub fn past_the_proxy(
+        &self,
+        target: String,
+        process: impl FnOnce() -> Option<String>,
+        now: Instant,
+    ) {
+        {
+            let mut dialled = self
+                .dialled
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if dialled.is_some_and(|at| now.saturating_duration_since(at) < WINDOW) {
+                return;
+            }
+            *dialled = Some(now);
+        }
+        let refusal = Refusal {
+            operation: DIALLED,
+            target,
+            process: process(),
+        };
+        self.pending.fetch_add(1, Ordering::SeqCst);
+        if self.queue.try_send(refusal).is_err() {
+            // Untold: the next address is told instead.
+            self.pending.fetch_sub(1, Ordering::SeqCst);
+            *self
+                .dialled
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         }
     }
 

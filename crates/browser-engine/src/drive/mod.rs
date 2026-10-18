@@ -39,6 +39,12 @@
 //!   ([`Browser::person_input`]) reaches the page, each field they type into blanked before
 //!   their keys reach it. The lease never comes back by itself: [`Browser::hand_back`] returns
 //!   it, and every reference dealt before it is void.
+//! - **Logins are purlis's** (#2016). [`Browser::log_in`] is the third driver: it takes the
+//!   lease, goes to the declared address, fills only while the page is on the declared origin,
+//!   submits, waits for the password field to go, clears what it filled where the login did not
+//!   go through, and hands the browser back. What it filled is kept out of every answer about
+//!   every page of the browser for as long as the browser lives, and each field it filled is
+//!   blanked before the value goes in.
 
 mod blank;
 mod browser;
@@ -56,7 +62,7 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-pub use browser::Browser;
+pub use browser::{Browser, LOGIN_WAIT, LoginEnded, origin_of};
 pub use screencast::QUALITY;
 
 use crate::WebAddress;
@@ -111,11 +117,35 @@ impl fmt::Display for Ref {
     }
 }
 
-/// Who drives a browser (#2014): the agent, through its calls, or the person who took it over.
+/// Who drives a browser (#2014): the agent, through its calls, the person who took it over, or
+/// purlis while it performs a login (#2016).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Driver {
     Agent,
     Person,
+    Purlis,
+}
+
+/// **A login purlis performs** (#2016): the declared address and the origin it fills only on,
+/// and the values from the vault. The values are wiped from memory when the login is dropped,
+/// and never shown by `Debug`.
+pub struct Login {
+    /// The declared login page.
+    pub address: WebAddress,
+    /// The origin it fills on alone (`https://host[:port]`), as a page's `URL.origin` spells it.
+    pub origin: String,
+    /// The user name, where the page asks for one.
+    pub user: Option<zeroize::Zeroizing<String>>,
+    pub password: zeroize::Zeroizing<String>,
+}
+
+impl fmt::Debug for Login {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Login")
+            .field("address", &self.address.as_str())
+            .field("origin", &self.origin)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What a frame showed: its page, and its documents (a number that changes each time the page
@@ -498,10 +528,19 @@ pub enum Refusal {
         "the person took this browser over while the call ran, so it was interrupted and the page's state is not known: once they hand it back, take a new snapshot"
     )]
     Interrupted,
-    #[error("{0} was dealt before the person took this browser over: take a new snapshot")]
+    #[error(
+        "{0} was dealt before the browser last changed hands (the person took it over, or purlis logged it in): take a new snapshot"
+    )]
     HandedBack(Ref),
     #[error("the person is not driving this browser: take it over first")]
     NotDriving,
+    #[error(
+        "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
+    )]
+    PurlisDriving,
+    /// A login purlis performed did not go through (#2016), in words that name no value.
+    #[error("{0}")]
+    NotLoggedIn(String),
     #[error("the page changed before this input reached it, so it was dropped")]
     Missed,
 }
@@ -522,6 +561,9 @@ pub struct Limits {
     /// How many answers to actions are kept by call id for retries (an action's answer holds
     /// no page content, so each is small).
     pub answers_kept: usize,
+    /// How long a login purlis performs waits for its form to show, and then for its password
+    /// field to go (#2016).
+    pub login_within: Duration,
 }
 
 impl Default for Limits {
@@ -533,6 +575,7 @@ impl Default for Limits {
             most_snapshot_lines: 2000,
             longest_wait: Duration::from_secs(60),
             answers_kept: 256,
+            login_within: LOGIN_WAIT,
         }
     }
 }

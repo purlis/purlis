@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
-use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, LogIn, Secret};
 
 use purlis_core::sandbox::persona::Browser;
 
@@ -26,9 +27,46 @@ struct Hosted {
     stopped: Mutex<Vec<String>>,
     /// Programs that have ended in the host.
     ended: Mutex<Vec<String>>,
+    /// The address of each login it performed, and its program (#2016).
+    logins: Mutex<Vec<(String, String)>>,
     /// How many closes, and how many stops by id, fail from now.
     closes_fail: Mutex<u32>,
     stops_fail: Mutex<u32>,
+    /// While set, every close waits until it is let go of: a host that does not answer.
+    holding: Mutex<bool>,
+    let_go: Condvar,
+    /// How many closes it was asked for, and from which one on it holds them.
+    closes: Mutex<u32>,
+    holds_from: Mutex<Option<u32>>,
+    /// How many closes wait now.
+    waiting: Mutex<u32>,
+}
+
+impl Hosted {
+    /// Every close from the `nth` on waits until [`Self::answer_closes`].
+    fn hold_closes_from(&self, nth: u32) {
+        *self.holds_from.lock().unwrap() = Some(nth);
+    }
+
+    fn answer_closes(&self) {
+        *self.holds_from.lock().unwrap() = None;
+        *self.holding.lock().unwrap() = false;
+        self.let_go.notify_all();
+    }
+
+    /// Waits until a close waits on the host.
+    fn until_a_close_waits(&self) {
+        until(|| *self.waiting.lock().unwrap() > 0);
+    }
+}
+
+/// Waits, a few seconds at most, until `done`.
+fn until(done: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < deadline, "it never came");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn fails(left: &Mutex<u32>) -> bool {
@@ -67,7 +105,41 @@ impl Driver for Hosted {
         })
     }
 
+    fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused> {
+        self.logins
+            .lock()
+            .unwrap()
+            .push((program.to_owned(), login.address.clone()));
+        Ok(Browsed {
+            settled: true,
+            note: Some("the password field is gone from https://shop.example.test since purlis submitted the login".into()),
+            ..Browsed::default()
+        })
+    }
+
     fn close(&self, program: &str) -> Result<(), String> {
+        let mut holding = self.holding.lock().unwrap();
+        let nth = {
+            let mut closes = self.closes.lock().unwrap();
+            *closes += 1;
+            *closes
+        };
+        if self
+            .holds_from
+            .lock()
+            .unwrap()
+            .is_some_and(|from| nth >= from)
+        {
+            *holding = true;
+        }
+        if *holding {
+            *self.waiting.lock().unwrap() += 1;
+            while *holding {
+                holding = self.let_go.wait(holding).unwrap();
+            }
+            *self.waiting.lock().unwrap() -= 1;
+        }
+        drop(holding);
         if fails(&self.closes_fail) {
             return Err("the session host did not answer in time".into());
         }
@@ -141,9 +213,25 @@ fn answered_confined(
         &|| reach(),
         confined,
         &|| as_persona.clone(),
+        &logins,
         1000,
     )
 }
+
+/// The one browser login a test chat has: `shop-login`, its values a test's own (#2016).
+fn logins(name: &str) -> Result<LogIn, String> {
+    if name != "shop-login" {
+        return Err(format!("the persona declares no browser login {name}"));
+    }
+    Ok(LogIn {
+        address: "https://shop.example.test/login".into(),
+        user: None,
+        password: Secret::new(LOGIN_VALUE.into()),
+    })
+}
+
+/// What the test login fills: a value no answer to the chat may carry.
+const LOGIN_VALUE: &str = "fixture-word";
 
 /// A chat running as `persona`, which declares `declared`, with Always kept as `always`.
 fn as_persona(persona: &str, declared: Option<Browser>, always: Option<bool>) -> AsPersona {
@@ -386,6 +474,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         &|| narrower.clone(),
         true,
         &AsPersona::default,
+        &logins,
         1000,
     );
     let Answer::Browsed { browsed, .. } = answer else {
@@ -450,6 +539,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 &|| reach(),
                 true,
                 &AsPersona::default,
+                &logins,
                 0,
             )
             .0,
@@ -460,7 +550,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
 
 #[test]
 fn a_browser_whose_chats_reach_narrowed_is_ended_retried_until_it_is() {
-    let browsers = ChatBrowsers::default();
+    let browsers = retrying_quickly();
     let hosted = Arc::new(Hosted::default());
     answered(&browsers, &hosted, &ask(3, click()));
     browsers.allow(3, false);
@@ -490,12 +580,11 @@ fn a_browser_whose_chats_reach_narrowed_is_ended_retried_until_it_is() {
         .map(|(program, _, _)| program.clone())
         .collect();
     assert_eq!(acts, ["program-1", "program-2"]);
-    // Once the host hears, the next call retries it, and it is ended.
+    // Once the host hears, the retry ends it, with no call of the chat's.
     *hosted.closes_fail.lock().unwrap() = 0;
     *hosted.stops_fail.lock().unwrap() = 0;
-    answered(&browsers, &hosted, &ask(3, click()));
+    until(|| browsers.unended().is_empty());
     assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
-    assert!(browsers.unended().is_empty());
 }
 
 #[test]
@@ -922,7 +1011,7 @@ fn a_browser_that_ended_by_itself_leaves_the_listing_at_its_chats_next_call() {
 
 #[test]
 fn a_browser_not_ended_yet_stays_listed_under_its_chat_as_not_ended_until_it_ends() {
-    let browsers = ChatBrowsers::default();
+    let browsers = retrying_quickly();
     let hosted = Arc::new(Hosted::default());
     let driver: Arc<dyn Driver> = hosted.clone();
     allowed_and_acting(&browsers, &hosted, 3);
@@ -940,10 +1029,10 @@ fn a_browser_not_ended_yet_stays_listed_under_its_chat_as_not_ended_until_it_end
     );
     let before = browsers.listing();
     *hosted.closes_fail.lock().unwrap() = 0;
-    // The chat's next call tries it again first, and it ends.
-    answered(&browsers, &hosted, &ask(3, click()));
+    // The retry tries it again, and it ends.
+    until(|| browsers.unended().is_empty());
     assert_ne!(browsers.listing(), before, "its row moves");
-    assert!(browsers.listed().iter().all(|one| !one.unended));
+    assert!(browsers.listed().is_empty());
 }
 
 #[test]
@@ -1125,4 +1214,154 @@ fn an_allow_takes_only_the_sites_their_ask_names_whole() {
         std::slice::from_ref(&long),
         std::slice::from_ref(&long)
     ));
+}
+
+/// Browsers that retry quickly, so a test waits on the retry and not on its timer.
+fn retrying_quickly() -> ChatBrowsers {
+    ChatBrowsers::retrying(Duration::from_millis(5), Duration::from_millis(20))
+}
+
+/// Chat 3 allowed, with a browser `program-1` that could not be ended, and that purlis now
+/// retries while the host does not answer.
+fn one_stuck(browsers: &ChatBrowsers, hosted: &Arc<Hosted>) {
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(browsers, hosted, 3);
+    // Its first try fails (two closes, then a stop by its id); every close after waits.
+    *hosted.closes_fail.lock().unwrap() = 2;
+    *hosted.stops_fail.lock().unwrap() = 1;
+    hosted.hold_closes_from(3);
+    browsers.narrowed(Some(&driver), 3);
+    assert_eq!(browsers.unended(), ["program-1"]);
+    hosted.until_a_close_waits();
+}
+
+#[test]
+fn a_browser_call_answers_at_once_while_a_browser_of_the_project_is_stuck() {
+    let browsers = Arc::new(retrying_quickly());
+    let hosted = Arc::new(Hosted::default());
+    one_stuck(&browsers, &hosted);
+
+    let (sent, answers) = std::sync::mpsc::channel();
+    let calling = {
+        let (browsers, hosted) = (Arc::clone(&browsers), Arc::clone(&hosted));
+        std::thread::spawn(move || {
+            let _ = sent.send(answered(&browsers, &hosted, &ask(3, click())).0);
+        })
+    };
+    let answer = answers.recv_timeout(Duration::from_secs(5));
+
+    hosted.answer_closes();
+    calling.join().unwrap();
+    let answer = answer.expect("the call answers while the stuck browser is retried");
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+}
+
+#[test]
+fn a_stuck_browser_being_retried_still_counts_toward_the_projects_three() {
+    let browsers = Arc::new(retrying_quickly());
+    let hosted = Arc::new(Hosted::default());
+    one_stuck(&browsers, &hosted);
+    // Two more run beside the stuck one: three in all.
+    answered(&browsers, &hosted, &ask(3, click()));
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+
+    let (sent, answers) = std::sync::mpsc::channel();
+    let calling = {
+        let (browsers, hosted) = (Arc::clone(&browsers), Arc::clone(&hosted));
+        std::thread::spawn(move || {
+            let _ = sent.send(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+        })
+    };
+    let fourth = answers.recv_timeout(Duration::from_secs(5));
+
+    hosted.answer_closes();
+    calling.join().unwrap();
+    let why = refusal(fourth.expect("the call answers"));
+    assert!(why.contains("this project"), "{why}");
+    assert_eq!(hosted.started.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn a_stuck_browser_is_ended_off_the_calls_path_once_the_host_answers_and_its_row_goes() {
+    let told = Arc::new(Mutex::new(0u32));
+    let browsers = {
+        let told = Arc::clone(&told);
+        retrying_quickly().telling(Arc::new(move || *told.lock().unwrap() += 1))
+    };
+    let hosted = Arc::new(Hosted::default());
+    one_stuck(&browsers, &hosted);
+    let before = browsers.listing();
+
+    hosted.answer_closes();
+
+    until(|| browsers.unended().is_empty());
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert_ne!(browsers.listing(), before, "its row moves");
+    assert!(browsers.listed().is_empty());
+    until(|| *told.lock().unwrap() > 0);
+}
+
+// ---- Logins purlis performs (#2016) ----
+
+fn log_in(name: &str) -> Browsing {
+    Browsing::LogIn { login: name.into() }
+}
+
+#[test]
+fn a_browser_login_is_performed_in_the_chats_browser_and_no_value_reaches_the_chat() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    browsers.allow(3, false);
+    let (answer, _) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    let Answer::Browsed { browser, browsed } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(browser, "b1");
+    let note = browsed.note.clone().unwrap_or_default();
+    assert!(
+        note.contains("since purlis submitted the login, with shop-login: take a snapshot"),
+        "{note}"
+    );
+    assert!(note.contains("reaches that site alone"), "{note}");
+    assert!(!format!("{browsed:?}").contains(LOGIN_VALUE));
+    assert_eq!(
+        *hosted.logins.lock().unwrap(),
+        [(
+            "program-1".to_owned(),
+            "https://shop.example.test/login".to_owned()
+        )]
+    );
+    assert!(
+        hosted.acts.lock().unwrap().is_empty(),
+        "a login is no act of the agent's"
+    );
+}
+
+#[test]
+fn a_login_the_chat_has_none_of_is_refused_and_nothing_is_filled() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, log_in("mail-login")));
+    browsers.allow(3, false);
+    let why = refusal(answered(&browsers, &hosted, &ask(3, log_in("mail-login"))).0);
+    assert!(
+        why.contains("declares no browser login mail-login"),
+        "{why}"
+    );
+    assert!(hosted.logins.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_login_waits_for_the_chats_browser_ask_like_any_browser_call() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let (first, raised) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    assert!(raised);
+    assert!(refusal(first).contains("asked the person"));
+    browsers.keep_off(3);
+    let (off, _) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    assert!(matches!(off, Answer::No { .. }));
+    assert!(hosted.logins.lock().unwrap().is_empty());
+    assert!(hosted.started.lock().unwrap().is_empty());
 }

@@ -77,28 +77,33 @@ pub(crate) struct Typing {
     /// Every field the person typed into (its page's target and its element), read again at a
     /// press of the mouse and at the hand-back.
     touched: HashSet<(String, NodeKey)>,
+    /// What each field the person typed into held when last read from the field itself.
+    latest: HashMap<NodeKey, String>,
+    /// The fields the person typed into, in the order they first typed into each.
+    order: Vec<NodeKey>,
     /// The mouse buttons the person holds down, as the engine's bits.
     held: i64,
 }
 
 thread_local! {
-    /// The epoch of the agent's call this thread is carrying out, if it is carrying one out.
-    static AGENT_CALL: Cell<Option<u64>> = const { Cell::new(None) };
+    /// Who this thread carries a call out for, the agent or purlis performing a login (#2016),
+    /// and the epoch of the lease it was made under, if it is carrying one out.
+    static CARRYING: Cell<Option<(Driver, u64)>> = const { Cell::new(None) };
 }
 
-/// Marks this thread as carrying out an agent's call under `epoch` until dropped.
-struct Carrying;
+/// Marks this thread as carrying out a call of `driver`'s under `epoch` until dropped.
+pub(super) struct Carrying;
 
 impl Carrying {
-    fn under(epoch: u64) -> Self {
-        AGENT_CALL.with(|call| call.set(Some(epoch)));
+    pub(super) fn under(driver: Driver, epoch: u64) -> Self {
+        CARRYING.with(|call| call.set(Some((driver, epoch))));
         Carrying
     }
 }
 
 impl Drop for Carrying {
     fn drop(&mut self) {
-        AGENT_CALL.with(|call| call.set(None));
+        CARRYING.with(|call| call.set(None));
     }
 }
 
@@ -134,9 +139,9 @@ impl Browser {
     }
 
     /// The person takes the browser over: a new epoch, held by them. A call of the agent's in
-    /// flight is cut and answers [`Refusal::Interrupted`]; every later one is refused until
-    /// [`Browser::hand_back`]. Answers the lease's epoch. Taking over a browser the person
-    /// already drives changes nothing.
+    /// flight is cut and answers [`Refusal::Interrupted`], and so is a login purlis is
+    /// performing (#2016); every later one is refused until [`Browser::hand_back`]. Answers the
+    /// lease's epoch. Taking over a browser the person already drives changes nothing.
     pub fn take_over(&self) -> u64 {
         let epoch = {
             let mut lease = lock(&self.lease);
@@ -145,6 +150,7 @@ impl Browser {
                 lease.driver = Driver::Person;
             }
             self.inner.person_drives.store(true, Ordering::SeqCst);
+            self.inner.purlis_drives.store(false, Ordering::SeqCst);
             lease.epoch
         };
         // Whatever waits for the page wakes now, and finds itself cut.
@@ -157,10 +163,12 @@ impl Browser {
     /// under a new epoch, which it answers. Handing back a browser the agent drives changes
     /// nothing.
     pub fn hand_back(&self) -> u64 {
-        if self.driver() == Driver::Agent {
+        if self.driver() != Driver::Person {
             return self.epoch();
         }
         self.keep_typing_out();
+        // What a login the person cut had filled is emptied before the agent has the page.
+        self.clear_cut_logins();
         let mut lease = lock(&self.lease);
         if lease.driver == Driver::Person {
             lease.epoch += 1;
@@ -176,6 +184,7 @@ impl Browser {
         let lease = lock(&self.lease);
         match lease.driver {
             Driver::Person => Err(Refusal::PersonDriving),
+            Driver::Purlis => Err(Refusal::PurlisDriving),
             Driver::Agent if lease.epoch != epoch => Err(Refusal::Interrupted),
             Driver::Agent => Ok(()),
         }
@@ -185,7 +194,7 @@ impl Browser {
     /// came to, if that lease ended before it answered.
     pub(super) fn run_at(&self, epoch: u64, call: Call) -> Result<super::Answer, Refusal> {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
-        let _carrying = Carrying::under(epoch);
+        let _carrying = Carrying::under(Driver::Agent, epoch);
         let answer = self.run(call);
         if self.cut() {
             return Err(Refusal::Interrupted);
@@ -193,21 +202,21 @@ impl Browser {
         answer
     }
 
-    /// Whether the agent's call this thread carries out has been cut by a take-over. Never, on
-    /// a thread that carries out none.
+    /// Whether the call this thread carries out (the agent's, or purlis's login) has been cut
+    /// by a take-over. Never, on a thread that carries out none.
     pub(super) fn cut(&self) -> bool {
-        AGENT_CALL.with(Cell::get).is_some_and(|epoch| {
+        CARRYING.with(Cell::get).is_some_and(|(driver, epoch)| {
             let lease = lock(&self.lease);
-            lease.driver != Driver::Agent || lease.epoch != epoch
+            lease.driver != driver || lease.epoch != epoch
         })
     }
 
     /// Runs `act`, which acts on a page, under the lease's lock: refused, before it runs, when
-    /// it is part of an agent's call the person has cut.
+    /// it is part of a call (the agent's, or purlis's login) the person has cut.
     pub(super) fn gated<T>(&self, act: impl FnOnce() -> T) -> Result<T, Refusal> {
         let lease = lock(&self.lease);
-        if let Some(epoch) = AGENT_CALL.with(Cell::get)
-            && (lease.driver != Driver::Agent || lease.epoch != epoch)
+        if let Some((driver, epoch)) = CARRYING.with(Cell::get)
+            && (lease.driver != driver || lease.epoch != epoch)
         {
             return Err(Refusal::Interrupted);
         }
@@ -315,7 +324,7 @@ impl Browser {
                 let before = field
                     .as_ref()
                     .filter(|_| text.is_none() && key != "Backspace" && key != "Delete")
-                    .map(|field| self.field_holds(field));
+                    .map(|(field, _)| self.field_holds(field));
                 let event = key_event(*down, key, code, *key_code, *modifiers, text.as_deref());
                 self.person_sends("Input.dispatchKeyEvent", event, &session)?;
                 if *down {
@@ -327,7 +336,7 @@ impl Browser {
                 if edits {
                     lock(&self.typing).dirty.insert(target.clone());
                 }
-                if let Some(field) = field {
+                if let Some((field, read)) = field {
                     // What the field holds now, with this key in it (or what was pasted), is
                     // kept out from this moment.
                     let after = self.field_holds(&field);
@@ -338,6 +347,13 @@ impl Browser {
                         // ends with what it replaced.
                         let [first, last] = put_in(&before, &after);
                         held.run(&[first, last, after.clone()]);
+                    }
+                    let (latest, order) = lock(&self.typing).read(&field.1, &after);
+                    // A box of a group (a code typed one character a box) is kept with the
+                    // rest of its group too, joined, each box the person typed into as they
+                    // last read it, this key in it.
+                    for (first, joined) in read.groups_holding(&latest, &order) {
+                        held.group(&first, &joined);
                     }
                     held.field(&field.1, &[after]);
                     lock(&self.inner.state).keep_out_everywhere(&held);
@@ -432,16 +448,28 @@ impl Browser {
         };
         let mut held = Kept::default();
         held.run(&runs);
+        let mut reads = Vec::new();
         for target in dirty {
-            let _ = self.snapshot_of(&target);
+            if let Ok(read) = self.snapshot_of(&target) {
+                reads.push(read);
+            }
             if let Some(page) = lock(&self.inner.state).page(&target) {
                 held.take_in(&page.scrubbed);
             }
         }
         // Each field is read last, from the field itself: what it holds now is the latest of
-        // its values, whatever its page's tree read before.
+        // its values, whatever its page's tree read before. So are the groups of boxes.
+        let mut latest = HashMap::new();
+        let mut order = Vec::new();
         for field in &touched {
-            held.field(&field.1, &[self.field_holds(field)]);
+            let now = self.field_holds(field);
+            held.field(&field.1, &[&now]);
+            (latest, order) = lock(&self.typing).read(&field.1, &now);
+        }
+        for read in &reads {
+            for (first, joined) in read.groups_holding(&latest, &order) {
+                held.group(&first, &joined);
+            }
         }
         lock(&self.inner.state).keep_out_everywhere(&held);
     }
@@ -508,6 +536,16 @@ impl Browser {
 }
 
 impl Typing {
+    /// The field `key` holds `now`, as read from the field itself: answers what every field
+    /// typed into held when last read, and the order they were first typed into.
+    fn read(&mut self, key: &NodeKey, now: &str) -> (HashMap<NodeKey, String>, Vec<NodeKey>) {
+        self.latest.insert(key.clone(), now.to_owned());
+        if !self.order.contains(key) {
+            self.order.push(key.clone());
+        }
+        (self.latest.clone(), self.order.clone())
+    }
+
     /// The person pressed `key` on `target`'s page, typing `text`, if it types any.
     fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
         let runs = self.runs.entry(target.to_owned()).or_default();
