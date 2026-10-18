@@ -7597,7 +7597,7 @@ fn a_one_chat_allow_applied_live_reaches_only_its_chat() {
         let live = chats.allow_live(Some(1), &host, level);
         assert_eq!(live.reached, [1], "{level:?}");
         assert_eq!(hosts_of(&one.allowed), ["live.example.com"], "{level:?}");
-        assert!(two.allowed_live().is_empty(), "{level:?}: not chat 2");
+        assert!(hosts_of(&two.allowed).is_empty(), "{level:?}: not chat 2");
 
         let live = chats.allow_live(None, &host, level);
         assert!(live.reached.is_empty(), "{level:?}: no chat named");
@@ -7675,6 +7675,6 @@ fn allowing_a_host_once_from_a_notice_is_refused_and_reaches_no_chat() {
         "purlis allows a host or a folder for this chat, or for longer, not once."
     );
     assert_eq!(*lock(&audited), 0);
-    assert!(one.allowed_live().is_empty());
-    assert!(two.allowed_live().is_empty());
+    assert!(hosts_of(&one.allowed).is_empty());
+    assert!(hosts_of(&two.allowed).is_empty());
 }
