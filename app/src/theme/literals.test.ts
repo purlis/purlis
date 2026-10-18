@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { LITERALS, dataUrls, mixesNoColourOfItsOwn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
-import { SYNTAX_FACE_PROPERTIES, TOKENS, property, type Token } from "./theme";
+import { PLATFORM_DRAWN, SYNTAX_FACE_PROPERTIES, TOKENS, property, type Token } from "./theme";
 
 /**
  * Every file the window is built from, as text, keyed by its path from `src`.
@@ -505,7 +505,14 @@ describe("the stylesheet and the vocabulary agree", () => {
     const offered = new Set(
       [...bridge.matchAll(/--color-([a-z0-9-]+):\s*var\((--[a-z0-9-]+)\)/g)].map((hit) => hit[2]),
     );
-    const wanted = TOKENS.filter((token) => !token.startsWith("terminal.")).map(property);
+    // Not offered (#2327): a token the platform may draw holds "platform" rather than a colour,
+    // and `window.background` is the native window's, which nothing in the page paints.
+    const notOffered = (token: Token) =>
+      (PLATFORM_DRAWN as readonly string[]).includes(token) || token === "window.background";
+    const wanted = TOKENS.filter(
+      (token) => !token.startsWith("terminal.") && !notOffered(token),
+    ).map(property);
     expect([...offered].sort()).toEqual([...wanted].sort());
+    expect(TOKENS.filter(notOffered).filter((token) => offered.has(property(token)))).toEqual([]);
   });
 });

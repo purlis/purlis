@@ -172,11 +172,6 @@
   --color-markdown-code-block: var(--markdown-code-block);
   --color-markdown-quote: var(--markdown-quote);
   --color-markdown-heading: var(--markdown-heading);
-  --color-selection-background: var(--selection-background);
-  --color-selection-text: var(--selection-text);
-  --color-caret: var(--caret);
-  --color-placeholder: var(--placeholder);
-  --color-scrollbar-thumb: var(--scrollbar-thumb);
   --color-scrollbar-track: var(--scrollbar-track);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -186,7 +181,6 @@
   --color-chart-6: var(--chart-6);
   --color-chart-7: var(--chart-7);
   --color-chart-8: var(--chart-8);
-  --color-window-background: var(--window-background);
 
   --shadow-*: initial;
   --shadow-2xs: 0 1px var(--overlay-shadow);
