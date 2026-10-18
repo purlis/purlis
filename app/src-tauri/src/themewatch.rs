@@ -46,8 +46,9 @@ pub struct ThemeFoldersChanged {
 const MOST_PATHS: usize = 512;
 
 /// How long the thread sleeps when nothing is owed and nothing is looked at: it wakes for an
-/// event, so this is only how often it notices it is no longer needed.
-const IDLE: Duration = Duration::from_secs(60);
+/// event, and at least this often to notice a window that came to need a look (a folder the
+/// platform refused) or that nothing holds the watch any more. One wake, never a spin.
+const IDLE: Duration = LOOK_EVERY;
 
 /// **Where one window's theme is read from**: the config home, and the plane root and the
 /// workspace in front, as `theme_in_force` was asked for them.
@@ -477,22 +478,19 @@ mod tests {
         let watch = ThemeWatch::<Refusing>::start(told.tell());
         let plane = target.plane.clone().unwrap();
         watch.set("main", target);
-        // The first look is taken; a save after it is found by the next.
-        std::thread::sleep(LOOK_EVERY + Duration::from_millis(300));
-        for n in 0..5 {
-            std::fs::write(
-                plane.join("themes/team/theme.json"),
-                format!("{{\"n\":{n}}}"),
-            )
-            .unwrap();
+        // The first look is what the next is compared with: the save comes after it.
+        let looked = Instant::now() + LOOK_EVERY * 5;
+        while !watch.lock().looks.contains_key("main") {
+            assert!(Instant::now() < looked, "the watch never looked");
+            std::thread::sleep(Duration::from_millis(50));
         }
+        std::fs::write(plane.join("themes/team/theme.json"), "{\"saved\":true}").unwrap();
         assert!(
-            told.until(1, LOOK_EVERY * 3),
+            told.until(1, LOOK_EVERY * 5),
             "the look never told the save"
         );
-        // However often it is asked, it looks no more often than its interval and tells the
-        // burst once.
-        std::thread::sleep(GAP * 2);
+        // It looks no more often than its interval, and a save is told once.
+        std::thread::sleep(LOOK_EVERY * 2 + GAP);
         assert_eq!(told.count(), 1);
         drop(watch);
     }

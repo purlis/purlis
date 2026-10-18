@@ -475,15 +475,15 @@ mod walk {
             let Ok(found) = statat(&at, name, AtFlags::SYMLINK_NOFOLLOW) else {
                 continue;
             };
-            // The widths of a stat's times differ between platforms.
-            #[allow(clippy::useless_conversion)]
+            // A stat's size and times are signed on one platform and unsigned on another: each is
+            // widened to an `i128`, which holds either exactly.
             out.insert(
                 name.to_owned(),
                 (
                     FileType::from_raw_mode(found.st_mode) == FileType::Directory,
-                    u64::try_from(found.st_size).unwrap_or_default(),
-                    i64::from(found.st_mtime),
-                    i64::from(found.st_mtime_nsec),
+                    i128::from(found.st_size),
+                    i128::from(found.st_mtime),
+                    i128::from(found.st_mtime_nsec),
                 ),
             );
         }
@@ -562,7 +562,7 @@ impl Pace {
 pub struct Look(BTreeMap<PathBuf, BTreeMap<String, Stamp>>);
 
 /// One entry, as a look sees it: whether it is a folder, its size and when it last changed.
-type Stamp = (bool, u64, i64, i64);
+type Stamp = (bool, i128, i128, i128);
 
 impl Look {
     /// The folders of `watched`, looked at now.
