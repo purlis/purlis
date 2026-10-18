@@ -99,6 +99,27 @@ turn with a workspace's colour, as the accent does), markdown's code, quotes and
 words' colour, `window.background` the window's surface (the native window's colour, #2328), and the terminal's extras xterm's own
 defaults.
 
+**The native window follows the theme** (#2328). The operating system's own parts of the
+window, the traffic lights, the menus and the dialogs, are drawn dark or light with the drawn
+appearance's tag, and the window's own colour is its `window.background`, opaque. Each window is
+created in both for the theme its first frame draws, so nothing of another colour shows before
+it, and the page hands both over again whenever it draws another theme
+(`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the
+system leaves the native parts to the system. On macOS and Linux the platform keeps one
+appearance for the app, so the focused window's is the one drawn. The tray and the app icon
+stay as they are: they are brand, not theme.
+
+**Forced colours win** (#2328). On a platform that forces its contrast colours (Windows'
+contrast themes), the browser draws every colour in the system's palette, and what the window
+says with a background or a shadow alone would be lost. `app/src/theme/forced-colors.css`, the
+last layer of the window's stylesheet, says it again in system colours and with a shape: a solid
+`Highlight` ring wherever Tab lands; what is selected or current in `SelectedItem` and
+`SelectedItemText`, underlined (an icon tab keeps its edge); what cannot be used in `GrayText`;
+each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
+`MarkText`; a dashed outline on what ends or destroys and on a ground that says something is
+wrong; a switch's thumb and a radio's dot; and an outline
+round what is opened over the window. It holds only system colours, never a token.
+
 **Two tokens may look like one token and are not.** `needs-you.base` and `danger.base` were a
 single value before this — `--stop`, `#c05c5c`, "purlis's red" — and splitting them by meaning
 paid for itself on the first measurement: white on `#c05c5c` is **4.26:1**, under WCAG AA, and
@@ -312,7 +333,11 @@ rewrites the file; the next pick made in Settings writes the new id.
   first appearance is what a theme draws when nothing chose another; following the system works
   with any theme that has a dark and a light one. A `system` pick with a theme of one appearance
   follows with Purlis Classic until Settings › Theme can say that following would stay in it
-  (#2331). A theme has at most 64.
+  (#2331). **When the system asks for more contrast** (`prefers-contrast: more`: Increase
+  contrast on macOS, a high-contrast theme elsewhere), whatever draws an appearance of a tag
+  draws the theme's appearance of that tag tagged `high-contrast` instead, when it has one, and
+  the window draws again when the setting changes (#2328). A built-in pick names its appearance.
+  A theme has at most 64.
 - **`icons`** names the theme's icon set (#2337): the path of a JSON file inside the theme's
   folder (`"icons": "icons/icons.json"`), read as `theme.json` is: no link on the way, a plain
   file, under the same cap. The file draws each view's tab on the rails, by the window's own
@@ -481,6 +506,79 @@ exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such t
 `purlis docs show themes` has the JSON's shape. **An extension's theme says what is wrong
 with it** on its row in Extensions, beside the row's other complaints: why the engine refused
 it, or what it left out.
+
+### Theme levels: where themes and choices are kept
+
+Themes live at three levels besides the built-ins and extensions (spec #2313, #2323), each a
+reserved `themes/` folder of theme folders:
+
+| Level | Where | Committed? |
+|---|---|---|
+| The person's own | `themes/` in purlis's config folder (beside `machine.json`) | never |
+| The project's | `themes/` at the plane root | by `purlis save` |
+| A workspace's | `workspaces/<ws>/themes/` | by `purlis save` while LIVE; kept in the clone while LOCAL |
+
+A theme folder is picked by its folder's name. **A choice reaches its own level and the levels
+farther out, never a nearer one**: the machine default names the person's own folders only; the
+project's choice and committed default the project's and the person's; a workspace's choice and
+default the workspace's, the project's and the person's. Within that reach the nearest level
+that has a folder of the name is read, and a folder `extends` by the same rule. Each `themes/`
+folder is opened from its level's root one folder at a time refusing a link, and its folders,
+`theme.json` and icon set are read from those handles (`crates/purlis-core/src/theme/folders.rs`).
+
+**The precedence**, nearest first; at each level the person's choice beats the committed
+default (`purlis_core::theme::resolve_levels`):
+
+1. the person's choice for this workspace on this machine;
+2. the workspace's committed default (LIVE workspaces only): `settings.theme.use` and
+   `settings.theme.appearance` in its `workspace.json`;
+3. the person's choice for the project;
+4. the project's committed default: `[theme] use` and `[theme] appearance` in its manifest;
+5. the person's machine default, else their own `theme.json`;
+6. Purlis (Purlis Classic until the switch-over), or the first theme in force from an extension
+   the project has on.
+
+The plane root resolves from level 3 down. A choice names a theme and, optionally, an
+appearance: an appearance's id, or `system`, which follows the operating system with any theme
+that has a dark and a light appearance. A choice that names no folder within its reach nor any
+other theme is passed over with a sentence, and the next level's is used. A choice of a theme
+that is there and cannot be drawn (a refused folder, an extension's theme that is off) draws
+Purlis with a sentence saying why.
+
+**The person's choices** are made in Settings › Appearance › Your theme (and Your appearance),
+at the Project level and at each Workspace level, and kept in `theme-choices.json` beside
+`machine.json`, keyed by the project's id (`[project] id` where the manifest keeps one, so a
+re-clone finds them; otherwise the id purlis holds the project by, which a re-clone elsewhere
+does not find), never committed. Each project's entry keeps when it was last changed, and at the
+file's 64 KiB cap the projects changed longest ago are dropped first:
+
+```json
+{
+  "version": 1,
+  "machine": { "theme": "dusk", "appearance": "system" },
+  "projects": {
+    "<project id>": {
+      "theme": "purlis-classic", "appearance": "light",
+      "workspaces": { "alpha": { "theme": "brand" } }
+    }
+  }
+}
+```
+
+A project's `charter.local.toml` `[theme]` pick, and a LOCAL workspace's `settings.theme`, are
+the person's choice where that file holds none, and are copied into it once, with a Notice. A
+LIVE workspace's pick is its committed default; where it now comes before the person's choice
+for the project, which the local file's pick used to beat, the Notice says so once. A theme
+pick in a manifest is a proposed change when a chat makes it (ADR 0098 §4).
+
+**A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
+with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a
+transition of its own keeps it; reduced motion makes it immediate.
+
+**An old single-file `theme.json`** keeps working and is offered once, in the Inbox, a move into
+a theme folder of the person's own (`themes/<name>/theme.json`), chosen as the machine default
+where none is chosen, so the window draws what it drew. The move is all or nothing, and only the
+person's press in the window makes it.
 
 ### Where a user's theme lives
 

@@ -518,6 +518,10 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "quit_cancelled",
             "hide_window",
             "window_showing",
+            // The window's own native appearance and colour, set and read back on the window
+            // the call came from (#2328): a property set on the window, as hiding it is.
+            "draw_native_window",
+            "native_window_drawn",
             "show_window_holding",
             "restart_on_the_session_bus",
             "restart_to_update",

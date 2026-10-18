@@ -457,15 +457,18 @@ export function themeGroup(unset: string, here: "project" | "workspace" = "proje
       // A file that still holds a built-in's old id is shown under the theme it draws (#1838).
       for (const [old, now] of Object.entries(THEME_ALIASES))
         if (labels[now] !== undefined) labels[old] ??= labels[now];
+      // What the theme levels draw here, and which level chose it (#2323), when the core said.
+      const levels = theme?.drawn == null ? undefined : `${theme.drawn}, from ${theme.from ?? ""}`;
       const drawn =
-        theme?.draws == null
+        levels ??
+        (theme?.draws == null
           ? `the window's own theme — your theme.json, else the first theme from an extension this ${here} has on, else ${DEFAULT_THEME.name}`
-          : (labels[theme.draws] ?? theme.draws);
+          : (labels[theme.draws] ?? theme.draws));
       // In a workspace, which of the three files picked the theme drawn here: its own, or the
       // project's that it did not override (charter-app#281). Not when the pick fell back: the
       // file picked something else, and the sentence under the group says what and why.
       const from =
-        here === "workspace" && theme?.file != null && theme.why === null
+        levels === undefined && here === "workspace" && theme?.file != null && theme.why === null
           ? `, picked in ${theme.file}`
           : "";
       return [

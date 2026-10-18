@@ -1248,8 +1248,11 @@ function App() {
   useEffect(() => {
     if (inFront === undefined) void drawThemeFor("every");
     else if (onInFront !== undefined && pickInFront !== undefined)
-      void drawThemeFor(onInFront, pickInFront);
-  }, [inFront, onInFront, pickInFront]);
+      void drawThemeFor(onInFront, pickInFront, {
+        plane: inFront,
+        workspace: workspaceInFront,
+      });
+  }, [inFront, onInFront, pickInFront, workspaceInFront]);
   // And the workspace in front's colour on the window's accent and focus ring (charter-app#281),
   // live on every switch. The terminal is not told: nothing it draws is tinted.
   const colourInFront = saying?.colour ?? null;

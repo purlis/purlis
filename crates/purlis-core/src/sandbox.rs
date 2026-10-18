@@ -3737,18 +3737,23 @@ enum Proxied {
 }
 
 /// A proxy the session host holds (#1999): its ports, purlis's own in this process too while it
-/// is held, and what reaches it.
+/// is held on this machine, and what reaches it.
 #[derive(Debug)]
 struct Elsewhere {
     http: u16,
     socks: u16,
     held: Box<dyn HeldElsewhere>,
+    /// Whether it listens on this machine, whose ports it holds as purlis's own: a runner's
+    /// listens on the runner's (#2446).
+    on_this_machine: bool,
 }
 
 impl Drop for Elsewhere {
     fn drop(&mut self) {
-        localport::release(self.http);
-        localport::release(self.socks);
+        if self.on_this_machine {
+            localport::release(self.http);
+            localport::release(self.socks);
+        }
     }
 }
 
@@ -3923,19 +3928,32 @@ impl Confinement {
                 "the session host's proxy for this chat listens on a port a chat here was given",
             ));
         }
+        Ok(Self::held_at(placed, held, true))
+    }
+
+    /// **A confinement a session host on another machine started and holds** (#2446): a
+    /// runner's. Its proxy listens on that machine's ports, so none of them is judged against,
+    /// or taken as, a port of this machine ([`localport`]); otherwise it is held as
+    /// [`Self::held_elsewhere`] holds one.
+    pub fn held_on_another_machine(placed: Placed, held: Box<dyn HeldElsewhere>) -> Self {
+        Self::held_at(placed, held, false)
+    }
+
+    fn held_at(placed: Placed, held: Box<dyn HeldElsewhere>, on_this_machine: bool) -> Self {
         let asks = held.board();
-        Ok(Self {
+        Self {
             proxy: Proxied::Elsewhere(Elsewhere {
                 http: placed.http,
                 socks: placed.socks,
                 held,
+                on_this_machine,
             }),
             tmp: placed.tmp.map(Folder::Theirs),
             asks,
             ssh: placed.ssh.map(tunnel::SshRoute::at),
             routed: placed.routed.map(Folder::Theirs),
             kept: None,
-        })
+        }
     }
 
     /// **Where this is** ([`Placed`]): what the session host says of one it started.
