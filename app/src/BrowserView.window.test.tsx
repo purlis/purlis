@@ -434,7 +434,7 @@ describe("taking a browser over from its view (#2014)", () => {
   });
 
   /** The bar's words for input the page moved on from before it arrived. */
-  const DROPPED = "The page changed before your key or click reached it, so it was dropped.";
+  const DROPPED = "The page changed before your key or click reached it, so purlis dropped it.";
 
   /** A host that takes input aimed at what `showing()` names, and drops the rest as missed. */
   const onlyAt =
@@ -490,5 +490,58 @@ describe("taking a browser over from its view (#2014)", () => {
     await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
 
     expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
+  });
+
+  it("stops saying input was dropped once the person hands the browser back", async () => {
+    const host = await drawn(true, () => ({ outcome: "missed" }));
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
+
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() => expect(host.asked("hand_back_browser")).toEqual([{ program: "B1" }]));
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED));
+  });
+
+  it("stops saying input was dropped once its view is watched again", async () => {
+    const host = await drawn(true, () => ({ outcome: "missed" }));
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
+
+    host.seen(false);
+    host.seen(true);
+
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(2));
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED));
+  });
+
+  it("says nothing of a key dropped from the watch before, whose answer comes after the view is watched again", async () => {
+    const lets: (() => void)[] = [];
+    const host = await drawn(
+      true,
+      () => new Promise((answer) => lets.push(() => answer({ outcome: "missed" }))),
+    );
+    const surface = screen.getByTestId("browser-surface");
+    await screen.findByRole("button", { name: "Done" });
+    typed(surface, "a");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(1));
+
+    host.seen(false);
+    host.seen(true);
+    await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(2));
+    lets.splice(0).forEach((go) => go());
+    await waitFor(() => expect(host.asked("unwatch_browser").length).toBeGreaterThan(0));
+
+    // The next key, of the new watch, is sent only once the old answer has been heard, and
+    // that answer said nothing.
+    typed(screen.getByTestId("browser-surface"), "b");
+    await waitFor(() => expect(host.asked("browser_input")).toHaveLength(2));
+    expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
+    lets.splice(0).forEach((go) => go());
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
   });
 });

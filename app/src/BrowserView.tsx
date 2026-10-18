@@ -40,7 +40,7 @@ type Shown =
  *  (#2304): the page, or a frame inside it, loaded another document after the frame they acted
  *  on was drawn, so the input never reached something they did not see. */
 const DROPPED =
-  "The page changed before your key or click reached it, so it was dropped. Type or click again.";
+  "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
 
 /** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
  *  button pressed or let go. A move or a wheel is followed by the next one. */
@@ -59,7 +59,8 @@ type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
  * A move waiting behind another is replaced by the newer one, so a quick mouse never queues a
  * backlog. `clear` drops whatever waits: a view watched again starts with nothing queued, so
  * nothing aimed at an earlier frame is sent after it. A key or click the page moved on from is
- * told to `dropped`, and the next one that reaches the page clears it (#2304).
+ * told to `dropped`, and the next one that reaches the page clears it (#2304). An answer that
+ * comes back after `clear` belongs to the watch before, so it says nothing.
  */
 function useSender(
   program: string,
@@ -68,6 +69,8 @@ function useSender(
 ) {
   const waiting = useRef<Queued[]>([]);
   const sending = useRef(false);
+  /** Counts the clears: an answer is heard only if no clear came while it was asked. */
+  const watch = useRef(0);
   const next = useCallback(async () => {
     if (sending.current) return;
     sending.current = true;
@@ -77,7 +80,9 @@ function useSender(
           await one.handBack();
           continue;
         }
+        const asked = watch.current;
         const sent = await commands.browserInput(program, one.input);
+        if (asked !== watch.current) continue;
         if (sent.status === "error") said(sent.error);
         else if (sent.data.outcome === "refused") said(sent.data.why);
         // A missed one was aimed at a page that has moved on: it is dropped, as it should be,
@@ -112,6 +117,7 @@ function useSender(
   );
   const clear = useCallback(() => {
     waiting.current = [];
+    watch.current += 1;
     dropped(false);
   }, [dropped]);
   return { send, after, clear };
