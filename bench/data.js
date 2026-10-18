@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792311678724,
+  "lastUpdate": 1792313041387,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16842,6 +16842,48 @@ window.BENCHMARK_DATA = {
             "value": 104.03121050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.541, 102.746, 104.031, 104.147, 104.814 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bfff74f567cb7fe921c218984a85ea7e33908434",
+          "message": "Bound how many secret execs the window's relay tracks per link (#2571) (#2576)\n\n* Bound how many secret execs the window's relay tracks per link (#2571)\n\nThe window's Heeding bounded the bytes it keeps for secret execs not\nbegun, but not how many entries a link tracks: an end of input for a\nnumber that never runs, an exec past the byte cap or a drop mark stayed\nuntil the host's end or the link's end. A link now tracks at most 256\nexecs; a line that would add one past that keeps nothing, and an exec\nthat begins then reads no input. A tracked exec is never evicted.\n\nThe bytes kept are a running total instead of a sum over every entry\non each line, and each cap is warned of once per link, never with the\ninput's content.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Track a secret exec from when its line is taken, bounded per chat (#2571)\n\nReview of #2576: the per-link cap was shared by every chat on the link,\nand input lines carry no chat, so one chat holding many execs open\ncould fill it; another chat's exec then lost its input, or its end, and\nwaited until the link ended.\n\nThe window's link now takes each line in order before a thread of its\nown hears it (Heeding::admit, called from Relayed::take): a secret exec\nis tracked from there, with its chat, so input that comes before it\nbegins always finds its entry and an end is never refused. A line for a\nnumber not tracked is of no exec here and is dropped, so no entry is\nmade from a line that carries no chat, and no drop marks are needed.\nAn exec is untracked when it ends. A chat has at most 32 tracked on a\nlink and a link 256; one past either is not run, and its host is told\nit ended.\n\nEvery entry goes in through Inputs::track and out through\nInputs::untrack, which keep the byte total and each chat's count;\nthe subtraction is debug-asserted. The exec's end goes through\nInputs::finished.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n* Hear lines that waited for the board first; end a panicked exec; say why one is refused (#2571)\n\nReview of #2576:\n\n- Relayed::keep_with gave up the waiting lines' lock before hearing\n  them, so a line the host handed on meanwhile was heard first: a\n  secret exec's input could find its exec not yet taken and be dropped,\n  and the exec waited for good. They are now heard with the lock held,\n  through Relayed::hand_on, the path that skips the waiting list.\n- A secret exec's run that panics skipped its end: it stayed tracked\n  and its host was never told. A drop guard (Finishing) untracks it and\n  tells the host it ended however the run returns.\n- An exec not run for want of room now tells its asker why, in a\n  refusal frame, before it ends.\n- One chat may have 16 secret execs tracked on a link, not 32, so\n  filling a link's 256 takes 16 chats.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M538BFC8ZDFGABYNBRP8913C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T12:30:16+04:00",
+          "tree_id": "ac4cc7a82f91f40b30719298d6fcb3e808c8e70a",
+          "url": "https://github.com/purlis/purlis/commit/bfff74f567cb7fe921c218984a85ea7e33908434"
+        },
+        "date": 1792313040246,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.535736,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.478, 0.530, 0.536, 0.544, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8991435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.567, 16.832, 16.899, 17.063, 17.179 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.4185325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.249, 103.810, 104.419, 105.174, 105.761 ms"
           }
         ]
       }
