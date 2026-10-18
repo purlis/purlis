@@ -183,7 +183,7 @@ mod made_elsewhere {
 
     use super::super::{Beside, Here, Plan};
     use super::plan;
-    use crate::sandbox::hosts::{Host, Network};
+    use crate::sandbox::hosts::Network;
     use crate::sandbox::internal::Internal;
     use crate::sandbox::reach::{By, Reach};
 
