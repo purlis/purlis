@@ -1635,6 +1635,8 @@ impl purlis_host::Compose for ComposesConfined {
 
 fn by_its_names() -> Named {
     Named {
+        chat: None,
+        run: None,
         profile: Some("work".to_owned()),
         persona: Some("steward".to_owned()),
         workspace: None,
@@ -2077,4 +2079,122 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
         reconnected(&told) == [id].into()
     });
     assert!(hosted.sessions.reconnecting().is_empty());
+}
+
+/// The window's link to its own host, which relays it to a runner whose host composes each
+/// harness chat in a confinement of its own (#2446): the window's sessions there, the runner's
+/// confinements, and what the runner ran.
+fn on_a_runner() -> (
+    HostedSessions,
+    purlis_host::standin::StandInConfines,
+    StandIns,
+    tempfile::TempDir,
+    tokio::runtime::Runtime,
+) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let confines = purlis_host::standin::StandInConfines::default();
+    let runs = StandIns::default();
+    let runner = Hosting::confining(ComposesConfined, confines.clone(), runs.clone());
+    let relay = runtime.block_on(async move {
+        purlis_host::Relay::new(Arc::new(move || {
+            let runner = runner.clone();
+            Box::pin(async move { Ok(crate::behaviour::linked_to(runner).await) })
+        }))
+    });
+    let (connection, _link) = in_memory(relay, &runtime);
+    let (dir, root) = a_project();
+    let sessions = HostedSessions::on_a_runner(connection, &root);
+    (sessions, confines, runs, dir, runtime)
+}
+
+/// **A harness chat on a runner is started there by its names, and its proxy's asks reach the
+/// window** (#2446): the runner composes it and names its confinement to the window, through
+/// the link its host relays; the window's answer and a port withdrawn reach it there, and
+/// closing the chat lets the runner end it. The window's own launch of a harness is not sent to
+/// a runner; a shell still starts from it.
+#[test]
+fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_the_window() {
+    use purlis_core::sandbox::asks::Heard;
+    use purlis_core::sandbox::hosts::Host;
+    use purlis_core::sandbox::plan::{Asking, Hearing};
+    use purlis_core::sandbox::reach::By;
+    let (sessions, confines, runs, _dir, _runtime) = on_a_runner();
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let hearing = Hearing {
+        asks: Some(Asking {
+            tell: {
+                let asked = Arc::clone(&asked);
+                Arc::new(move |heard: Heard| {
+                    if let Heard::Asked(targets) = heard {
+                        asked.lock().unwrap().extend(targets);
+                    }
+                })
+            },
+            askable: Arc::new(|| true),
+            known: Arc::new(|_| None),
+        }),
+        ..Hearing::default()
+    };
+    assert!(sessions.composes_its_harness_chats());
+
+    let (id, confinement) = sessions
+        .open_named(None, &by_its_names(), hearing, &|_| {})
+        .expect("composed on the runner");
+    let confinement = confinement.expect("named to the window");
+    let held = confinement
+        .held_as()
+        .expect("held on the runner")
+        .to_owned();
+    confines.proxy_did(
+        &held,
+        session::SandboxTold::Asked {
+            targets: vec!["pypi.example.com:443".into()],
+        },
+    );
+    until("the window is asked", || !asked.lock().unwrap().is_empty());
+    confinement
+        .asks()
+        .expect("its asks are answered from the window")
+        .allow(&Host::parse("pypi.example.com").unwrap(), By::Chat);
+    confinement
+        .withdraw_port(5432)
+        .expect("withdrawn on the runner");
+    until("the runner hears the window", || {
+        confines.seen()[0].changes.len() == 2
+    });
+
+    assert_eq!(*asked.lock().unwrap(), ["pypi.example.com:443"]);
+    assert_eq!(
+        confines.seen()[0].changes,
+        [
+            session::ReachChange::Allow {
+                host: "pypi.example.com".into(),
+                layer: session::Layer::Chat,
+            },
+            session::ReachChange::WithdrawPort { port: 5432 },
+        ]
+    );
+    drop(confinement);
+    sessions.close(id).expect("it closes");
+    until("the runner ends it", || confines.ended(&held));
+
+    let opted_out = Named {
+        without_sandbox: true,
+        ..by_its_names()
+    };
+    let refused = sessions.open_named(None, &opted_out, Default::default(), &|_| {});
+    assert_eq!(refused.err().as_deref(), Some(SANDBOXED_ON_A_RUNNER));
+    let mut harness = a_shell("true");
+    harness.harness = Some(purlis_core::harness::Harness::ClaudeCode);
+    let refused = sessions.open(None, &harness, &|_| {});
+    assert_eq!(refused, Err(COMPOSED_ON_THE_RUNNER.to_owned()));
+    let ran = runs.ran().len();
+    sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a shell starts from the window's launch");
+    until("the runner runs the shell", || runs.ran().len() == ran + 1);
 }

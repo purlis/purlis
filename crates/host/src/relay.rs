@@ -66,8 +66,8 @@ use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::hostlink::{Linked, Links};
 use purlis_session_protocol::link::{Acceptor, Link, Opener, Stream};
 use purlis_session_protocol::session::{
-    self, Answer, Attached, CallError, Client, Command, Events, Peer, Pushed, Refusal, Since, Told,
-    ViewEnd, ViewKind, ViewRole,
+    self, Answer, Attached, CallError, Client, Command, Events, Peer, Pushed, Refusal, Since,
+    StartProgram, Told, ViewEnd, ViewKind, ViewRole,
 };
 use purlis_session_protocol::view::{Epoch, Header, ViewId};
 use tokio::io::AsyncWriteExt;
@@ -904,6 +904,23 @@ fn the_windows_alone(command: &Command) -> bool {
     }
 }
 
+/// `command`, without the chat and run ids a start names unless its client is the window
+/// (#2446): the other host keeps the ids its peer sends on, as its window's (ADR 0066), so a
+/// start from any other client is sent on to be given ids of the other host's own, as this
+/// host gives such a start ids of its own.
+fn ids_for_the_window_alone(command: Command, scope: Scope) -> Command {
+    match command {
+        Command::StartProgram(start) if scope != Scope::LocalUi => {
+            Command::StartProgram(Box::new(StartProgram {
+                program: None,
+                run: None,
+                ..*start
+            }))
+        }
+        command => command,
+    }
+}
+
 /// Whether `power` is one only the window holds of those the relay meets in a command or a
 /// push: holding a project, replying to its hook lines, saving it, and confining a chat.
 fn the_windows_power(power: Power) -> bool {
@@ -951,6 +968,7 @@ impl session::Host for Relay {
                 ),
             });
         }
+        let command = ids_for_the_window_alone(command, peer.scope());
         let relayed = self.relayed(peer)?;
         let client = &relayed.client;
         match command {

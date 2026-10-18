@@ -161,6 +161,9 @@ async fn linked_as(scope: Scope) -> Linked {
         .expect("held");
     let client = if scope == Scope::LocalUi {
         window
+    } else if scope == Scope::RemoteLink {
+        std::mem::forget(window);
+        Client::new(over_the_link_between_hosts(hosting).await).0
     } else {
         let (a, b) = duplex(256 * 1024);
         let (client, served) = tokio::join!(
@@ -178,6 +181,47 @@ async fn linked_as(scope: Scope) -> Linked {
         log,
         _project: project,
     }
+}
+
+/// A link to `hosting` as the link between hosts carries it: served as `remote-link`, from the
+/// desktop it pinned.
+async fn over_the_link_between_hosts(hosting: Hosting) -> link::Link {
+    use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
+    let identity = |device: &str| Identity {
+        device: device.into(),
+        key: LinkKey::generate().unwrap(),
+    };
+    let (desktop, runner) = (
+        identity("01JA0DESKT0P00000000000000"),
+        identity("01JB0RUNNER0000000000000000"),
+    );
+    let pinned = |identity: &Identity| Pinned {
+        device: identity.device.clone(),
+        key: identity.key.public(),
+    };
+    let (peer, runner_pinned) = (pinned(&desktop), pinned(&runner));
+    let (a, b) = duplex(256 * 1024);
+    tokio::spawn(async move {
+        let answered = hostlink::answer(
+            b,
+            Handshake::THIS_BUILD,
+            &runner,
+            &peer,
+            Liveness::default(),
+        )
+        .await
+        .unwrap();
+        session::serve(answered.link, hosting, None).await
+    });
+    hostlink::connect(
+        a,
+        Handshake::THIS_BUILD,
+        &desktop,
+        &runner_pinned,
+        Liveness::default(),
+    )
+    .await
+    .unwrap()
 }
 
 fn composed(first_message: Option<&str>) -> StartProgram {
@@ -286,6 +330,38 @@ async fn a_start_from_the_window_runs_under_the_ids_the_window_named() {
         Some("01J9RUN0000000000000000000")
     );
     assert_eq!(env_of(&spec, "STARTED_BY").as_deref(), Some("local-ui"));
+}
+
+/// **A runner keeps the ids its desktop relays for the window** (#2446): what it writes of the
+/// chat joins the window's own chat and run (ADR 0066). A chat the runner already holds is not
+/// started again under its id.
+#[tokio::test]
+async fn a_start_relayed_over_the_link_runs_under_the_ids_the_window_named() {
+    let linked = linked_as(Scope::RemoteLink).await;
+
+    let program = linked
+        .client
+        .start_program(named_ids(composed(None)))
+        .await
+        .expect("started");
+
+    let (spec, _) = linked.runs.ran().pop().expect("it ran");
+    assert_eq!(program, "01J9CHAT000000000000000000");
+    assert_eq!(
+        env_of(&spec, "RUN").as_deref(),
+        Some("01J9RUN0000000000000000000")
+    );
+    assert_eq!(env_of(&spec, "STARTED_BY").as_deref(), Some("remote-link"));
+    let again = linked
+        .client
+        .start_program(named_ids(composed(None)))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        again.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::MALFORMED)
+    );
+    assert_eq!(linked.runs.ran().len(), 1, "nothing ran again");
 }
 
 #[tokio::test]

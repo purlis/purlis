@@ -198,6 +198,10 @@ pub struct Ready {
     /// of each variable its harness is handed, read where its program is spawned
     /// ([`crate::profilesignin::read`]). References only. `None` where purlis cannot see it.
     pub sign_in: Option<crate::profilesignin::AtStart>,
+    /// The chat's first message, where a caller put one last on its line by its harness's route
+    /// ([`crate::handoff::first_message_argv`]): what a session host that composes the chat
+    /// itself is handed in its place (#2446). `None` from [`ready`].
+    pub first_message: Option<String>,
 }
 
 /// A branch whose `AGENTS.md` is the operator's and hidden from `git status` by charter's line:
@@ -641,6 +645,7 @@ fn ready_given(
         notices,
         agents_md,
         sign_in,
+        first_message: None,
     })
 }
 
