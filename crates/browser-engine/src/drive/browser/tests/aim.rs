@@ -146,3 +146,84 @@ fn a_click_in_a_frame_drawn_flat_to_a_line_is_answered_not_shown() {
     assert_eq!(answer, Err(Refusal::NotShown(pay)));
     assert!(presses_and_releases(&engine).is_empty());
 }
+
+/// The button of the payment frame's document is at `quad` of that document.
+fn the_button_at(engine: &super::Engine, quad: Vec<f64>) {
+    super::super::lock(&engine.model).quads.insert(7, quad);
+}
+
+fn refused_with_nothing_sent(browser: &super::Browser, engine: &super::Engine) {
+    let pay = ref_of(&snapshot(browser, 1), "- button \"Pay now\"");
+
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: pay.clone(),
+        },
+    );
+
+    assert_eq!(answer, Err(Refusal::NotShown(pay)));
+    assert!(mouse(engine).is_empty(), "nothing reaches the page");
+}
+
+#[test]
+fn a_click_on_an_element_beyond_its_upright_frames_edge_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    // The frame shows 200 by 60 of its document; the button is drawn right of that.
+    the_button_at(
+        &engine,
+        vec![250.0, 10.0, 270.0, 10.0, 270.0, 20.0, 250.0, 20.0],
+    );
+    refused_with_nothing_sent(&browser, &engine);
+}
+
+#[test]
+fn a_click_on_an_element_above_its_upright_frames_top_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    the_button_at(
+        &engine,
+        vec![10.0, -40.0, 30.0, -40.0, 30.0, -30.0, 10.0, -30.0],
+    );
+    refused_with_nothing_sent(&browser, &engine);
+}
+
+#[test]
+fn a_click_on_an_element_beyond_its_turned_frames_edge_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    turned_and_halved(&engine);
+    // Inside its border the turned frame shows 200 by 60 of its document.
+    the_button_at(
+        &engine,
+        vec![10.0, 70.0, 30.0, 70.0, 30.0, 80.0, 10.0, 80.0],
+    );
+    refused_with_nothing_sent(&browser, &engine);
+}
+
+#[test]
+fn a_click_at_the_very_edge_of_a_frame_is_carried_out() {
+    let (browser, engine) = browser();
+    // Centred on the frame's right edge, at x 200 of its 200 pixels.
+    the_button_at(
+        &engine,
+        vec![190.0, 10.0, 210.0, 10.0, 210.0, 20.0, 190.0, 20.0],
+    );
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+
+    browser.call(&id(2), Call::Click { target: pay }).unwrap();
+
+    assert_eq!(
+        presses_and_releases(&engine),
+        vec![
+            ("mousePressed".into(), 300.0, 215.0),
+            ("mouseReleased".into(), 300.0, 215.0),
+        ]
+    );
+}
+
+#[test]
+fn a_click_in_a_frame_whose_corners_cross_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    let crossed = json!([100, 200, 300, 260, 300, 200, 100, 260]);
+    frame_drawn_as(&engine, crossed.clone(), crossed, 200.0, 60.0);
+    refused_with_nothing_sent(&browser, &engine);
+}

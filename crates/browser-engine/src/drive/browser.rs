@@ -1735,12 +1735,20 @@ impl Browser {
                 place.within = Some(place.on_page(quad_bounds(&border)));
             }
             place.steps.push(if as_laid_out {
-                Step::Moved(content[0], content[1])
+                Step::Moved {
+                    at: (content[0], content[1]),
+                    shows: (content[2] - content[0], content[5] - content[1]),
+                }
             } else {
                 Drawing::of(&border, width, height)
                     .and_then(|drawing| {
                         let inside = drawing.in_box((content[0], content[1]))?;
-                        Some(Step::Drawn { drawing, inside })
+                        let far = drawing.in_box((content[4], content[5]))?;
+                        Some(Step::Drawn {
+                            drawing,
+                            inside,
+                            shows: (far.0 - inside.0, far.1 - inside.1),
+                        })
                     })
                     .unwrap_or(Step::Flat)
             });
@@ -1783,7 +1791,7 @@ impl Browser {
             )
             .map_err(shown)?;
         centre(&quads)
-            .and_then(|centre| place.aim(centre))
+            .and_then(|centre| place.drawn_at(centre))
             .ok_or_else(|| Refusal::NotShown(target.clone()))
     }
 
@@ -2607,7 +2615,9 @@ type Placings = HashMap<Vec<(String, String)>, Option<FramePlace>>;
 /// Where a frame's document is drawn on its page, in CSS pixels.
 #[derive(Debug, Clone, PartialEq)]
 struct FramePlace {
-    /// Where the document's top left corner is.
+    /// Where the document's top left corner is drawn, frame by frame moved by each frame's
+    /// corner: exact while every frame between is upright at its own size, and what `within`
+    /// is placed by otherwise.
     corner: (f64, f64),
     /// The box of the outermost frame between the page and the document that is drawn other
     /// than upright at its own size: everything the document draws is drawn within it.
@@ -2619,13 +2629,15 @@ struct FramePlace {
 /// How a frame draws its document in the document around it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Step {
-    /// Upright at its own size, the document's top left corner at this point.
-    Moved(f64, f64),
+    /// Upright at its own size, the document's top left corner at `at`, showing `shows` (width
+    /// and height) of the document.
+    Moved { at: (f64, f64), shows: (f64, f64) },
     /// Turned, scaled, zoomed or otherwise: the frame element's box drawn as `drawing`, the
-    /// document's top left corner at `inside` of that box.
+    /// document's top left corner at `inside` of that box, showing `shows` of the document.
     Drawn {
         drawing: Drawing,
         inside: (f64, f64),
+        shows: (f64, f64),
     },
     /// Drawn with no area, so no point of the document is drawn anywhere to aim at.
     Flat,
@@ -2633,14 +2645,21 @@ enum Step {
 
 impl FramePlace {
     /// Where `point`, in CSS pixels of the frame's document, is drawn on the page; `None` when
-    /// it is drawn nowhere.
-    fn aim(&self, point: (f64, f64)) -> Option<(f64, f64)> {
+    /// it is drawn nowhere, or outside what a frame between shows of its document: an act lands
+    /// only inside the frame that shows its element (#2557).
+    fn drawn_at(&self, point: (f64, f64)) -> Option<(f64, f64)> {
         self.steps
             .iter()
             .rev()
             .try_fold(point, |(x, y), step| match *step {
-                Step::Moved(dx, dy) => Some((x + dx, y + dy)),
-                Step::Drawn { drawing, inside } => drawing.on_page((x + inside.0, y + inside.1)),
+                Step::Moved { at, shows } => shown(x, y, shows).then_some((x + at.0, y + at.1)),
+                Step::Drawn {
+                    drawing,
+                    inside,
+                    shows,
+                } => shown(x, y, shows)
+                    .then(|| drawing.on_page((x + inside.0, y + inside.1)))
+                    .flatten(),
                 Step::Flat => None,
             })
     }
@@ -2653,6 +2672,13 @@ impl FramePlace {
             ..rect
         }
     }
+}
+
+/// Whether (`x`, `y`) of a document lies within the `shows` (width and height) of it its frame
+/// shows, to within half a pixel.
+fn shown(x: f64, y: f64, shows: (f64, f64)) -> bool {
+    const EDGE: f64 = 0.5;
+    (-EDGE..=shows.0 + EDGE).contains(&x) && (-EDGE..=shows.1 + EDGE).contains(&y)
 }
 
 /// Whether `border`, an element's border box as drawn, is upright and the size the element is

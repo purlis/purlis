@@ -16,5 +16,10 @@ not.
    pixels of the page, the way the screenshot the agent reads shows it, wherever the drag starts.
    *D-2557-2, decided in implementation, to be confirmed.*
 3. **Unsure means not shown.** When the engine does not say where a frame between the page and
-   the element is drawn, or draws it with no area, the act is answered "not shown" and nothing is
-   sent to the page. *D-2557-3, decided in implementation, to be confirmed.*
+   the element is drawn, or draws it with no area, with its corners crossed, or with a corner
+   behind the eye of a perspective, the act is answered "not shown" and nothing is sent to the
+   page. *D-2557-3, decided in implementation, to be confirmed.*
+4. **Only inside the frame that shows the element.** An act lands only inside the frame that
+   shows its element: when the element's centre lies outside what any frame between the page and
+   the element shows of its document, to within half a pixel, the act is answered "not shown" and
+   nothing is sent to the page. *D-2557-4, decided in review.*

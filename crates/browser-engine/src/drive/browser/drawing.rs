@@ -19,7 +19,8 @@ pub(super) struct Drawing {
 impl Drawing {
     /// The box laid out `width` by `height` CSS pixels and drawn at `corners` (top left, top
     /// right, bottom right, bottom left, as `DOM.getBoxModel` gives them); `None` when it is not
-    /// drawn as an area, so no point of it can be told from another.
+    /// drawn as an area, so no point of it can be told from another, or when its corners cross
+    /// or a corner is drawn behind the eye.
     pub(super) fn of(corners: &[f64; 8], width: f64, height: f64) -> Option<Self> {
         if !(width > 0.0 && height > 0.0) {
             return None;
@@ -59,6 +60,15 @@ impl Drawing {
             unit[8],
         ];
         let drawing = Self { map };
+        // Every corner drawn in front: the box is then drawn onto the convex quad its corners
+        // make, one point for one point. A box folded through itself, or crossing the horizon
+        // of a perspective, has a corner drawn behind.
+        let in_front = [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)]
+            .into_iter()
+            .all(|(x, y)| map[6] * x + map[7] * y + map[8] > f64::EPSILON);
+        if !in_front {
+            return None;
+        }
         drawing.inverse().map(|_| drawing)
     }
 

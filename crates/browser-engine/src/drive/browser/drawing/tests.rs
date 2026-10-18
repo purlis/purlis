@@ -64,3 +64,18 @@ fn a_box_drawn_flat_or_with_no_size_has_no_drawing() {
     let square = [0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0];
     assert_eq!(Drawing::of(&square, 0.0, 10.0), None);
 }
+
+#[test]
+fn a_box_whose_corners_cross_has_no_drawing() {
+    // A bow tie: the top edge drawn from (0, 0) to (100, 100) and the bottom from (100, 0) to
+    // (0, 100), the box folded through itself.
+    let crossed = [0.0, 0.0, 100.0, 100.0, 100.0, 0.0, 0.0, 100.0];
+    assert_eq!(Drawing::of(&crossed, 100.0, 100.0), None);
+}
+
+#[test]
+fn a_box_drawn_across_the_horizon_has_no_drawing() {
+    // A perspective whose horizon passes through the box: a far corner is drawn behind the eye.
+    let corners = [0.0, 0.0, 100.0, 0.0, -400.0, -500.0, 500.0, -500.0];
+    assert_eq!(Drawing::of(&corners, 100.0, 100.0), None);
+}

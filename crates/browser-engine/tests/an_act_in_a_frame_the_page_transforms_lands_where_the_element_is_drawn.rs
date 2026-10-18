@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A click or a drag the agent aims at an element inside a frame from another site lands where
+//! A click, a hover or a drag the agent aims at an element inside a frame from another site lands where
 //! the element is drawn, however the page lays the frame out: turned and scaled, or zoomed
 //! (#2557).
 //!
@@ -48,6 +48,23 @@ fn the_drag_lands(path: &str) -> bool {
         },
     );
     sees(&browser, "Dragged from start to end")
+}
+
+/// Opens `path`, whose frame from another site holds a "Point here" square, hovers over it,
+/// and answers whether the frame saw the pointer come onto it.
+fn the_hover_lands(path: &str) -> bool {
+    let Some((browser, _data, _site)) = started() else {
+        return true;
+    };
+    open(&browser, path);
+    let target = ref_on(&find(&browser, "Point here"), "Point here");
+    call(&browser, Call::Hover { target });
+    sees(&browser, "Pointed at")
+}
+
+#[test]
+fn a_hover_in_a_frame_the_page_turns_and_scales_comes_onto_its_element() {
+    assert!(the_hover_lands("turned-pad.html"));
 }
 
 #[test]
