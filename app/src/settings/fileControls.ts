@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { BUILT_IN, DEFAULT_THEME, SYSTEM, THEME_ALIASES } from "../theme/theme";
-import { hueOf, PALETTE } from "../theme/tint";
+import { isWorkspaceColour, WORKSPACE_COLOURS } from "../theme/theme";
 import type { Option } from "./components";
 import type {
   HarnessPlugin,
@@ -492,7 +492,7 @@ export function themeGroup(unset: string, here: "project" | "workspace" = "proje
       return [
         ...(why === null ? [] : [why]),
         ...theme.ignored.filter((one) => one.file === file.file).map((one) => one.why),
-        ...(here === "workspace" && theme.colour !== null && hueOf(theme.colour) === undefined
+        ...(here === "workspace" && theme.colour !== null && !isWorkspaceColour(theme.colour)
           ? [
               `${theme.colour} is a grey, which has no hue to tint with — so this workspace is drawn without a colour. Pick one of the eight, or a custom colour that is not grey.`,
             ]
@@ -815,19 +815,19 @@ const CUSTOM = "custom";
 
 /**
  * **A workspace's colour** (charter-app#281): `settings.theme.colour`, one of the eight the core
- * reads (`theme/tint.ts`'s `PALETTE`, held to the core's by a test) or a custom `#rrggbb`, whose
+ * reads (`theme.ts`' `WORKSPACE_COLOURS`, as the engine hands them) or a custom `#rrggbb`, whose
  * hue is taken. A select, and a colour well beside it while the pick is custom.
  */
 const COLOUR: Control = {
   ...textAt(key("theme", "colour"), "Colour", {
     kind: "colour",
-    choices: [...Object.keys(PALETTE), CUSTOM],
-    hint: "Tints this workspace's tab, its chat strip, the title bar's mark and the accent while it is in front. Text and the terminal keep the theme's own colours.",
+    choices: [...WORKSPACE_COLOURS, CUSTOM],
+    hint: "Tints this workspace's tab, its chat strip, the title bar's mark and the accent while it is in front, as the theme says. The terminal keeps the theme's own colours.",
   }),
   unset: "none — the theme as it is",
   labels: {
     ...Object.fromEntries(
-      Object.keys(PALETTE).map((name) => [name, name[0].toUpperCase() + name.slice(1)]),
+      WORKSPACE_COLOURS.map((name) => [name, name[0].toUpperCase() + name.slice(1)]),
     ),
     [CUSTOM]: "Custom…",
   },

@@ -1,0 +1,21 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# A base16 scheme in the classic form, made up for purlis's import tests.
+scheme: "Harbor"
+author: "purlis tests"
+base00: "1b2024"
+base01: "232a2f"
+base02: "2e373d"
+base03: "5c6a73"
+base04: "8a9aa4"
+base05: "c7d3da"
+base06: "dce5ea"
+base07: "f0f5f7"
+base08: "e06c75"
+base09: "d19a66"
+base0A: "e5c07b"
+base0B: "98c379"
+base0C: "56b6c2"
+base0D: "61afef"
+base0E: "c678dd"
+base0F: "be5046"

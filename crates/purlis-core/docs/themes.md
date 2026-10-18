@@ -11,19 +11,38 @@ repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.sc
 - **Built in**: Purlis Classic, `purlis-classic`, with a dark and a light appearance. The ids
   its appearances have had (`purlis-dark`, `purlis-light`, `charter-dark`, `charter-light`)
   still name it.
-- **Your own**: `theme.json` in purlis's config folder (`$PURLIS_CONFIG_HOME`, else
-  `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`). Its id is `mine`.
+- **Your own**, at the machine level: `theme.json` in purlis's config folder
+  (`$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`), whose id
+  is `mine`, and each theme folder in that folder's `themes/`, whose id is `machine:<folder>`.
+- **The project's**: each theme folder in `themes/` at the plane root, `project:<folder>`.
+- **A workspace's**: each theme folder in `workspaces/<ws>/themes/`,
+  `workspace:<ws>:<folder>`.
 - **An extension**: each theme an approved extension contributes while it is on. Its id is
   `<extension>/<theme>`, as a project's pick names it.
 
-`purlis theme list` shows every theme available here:
+A theme folder's id names its level because a folder of the same name can be at several levels;
+a pick names it by its folder's name alone, and the nearest level within the pick's reach is
+read. The theme commands read the levels' folders exactly as the window does, with the same
+reach: a folder extends the folders of its own level and the levels farther out. Outside a
+plane there are no project or workspace levels. What reading a level has to say (a `themes/` reached through a link, more folders than are
+read) is attached to every theme at that level: as a note on a theme that is drawn, among the
+reasons on one that is refused.
+
+`purlis theme list` shows every theme available here, the machine's first, then the project's,
+each workspace's by name, and the extensions':
 
 ```
   ID                        NAME            APPEARANCES  FROM
   purlis-classic            Purlis Classic  dark, light  built-in
-  mine                      Late            dark         /home/me/.config/purlis/theme.json
+  mine                      Late            dark         machine /home/me/.config/purlis/theme.json
+  machine:dusk              Dusk            dark, light  machine /home/me/.config/purlis/themes/dusk
+  project:team              Team            dark         project /work/plane/themes/team
+  workspace:ops:alarm       Alarm           dark         workspace ops /work/plane/workspaces/ops/themes/alarm
   solarized/Solarized Dark  Solarized Dark  dark         extension solarized
 ```
+
+FROM starts with the theme's level: `built-in`, `machine`, `project`, `workspace <ws>` or
+`extension <extension>`.
 
 APPEARANCES names each appearance by its id, with its tag when the id is not one (`day
 (light)`) and `high contrast` when it is tagged so. An id may hold a space, as an extension's
@@ -37,7 +56,10 @@ this purlis reads (see [The schema a theme names](#the-schema-a-theme-names)), e
 values are `off` and `on`, so its `default` here is `"on"` or `"off"`, where `theme.json`
 writes `true` or `false`), `combinations` is how many appearance × option combinations the
 theme has, `from` is `{"kind": "built-in"}`,
-`{"kind": "mine", "path"}` or `{"kind": "extension", "extension"}`, and `refused` is `null` or
+`{"kind": "mine", "path"}`, `{"kind": "machine", "folder", "path"}`,
+`{"kind": "project", "folder", "path"}`, `{"kind": "workspace", "workspace", "folder", "path"}`
+or `{"kind": "extension", "extension"}`, `level` is `built-in`, `machine`, `project`,
+`workspace` or `extension` (`null` for a theme named by its path), and `refused` is `null` or
 why (`name`, `appearances`, `options` and `combinations` are then `null`).
 
 ## Theme options
@@ -67,8 +89,11 @@ number of values (a toggle has two). A theme past that is refused with its count
 
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the
-themes it may `extend`). A file path that is a link is followed, since it is the path you typed;
-a theme folder, or its `theme.json`, that is a link is refused:
+themes it may `extend`). A level's theme folder is named by its level and folder
+(`project:team`) and checked exactly as the window reads it: that level's folder, never a
+farther level's of the same name, extending what a choice made at that level reaches. A file
+path that is a link is followed, since it is the path you typed; a theme folder, or its
+`theme.json`, that is a link is refused:
 
 ```
 Dim — /home/me/dim.json, dark
@@ -79,8 +104,11 @@ warnings (2):
   text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
 ```
 
-A last `hard floors:` line follows. Until purlis keeps hard floors (#2332), it says they are
-not checked by this purlis yet.
+Then `floors held:`, what the window draws of the theme: each consent floor it breaks in a
+combination, and the tokens the window draws as purlis's own for it (`danger is
+distinguishable from primary — purlis draws its own danger.base`), or `none`. A last `hard
+floors:` line follows. Until purlis keeps hard floors (#2332), it says they are not checked by
+this purlis yet.
 
 - **Refused**: a theme that breaks its grammar anywhere is not drawn at all, and each value
   that refused it is listed: a colour that is not hex or a palette name, a duration or an
@@ -96,6 +124,10 @@ not checked by this purlis yet.
   value in the theme's order of its options (`dark, borders on: …`). A theme with options says
   them on an `options:` line under its name, with how many combinations were checked. A warning
   is the author's call; the theme is drawn.
+- **Floors held** are the consent floors (an ask contrasts with its surface, Allow is
+  distinguishable from Keep blocked, the danger colours contrast with what they are drawn on,
+  danger is distinguishable from primary, the state marks meet the mark floor). A theme that
+  breaks one is drawn with purlis's own values for those tokens and the rest as written.
 - **Hard floors** are the few rules a theme can never break. This purlis does not check them
   yet (#2332), and says so rather than reporting a pass.
 
@@ -110,7 +142,7 @@ is refused, **2** when there is no such theme.
   "theme_schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
   "theme": {"id": "mine", "name": "Dim",
             "appearances": [{"id": "dark", "appearance": "dark", "high_contrast": false}],
-            "options": [], "combinations": 1,
+            "options": [], "combinations": 1, "level": "machine",
             "from": {"kind": "mine", "path": "/home/me/.config/purlis/theme.json"}},
   "refused": null,
   "errors": [],
@@ -119,6 +151,7 @@ is refused, **2** when there is no such theme.
   "warnings": [{"appearance": "dark", "options": {}, "kind": "contrast", "tint": null,
                 "pair": {"front": "text.muted", "back": "surface.base", "floor": 4.5},
                 "ratio": 2.38}],
+  "held": [],
   "hard_floors": null,
   "clean": false
 }
@@ -132,9 +165,12 @@ for a theme with none), in the theme's order of its options. Its `kind` is `cont
 its `ratio`, and `under` when the back is a wash laid over another token), `ansi` (a terminal
 colour too close to the terminal's background: `token`, `ratio`, `floor`) or
 `selected-not-apart` (the selected row drawn exactly as `other`). `tint` is the workspace colour
-it was found in, or `null` for the theme as it is. `hard_floors` is `null` until purlis checks
-them. `clean` is true with no error, no note and no warning; it covers those only, never hard
-floors, which `hard_floors` reports on its own. `schema` is the version of this shape, in both
+it was found in, or `null` for the theme as it is. `held` has one entry for each combination
+in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
+`floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
+as purlis's own. `hard_floors` is `null` until purlis checks them. `clean` is true with no
+error, no note, no warning and no floor held; it covers those only, never hard floors, which
+`hard_floors` reports on its own. `schema` is the version of this shape, in both
 answers: a reader checks it first. A theme folder's `from` is `{"kind": "folder", "path"}`, a
 theme file's `{"kind": "file", "path"}`.
 
@@ -152,6 +188,518 @@ address as `theme_schema`. An address at `main` would offer tokens your purlis d
 yet, and it leaves those out. The `v2` is the format: within it the schema only ever grows, so
 a theme valid against one release's schema is valid against every later release's. purlis
 itself never fetches the address; only your editor does.
+
+## Importing a theme
+
+`purlis theme import <file>` makes a theme folder from a theme you already have:
+
+- a **VS Code colour theme** (`--kind vscode`): its JSON, comments and trailing commas allowed;
+- a **base16** or **base24 scheme** (`base16`, `base24`): YAML or JSON, the classic form
+  (`scheme:`, `base00: "1b2024"`) or the tinted one (`system:`, `name:`, `variant:`,
+  `palette:`);
+- an **iTerm2 colour preset** (`iterm`), an `.itermcolors` file;
+- a **Ghostty theme** (`ghostty`): its `key = value` lines;
+- a **theme folder's zip** (`zip`), as `purlis theme export` writes one.
+
+The kind is told from the file's name and its first words; `--kind` says it when they do not.
+The new folder goes in `--into <folder>`, a `themes/` folder, or in your own themes' folder,
+`themes/` in purlis's config folder, where `purlis theme list` lists it as `machine:<folder>`.
+It is named from the theme's name (`Solarized Dark` goes in
+`solarized-dark/`): a theme folder's id is lower-case letters, digits and dashes, starting with a
+letter, at most 32 long, and never one purlis keeps for its own themes (`purlis-classic`, the
+ids its appearances have had, `mine`, `system`). A folder of that name that is there is never
+replaced without `--force`, and with it, it is swapped for the new one in one step:
+
+```
+imported Harbor (base16) into /home/me/.config/purlis/themes/harbor
+not taken (2):
+  author: theme.json has no place for it
+  base06: no token takes it
+Harbor — /home/me/.config/purlis/themes/harbor, dark
+left out: nothing
+warnings (22):
+  text.muted on surface.base: 2.94, under 4.5; in every workspace tint too, down to 2.94
+  …
+the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home/me/.config/purlis/themes/harbor` checks it again, and `purlis theme export /home/me/.config/purlis/themes/harbor` makes a zip of it to share
+```
+
+- **Each kind goes through a fixed table** (below): each token takes the first of its source
+  keys that the source has. A token no row fills is Purlis Classic's of the same appearance, as
+  in any theme that leaves a token out.
+- **Nothing is dropped silently.** `not taken` lists every key of the source that gave no token a
+  value, with why: no token takes it, a nearer key gave its token the value, it is not a colour, it names another file (a VS Code
+  theme's `include`, which import never reads), or `theme.json` has no place for it.
+- **The new theme's check follows**, the same as `purlis theme check` of the folder. A theme
+  purlis would refuse is not written at all.
+- **A scheme's or a terminal's own colours become the theme's palette**, each named after its
+  source key (`base0d`, `ansi-4`, `palette-4`, `background`), so a colour changed once changes
+  every token it fills. A VS Code theme's colours are written as hex.
+- **The appearance** is the source's own word where it has one: VS Code's `type` (`hc` and
+  `hcLight` are tagged high contrast), a tinted scheme's `variant`. Otherwise it is dark when the
+  background reads better under white text than black. An iTerm2 preset that keeps colours for
+  dark and light mode (`Ansi 0 Color (Dark)`) gets a `dark` and a `light` appearance.
+
+A source is read from the file alone, never from another file it names and never from the
+network, and is at most 1 MiB; an iTerm2 preset nests its dictionaries and lists at most 8
+deep. The exit: **0** when the folder is written, **1** when it is not
+(the file cannot be read as its kind, the folder is there, purlis refuses the theme), **2** when
+there is no such file.
+
+`--json` answers `{"schema": 1, "kind", "name", "folder", "written", "not_taken": [{"key",
+"why"}], "check"}`: `written` is the new folder's path, or `null` when nothing was written, and
+`check` is what `purlis theme check --json` answers for it.
+
+### VS Code
+
+A VS Code theme's `colors`:
+
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `editor.background` |
+| `surface.sunken` | `sideBar.background` |
+| `surface.deep` | `titleBar.activeBackground`, `activityBar.background` |
+| `surface.raised` | `editorWidget.background` |
+| `surface.overlay` | `quickInput.background`, `menu.background`, `editorWidget.background` |
+| `surface.hover` | `list.hoverBackground` |
+| `control.base` | `input.background`, `dropdown.background` |
+| `control.hover` | `toolbar.hoverBackground` |
+| `text.primary` | `editor.foreground`, `foreground` |
+| `text.secondary` | `descriptionForeground` |
+| `text.muted` | `disabledForeground`, `editorLineNumber.foreground` |
+| `border.subtle` | `panel.border`, `sideBar.border`, `editorGroup.border` |
+| `border.strong` | `input.border`, `contrastBorder` |
+| `accent.base` | `button.background`, `focusBorder` |
+| `focus.ring` | `focusBorder` |
+| `tab.active` | `tab.activeBackground` |
+| `list.selected` | `list.activeSelectionBackground` |
+| `tree.guide` | `tree.indentGuidesStroke` |
+| `danger.base` | `errorForeground`, `editorError.foreground` |
+| `diff.deleted` | `diffEditor.removedLineBackground`, `diffEditor.removedTextBackground` |
+| `diff.inserted` | `diffEditor.insertedLineBackground`, `diffEditor.insertedTextBackground` |
+| `diff.deleted-text` | `diffEditor.removedTextBackground` |
+| `diff.inserted-text` | `diffEditor.insertedTextBackground` |
+| `icon.red` | `charts.red` |
+| `icon.orange` | `charts.orange` |
+| `icon.yellow` | `charts.yellow` |
+| `icon.green` | `charts.green` |
+| `icon.blue` | `charts.blue` |
+| `icon.purple` | `charts.purple` |
+| `state.running` | `progressBar.background` |
+| `state.waiting` | `editorWarning.foreground` |
+| `state.failed` | `editorError.foreground`, `errorForeground` |
+| `state.success` | `testing.iconPassed` |
+| `overlay.shadow` | `widget.shadow` |
+| `terminal.background` | `terminal.background`, `panel.background`, `editor.background` |
+| `terminal.foreground` | `terminal.foreground`, `editor.foreground`, `foreground` |
+| `terminal.cursor` | `terminalCursor.foreground`, `editorCursor.foreground` |
+| `terminal.cursor-accent` | `terminalCursor.background` |
+| `terminal.selection` | `terminal.selectionBackground`, `editor.selectionBackground` |
+| `terminal.find-match` | `terminal.findMatchHighlightBackground` |
+| `terminal.find-match-active` | `terminal.findMatchBackground` |
+| `terminal.selection-foreground` | `terminal.selectionForeground` |
+| `terminal.selection-inactive` | `terminal.inactiveSelectionBackground` |
+| `terminal.scrollbar` | `scrollbarSlider.background` |
+| `terminal.scrollbar-hover` | `scrollbarSlider.hoverBackground` |
+| `terminal.scrollbar-active` | `scrollbarSlider.activeBackground` |
+| `terminal.ansi.black` | `terminal.ansiBlack` |
+| `terminal.ansi.red` | `terminal.ansiRed` |
+| `terminal.ansi.green` | `terminal.ansiGreen` |
+| `terminal.ansi.yellow` | `terminal.ansiYellow` |
+| `terminal.ansi.blue` | `terminal.ansiBlue` |
+| `terminal.ansi.magenta` | `terminal.ansiMagenta` |
+| `terminal.ansi.cyan` | `terminal.ansiCyan` |
+| `terminal.ansi.white` | `terminal.ansiWhite` |
+| `terminal.ansi.bright-black` | `terminal.ansiBrightBlack` |
+| `terminal.ansi.bright-red` | `terminal.ansiBrightRed` |
+| `terminal.ansi.bright-green` | `terminal.ansiBrightGreen` |
+| `terminal.ansi.bright-yellow` | `terminal.ansiBrightYellow` |
+| `terminal.ansi.bright-blue` | `terminal.ansiBrightBlue` |
+| `terminal.ansi.bright-magenta` | `terminal.ansiBrightMagenta` |
+| `terminal.ansi.bright-cyan` | `terminal.ansiBrightCyan` |
+| `terminal.ansi.bright-white` | `terminal.ansiBrightWhite` |
+| `markdown.link` | `textLink.foreground` |
+| `markdown.code` | `textPreformat.foreground` |
+| `markdown.code-block` | `textPreformat.foreground` |
+| `selection.background` | `editor.selectionBackground` |
+| `selection.text` | `editor.selectionForeground` |
+| `caret` | `editorCursor.foreground` |
+| `placeholder` | `input.placeholderForeground` |
+| `scrollbar.thumb` | `scrollbarSlider.background` |
+| `chart.1` | `charts.blue` |
+| `chart.2` | `charts.green` |
+| `chart.3` | `charts.yellow` |
+| `chart.4` | `charts.purple` |
+| `chart.5` | `charts.red` |
+| `chart.6` | `charts.orange` |
+| `chart.7` | `terminal.ansiCyan` |
+| `chart.8` | `terminal.ansiMagenta` |
+| `window.background` | `titleBar.activeBackground`, `editor.background` |
+
+Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
+token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
+between rules of one scope, the last; a scope with a space in it (`meta.embedded string`) is
+about a context and fills none. A rule's `fontStyle` sets the token's italic and bold.
+
+| Token | Scopes, nearest first |
+|---|---|
+| `syntax.keyword` | `keyword`, `storage` |
+| `syntax.string` | `string` |
+| `syntax.number` | `constant.numeric` |
+| `syntax.constant` | `constant.language`, `constant`, `support.constant` |
+| `syntax.comment` | `comment` |
+| `syntax.function` | `entity.name.function`, `support.function` |
+| `syntax.type` | `entity.name.type`, `entity.name.class`, `support.type`, `support.class` |
+| `syntax.property` | `variable.other.property`, `support.type.property-name`, `meta.object-literal.key` |
+| `syntax.attribute` | `entity.other.attribute-name` |
+| `syntax.tag` | `entity.name.tag` |
+| `syntax.heading` | `markup.heading`, `entity.name.section` |
+| `syntax.invalid` | `invalid` |
+| `syntax.variable` | `variable` |
+| `syntax.operator` | `keyword.operator` |
+| `syntax.punctuation` | `punctuation` |
+| `markdown.heading` | `markup.heading` |
+
+### base16
+
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `base00` |
+| `surface.sunken` | `base01` |
+| `surface.raised` | `base01` |
+| `surface.overlay` | `base01` |
+| `surface.hover` | `base02` |
+| `control.base` | `base01` |
+| `control.hover` | `base02` |
+| `text.primary` | `base05` |
+| `text.secondary` | `base04` |
+| `text.muted` | `base03` |
+| `border.subtle` | `base02` |
+| `border.strong` | `base03` |
+| `accent.base` | `base0d` |
+| `focus.ring` | `base0d` |
+| `list.selected` | `base02` |
+| `danger.base` | `base08` |
+| `icon.red` | `base08` |
+| `icon.orange` | `base09` |
+| `icon.yellow` | `base0a` |
+| `icon.green` | `base0b` |
+| `icon.teal` | `base0c` |
+| `icon.blue` | `base0d` |
+| `icon.purple` | `base0e` |
+| `icon.pink` | `base0f` |
+| `state.running` | `base0d` |
+| `state.waiting` | `base0a` |
+| `state.failed` | `base08` |
+| `state.success` | `base0b` |
+| `terminal.background` | `base00` |
+| `terminal.foreground` | `base05` |
+| `terminal.cursor` | `base05` |
+| `terminal.cursor-accent` | `base00` |
+| `terminal.selection` | `base02` |
+| `terminal.ansi.black` | `base00` |
+| `terminal.ansi.red` | `base08` |
+| `terminal.ansi.green` | `base0b` |
+| `terminal.ansi.yellow` | `base0a` |
+| `terminal.ansi.blue` | `base0d` |
+| `terminal.ansi.magenta` | `base0e` |
+| `terminal.ansi.cyan` | `base0c` |
+| `terminal.ansi.white` | `base05` |
+| `terminal.ansi.bright-black` | `base03` |
+| `terminal.ansi.bright-red` | `base08` |
+| `terminal.ansi.bright-green` | `base0b` |
+| `terminal.ansi.bright-yellow` | `base0a` |
+| `terminal.ansi.bright-blue` | `base0d` |
+| `terminal.ansi.bright-magenta` | `base0e` |
+| `terminal.ansi.bright-cyan` | `base0c` |
+| `terminal.ansi.bright-white` | `base07` |
+| `syntax.keyword` | `base0e` |
+| `syntax.string` | `base0b` |
+| `syntax.number` | `base09` |
+| `syntax.constant` | `base09` |
+| `syntax.comment` | `base03` |
+| `syntax.function` | `base0d` |
+| `syntax.type` | `base0a` |
+| `syntax.property` | `base0c` |
+| `syntax.attribute` | `base09` |
+| `syntax.tag` | `base08` |
+| `syntax.heading` | `base0d` |
+| `syntax.invalid` | `base08` |
+| `syntax.variable` | `base08` |
+| `syntax.operator` | `base05` |
+| `syntax.punctuation` | `base05` |
+| `markdown.link` | `base0d` |
+| `markdown.code` | `base0b` |
+| `markdown.code-block` | `base05` |
+| `markdown.quote` | `base0c` |
+| `markdown.heading` | `base0d` |
+| `selection.background` | `base02` |
+| `caret` | `base05` |
+| `placeholder` | `base04` |
+| `scrollbar.thumb` | `base03` |
+| `chart.1` | `base0d` |
+| `chart.2` | `base0b` |
+| `chart.3` | `base0a` |
+| `chart.4` | `base0e` |
+| `chart.5` | `base08` |
+| `chart.6` | `base0c` |
+| `chart.7` | `base09` |
+| `chart.8` | `base0f` |
+| `window.background` | `base00` |
+
+### base24
+
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `base00` |
+| `surface.sunken` | `base10`, `base01` |
+| `surface.deep` | `base11`, `base10` |
+| `surface.raised` | `base01` |
+| `surface.overlay` | `base01` |
+| `surface.hover` | `base02` |
+| `control.base` | `base01` |
+| `control.hover` | `base02` |
+| `text.primary` | `base05` |
+| `text.secondary` | `base04` |
+| `text.muted` | `base03` |
+| `border.subtle` | `base02` |
+| `border.strong` | `base03` |
+| `accent.base` | `base0d` |
+| `focus.ring` | `base0d` |
+| `list.selected` | `base02` |
+| `danger.base` | `base08` |
+| `icon.red` | `base08` |
+| `icon.orange` | `base09` |
+| `icon.yellow` | `base0a` |
+| `icon.green` | `base0b` |
+| `icon.teal` | `base0c` |
+| `icon.blue` | `base0d` |
+| `icon.purple` | `base0e` |
+| `icon.pink` | `base0f` |
+| `state.running` | `base0d` |
+| `state.waiting` | `base0a` |
+| `state.failed` | `base08` |
+| `state.success` | `base0b` |
+| `terminal.background` | `base00` |
+| `terminal.foreground` | `base05` |
+| `terminal.cursor` | `base05` |
+| `terminal.cursor-accent` | `base00` |
+| `terminal.selection` | `base02` |
+| `terminal.ansi.black` | `base00` |
+| `terminal.ansi.red` | `base08` |
+| `terminal.ansi.green` | `base0b` |
+| `terminal.ansi.yellow` | `base0a` |
+| `terminal.ansi.blue` | `base0d` |
+| `terminal.ansi.magenta` | `base0e` |
+| `terminal.ansi.cyan` | `base0c` |
+| `terminal.ansi.white` | `base05` |
+| `terminal.ansi.bright-black` | `base03` |
+| `terminal.ansi.bright-red` | `base12`, `base08` |
+| `terminal.ansi.bright-green` | `base14`, `base0b` |
+| `terminal.ansi.bright-yellow` | `base13`, `base0a` |
+| `terminal.ansi.bright-blue` | `base16`, `base0d` |
+| `terminal.ansi.bright-magenta` | `base17`, `base0e` |
+| `terminal.ansi.bright-cyan` | `base15`, `base0c` |
+| `terminal.ansi.bright-white` | `base07` |
+| `syntax.keyword` | `base0e` |
+| `syntax.string` | `base0b` |
+| `syntax.number` | `base09` |
+| `syntax.constant` | `base09` |
+| `syntax.comment` | `base03` |
+| `syntax.function` | `base0d` |
+| `syntax.type` | `base0a` |
+| `syntax.property` | `base0c` |
+| `syntax.attribute` | `base09` |
+| `syntax.tag` | `base08` |
+| `syntax.heading` | `base0d` |
+| `syntax.invalid` | `base08` |
+| `syntax.variable` | `base08` |
+| `syntax.operator` | `base05` |
+| `syntax.punctuation` | `base05` |
+| `markdown.link` | `base0d` |
+| `markdown.code` | `base0b` |
+| `markdown.code-block` | `base05` |
+| `markdown.quote` | `base0c` |
+| `markdown.heading` | `base0d` |
+| `selection.background` | `base02` |
+| `caret` | `base05` |
+| `placeholder` | `base04` |
+| `scrollbar.thumb` | `base03` |
+| `chart.1` | `base0d` |
+| `chart.2` | `base0b` |
+| `chart.3` | `base0a` |
+| `chart.4` | `base0e` |
+| `chart.5` | `base08` |
+| `chart.6` | `base0c` |
+| `chart.7` | `base09` |
+| `chart.8` | `base0f` |
+| `window.background` | `base00` |
+
+### iTerm2
+
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `Background Color` |
+| `text.primary` | `Foreground Color` |
+| `text.muted` | `Ansi 8 Color` |
+| `accent.base` | `Ansi 4 Color` |
+| `focus.ring` | `Ansi 4 Color` |
+| `danger.base` | `Ansi 1 Color` |
+| `icon.red` | `Ansi 1 Color` |
+| `icon.yellow` | `Ansi 3 Color` |
+| `icon.green` | `Ansi 2 Color` |
+| `icon.teal` | `Ansi 6 Color` |
+| `icon.blue` | `Ansi 4 Color` |
+| `icon.purple` | `Ansi 5 Color` |
+| `state.running` | `Ansi 4 Color` |
+| `state.waiting` | `Ansi 3 Color` |
+| `state.failed` | `Ansi 1 Color` |
+| `state.success` | `Ansi 2 Color` |
+| `terminal.background` | `Background Color` |
+| `terminal.foreground` | `Foreground Color` |
+| `terminal.cursor` | `Cursor Color` |
+| `terminal.cursor-accent` | `Cursor Text Color` |
+| `terminal.selection` | `Selection Color` |
+| `terminal.selection-foreground` | `Selected Text Color` |
+| `terminal.ansi.black` | `Ansi 0 Color` |
+| `terminal.ansi.red` | `Ansi 1 Color` |
+| `terminal.ansi.green` | `Ansi 2 Color` |
+| `terminal.ansi.yellow` | `Ansi 3 Color` |
+| `terminal.ansi.blue` | `Ansi 4 Color` |
+| `terminal.ansi.magenta` | `Ansi 5 Color` |
+| `terminal.ansi.cyan` | `Ansi 6 Color` |
+| `terminal.ansi.white` | `Ansi 7 Color` |
+| `terminal.ansi.bright-black` | `Ansi 8 Color` |
+| `terminal.ansi.bright-red` | `Ansi 9 Color` |
+| `terminal.ansi.bright-green` | `Ansi 10 Color` |
+| `terminal.ansi.bright-yellow` | `Ansi 11 Color` |
+| `terminal.ansi.bright-blue` | `Ansi 12 Color` |
+| `terminal.ansi.bright-magenta` | `Ansi 13 Color` |
+| `terminal.ansi.bright-cyan` | `Ansi 14 Color` |
+| `terminal.ansi.bright-white` | `Ansi 15 Color` |
+| `syntax.keyword` | `Ansi 5 Color` |
+| `syntax.string` | `Ansi 2 Color` |
+| `syntax.number` | `Ansi 11 Color` |
+| `syntax.constant` | `Ansi 11 Color` |
+| `syntax.comment` | `Ansi 8 Color` |
+| `syntax.function` | `Ansi 4 Color` |
+| `syntax.type` | `Ansi 3 Color` |
+| `syntax.property` | `Ansi 6 Color` |
+| `syntax.tag` | `Ansi 1 Color` |
+| `syntax.heading` | `Ansi 4 Color` |
+| `syntax.invalid` | `Ansi 1 Color` |
+| `syntax.variable` | `Ansi 1 Color` |
+| `markdown.link` | `Link Color`, `Ansi 4 Color` |
+| `markdown.code` | `Ansi 2 Color` |
+| `markdown.quote` | `Ansi 6 Color` |
+| `markdown.heading` | `Ansi 4 Color` |
+| `selection.background` | `Selection Color` |
+| `selection.text` | `Selected Text Color` |
+| `caret` | `Cursor Color` |
+| `chart.1` | `Ansi 4 Color` |
+| `chart.2` | `Ansi 2 Color` |
+| `chart.3` | `Ansi 3 Color` |
+| `chart.4` | `Ansi 5 Color` |
+| `chart.5` | `Ansi 1 Color` |
+| `chart.6` | `Ansi 6 Color` |
+| `chart.7` | `Ansi 12 Color` |
+| `chart.8` | `Ansi 13 Color` |
+| `window.background` | `Background Color` |
+
+### Ghostty
+
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `background` |
+| `text.primary` | `foreground` |
+| `text.muted` | `palette 8` |
+| `accent.base` | `palette 4` |
+| `focus.ring` | `palette 4` |
+| `danger.base` | `palette 1` |
+| `icon.red` | `palette 1` |
+| `icon.yellow` | `palette 3` |
+| `icon.green` | `palette 2` |
+| `icon.teal` | `palette 6` |
+| `icon.blue` | `palette 4` |
+| `icon.purple` | `palette 5` |
+| `state.running` | `palette 4` |
+| `state.waiting` | `palette 3` |
+| `state.failed` | `palette 1` |
+| `state.success` | `palette 2` |
+| `terminal.background` | `background` |
+| `terminal.foreground` | `foreground` |
+| `terminal.cursor` | `cursor-color` |
+| `terminal.cursor-accent` | `cursor-text` |
+| `terminal.selection` | `selection-background` |
+| `terminal.selection-foreground` | `selection-foreground` |
+| `terminal.ansi.black` | `palette 0` |
+| `terminal.ansi.red` | `palette 1` |
+| `terminal.ansi.green` | `palette 2` |
+| `terminal.ansi.yellow` | `palette 3` |
+| `terminal.ansi.blue` | `palette 4` |
+| `terminal.ansi.magenta` | `palette 5` |
+| `terminal.ansi.cyan` | `palette 6` |
+| `terminal.ansi.white` | `palette 7` |
+| `terminal.ansi.bright-black` | `palette 8` |
+| `terminal.ansi.bright-red` | `palette 9` |
+| `terminal.ansi.bright-green` | `palette 10` |
+| `terminal.ansi.bright-yellow` | `palette 11` |
+| `terminal.ansi.bright-blue` | `palette 12` |
+| `terminal.ansi.bright-magenta` | `palette 13` |
+| `terminal.ansi.bright-cyan` | `palette 14` |
+| `terminal.ansi.bright-white` | `palette 15` |
+| `syntax.keyword` | `palette 5` |
+| `syntax.string` | `palette 2` |
+| `syntax.number` | `palette 11` |
+| `syntax.constant` | `palette 11` |
+| `syntax.comment` | `palette 8` |
+| `syntax.function` | `palette 4` |
+| `syntax.type` | `palette 3` |
+| `syntax.property` | `palette 6` |
+| `syntax.tag` | `palette 1` |
+| `syntax.heading` | `palette 4` |
+| `syntax.invalid` | `palette 1` |
+| `syntax.variable` | `palette 1` |
+| `markdown.link` | `palette 4` |
+| `markdown.code` | `palette 2` |
+| `markdown.quote` | `palette 6` |
+| `markdown.heading` | `palette 4` |
+| `selection.background` | `selection-background` |
+| `selection.text` | `selection-foreground` |
+| `caret` | `cursor-color` |
+| `chart.1` | `palette 4` |
+| `chart.2` | `palette 2` |
+| `chart.3` | `palette 3` |
+| `chart.4` | `palette 5` |
+| `chart.5` | `palette 1` |
+| `chart.6` | `palette 6` |
+| `chart.7` | `palette 12` |
+| `chart.8` | `palette 13` |
+| `window.background` | `background` |
+
+## Exporting a theme
+
+`purlis theme export <theme folder>` writes the folder as a zip to hand to someone, at
+`--to <file.zip>` or as `<folder's name>.zip` here; a file there is replaced only with
+`--force`. `purlis theme export purlis-classic` writes Purlis Classic's own `theme.json` as the
+folder `purlis-classic-copy`, which imports beside the built-in, never in its place.
+
+```
+exported harbor (1 file) to harbor.zip
+```
+
+The zip holds one folder, named as the theme folder is, so unzipping it gives the folder back;
+`purlis theme import harbor.zip` gives back the same files, byte for byte. It carries
+`theme.json`, every plain file beside it (a licence, a preview), and the plain files in `fonts/`
+and `icons/`. What it does not carry, a hidden file, a link or another folder, is listed under
+`not carried`. The same folder always makes the same zip.
+
+Importing a zip reads only what an export writes: one folder, with files beside `theme.json` and
+in its `fonts/` and `icons/`; what the macOS Finder adds to a zip it makes (`__MACOSX/`,
+`.DS_Store`) is passed over and not counted. A zip with bytes after its end is refused. A zip with an entry that climbs out of the folder, starts at the
+root, is a link or is encrypted, a folder that is not a theme folder's id, two names a
+filesystem writes as one file (in other case or other accents), and a zip whose end lists more
+entries than that are refused whole, and nothing of it is written. A zip holds at
+most 64 files, each at most 2 MiB (the most a font may be) and 16 MiB together.
 
 ## An extension's theme
 

@@ -10,20 +10,25 @@ import {
   DEFAULT_THEME,
   drawIn,
   drawTint,
+  hueIn,
+  PLATFORM,
   property,
-  TINTED_TABS,
-  TINTED_WINDOW,
+  tabTint,
   TOKENS,
   tinted,
   tintVariables,
+  WORKSPACE_COLOURS,
+  type Theme,
+  type Token,
 } from "./theme";
-import { hueOf, PALETTE, tintHex } from "./tint";
+import { apartChroma, hueOf, oklabDistance, tintHex } from "./tint";
 
 /**
- * **A workspace's colour** (charter-app#281): a hue that tints the accent and the tab shades of
- * the theme in force, and nothing else. The core's theme engine holds every palette hue on any
- * theme to the same floors as the theme itself (`purlis_core::theme::check`), with its own copy
- * of this arithmetic; this file holds what the tint touches, and that the two copies agree.
+ * **A workspace's colour** (charter-app#281): a hue that tints the tokens the theme's recipe
+ * names, and nothing else. The core's theme engine resolves the recipe (#2329) and hands it with
+ * the theme, and holds every hue on any theme to the same floors as the theme itself
+ * (`purlis_core::theme::check`), with its own copy of this arithmetic; this file holds that the
+ * window draws the recipe it is handed, and that the two copies of the arithmetic agree.
  */
 
 /** WCAG relative luminance of `#rrggbb`. */
@@ -41,30 +46,18 @@ function apart(a: number, b: number): number {
   return Math.min(d, 360 - d);
 }
 
-describe("the palette", () => {
-  it("names the eight colours the core reads", () => {
-    const core = join(
-      process.cwd(),
-      "..",
-      "crates",
-      "purlis-core",
-      "src",
-      "extension",
-      "project",
-      "theme.rs",
-    );
-    const source = readFileSync(core, "utf8");
-    const declared = /PALETTE:\s*\[&str;\s*\d+\]\s*=\s*\[([^\]]*)\]/.exec(source);
-    expect(declared, `PALETTE was not found in ${core}`).not.toBeNull();
-    const named = [...(declared?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((hit) => hit[1]);
-    expect(named).toEqual(Object.keys(PALETTE));
-  });
+/** `theme` with its recipe changed. */
+function withTint(theme: Theme, tint: Partial<Theme["tint"]>): Theme {
+  return { ...theme, tint: { ...theme.tint, ...tint } };
+}
 
-  it("reads a name as its hue, a #rrggbb as the hue it has, and anything else as none", () => {
-    expect(hueOf("teal")).toBe(PALETTE.teal);
-    expect(hueOf(tintHex("#6a9fb5", PALETTE.purple))).toBeCloseTo(PALETTE.purple, 0);
+describe("a workspace's colour", () => {
+  it("reads a name as the theme's hue, a #rrggbb as the hue it has, and anything else as none", () => {
+    expect(hueIn(DEFAULT_THEME, "teal")).toBe(190);
+    const purple = hueIn(DEFAULT_THEME, "purple") ?? Number.NaN;
+    expect(hueOf(tintHex("#6a9fb5", purple))).toBeCloseTo(purple, 0);
     for (const none of [null, undefined, "", "mauve", "#fff", "#12345", "#808080"])
-      expect(hueOf(none), String(none)).toBeUndefined();
+      expect(hueIn(DEFAULT_THEME, none), String(none)).toBeUndefined();
   });
 });
 
@@ -80,14 +73,49 @@ describe("the core's copy of the tint", () => {
     ) as {
       hues: { colour: string; hue: number | null }[];
       tints: { hex: string; colour: string; tinted: string }[];
+      apart: {
+        accent: string;
+        accent_tinted: boolean;
+        rules: { from: string; tinted: boolean; distance: number }[];
+        hue: number;
+        most: number | null | "none";
+        tinted: string | null;
+      }[];
     };
     expect(cases.tints.length).toBeGreaterThan(100);
     for (const { colour, hue } of cases.hues) {
-      if (hue === null) expect(hueOf(colour), colour).toBeUndefined();
-      else expect(hueOf(colour), colour).toBeCloseTo(hue, 9);
+      if (hue === null) expect(hueIn(DEFAULT_THEME, colour), colour).toBeUndefined();
+      else expect(hueIn(DEFAULT_THEME, colour), colour).toBeCloseTo(hue, 9);
     }
     for (const { hex, colour, tinted: want } of cases.tints)
-      expect(tintHex(hex, hueOf(colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(want);
+      expect(tintHex(hex, hueIn(DEFAULT_THEME, colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(
+        want,
+      );
+    // The accent held apart from danger: the chroma held to, and the accent drawn.
+    expect(cases.apart.length).toBeGreaterThanOrEqual(40);
+    // The path where no chroma keeps them apart, and the tint is dropped, is held too, and so is
+    // a rule whose other colour the tint turns as well (Keep blocked's edge).
+    expect(cases.apart.some((one) => one.most === "none")).toBe(true);
+    expect(cases.apart.some((one) => one.rules.some((rule) => rule.tinted))).toBe(true);
+    // And a recipe that turns Keep blocked's edge and leaves the accent as it is.
+    expect(cases.apart.some((one) => !one.accent_tinted)).toBe(true);
+    for (const { accent, accent_tinted, rules, hue, most, tinted: want } of cases.apart) {
+      const got = apartChroma(
+        rules.map((rule) => ({
+          token: accent,
+          tokenTinted: accent_tinted,
+          from: rule.from,
+          fromTinted: rule.tinted,
+          distance: rule.distance,
+        })),
+        hue,
+      );
+      const expected =
+        most === null ? Number.POSITIVE_INFINITY : most === "none" ? undefined : most;
+      expect(got, `${accent} at ${hue}`).toBe(expected);
+      const drawn = got === undefined ? null : accent_tinted ? tintHex(accent, hue, got) : accent;
+      expect(drawn, `${accent} at ${hue}`).toBe(want);
+    }
   });
 });
 
@@ -96,11 +124,11 @@ describe("a tint", () => {
     "turns only %s's accent and tab shades, and never its text or its terminal",
     (name) => {
       const theme = BUILT_IN[name];
-      for (const colour of Object.keys(PALETTE)) {
+      for (const colour of WORKSPACE_COLOURS) {
         const tint = tinted(theme, colour);
         const moved = TOKENS.filter((token) => tint.values[token] !== theme.values[token]);
         expect(
-          moved.filter((token) => !TINTED_TABS.includes(token)),
+          moved.filter((token) => !theme.tint.tabs.includes(token)),
           colour,
         ).toEqual([]);
         expect(tint.name).toBe(theme.name);
@@ -111,18 +139,19 @@ describe("a tint", () => {
 
   it.each(Object.keys(BUILT_IN))("gives %s's accent the colour's hue", (name) => {
     const theme = BUILT_IN[name];
-    for (const [colour, hue] of Object.entries(PALETTE)) {
+    for (const { name: colour, hue } of theme.tint.hues) {
       const accent = tinted(theme, colour).values["accent.base"];
       // Within a few degrees: the hex is rounded to eight bits a channel.
-      expect(apart(hueOf(accent) ?? Number.NaN, hue), `${colour}: ${accent}`).toBeLessThan(4);
+      // Within a few more where the tint gave less colour to keep the accent apart from danger.
+      expect(apart(hueOf(accent) ?? Number.NaN, hue), `${colour}: ${accent}`).toBeLessThan(6);
     }
   });
 
   it.each(Object.keys(BUILT_IN))("keeps the luminance of every shade it turns in %s", (name) => {
     const theme = BUILT_IN[name];
-    for (const colour of Object.keys(PALETTE)) {
+    for (const colour of WORKSPACE_COLOURS) {
       const tint = tinted(theme, colour);
-      for (const token of TINTED_TABS) {
+      for (const token of theme.tint.tabs as readonly Token[]) {
         const was = luminance(theme.values[token]);
         const now = luminance(tint.values[token]);
         expect(Math.abs(now - was) / Math.max(was, 0.01), `${colour} ${token}`).toBeLessThan(0.03);
@@ -139,7 +168,7 @@ describe("a tint", () => {
   it("is nothing without a colour, or with one purlis does not read", () => {
     expect(tinted(DEFAULT_THEME, null)).toBe(DEFAULT_THEME);
     expect(tinted(DEFAULT_THEME, "mauve")).toBe(DEFAULT_THEME);
-    expect(tintVariables(DEFAULT_THEME, null, TINTED_TABS)).toEqual({});
+    expect(tabTint(DEFAULT_THEME, null)).toEqual({});
   });
 
   it("takes a custom colour's hue", () => {
@@ -174,7 +203,7 @@ describe("the window's tint", () => {
     drawIn(DEFAULT_THEME);
     drawTint("yellow");
     const tint = tinted(DEFAULT_THEME, "yellow");
-    for (const token of TINTED_WINDOW)
+    for (const token of DEFAULT_THEME.tint.window as readonly Token[])
       expect(root.style.getPropertyValue(property(token)), token).toBe(tint.values[token]);
     // The tab shades are each tab's own, set on the tab: the project strip is not a workspace's.
     for (const token of ["layer.project", "layer.workspace", "layer.chat"] as const)
@@ -192,5 +221,120 @@ describe("the window's tint", () => {
     expect(root.style.getPropertyValue(property("accent.base"))).toBe(
       BUILT_IN["purlis-light"].values["accent.base"],
     );
+  });
+});
+
+describe("a theme's own recipe", () => {
+  afterEach(() => {
+    drawTint(null);
+    drawIn(DEFAULT_THEME);
+  });
+
+  it("draws a theme that turns tint off untinted, on the window and on a workspace's tab", () => {
+    const off = withTint(DEFAULT_THEME, { window: [], tabs: [] });
+    const root = document.documentElement;
+    drawIn(off);
+    drawTint("teal");
+    expect(root.style.getPropertyValue(property("accent.base"))).toBe(
+      DEFAULT_THEME.values["accent.base"],
+    );
+    expect(tinted(off, "teal")).toBe(off);
+    expect(tabTint(off, "teal")).toEqual({});
+    // A persona's mark is its own colour, whatever the workspace tint does.
+    expect(tintVariables(off, "teal", ["accent.base"])).not.toEqual({});
+  });
+
+  it("tints the tokens the theme names, where it names them", () => {
+    const own = withTint(DEFAULT_THEME, {
+      window: ["surface.raised"],
+      tabs: ["surface.raised", "layer.chat"],
+    });
+    const root = document.documentElement;
+    drawIn(own);
+    drawTint("green");
+    const tint = tinted(own, "green");
+    expect(root.style.getPropertyValue(property("surface.raised"))).toBe(
+      tint.values["surface.raised"],
+    );
+    expect(tint.values["surface.raised"]).not.toBe(own.values["surface.raised"]);
+    expect(root.style.getPropertyValue(property("accent.base"))).toBe(own.values["accent.base"]);
+    expect(Object.keys(tabTint(own, "green"))).toEqual([
+      property("surface.raised"),
+      property("layer.chat"),
+    ]);
+  });
+
+  it("draws a colour untinted when no amount of colour keeps the accent apart from danger", () => {
+    const grey = {
+      ...DEFAULT_THEME,
+      values: { ...DEFAULT_THEME.values, "accent.base": "#777777", "danger.base": "#777777" },
+    };
+    expect(tinted(grey, "red")).toBe(grey);
+  });
+
+  it("leaves a value left to the platform as it is", () => {
+    const own = {
+      ...withTint(DEFAULT_THEME, { tabs: ["accent.base", "caret"] }),
+      values: { ...DEFAULT_THEME.values, caret: PLATFORM },
+    };
+    const tint = tinted(own, "teal");
+    expect(tint.values.caret).toBe(PLATFORM);
+    expect(tint.values["accent.base"]).not.toBe(own.values["accent.base"]);
+  });
+
+  it("gives a workspace colour the hue the theme gives it", () => {
+    const blue = hueIn(DEFAULT_THEME, "blue") ?? Number.NaN;
+    const own = withTint(DEFAULT_THEME, {
+      hues: DEFAULT_THEME.tint.hues.map((one) =>
+        one.name === "red" ? { ...one, hue: blue } : one,
+      ),
+    });
+    expect(tinted(own, "red").values).toEqual(tinted(DEFAULT_THEME, "blue").values);
+    expect(tinted(own, "teal").values).toEqual(tinted(DEFAULT_THEME, "teal").values);
+  });
+});
+
+describe("every tint", () => {
+  it("keeps Allow's edge apart from Keep blocked's at every whole degree of a custom colour", () => {
+    // Keep blocked's edge the accent turned red with half its colour: one colour with Allow's
+    // under any tint that turns both alike.
+    const accent = DEFAULT_THEME.values["accent.base"];
+    const edges = {
+      ...withTint(DEFAULT_THEME, { tabs: ["accent.base", "border.strong"] }),
+      values: { ...DEFAULT_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
+    };
+    for (let degree = 0; degree < 360; degree++) {
+      const colour = tintHex("#c0392b", degree);
+      const tint = tinted(edges, colour);
+      expect(
+        oklabDistance(tint.values["accent.base"], tint.values["border.strong"]),
+        `${degree}`,
+      ).toBeGreaterThanOrEqual(0.1);
+      expect(
+        oklabDistance(tint.values["accent.base"], tint.values["danger.base"]),
+        `${degree}`,
+      ).toBeGreaterThanOrEqual(0.1);
+    }
+  });
+});
+
+describe("a recipe that turns only Keep blocked's edge", () => {
+  it("keeps the edge apart from Allow's at every whole degree, and turns it still", () => {
+    const accent = DEFAULT_THEME.values["accent.base"];
+    const edge = {
+      ...withTint(DEFAULT_THEME, { tabs: ["border.strong"] }),
+      values: { ...DEFAULT_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
+    };
+    let turned = 0;
+    for (let degree = 0; degree < 360; degree++) {
+      const tint = tinted(edge, tintHex("#c0392b", degree));
+      expect(tint.values["accent.base"], `${degree}`).toBe(accent);
+      expect(
+        oklabDistance(accent, tint.values["border.strong"]),
+        `${degree}`,
+      ).toBeGreaterThanOrEqual(0.1);
+      if (tint.values["border.strong"] !== edge.values["border.strong"]) turned++;
+    }
+    expect(turned).toBeGreaterThan(300);
   });
 });

@@ -1,20 +1,38 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis theme list` and `purlis theme check` (spec #2313, #2321): every theme available on
-//! this machine and where it comes from, and the theme check of any one of them.
+//! `purlis theme list`, `check`, `import` and `export` (spec #2313, #2321, #2334): every theme
+//! available on this machine and where it comes from, the theme check of any one of them, a
+//! theme folder made from a theme of another program, and a theme folder as a zip.
 //!
 //! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it
 //! or says what it left out, and checks each appearance; this module finds the themes there are,
 //! asks the engine about each, and prints its answer, as a table for a person or as JSON for a
-//! chat. Nothing is written: a theme command reads Purlis Classic, the person's `theme.json`
-//! and the approved extensions' themes, and leaves every file as it found it.
+//! chat. `list` and `check` write nothing: they read Purlis Classic, the person's `theme.json`,
+//! the theme folders of every level and the approved extensions' themes, and leave every file
+//! as they found it.
 //!
-//! **Where a theme comes from, today:** built in (Purlis Classic, `purlis-classic`), the
-//! person's own `theme.json` (its id is [`MINE`]), or an approved extension that is on (its id
-//! is `<extension>/<theme>`, as a project's pick names it). A theme file or a theme folder
-//! anywhere else can be checked by its path. The levels the spec adds (machine, project and
-//! workspace theme folders) are more sources in the same list, with the same `from`.
+//! **`import` and `export`** (#2334): the engine makes a theme folder's files from a VS Code
+//! colour theme, a base16 or base24 scheme, an iTerm2 or a Ghostty palette or a theme folder's
+//! zip, through its fixed mapping tables, and lists every source key no token takes. `import`
+//! writes them beside where they go, has the engine read them there as it reads any theme
+//! folder, and puts in place only a theme it draws: one theme folder, in the machine level's
+//! `themes/` unless `--into` names another, never over one that is there without `--force`.
+//! `export` writes one zip of a theme folder that `import` gives back file for file.
+//!
+//! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic,
+//! `purlis-classic`); the person's own `theme.json` (its id is [`MINE`]) and the theme folders
+//! in the person's `themes/`, at the machine level; the project's `themes/` at the plane root;
+//! each workspace's `themes/`; or an approved extension that is on (its id is
+//! `<extension>/<theme>`, as a project's pick names it). A theme folder's id names its level
+//! and its folder: `machine:<folder>`, `project:<folder>`, `workspace:<workspace>:<folder>`.
+//! The levels' folders are read by the engine exactly as the window reads them
+//! ([`theme::Folders`]: through handles, refusing a link, under the caps, each extending the
+//! folders of its own level and the levels farther out), and nothing here reads them another
+//! way. A theme file or a theme folder anywhere else can be checked by its path.
+//!
+//! **The check is of what the window draws**: each combination says the consent floors the
+//! window holds when it draws it, and the tokens it draws as purlis's own for them.
 //!
 //! **The exit is a linter's.** `check` exits 0 when the theme is drawn, notes and warnings or
 //! not (a contrast finding is the author's call, ADR 0097 §2); 1 when it is refused; 2 when
@@ -24,7 +42,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use purlis_core::theme::{self, Complaint, Finding, Resolved, Theme};
+use purlis_core::theme::levels::{Found as AtLevel, Reach};
+use purlis_core::theme::{self, Complaint, Finding, Folders, Resolved, Theme};
 use purlis_core::{extension, shown};
 use serde_json::{Value, json};
 
@@ -38,12 +57,23 @@ pub const SCHEMA: u64 = 1;
 /// The id of the person's own theme, `theme.json` beside `machine.json`.
 pub const MINE: &str = "mine";
 
+/// How a theme folder's id names the machine level: `machine:<folder>`.
+pub const MACHINE: &str = "machine";
+
+/// How a theme folder's id names the project level: `project:<folder>`.
+pub const PROJECT: &str = "project";
+
+/// How a theme folder's id names a workspace's level: `workspace:<workspace>:<folder>`.
+pub const WORKSPACE: &str = "workspace";
+
 /// `purlis theme …`.
 #[derive(Subcommand)]
 pub enum ThemeCommand {
-    /// Every theme available here, with its id, its appearances and where it comes from:
-    /// built in (`purlis-classic`), your own theme.json (`mine`), or an approved extension
-    /// (`<extension>/<theme>`). A theme purlis refuses is listed as refused, with why.
+    /// Every theme available here, with its id, its appearances, its level and where it comes
+    /// from: built in (`purlis-classic`); your own theme.json (`mine`) and your theme folders
+    /// (`machine:<folder>`); the project's (`project:<folder>`); each workspace's
+    /// (`workspace:<workspace>:<folder>`); or an approved extension (`<extension>/<theme>`). A
+    /// theme purlis refuses is listed as refused, with why.
     List {
         /// Answer as JSON, for a chat or a script.
         #[arg(long)]
@@ -51,18 +81,59 @@ pub enum ThemeCommand {
     },
     /// The theme check of one theme: why it is refused, if it is; what purlis left out of it;
     /// its contrast warnings in every combination of its appearances and option values (each
-    /// pair with its ratio and its floor, as it is and in every workspace tint); and its hard
+    /// pair with its ratio and its floor, as it is and in every workspace tint); the consent
+    /// floors the window holds in each, drawing purlis's own tokens for them; and its hard
     /// floors. A theme with more than 64 combinations is refused with its count. Exits 0 when
     /// the theme is drawn, 1 when it is refused, 2 when there is no such theme.
     Check {
-        /// A theme's id from `purlis theme list`, or the path of a theme file or a theme
-        /// folder. An id may hold a space (`solarized/Solarized Dark`): quote it.
+        /// A theme's id from `purlis theme list` (a theme folder's names its level:
+        /// `project:dusk`), or the path of a theme file or a theme folder. An id may hold a
+        /// space (`solarized/Solarized Dark`): quote it.
         theme: String,
-        /// Answer as JSON, for a chat or a script. Its `clean` is true with no error, no note
-        /// and no warning; it does not cover hard floors, which `hard_floors` reports on its
-        /// own (`null` until purlis checks them).
+        /// Answer as JSON, for a chat or a script. Its `clean` is true with no error, no note,
+        /// no warning and no floor held; it does not cover hard floors, which `hard_floors`
+        /// reports on its own (`null` until purlis checks them).
         #[arg(long)]
         json: bool,
+    },
+    /// Make a theme folder from a theme you already have: a VS Code colour theme (JSON with
+    /// comments), a base16 or base24 scheme (YAML or JSON), an iTerm2 colour preset
+    /// (.itermcolors), a Ghostty theme, or a theme folder's zip from `purlis theme export`.
+    /// Each kind goes through a fixed mapping table (`purlis docs show themes`); every key of
+    /// the source no token takes is listed, and the new theme's check is shown. It never
+    /// replaces a theme folder that is there without --force. Exits 0 when the folder is
+    /// written, 1 when it is not, 2 when there is no such file.
+    Import {
+        /// The file to import.
+        source: String,
+        /// What the file is, when its name and its first words do not say.
+        #[arg(long, value_parser = ["vscode", "base16", "base24", "iterm", "ghostty", "zip"])]
+        kind: Option<String>,
+        /// The folder the new theme folder goes in: a `themes/` folder. Your own themes'
+        /// folder (`themes/` in purlis's config folder) when not given.
+        #[arg(long)]
+        into: Option<String>,
+        /// Replace a theme folder of the same name that is there.
+        #[arg(long)]
+        force: bool,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Write a theme folder as a zip to hand to someone: its theme.json, the files beside it
+    /// (a licence, a preview) and its fonts/ and icons/, under one folder of its name, so
+    /// `purlis theme import` (or unzip) gives the folder back. What it does not carry is
+    /// listed. Exits 0 when the zip is written, 1 when it is not, 2 when there is no such
+    /// theme.
+    Export {
+        /// The path of a theme folder, or `purlis-classic`.
+        theme: String,
+        /// The zip to write: `<theme folder's name>.zip` here when not given.
+        #[arg(long)]
+        to: Option<String>,
+        /// Replace a file that is there.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -79,6 +150,64 @@ enum From {
     File(String),
     /// A theme folder named by its path on the command line.
     Folder(String),
+    /// A theme folder in a level's `themes/`: its level, its folder's name and its path.
+    Level {
+        level: Level,
+        folder: String,
+        path: String,
+    },
+}
+
+/// The level of a theme folder in a level's `themes/`.
+#[derive(Debug, Clone)]
+enum Level {
+    Machine,
+    Project,
+    Workspace(String),
+}
+
+impl Level {
+    /// How far a choice made at this level reaches: the level itself, read as it reads it.
+    fn reach(&self) -> Reach {
+        match self {
+            Self::Machine => Reach::Machine,
+            Self::Project => Reach::Project,
+            Self::Workspace(_) => Reach::Workspace,
+        }
+    }
+
+    /// The id of its folder `folder`, as `list` says it and `check` takes it.
+    fn id(&self, folder: &str) -> String {
+        match self {
+            Self::Machine => format!("{MACHINE}:{folder}"),
+            Self::Project => format!("{PROJECT}:{folder}"),
+            Self::Workspace(name) => format!("{WORKSPACE}:{name}:{folder}"),
+        }
+    }
+
+    /// The level as `from` and the table's FROM column name it.
+    fn word(&self) -> &'static str {
+        match self {
+            Self::Machine => MACHINE,
+            Self::Project => PROJECT,
+            Self::Workspace(_) => WORKSPACE,
+        }
+    }
+
+    /// The level an id names, and the folder: `None` when `asked` is not a level's id.
+    fn of_id(asked: &str) -> Option<(Self, &str)> {
+        let (level, rest) = asked.split_once(':')?;
+        let (level, folder) = match level {
+            MACHINE => (Self::Machine, rest),
+            PROJECT => (Self::Project, rest),
+            WORKSPACE => {
+                let (name, folder) = rest.split_once(':')?;
+                (Self::Workspace(name.to_owned()), folder)
+            }
+            _ => return None,
+        };
+        theme::is_folder_name(folder).then_some((level, folder))
+    }
 }
 
 impl From {
@@ -86,8 +215,29 @@ impl From {
     fn said(&self) -> String {
         match self {
             Self::BuiltIn => "built-in".to_owned(),
-            Self::Mine(path) | Self::File(path) | Self::Folder(path) => shown::short(path),
+            Self::Mine(path) => format!("{MACHINE} {}", shown::short(path)),
+            Self::File(path) | Self::Folder(path) => shown::short(path),
             Self::Extension(id) => format!("extension {}", shown::short(id)),
+            Self::Level {
+                level: Level::Workspace(name),
+                path,
+                ..
+            } => format!("{WORKSPACE} {} {}", shown::short(name), shown::short(path)),
+            Self::Level { level, path, .. } => {
+                format!("{} {}", level.word(), shown::short(path))
+            }
+        }
+    }
+
+    /// The level a theme comes from, as `level` in the JSON says it; `None` for a theme named
+    /// by its path, which is at no level.
+    fn level(&self) -> Option<&'static str> {
+        match self {
+            Self::BuiltIn => Some("built-in"),
+            Self::Mine(_) => Some(MACHINE),
+            Self::Extension(_) => Some("extension"),
+            Self::Level { level, .. } => Some(level.word()),
+            Self::File(_) | Self::Folder(_) => None,
         }
     }
 
@@ -98,6 +248,16 @@ impl From {
             Self::Extension(id) => json!({ "kind": "extension", "extension": id }),
             Self::File(path) => json!({ "kind": "file", "path": path }),
             Self::Folder(path) => json!({ "kind": "folder", "path": path }),
+            Self::Level {
+                level: Level::Workspace(name),
+                folder,
+                path,
+            } => json!({ "kind": WORKSPACE, "workspace": name, "folder": folder, "path": path }),
+            Self::Level {
+                level,
+                folder,
+                path,
+            } => json!({ "kind": level.word(), "folder": folder, "path": path }),
         }
     }
 }
@@ -190,6 +350,7 @@ impl Found {
             "appearances": appearances,
             "options": options,
             "combinations": combinations,
+            "level": self.from.level(),
             "from": self.from.json(),
             "refused": self.refused,
         })
@@ -199,9 +360,14 @@ impl Found {
 /// `purlis theme …`, run.
 pub fn run(command: &ThemeCommand) -> ExitCode {
     let config = purlis_core::machine::config_root();
+    let plane = plane();
+    let here = Here {
+        config: config.as_deref(),
+        plane: plane.as_deref(),
+    };
     match command {
         ThemeCommand::List { json } => {
-            let found = available(config.as_deref());
+            let found = available(here);
             if *json {
                 let themes: Vec<Value> = found.iter().map(Found::summary_json).collect();
                 println!(
@@ -218,13 +384,21 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             ExitCode::SUCCESS
         }
         ThemeCommand::Check { theme, json } => {
-            let Some(found) = find(config.as_deref(), theme) else {
-                eprintln!(
-                    "purlis: there is no theme '{}' here — `purlis theme list` lists the themes \
-                     there are, and `purlis theme check <path>` checks a theme file or folder",
-                    shown::short(theme)
-                );
-                return ExitCode::from(2);
+            let found = match find(here, theme) {
+                Ok(found) => found,
+                Err(said) => {
+                    eprintln!(
+                        "purlis: there is no theme '{}' here — `purlis theme list` lists the \
+                         themes there are, with a theme folder named by its level \
+                         (`project:<folder>`), and `purlis theme check <path>` checks a theme \
+                         file or folder",
+                        shown::short(theme)
+                    );
+                    for one in said {
+                        eprintln!("  {}", shown::readable(&one.said, 240));
+                    }
+                    return ExitCode::from(2);
+                }
             };
             let checked = checks(&found);
             if *json {
@@ -234,19 +408,410 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             }
             ExitCode::from(u8::from(found.refused.is_some()))
         }
+        ThemeCommand::Import {
+            source,
+            kind,
+            into,
+            force,
+            json,
+        } => import(
+            config.as_deref(),
+            source,
+            kind.as_deref(),
+            into.as_deref(),
+            *force,
+            *json,
+        ),
+        ThemeCommand::Export { theme, to, force } => export(theme, to.as_deref(), *force),
     }
 }
 
-/// Every theme there is here, in the order a person reads them: Purlis Classic, the person's
-/// own, then each approved extension's in the order the survey found them.
-fn available(config: Option<&Path>) -> Vec<Found> {
-    let mut found = vec![Found::classic()];
-    let Some(config) = config else {
-        return found;
+/// The most of a path a line prints.
+const PATH_LIMIT: usize = 1024;
+
+/// The folder your own theme folders are kept in: `themes/` in purlis's config folder.
+fn your_themes(config: &Path) -> std::path::PathBuf {
+    purlis_core::machine::dir(config).join(theme::levels::THEMES)
+}
+
+/// `purlis theme import`: the engine makes the folder's files from the source, they are
+/// written beside where they go, the engine reads them there as it reads any theme folder, and
+/// only a theme it draws is put in place.
+fn import(
+    config: Option<&Path>,
+    source: &str,
+    kind: Option<&str>,
+    into: Option<&str>,
+    force: bool,
+    json: bool,
+) -> ExitCode {
+    let path = Path::new(source);
+    if !path.is_file() {
+        eprintln!(
+            "purlis: there is no file '{}' to import",
+            shown::short(source)
+        );
+        return ExitCode::from(2);
+    }
+    let bytes = match read_source(path) {
+        Ok(bytes) => bytes,
+        Err(why) => return not_written(&why),
     };
-    found.extend(mine(config));
-    found.extend(extensions(config));
+    let file_name = path
+        .file_name()
+        .map_or_else(|| source.to_owned(), |it| it.to_string_lossy().into_owned());
+    let kind = match kind.and_then(theme::SourceKind::named) {
+        Some(kind) => kind,
+        None => match theme::detect(&file_name, &bytes) {
+            Some(kind) => kind,
+            None => {
+                return not_written(&format!(
+                    "purlis cannot tell what {} is: say which with --kind (vscode, base16, \
+                     base24, iterm, ghostty or zip)",
+                    shown::short(&file_name)
+                ));
+            }
+        },
+    };
+    let imported = match theme::import(kind, &file_name, &bytes) {
+        Ok(imported) => imported,
+        Err(why) => return not_written(&why),
+    };
+    let into = match (into, config) {
+        (Some(into), _) => std::path::PathBuf::from(into),
+        (None, Some(config)) => your_themes(config),
+        (None, None) => {
+            return not_written(
+                "purlis has no config folder to keep your themes in here: say where with --into",
+            );
+        }
+    };
+    let staged = match theme::stage(&into, &imported.folder, &imported.files, force) {
+        Ok(staged) => staged,
+        Err(why) => return not_written(&why.to_string()),
+    };
+    let target = into.join(&imported.folder);
+    let mut found = read_folder(&staged.path, target.display().to_string());
+    found.id.clone_from(&imported.folder);
+    let checked = checks(&found);
+    let written = if found.refused.is_some() {
+        drop(staged);
+        None
+    } else {
+        match staged.commit() {
+            Ok(path) => Some(path),
+            Err(why) => return not_written(&why.to_string()),
+        }
+    };
+    if json {
+        println!(
+            "{}",
+            imported_json(&imported, written.as_deref(), &found, &checked)
+        );
+    } else {
+        print!(
+            "{}",
+            imported_text(&imported, written.as_deref(), &found, &checked)
+        );
+    }
+    ExitCode::from(u8::from(written.is_none()))
+}
+
+/// A source file, read under the cap every import reads under (a zip's own is larger).
+fn read_source(path: &Path) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let most = theme::MOST_ZIP_BYTES.max(theme::MOST_SOURCE_BYTES);
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|file| file.take(most + 1).read_to_end(&mut bytes))
+        .map_err(|why| format!("{} could not be read: {why}", path.display()))?;
+    if bytes.len() as u64 > most {
+        return Err(format!(
+            "{} is larger than {} MiB, the most purlis imports",
+            path.display(),
+            most / 1024 / 1024
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Nothing was written, for `why`: said on standard error, exit 1.
+fn not_written(why: &str) -> ExitCode {
+    eprintln!("purlis: {}", shown::readable(why, 480));
+    ExitCode::from(1)
+}
+
+/// What an import says to a person: where the folder went (or that it did not), what was left
+/// out of the source, and the new theme's check.
+fn imported_text(
+    imported: &theme::Imported,
+    written: Option<&Path>,
+    found: &Found,
+    checked: &[theme::Checked],
+) -> String {
+    let mut out = match written {
+        Some(path) => format!(
+            "imported {} ({}) into {}\n",
+            shown::short(&imported.name),
+            imported.kind.name(),
+            shown::readable(&path.display().to_string(), PATH_LIMIT)
+        ),
+        None => format!(
+            "not imported: the theme {} makes is refused, so nothing was written\n",
+            imported.kind.name()
+        ),
+    };
+    if imported.left_out.is_empty() {
+        out.push_str("not taken: nothing\n");
+    } else {
+        out.push_str(&format!("not taken ({}):\n", imported.left_out.len()));
+        for one in &imported.left_out {
+            out.push_str(&format!(
+                "  {}: {}\n",
+                shown::readable(&one.key, 160),
+                shown::readable(&one.why, 240)
+            ));
+        }
+    }
+    out.push_str(&checked_text(found, checked));
+    if let Some(path) = written {
+        let path = shown::readable(&path.display().to_string(), PATH_LIMIT);
+        out.push_str(&format!(
+            "the theme is in {path}: `purlis theme check {path}` checks it again, and `purlis \
+             theme export {path}` makes a zip of it to share\n"
+        ));
+    }
+    out
+}
+
+/// What an import says to a chat: `written` (the folder's path, or `null`), what was not
+/// taken from the source, and the check as `purlis theme check --json` answers it.
+fn imported_json(
+    imported: &theme::Imported,
+    written: Option<&Path>,
+    found: &Found,
+    checked: &[theme::Checked],
+) -> Value {
+    json!({
+        "schema": SCHEMA,
+        "kind": imported.kind,
+        "name": imported.name,
+        "folder": imported.folder,
+        "written": written.map(|it| it.display().to_string()),
+        "not_taken": imported.left_out,
+        "check": checked_json(found, checked),
+    })
+}
+
+/// The folder Purlis Classic is exported as: its own id is kept for the built-in, so a copy
+/// imported back sits beside it and never in its place.
+const CLASSIC_COPY: &str = "purlis-classic-copy";
+
+/// `purlis theme export`.
+fn export(asked: &str, to: Option<&str>, force: bool) -> ExitCode {
+    let packed = if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+        let files = theme::Files::from([(
+            theme::THEME_JSON.to_owned(),
+            theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
+        )]);
+        theme::pack(CLASSIC_COPY, &files).map(|bytes| theme::Packed {
+            name: CLASSIC_COPY.to_owned(),
+            bytes,
+            files: 1,
+            left_out: Vec::new(),
+        })
+    } else {
+        let path = Path::new(asked);
+        if !path.is_dir() {
+            let why = if path.exists() || asked == MINE {
+                " — export takes a theme folder: put a theme file in a folder of its own first"
+            } else {
+                ""
+            };
+            eprintln!(
+                "purlis: there is no theme folder '{}' here{why}",
+                shown::short(asked)
+            );
+            return ExitCode::from(2);
+        }
+        theme::export(path)
+    };
+    let packed = match packed {
+        Ok(packed) => packed,
+        Err(why) => return not_written(&why),
+    };
+    let to = to.map_or_else(
+        || std::path::PathBuf::from(format!("{}.zip", packed.name)),
+        std::path::PathBuf::from,
+    );
+    if let Err(why) = write_zip(&to, &packed.bytes, force) {
+        return not_written(&why);
+    }
+    let mut out = format!(
+        "exported {} ({} {}) to {}\n",
+        shown::short(&packed.name),
+        packed.files,
+        purlis_core::counts::plural(packed.files, "file", "files"),
+        shown::readable(&to.display().to_string(), PATH_LIMIT)
+    );
+    if !packed.left_out.is_empty() {
+        out.push_str(&format!("not carried ({}):\n", packed.left_out.len()));
+        for one in &packed.left_out {
+            out.push_str(&format!(
+                "  {}: {}\n",
+                shown::readable(&one.key, 160),
+                one.why
+            ));
+        }
+    }
+    print!("{out}");
+    ExitCode::SUCCESS
+}
+
+/// Writes `bytes` to `to` whole or not at all: beside it first, then moved in. A file there is
+/// replaced only with `force`, and never a link or a folder.
+fn write_zip(to: &Path, bytes: &[u8], force: bool) -> Result<(), String> {
+    use std::io::Write;
+    match std::fs::symlink_metadata(to) {
+        Ok(meta) if !meta.file_type().is_file() => {
+            return Err(format!(
+                "{} is there and is not a plain file: purlis does not replace it",
+                to.display()
+            ));
+        }
+        Ok(_) if !force => {
+            return Err(format!(
+                "{} is there already, and is replaced only with --force",
+                to.display()
+            ));
+        }
+        _ => {}
+    }
+    let name = to
+        .file_name()
+        .map(|it| it.to_string_lossy().into_owned())
+        .ok_or_else(|| format!("{} is not a file purlis can write", to.display()))?;
+    let beside = to.with_file_name(format!(".{name}.writing-{}", std::process::id()));
+    let failed = |why: std::io::Error| format!("{}: {why}", to.display());
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&beside)
+        .and_then(|mut file| file.write_all(bytes).and_then(|()| file.sync_all()));
+    if let Err(why) = written {
+        let _ = std::fs::remove_file(&beside);
+        return Err(failed(why));
+    }
+    // Without --force, the move itself refuses a file that appeared at `to` meanwhile.
+    let moved = if force {
+        std::fs::rename(&beside, to).map(|()| true)
+    } else {
+        theme::rename_no_replace(&beside, to)
+    };
+    match moved {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            let _ = std::fs::remove_file(&beside);
+            Err(format!(
+                "{} is there already, and is replaced only with --force",
+                to.display()
+            ))
+        }
+        Err(why) => {
+            let _ = std::fs::remove_file(&beside);
+            Err(failed(why))
+        }
+    }
+}
+
+/// Where a theme command looks: the config home, and the plane it runs in, when it runs in one.
+#[derive(Clone, Copy)]
+struct Here<'a> {
+    config: Option<&'a Path>,
+    plane: Option<&'a Path>,
+}
+
+/// The plane this command runs in, as every command finds it; `None` outside one.
+fn plane() -> Option<std::path::PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let place = purlis_core::plane::place(&cwd);
+    place.is_plane.then_some(place.root)
+}
+
+/// Every theme there is here, in the order a person reads them: Purlis Classic; the machine's
+/// (the person's own, then their theme folders); the project's; each workspace's, by name; then
+/// each approved extension's in the order the survey found them.
+fn available(here: Here<'_>) -> Vec<Found> {
+    let mut found = vec![Found::classic()];
+    if let Some(config) = here.config {
+        found.extend(mine(config));
+    }
+    found.extend(at_level(here, &Level::Machine));
+    if let Some(plane) = here.plane {
+        found.extend(at_level(here, &Level::Project));
+        let workspaces = purlis_core::workspaces::Plane::open(plane)
+            .workspaces()
+            .unwrap_or_default();
+        for name in workspaces {
+            found.extend(at_level(here, &Level::Workspace(name)));
+        }
+    }
+    if let Some(config) = here.config {
+        found.extend(extensions(config));
+    }
     found
+}
+
+/// The levels' theme folders as the window reads them in front of `level`: the machine's alone,
+/// the project's and the machine's, or a workspace's, the project's and the machine's.
+fn folders(here: Here<'_>, level: &Level) -> Folders {
+    match level {
+        Level::Machine => Folders::of(here.config, None, None),
+        Level::Project => Folders::of(here.config, here.plane, None),
+        Level::Workspace(name) => Folders::of(here.config, here.plane, Some(name)),
+    }
+}
+
+/// The theme folders of `level` itself, each read by the engine as a choice made there reads it.
+fn at_level(here: Here<'_>, level: &Level) -> Vec<Found> {
+    let folders = folders(here, level);
+    folders
+        .every_at(level.reach())
+        .into_iter()
+        .map(|(folder, resolved)| at_level_found(&folders, level, &folder, resolved))
+        .collect()
+}
+
+/// The theme folder `folder` of `level` itself, read by the engine as a choice made there reads
+/// it; or what reading the levels said when that level has no such folder.
+fn one_at_level(here: Here<'_>, level: &Level, folder: &str) -> Result<Found, Vec<Complaint>> {
+    let folders = folders(here, level);
+    match folders.find_at(folder, level.reach()) {
+        AtLevel::Missing(said) => Err(said),
+        AtLevel::Read(resolved) => Ok(at_level_found(&folders, level, folder, resolved)),
+    }
+}
+
+/// What the engine answered for the folder `folder` of `level`.
+fn at_level_found(folders: &Folders, level: &Level, folder: &str, resolved: Resolved) -> Found {
+    let themes = match level {
+        Level::Machine => &folders.machine,
+        Level::Project => &folders.project,
+        Level::Workspace(_) => &folders.workspace,
+    };
+    let path = themes
+        .as_ref()
+        .map(|it| it.path().join(folder).display().to_string())
+        .unwrap_or_default();
+    Found::of(
+        level.id(folder),
+        From::Level {
+            level: level.clone(),
+            folder: folder.to_owned(),
+            path,
+        },
+        resolved,
+    )
 }
 
 /// The person's own theme, when there is a file.
@@ -312,32 +877,40 @@ fn extensions(config: &Path) -> Vec<Found> {
 }
 
 /// The theme `asked` names: Purlis Classic by its id or any id its appearances have had, the
-/// person's own, an extension's by `<extension>/<theme>`, or else a theme file or a theme
-/// folder by its path.
-fn find(config: Option<&Path>, asked: &str) -> Option<Found> {
+/// person's own, a level's theme folder by `<level>:<folder>`, an extension's by
+/// `<extension>/<theme>`, or else a theme file or a theme folder by its path. `Err` when there
+/// is none, with what reading a level had to say.
+fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {
     if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
-        return Some(Found::classic());
+        return Ok(Found::classic());
     }
-    if let Some(config) = config {
+    // A level's id is never an extension's (it holds no `/`) nor a folder name: it is asked
+    // before a path of the same spelling, which `./` names.
+    if let Some((level, folder)) = Level::of_id(asked) {
+        return one_at_level(here, &level, folder);
+    }
+    if let Some(config) = here.config {
         if asked == MINE {
-            return mine(config);
+            return mine(config).ok_or_else(Vec::new);
         }
         if let Some(theirs) = extensions(config).into_iter().find(|one| one.id == asked) {
-            return Some(theirs);
+            return Ok(theirs);
         }
     }
     let path = Path::new(asked);
     let shown = path.display().to_string();
     if path.is_dir() {
-        return Some(read_folder(path, shown));
+        return Ok(read_folder(path, shown));
     }
-    path.is_file().then(|| {
-        Found::of(
-            asked.to_owned(),
-            From::File(shown),
-            read_file(path).unwrap_or_else(refusal),
-        )
-    })
+    path.is_file()
+        .then(|| {
+            Found::of(
+                asked.to_owned(),
+                From::File(shown),
+                read_file(path).unwrap_or_else(refusal),
+            )
+        })
+        .ok_or_else(Vec::new)
 }
 
 /// The engine's refusal of a theme for `why`, Purlis in its place.
@@ -587,9 +1160,11 @@ fn options_line(theme: &Theme) -> Option<String> {
 fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
     let mut out = String::new();
     let Some(theme) = &found.theme else {
-        // The person's own is the one the window would have drawn: it draws Purlis instead.
+        // The person's own is the one the window would have drawn, and a level's folder is
+        // what a choice there names: it draws Purlis instead.
         let instead = match found.from {
             From::Mine(_) => " — the window draws Purlis in its place",
+            From::Level { .. } => " — the window draws Purlis in its place when it is chosen",
             _ => "",
         };
         out.push_str(&format!(
@@ -641,6 +1216,32 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
     } else {
         out.push_str(&format!("warnings ({}):\n", said.len()));
         for line in said {
+            out.push_str(&format!("  {line}\n"));
+        }
+    }
+    let held: Vec<String> = checked
+        .iter()
+        .filter_map(|one| {
+            let held = one.held.as_ref()?;
+            let floors: Vec<&str> = held.floors.iter().map(|floor| floor.says()).collect();
+            let line = format!(
+                "{} — purlis draws its own {}",
+                floors.join("; "),
+                held.tokens.join(", ")
+            );
+            Some(if named {
+                format!("{}: {line}", combination(theme, one))
+            } else {
+                line
+            })
+        })
+        .collect();
+    if held.is_empty() {
+        out.push_str("floors held: none\n");
+    } else {
+        out.push_str(&format!("floors held ({}):\n", held.len()));
+        // The floors' words and the tokens are the engine's own; the combination is shown.
+        for line in held {
             out.push_str(&format!("  {line}\n"));
         }
     }
@@ -765,26 +1366,31 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
 
 /// The check as a chat reads it: the theme, its appearances and options, why it is refused (or
 /// `null`), what refused it (`errors`), what was left out of it (`notes`), each combination's
-/// warnings as the engine reports them with the appearance's id and the option values added, its
-/// hard floors (`null` until the engine keeps them), and whether it is clean: no error, no note
-/// and no warning. `clean` does not cover hard floors, which are reported on their own.
+/// warnings as the engine reports them with the appearance's id and the option values added, the
+/// consent floors the window holds in each combination that breaks one (`held`), its hard
+/// floors (`null` until the engine keeps them), and whether it is clean: no error, no note, no
+/// warning and no floor held. `clean` does not cover hard floors, which are reported on their
+/// own.
 fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
     let summary = found.summary_json();
     let errors = serde_json::to_value(&found.errors).unwrap_or_default();
     let notes = serde_json::to_value(&found.notes).unwrap_or_default();
+    // The option values of a combination in the theme's order of its options.
+    let options_of = |one: &theme::Checked| -> serde_json::Map<String, Value> {
+        found
+            .theme
+            .as_ref()
+            .map(|theme| {
+                in_theme_order(theme, one)
+                    .map(|(option, value)| (option.to_owned(), Value::from(value)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let warnings: Vec<Value> = checked
         .iter()
         .flat_map(|one| {
-            // The option values in the theme's order of its options.
-            let options: serde_json::Map<String, Value> = found
-                .theme
-                .as_ref()
-                .map(|theme| {
-                    in_theme_order(theme, one)
-                        .map(|(option, value)| (option.to_owned(), Value::from(value)))
-                        .collect()
-                })
-                .unwrap_or_default();
+            let options = options_of(one);
             one.report.findings.iter().map(move |finding| {
                 let mut said = serde_json::to_value(finding).unwrap_or_default();
                 if let Some(fields) = said.as_object_mut() {
@@ -795,7 +1401,20 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
             })
         })
         .collect();
-    let clean = found.refused.is_none() && found.notes.is_empty() && warnings.is_empty();
+    let held: Vec<Value> = checked
+        .iter()
+        .filter_map(|one| {
+            let held = one.held.as_ref()?;
+            Some(json!({
+                "appearance": one.appearance,
+                "options": options_of(one),
+                "floors": held.floors,
+                "tokens": held.tokens,
+            }))
+        })
+        .collect();
+    let clean =
+        found.refused.is_none() && found.notes.is_empty() && warnings.is_empty() && held.is_empty();
     json!({
         "schema": SCHEMA,
         "theme_schema": theme::SCHEMA_URL,
@@ -805,12 +1424,14 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
             "appearances": summary["appearances"],
             "options": summary["options"],
             "combinations": summary["combinations"],
+            "level": summary["level"],
             "from": summary["from"],
         },
         "refused": summary["refused"],
         "errors": errors,
         "notes": notes,
         "warnings": warnings,
+        "held": held,
         "hard_floors": Value::Null,
         "clean": clean,
     })

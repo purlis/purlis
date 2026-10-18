@@ -387,8 +387,7 @@ import type {
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
-import { inForce, onDrawn, TINTED_TABS, tintVariables } from "./theme/theme";
-import { hueOf } from "./theme/tint";
+import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
@@ -2485,10 +2484,10 @@ export const PlaneView = memo(function PlaneView({
     colourWithHue(sidebar?.workspaces.find((ws) => ws.name === workspace)?.colour);
   /** The theme the window draws, which a colour is a hue shift of: a tab's tint follows it. */
   const drawnTheme = useSyncExternalStore(followTheme, inForce);
-  /** What a workspace's own tab and its chat strip put on themselves: its colour, on the tab
-   *  shades and the accent (`theme.TINTED_TABS`). Nothing for a workspace with no colour. */
+  /** What a workspace's own tab and its chat strip put on themselves: its colour, on the tokens
+   *  the theme's recipe tints there (`theme.tabTint`). Nothing for a workspace with no colour. */
   const tintOf = (workspace: string | undefined) =>
-    tintVariables(drawnTheme, colourOf(workspace), TINTED_TABS) as CSSProperties;
+    tabTint(drawnTheme, colourOf(workspace)) as CSSProperties;
 
   /**
    * What a workspace is drawn as: its name, its live dot, its counts in one pill, and its pin.
@@ -8028,7 +8027,8 @@ export const PlaneView = memo(function PlaneView({
         settle={settleNotices}
         onRestart={restartThem}
       />
-      {/* **The project's own hosts changed** (#1341): told once to each teammate. */}
+      {/* **The project's own hosts changed** (#1341): told once to each teammate. With them,
+          the project's browser sites (#2443), each told before it reaches their browsers. */}
       <ProjectHostsNotice
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
@@ -9288,7 +9288,7 @@ function followTheme(changed: () => void): () => void {
 
 /** A workspace's colour when it has a hue to tint with, else `null` (charter-app#281). */
 function colourWithHue(colour: string | null | undefined): string | null {
-  return hueOf(colour) === undefined ? null : (colour ?? null);
+  return isWorkspaceColour(colour) ? (colour ?? null) : null;
 }
 
 /**

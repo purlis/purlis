@@ -699,6 +699,16 @@ const PAST_THE_PROXY_ROUTE: &str = "This program connects to an internet address
 const PAST_THE_PROXY_SAID: &str = "A program connected to an internet address directly, \
                                        so nothing waits on your answer.";
 
+/// The way round a lookup a program made itself, past the proxy (#1631): through the system's
+/// name lookup, whose socket on Linux is no socket to allow (#2428).
+const LOOKUP_PAST_THE_PROXY: &str = "This program looks its host up itself, through the \
+                                     system's name lookup, instead of going through the \
+                                     sandbox's proxy. Allowing the host would not let it \
+                                     through, and letting it reach the system's name lookup \
+                                     would let this chat look up any name past the proxy, so \
+                                     purlis offers neither. A client that uses the proxy, such \
+                                     as curl, gh or kubectl, reaches a host this project allows.";
+
 /// What a quiet line says of where its block came from ([`ChatBlocked::quiet`]).
 pub const READ_BACK_SAID: &str = "It was in the output of a command that ran earlier, so \
                                   nothing waits on your answer.";
@@ -730,7 +740,10 @@ fn choosable(
         }
         // No service is chosen: purlis lists none it can allow
         // (`services::GRANTABLE_SERVICES`). The certificate check, the one it listed, is the
-        // project's setting and never a grant (R1), and its Notice says what stands.
+        // project's setting and never a grant (R1), and its Notice says what stands. The
+        // chooser's service half is kept for the next service listed there (#1927): listing
+        // one also needs an arm here, `(Operation::Lookup, Kind::SystemService)` to
+        // `GrantWhat::Service`, and a sentence for its Notice beside `CHOOSE_SOCKET_SAID`.
         _ => None,
     }
 }
@@ -1297,12 +1310,7 @@ fn offered_to(
         (Operation::Lookup, Kind::Host) => (
             BlockOffer::Unsandboxed,
             target.and_then(purlis_core::sandboxblock::named_host),
-            Some(
-                "This program looks its host up itself instead of going through the sandbox's \
-                 proxy, so allowing the host would not let it through. A client that uses the \
-                 proxy, such as curl, gh or kubectl, reaches a host this project allows."
-                    .to_owned(),
-            ),
+            Some(LOOKUP_PAST_THE_PROXY.to_owned()),
         ),
         // A program that connects to an address itself, past the proxy (#2423): as a lookup
         // past it, no host grant would let it through. The address is shown, never offered.

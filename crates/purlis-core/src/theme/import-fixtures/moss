@@ -1,0 +1,24 @@
+# A Ghostty theme, made up for purlis's import tests.
+palette = 0=#1d2420
+palette = 1=#d0675d
+palette = 2=#8fbf7a
+palette = 3=#d8b45f
+palette = 4=#6fa3c8
+palette = 5=#b083c4
+palette = 6=#5fb8a8
+palette = 7=#c8d0c8
+palette = 8=#56645c
+palette = 9=#e07a70
+palette = 10=#a2d18c
+palette = 11=#e8c670
+palette = 12=#82b6db
+palette = 13=#c396d6
+palette = 14=#72cbbb
+palette = 15=#e8eee8
+palette = 16=#ff8800
+background = 1a201c
+foreground = d6ddd6
+cursor-color = d6ddd6
+selection-background = 34403a
+selection-foreground = e8eee8
+font-family = "Plex Mono"

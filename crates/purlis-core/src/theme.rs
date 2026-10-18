@@ -43,6 +43,10 @@
 //!   the first frame, and [`first_frame`] is what a window draws as it is created.
 //! - [`check`] measures one appearance against the contrast pairs and the terminal's floors, as
 //!   it ships and tinted by every workspace colour, and answers with a [`Report`].
+//! - [`import`] makes a theme folder's files from a VS Code colour theme, a base16 or base24
+//!   scheme, an iTerm2 or a Ghostty palette through a fixed mapping table ([`table`]), and says
+//!   every source key no token takes; [`export`] packs a theme folder as a zip that [`unpack`]
+//!   gives back file for file (#2334).
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
 //!   vocabulary (`docs/schema/theme.v2.schema.json`, held to it by a test), and [`SCHEMA_URL`]
 //!   its address at this release, which a format only ever grows at (`published`).
@@ -66,6 +70,7 @@ use std::sync::OnceLock;
 
 use serde_json::Value;
 
+mod archive;
 mod check;
 pub mod choices;
 mod floors;
@@ -74,6 +79,7 @@ mod fonts;
 mod format;
 pub mod geometry;
 mod icons;
+mod import;
 pub mod levels;
 mod native;
 mod options;
@@ -85,6 +91,10 @@ mod tint;
 mod typed;
 pub mod vocabulary;
 
+pub use archive::{
+    MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
+    export, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage, unpack,
+};
 pub use check::{Finding, PAIRS, Pair, Report};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
@@ -94,6 +104,10 @@ pub use fonts::{
 pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
+pub use import::{
+    Files, Imported, LeftOut, MOST_SOURCE_BYTES, SCOPES, SourceKind, detect, folder_name, import,
+    scopes_markdown, table, table_markdown,
+};
 pub use levels::{Choice, Folders, Level, LevelInputs, Levels, resolve_levels};
 pub use native::{Native, first_frame};
 pub use options::{
@@ -103,7 +117,10 @@ pub use person::{Density, Layer, Person};
 pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
-pub use tint::{PALETTE, hue_of, tint_hex, tinted};
+pub use tint::{
+    APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of, tint_hex,
+    tint_hex_within, tinted,
+};
 pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
@@ -112,11 +129,15 @@ use vocabulary::{
 #[cfg(test)]
 mod floors_tests;
 #[cfg(test)]
+mod folders_tests;
+#[cfg(test)]
 mod format_tests;
 #[cfg(test)]
 mod geometry_tests;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod levels_tests;
 #[cfg(test)]
@@ -127,6 +148,8 @@ mod options_tests;
 mod published_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tint_tests;
 #[cfg(test)]
 mod typed_tests;
 
@@ -204,6 +227,9 @@ pub struct ResolvedTheme {
     /// empty for a theme with none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<OptionDrawn>,
+    /// How a workspace's colour tints the theme (#2329), the same in each of its appearances:
+    /// Purlis Classic's recipe unless the theme says otherwise.
+    pub tint: Tint,
 }
 
 impl ResolvedTheme {
@@ -392,6 +418,10 @@ impl Resolved {
 /// Purlis Classic's `theme.json`, compiled in: the one copy of it.
 const CLASSIC_FILE: &str = include_str!("theme/built-in/purlis-classic/theme.json");
 
+/// Purlis Classic's `theme.json` as its folder holds it: what `purlis theme export
+/// purlis-classic` packs.
+pub const CLASSIC_THEME_JSON: &str = CLASSIC_FILE;
+
 /// Purlis Classic's id: its folder's name, which a theme `extends` it by.
 pub const CLASSIC: &str = "purlis-classic";
 
@@ -467,6 +497,7 @@ fn built_in_of(text: &str) -> Theme {
                 tuned: Geometry::new(),
                 fonts: Fonts::classic(),
                 options: Vec::new(),
+                tint: Tint::default(),
             }
         })
         .collect();
@@ -687,6 +718,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             tuned: base.tuned.clone(),
             fonts: base.fonts.clone(),
             options: Vec::new(),
+            tint: Tint::default(),
         }),
         complaints: notes,
         refused: false,
@@ -926,12 +958,16 @@ pub struct Checked {
     /// The value of each option it was drawn with: empty for a theme with no options.
     pub options: Values,
     pub report: Report,
+    /// The consent floors the window holds when it draws this combination, and the tokens it
+    /// draws as purlis's own for them ([`draw`]); `None` when it clears them.
+    pub held: Option<Held>,
 }
 
 /// **Checks every combination of a theme's appearances and option values** (#2325): [`check`]
 /// of each appearance drawn with each combination of option values, the appearances in the
 /// theme's order and, within each, the combinations with the first option's values slowest. A
-/// theme has at most [`MOST_COMBINATIONS`]: one with more is refused when it is read.
+/// theme has at most [`MOST_COMBINATIONS`]: one with more is refused when it is read. Each
+/// says what the window draws of it too: the consent floors it holds there ([`Checked::held`]).
 pub fn check_every(theme: &Theme) -> Vec<Checked> {
     let every = options::every(&theme.options);
     let drawn: Vec<(Values, Theme)> = every
@@ -949,6 +985,7 @@ pub fn check_every(theme: &Theme) -> Vec<Checked> {
                 appearance: one.id.clone(),
                 options: values.clone(),
                 report: check::check(one),
+                held: floors::hold(one).1,
             });
         }
     }

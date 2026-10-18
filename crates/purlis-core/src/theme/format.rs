@@ -31,8 +31,7 @@
 //! **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): it draws
 //! Purlis, and every complaint says what is wrong. A token or motion name purlis does not have is
 //! said and left out instead: a name reaches nothing, and a teammate's purlis may know a token
-//! this one does not yet. Tint (#2329) is not read yet, so naming it refuses the theme rather
-//! than drawing something other than what it says.
+//! this one does not yet.
 //!
 //! - **A token that is not a colour** (#2327, [`super::typed`]) is given under `tokens` as a
 //!   colour is: a flag as `true` or `false`, the terminal cursor's shape by its name, the
@@ -50,6 +49,8 @@
 //!   layer of tokens drawn over every appearance. A child has its parent's, and one of its own
 //!   with a parent's id takes that one's place. A theme past [`super::MOST_COMBINATIONS`]
 //!   appearance × option combinations is refused with its count.
+//! - **`tint`** says how a workspace's colour tints the theme (#2329): on or off, which tokens,
+//!   and its own hues ([`super::tint`]). What it does not say is its parent's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -60,6 +61,7 @@ use super::fonts::Fonts;
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
 use super::options::{self, MOST_COMBINATIONS};
+use super::tint;
 use super::typed::Typed;
 use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform};
 use super::{
@@ -92,11 +94,8 @@ const KEYS: &[&str] = &[
     "compact",
     "fonts",
     "options",
+    "tint",
 ];
-
-/// The keys the spec gives format 2 that this purlis does not read yet, each with the ticket
-/// that reads it: tint #2329.
-const NOT_YET: &[(&str, &str)] = &[("tint", "#2329")];
 
 /// The longest path to an icon set purlis follows, in bytes.
 pub(super) const MOST_ICONS_PATH: usize = 256;
@@ -305,11 +304,7 @@ impl Library {
         let mut complaints = Vec::new();
         let mut notes = Vec::new();
         for key in from.keys() {
-            if let Some((_, ticket)) = NOT_YET.iter().find(|(it, _)| it == key) {
-                complaints.push(Complaint::said(format!(
-                    "{key} is not read yet ({ticket}), so the theme cannot be drawn as written"
-                )));
-            } else if !KEYS.contains(&key.as_str()) {
+            if !KEYS.contains(&key.as_str()) {
                 complaints.push(Complaint::said(format!("{key} is not a key of theme.json")));
             }
         }
@@ -396,6 +391,15 @@ impl Library {
             .map(|one| one.icons.clone())
             .unwrap_or_default();
         let own_icons = icon_set(from.get("icons"), beside, &mut complaints, &mut notes);
+        // Every appearance of a theme carries its one recipe too.
+        let parents_tint = appearances
+            .first()
+            .map(|one| one.tint.clone())
+            .unwrap_or_default();
+        let tint = match from.get("tint") {
+            None => parents_tint,
+            Some(raw) => tint::read(raw, &parents_tint, &palette, &mut complaints, &mut notes),
+        };
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
@@ -461,6 +465,7 @@ impl Library {
             one.compact = geometry::compact_of(&one.geometry, &tuned);
             one.tuned.clone_from(&tuned);
             one.fonts.clone_from(&fonts);
+            one.tint.clone_from(&tint);
         }
         Ok((Theme::made(name, appearances, options), notes))
     }
@@ -843,6 +848,7 @@ fn appearance(
         tuned: base.tuned.clone(),
         fonts: base.fonts.clone(),
         options: Vec::new(),
+        tint: base.tint.clone(),
     })
 }
 

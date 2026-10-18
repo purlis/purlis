@@ -1,8 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis theme list` and `purlis theme check` (#2321): every theme available on this machine
-//! with where it comes from, and the theme check of any one, for a person and for a chat.
+//! `purlis theme list` and `purlis theme check` (#2321, #2518): every theme available on this
+//! machine and in the plane, with its level and where it comes from, and the theme check of any
+//! one, for a person and for a chat.
+//! `purlis theme import` and `export` (#2334): a theme folder made from each kind of source,
+//! and a theme folder's zip that imports back to the same folder.
 //!
 //! Every run is against a temporary plane and a temporary config home, started unsteered
 //! (`support::purlis`, which clears every spelling of the variables that choose a project,
@@ -41,8 +44,14 @@ impl Rig {
         Self { dir }
     }
 
+    /// The plane, as purlis finds it: through every link on the way (a temporary directory is
+    /// reached through one on macOS).
     fn plane(&self) -> PathBuf {
-        self.dir.path().join("plane")
+        self.dir
+            .path()
+            .join("plane")
+            .canonicalize()
+            .expect("the plane")
     }
 
     fn config(&self) -> PathBuf {
@@ -77,6 +86,29 @@ impl Rig {
             .expect("installed");
         extension::approve(&self.config(), found.id(), &found.path, &found.fingerprint)
             .expect("approved");
+    }
+
+    /// The person's own `themes/`, in purlis's config folder.
+    fn machine_themes(&self) -> PathBuf {
+        purlis_core::machine::dir(&self.config()).join("themes")
+    }
+
+    /// The project's `themes/`, at the plane root.
+    fn project_themes(&self) -> PathBuf {
+        self.plane().join("themes")
+    }
+
+    /// The workspace `name`'s `themes/`.
+    fn workspace_themes(&self, name: &str) -> PathBuf {
+        self.plane().join("workspaces").join(name).join("themes")
+    }
+
+    /// The theme folder `name` in the level's `themes`, its `theme.json` holding `document`.
+    fn folder(&self, themes: &Path, name: &str, document: &serde_json::Value) -> PathBuf {
+        let folder = themes.join(name);
+        std::fs::create_dir_all(&folder).expect("a theme folder");
+        std::fs::write(folder.join("theme.json"), document.to_string()).expect("a theme.json");
+        folder
     }
 
     fn run(&self, args: &[&str]) -> Ran {
@@ -156,7 +188,13 @@ fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_in() {
     };
     assert_eq!(
         words(lines[2]),
-        ["mine", "Late", "dark", &path.display().to_string()]
+        [
+            "mine",
+            "Late",
+            "dark",
+            "machine",
+            &path.display().to_string()
+        ]
     );
     assert_eq!(
         words(lines[3]),
@@ -204,7 +242,7 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
                 { "id": "dark", "appearance": "dark", "high_contrast": false },
                 { "id": "light", "appearance": "light", "high_contrast": false }
             ],
-            "options": [], "combinations": 2,
+            "options": [], "combinations": 2, "level": "built-in",
             "from": { "kind": "built-in" }, "refused": null
         })
     );
@@ -222,7 +260,7 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
         serde_json::json!({
             "id": "nord/Nord", "name": "Nord",
             "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
-            "options": [], "combinations": 1,
+            "options": [], "combinations": 1, "level": "extension",
             "from": { "kind": "extension", "extension": "nord" }, "refused": null
         })
     );
@@ -240,6 +278,7 @@ fn purlis_classic_checks_clean_in_both_appearances_and_exits_zero() {
         "Purlis Classic — built-in, dark, light\n\
          left out: nothing\n\
          warnings: none\n\
+         floors held: none\n\
          hard floors: not checked by this purlis yet\n"
     );
 }
@@ -434,6 +473,7 @@ fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
             "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
             "options": [],
             "combinations": 1,
+            "level": "extension",
             "from": { "kind": "extension", "extension": "dim" }
         })
     );
@@ -451,6 +491,11 @@ fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
     assert_eq!(first["pair"]["back"], "surface.base");
     assert_eq!(first["pair"]["floor"], 4.5);
     assert_eq!(first["ratio"], 2.38);
+    assert_eq!(
+        said["held"],
+        serde_json::json!([]),
+        "no consent floor is broken"
+    );
     assert_eq!(
         said["hard_floors"],
         serde_json::Value::Null,
@@ -662,4 +707,628 @@ fn both_answers_name_the_theme_schema_of_this_purlis() {
         );
     }
     assert!(purlis_core::theme::SCHEMA_URL.contains(concat!("/v", env!("CARGO_PKG_VERSION"), "/")));
+}
+
+/// A one-appearance dark theme folder's `theme.json` called `name`, extending `extends`.
+fn a_folder(name: &str, extends: Option<&str>, tokens: &serde_json::Value) -> serde_json::Value {
+    let mut theme = serde_json::json!({
+        "name": name,
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    });
+    if let Some(parent) = extends {
+        theme["extends"] = serde_json::Value::from(parent);
+    }
+    theme
+}
+
+/// A plane with a theme folder at every level: the person's `base`, the project's `team`
+/// (extending `base`), the workspace `alpha`'s `client` (extending `team`) and the workspace
+/// `beta`'s `night`.
+fn every_level(rig: &Rig) -> [PathBuf; 4] {
+    let none = serde_json::json!({});
+    std::fs::create_dir_all(rig.plane().join("workspaces/beta")).expect("a workspace");
+    [
+        rig.folder(
+            &rig.machine_themes(),
+            "base",
+            &a_folder("Base", None, &none),
+        ),
+        rig.folder(
+            &rig.project_themes(),
+            "team",
+            &a_folder("Team", Some("base"), &none),
+        ),
+        rig.folder(
+            &rig.workspace_themes("alpha"),
+            "client",
+            &a_folder("Client", Some("team"), &none),
+        ),
+        rig.folder(
+            &rig.workspace_themes("beta"),
+            "night",
+            &a_folder("Night", None, &none),
+        ),
+    ]
+}
+
+#[test]
+fn the_theme_folders_of_every_level_are_listed_with_their_level() {
+    let rig = Rig::new();
+    let [base, team, client, night] = every_level(&rig);
+    rig.extension_theme("nord", "Nord", &a_theme("Nord", &serde_json::json!({})));
+
+    let ran = rig.run(&["list"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let rows: Vec<Vec<&str>> = ran
+        .out
+        .lines()
+        .skip(1)
+        .map(|line| line.split_whitespace().collect())
+        .collect();
+    let shown = |path: &PathBuf| path.display().to_string();
+    assert_eq!(
+        rows,
+        [
+            vec![
+                "purlis-classic",
+                "Purlis",
+                "Classic",
+                "dark,",
+                "light",
+                "built-in"
+            ],
+            vec!["machine:base", "Base", "dark", "machine", &shown(&base)],
+            vec!["project:team", "Team", "dark", "project", &shown(&team)],
+            vec![
+                "workspace:alpha:client",
+                "Client",
+                "dark",
+                "workspace",
+                "alpha",
+                &shown(&client)
+            ],
+            vec![
+                "workspace:beta:night",
+                "Night",
+                "dark",
+                "workspace",
+                "beta",
+                &shown(&night)
+            ],
+            vec!["nord/Nord", "Nord", "dark", "extension", "nord"],
+        ],
+        "{}",
+        ran.out
+    );
+
+    let json = rig.run(&["list", "--json"]).json();
+    let themes = json["themes"].as_array().expect("the themes").clone();
+    let levels: Vec<(&str, &str)> = themes
+        .iter()
+        .map(|one| {
+            (
+                one["id"].as_str().unwrap_or_default(),
+                one["level"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        levels,
+        [
+            ("purlis-classic", "built-in"),
+            ("machine:base", "machine"),
+            ("project:team", "project"),
+            ("workspace:alpha:client", "workspace"),
+            ("workspace:beta:night", "workspace"),
+            ("nord/Nord", "extension"),
+        ]
+    );
+    assert_eq!(
+        themes[3]["from"],
+        serde_json::json!({
+            "kind": "workspace", "workspace": "alpha", "folder": "client", "path": shown(&client)
+        })
+    );
+    assert_eq!(
+        themes[2]["from"],
+        serde_json::json!({ "kind": "project", "folder": "team", "path": shown(&team) })
+    );
+    assert_eq!(themes[3]["refused"], serde_json::Value::Null, "{themes:?}");
+}
+
+#[test]
+fn outside_a_plane_only_the_machine_s_theme_folders_are_listed() {
+    let rig = Rig::new();
+    every_level(&rig);
+    let elsewhere = rig.dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("a directory");
+
+    let out = support::purlis()
+        .args(["theme", "list", "--json"])
+        .current_dir(&elsewhere)
+        .env("PURLIS_CONFIG_HOME", rig.config())
+        .env("PURLIS_DATA_HOME", rig.dir.path().join("data"))
+        .output()
+        .expect("the binary runs");
+
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("the listing as JSON");
+    let ids: Vec<&str> = json["themes"]
+        .as_array()
+        .expect("the themes")
+        .iter()
+        .filter_map(|one| one["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["purlis-classic", "machine:base"]);
+}
+
+#[test]
+fn a_level_s_theme_folder_is_checked_by_its_level_and_name_as_the_window_reads_it() {
+    let rig = Rig::new();
+    every_level(&rig);
+
+    let ran = rig.run(&["check", "workspace:alpha:client", "--json"]);
+
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    let said = ran.json();
+    assert_eq!(said["theme"]["id"], "workspace:alpha:client");
+    assert_eq!(said["theme"]["name"], "Client");
+    assert_eq!(said["theme"]["level"], "workspace");
+    assert_eq!(said["theme"]["from"]["workspace"], "alpha");
+    assert_eq!(said["refused"], serde_json::Value::Null, "{said}");
+    assert_eq!(said["clean"], true, "{said}");
+
+    let text = rig.run(&["check", "project:team"]);
+    assert_eq!(text.code, 0, "{}{}", text.out, text.err);
+    assert!(
+        text.out.starts_with(&format!(
+            "Team — project {}, dark\n",
+            rig.project_themes().join("team").display()
+        )),
+        "{}",
+        text.out
+    );
+}
+
+#[test]
+fn a_level_s_folder_extends_only_its_own_level_and_the_levels_farther_out() {
+    let rig = Rig::new();
+    let none = serde_json::json!({});
+    // The project's folder names a parent only the workspace has: a choice made for the project
+    // never reads a workspace's folder, so the window refuses it, and so does the check.
+    rig.folder(
+        &rig.project_themes(),
+        "team",
+        &a_folder("Team", Some("client"), &none),
+    );
+    rig.folder(
+        &rig.workspace_themes("alpha"),
+        "client",
+        &a_folder("Client", None, &none),
+    );
+
+    let ran = rig.run(&["check", "project:team"]);
+
+    assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
+    assert!(
+        ran.out
+            .contains("refused — the window draws Purlis in its place when it is chosen:\n"),
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn a_level_without_the_folder_named_is_not_read_in_a_farther_level_s_place() {
+    let rig = Rig::new();
+    every_level(&rig);
+
+    for asked in [
+        "project:base",
+        "workspace:alpha:team",
+        "machine:team",
+        "workspace:gamma:x",
+    ] {
+        let ran = rig.run(&["check", asked]);
+
+        assert_eq!(ran.code, 2, "{asked}: {}{}", ran.out, ran.err);
+        assert_eq!(ran.out, "", "{asked}");
+        assert!(ran.err.contains("project:<folder>"), "{}", ran.err);
+    }
+}
+
+#[test]
+fn the_check_says_the_consent_floors_the_window_holds_and_is_not_clean() {
+    let rig = Rig::new();
+    // Danger in the accent's own colour: not told apart from primary, so the window draws
+    // purlis's own danger colour.
+    let accent = purlis_core::theme::built_in_for(purlis_core::theme::Appearance::Dark)
+        .value("accent.base")
+        .to_owned();
+    rig.folder(
+        &rig.project_themes(),
+        "same",
+        &a_folder("Same", None, &serde_json::json!({ "danger.base": accent })),
+    );
+
+    let ran = rig.run(&["check", "project:same"]);
+
+    assert_eq!(ran.code, 0, "a held floor is drawn: {}{}", ran.out, ran.err);
+    let (_, held) = ran
+        .out
+        .split_once("floors held (1):\n")
+        .unwrap_or_else(|| panic!("{}", ran.out));
+    assert!(
+        held.starts_with("  danger is distinguishable from primary — purlis draws its own ")
+            && held
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("danger.base")),
+        "{held}"
+    );
+
+    let json = rig.run(&["check", "project:same", "--json"]).json();
+    let first = &json["held"][0];
+    assert_eq!(first["appearance"], "dark");
+    assert!(
+        first["floors"]
+            .as_array()
+            .is_some_and(|floors| floors.contains(&serde_json::json!("danger-apart"))),
+        "{first}"
+    );
+    assert!(
+        first["tokens"]
+            .as_array()
+            .is_some_and(|tokens| tokens.contains(&serde_json::json!("danger.base"))),
+        "{first}"
+    );
+    assert_eq!(json["clean"], false, "a held floor is not clean");
+}
+
+#[test]
+fn a_refused_level_folder_is_listed_as_refused_and_its_check_exits_one() {
+    let rig = Rig::new();
+    rig.folder(
+        &rig.workspace_themes("alpha"),
+        "typo",
+        &a_folder("Typo", None, &serde_json::json!({ "text.primary": "red" })),
+    );
+
+    let ran = rig.run(&["list"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let (_, refused) = ran.out.split_once("refused:\n").expect("a refused section");
+    assert!(
+        refused.starts_with("  workspace:alpha:typo (workspace alpha "),
+        "{refused}"
+    );
+    let checked = rig.run(&["check", "workspace:alpha:typo", "--json"]);
+    assert_eq!(checked.code, 1, "{}{}", checked.out, checked.err);
+    assert_eq!(checked.json()["errors"][0]["token"], "text.primary");
+}
+
+#[test]
+fn listing_and_checking_the_levels_write_nothing() {
+    let rig = Rig::new();
+    every_level(&rig);
+    let before = every_file(rig.dir.path());
+
+    rig.run(&["list"]);
+    rig.run(&["list", "--json"]);
+    rig.run(&["check", "machine:base"]);
+    rig.run(&["check", "workspace:alpha:client", "--json"]);
+    rig.run(&["check", "project:nowhere"]);
+
+    assert_eq!(every_file(rig.dir.path()), before);
+}
+
+// ------------------------------------------------------------------------------------------
+// import and export (#2334)
+// ------------------------------------------------------------------------------------------
+
+/// The engine's own fixtures, one small source of each kind.
+const FIXTURES: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../purlis-core/src/theme/import-fixtures"
+);
+
+impl Rig {
+    /// The fixture `name` copied into the rig, where a run can name it.
+    fn fixture(&self, name: &str) -> PathBuf {
+        let at = self.dir.path().join("sources").join(name);
+        std::fs::create_dir_all(at.parent().expect("a folder")).expect("the sources folder");
+        std::fs::copy(Path::new(FIXTURES).join(name), &at).expect("a fixture");
+        at
+    }
+
+    /// A `themes/` folder of the rig's own.
+    fn themes(&self) -> PathBuf {
+        self.dir.path().join("themes")
+    }
+}
+
+/// Every file of the theme folder `folder`, by its path inside it, with its bytes.
+fn folder_files(folder: &Path) -> Vec<(String, Vec<u8>)> {
+    every_file(folder)
+        .into_iter()
+        .map(|(path, bytes)| {
+            let inside = path
+                .strip_prefix(folder)
+                .expect("inside")
+                .to_string_lossy()
+                .into_owned();
+            (inside, bytes)
+        })
+        .collect()
+}
+
+#[test]
+fn each_kind_of_source_imports_into_a_theme_folder_the_check_draws() {
+    let rig = Rig::new();
+    for (fixture, kind, folder) in [
+        ("ember.jsonc", "vscode", "ember"),
+        ("harbor.yaml", "base16", "harbor"),
+        ("dune.json", "base24", "dune"),
+        ("tide.itermcolors", "iterm", "tide"),
+        ("moss", "ghostty", "moss"),
+    ] {
+        let source = rig.fixture(fixture);
+        let themes = rig.themes();
+
+        let ran = rig.run(&[
+            "import",
+            source.to_str().expect("a path"),
+            "--into",
+            themes.to_str().expect("a path"),
+        ]);
+
+        assert_eq!(ran.code, 0, "{fixture}: {}{}", ran.out, ran.err);
+        let first = ran.out.lines().next().unwrap_or_default();
+        assert!(
+            first.starts_with("imported ") && first.contains(&format!("({kind})")),
+            "{first}"
+        );
+        assert!(ran.out.contains("not taken"), "{}", ran.out);
+        assert!(
+            ran.out.contains("hard floors:"),
+            "the check is shown: {}",
+            ran.out
+        );
+        let written = themes.join(folder);
+        let hint = ran.out.lines().last().unwrap_or_default();
+        assert!(
+            hint.starts_with(&format!("the theme is in {}:", written.display())),
+            "{hint}"
+        );
+        assert!(written.join("theme.json").is_file(), "{fixture}");
+        let checked = rig.run(&["check", written.to_str().expect("a path")]);
+        assert_eq!(checked.code, 0, "{}", checked.out);
+        assert!(checked.out.contains("left out: nothing"), "{}", checked.out);
+    }
+}
+
+#[test]
+fn what_a_source_has_that_no_token_takes_is_listed() {
+    let rig = Rig::new();
+    let source = rig.fixture("harbor.yaml");
+    let themes = rig.themes();
+
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        themes.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    assert!(
+        ran.out.contains("not taken (2):\n  author: theme.json has no place for it\n  base06: no token takes it\n"),
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn an_import_with_no_folder_named_goes_into_your_own_themes() {
+    let rig = Rig::new();
+    let source = rig.fixture("moss");
+
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--kind",
+        "ghostty",
+    ]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    assert!(
+        purlis_core::machine::dir(&rig.config())
+            .join("themes/moss/theme.json")
+            .is_file(),
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn an_import_never_replaces_a_theme_folder_without_force() {
+    let rig = Rig::new();
+    let source = rig.fixture("ember.jsonc");
+    let themes = rig.themes();
+    std::fs::create_dir_all(themes.join("ember")).expect("a folder");
+    std::fs::write(themes.join("ember/theme.json"), "mine").expect("a theme");
+    let args = [
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        themes.to_str().expect("a path"),
+    ];
+
+    let refused = rig.run(&args);
+    let kept = std::fs::read_to_string(themes.join("ember/theme.json")).expect("read");
+    let forced = rig.run(&[&args[..], &["--force"]].concat());
+
+    assert_eq!(refused.code, 1);
+    assert!(refused.err.contains("--force"), "{}", refused.err);
+    assert_eq!(kept, "mine");
+    assert_eq!(forced.code, 0, "{}", forced.err);
+    let replaced = std::fs::read_to_string(themes.join("ember/theme.json")).expect("read");
+    assert!(replaced.contains("\"Ember\""), "{replaced}");
+    let names: Vec<_> = std::fs::read_dir(&themes)
+        .expect("listed")
+        .flatten()
+        .map(|it| it.file_name())
+        .collect();
+    assert_eq!(names.len(), 1, "nothing staged is left: {names:?}");
+}
+
+#[test]
+fn an_import_as_json_says_what_was_written_not_taken_and_checked() {
+    let rig = Rig::new();
+    let source = rig.fixture("tide.itermcolors");
+    let themes = rig.themes();
+
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        themes.to_str().expect("a path"),
+        "--json",
+    ]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let answer = ran.json();
+    assert_eq!(answer["schema"], 1);
+    assert_eq!(answer["kind"], "iterm");
+    assert_eq!(answer["name"], "tide");
+    assert_eq!(answer["folder"], "tide");
+    assert_eq!(answer["written"], themes.join("tide").display().to_string());
+    assert_eq!(
+        answer["not_taken"],
+        serde_json::json!([
+            { "key": "Name", "why": "is not a colour" },
+            { "key": "Badge Color", "why": "no token takes it" }
+        ])
+    );
+    assert_eq!(answer["check"]["schema"], 1);
+    assert_eq!(answer["check"]["refused"], serde_json::Value::Null);
+    assert_eq!(answer["check"]["notes"], serde_json::json!([]));
+}
+
+#[test]
+fn a_source_purlis_cannot_tell_asks_for_its_kind_and_a_missing_one_exits_two() {
+    let rig = Rig::new();
+    let odd = rig.dir.path().join("notes.txt");
+    std::fs::write(&odd, "nothing a theme says").expect("a file");
+
+    let unknown = rig.run(&["import", odd.to_str().expect("a path")]);
+    let missing = rig.run(&["import", "/nowhere/at/all.json"]);
+
+    assert_eq!(unknown.code, 1);
+    assert!(unknown.err.contains("--kind"), "{}", unknown.err);
+    assert_eq!(missing.code, 2);
+    assert!(
+        !purlis_core::machine::dir(&rig.config())
+            .join("themes")
+            .exists(),
+        "nothing was written"
+    );
+}
+
+#[test]
+fn an_exported_theme_folder_imports_back_to_the_same_folder() {
+    let rig = Rig::new();
+    let made = rig.dir.path().join("made");
+    let folder = made.join("kept");
+    std::fs::create_dir_all(folder.join("icons")).expect("a folder");
+    std::fs::write(
+        folder.join("theme.json"),
+        r##"{ "name": "Kept", "palette": { "ink": "#101418" },
+              "appearances": [{ "id": "dark", "appearance": "dark", "tokens": { "surface.base": "ink" } }] }"##,
+    )
+    .expect("a theme");
+    std::fs::write(folder.join("LICENSE"), "made up for a test\n").expect("a licence");
+    std::fs::write(folder.join("icons/notes.json"), "{}").expect("a file");
+    let zip = rig.dir.path().join("kept.zip");
+    let back = rig.dir.path().join("back");
+
+    let exported = rig.run(&[
+        "export",
+        folder.to_str().expect("a path"),
+        "--to",
+        zip.to_str().expect("a path"),
+    ]);
+    let imported = rig.run(&[
+        "import",
+        zip.to_str().expect("a path"),
+        "--into",
+        back.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(exported.code, 0, "{}", exported.err);
+    assert_eq!(
+        exported.out.lines().next().unwrap_or_default(),
+        format!("exported kept (3 files) to {}", zip.display())
+    );
+    assert_eq!(imported.code, 0, "{}{}", imported.out, imported.err);
+    assert!(
+        imported.out.starts_with("imported Kept (zip) into "),
+        "{}",
+        imported.out
+    );
+    assert_eq!(folder_files(&back.join("kept")), folder_files(&folder));
+}
+
+#[test]
+fn purlis_classic_exports_as_a_copy_beside_the_built_in() {
+    let rig = Rig::new();
+    let zip = rig.dir.path().join("classic.zip");
+    let back = rig.dir.path().join("back");
+
+    let exported = rig.run(&[
+        "export",
+        "purlis-classic",
+        "--to",
+        zip.to_str().expect("a path"),
+    ]);
+    let imported = rig.run(&[
+        "import",
+        zip.to_str().expect("a path"),
+        "--into",
+        back.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(exported.code, 0, "{}", exported.err);
+    assert_eq!(imported.code, 0, "{}{}", imported.out, imported.err);
+    assert_eq!(
+        std::fs::read_to_string(back.join("purlis-classic-copy/theme.json")).expect("read"),
+        purlis_core::theme::CLASSIC_THEME_JSON
+    );
+}
+
+#[test]
+fn an_export_writes_its_name_here_and_never_over_a_file_without_force() {
+    let rig = Rig::new();
+
+    let first = rig.run(&["export", "purlis-classic"]);
+    let again = rig.run(&["export", "purlis-classic"]);
+    let forced = rig.run(&["export", "purlis-classic", "--force"]);
+
+    assert_eq!(first.code, 0, "{}", first.err);
+    assert!(rig.plane().join("purlis-classic-copy.zip").is_file());
+    assert_eq!(again.code, 1);
+    assert!(again.err.contains("--force"), "{}", again.err);
+    assert_eq!(forced.code, 0, "{}", forced.err);
+}
+
+#[test]
+fn an_export_of_what_is_not_a_theme_folder_says_so_and_exits_two() {
+    let rig = Rig::new();
+    let file = rig.dir.path().join("one.json");
+    std::fs::write(&file, a_theme("One", &serde_json::json!({}))).expect("a theme file");
+
+    let ran = rig.run(&["export", file.to_str().expect("a path")]);
+
+    assert_eq!(ran.code, 2);
+    assert!(ran.err.contains("a folder of its own"), "{}", ran.err);
 }

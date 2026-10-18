@@ -2545,3 +2545,22 @@ fn a_result_of_both_streams_in_one_text_names_the_check_by_the_same_rule() {
         named_check()
     );
 }
+
+/// #2428: one failed lookup is one Notice, whether a hook or the wrap's supervisor told it
+/// first: a lookup that names no host is the same as any lookup of that chat in its window.
+/// Lookups of two hosts are two.
+#[test]
+fn a_lookup_that_names_no_host_is_one_with_any_lookup_of_its_chat_in_the_window() {
+    let lookup = block(Operation::Lookup, Kind::Host, false);
+    let now = std::time::Instant::now();
+    let mut throttle = Throttle::default();
+    assert!(throttle.lets_on(3, &lookup, None, now));
+    assert!(!throttle.lets_on(3, &lookup, Some("api.example.com"), now));
+    assert!(throttle.lets_on(4, &lookup, Some("api.example.com"), now));
+    assert!(!throttle.lets_on(4, &lookup, None, now));
+    assert!(throttle.lets_on(4, &lookup, Some("db.example.com"), now));
+    // A host and a socket are no lookup: as they were.
+    let host = block(Operation::Connect, Kind::Host, false);
+    assert!(throttle.lets_on(3, &host, None, now));
+    assert!(throttle.lets_on(3, &host, Some("api.example.com:443"), now));
+}

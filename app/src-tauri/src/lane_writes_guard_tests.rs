@@ -33,6 +33,8 @@ const LANE_FILE_WRITES: &[(&str, &[&str])] = &[
         &["add", "remove", "rename", "rename_everywhere"],
     ),
     ("hosts", &["add", "remove", "confirm"]),
+    // The project's browser sites (#2443): the manifest, and this machine's record of them.
+    ("browser_sites", &["grant", "revoke", "acknowledge"]),
     (
         "dispatchgrant",
         &[
@@ -93,6 +95,7 @@ const LOCAL_READS: &[&str] = &[
     "browser_site_held_at",
     "browser_sites",
     "browser_sites_in_force",
+    "browser_sites_seen",
     "confirmed_hosts",
     "confirmed_levels",
     "dispatch_mine_in",

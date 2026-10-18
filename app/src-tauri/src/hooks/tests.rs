@@ -2650,3 +2650,38 @@ fn a_secret_exec_that_waited_for_the_board_reads_input_handed_on_while_it_is_hea
     );
     assert_eq!(replied.recv_timeout(within), Ok(Replied::Ended));
 }
+
+/// #2428: a lookup a program made itself, whether a hook named its host or the wrap refused the
+/// system's name lookup at its socket, says what reaching that lookup would mean, and offers
+/// neither the host nor the socket.
+#[test]
+fn a_lookup_past_the_proxy_says_what_reaching_the_system_s_name_lookup_would_mean() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    for target in [None, Some("api.example.com")] {
+        let said = blocked(
+            &plane,
+            &purlis_core::hookwire::SandboxBlocked {
+                chat: 3,
+                sandbox_blocked: Block {
+                    operation: Operation::Lookup,
+                    kind: Kind::Host,
+                    ours: false,
+                },
+                harness: Some("codex".to_owned()),
+                target: target.map(str::to_owned),
+                read_back: false,
+                suggested: None,
+            }
+            .into(),
+        );
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{target:?}");
+        assert_eq!(said.choose, None, "{target:?}");
+        let route = said.route.expect("why");
+        assert!(route.contains("system's name lookup"), "{route}");
+        assert!(route.contains("look up any name past the proxy"), "{route}");
+    }
+}
