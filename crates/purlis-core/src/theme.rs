@@ -732,8 +732,9 @@ pub fn load_text(text: &str) -> Resolved {
 }
 
 /// [`load_text`] of a `theme.json` read from `folder`, the theme's folder, whose `fonts/` its
-/// fonts are read from.
-pub fn load_text_in(text: &str, folder: Option<&std::path::Path>) -> Resolved {
+/// fonts are read from: the person's own, in their config folder ([`read_theirs`]), whose
+/// handle is opened when the text has been read.
+pub(crate) fn load_text_in(text: &str, folder: Option<&std::path::Path>) -> Resolved {
     match load_text_document(text) {
         Ok(document) => match folder {
             Some(folder) => Library::new().load_in(None, &document, folder),

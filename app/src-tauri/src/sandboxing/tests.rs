@@ -2934,3 +2934,48 @@ fn allow_for_you_on_a_runners_service_grants_nothing_in_the_project_here() {
     .expect("a service on this Mac is allowed for you");
     assert_eq!(sandbox::local::granted_ports(project.path()), [5432]);
 }
+
+/// #2653: **a host allowed for me is removed from my hosts**: Remove on its row takes it out of
+/// the personal hosts file, audited at "for me". A chat is named only for a one-chat grant,
+/// so a for-me revoke that names a chat, or a one-chat revoke that names none, removes nothing
+/// and audits nothing.
+#[test]
+fn a_host_allowed_for_me_is_removed_from_my_hosts_and_a_chat_named_with_it_removes_nothing() {
+    use sandbox::grant::Level;
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    let host = sandbox::hosts::Host::parse("api.example.com").expect("a host");
+    purlis_core::settings::hosts::grant(root, hosts_file(Level::You), &host).expect("granted");
+    let id = grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
+        .into_iter()
+        .find(|one| one.what == GrantWhat::Host && one.level == GrantLevel::You)
+        .expect("listed")
+        .id;
+    assert_eq!(id, format!("you{SEP}host{SEP}api.example.com"));
+
+    let heard = std::sync::Mutex::new(Vec::new());
+    let audit = |number: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        heard
+            .lock()
+            .unwrap()
+            .push((number, audited.granted, audited.level.word()));
+        Ok(())
+    };
+    for named in [
+        format!("you{SEP}chat-1{SEP}host{SEP}api.example.com"),
+        format!("machine{SEP}chat-1{SEP}host{SEP}api.example.com"),
+        format!("project{SEP}chat-1{SEP}host{SEP}api.example.com"),
+        format!("chat{SEP}host{SEP}api.example.com"),
+        format!("once{SEP}host{SEP}api.example.com"),
+    ] {
+        let refused = revoke(root, &chats, &named, &audit).expect_err("refused");
+        assert!(refused.contains("no longer there"), "{named:?}: {refused}");
+    }
+    assert_eq!(sandbox::hosts::personal(root), std::slice::from_ref(&host));
+    assert!(heard.lock().unwrap().is_empty(), "nothing audited");
+
+    revoke(root, &chats, &id, &audit).expect("removed");
+    assert!(sandbox::hosts::personal(root).is_empty());
+    assert_eq!(*heard.lock().unwrap(), [(None, false, "you")]);
+}

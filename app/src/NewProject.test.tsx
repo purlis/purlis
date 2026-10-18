@@ -91,7 +91,7 @@ function core(
           plane: null,
           ask: {
             path: MADE,
-            contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [] },
+            contributes: { plugins: [], env: [], starts: [], profiles: [], grants: [], fonts: [] },
             changes: [],
             first: true,
           },

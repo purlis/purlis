@@ -14,8 +14,9 @@
 //! **A format only grows.** Within one format a release adds token names, keys and values to
 //! the schema and never takes one away or narrows one: a theme valid against one release's
 //! schema is valid against every later release's of that format. A test holds the schema the
-//! engine generates to the one committed for its format with [`narrowings`]; a removal or a
-//! narrowed type is a new format.
+//! engine generates to the one committed for its format with [`narrowings`], and CI holds it to
+//! the one the last release's tag holds (`tools/theme-schema-since-release.sh`, #2524); a
+//! removal or a narrowed type is a new format.
 
 /// The format the published schema describes, as its file is named.
 pub const SCHEMA_FILE: &str = "docs/schema/theme.v2.schema.json";
@@ -57,6 +58,15 @@ mod promise {
     /// comparison is taught it.
     const UNJUDGED: &[&str] = &["not", "if", "then", "else", "oneOf"];
 
+    /// Keywords under which a wider schema can accept less: a value is refused by `not` when
+    /// its schema accepts it, an `if` that accepts more sends values to its other branch, and a
+    /// value two branches of a `oneOf` accept is refused. Whatever a reference inside one
+    /// reaches is held to the earlier schema word for word ([`inverted`]).
+    const INVERTING: &[&str] = &["not", "if", "oneOf"];
+
+    /// Keywords whose value is a value a theme holds, not a schema.
+    const DATA: &[&str] = &["const", "enum"];
+
     /// Bounds a later schema may lower or drop, never raise or add.
     const LOWER: &[&str] = &[
         "minimum",
@@ -83,6 +93,7 @@ mod promise {
         let mut found = Vec::new();
         compare(before, after, "", &mut found);
         unjudged(after, Some(before), "", &mut found);
+        inverted(before, after, &mut found);
         found.sort();
         found.dedup();
         found
@@ -145,18 +156,217 @@ mod promise {
         }
     }
 
+    /// **Every schema a `$ref` reaches from inside an [`INVERTING`] keyword**, in either schema
+    /// and through every reference it holds in turn, must be the same in both. A `oneOf` whose
+    /// branches are told apart by a constant ([`told_apart`]) accepts what one of its branches
+    /// accepts, as `anyOf` does, so it inverts nothing by itself; what it holds is still read.
+    fn inverted(before: &Value, after: &Value, found: &mut Vec<String>) {
+        let mut reached: Vec<(String, String)> = Vec::new();
+        for schema in [before, after] {
+            inverting_sites(schema, "", &mut reached);
+        }
+        let mut seen: Vec<String> = Vec::new();
+        while let Some((reference, site)) = reached.pop() {
+            if seen.contains(&reference) {
+                continue;
+            }
+            seen.push(reference.clone());
+            let Some(pointer) = reference.strip_prefix('#') else {
+                found.push(format!(
+                    "{site}: a reference this check cannot follow, {reference}"
+                ));
+                continue;
+            };
+            let (was, now) = (before.pointer(pointer), after.pointer(pointer));
+            if was.is_some() && was != now {
+                found.push(format!(
+                    "{}: reached from inside {site}, where a wider schema can accept less; \
+                     this check cannot judge a change here",
+                    shown(pointer)
+                ));
+            }
+            for one in [was, now].into_iter().flatten() {
+                let mut inner = Vec::new();
+                references(one, &mut inner);
+                reached.extend(inner.into_iter().map(|it| (it, site.clone())));
+            }
+        }
+    }
+
+    /// Each `$ref` inside an [`INVERTING`] keyword of `schema`, with where that keyword is.
+    fn inverting_sites(schema: &Value, at: &str, reached: &mut Vec<(String, String)>) {
+        match schema {
+            Value::Array(items) => {
+                for (n, item) in items.iter().enumerate() {
+                    inverting_sites(item, &format!("{at}/{n}"), reached);
+                }
+            }
+            Value::Object(fields) => {
+                for (key, value) in fields {
+                    let here = format!("{at}/{key}");
+                    if is_data(key) {
+                        continue;
+                    }
+                    if INVERTING.contains(&key.as_str()) && !(key == "oneOf" && told_apart(value)) {
+                        let mut inner = Vec::new();
+                        references(value, &mut inner);
+                        reached.extend(inner.into_iter().map(|it| (it, here.clone())));
+                    }
+                    match (key.as_str(), value) {
+                        ("properties" | "patternProperties" | "$defs", Value::Object(named)) => {
+                            for (name, one) in named {
+                                inverting_sites(one, &format!("{here}/{name}"), reached);
+                            }
+                        }
+                        _ => inverting_sites(value, &here, reached),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Every `$ref` anywhere in `schema`.
+    fn references(schema: &Value, out: &mut Vec<String>) {
+        match schema {
+            Value::Array(items) => items.iter().for_each(|item| references(item, out)),
+            Value::Object(fields) => {
+                for (key, value) in fields {
+                    match (key.as_str(), value) {
+                        ("$ref", Value::String(reference)) => out.push(reference.clone()),
+                        (key, _) if is_data(key) => {}
+                        ("properties" | "patternProperties" | "$defs", Value::Object(named)) => {
+                            named.values().for_each(|one| references(one, out));
+                        }
+                        _ => references(value, out),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn is_data(key: &str) -> bool {
+        DATA.contains(&key) || ANNOTATIONS.contains(&key)
+    }
+
+    /// **Whether no value can satisfy two of these `oneOf` branches**: each is an object that
+    /// requires one same key and holds it to a constant of its own, written in the branch
+    /// itself, so nothing a reference reaches can change which branch a value meets.
+    fn told_apart(branches: &Value) -> bool {
+        let Some(branches) = branches.as_array().filter(|it| it.len() > 1) else {
+            return false;
+        };
+        let constant = |branch: &Value, key: &str| -> Option<Value> {
+            let object = branch.get("type") == Some(&Value::String("object".to_owned()));
+            let required = branch
+                .get("required")
+                .and_then(Value::as_array)
+                .is_some_and(|it| it.iter().any(|one| one.as_str() == Some(key)));
+            let one = branch.get("properties")?.get(key)?.get("const")?;
+            (object && required).then(|| one.clone())
+        };
+        let keys = branches[0]
+            .get("required")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str);
+        for key in keys {
+            let constants: Option<Vec<Value>> = branches
+                .iter()
+                .map(|branch| constant(branch, key))
+                .collect();
+            if let Some(constants) = constants
+                && constants
+                    .iter()
+                    .enumerate()
+                    .all(|(n, one)| !constants[..n].iter().any(|it| same(it, one)))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     fn shown(at: &str) -> &str {
         if at.is_empty() { "/" } else { at }
     }
 
-    /// What a schema with `properties` and `additionalProperties` asks of the property `name`.
-    fn property<'a>(schema: &'a Map<String, Value>, name: &str) -> &'a Value {
+    /// **Whether two JSON values are equal as JSON Schema counts it**: numbers by their value,
+    /// so `1` and `1.0` are one constant.
+    fn same(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Number(a), Value::Number(b)) => a.as_f64() == b.as_f64(),
+            (Value::Array(a), Value::Array(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
+            }
+            (Value::Object(a), Value::Object(b)) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .all(|(key, one)| b.get(key).is_some_and(|it| same(one, it)))
+            }
+            _ => a == b,
+        }
+    }
+
+    /// **What an object schema asks of the property `name`**, as the schemas that all hold for
+    /// its value: its entry in `properties` and each `patternProperties` schema whose pattern
+    /// matches the name, or else `additionalProperties`. A pattern this check cannot read is a
+    /// narrowing, and is taken to match. That narrowing is pushed here, during the lookup,
+    /// because only the lookup compiles the pattern; both schemas' lookups may push the same
+    /// line, and [`narrowings`] dedups it. Patterns are matched with the `regex` crate's syntax
+    /// and semantics, not ECMA-262's (`\d` and `\w` are Unicode-aware there).
+    fn property<'a>(
+        schema: &'a Map<String, Value>,
+        name: &str,
+        at: &str,
+        found: &mut Vec<String>,
+    ) -> Vec<&'a Value> {
         const ANY: &Value = &Value::Bool(true);
-        schema
+        let mut holds: Vec<&Value> = schema
             .get("properties")
             .and_then(|it| it.get(name))
-            .or_else(|| schema.get("additionalProperties"))
-            .unwrap_or(ANY)
+            .into_iter()
+            .collect();
+        let patterns = schema.get("patternProperties").and_then(Value::as_object);
+        for (pattern, one) in patterns.into_iter().flatten() {
+            match regex::Regex::new(pattern) {
+                Ok(it) if !it.is_match(name) => {}
+                Ok(_) => holds.push(one),
+                Err(_) => {
+                    found.push(format!(
+                        "{at}/patternProperties/{pattern}: a pattern this check cannot read"
+                    ));
+                    holds.push(one);
+                }
+            }
+        }
+        if holds.is_empty() {
+            holds.push(schema.get("additionalProperties").unwrap_or(ANY));
+        }
+        holds
+    }
+
+    /// [`compare`] for a value every schema of `before` holds and every schema of `after` must:
+    /// each of `after` is to accept all that one of `before` accepts.
+    fn compare_each(before: &[&Value], after: &[&Value], at: &str, found: &mut Vec<String>) {
+        if let ([was], [now]) = (before, after) {
+            return compare(was, now, at, found);
+        }
+        for now in after {
+            let mut first: Option<Vec<String>> = None;
+            for was in before {
+                let mut here = Vec::new();
+                compare(was, now, at, &mut here);
+                if here.is_empty() {
+                    first = Some(here);
+                    break;
+                }
+                first.get_or_insert(here);
+            }
+            found.extend(first.unwrap_or_default());
+        }
     }
 
     fn or_any(value: Option<&Value>) -> &Value {
@@ -195,21 +405,19 @@ mod promise {
                     let now_named = now.and_then(Value::as_object).unwrap_or(&empty);
                     for name in was_named.keys() {
                         let path = format!("{here}/{name}");
-                        let kept = property(after, name);
-                        if !now_named.contains_key(name) && kept == &Value::Bool(false) {
+                        let kept = property(after, name, at, found);
+                        if !now_named.contains_key(name) && kept == [&Value::Bool(false)] {
                             found.push(format!("{path} is gone"));
                         } else {
-                            compare(&was_named[name], kept, &path, found);
+                            let held = property(before, name, at, found);
+                            compare_each(&held, &kept, &path, found);
                         }
                     }
-                    for (name, added) in now_named {
+                    for name in now_named.keys() {
                         if !was_named.contains_key(name) {
-                            compare(
-                                property(before, name),
-                                added,
-                                &format!("{here}/{name}"),
-                                found,
-                            );
+                            let held = property(before, name, at, found);
+                            let kept = property(after, name, at, found);
+                            compare_each(&held, &kept, &format!("{here}/{name}"), found);
                         }
                     }
                 }

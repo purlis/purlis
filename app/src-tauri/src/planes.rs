@@ -136,7 +136,7 @@ impl Records {
     /// Writes what is open into the plane, then vouches for it.
     ///
     /// **Record first, vouch second, and the order is not a preference.**
-    /// `machine::Contribution::of` reads the record back off disk, so a vouch taken before
+    /// `machine::Contribution::of_record` reads the record back off disk, so a vouch taken before
     /// the write would fingerprint what was there a moment ago — which is the stale
     /// fingerprint this exists to prevent, arrived at from the other side.
     ///
@@ -189,7 +189,8 @@ impl Records {
         let Some(config) = self.config.as_deref() else {
             return;
         };
-        let contributed = machine::Contribution::of(&self.root);
+        // The record's half alone: a vouch refreshes nothing else, so nothing else is read.
+        let contributed = machine::Contribution::of_record(&self.root);
         let when = now();
         let root = self.root.clone();
         if let Err(why) = machine::update(config, move |store| {

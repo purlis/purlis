@@ -43,7 +43,7 @@ use crate::planes::{Asking, Holding, Opening, PlaneId, Planes, Restoring, Showin
 ///
 /// A mirror of [`machine::Contribution`] rather than the thing itself, because `purlis-core`
 /// never depends on the app and the app's wire types are generated into TypeScript. Each of
-/// the four maps travels as pairs in the map's own order, which is `BTreeMap`'s and therefore
+/// the maps travels as pairs in the map's own order, which is `BTreeMap`'s and therefore
 /// sorted, so a value that comes back from the window compares against one taken from disk
 /// without either side having to sort anything.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -65,6 +65,10 @@ pub struct PlaneContribution {
     /// keeps it — each tool it may run without a prompt, with the digest of the script it runs
     /// where the persona ships one. The persona tool gate smooths only what is approved here.
     pub grants: Vec<(String, String)>,
+    /// One line per font file the project's or a workspace's theme folders bring: its path in
+    /// the project, and the sha-256 of its bytes then its size, space-separated. The window
+    /// draws a face from the project only when it is approved here with that digest.
+    pub fonts: Vec<(String, String)>,
 }
 
 impl PlaneContribution {
@@ -76,6 +80,7 @@ impl PlaneContribution {
             starts: pairs(&what.starts),
             profiles: pairs(&what.profiles),
             grants: pairs(&what.grants),
+            fonts: pairs(&what.fonts),
         }
     }
 
@@ -93,6 +98,7 @@ impl PlaneContribution {
             starts: self.starts.into_iter().collect(),
             profiles: self.profiles.into_iter().collect(),
             grants: self.grants.into_iter().collect(),
+            fonts: self.fonts.into_iter().collect(),
         }
     }
 }
@@ -1343,6 +1349,9 @@ mod tests {
                 .into_iter()
                 .collect(),
             grants: [("ops".to_owned(), "{\"gh\":\"\"}".to_owned())]
+                .into_iter()
+                .collect(),
+            fonts: [("themes/plex/fonts/Plex.woff2".to_owned(), "ab12".to_owned())]
                 .into_iter()
                 .collect(),
         };
