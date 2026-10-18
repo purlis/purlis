@@ -710,7 +710,8 @@ fn a_site_new_to_the_project_held_back_is_named_to_ask_about() {
     assert_eq!(
         went,
         crate::browsers::Went::Asks {
-            sites: vec!["example.com:443".into()]
+            sites: vec!["example.com:443".into()],
+            answers: Vec::new(),
         }
     );
 }

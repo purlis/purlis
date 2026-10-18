@@ -75,6 +75,9 @@ fn refused_on(
     own: Option<&[std::net::IpAddr]>,
 ) -> Option<String> {
     match lane.decide_here(host, port, tunnel, own) {
+        // A public site on a port nothing lists is held back and asked about, as the judge
+        // does: an Allow of that host and port carries it.
+        Verdict::Refused(crate::sandbox::browser_reach::Refusal::Port) => None,
         Verdict::Refused(why) => Some(format!("{}.", refusal_said(host, port, &why))),
         _ => None,
     }
@@ -105,149 +108,16 @@ fn scheme_of(typed: &str) -> Option<&str> {
 
 /// Whether `typed`, written with no scheme, names a port of this machine by its address.
 fn this_machine(typed: &str) -> bool {
-    let host = typed.split(['/', '?', '#']).next().unwrap_or_default();
-    host.starts_with("127.") || host.starts_with("[::1]")
+    let authority = typed.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = match authority.strip_prefix('[') {
+        Some(inside) => inside.split_once(']').map_or(inside, |(host, _)| host),
+        None => authority
+            .rsplit_once(':')
+            .map_or(authority, |(host, _)| host),
+    };
+    host.parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use purlis_host::protocol::session::{Layer, Listed};
-
-    #[test]
-    fn an_http_or_https_address_is_taken_whole() {
-        assert_eq!(
-            address_of(" https://example.com/a?b#c "),
-            Ok("https://example.com/a?b#c".to_owned())
-        );
-        assert_eq!(
-            address_of("HTTP://example.com"),
-            Ok("HTTP://example.com".to_owned())
-        );
-    }
-
-    #[test]
-    fn an_address_with_no_scheme_is_https_and_a_port_of_this_machine_is_http() {
-        assert_eq!(
-            address_of("example.com/docs"),
-            Ok("https://example.com/docs".to_owned())
-        );
-        assert_eq!(
-            address_of("example.com:8443"),
-            Ok("https://example.com:8443".to_owned())
-        );
-        assert_eq!(
-            address_of("127.0.0.1:5173/app"),
-            Ok("http://127.0.0.1:5173/app".to_owned())
-        );
-        assert_eq!(address_of("[::1]:3000"), Ok("http://[::1]:3000".to_owned()));
-    }
-
-    #[test]
-    fn every_other_scheme_is_refused_in_words() {
-        for typed in [
-            "file:///etc/passwd",
-            "chrome://settings",
-            "javascript:alert(1)",
-            "javascript:1;alert(1)",
-            "JavaScript://%0aalert(1)",
-            "data:text/html,<b>hi</b>",
-            "about:blank",
-            "blob:https://example.com/x",
-            "view-source:https://example.com",
-            "mailto:a@example.com",
-            "ftp://example.com",
-        ] {
-            let said = address_of(typed).expect_err(typed);
-            assert!(
-                said.starts_with("A browser goes only to http and https addresses"),
-                "{typed}: {said}"
-            );
-        }
-    }
-
-    #[test]
-    fn an_address_that_hides_its_host_or_carries_a_space_is_refused() {
-        assert!(
-            address_of("https://good.example@evil.example/")
-                .unwrap_err()
-                .contains("name or password")
-        );
-        assert!(
-            address_of("https://exa mple.com")
-                .unwrap_err()
-                .contains("space")
-        );
-        assert!(
-            address_of("https://example.com\\@evil.example")
-                .unwrap_err()
-                .contains("backslash")
-        );
-        assert!(address_of("https://").unwrap_err().contains("no host"));
-        assert!(address_of("   ").unwrap_err().contains("Type an address"));
-    }
-
-    fn lane(listed: &[&str]) -> Lane {
-        let reach = BrowserReach {
-            listed: listed
-                .iter()
-                .map(|host| Listed {
-                    host: (*host).to_owned(),
-                    layer: Layer::You,
-                })
-                .collect(),
-            ..BrowserReach::default()
-        };
-        Lane::of(super::super::reach_of(Some(&reach)).expect("reads").0)
-    }
-
-    const OWN: &[std::net::IpAddr] = &[std::net::IpAddr::V4(std::net::Ipv4Addr::new(
-        192, 168, 1, 20,
-    ))];
-
-    #[test]
-    fn this_machine_a_private_address_or_a_name_of_this_machine_is_refused_before_it_loads() {
-        let lane = lane(&[]);
-        for (host, port, tunnel) in [
-            ("127.0.0.1", 5173, false),
-            ("localhost", 5173, false),
-            ("10.0.0.5", 443, true),
-            ("169.254.169.254", 80, false),
-            ("192.168.1.20", 80, false),
-            ("2130706433", 80, false),
-        ] {
-            let said = refused_on(&lane, host, port, tunnel, Some(OWN)).expect(host);
-            assert!(
-                said.starts_with("purlis's reach proxy does not carry"),
-                "{said}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_site_new_to_the_project_is_not_refused_it_asks_and_a_listed_port_goes() {
-        assert_eq!(
-            refused_on(&lane(&[]), "example.com", 443, true, Some(OWN)),
-            None
-        );
-        assert_eq!(
-            refused_on(
-                &lane(&["127.0.0.1:5173"]),
-                "127.0.0.1",
-                5173,
-                false,
-                Some(OWN)
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn with_this_machines_addresses_unknown_nothing_is_carried() {
-        assert!(
-            refused_on(&lane(&[]), "example.com", 443, true, None)
-                .unwrap()
-                .contains("cannot be read")
-        );
-    }
-}
+mod tests;

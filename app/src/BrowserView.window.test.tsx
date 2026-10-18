@@ -581,12 +581,19 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
   });
 
-  it("asks once about a site new to the project, and Allow on this machine lets it go there", async () => {
+  it("asks once about a site new to the project, and an Allow on this machine lets it go there", async () => {
     let goes = 0;
     besides.go_browser = () => {
       goes += 1;
       return goes === 1
-        ? { outcome: "asks", sites: ["example.com:443"] }
+        ? {
+            outcome: "asks",
+            sites: ["example.com:443"],
+            answers: [
+              { id: "you", label: "Always allow in this project, on this machine", allows: true },
+              { id: "keep", label: "Keep blocked", allows: false },
+            ],
+          }
         : { outcome: "went", address: "https://example.com/" };
     };
     besides.allow_person_browser_sites = () => null;
@@ -600,7 +607,9 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     expect(
       await screen.findByText(/example\.com:443 is a site new to this project/),
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Allow on this machine" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Always allow in this project, on this machine" }),
+    );
 
     await waitFor(() =>
       expect(host.asked("allow_person_browser_sites")).toEqual([
@@ -613,8 +622,15 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     );
   });
 
-  it("keeps the site blocked on Dismiss, and goes nowhere", async () => {
-    besides.go_browser = () => ({ outcome: "asks", sites: ["example.com:443"] });
+  it("keeps the site blocked on Keep blocked, and goes nowhere", async () => {
+    besides.go_browser = () => ({
+      outcome: "asks",
+      sites: ["example.com:443"],
+      answers: [
+        { id: "you", label: "Always allow in this project, on this machine", allows: true },
+        { id: "keep", label: "Keep blocked", allows: false },
+      ],
+    });
     const host = await opened();
     fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
       target: { value: "example.com" },
@@ -622,7 +638,7 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
     await screen.findByText(/is a site new to this project/);
 
-    await userEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
 
     await waitFor(() =>
       expect(screen.queryByText(/is a site new to this project/)).not.toBeInTheDocument(),
@@ -644,6 +660,29 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
 
     expect(await screen.findByText(refused)).toBeInTheDocument();
+  });
+
+  it("hands a browser the person drives back before it goes, after what they typed", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/" });
+    const host = core(undefined, true);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByTestId("title-about");
+    await fromThePalette("New browser");
+    await screen.findByRole("button", { name: "Done" });
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    await waitFor(() => expect(host.asked("go_browser")).toHaveLength(1));
+    const order = host.order().filter((cmd) => cmd === "hand_back_browser" || cmd === "go_browser");
+    expect(order).toEqual(["hand_back_browser", "go_browser"]);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Done" })).toBeNull());
   });
 
   it("has no address field on a chat's browser, which its chat drives", async () => {

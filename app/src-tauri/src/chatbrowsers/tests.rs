@@ -2336,3 +2336,50 @@ fn allow_on_a_browser_the_person_opened_keeps_only_the_sites_it_asked_about() {
         [sandbox::hosts::Host::parse("team.example:443").unwrap()]
     );
 }
+
+/// #2176: where the project's sandbox is not on, a browser site for everyone in the project
+/// reaches no browser (#2443), so the person's browser is not offered it, and it is refused.
+#[test]
+fn without_the_projects_sandbox_a_persons_browser_is_offered_this_machine_alone() {
+    use purlis_core::sandbox::{self, grant::Level};
+    let (_dir, planes, id) = held_project("schema = 1\n");
+    let held = planes.held(&id).expect("held");
+    let (named, answers) = super::theirs_asked(&held, "B1", &["example.com:443".to_owned()]);
+    assert_eq!(named, ["example.com:443"]);
+    let ids: Vec<&str> = answers.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, ["you", "keep"]);
+    assert_eq!(
+        answers[0].label,
+        "Always allow in this project, on this machine"
+    );
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| Ok(());
+    let why = super::person_sites_allowed(
+        &held,
+        "B1",
+        &["example.com:443".to_owned()],
+        Level::Project,
+        &audit,
+        7,
+    )
+    .unwrap_err();
+    assert!(why.contains("sandbox is on"), "{why}");
+    assert!(
+        sandbox::browser_sites::committed(held.root(), &sandbox::policy::Locks::of(held.root()))
+            .is_empty()
+    );
+}
+
+/// #2176: where it is on, both are offered, in the registry's words.
+#[test]
+fn with_the_projects_sandbox_a_persons_browser_is_offered_everyone_too() {
+    let (_dir, planes, id) = held_project("schema = 1\n[sandbox]\nmode = \"on\"\negress = []\n");
+    let held = planes.held(&id).expect("held");
+    let (_, answers) = super::theirs_asked(&held, "B1", &["example.com:443".to_owned()]);
+    let ids: Vec<&str> = answers.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, ["you", "project", "keep"]);
+    assert_eq!(answers[1].label, "Allow for everyone in this project");
+    assert_eq!(
+        held.browsers().theirs_waiting("B1"),
+        [site("example.com:443")]
+    );
+}

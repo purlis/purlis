@@ -24,11 +24,20 @@ of the amendment *a browser's new sites are judged by its driver*.
    name of this machine, a host policy never allows) is refused in the reach proxy's words
    before it loads. *Decided in implementation, D-2176-2, to be confirmed.*
 3. **A site new to the project asks once**, as an address the agent writes does: the browser's
-   judge holds it back, and the view asks under the field, with Allow on this machine (a browser
-   site of this project on this machine, listed in the Granted list), Allow for everyone in the
-   project (a browser site committed to the project's settings, #2443), and Keep blocked. After an
-   Allow the browser goes there. Where that address redirects while it loads is judged the same
-   way. *Decided in implementation, D-2176-3, to be confirmed.*
-4. **The address goes on the browser's own lane.** A browser the person drives is handed back
-   before it goes, and their next click or key takes it over again. A chat's browser has no
-   address field: its chat drives it.
+   judge holds it back, and the view asks under the field with the answers of a chat's sites ask
+   in the same words, but for this chat, which a browser with no chat has none of: Always allow
+   in this project, on this machine (a browser site of this project on this machine, listed in
+   the Granted list); Allow for everyone in this project (a browser site committed to the
+   project's settings, #2443), only where the project's sandbox is on, since only there does a
+   committed browser site reach a browser; each unless an administrator's policy leaves its scope
+   out; and Keep blocked. After an Allow the browser goes there. Where that address redirects
+   while it loads is judged the same way. A public site on a port nothing lists asks too, for
+   that host and port. *Decided in implementation, D-2176-3, to be confirmed.*
+4. **The address goes on the browser's own lane**, after every key and click of the person's
+   already sent. A browser the person drives is handed back first, and their next click or key
+   takes it over again. A chat's browser has no address field: its chat drives it, and an
+   address is sent only to a browser the window opened in that project. *Decided in
+   implementation, D-2176-4, to be confirmed.*
+5. **Each of the person's acts has an id of its own**, so the session host never answers one as
+   a retry of another, a browser reattached after a crash of the window included. *Decided in
+   implementation, D-2176-5, to be confirmed.*

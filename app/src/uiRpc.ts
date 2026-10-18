@@ -9302,10 +9302,11 @@ export type Way =
 
 /**
  *  **Where the person's address took their browser** (#2176): the page is at `address` now, or
- *  the browser held back what it would have opened on `sites`, each new to the project, and
- *  the person is asked whether their browsers may go there.
+ *  the browser held back what it would have opened on `sites`, each new to the project, and the
+ *  person is asked whether their browsers may go there, with `answers`, the sites ask's own
+ *  (`crate::asking::browser_site_answers`).
  */
-export type Went = { outcome: "went"; address: string | null } | { outcome: "asks"; sites: string[] };
+export type Went = { outcome: "went"; address: string | null } | { outcome: "asks"; sites: string[]; answers: Offered[] };
 
 /**  One file of a branch against the branch it was cut from: "Show what changed" (FM-11). */
 export type WhatChanged = {

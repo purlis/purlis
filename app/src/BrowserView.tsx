@@ -11,7 +11,13 @@ import type {
 } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CHAT_KEYBOARD } from "./actions";
-import { type BrowserFrame, type BrowserInput, commands } from "./bindings";
+import {
+  type BrowserFrame,
+  type BrowserInput,
+  commands,
+  type GrantLevel,
+  type Offered,
+} from "./bindings";
 import {
   SIZE_PRESETS,
   drivenBy,
@@ -27,7 +33,7 @@ import { addressChip, thisDevice } from "./browsers";
 import { useWindowSeen } from "./browserWatch";
 import { programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./EmptyState";
-import { Notice, NoticePaneRow } from "./Notice";
+import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
 import { Select } from "./primitives/Select";
 import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
@@ -181,7 +187,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** The address the person typed, the page's address once it went, and the sites it asks. */
   const [typed, setTyped] = useState("");
   const [address, setAddress] = useState<string | null>(null);
-  const [asking, setAsking] = useState<{ address: string; sites: string[] } | null>(null);
+  const [asking, setAsking] = useState<SitesAsked | null>(null);
   const [going, setGoing] = useState(false);
 
   const drivingNow = useCallback((now: boolean) => {
@@ -364,20 +370,32 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   };
 
   /** Sends the browser to `to`, the address as the person typed it. */
+  /** Sends the browser to `to`, the address as the person typed it, after every key and click
+   *  already queued. The browser takes an address on its own lane, so one the person drives is
+   *  handed back first; their next click or key takes it over again. */
   const go = (to: string) => {
     if (going) return;
     setGoing(true);
-    void commands.goBrowser(plane, program, to).then((went) => {
+    after(async () => {
+      if (drives.current) {
+        const back = await commands.handBackBrowser(program);
+        if (back.status === "error") {
+          setGoing(false);
+          setSaid(back.error);
+          return;
+        }
+        setDropped(false);
+        drivingNow(false);
+      }
+      const went = await commands.goBrowser(plane, program, to);
       setGoing(false);
       if (went.status === "error") {
         setSaid(went.error);
         return;
       }
       setSaid(undefined);
-      // The browser takes an address from its own lane: a person driving it handed it back.
-      drivingNow(false);
       if (went.data.outcome === "asks") {
-        setAsking({ address: to, sites: went.data.sites });
+        setAsking({ address: to, sites: went.data.sites, answers: went.data.answers });
         return;
       }
       setAsking(null);
@@ -390,9 +408,9 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     go(typed);
   };
 
-  /** Allow on this machine (every browser of the project here) or for everyone in the project
-   *  (committed): this one goes there now. */
-  const allowSites = (ask: { address: string; sites: string[] }, level: "you" | "project") => {
+  /** An Allow of the sites ask: on this machine (every browser of the project here) or for
+   *  everyone in the project (committed); this one goes there now. */
+  const allowSites = (ask: SitesAsked, level: GrantLevel) => {
     void commands.allowPersonBrowserSites(plane, program, ask.sites, level).then((allowed) => {
       if (allowed.status === "error") {
         setSaid(allowed.error);
@@ -402,6 +420,12 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       setAsking(null);
       go(ask.address);
     });
+  };
+
+  /** One answer of the sites ask: an Allow at its scope, or Keep blocked putting it away. */
+  const answerSites = (ask: SitesAsked, one: Offered) => {
+    if (one.allows) allowSites(ask, one.id as GrantLevel);
+    else setAsking(null);
   };
 
   if (shown.kind === "ended")
@@ -453,24 +477,22 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           <Notice
             at="pane"
             cause={`browser-sites:${program}`}
-            fixes={[
-              {
-                label: "Allow on this machine",
-                allows: true,
-                onPress: () => allowSites(asking, "you"),
-              },
-              {
-                label: "Allow for everyone in the project",
-                allows: true,
-                onPress: () => allowSites(asking, "project"),
-              },
-            ]}
-            onDismiss={() => setAsking(null)}
-            dismissSays="Keep it blocked: the page stays where it was"
+            fixes={
+              // The core's answers, Keep blocked among them; Keep blocked alone were there none.
+              (asking.answers.length > 0
+                ? asking.answers.map((one): NoticeAction => ({
+                    label: one.label,
+                    allows: one.allows,
+                    onPress: () => answerSites(asking, one),
+                  }))
+                : [{ label: KEEP_SAID, onPress: () => setAsking(null) }]) as [
+                NoticeAction,
+                ...NoticeAction[],
+              ]
+            }
           >
             {asking.sites.join(", ")} {asking.sites.length === 1 ? "is a site" : "are sites"} new to
-            this project, so this browser did not go there. On this machine lets every browser of
-            this project here go there; for everyone writes it in the project's settings.
+            this project, so this browser did not go there.
           </Notice>
         </NoticePaneRow>
       )}
@@ -540,6 +562,12 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     </div>
   );
 }
+
+/** What a browser the person opened held back, and the answers its sites ask offers (#2176). */
+type SitesAsked = { address: string; sites: string[]; answers: Offered[] };
+
+/** Keep blocked, where the core offered no answer that refuses. */
+const KEEP_SAID = "Keep blocked";
 
 /** A browser's address and device, as its view says them above its page (#2024). */
 function BrowserChip({ mac, address }: { mac: boolean; address: string | null }) {

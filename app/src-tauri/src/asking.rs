@@ -1038,40 +1038,8 @@ pub fn browser_sites(
     waits: &crate::chatbrowsers::SitesWait,
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Shown {
-    use purlis_core::sandbox::grant::Level;
     let all: Vec<String> = waits.sites.iter().map(ToString::to_string).collect();
-    let mut options = Vec::new();
-    let allow = |level: Level, label: &str| Offered {
-        id: level.word().to_owned(),
-        label: label.to_owned(),
-        allows: true,
-        preselected: None,
-    };
-    let (sites, says) = match sites_named(&all) {
-        Some(named) => {
-            if locks.scope_removed(Level::Chat).is_none() {
-                options.push(allow(Level::Chat, "Allow for this chat"));
-            }
-            if locks.scope_removed(Level::You).is_none() {
-                options.push(allow(
-                    Level::You,
-                    "Always allow in this project, on this machine",
-                ));
-            }
-            // Committed for everyone in the project (#2443): still the browsers' alone.
-            if locks.scope_removed(Level::Project).is_none() {
-                options.push(allow(Level::Project, "Allow for everyone in this project"));
-            }
-            named
-        }
-        // Not even the oldest fits whole: nothing is allowed that the person cannot read.
-        None => {
-            let oldest: Vec<String> = all.iter().take(1).cloned().collect();
-            let says = sites_said(&oldest, all.len() - oldest.len());
-            (oldest, says)
-        }
-    };
-    options.push(refuses(KEEP, "Keep blocked"));
+    let (sites, says, options) = browser_site_answers(&all, locks, true, true);
     Shown {
         session: waits.session,
         ask: browser_sites_key(waits.session),
@@ -1084,6 +1052,53 @@ pub fn browser_sites(
         held_until: None,
         writes: None,
     }
+}
+
+/// **What a browser's sites ask names and offers** (#2018, #2176): the sites of `all` it names
+/// whole ([`sites_named`]), its line, and its answers. Allow for this chat where it is a chat's
+/// (`for_a_chat`); Always allow in this project, on this machine; Allow for everyone in this
+/// project where `everyone` (#2443); each unless an administrator's policy leaves its scope out;
+/// Keep blocked last. A site too long to be named whole is offered Keep blocked alone.
+pub fn browser_site_answers(
+    all: &[String],
+    locks: &purlis_core::sandbox::policy::Locks,
+    for_a_chat: bool,
+    everyone: bool,
+) -> (Vec<String>, String, Vec<Offered>) {
+    use purlis_core::sandbox::grant::Level;
+    let mut options = Vec::new();
+    let allow = |level: Level, label: &str| Offered {
+        id: level.word().to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    };
+    let (sites, says) = match sites_named(all) {
+        Some(named) => {
+            if for_a_chat && locks.scope_removed(Level::Chat).is_none() {
+                options.push(allow(Level::Chat, "Allow for this chat"));
+            }
+            if locks.scope_removed(Level::You).is_none() {
+                options.push(allow(
+                    Level::You,
+                    "Always allow in this project, on this machine",
+                ));
+            }
+            // Committed for everyone in the project (#2443): still the browsers' alone.
+            if everyone && locks.scope_removed(Level::Project).is_none() {
+                options.push(allow(Level::Project, "Allow for everyone in this project"));
+            }
+            named
+        }
+        // Not even the oldest fits whole: nothing is allowed that the person cannot read.
+        None => {
+            let oldest: Vec<String> = all.iter().take(1).cloned().collect();
+            let says = sites_said(&oldest, all.len() - oldest.len());
+            (oldest, says)
+        }
+    };
+    options.push(refuses(KEEP, KEEP_SAID));
+    (sites, says, options)
 }
 
 /// **The sites of `all`, oldest first, that a browser sites ask names whole** (#2364), and its

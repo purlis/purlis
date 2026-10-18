@@ -136,13 +136,19 @@ pub enum InputOutcome {
 }
 
 /// **Where the person's address took their browser** (#2176): the page is at `address` now, or
-/// the browser held back what it would have opened on `sites`, each new to the project, and
-/// the person is asked whether their browsers may go there.
+/// the browser held back what it would have opened on `sites`, each new to the project, and the
+/// person is asked whether their browsers may go there, with `answers`, the sites ask's own
+/// (`crate::asking::browser_site_answers`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum Went {
-    Went { address: Option<String> },
-    Asks { sites: Vec<String> },
+    Went {
+        address: Option<String>,
+    },
+    Asks {
+        sites: Vec<String>,
+        answers: Vec<crate::asking::Offered>,
+    },
 }
 
 /// What a frame shows, as the window holds it: `p1:5`, the page and its document.
@@ -455,6 +461,13 @@ mod hosted {
             Ok((link, project))
         }
 
+        /// Whether the window started `program` in the project at `root` (#2176).
+        pub(crate) fn started_in(&self, root: &Path, program: &str) -> bool {
+            self.projects()
+                .get(root)
+                .is_some_and(|held| held.browsers.iter().any(|one| one == program))
+        }
+
         /// Starts a browser in the project at `root` reaching nothing listed, and answers its
         /// id: what a test of the window's browsers starts.
         #[cfg(test)]
@@ -673,6 +686,7 @@ mod hosted {
             } else {
                 Went::Asks {
                     sites: browsed.asked,
+                    answers: Vec::new(),
                 }
             })
         }
@@ -910,12 +924,21 @@ pub async fn go_browser(
     address: String,
 ) -> Result<Went, String> {
     let held = planes.held(&plane)?;
-    if held.browsers().is_in_use(&program) {
+    // Never a chat's browser, in this project or any other the window holds.
+    if planes
+        .every_held()
+        .iter()
+        .any(|one| one.browsers().is_in_use(&program))
+    {
         return Err(A_CHATS_BROWSER.to_owned());
     }
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
+        // Only one the window started in this project goes with this project's reach.
+        if !browsers.started_in(held.root(), &program) {
+            return Err(NOT_THIS_PROJECTS.to_owned());
+        }
         crate::off_the_window("sending a browser to an address", move || {
             let address = purlis_core::browsers::typed::address_of(&address)?;
             let reach = crate::chatbrowsers::person_reach(&held);
@@ -923,15 +946,22 @@ pub async fn go_browser(
                 return Err(why);
             }
             let went = browsers.go(&program, &address, &reach)?;
-            // What it held back waits on the person, and only that (#2176).
-            held.browsers().theirs_asked(
-                &program,
-                match &went {
-                    Went::Asks { sites } => sites,
-                    Went::Went { .. } => &[],
-                },
-            );
-            Ok(went)
+            // What it held back waits on the person, and only what the ask names whole, with
+            // the answers the scopes policy leaves open offer (#2176).
+            Ok(match went {
+                Went::Asks { sites, .. } => {
+                    let (named, answers) =
+                        crate::chatbrowsers::theirs_asked(&held, &program, &sites);
+                    Went::Asks {
+                        sites: named,
+                        answers,
+                    }
+                }
+                went @ Went::Went { .. } => {
+                    held.browsers().theirs_asked(&program, &[]);
+                    went
+                }
+            })
         })
         .await
     }
@@ -941,6 +971,11 @@ pub async fn go_browser(
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }
+
+/// What sending a browser the window did not start in this project to an address is refused
+/// with (#2176).
+pub const NOT_THIS_PROJECTS: &str = "This browser was not opened in this project from this \
+                                     window: open one here from the palette to go somewhere.";
 
 /// What sending a chat's browser to an address from the window is refused with (#2176).
 pub const A_CHATS_BROWSER: &str = "This browser is a chat's, and goes where its chat sends it: \

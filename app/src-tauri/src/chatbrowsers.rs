@@ -2720,8 +2720,9 @@ fn sites_kept(
 
 /// **Allow on the sites a browser the person opened asked about** (#2176): `sites`, the sites
 /// its view showed, are browser sites at `level`: every browser of this project on this
-/// machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a chat's site Allow is: no chat's own commands reach
-/// them. Refused whole unless each waits on the person for that browser now.
+/// machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a
+/// chat's site Allow is: no chat's own commands reach them. Refused whole unless each waits on
+/// the person for that browser now.
 #[tauri::command]
 #[specta::specta]
 pub async fn allow_person_browser_sites(
@@ -2746,6 +2747,41 @@ pub async fn allow_person_browser_sites(
     .await
 }
 
+/// **The person's browser `program` held back `asked`** (#2176): the sites its ask names whole
+/// wait on the person for it, and only those, with the answers it offers: Always allow in this
+/// project on this machine, and Allow for everyone in this project where the project's sandbox
+/// is in force here (committed browser sites count only there, #2443), each unless an
+/// administrator's policy leaves its scope out; and Keep blocked.
+pub fn theirs_asked(
+    held: &crate::planes::Held,
+    program: &str,
+    asked: &[String],
+) -> (Vec<String>, Vec<crate::asking::Offered>) {
+    let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+    let (named, _, answers) = crate::asking::browser_site_answers(
+        asked,
+        &locks,
+        false,
+        everyone_counts(held.root(), &locks),
+    );
+    // Only what may be allowed waits: a site not named whole is offered Keep blocked alone.
+    let waiting: &[String] = if answers.iter().any(|one| one.allows) {
+        &named
+    } else {
+        &[]
+    };
+    held.browsers().theirs_asked(program, waiting);
+    (named, answers)
+}
+
+/// Whether a browser site for everyone in the project reaches anything here: only where the
+/// project's sandbox is in force (#2443).
+fn everyone_counts(root: &Path, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+    purlis_core::sandbox::Plane::read(root)
+        .in_force(locks)
+        .is_some()
+}
+
 /// [`allow_person_browser_sites`]'s work: judged, then audited, then kept.
 pub fn person_sites_allowed(
     held: &crate::planes::Held,
@@ -2761,6 +2797,19 @@ pub fn person_sites_allowed(
         return Err(
             "purlis allows a site for your own browser for every browser of this project on \
              this machine, or for everyone in the project."
+                .to_owned(),
+        );
+    }
+    if level == Level::Project
+        && !everyone_counts(
+            held.root(),
+            &purlis_core::sandbox::policy::Locks::of(held.root()),
+        )
+    {
+        return Err(
+            "Nothing was allowed: a browser site for everyone in the project reaches browsers \
+             only where the project's sandbox is on, and it is not on here. Allow it on this \
+             machine instead."
                 .to_owned(),
         );
     }
