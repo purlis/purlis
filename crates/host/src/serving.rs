@@ -211,12 +211,23 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
             .await
             {
                 Ok(answered) => {
+                    let unpaired = Arc::new(tokio::sync::Notify::new());
                     let paired = PairedLink {
                         hosting,
                         desktop,
                         unpairing,
+                        unpaired: Arc::clone(&unpaired),
                     };
-                    let _ = session::serve(answered.link, paired, None).await;
+                    let serving = session::serve(answered.link, paired, None);
+                    tokio::pin!(serving);
+                    // A desktop that unpaired is linked no more: its link ends once its
+                    // `done` has had time to go out, whether or not it closes the link itself.
+                    tokio::select! {
+                        _ = &mut serving => {}
+                        () = unpaired.notified() => {
+                            let _ = tokio::time::timeout(UNPAIRED_LINK_ENDS, &mut serving).await;
+                        }
+                    }
                 }
                 Err(refused) => say(&format!("a link was refused: {refused}")),
             }
@@ -231,7 +242,13 @@ struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
     unpairing: Unpairing,
+    /// Told once the desktop is unpaired, so its link ends.
+    unpaired: Arc<tokio::sync::Notify>,
 }
+
+/// How long the link of a desktop that unpaired stays open after its answer, for the answer to
+/// reach it.
+const UNPAIRED_LINK_ENDS: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl session::Host for PairedLink {
     async fn call(
@@ -249,6 +266,7 @@ impl session::Host for PairedLink {
         match unpaired {
             Ok(()) => {
                 say("the desktop this runner was paired with unpaired it");
+                self.unpaired.notify_one();
                 Ok(session::Answer::Done)
             }
             Err(why) => Err(session::Refusal {

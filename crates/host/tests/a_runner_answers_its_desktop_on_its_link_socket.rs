@@ -252,5 +252,10 @@ async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
         serde_json::json!({ "reply": { "re": 1, "ok": "done" } })
     );
     assert!(matches!(*paired.lock().unwrap(), Ok(None)));
+    // The runner ends the link it answered on, though the desktop keeps it open.
+    let ended = tokio::time::timeout(std::time::Duration::from_secs(10), linked.control().next())
+        .await
+        .expect("the link ends after the unpairing");
+    assert!(!matches!(ended, Some(Ok(_))), "{ended:?}");
     assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 }

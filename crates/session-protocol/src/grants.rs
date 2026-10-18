@@ -42,7 +42,7 @@
 //! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
-//! | `unpair`, the desktop taken out of a runner's peers (1.25) | yes | | | | | yes |
+//! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -162,9 +162,9 @@
 //! - **`unpair` is the paired desktop's, on its own link to the runner** (1.25, #2525). It takes
 //!   that desktop out of the runner's peers as the person removes the runner (ADR 0078 §3), so
 //!   only `remote-link` sends it where it is carried out, and a runner's host carries it out
-//!   for the desktop the link's handshake proved, never another. The window may send it to its
-//!   own host, which holds no peers and refuses it; a relaying host refuses it too, so it never
-//!   reaches a runner but from the desktop that removes it.
+//!   for the desktop the link's handshake proved, never another. No other scope is granted it,
+//!   the window's included, whose own host holds no peers; and a relaying host refuses it, so it
+//!   never reaches a runner but from the desktop that removes it.
 
 use crate::auth::Scope;
 
@@ -245,7 +245,7 @@ impl Scope {
         use Power as P;
         use Scope as S;
         match self {
-            S::LocalUi => power != P::TakeBack,
+            S::LocalUi => !matches!(power, P::TakeBack | P::Unpair),
             S::Terminal => matches!(
                 power,
                 P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
@@ -357,10 +357,13 @@ mod tests {
     }
 
     #[test]
-    fn only_the_window_or_a_desktop_on_its_link_to_a_runner_unpairs() {
+    fn only_a_desktop_on_its_link_to_a_runner_unpairs() {
         for scope in Scope::ALL {
-            let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
-            assert_eq!(scope.may(Power::Unpair), windows, "{scope}");
+            assert_eq!(
+                scope.may(Power::Unpair),
+                scope == Scope::RemoteLink,
+                "{scope}"
+            );
         }
     }
 

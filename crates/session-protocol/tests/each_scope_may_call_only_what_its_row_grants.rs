@@ -386,7 +386,6 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "browse",
             "programs_of",
             "quit",
-            "unpair",
             "take_over",
             "browser_input",
             "size_browser",
