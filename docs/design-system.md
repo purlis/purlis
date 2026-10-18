@@ -224,27 +224,44 @@ Chats tree has since moved to the shared tree row (`.ui-tree-row`, DS-3 and DS-1
 `ui-primitives.md`), which draws the same guides, selection and ring.
 
 **A workspace's colour is a hue shift of the theme in force, not a colour of its own**
-(purlis#281, ADR 0048). A workspace names one of eight hues (`tint.PALETTE`, the same eight
-the core reads) or a `#rrggbb` whose hue is taken, and the window turns only these tokens to it:
+(purlis#281, ADR 0048). A workspace names one of eight colours (`red` to `pink`, the names the
+core reads) or a `#rrggbb` whose hue is taken. **Which tokens it turns, and the hue each of the
+eight gives, are the theme's tint recipe** (#2329, the theme's `tint`, below), which the engine
+resolves and hands the window with the theme (`purlis_core::theme::Tint`, `theme.tint`); the
+window keeps no list of its own (#2393). Purlis Classic's recipe, the one a theme starts from:
 
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
-  `focus.ring`, `tab.active` (`theme.TINTED_WINDOW`, drawn by `drawTint`);
+  `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
+  `drawTint`);
 - on that workspace's own tab and on the chat strip, which holds its chats, the same and
-  `layer.workspace`, `layer.chat`, `layer.selected` (`theme.TINTED_TABS`), set on the element as
-  custom properties by `tintVariables`. Each workspace tab carries its own tint whether or not it
+  `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
+  custom properties by `tabTint`. Each workspace tab carries its own tint whether or not it
   is in front: a `.workspace-mark` dot in its accent and its own shade. (The title bar's
   breadcrumb carried the same dot until ADR 0054 took the breadcrumb away.)
+- the hues `red` 25°, `orange` 55°, `yellow` 95°, `green` 145°, `teal` 190°, `blue` 255°,
+  `purple` 305°, `pink` 350° (OKLCH).
 
-Never the text, never `layer.project` (the project strip is not a workspace's), never the
-terminal. `app/src/theme/tint.ts` does the arithmetic in OKLCH and then keeps each token's
-**relative luminance** exactly, so a tinted shade clears every contrast floor the theme's own
-cleared; the contrast check runs every palette hue on any theme, and holds two pairs
-the tint adds — the mark (`accent.base`) and a tab's primary text on `layer.workspace`. A neutral
-grey is given a small fixed chroma, felt rather than noticed, as the strips are meant to be;
-white stays white. No colour is written for this anywhere but `app/src/theme/`: a component asks
-`tintVariables` and sets what it answers.
+The strip shades (`layer.workspace`, `layer.chat`, `layer.selected`, `layer.divider`) are only
+ever tinted on a workspace's own tab and chat strip, never on the window. `app/src/theme/tint.ts`
+does the arithmetic in OKLCH, the same as the engine's (`purlis_core::theme::tint`, held to one
+another by `theme/tint-cases.json`), and then keeps each token's **relative luminance** exactly,
+so a tinted shade clears every contrast floor the theme's own cleared, up to one channel's
+rounding; the contrast check runs every hue of the theme's recipe, and holds two pairs the tint
+adds — the mark (`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint
+holds two consent floors itself, at every hue, custom colours included** (`tint::APART`, OKLab
+0.1 each): the accent stays apart from the danger colour, and Allow and Keep blocked stay apart
+(`accent.base` from `border.strong`, as the tint draws it); every rule holds whichever side a
+theme tints. At a hue that would bring either pair
+nearer, the tint keeps the hue and gives less colour, in steps of 0.005 chroma, so a red
+workspace stays red; a colour no amount holds apart is drawn untinted. Purlis Classic's light
+appearance gives less colour at `red`, `orange` and `pink`. The consent floors are also measured
+under every tint of the theme's own recipe, and a token whose tint breaks one is drawn
+untinted. A neutral grey is given a small fixed chroma,
+felt rather than noticed, as the strips are meant to be; white stays white. No colour is written
+for this anywhere but `app/src/theme/`: a component asks `tabTint` and sets what it answers.
 
-**A persona's mark is tinted the same way, on two tokens only** (#1449). A persona is drawn
+**A persona's mark is tinted the same way, on two tokens only** (#1449), at the hues of the
+theme in force, whether or not its recipe tints workspaces: a persona's colour says who it is. A persona is drawn
 wherever it appears as one `PersonaMark` (`app/src/PersonaMark.tsx`): its custom `icon.png`,
 else its built-in icon, else its initials, on a ground of its colour. The colour is the
 workspace's vocabulary, one of the same eight hues or a `#rrggbb`, and a persona that names none
@@ -361,9 +378,21 @@ rewrites the file; the next pick made in Settings writes the new id.
   theme engine takes the option values as an input (`Theme::with`), by the same precedence as
   the appearance, and Settings › Appearance shows the drawn theme's options with where each
   value comes from.
+- **`tint`** says how a workspace's colour tints the theme (#2329), the same in each of its
+  appearances: `"tint": { "on": true, "tokens": ["accent.base", "surface.raised"], "hues":
+  { "red": "#c0392b" } }`. `on: false` and a workspace's colour tints nothing in it. `tokens`
+  replaces the parent's list, from a closed list: the surfaces, controls, words, rules, the
+  accent and its kin, the selected row, the tree's guides and the workspace's strip shades
+  (`vocabulary::TINTABLE`). The consent and state colours (`needs-you.*`, `danger.*`,
+  `state.*`) are purlis's to hold, the diff washes (`diff.*`) and the icon colours (`icon.*`)
+  carry their meaning in their hue, the terminal (`terminal.*`) is handed its colours once, the
+  project strip (`layer.project`) is not a workspace's, and the scrim and shadow (`overlay.*`)
+  lie over every workspace at once: naming one refuses the theme. `hues` gives any of the eight
+  colours this theme's hue, as a hex colour or a palette name whose OKLCH hue is taken; a grey has none and refuses the theme. A
+  workspace's own `#rrggbb` is always its own hue. What a theme does not say is its parent's,
+  and Purlis Classic's recipe is the start.
 - **A format 2 theme that breaks its grammar anywhere is refused whole** (ADR 0097 §2): purlis
-  draws Purlis and says what is wrong. Tint (#2329) is not read yet, so naming it refuses the
-  theme.
+  draws Purlis and says what is wrong.
 - **Geometry and fonts** (#2326): an appearance's `tokens` may give a geometry token a number
   inside its bound (`"radius.md": 6`), a `compact` object tunes what compact density draws for
   every appearance, and `fonts` names the UI, mono and terminal fonts from the folder's
@@ -453,8 +482,8 @@ can be read. Its interface:
   system's appearance;
 - `schema()` is the published JSON Schema of format 2;
 - `check(theme)` holds any appearance to every contrast pair (`PAIRS`), the ANSI floors and the
-  selected row's distinctness, as it is and tinted by every workspace colour, and reports each
-  finding with its ratio.
+  selected row's distinctness, as it is and tinted by every hue of its own recipe, and reports
+  each finding with its ratio.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
 gives, and the theme the window is handed as it is created, is drawn by `draw`, which holds five
@@ -491,17 +520,22 @@ as written, and one Notice in the Inbox names the theme and the floors it breaks
 motion, and writes the custom properties and xterm's object from it (`theme.ts`). The first
 frame's theme is resolved before the window exists and handed to it with the window, so nothing
 is read or asked on the way to the first paint; a project's pick and an extension's theme are
-asked for afterwards (`theme_in_force`). The window still names the token, motion, geometry and
-tint lists it writes, and `core.test.ts` holds each to the engine's; the stylesheets' half of the
+asked for afterwards (`theme_in_force`). The window still names the token, motion and geometry
+lists it writes, and `core.test.ts` holds each to the engine's; the tint recipe comes with each
+resolved theme; the stylesheets' half of the
 contrast suite stays in `contrast.test.ts`, which reads the engine's `PAIRS` and fails for a pair
 a stylesheet draws that the list does not hold.
 
-**The command line asks the same engine** (#2321). `purlis theme list` shows every theme
-available on the machine, its appearances and where it comes from (Purlis Classic built in,
-the person's `theme.json` as `mine`, an approved extension's as `<extension>/<theme>`), and
-`purlis theme check <theme>` (an id, or the path of a theme file or folder) prints the check:
-why the theme is refused, what was left out of it, each appearance's contrast findings with
-the pair and ratio as warnings, and the hard floors, as text or as `--json` for a chat. It
+**The command line asks the same engine** (#2321, #2518). `purlis theme list` shows every
+theme available on the machine and in the plane, its appearances, its level and where it comes
+from (Purlis Classic built in, the person's `theme.json` as `mine`, a level's theme folder as
+`machine:<folder>`, `project:<folder>` or `workspace:<ws>:<folder>`, an approved extension's as
+`<extension>/<theme>`). The levels' folders are read through `Folders`, the same read the window
+makes, so the command line has no reader of its own for them. `purlis theme check <theme>` (an
+id, or the path of a theme file or folder) prints the check: why the theme is refused, what was
+left out of it, each appearance's contrast findings with the pair and ratio as warnings, the
+consent floors the window holds in each combination with the tokens it draws as purlis's own,
+and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
 `purlis docs show themes` has the JSON's shape. **An extension's theme says what is wrong
 with it** on its row in Extensions, beside the row's other complaints: why the engine refused

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "A purlis theme folder's theme.json (format 2)",
-  "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, and its options. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+  "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, its options, and how a workspace's colour tints it. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -296,6 +296,73 @@
         },
         "terminal": {
           "$ref": "#/$defs/font"
+        }
+      }
+    },
+    "tint": {
+      "description": "How a workspace's colour tints this theme. A key not given is the parent's, or Purlis Classic's.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "description": "false: a workspace's colour tints nothing in this theme.",
+          "type": "boolean"
+        },
+        "tokens": {
+          "description": "The tokens a workspace's colour turns. The strip shades (layer.*) are tinted on a workspace's own tab and chat strip; the rest on the whole window too.",
+          "type": "array",
+          "items": {
+            "enum": [
+              "surface.base",
+              "surface.sunken",
+              "surface.deep",
+              "surface.raised",
+              "surface.overlay",
+              "surface.hover",
+              "control.base",
+              "control.hover",
+              "control.aimed",
+              "control.count",
+              "text.primary",
+              "text.secondary",
+              "text.muted",
+              "border.subtle",
+              "border.strong",
+              "accent.base",
+              "accent.surface",
+              "focus.ring",
+              "tab.active",
+              "list.selected",
+              "list.selected-edge",
+              "markdown.link",
+              "chart.1",
+              "tree.guide",
+              "layer.workspace",
+              "layer.chat",
+              "layer.selected",
+              "layer.divider"
+            ]
+          },
+          "maxItems": 119
+        },
+        "hues": {
+          "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "red",
+              "orange",
+              "yellow",
+              "green",
+              "teal",
+              "blue",
+              "purple",
+              "pink"
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/colour"
+          }
         }
       }
     }

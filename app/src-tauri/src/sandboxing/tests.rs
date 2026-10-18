@@ -1750,6 +1750,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             said: None,
             never: never_here(sandbox::Os::this()),
             hosts_changed: None,
+            browser_sites_changed: None,
             presets_changed: None,
             presets: presets_of(
                 &sandbox::Plane::read(project.path()),
@@ -1779,6 +1780,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             ),
             never: never_here(sandbox::Os::this()),
             hosts_changed: None,
+            browser_sites_changed: None,
             presets_changed: None,
             presets: presets_of(
                 &sandbox::Plane::read(project.path()),
@@ -1816,6 +1818,7 @@ fn keeping_it_off_leaves_the_project_as_it_was_and_asks_no_more() {
             said: None,
             never: never_here(sandbox::Os::this()),
             hosts_changed: None,
+            browser_sites_changed: None,
             presets_changed: None,
             presets: presets_of(
                 &sandbox::Plane::read(project.path()),
@@ -1991,6 +1994,47 @@ fn the_project_s_hosts_are_told_once_and_not_again_once_read() {
     let after = acknowledge(project.path(), &told.now).expect("read");
 
     assert_eq!(after.hosts_changed, None);
+}
+
+/// #2443: a teammate's browser site is told once, site by site, and reaches a browser here once
+/// it was shown; the Granted list has it apart, waiting until then.
+#[test]
+fn the_project_s_browser_sites_are_told_once_and_wait_in_granted_until_shown() {
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\nbrowser-sites = [\"news.example.org:443\"]\n",
+    )
+    .expect("toml");
+    let told = state_of(project.path())
+        .browser_sites_changed
+        .expect("told");
+    assert_eq!(told.added, ["news.example.org:443"]);
+    let row = |root: &std::path::Path| {
+        grants_of(
+            root,
+            &crate::chats::Chats::new(),
+            &crate::chatbrowsers::ChatBrowsers::default(),
+        )
+        .into_iter()
+        .find(|one| one.what == GrantWhat::BrowserSite)
+        .expect("listed")
+    };
+    let waiting = row(project.path());
+    assert_eq!(waiting.level, GrantLevel::Project);
+    assert_eq!(waiting.target, "news.example.org:443");
+    assert!(waiting.waiting.is_some(), "{waiting:?}");
+
+    let after = acknowledge_browser_sites(project.path(), &told.added).expect("read");
+
+    assert_eq!(after.browser_sites_changed, None);
+    assert_eq!(row(project.path()).waiting, None);
+    assert_eq!(
+        browser_site_of(&row(project.path()).id),
+        Some(SiteGranted::Project(
+            sandbox::hosts::Host::parse("news.example.org:443").unwrap()
+        ))
+    );
 }
 
 /// #1385: a teammate is told once of a preset that widens, and not again once it was read.

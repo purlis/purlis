@@ -93,6 +93,56 @@ test("M3 is the app's resident memory in every look with no chat running", () =>
   assert.match(m3.extra, /median of 4 samples/);
 });
 
+/** A process as `stress.e2e.ts` samples it: the session host's part of a look (#2597). */
+const host = (rssKb) => ({ pid: 2, rssKb, threads: 20, descriptors: 30 });
+
+/** Looks from a run whose window starts a session host, as `stress.jsonl` holds them since #2597. */
+const hosted = [
+  look("nothing open", { pid: 1, rssKb: 200_000, host: host(40_000) }),
+  look("fifty open", { pid: 1, harnesses: 50, rssKb: 205_000, webContentKb: 300_000, host: host(400_000) }),
+  look("all closed", { pid: 1, rssKb: 202_000, host: host(60_000) }),
+  look("fifty open", { pid: 1, harnesses: 50, rssKb: 206_000, webContentKb: 310_000, host: host(410_000) }),
+  look("all closed", { pid: 1, rssKb: 204_000, host: host(64_000) }),
+].map((r) => JSON.stringify(r));
+
+test("M3 counts the app as the window plus its session host, and says so", () => {
+  const { entries } = benchmarks(readSamples(hosted.join("\n")), "macos-latest");
+  const m3 = entries.find((e) => e.name.startsWith("M3"));
+  // 240,000, 262,000 and 268,000 KB: the median is 262,000 KB, 255.9 MB.
+  assert.equal(m3.value, 255.9);
+  assert.match(m3.name, /window \+ session host/);
+  assert.match(m3.extra, /median of 3 samples: 234.4, 255.9, 261.7 MB/);
+});
+
+test("M3 keeps each process's own figure beside the sum", () => {
+  const { entries } = benchmarks(readSamples(hosted.join("\n")), "ubuntu-24.04");
+  const m3 = entries.find((e) => e.name.startsWith("M3"));
+  // The window: 200,000, 202,000, 204,000 KB; the host: 40,000, 60,000, 64,000 KB.
+  assert.match(m3.extra, /window 197.3 MB/);
+  assert.match(m3.extra, /session host 58.6 MB/);
+});
+
+test("a look whose app runs no session host counts the window alone", () => {
+  const lines = [
+    look("nothing open", { rssKb: 190_000, host: null }),
+    look("all closed", { rssKb: 200_000, host: null }),
+  ];
+  const m3 = benchmarks(lines, "ubuntu-24.04").entries.find((e) => e.name.startsWith("M3"));
+  assert.equal(m3.value, 190.4);
+  assert.match(m3.extra, /session host none/);
+});
+
+test("a look whose host has no reading is skipped, never counted as the window alone", () => {
+  const lines = [
+    look("nothing open", { rssKb: 200_000, host: host(40_000) }),
+    look("all closed", { rssKb: 202_000, host: host(0) }),
+    look("all closed", { rssKb: 204_000, host: { pid: 2 } }),
+    look("all closed", { rssKb: 206_000, host: host(64_000) }),
+  ];
+  const m3 = benchmarks(lines, "ubuntu-24.04").entries.find((e) => e.name.startsWith("M3"));
+  assert.match(m3.extra, /median of 2 samples/);
+});
+
 test("a row with fewer than two samples is left out with a warning, never recorded from one", () => {
   const one = [
     look("nothing open", { rssKb: 190_000 }),
@@ -127,7 +177,7 @@ test("a run with no row writes no file, so the job skips the tool", () => {
     entries.map((e) => e.name),
     [
       "M2 web content at fifty hot chats (resident)",
-      "M3 native side with no chats (resident)",
+      "M3 native side with no chats (window + session host, resident)",
     ],
   );
 });

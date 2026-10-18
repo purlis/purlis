@@ -31,9 +31,15 @@
 //! a relay made with [`Relay::new`] tells its client both as a kept one does. Both are this
 //! host's own words: the other host's are never handed on, and neither holds up linking again
 //! for a client that has stopped reading. A view the other host will not attach again has ended for good, and the
-//! client is told so. What the other host named to the link that ended, a chat's confinement
-//! among them, is not named again by this: the other host names a link only what that link made
-//! or took back (#2511).
+//! client is told so.
+//!
+//! **The window takes back its own runner chats' sandboxes** (#2511, ruled 2026-10-17). The
+//! relay gives each client link a name of its own, and on every link it makes to the other host
+//! for that client it says the name as it carries over the projects held (`take_back`): the other
+//! host names that link the confinements of the chats the client started over the links before,
+//! made or composed for them, and no other. So after a re-link the window answers its runner
+//! chats' asks and changes their reach again, Forgets included. The name is the relay's own
+//! word: a client's `take_back` is refused.
 //!
 //! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
 //! client, so a vault's value never reaches another host this way.
@@ -240,6 +246,7 @@ impl Relayed {
     fn start(source: Source, opener: Opener, scope: Scope) -> Relayed {
         let client = Arc::new(ClientLink {
             scope,
+            window: ulid::Ulid::generate().to_string(),
             opener,
             kept: Mutex::default(),
             handing: tokio::sync::Mutex::new(()),
@@ -426,6 +433,9 @@ impl LinkTold {
 /// carries over to each new link to the other host.
 struct ClientLink {
     scope: Scope,
+    /// The relay's name for this client link, which every link to the other host made for it
+    /// says ([`Command::TakeBack`], #2511): a name no other client link is given.
+    window: String,
     opener: Opener,
     kept: Mutex<Kept>,
     /// Held while an event is handed to the client, so the cursor moves only once it has been.
@@ -685,7 +695,8 @@ struct Carried {
 struct LinkEnded;
 
 /// Carry what `client`'s link stands on over to `link`, new to the other host: hold its
-/// projects, subscribe from its cursor, and attach its views again. The link before it, if
+/// projects, name the client to take back its chats' confinements (#2511), subscribe from its
+/// cursor, and attach its views again. The link before it, if
 /// one is still up, carries commands while the first pass is made; then commands wait, the
 /// commands still changing what the client stands on are let finish, and what they changed is
 /// carried too. `None` when the new link ends first.
@@ -771,6 +782,11 @@ async fn carry(
             return Err(LinkEnded);
         }
         carried.held.insert(project, path);
+    }
+    // A host that does not know the word takes nothing back.
+    let taken = upstream.client.take_back(&client.window).await;
+    if closed(&taken) {
+        return Err(LinkEnded);
     }
     if let Some((subscription, cursor)) = subscribe {
         let subscribed = upstream.client.subscribe(cursor).await;
@@ -966,6 +982,12 @@ impl session::Host for Relay {
                     command.word(),
                     peer.scope()
                 ),
+            });
+        }
+        if let Command::TakeBack { .. } = command {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "`take_back` is the relaying host's own word, and no client sends it".into(),
             });
         }
         let command = ids_for_the_window_alone(command, peer.scope());

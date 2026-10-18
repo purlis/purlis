@@ -301,6 +301,34 @@ impl PrivateDirectory {
         nix::unistd::fsync(&self.opened).map_err(io::Error::from)
     }
 
+    /// Makes `bytes` the file `name` in this directory, `0600`, only when no file of that name
+    /// is there (`O_EXCL`, `O_NOFOLLOW`, relative to the held descriptor): of two writers at
+    /// once, one makes it and the other is told [`io::ErrorKind::AlreadyExists`]. Synced, and
+    /// the directory with it. `name` is one plain name, as for [`PrivateDirectory::replace_file`].
+    pub fn create_file(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        use nix::fcntl::{OFlag, openat};
+        use nix::sys::stat::Mode;
+        use std::io::Write;
+
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{name:?} is not one plain file name"),
+            ));
+        }
+        let flags =
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+        let file = File::from(
+            openat(&self.opened, name, flags, Mode::from_bits_truncate(0o600))
+                .map_err(io::Error::from)?,
+        );
+        (&file)
+            .write_all(bytes)
+            .and_then(|()| file.set_permissions(std::fs::Permissions::from_mode(0o600)))
+            .and_then(|()| file.sync_all())?;
+        nix::unistd::fsync(&self.opened).map_err(io::Error::from)
+    }
+
     /// The path the directory was opened by, for what is said of it.
     pub fn path(&self) -> &Path {
         &self.path
@@ -391,6 +419,23 @@ mod tests {
 
     fn other() -> Uid {
         Uid(ours().0.wrapping_add(1))
+    }
+
+    #[test]
+    fn a_file_made_once_is_never_made_again_or_replaced() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let held = PrivateDirectory::open(&dir.path().join("held")).unwrap();
+        held.create_file("once", b"first").unwrap();
+        let again = held.create_file("once", b"second").unwrap_err();
+        assert_eq!(again.kind(), io::ErrorKind::AlreadyExists);
+        let path = dir.path().join("held").join("once");
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(held.create_file("../out", b"x").is_err());
     }
 
     #[test]

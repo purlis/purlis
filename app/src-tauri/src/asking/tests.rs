@@ -1506,7 +1506,7 @@ fn a_browser_site_and_a_host_for_the_chats_commands_are_two_rows_each_its_own_al
         "Its browser wants to reach news.example.org:443 and api.example.com:443. An Allow is \
          its browser's alone, from its next act; nothing restarts."
     );
-    assert_eq!(ids(sites), ["chat", "you", KEEP]);
+    assert_eq!(ids(sites), ["chat", "you", "project", KEEP]);
     assert_eq!(
         sites.answer,
         AnswerPath::BrowserSites {
@@ -1588,7 +1588,7 @@ fn a_browser_sites_ask_answers_only_the_sites_its_line_names_whole() {
         "{}",
         sites.says
     );
-    assert_eq!(ids(sites), ["chat", "you", KEEP]);
+    assert_eq!(ids(sites), ["chat", "you", "project", KEEP]);
 }
 
 /// #2364: a site too long for the line to name whole is never offered an Allow.

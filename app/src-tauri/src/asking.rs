@@ -1026,13 +1026,14 @@ fn browser_sites_key(session: u32) -> String {
 
 /// **The browser sites adapter** (#2018): one ask per chat, naming the sites new to the project
 /// its browser held back what it would open, send or type on, oldest first, each whole. Allow
-/// for this chat; Allow always here, on this machine, unless an administrator's policy leaves
-/// out `you`; Keep blocked. Every word is purlis's, and the line says an Allow is the browser's
-/// alone (the chat's own commands still need their own Allow for a host) and what it does
-/// (#2364): the browser reaches the site from its next act, and nothing restarts.
+/// for this chat; Allow always here, on this machine; Allow for everyone in this project
+/// (#2443), each unless an administrator's policy leaves its scope out; Keep blocked. Every word
+/// is purlis's, and the line says an Allow is the browser's alone (the chat's own commands still
+/// need their own Allow for a host) and what it does (#2364): the browser reaches the site from
+/// its next act, and nothing restarts.
 ///
 /// **It answers only what its line names whole** ([`sites_named`], #2364): the rest wait for the
-/// next ask. A site too long to be named whole is offered Keep blocked alone.
+/// next ask. A site too long to be named whole is offered Keep blocked alone, at every scope.
 pub fn browser_sites(
     waits: &crate::chatbrowsers::SitesWait,
     locks: &purlis_core::sandbox::policy::Locks,
@@ -1056,6 +1057,10 @@ pub fn browser_sites(
                     Level::You,
                     "Always allow in this project, on this machine",
                 ));
+            }
+            // Committed for everyone in the project (#2443): still the browsers' alone.
+            if locks.scope_removed(Level::Project).is_none() {
+                options.push(allow(Level::Project, "Allow for everyone in this project"));
             }
             named
         }

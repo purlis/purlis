@@ -244,7 +244,9 @@ jobs:
     # github-action-benchmark's data on the `benchmarks` branch (#818), as `ci.yml`'s
     # `bench-record` appends the `bench` job's. Each value is the median of the run's own
     # samples (`tools/stress-bench.mjs`), and each OS is its own series: M2 is the footprint
-    # peak on macOS and resident memory on Linux, two measures that are never compared.
+    # peak on macOS and resident memory on Linux, two measures that are never compared. M3 is
+    # the window plus its session host since #2605, under a new name, so the window-only
+    # series ends where the new one starts.
     #
     # **Only a run on `main` records, and only this job can write.** A pull request never runs
     # `fifty tabs` (V70), so it never starts this job either and pays no runner time for it;

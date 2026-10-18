@@ -1,0 +1,506 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! After a re-link, the window takes back the sandboxes of the chats it started on a runner, its
+//! own chats only (#2511, ruled 2026-10-17). On each link the desktop's relay makes to the runner
+//! for one window it names that window (`take_back`), and the runner names that link the
+//! confinements of the chats the window started there over the links before, whether the window
+//! made the confinement or the runner composed it for the window's start. It names it no
+//! confinement the runner's own window made, and none made or composed for another window's
+//! link. Here the runner's host is spoken to directly, each link of the desktop's admitted as
+//! `remote-link`, so the links' ends are the test's to choose; the confinements and programs are
+//! stand-ins, so none of this needs a terminal.
+
+#![cfg(unix)]
+
+use std::time::Duration;
+
+use purlis_host::standin::{StandInConfines, StandIns};
+use purlis_host::{Compose, Hosting, ToCompose};
+use purlis_session_protocol::auth::{Credentials, Scope};
+use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
+use purlis_session_protocol::link::{self, Link};
+use purlis_session_protocol::session::{
+    self, Answer, Beside, Client, Command, Confine, ConfinePlan, Events, Launch, Layer, Listed,
+    ProgramKind, Pushed, ReachChange, SandboxTold, StartProgram, Told,
+};
+use purlis_terminal::session::Spec;
+use tokio::io::duplex;
+use tokio::time::timeout;
+
+const PROJECT: &str = "01J9PRJCT00000000000000000";
+const PATIENCE: Duration = Duration::from_secs(5);
+/// The desktop's relay's names for two windows it relays to the runner.
+const WINDOW: &str = "01JA0WNDW0000000000000000";
+const ANOTHER_WINDOW: &str = "01JA0WNDW0000000000000001";
+/// A chat's confinement the runner composes for the window's start.
+const COMPOSED: &str = "01J9CNFNMNT0000000000000001";
+/// A chat's confinement the window made, and a chat started in it.
+const MADE: &str = "01J9CNFNMNT0000000000000002";
+
+static HELD: std::sync::LazyLock<Credentials> =
+    std::sync::LazyLock::new(|| Credentials::mint().unwrap());
+
+/// Composes every start as `/bin/echo`; one started by its names in a confinement of the
+/// runner's own, as its binary composes it with its own sandbox.
+struct Composes;
+
+impl Compose for Composes {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        if starting.start.launch.is_none() {
+            starting.beside.confine(&planned("unused").plan)?;
+        }
+        Ok(Spec::new("/bin/echo", starting.size))
+    }
+}
+
+fn planned(id: &str) -> Confine {
+    Confine {
+        confinement: id.into(),
+        project: PROJECT.into(),
+        plan: ConfinePlan {
+            listed: vec![Listed {
+                host: "api.anthropic.com".into(),
+                layer: Layer::Open,
+            }],
+            never: Vec::new(),
+            withdrawn: Vec::new(),
+            anything: false,
+            tunnel_ports: vec![443],
+            plain_ports: vec![80],
+            any_port: false,
+            beside: Beside::Wrapped,
+            given: vec![5432],
+        },
+        asks: true,
+    }
+}
+
+/// The runner's host, its confinements stand-ins, and the project it holds.
+struct Runner {
+    hosting: Hosting,
+    confines: StandInConfines,
+    project: tempfile::TempDir,
+}
+
+fn a_runner() -> Runner {
+    let confines = StandInConfines::default();
+    Runner {
+        hosting: Hosting::confining(Composes, confines.clone(), StandIns::default()),
+        confines,
+        project: tempfile::tempdir().unwrap(),
+    }
+}
+
+fn identity(device: &str) -> Identity {
+    Identity {
+        device: device.into(),
+        key: LinkKey::generate().unwrap(),
+    }
+}
+
+/// A link to `runner` over the link between hosts, which it serves as `remote-link`.
+async fn between_hosts(runner: Hosting) -> Link {
+    let (a_end, b_end) = duplex(256 * 1024);
+    let (desktop, ours) = (
+        identity("01JA0DESKT0P00000000000000"),
+        identity("01JB0RUNNER0000000000000000"),
+    );
+    let pinned = |identity: &Identity| Pinned {
+        device: identity.device.clone(),
+        key: identity.key.public(),
+    };
+    let (peer, runner_pinned) = (pinned(&desktop), pinned(&ours));
+    tokio::spawn(async move {
+        let answered = hostlink::answer(
+            b_end,
+            Handshake::THIS_BUILD,
+            &ours,
+            &peer,
+            Liveness::default(),
+        )
+        .await
+        .unwrap();
+        session::serve(answered.link, runner, None).await
+    });
+    hostlink::connect(
+        a_end,
+        Handshake::THIS_BUILD,
+        &desktop,
+        &runner_pinned,
+        Liveness::default(),
+    )
+    .await
+    .unwrap()
+}
+
+impl Runner {
+    /// A link to the runner admitted as `scope`, holding the project and subscribed: the
+    /// runner's own window's for `local-ui`, and one of the desktop's over the link between
+    /// hosts for `remote-link`.
+    async fn linked(&self, scope: Scope) -> (Client, Events) {
+        let linked = if scope == Scope::RemoteLink {
+            between_hosts(self.hosting.clone()).await
+        } else {
+            let (a, b) = duplex(256 * 1024);
+            let (client, served) = tokio::join!(
+                link::connect(a, session::speaks(), scope, HELD.of(scope)),
+                link::serve_any(b, session::speaks(), &HELD)
+            );
+            tokio::spawn(session::serve(served.unwrap(), self.hosting.clone(), None));
+            client.unwrap()
+        };
+        let (client, _views, events) = Client::new(linked);
+        client
+            .hold_project(PROJECT, self.project.path().to_str().unwrap())
+            .await
+            .expect("held");
+        client
+            .subscribe(Default::default())
+            .await
+            .expect("subscribed");
+        (client, events)
+    }
+
+    /// A link the desktop's relay made for `window`, named so before anything else.
+    async fn relayed_for(&self, window: &str) -> (Client, Events, Vec<String>) {
+        let (client, events) = self.linked(Scope::RemoteLink).await;
+        let taken = client.take_back(window).await.expect("named its window");
+        (client, events, taken)
+    }
+
+    /// Wait until the runner has dealt with the end of the link that last held `id`: its ports
+    /// of the machine are withdrawn.
+    async fn unheld(&self, id: &str) {
+        let deadline = std::time::Instant::now() + PATIENCE;
+        while !self.confines.seen().iter().any(|one| {
+            one.confine.confinement == id
+                && one
+                    .changes
+                    .contains(&ReachChange::WithdrawPort { port: 5432 })
+        }) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the runner never heard the link end"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+}
+
+/// A chat the runner composes by its names, its confinement named to the start's link.
+fn composed(id: &str) -> StartProgram {
+    StartProgram {
+        confinement: Some(id.into()),
+        ..StartProgram::of(PROJECT, ProgramKind::Harness)
+    }
+}
+
+/// A chat started in confinement `id`, which the link made.
+fn running_in(id: &str) -> StartProgram {
+    StartProgram {
+        launch: Some(Launch {
+            program: "/bin/echo".into(),
+            args: Vec::new(),
+            cwd: None,
+            set: Vec::new(),
+            strip: Vec::new(),
+            pass: Vec::new(),
+            declared: Vec::new(),
+            harness: None,
+            git_hooks: None,
+            reporting: None,
+            confinement: Some(id.into()),
+        }),
+        ..StartProgram::of(PROJECT, ProgramKind::Harness)
+    }
+}
+
+async fn changed(client: &Client, id: &str, change: ReachChange) -> Result<Answer, String> {
+    client
+        .call(Command::ChangeReach {
+            confinement: id.into(),
+            change,
+        })
+        .await
+        .map_err(|why| why.refusal().map(|r| r.code.clone()).unwrap_or_default())
+}
+
+async fn reach_of(client: &Client, id: &str) -> Result<(), String> {
+    client
+        .call(Command::ReachOf {
+            confinement: id.into(),
+        })
+        .await
+        .map(drop)
+        .map_err(|why| why.refusal().map(|r| r.code.clone()).unwrap_or_default())
+}
+
+/// Whether `events` is pushed what a confinement's proxy did, soon.
+async fn hears_a_sandbox(events: &mut Events) -> bool {
+    timeout(Duration::from_millis(300), async {
+        loop {
+            match events.recv().await {
+                Some(Told::Pushed(Pushed::Sandbox { .. })) => return true,
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    })
+    .await
+    .unwrap_or(false)
+}
+
+fn asked() -> SandboxTold {
+    SandboxTold::Asked {
+        targets: vec!["pypi.example.com:443".into()],
+    }
+}
+
+#[tokio::test]
+async fn after_a_re_link_the_window_answers_its_runner_chats_asks_and_changes_their_reach_again() {
+    let runner = a_runner();
+    let (first, first_events, taken) = runner.relayed_for(WINDOW).await;
+    assert_eq!(taken, Vec::<String>::new(), "nothing to take back yet");
+    first
+        .start_program(composed(COMPOSED))
+        .await
+        .expect("composed on the runner");
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+
+    drop((first, first_events));
+    runner.unheld(COMPOSED).await;
+    runner.unheld(MADE).await;
+    let (again, mut events, taken) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(taken, [COMPOSED, MADE], "both of the window's chats");
+    for id in [COMPOSED, MADE] {
+        runner.confines.proxy_did(id, asked());
+        assert!(hears_a_sandbox(&mut events).await, "{id}: its ask is heard");
+        assert!(
+            runner.confines.askable(id),
+            "{id}: it may hold an ask again"
+        );
+        assert_eq!(
+            changed(
+                &again,
+                id,
+                ReachChange::Allow {
+                    host: "pypi.example.com".into(),
+                    layer: Layer::Chat,
+                },
+            )
+            .await,
+            Ok(Answer::ReachChanged {
+                retry: vec!["pypi.example.com:443".into()]
+            }),
+            "{id}: the window answers its ask"
+        );
+        assert_eq!(reach_of(&again, id).await, Ok(()), "{id}");
+    }
+}
+
+#[tokio::test]
+async fn after_a_re_link_the_person_forgets_a_runner_chats_allows() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .start_program(composed(COMPOSED))
+        .await
+        .expect("composed on the runner");
+    let allow = ReachChange::Allow {
+        host: "pypi.example.com".into(),
+        layer: Layer::Chat,
+    };
+    changed(&first, COMPOSED, allow).await.expect("allowed");
+
+    drop((first, first_events));
+    runner.unheld(COMPOSED).await;
+    let (again, _events, _) = runner.relayed_for(WINDOW).await;
+
+    let forget = ReachChange::Forget {
+        host: "pypi.example.com".into(),
+        layer: Layer::Chat,
+    };
+    changed(&again, COMPOSED, forget.clone())
+        .await
+        .expect("forgotten");
+    let seen = runner.confines.seen();
+    assert_eq!(seen[0].changes.last(), Some(&forget));
+}
+
+#[tokio::test]
+async fn a_link_renewed_ahead_of_its_limit_is_named_the_windows_chats_while_the_old_one_lasts() {
+    let runner = a_runner();
+    let (old, _old_events, _) = runner.relayed_for(WINDOW).await;
+    old.start_program(composed(COMPOSED))
+        .await
+        .expect("composed on the runner");
+
+    let (renewed, _events, taken) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(taken, [COMPOSED]);
+    assert_eq!(reach_of(&renewed, COMPOSED).await, Ok(()));
+    assert_eq!(
+        reach_of(&old, COMPOSED).await,
+        Ok(()),
+        "the old link still is"
+    );
+}
+
+#[tokio::test]
+async fn a_chat_the_window_starts_on_the_link_a_renewal_replaces_is_named_to_the_new_one_too() {
+    let runner = a_runner();
+    let (old, _old_events, _) = runner.relayed_for(WINDOW).await;
+    let (renewed, _events, _) = runner.relayed_for(WINDOW).await;
+
+    old.start_program(composed(COMPOSED))
+        .await
+        .expect("composed on the runner");
+    old.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    old.start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+
+    for id in [COMPOSED, MADE] {
+        assert_eq!(reach_of(&renewed, id).await, Ok(()), "{id}");
+    }
+}
+
+#[tokio::test]
+async fn the_runner_never_names_its_own_windows_confinements_to_a_relayed_window() {
+    let runner = a_runner();
+    let (own, _own_events) = runner.linked(Scope::LocalUi).await;
+    own.start_program(composed(COMPOSED))
+        .await
+        .expect("composed for the runner's own window");
+    own.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined by the runner's own window");
+    own.start_program(running_in(MADE))
+        .await
+        .expect("runs in its confinement");
+
+    let (relayed, mut events, taken) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(taken, Vec::<String>::new());
+    for id in [COMPOSED, MADE] {
+        assert_eq!(
+            reach_of(&relayed, id).await,
+            Err(session::NO_SUCH_CHAT.into()),
+            "{id}"
+        );
+        runner.confines.proxy_did(id, asked());
+        assert!(!hears_a_sandbox(&mut events).await, "{id}: not told");
+    }
+}
+
+#[tokio::test]
+async fn the_runner_never_names_another_windows_confinements_to_a_window_after_its_re_link() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    let (another, _another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+    first
+        .start_program(composed(COMPOSED))
+        .await
+        .expect("composed for the first window");
+    another
+        .start_program(composed(MADE))
+        .await
+        .expect("composed for another window");
+
+    drop((first, first_events));
+    runner.unheld(COMPOSED).await;
+    let (again, _events, taken) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(taken, [COMPOSED]);
+    assert_eq!(
+        reach_of(&again, MADE).await,
+        Err(session::NO_SUCH_CHAT.into()),
+        "another window's chat"
+    );
+    assert_eq!(
+        reach_of(&another, MADE).await,
+        Ok(()),
+        "still that window's"
+    );
+}
+
+#[tokio::test]
+async fn a_window_whose_link_ended_is_not_named_to_another_window_s_next_link() {
+    let runner = a_runner();
+    let (another, another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+    another
+        .start_program(composed(COMPOSED))
+        .await
+        .expect("composed for another window");
+
+    drop((another, another_events));
+    runner.unheld(COMPOSED).await;
+    let (relayed, _events, taken) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(taken, Vec::<String>::new());
+    assert_eq!(
+        reach_of(&relayed, COMPOSED).await,
+        Err(session::NO_SUCH_CHAT.into())
+    );
+}
+
+#[tokio::test]
+async fn a_link_names_one_window() {
+    let runner = a_runner();
+    let (relayed, _events, _) = runner.relayed_for(WINDOW).await;
+
+    relayed
+        .take_back(WINDOW)
+        .await
+        .expect("the same window again");
+    let refused = relayed.take_back(ANOTHER_WINDOW).await.unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::MALFORMED)
+    );
+}
+
+#[tokio::test]
+async fn a_link_that_named_no_window_has_its_chats_taken_back_by_none() {
+    let runner = a_runner();
+    let (unnamed, unnamed_events) = runner.linked(Scope::RemoteLink).await;
+    unnamed
+        .start_program(composed(COMPOSED))
+        .await
+        .expect("composed on the runner");
+
+    drop((unnamed, unnamed_events));
+    runner.unheld(COMPOSED).await;
+    let (relayed, _events, taken) = runner.relayed_for(WINDOW).await;
+
+    assert_eq!(taken, Vec::<String>::new());
+    assert_eq!(
+        reach_of(&relayed, COMPOSED).await,
+        Err(session::NO_SUCH_CHAT.into())
+    );
+}
+
+#[tokio::test]
+async fn the_window_takes_nothing_back_by_a_relaying_hosts_word() {
+    let runner = a_runner();
+    let (own, _events) = runner.linked(Scope::LocalUi).await;
+
+    let refused = own.take_back(WINDOW).await.unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED)
+    );
+}

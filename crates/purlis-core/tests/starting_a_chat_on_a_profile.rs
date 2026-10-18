@@ -131,7 +131,10 @@ fn a_chat_started_on_a_profile_runs_that_profiles_command_in_that_profiles_envir
 
     let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
 
-    assert_eq!(ready.program, bin.display().to_string());
+    // The profile's program by its real path: a sandboxed start runs the file its check asked
+    // (ADR 0067, V87g), and on macOS a temp folder's real path is `/private/var/…` (#2616).
+    let real = bin.canonicalize().expect("the program's real path");
+    assert_eq!(ready.program, real.display().to_string());
     let home = std::env::var("HOME").unwrap();
     assert_eq!(
         ready.env.iter().find(|(n, _)| n == "CLAUDE_CONFIG_DIR"),
