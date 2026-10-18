@@ -44,10 +44,16 @@ fn a_specimen_is_drawn_as_the_window_draws_its_theme_with_the_consent_floors_hel
         let theme = chosen(&asked).expect("a theme");
         let drawn = drawn(&asked).expect("drawn");
         assert_eq!(drawn, theme::draw(theme));
-        assert_eq!(drawn.held, None, "Purlis Classic clears every consent floor");
+        assert_eq!(
+            drawn.held, None,
+            "Purlis Classic clears every consent floor"
+        );
     }
     let why = drawn(&specimen("no-such-theme", None)).expect_err("refused");
-    assert_eq!(Err(why), chosen(&specimen("no-such-theme", None)).map(|_| ()));
+    assert_eq!(
+        Err(why),
+        chosen(&specimen("no-such-theme", None)).map(|_| ())
+    );
 }
 
 #[test]

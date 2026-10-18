@@ -542,7 +542,10 @@ fn the_window_draws_an_option_value_that_breaks_a_floor_with_purlis_s_values_and
         },
         || unreachable!("the person's own theme needs no survey"),
     );
-    for drawn in [resolved, follow(&theme, Appearance::Dark, Contrast::Standard)] {
+    for drawn in [
+        resolved,
+        follow(&theme, Appearance::Dark, Contrast::Standard),
+    ] {
         let held = drawn.held.as_ref().expect("the floor was held");
         assert_eq!(held.floors, [Floor::Danger]);
         assert_eq!(held.tokens, ["danger.surface", "danger.text"]);
