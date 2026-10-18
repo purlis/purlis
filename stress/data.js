@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792344796974,
+  "lastUpdate": 1792347876521,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5388,6 +5388,42 @@ window.BENCHMARK_DATA = {
             "value": 677.2,
             "unit": "MB",
             "extra": "median of 6 samples: 630.1, 660.5, 671, 683.3, 683.8, 765.5 MB; window 396 MB, session host 281.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b8f84e74d43f5c1ea8e469e7d1202f549eb60d8",
+          "message": "Runners: after a re-link the window takes back its own runner chats' sandboxes (#2593)\n\n* Runners: after a re-link the window takes back its own runner chats' sandboxes (#2511)\n\nSession protocol 1.19: take_back, the desktop relay's own word on each\nlink it makes to a runner for one window, names that window; the runner\nanswers with the confinements of the chats that window started there,\nmade or composed for it, and names them to the new link. It never names\none the runner's own window made, or one made or composed for another\nwindow's link. A chat started on either of two overlapping links of one\nwindow is named to both.\n\nFD-27's grants table gains a take_back row (remote-link only) and its row\ntest; ADR 0078 and ADR 0068 amended with the person's ruling of\n2026-10-17.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: take_back is session protocol 1.22; the ADRs mark what is to be confirmed (#2511)\n\n1.19 was reserved and released: 1.21 landed first. The version notes and\nthe fixture keep protocol order. The ADR amendments say only the ruling\nis ruled, and the changelog fragment says what the host does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T21:26:07+04:00",
+          "tree_id": "c2d8f2bd8dace064f3605452258825be92344865",
+          "url": "https://github.com/purlis/purlis/commit/9b8f84e74d43f5c1ea8e469e7d1202f549eb60d8"
+        },
+        "date": 1792347874886,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1538,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1363.5, 1557, 1538 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 640.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 616.4, 632.4, 639.5, 641.6, 641.8, 734.8 MB; window 382.1 MB, session host 258.4 MB"
           }
         ]
       }
