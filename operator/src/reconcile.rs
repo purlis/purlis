@@ -118,6 +118,28 @@ pub fn status_of_an_object_in_the_way(kind: &str, name: &str) -> ClaimStatus {
     }
 }
 
+/// A Claim's status when its pool's `kind` named `name` in its namespace belongs only to
+/// `holders`, Claims the operator made it for and now refuses, since they were made before the
+/// policy on claims was in force: it is left as it is, and goes with them.
+pub fn status_of_objects_held_by_refused_claims(
+    kind: &str,
+    name: &str,
+    holders: &[String],
+) -> ClaimStatus {
+    ClaimStatus {
+        conditions: vec![condition(
+            "False",
+            "HeldByClaimsMadeBeforePolicy",
+            format!(
+                "The {kind} {name} in this namespace belongs to claims made before the policy on \
+                 claims was in force ({}), so it is left as it is. Delete them, or wait for them \
+                 to end, and this claim goes on.",
+                holders.join(", ")
+            ),
+        )],
+    }
+}
+
 /// `next`, with each condition's transition time kept from `previous` while its status has not
 /// changed, which is when Kubernetes' conventions say the time moves. A status that says the same
 /// thing as before is then equal to it, and is not written again.
@@ -219,37 +241,61 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 &namespace,
                 owners_with(template_held.as_ref(), &claim, &kept),
             );
-            template.metadata.resource_version =
-                template_held.and_then(|held| held.resource_version);
+            template.metadata.resource_version = template_held
+                .as_ref()
+                .and_then(|held| held.resource_version.clone());
             let mut warm = warm_pool_for(
                 &pool,
                 &namespace,
                 owners_with(warm_held.as_ref(), &claim, &kept),
             );
-            warm.metadata.resource_version = warm_held.and_then(|held| held.resource_version);
+            warm.metadata.resource_version = warm_held
+                .as_ref()
+                .and_then(|held| held.resource_version.clone());
+            // Who holds an object in the way: Claims the operator made it for and now refuses,
+            // or none it knows of.
+            let holders = |held: &Option<ObjectMeta>| {
+                held.as_ref()
+                    .map(|held| upstream::claims_holding(held, &pool, &kept))
+                    .unwrap_or_default()
+            };
             let in_the_way = [
                 (
                     &template_found,
                     SandboxTemplate::kind(&()),
                     template.name_any(),
+                    holders(&template_held),
                 ),
-                (&warm_found, SandboxWarmPool::kind(&()), warm.name_any()),
-                (&claim_found, SandboxClaim::kind(&()), wanted.name_any()),
+                (
+                    &warm_found,
+                    SandboxWarmPool::kind(&()),
+                    warm.name_any(),
+                    holders(&warm_held),
+                ),
+                (
+                    &claim_found,
+                    SandboxClaim::kind(&()),
+                    wanted.name_any(),
+                    Vec::new(),
+                ),
             ]
             .into_iter()
-            .find(|(found, _, _)| **found == Found::InTheWay);
-            if let Some((_, kind, object)) = in_the_way {
-                tracing::warn!(
-                    claim = %name, %namespace, %kind, %object,
-                    "left as it is: an upstream object the operator did not make has the name it would use"
-                );
-                write_status(
-                    client,
-                    &claim,
-                    &namespace,
-                    status_of_an_object_in_the_way(&kind, &object),
-                )
-                .await?;
+            .find(|(found, _, _, _)| **found == Found::InTheWay);
+            if let Some((_, kind, object, holders)) = in_the_way {
+                let status = if holders.is_empty() {
+                    tracing::warn!(
+                        claim = %name, %namespace, %kind, %object,
+                        "left as it is: an upstream object the operator did not make has the name it would use"
+                    );
+                    status_of_an_object_in_the_way(&kind, &object)
+                } else {
+                    tracing::warn!(
+                        claim = %name, %namespace, %kind, %object, holders = %holders.join(","),
+                        "left as it is: the pool's object belongs to claims made before the policy"
+                    );
+                    status_of_objects_held_by_refused_claims(&kind, &object, &holders)
+                };
+                write_status(client, &claim, &namespace, status).await?;
                 return Ok(Action::await_change());
             }
             write_ours(&templates, template, template_found).await?;

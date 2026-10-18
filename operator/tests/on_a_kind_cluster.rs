@@ -930,7 +930,8 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
         tokio::time::sleep(settled()).await;
 
         // A claim made under the new binding: the template is owned only by a claim the
-        // operator refused, so it is not taken for the operator's, and nothing is written.
+        // operator refused, so it is not taken for the operator's, nothing is written, and the
+        // claim says whose it is.
         claims
             .create(&PostParams::default(), &claim("ada-2", "e2e-refused-runs"))
             .await
@@ -940,7 +941,13 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
             Duration::from_secs(60),
             || async {
                 let claim = claims.get("ada-2").await.ok()?;
-                (ready_of(&claim)?.1 == "UpstreamObjectInTheWay").then_some(())
+                let ready = claim
+                    .status?
+                    .conditions
+                    .into_iter()
+                    .find(|c| c.type_ == "Ready")?;
+                (ready.reason == "HeldByClaimsMadeBeforePolicy" && ready.message.contains("ada-1"))
+                    .then_some(())
             },
         )
         .await;
