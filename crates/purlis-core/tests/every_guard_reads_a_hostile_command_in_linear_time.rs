@@ -495,10 +495,19 @@ fn the_whole_verdict_at_the_largest_and_deepest_command_stays_well_inside_the_bu
         WHOLE_VERDICT
     };
     let mut slowest = (Duration::ZERO, String::new());
+    // A shape that nests nothing is the same command at both depths, and is judged once: judged
+    // again it measured the same verdict twice, a third of this test's minutes (#2619).
+    let at_the_cap: Vec<String> = shapes(MAX_NESTING)
+        .into_iter()
+        .map(|(_, line)| line(size))
+        .collect();
     for deep in [MAX_NESTING, MAX_NESTING + 1] {
-        for (shape, line) in shapes(deep) {
+        for (n, (shape, line)) in shapes(deep).into_iter().enumerate() {
             let cmd = line(size);
             assert!(cmd.len() <= guardcaps::MAX_COMMAND_BYTES, "{shape}");
+            if deep > MAX_NESTING && cmd == at_the_cap[n] {
+                continue;
+            }
             for mode in ["default", "bypassPermissions"] {
                 let call = Call {
                     command: &cmd,

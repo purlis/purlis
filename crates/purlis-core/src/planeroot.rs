@@ -2102,13 +2102,87 @@ pub fn plane_root(root: &str) -> String {
 struct Unasked;
 
 /// What one git question answered, as Python's `CompletedProcess` would hold it.
+#[derive(Clone)]
 struct Answer {
     ok: bool,
     out: String,
 }
 
-/// One read-only git question about `root` — `doctor._git_in`, through the session-aware runner.
+/// The most answers one guard's call keeps ([`Remembered`]). Past it git is asked again, so a
+/// line that puts thousands of different questions costs time and not memory.
+const MAX_REMEMBERED_ANSWERS: usize = 1024;
+
+/// What git answered, by the root it was asked in and the arguments it was asked with.
+type Answers = std::collections::HashMap<(String, Vec<String>), Answer>;
+
+thread_local! {
+    /// What git answered during the guard call running on this thread: `None` outside one
+    /// ([`remembering`]).
+    static REMEMBERED: std::cell::RefCell<Option<Answers>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Ends the memory [`remembering`] began, however the call it wraps ends.
+struct Remembered {
+    began: bool,
+}
+
+impl Drop for Remembered {
+    fn drop(&mut self) {
+        if self.began {
+            REMEMBERED.with(|r| *r.borrow_mut() = None);
+        }
+    }
+}
+
+/// `then`, with every git question it puts asked of git once (#2619).
+///
+/// A line repeats the same few questions — whether `HEAD` would lose commits, what the default
+/// branch is, whether a word is a tracked path — once for each git on it, and each is a git
+/// process: tens of milliseconds on a macOS runner, so 124 KB of the restores and ended
+/// operations the linear-time test reads took the branch and reset guards 40 s there, in a
+/// release build as in a debug one. Nothing runs between two questions of one guard call, so the
+/// second is answered what the first was; that is all that changes. Only an answer git gave is
+/// kept: a question that could not be asked is asked again, as before, so no refusal a later
+/// attempt would have made is lost. The memory ends with the call, so the next command is read
+/// against the repository as it is then.
+fn remembering<T>(then: impl FnOnce() -> T) -> T {
+    let began = REMEMBERED.with(|r| {
+        let mut r = r.borrow_mut();
+        let began = r.is_none();
+        if began {
+            *r = Some(std::collections::HashMap::new());
+        }
+        began
+    });
+    let _ends = Remembered { began };
+    then()
+}
+
+/// One read-only git question about `root` — `doctor._git_in`, through the session-aware runner,
+/// answered from what the guard call already asked where it can ([`remembering`]).
 fn git_in(root: &str, args: &[&str]) -> Result<Answer, Unasked> {
+    let key = (
+        root.to_string(),
+        args.iter().map(|a| (*a).to_string()).collect::<Vec<_>>(),
+    );
+    let known = REMEMBERED.with(|r| r.borrow().as_ref().and_then(|m| m.get(&key).cloned()));
+    if let Some(known) = known {
+        return Ok(known);
+    }
+    let answer = git_asked(root, args)?;
+    REMEMBERED.with(|r| {
+        if let Some(m) = r.borrow_mut().as_mut() {
+            if m.len() < MAX_REMEMBERED_ANSWERS {
+                m.insert(key, answer.clone());
+            }
+        }
+    });
+    Ok(answer)
+}
+
+/// [`git_in`]'s question, put to git.
+fn git_asked(root: &str, args: &[&str]) -> Result<Answer, Unasked> {
     let raw = runner::run_as_session(
         std::path::Path::new(root),
         args,
@@ -2765,6 +2839,11 @@ pub fn default_branch(root: &str) -> Option<String> {
 /// only an affirmative "a tracked path and not a revision", with every option one charter can
 /// place as restore-only, opens the gate.
 pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
+    remembering(|| branch_reason(cmd, cwd, root))
+}
+
+/// [`plane_root_branch_reason`], each git question asked once.
+fn branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
     let (invocations, too_deep) = read_line(cmd, cwd, &root);
     if too_deep {
@@ -3097,6 +3176,11 @@ pub fn plane_root_reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<Strin
     if !shellwrap::may_name(cmd, "git") {
         return None;
     }
+    remembering(|| reset_reason(cmd, cwd, root))
+}
+
+/// [`plane_root_reset_reason`], each git question asked once.
+fn reset_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
     for inv in plane_root_git(cmd, cwd, &root) {
         let tree_mode =

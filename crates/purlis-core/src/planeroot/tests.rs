@@ -2234,3 +2234,75 @@ fn a_git_behind_more_directories_than_are_spelt_is_one_the_guard_cannot_name() {
     assert_eq!(read.elsewhere.len(), 1, "{read:?}");
     assert_eq!(read.elsewhere[0].dirs, [format!("{root}/clone")]);
 }
+
+/// How many times git was asked exactly `question` in `root` since `before` questions there.
+fn times_asked(root: &str, before: usize, question: &[&str]) -> usize {
+    crate::worktree::git::tally::asked(std::path::Path::new(root))[before..]
+        .iter()
+        .filter(|asked| *asked == question)
+        .count()
+}
+
+/// How many questions git was asked in `root` so far.
+fn asked_so_far(root: &str) -> usize {
+    crate::worktree::git::tally::asked(std::path::Path::new(root)).len()
+}
+
+/// Every git on a line puts the same few questions, and each is a git process: one guard call
+/// asks each once, and answers every git what it would have been answered (#2619).
+#[test]
+fn a_question_every_git_on_a_line_repeats_is_asked_of_git_once() {
+    let f = fixture();
+    let unpushed = [
+        "rev-list",
+        "--count",
+        "HEAD",
+        "--not",
+        "HEAD",
+        "@{upstream}",
+        "--",
+    ];
+    let before = asked_so_far(&f.root);
+    assert_eq!(reset(&f, &"git reset --hard HEAD; ".repeat(50)), None);
+    assert_eq!(times_asked(&f.root, before, &unpushed), 1);
+
+    let before = asked_so_far(&f.root);
+    assert_eq!(branch(&f, &"git checkout README; ".repeat(50)), None);
+    for question in [
+        &["rev-parse", "--verify", "--quiet", "README^{commit}"][..],
+        &["ls-files", "--error-unmatch", "--", "README"],
+        &[
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ],
+    ] {
+        assert_eq!(times_asked(&f.root, before, question), 1, "{question:?}");
+    }
+}
+
+/// What one call remembers changes no verdict: a refusal behind any number of gits that pass is
+/// still made, a different question is still asked, and the next call asks git again, so a push
+/// between two commands is seen (#2619).
+#[test]
+fn what_git_answered_is_kept_for_one_call_and_refuses_as_it_did() {
+    let f = fixture();
+    let wipe = "git reset --hard HEAD~1";
+    let alone = reset(&f, wipe).expect("the unpushed commit is at risk");
+    let behind = format!("{}{wipe}", "git reset --hard HEAD; ".repeat(50));
+    assert_eq!(reset(&f, &behind).as_deref(), Some(alone.as_str()));
+    let twice = format!("{wipe}; {wipe}");
+    assert_eq!(reset(&f, &twice).as_deref(), Some(alone.as_str()));
+    // The branch guard: a restore repeated, then a move.
+    let restores = "git checkout README; ".repeat(50);
+    let moved = branch(&f, "git checkout feature").expect("a branch move");
+    assert_eq!(
+        branch(&f, &format!("{restores}git checkout feature")).as_deref(),
+        Some(moved.as_str())
+    );
+    // Once the commit is pushed, the next call reads the repository as it is then.
+    git(std::path::Path::new(&f.root), &["push", "-q", "origin", "main"]);
+    assert_eq!(reset(&f, wipe), None);
+    assert_eq!(reset(&f, &behind), None);
+}
