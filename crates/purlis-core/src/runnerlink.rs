@@ -64,10 +64,11 @@ pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
             if held.path().join(KEY_FILE).exists() || store.path().join(PEERS_FILE).exists() {
                 return made_already("a pairing");
             }
-            "this runner's home came with a device id this runner did not mint, from its image \
-             or from a runner before it, so it is not paired: a runner mints its device id at \
-             its pairing. Build the image without purlis's machine store in its home, then \
-             remove the runner and make a new one"
+            "this runner's home came with a device id, or one was minted in it before this \
+             pairing (by its image's build, by a purlis command run in it first, or by a \
+             pairing that did not finish), so it is not paired: a runner mints its device id \
+             at its pairing. Remove the runner and make a new one, from an image whose home \
+             holds no purlis machine store"
                 .to_owned()
         })?;
     let key = LinkKey::generate().map_err(|why| why.to_string())?;

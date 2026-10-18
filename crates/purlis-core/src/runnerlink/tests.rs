@@ -207,7 +207,7 @@ fn a_home_that_came_with_a_device_id_is_not_paired_and_nothing_is_made() {
     let brought = crate::machine::device_id(folder.path()).unwrap();
     let refused = pair(folder.path(), &desktop()).unwrap_err();
     assert!(
-        refused.contains("came with a device id") && refused.contains("remove the runner"),
+        refused.contains("came with a device id") && refused.contains("Remove the runner"),
         "{refused}"
     );
     assert!(
@@ -273,6 +273,9 @@ fn a_paired_runner_whose_device_id_is_gone_links_nobody() {
     pair(folder.path(), &desktop()).unwrap();
     crate::machine::update(folder.path(), |store| store.device = None).unwrap();
     assert!(answering(folder.path()).is_err());
+}
+
+#[test]
 fn the_paired_desktop_unpairing_leaves_a_runner_that_links_nobody_and_is_not_paired_again() {
     let folder = tempfile::tempdir().unwrap();
     let ours = desktop();
