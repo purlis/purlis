@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792298776288,
+  "lastUpdate": 1792299917290,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -16464,6 +16464,48 @@ window.BENCHMARK_DATA = {
             "value": 104.41441900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.956, 104.074, 104.414, 104.506, 105.793 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c6c46a6d8ea1ebd2366297d18c70b9f225233d7",
+          "message": "Runners: the pinned agent-sandbox controller is installed by digest (#2556)\n\n* Cluster operator: install the pinned agent-sandbox controller by digest (#2261)\n\nThe vendored v1.0.6 release manifest stays byte for byte as upstream published it. Beside it,\nvendor/agent-sandbox/v1.0.6/kustomization.yaml applies it with the controller's image named by\nthe digest Kubernetes' image promoter published for the tag; step 1 of the install and\noperator/e2e/kind.sh are now kubectl apply --server-side -k on that directory. CONTROLLER_DIGEST\nin upstream.rs names the same digest, and a test fails while the record, the vendored manifest\nand the pin disagree; kind.sh checks the registry holds the recorded digest under the tag before\nit installs, and that the controller runs by it after.\n\ndoctor takes the pinned release to be the one whose controller runs at the pinned digest; the\nsame release by its tag alone, or at another digest, is a finding naming the install by digest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Cluster operator: review fixes for the controller by digest (#2261)\n\ndoctor's next step and digest are named once; kind.sh reads the controller's image, tag and\ndigest from the kustomization; the fragment says what doctor now reports on a cluster installed\nby tag.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-18T08:59:48+04:00",
+          "tree_id": "1b80bd60dca34aea5685ea00d2717a985bc3f5c8",
+          "url": "https://github.com/purlis/purlis/commit/8c6c46a6d8ea1ebd2366297d18c70b9f225233d7"
+        },
+        "date": 1792299916094,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2951315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.279, 0.291, 0.295, 0.296, 0.296 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5036125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.443, 16.497, 16.504, 16.618, 16.655 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.34417049999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.923, 101.223, 101.344, 101.372, 102.163 ms"
           }
         ]
       }
