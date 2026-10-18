@@ -66,8 +66,8 @@ pub struct PlaneContribution {
     /// where the persona ships one. The persona tool gate smooths only what is approved here.
     pub grants: Vec<(String, String)>,
     /// One line per font file the project's or a workspace's theme folders bring: its path in
-    /// the project, and the sha-256 of its bytes. The window draws a face from the project only
-    /// when it is approved here with that digest.
+    /// the project, and the sha-256 of its bytes then its size, space-separated. The window
+    /// draws a face from the project only when it is approved here with that digest.
     pub fonts: Vec<(String, String)>,
 }
 

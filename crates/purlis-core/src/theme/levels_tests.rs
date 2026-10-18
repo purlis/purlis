@@ -1163,9 +1163,11 @@ fn every_level_s_theme_is_drawn_with_its_own_tint_recipe() {
             );
         }
     }
+}
+
 // ---------------------------------------------------------------------------------------
 // A theme folder's fonts (#2555): read through the folder's handle, and a project's only
-// once the project is opened.
+// as approved.
 // ---------------------------------------------------------------------------------------
 
 /// A woff2 file's bytes: the signature, then `body`.
@@ -1352,11 +1354,12 @@ fn a_project_that_brings_only_theme_fonts_is_asked_about_and_asked_again_when_on
         &woff2("only fonts, #2555"),
     );
     let contributes = Contribution::of(&places.plane);
+    let face = woff2("only fonts, #2555");
     assert_eq!(
         contributes.fonts,
         [(
             "themes/team/fonts/Plex.woff2".to_owned(),
-            digest(&woff2("only fonts, #2555"))
+            format!("{} {}", digest(&face), face.len())
         )]
         .into_iter()
         .collect()
@@ -1440,4 +1443,134 @@ fn a_folder_named_to_the_library_brings_its_fonts_only_when_asked_to() {
         .reading_named_fonts()
         .load_folder(dir.path(), "plex");
     assert!(!asked.refused, "{:?}", complaints_of(&asked));
+}
+
+/// A theme folder `folder` in `themes` whose UI font is the face `face`, with each of `files`
+/// in its `fonts/`.
+fn put_with_files(themes: &Path, folder: &str, face: &str, files: &[(String, Vec<u8>)]) {
+    let mut document = named(folder, "#101010");
+    document["fonts"] = json!({ "ui": { "family": "Plex", "faces": [
+        { "file": format!("fonts/{face}") }
+    ] } });
+    put(themes, folder, &document);
+    let fonts = themes.join(folder).join("fonts");
+    std::fs::create_dir_all(&fonts).unwrap();
+    for (file, bytes) in files {
+        std::fs::write(fonts.join(file), bytes).unwrap();
+    }
+}
+
+/// `count` small faces named `F00.woff2`, `F01.woff2`, …, each its own bytes.
+fn faces(tag: &str, count: usize) -> Vec<(String, Vec<u8>)> {
+    (0..count)
+        .map(|at| {
+            (
+                format!("F{at:02}.woff2"),
+                woff2(&format!("{tag} {at}, #2555")),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_chat_s_record_write_vouches_without_reading_a_font_file() {
+    use crate::machine::Contribution;
+    let places = Places::new();
+    put_with_a_face(&places.project_themes(), "team", &woff2("vouched, #2555"));
+    assert_eq!(Contribution::of(&places.plane).fonts.len(), 1);
+    // What a vouch reads is the record's half alone: no font file, no settings, no persona.
+    let record = Contribution::of_record(&places.plane);
+    assert!(record.fonts.is_empty());
+    assert_eq!(record, Contribution::default());
+}
+
+#[test]
+fn a_project_s_font_files_are_listed_under_one_budget_and_one_past_it_is_never_drawn() {
+    use crate::machine::Contribution;
+    let places = Places::new();
+    let themes = places.project_themes();
+    // 25 in one folder: the 25th by name is past the folder's 24.
+    put_with_files(&themes, "a-wide", "F24.woff2", &faces("wide", 25));
+    // 24 and 24 more: 48 listed in all with the first folder's, then 16 of the third's.
+    put_with_files(&themes, "b-full", "F00.woff2", &faces("full", 24));
+    put_with_files(&themes, "c-last", "F20.woff2", &faces("last", 24));
+    let listed = Contribution::of(&places.plane).fonts;
+    assert_eq!(listed.len(), 64);
+    assert!(!listed.contains_key("themes/a-wide/fonts/F24.woff2"));
+    assert!(listed.contains_key("themes/c-last/fonts/F15.woff2"));
+    assert!(!listed.contains_key("themes/c-last/fonts/F16.woff2"));
+
+    approve(&places);
+    assert!(!found(&places.folders(None), "b-full", levels::Reach::Project).refused);
+    let wide = found(&places.folders(None), "a-wide", levels::Reach::Project);
+    assert_eq!(
+        complaints_of(&wide),
+        [
+            "themes/a-wide/fonts/F24.woff2 is past the 24 font files purlis lists in a theme \
+          folder's fonts/, so it is not read"
+        ]
+    );
+    let last = found(&places.folders(None), "c-last", levels::Reach::Project);
+    assert_eq!(
+        complaints_of(&last),
+        [
+            "themes/c-last/fonts/F20.woff2 is past the 64 font files (32 MiB) purlis lists in a \
+          project, so it is not read"
+        ]
+    );
+}
+
+#[test]
+fn a_project_s_font_files_are_listed_up_to_32_mib_in_all() {
+    use crate::machine::Contribution;
+    let places = Places::new();
+    // Seventeen faces at the 2 MiB cap: sixteen fill the budget, the seventeenth is not listed.
+    let big = |at: usize| {
+        let mut bytes = woff2(&format!("big {at}, #2555"));
+        bytes.resize(usize::try_from(MOST_FONT_BYTES).unwrap(), 0);
+        bytes
+    };
+    let files: Vec<(String, Vec<u8>)> = (0..17)
+        .map(|at| (format!("F{at:02}.woff2"), big(at)))
+        .collect();
+    put_with_files(&places.project_themes(), "big", "F16.woff2", &files);
+    let listed = Contribution::of(&places.plane).fonts;
+    assert_eq!(listed.len(), 16);
+    assert!(!listed.contains_key("themes/big/fonts/F16.woff2"));
+    approve(&places);
+    let drawn = found(&places.folders(None), "big", levels::Reach::Project);
+    assert!(drawn.refused);
+    assert!(complaints_of(&drawn)[0].contains("past the 64 font files (32 MiB)"));
+}
+
+#[test]
+fn the_window_never_reads_a_named_folder_s_fonts() {
+    // `Library::reading_named_fonts` is for a folder the person names on the command line. The
+    // window reads theme folders through `Folders`, whose project fonts are read as approved.
+    fn sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|it| it == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/src");
+    let mut files = Vec::new();
+    sources(&app, &mut files);
+    assert!(
+        files.len() > 10,
+        "the app's sources are at {}",
+        app.display()
+    );
+    for file in files {
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            !text.contains("reading_named_fonts"),
+            "{} reads a named folder's fonts",
+            file.display()
+        );
+    }
 }

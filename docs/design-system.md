@@ -1053,8 +1053,9 @@ folder, beside `machine.json`, and its fonts are that folder's `fonts/`.
 is opened from the handle the folder's `theme.json` was read through, refusing a link, and each
 face from the handle of `fonts/`, refusing a link again; serving a face reads it from the same
 handles. **A project's and a workspace's font files are approved with the project** (ADR 0098,
-as amended 2026-10-18): the trust ask lists each by its path and digest, asks again when one is
-new or changed, and a face from the project is drawn only when that approval holds it. The
+as amended 2026-10-18): the trust ask lists each by its theme folder, size and digest (at most
+64 files and 32 MiB per project, 24 per folder), asks again when one is new or changed, and a
+face from the project is drawn only when that approval holds it. The
 person's own theme folders' fonts need no approval.
 
 **The person's font beats the theme's.** Settings › You › Density and fonts takes a family for

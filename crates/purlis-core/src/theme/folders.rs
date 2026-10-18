@@ -294,15 +294,26 @@ fn in_project(path: &Path) -> String {
         .join("/")
 }
 
-/// The most font files one theme folder's `fonts/` is read for, in name order: every face a
-/// theme can name fits.
-const MOST_FONT_FILES: usize = 3 * super::fonts::MOST_FACES;
+/// The most workspaces whose theme folders a project's font files are listed from, by name.
+const MOST_WORKSPACES_WALKED: usize = 64;
+
+/// The most theme folders a project's font files are listed from, all levels together.
+const MOST_FOLDERS_WALKED: usize = 256;
+
+/// The most files opened when a project's font files are listed, all folders together.
+const MOST_FILES_EXAMINED: usize = 256;
 
 /// **Every font file the project at `plane` brings in its theme folders and its workspaces'**,
-/// by its path in the project, to the sha-256 of its bytes: what the trust ask lists and what
-/// an approval holds (`crate::machine::Contribution::fonts`). Each is read as a face is, through
-/// handles opened refusing a link, a plain woff2 file under the cap; one that is not is left
-/// out, and is then never read as a face either.
+/// by its path in the project, to the sha-256 of its bytes and its size
+/// (`super::fonts::listed_as`): what the trust ask lists and what an approval holds
+/// (`crate::machine::Contribution::fonts`). Each is read as a face is, through handles opened
+/// refusing a link, a plain woff2 file under the cap.
+///
+/// **One budget holds the whole listing**: at most `fonts::MOST_PROJECT_FONTS` files and
+/// `fonts::MOST_PROJECT_FONT_BYTES` bytes, `fonts::MOST_FOLDER_FONTS` files in one folder,
+/// [`MOST_WORKSPACES_WALKED`] workspaces, [`MOST_FOLDERS_WALKED`] theme folders and
+/// [`MOST_FILES_EXAMINED`] files opened, the project's own folders first and then each
+/// workspace's by name. A file not listed is never approved, so it is never drawn.
 pub(crate) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
     read::plane_fonts(plane)
 }
@@ -333,6 +344,7 @@ mod read {
         FontGate, Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, in_project,
         plain_below,
     };
+    use crate::theme::fonts;
     use crate::theme::fonts::ThemeDir;
 
     const DIRECTORY: OFlags = OFlags::RDONLY
@@ -412,18 +424,39 @@ mod read {
         openat(at, step, DIRECTORY, Mode::empty()).ok()
     }
 
-    /// Every name in the folder `at` that `keep` takes, sorted.
+    /// Every name in the folder `at` that `keep` takes, of the first
+    /// [`fonts::MOST_NAMES_SCANNED`] read, sorted.
     fn listed(at: &OwnedFd, keep: impl Fn(&str) -> bool) -> Vec<String> {
         let Ok(dir) = Dir::read_from(at) else {
             return Vec::new();
         };
         let mut names: Vec<String> = dir
             .filter_map(Result::ok)
+            .take(fonts::MOST_NAMES_SCANNED)
             .filter_map(|entry| entry.file_name().to_str().ok().map(str::to_owned))
             .filter(|name| !name.starts_with('.') && keep(name))
             .collect();
         names.sort();
         names
+    }
+
+    /// What is left of the one budget a project's font files are listed under.
+    struct Budget {
+        files: usize,
+        bytes: u64,
+        folders: usize,
+        examined: usize,
+    }
+
+    impl Budget {
+        fn new() -> Self {
+            Self {
+                files: fonts::MOST_PROJECT_FONTS,
+                bytes: fonts::MOST_PROJECT_FONT_BYTES,
+                folders: super::MOST_FOLDERS_WALKED,
+                examined: super::MOST_FILES_EXAMINED,
+            }
+        }
     }
 
     pub(super) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
@@ -440,7 +473,10 @@ mod read {
             levels.push((super::THEMES.to_owned(), themes));
         }
         if let Some(workspaces) = folder_in(&root, "workspaces") {
-            for name in listed(&workspaces, crate::contain::workspace_name_ok) {
+            for name in listed(&workspaces, crate::contain::workspace_name_ok)
+                .into_iter()
+                .take(super::MOST_WORKSPACES_WALKED)
+            {
                 if let Some(themes) = folder_in(&workspaces, &name)
                     .as_ref()
                     .and_then(|workspace| folder_in(workspace, super::THEMES))
@@ -449,26 +485,39 @@ mod read {
                 }
             }
         }
+        let mut left = Budget::new();
         for (below, themes) in levels {
             for name in listed(&themes, crate::theme::is_folder_name)
                 .into_iter()
                 .take(MOST_FOLDERS)
             {
-                let Some(fonts) = folder_in(&themes, &name)
+                if left.folders == 0 || left.files == 0 || left.examined == 0 {
+                    return out;
+                }
+                left.folders -= 1;
+                let Some(faces) = folder_in(&themes, &name)
                     .as_ref()
                     .and_then(|folder| folder_in(folder, "fonts"))
                 else {
                     continue;
                 };
-                for file in listed(&fonts, crate::theme::fonts::is_face_name)
+                for file in listed(&faces, fonts::is_face_name)
                     .into_iter()
-                    .take(super::MOST_FONT_FILES)
+                    .take(fonts::MOST_FOLDER_FONTS)
                 {
-                    let Ok(again) = rustix::io::dup(&fonts) else {
-                        continue;
-                    };
-                    if let Some(digest) = crate::theme::fonts::digest_in(again, &file) {
-                        out.insert(format!("{below}/{name}/fonts/{file}"), digest);
+                    if left.files == 0 || left.examined == 0 {
+                        return out;
+                    }
+                    left.examined -= 1;
+                    // A file past what is left of the bytes is not listed, so it is never
+                    // approved and never drawn.
+                    if let Some((digest, bytes)) = fonts::measured(&faces, &file, left.bytes) {
+                        left.files -= 1;
+                        left.bytes -= bytes;
+                        out.insert(
+                            format!("{below}/{name}/fonts/{file}"),
+                            fonts::listed_as(&digest, bytes),
+                        );
                     }
                 }
             }

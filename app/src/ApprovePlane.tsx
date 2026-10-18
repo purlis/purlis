@@ -158,18 +158,11 @@ export function ApprovePlane({
           )}
           {contributes.fonts.length > 0 && (
             <section>
-              {/* Each font file by its path in the project and the sha-256 of its bytes: the
-                window draws a face from the project only when it is approved here with that
-                digest, so a face that changes later asks again. */}
+              {/* Each font file by its path in the project, its size and its sha-256 (the full
+                digest on hover): the window draws a face from the project only when it is
+                approved here with that digest, so a face that changes later asks again. */}
               <h4>Font files its themes bring</h4>
-              <ul className="contributes">
-                {contributes.fonts.map(([file, digest]) => (
-                  <li key={file}>
-                    <code>{file}</code>
-                    <span className="value"> sha-256 {digest}</span>
-                  </li>
-                ))}
-              </ul>
+              <FontFiles fonts={contributes.fonts} />
             </section>
           )}
           {contributes.starts.length > 0 && (
@@ -226,5 +219,68 @@ export function ApprovePlane({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/** How many font files the ask draws before it says how many more there are. */
+const FONT_FILES_SHOWN = 12;
+
+/** One font file as the contribution records it: its path, its sha-256 and its size. */
+type FontFile = { folder: string; name: string; digest: string; bytes: number };
+
+function fontFile([path, listed]: [string, string]): FontFile {
+  const at = path.lastIndexOf("/fonts/");
+  const [digest = "", bytes = "0"] = listed.split(" ");
+  return {
+    folder: at < 0 ? "" : path.slice(0, at),
+    name: at < 0 ? path : path.slice(at + "/fonts/".length),
+    digest,
+    bytes: Number(bytes) || 0,
+  };
+}
+
+function size(bytes: number): string {
+  return bytes < 1024 ? `${bytes} bytes` : `${Math.round(bytes / 1024)} KiB`;
+}
+
+/**
+ * A project's font files, grouped by the theme folder that brings them: each file's name, its
+ * size and the first twelve hex digits of its digest, the whole digest on hover. The first
+ * {@link FONT_FILES_SHOWN} are drawn, and the rest are counted.
+ */
+function FontFiles({ fonts }: { fonts: [string, string][] }) {
+  const files = fonts.map(fontFile);
+  const shown = files.slice(0, FONT_FILES_SHOWN);
+  const folders = [...new Set(shown.map((file) => file.folder))];
+  const more = files.length - shown.length;
+  return (
+    <>
+      {folders.map((folder) => (
+        <div key={folder}>
+          <p className="where">
+            <code>{folder}</code>
+          </p>
+          <ul className="contributes">
+            {shown
+              .filter((file) => file.folder === folder)
+              .map((file) => (
+                <li key={file.name}>
+                  <code>{file.name}</code>
+                  <span className="value">
+                    {" "}
+                    {size(file.bytes)}, sha-256{" "}
+                    <span title={file.digest}>{file.digest.slice(0, 12)}</span>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+      {more > 0 && (
+        <p className="came-back">
+          and {more} more font file{more === 1 ? "" : "s"}
+        </p>
+      )}
+    </>
   );
 }

@@ -480,8 +480,8 @@ pub struct Contribution {
     /// the plane is approved again.
     pub grants: BTreeMap<String, String>,
     /// One key per font file the plane's theme folders bring, at its root and in its
-    /// workspaces: its path in the plane, to the sha-256 of its bytes
-    /// ([`crate::theme::levels::plane_fonts`]).
+    /// workspaces: its path in the plane, to the sha-256 of its bytes and its size
+    /// ([`crate::theme::levels::plane_fonts`], under one budget for the whole plane).
     ///
     /// **A grant, by the operator's ruling (2026-10-18; ADR 0098 as amended).** A theme's
     /// colours and folders need no approval, and its font files do: a face from the project or
@@ -542,6 +542,27 @@ impl Contribution {
             }
         }
         out.fonts = crate::theme::levels::plane_fonts(plane);
+        let record = out.with_record(plane);
+        Reading {
+            contributes: out,
+            record,
+        }
+    }
+
+    /// **The half of what opening `plane` would do that charter itself writes**: the chats its
+    /// reopen record would start ([`Self::starts`], [`Self::profiles`]), and nothing else. What
+    /// [`Store::vouch`] refreshes, read without the settings, the personas or the font files,
+    /// which a vouch keeps as they were approved.
+    pub fn of_record(plane: &Path) -> Self {
+        let mut out = Self::default();
+        // A record charter would refuse contributes nothing, as in [`Self::read`].
+        let _ = out.with_record(plane);
+        out
+    }
+
+    /// The chats `plane`'s reopen record would start, added to this; and the record as read.
+    fn with_record(&mut self, plane: &Path) -> Result<crate::reopen::Record, io::Error> {
+        let out = self;
         // Through `reopen`, never by reading the file here: that read is already gated on the
         // exact path it opens, bounded, and refuses a FIFO — and a second reader of the same
         // file would be a second set of rules about it.
@@ -574,10 +595,7 @@ impl Contribution {
                 };
             }
         }
-        Reading {
-            contributes: out,
-            record,
-        }
+        record
     }
 
     /// Every way `now` differs from what this recorded, in a stable order.

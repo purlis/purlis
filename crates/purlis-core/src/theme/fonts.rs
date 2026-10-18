@@ -305,14 +305,93 @@ pub(crate) fn is_face_name(name: &str) -> bool {
     face_file(&format!("fonts/{name}")).is_some()
 }
 
-/// **The digest of the face `name` in the folder `fonts` holds**, read as a face is (from the
-/// handle, refusing a link, a plain woff2 file under the cap), or `None`: what a project's
-/// contribution records of each font file its theme folders bring.
+/// The most font files one theme folder's `fonts/` lists in a project's contribution, in name
+/// order: every face a theme can name fits.
+pub(crate) const MOST_FOLDER_FONTS: usize = 3 * MOST_FACES;
+
+/// The most font files a project's contribution lists, all its theme folders together.
+pub(crate) const MOST_PROJECT_FONTS: usize = 64;
+
+/// The most bytes of font files a project's contribution reads, all together.
+pub(crate) const MOST_PROJECT_FONT_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The most names one folder is read for, when a project's font files are listed.
+pub(crate) const MOST_NAMES_SCANNED: usize = 1024;
+
+/// What a project's contribution records of one font file: the sha-256 of its bytes, then
+/// its size in bytes.
+pub(crate) fn listed_as(digest: &str, bytes: u64) -> String {
+    format!("{digest} {bytes}")
+}
+
+/// The digest a contribution's record of a font file holds.
+fn digest_of(listed: &str) -> &str {
+    listed.split(' ').next().unwrap_or_default()
+}
+
+/// **The face `name` in the folder `fonts` holds, measured** for a project's contribution:
+/// opened from the handle refusing a link, a plain woff2 file of at most `most` bytes (and
+/// never past [`MOST_FONT_BYTES`]); its digest and its size, or `None`.
 #[cfg(unix)]
-pub(crate) fn digest_in(fonts: std::os::fd::OwnedFd, name: &str) -> Option<String> {
-    read_face(&std::sync::Arc::new(fonts), name, name)
-        .ok()
-        .map(|bytes| hex(&bytes))
+pub(crate) fn measured(
+    fonts: &std::os::fd::OwnedFd,
+    name: &str,
+    most: u64,
+) -> Option<(String, u64)> {
+    use std::io::Read;
+    let most = most.min(MOST_FONT_BYTES);
+    let fd = rustix::fs::openat(
+        fonts,
+        name,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .ok()?;
+    let mut open = std::fs::File::from(fd);
+    let found = open.metadata().ok()?;
+    if !found.file_type().is_file() || found.len() > most {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    (&mut open).take(most + 1).read_to_end(&mut bytes).ok()?;
+    let size = bytes.len() as u64;
+    (size <= most && bytes.starts_with(WOFF2)).then(|| (hex(&bytes), size))
+}
+
+/// Why a face of a project's or a workspace's theme folder that is read is not drawn: `named`,
+/// its path in the project, of `size` bytes, whose digest is not the one the approval `files`
+/// holds for it, in a folder whose `fonts/` lists `before` face names ahead of it.
+fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> String {
+    match files.files.get(named) {
+        Some(_) => {
+            format!("{named} has changed since you approved this project, so it is not read")
+        }
+        None if before >= MOST_FOLDER_FONTS => format!(
+            "{named} is past the {MOST_FOLDER_FONTS} font files purlis lists in a theme \
+             folder's fonts/, so it is not read"
+        ),
+        None => {
+            let bytes: u64 = files
+                .files
+                .values()
+                .filter_map(|listed| listed.split(' ').nth(1)?.parse::<u64>().ok())
+                .sum();
+            if files.files.len() >= MOST_PROJECT_FONTS || bytes + size > MOST_PROJECT_FONT_BYTES {
+                format!(
+                    "{named} is past the {MOST_PROJECT_FONTS} font files ({} MiB) purlis lists \
+                     in a project, so it is not read",
+                    MOST_PROJECT_FONT_BYTES / 1024 / 1024
+                )
+            } else {
+                format!(
+                    "{named} is not a font file you approved with this project, so it is not read"
+                )
+            }
+        }
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -634,11 +713,10 @@ fn face_of(
             let asset = hex(&bytes);
             if let Some(approved) = folder.approved {
                 let named = format!("{}/fonts/{file}", approved.folder);
-                if approved.files.get(&named) != Some(&asset) {
-                    complaints.push(format!(
-                        "{named} is not a font file you approved with this project, so it is \
-                         not read"
-                    ));
+                let approved_digest = approved.files.get(&named).map(|listed| digest_of(listed));
+                if approved_digest != Some(asset.as_str()) {
+                    let before = held::names_before(fonts, &file);
+                    complaints.push(unapproved(&named, bytes.len() as u64, approved, before));
                     return None;
                 }
             }
@@ -711,6 +789,19 @@ mod held {
             .map_err(missed)
     }
 
+    /// How many face names in `fonts` sort before `name`, as a project's contribution lists
+    /// them.
+    pub(super) fn names_before(fonts: &Handle, name: &str) -> usize {
+        let Ok(dir) = rustix::fs::Dir::read_from(fonts.as_ref()) else {
+            return 0;
+        };
+        dir.filter_map(Result::ok)
+            .take(super::MOST_NAMES_SCANNED)
+            .filter_map(|entry| entry.file_name().to_str().ok().map(str::to_owned))
+            .filter(|one| super::is_face_name(one) && one.as_str() < name)
+            .count()
+    }
+
     /// The face `name` in `fonts`, opened from its handle refusing a link.
     pub(super) fn face(fonts: &Handle, name: &str) -> Result<std::fs::File, Missed> {
         openat(
@@ -746,6 +837,10 @@ mod held {
     }
 
     pub(super) fn face(fonts: &Handle, _name: &str) -> Result<std::fs::File, Missed> {
+        match *fonts {}
+    }
+
+    pub(super) fn names_before(fonts: &Handle, _name: &str) -> usize {
         match *fonts {}
     }
 }

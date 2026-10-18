@@ -9,6 +9,10 @@ or a workspace's theme folder.**
   bytes (`machine::Contribution::fonts`). The trust ask
   ([ADR 0035](../0035-a-plane-is-untrusted-until-the-operator-opens-it.md)) names them under
   their own heading, so a project that brings font files and nothing else is asked about.
+- **They are listed under one budget for the whole project**: at most 64 files and 32 MiB in
+  all, 24 in one theme folder's `fonts/`, and the theme folders of at most 64 workspaces, the
+  project's own first. A font file past the budget is not listed, so it is never approved and
+  never drawn, and the complaint names the limit.
 - **A new or changed font file asks again**, as a new plugin does. A font file that is gone is
   reported and does not ask.
 - **A face is drawn only as approved.** The engine reads this machine's approval of the project
