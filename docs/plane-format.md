@@ -1287,6 +1287,8 @@ An older project may still carry `.claude/skills/playwright-cli/`, `.playwright/
 and an ``added by `purlis browser install` `` block in its `.gitignore`. They are Playwright's files;
 purlis neither writes nor reads them (#2575).
 
+- **Tier:** None — Playwright's files, not purlis's.
+
 ### `themes/` — the project's theme folders
 
 - **Format:** a directory of theme folders, one per theme: `themes/<name>/theme.json`, plus
