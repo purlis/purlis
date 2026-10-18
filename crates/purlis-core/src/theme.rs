@@ -90,8 +90,8 @@ mod resolve;
 mod schema;
 mod tint;
 mod typed;
-mod warnings;
 pub mod vocabulary;
+mod warnings;
 
 pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
@@ -124,10 +124,10 @@ pub use tint::{
     tint_hex_within, tinted,
 };
 pub use typed::Typed;
-pub use warnings::said as warnings_said;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
+pub use warnings::said as warnings_said;
 
 #[cfg(test)]
 mod floors_tests;

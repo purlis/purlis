@@ -116,7 +116,11 @@ fn a_levels_gallery_holds_the_themes_a_choice_there_reaches() {
 fn a_nearer_levels_folder_of_a_name_takes_a_farther_ones_place() {
     let places = Places::new();
     put(&places.machine(), "brand", &dusk("Brand, mine", "#101010"));
-    put(&places.project(), "brand", &dusk("Brand, the team's", "#202020"));
+    put(
+        &places.project(),
+        "brand",
+        &dusk("Brand, the team's", "#202020"),
+    );
     let folders = places.folders();
     let cards = gallery::cards(&shelf(&folders, Reach::Project, &[]));
     let brand: Vec<&Card> = cards.iter().filter(|one| one.id == "brand").collect();

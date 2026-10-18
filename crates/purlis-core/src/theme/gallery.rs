@@ -135,7 +135,11 @@ pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
         };
         cards.push(card(name, from_level(level), &resolved));
     }
-    for one in shelf.offered.iter().filter(|one| shelf.on.has(&one.extension)) {
+    for one in shelf
+        .offered
+        .iter()
+        .filter(|one| shelf.on.has(&one.extension))
+    {
         let id = Pick::Extension {
             id: one.extension.clone(),
             name: one.name.clone(),
@@ -435,17 +439,15 @@ mod write {
             let file = openat(
                 &folder,
                 THEME_JSON,
-                OFlags::WRONLY
-                    | OFlags::CREATE
-                    | OFlags::EXCL
-                    | OFlags::NOFOLLOW
-                    | OFlags::CLOEXEC,
+                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                 FILE,
             )
             .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))?;
             std::fs::File::from(file)
                 .write_all(text.as_bytes())
-                .map_err(|why| format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}"))?;
+                .map_err(|why| {
+                    format!("purlis could not write {shown}/{name}/{THEME_JSON}: {why}")
+                })?;
             return Ok(name.clone());
         }
         Err(format!(

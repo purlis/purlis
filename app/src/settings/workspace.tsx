@@ -27,7 +27,7 @@ import { EXTENSIONS_LINK } from "./links";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "./driver";
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
-import { themeGallery } from "./themeGallery";
+import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
 
 /**
@@ -188,7 +188,12 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
     },
     // The person's own theme for this workspace, chosen from a card per theme (#2331): the
     // nearest level the theme engine reads, kept on this machine.
-    themeGallery("workspace.theme", { plane: read.plane, workspace: read.workspace }),
+    {
+      id: "workspace.theme",
+      label: "Theme",
+      ...THEME_GROUP,
+      settings: themeRows("workspace.theme", { plane: read.plane, workspace: read.workspace }),
+    },
     {
       id: "workspace.appearance",
       label: "Appearance",

@@ -172,10 +172,7 @@ impl Place {
         let on = plane.as_deref().map(|root| {
             let choices = extension::project::Choices::read_in(root, workspace.as_deref());
             extension::project::resolve(
-                &extension::project::Installed::from_record(&extension::read(
-                    &config,
-                    &built_in(),
-                )),
+                &extension::project::Installed::from_record(&extension::read(&config, &built_in())),
                 &choices,
             )
             .into_iter()
@@ -211,9 +208,11 @@ async fn place_of(
 ) -> Result<(PathBuf, Option<PathBuf>, Option<String>), String> {
     let config = config_root()?;
     Ok(match at {
-        Some(ThemeAt { plane, workspace }) => {
-            (config, Some(planes.held(&plane)?.root().to_path_buf()), workspace)
-        }
+        Some(ThemeAt { plane, workspace }) => (
+            config,
+            Some(planes.held(&plane)?.root().to_path_buf()),
+            workspace,
+        ),
         None => (config, None, None),
     })
 }
@@ -382,7 +381,8 @@ pub(crate) fn specimen_theme(
     theme: &str,
     appearance: Option<&str>,
 ) -> Result<WindowTheme, String> {
-    let (plane, workspace) = place.map_or((None, None), |(root, workspace)| (Some(root), workspace));
+    let (plane, workspace) =
+        place.map_or((None, None), |(root, workspace)| (Some(root), workspace));
     let place = Place::read(config_root()?, plane, workspace);
     card_drawn_of(&place, theme, appearance, false, false)
         .and_then(|drawn| drawn.theme)

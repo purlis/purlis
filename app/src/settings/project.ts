@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { themeGallery } from "./themeGallery";
+import { THEME_GROUP, themeRows } from "./themeGallery";
 import { useProjectThemeAnswers } from "../projectTheme";
 import {
   commands,
@@ -733,7 +733,14 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
     // the theme engine reads, kept on this machine.
     ...(read.plane === undefined
       ? []
-      : [themeGallery("project.theme", { plane: read.plane, workspace: null })]),
+      : [
+          {
+            id: "project.theme",
+            label: "Theme",
+            ...THEME_GROUP,
+            settings: themeRows("project.theme", { plane: read.plane, workspace: null }),
+          },
+        ]),
     {
       id: "project.appearance",
       label: "Appearance",

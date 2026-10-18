@@ -208,19 +208,17 @@ pub async fn theme_specimen(
         }
     };
     let one = tauri::async_runtime::spawn_blocking(move || match specimen {
-        Ask::BuiltIn(specimen) => {
-            painted(painter().as_deref(), std::slice::from_ref(&specimen)).map(|mut drawn| {
+        Ask::BuiltIn(specimen) => painted(painter().as_deref(), std::slice::from_ref(&specimen))
+            .map(|mut drawn| {
                 let one = drawn.remove(0);
                 (one.png, one.width, one.height, one.millis, one.appearance)
-            })
-        }
+            }),
         Ask::Card {
             place,
             theme,
             appearance,
         } => {
-            let theme =
-                crate::themegallery::specimen_theme(place, &theme, appearance.as_deref())?;
+            let theme = crate::themegallery::specimen_theme(place, &theme, appearance.as_deref())?;
             let painter = painter().ok_or_else(|| NO_PAINTER.to_owned())?;
             let started = Instant::now();
             let picture = painter.paint(&theme)?;

@@ -51,20 +51,21 @@ import { useSpecimen } from "./themeSpecimens";
  * Enter or Space chooses it. Nothing here takes the focus by itself, so nothing that writes is
  * ever where the focus lands.
  */
-export function themeGallery(group: string, at: ThemeAt | null): SettingsGroup {
-  return {
-    id: group,
-    label: "Theme",
-    help: "Every theme you can choose here. Point at a card, or move to it with the arrow keys, to see it in the window; press it to choose it.",
-    kept: "Kept on this machine, never in a project file.",
-    settings: [
-      galleryRow(group, at),
-      appearanceRow(group, at),
-      optionsRow(group, at),
-      checkRow(group, at),
-      folderRow(group, at),
-    ],
-  };
+export const THEME_GROUP = {
+  help: "Every theme you can choose here. Point at a card, or move to it with the arrow keys, to see it in the window; press it to choose it.",
+  kept: "Kept on this machine, never in a project file.",
+} satisfies Partial<SettingsGroup>;
+
+/** **The Theme group's rows**, at the level `at` names (the machine's with `null`), under the
+ *  group whose address is `group`. */
+export function themeRows(group: string, at: ThemeAt | null): LiveSetting[] {
+  return [
+    galleryRow(group, at),
+    appearanceRow(group, at),
+    optionsRow(group, at),
+    checkRow(group, at),
+    folderRow(group, at),
+  ];
 }
 
 // ---------------------------------------------------------------------------------------
@@ -96,6 +97,8 @@ function reread(at: ThemeAt | null): void {
     .themeGallery(at)
     .then(
       (answer) => {
+        // Nothing shows this level any more: the answer is not kept.
+        if (!interest.has(key)) return;
         const given = answer.status === "ok" ? (answer.data as ThemeGallery | null) : null;
         answers.set(
           key,
@@ -104,7 +107,9 @@ function reread(at: ThemeAt | null): void {
             : { trouble: answer.status === "error" ? answer.error : "purlis did not answer" },
         );
       },
-      (why: unknown) => answers.set(key, { trouble: String(why) }),
+      (why: unknown) => {
+        if (interest.has(key)) answers.set(key, { trouble: String(why) });
+      },
     )
     .finally(() => {
       asking.delete(key);
@@ -124,17 +129,33 @@ function useGallery(at: ThemeAt | null): Read {
     () => answers.get(key),
   );
   useEffect(() => {
+    interest.set(key, (interest.get(key) ?? 0) + 1);
     if (!answers.has(key)) reread(at);
+    return () => {
+      const left = (interest.get(key) ?? 1) - 1;
+      if (left > 0) {
+        interest.set(key, left);
+        return;
+      }
+      // No row shows it any more: the next one to show it asks again, so a gallery is never older
+      // than the visit to the tab that shows it.
+      interest.delete(key);
+      answers.delete(key);
+    };
     // `key` is `at`, as a value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return read;
 }
 
+/** How many rows show each level's gallery. */
+const interest = new Map<string, number>();
+
 /** For tests: forget every gallery read. */
 export function forgetGalleries(): void {
   answers.clear();
   asking.clear();
+  interest.clear();
 }
 
 /** Whether `read` is the core's answer. */
@@ -485,7 +506,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
             <p id={ids.id} className="ui-setting-help">
               {card === undefined
                 ? "Reading the themes…"
-                : "The chosen theme is refused, so Purlis is drawn."}
+                : "The chosen theme is refused, so purlis draws its own in its place."}
             </p>
           ) : (
             <div className="flex flex-col gap-1">
@@ -524,7 +545,7 @@ function optionsRow(group: string, at: ThemeAt | null): LiveSetting {
   return {
     id: `${group}.options`,
     label: "Options",
-    help: "The chosen theme's options: the value of each, and where that value comes from.",
+    help: "The chosen theme's options: the value of each, and what decided it.",
     writes: "nothing",
     useControl: function useThemeOptions() {
       const read = useGallery(at);
@@ -646,7 +667,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 disabled={card === undefined || !card.duplicable}
                 title={
                   card !== undefined && !card.duplicable
-                    ? "A theme of your own extends Purlis Classic or another of your own."
+                    ? "A theme of your own extends the built-in theme or another of your own."
                     : undefined
                 }
                 onClick={duplicate}
