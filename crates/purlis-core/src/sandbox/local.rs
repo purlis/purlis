@@ -166,6 +166,11 @@ struct OnDisk {
     /// [`super::hosts::Host`] spells it; absent before the first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     hosts_seen: Option<Vec<String>>,
+    /// The project's browser sites shown to the person on this machine (#2443), each as
+    /// [`super::hosts::Host`] spells it: the only ones of the committed file that reach a
+    /// browser here ([`super::browser_sites::in_force`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    browser_sites_seen: Vec<String>,
     /// The project's Internet access presets, and `certificate-checks` where a chat has them, as this
     /// machine last showed them to the person (#1385), each by the word the committed file
     /// names it by; absent before the first, which reads as the defaults.
@@ -1719,6 +1724,16 @@ pub fn revoke_browser_site(root: &Path, site: &super::browser_reach::Site) -> io
             .retain(|made| !(made.what == BROWSER_SITE && made.target == written));
     })?;
     Ok(was)
+}
+
+/// The project's browser sites shown to the person on this machine (#2443).
+pub fn browser_sites_seen(root: &Path) -> Vec<String> {
+    read(root).browser_sites_seen
+}
+
+/// Records `seen` as the project's browser sites shown to the person on this machine (#2443).
+pub fn keep_browser_sites_seen(root: &Path, seen: Vec<String>) -> io::Result<()> {
+    change(root, |held| held.browser_sites_seen = seen)
 }
 
 // ---- your dispatch grants, and the project's as you were told of them (#1437) ----------------

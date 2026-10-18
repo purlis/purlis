@@ -59,6 +59,8 @@ struct Model {
     /// The address each page the stand-in was told of was opened at: the document its frame
     /// tree says it shows.
     opened_at: HashMap<String, String>,
+    /// Whether the engine makes worlds without telling of them (#2138).
+    worlds_untold: bool,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -68,6 +70,20 @@ struct Engine {
     model: Mutex<Model>,
     hook: Mutex<Option<Hook>>,
     dropped: Mutex<u64>,
+    /// The worlds of purlis's own made in the page's frames. The page's own world lies about
+    /// everything purlis's scripts read (#2138).
+    worlds: Mutex<Vec<StandWorld>>,
+    /// Ids of ended worlds that now name the page's own world, by session: what a process the
+    /// page moved to may give the same number.
+    reused: Mutex<Vec<(String, i64)>>,
+}
+
+/// A world of purlis's own the stand-in made.
+struct StandWorld {
+    id: i64,
+    unique: String,
+    session: String,
+    live: bool,
 }
 
 impl Engine {
@@ -101,6 +117,58 @@ impl Engine {
 
     fn all_sent(&self) -> Vec<Sent> {
         super::lock(&self.sent).clone()
+    }
+
+    /// Every world of purlis's own ends, and its number now names the page's own world, with no
+    /// word of it yet: as when the page moves to another process.
+    fn worlds_reused_by_the_page(&self) {
+        let mut reused = super::lock(&self.reused);
+        for world in super::lock(&self.worlds).iter_mut() {
+            world.live = false;
+            reused.push((world.session.clone(), world.id));
+        }
+    }
+
+    fn no_context() -> CallError {
+        CallError::Engine {
+            code: -32000,
+            message: "Cannot find context with specified id".into(),
+        }
+    }
+
+    /// The world a unique id names on `session`: `None` for the page's own world (none named),
+    /// refused for one the engine does not have.
+    fn by_unique(&self, unique: &Value, session: Option<&str>) -> Result<Option<i64>, CallError> {
+        let Some(unique) = unique.as_str() else {
+            return Ok(None);
+        };
+        super::lock(&self.worlds)
+            .iter()
+            .find(|w| w.live && w.unique == unique && Some(w.session.as_str()) == session)
+            .map(|w| Some(w.id))
+            .ok_or_else(Self::no_context)
+    }
+
+    /// The world a number names on `session`: `None` for the page's own world, refused for one
+    /// the engine does not have.
+    fn by_id(&self, id: &Value, session: Option<&str>) -> Result<Option<i64>, CallError> {
+        let Some(id) = id.as_i64() else {
+            return Ok(None);
+        };
+        let session = session.unwrap_or_default();
+        if super::lock(&self.worlds)
+            .iter()
+            .any(|w| w.live && w.id == id && w.session == session)
+        {
+            return Ok(Some(id));
+        }
+        if super::lock(&self.reused)
+            .iter()
+            .any(|(s, reused)| s == session && *reused == id)
+        {
+            return Ok(None);
+        }
+        Err(Self::no_context())
     }
 
     fn on(
@@ -177,6 +245,41 @@ impl Engine {
                     }),
                 }
             }
+            "Page.createIsolatedWorld" => {
+                let id = {
+                    let mut worlds = super::lock(&self.worlds);
+                    let id = 100 + i64::try_from(worlds.len()).unwrap();
+                    worlds.push(StandWorld {
+                        id,
+                        unique: format!("U-{id}"),
+                        session: on.unwrap_or_default().to_owned(),
+                        live: true,
+                    });
+                    id
+                };
+                if super::lock(&self.model).worlds_untold {
+                    return Ok(json!({ "executionContextId": id }));
+                }
+                self.emit(
+                    "Runtime.executionContextCreated",
+                    json!({"context":{"id":id,"uniqueId":format!("U-{id}"),"origin":"","name":p["worldName"],"auxData":{"frameId":p["frameId"],"isDefault":false,"type":"isolated"}}}),
+                    on,
+                );
+                Ok(json!({ "executionContextId": id }))
+            }
+            // The page's own world says what the page made it say: its document still loading,
+            // nothing focused.
+            "Runtime.evaluate"
+                if self.by_unique(&p["uniqueContextId"], on)?.is_none()
+                    && self.by_id(&p["contextId"], on)?.is_none() =>
+            {
+                let lie = if p["expression"] == ACTIVE_ELEMENT {
+                    ""
+                } else {
+                    "loading"
+                };
+                Ok(json!({"result":{"type":"string","value":lie}}))
+            }
             "Runtime.evaluate" if p["expression"] == ACTIVE_ELEMENT => {
                 Ok(json!({"result":{"type":"string","value":super::lock(&self.model).active}}))
             }
@@ -209,7 +312,37 @@ impl Engine {
                 }))
             }
             "DOM.resolveNode" => {
-                Ok(json!({"object":{"type":"object","subtype":"node","objectId":"OBJECT-1"}}))
+                let object = match self.by_id(&p["executionContextId"], on)? {
+                    Some(world) => format!("OBJECT-{world}"),
+                    None => "PAGE-OBJECT".to_owned(),
+                };
+                Ok(json!({"object":{"type":"object","subtype":"node","objectId":object}}))
+            }
+            // A function run in a world by its unique id is given an element of that world, or
+            // refused.
+            "Runtime.callFunctionOn" if !p["uniqueContextId"].is_null() => {
+                let world = self.by_unique(&p["uniqueContextId"], on)?;
+                if p["arguments"][0]["objectId"] != json!(format!("OBJECT-{}", world.unwrap())) {
+                    return Err(CallError::Engine {
+                        code: -32000,
+                        message:
+                            "Argument should belong to the same JavaScript world as target object"
+                                .into(),
+                    });
+                }
+                Ok(if p["functionDeclaration"] == READ_VALUE {
+                    json!({"result": {"type":"string","value": super::lock(&self.model).value}})
+                } else {
+                    json!({"result": {"type":"object","value": super::lock(&self.model).select}})
+                })
+            }
+            // In the page's own world a field holds nothing and no drop-down is one.
+            "Runtime.callFunctionOn" if p["objectId"] == "PAGE-OBJECT" => {
+                Ok(if p["functionDeclaration"] == READ_VALUE {
+                    json!({"result": {"type":"string","value": ""}})
+                } else {
+                    json!({"result": {"type":"object","value": {"notSelect": true}}})
+                })
             }
             "Runtime.callFunctionOn" if p["functionDeclaration"] == READ_VALUE => {
                 Ok(json!({"result": {"type":"string","value": super::lock(&self.model).value}}))
@@ -328,9 +461,12 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             active: String::new(),
             drawn: HashMap::new(),
             opened_at: HashMap::new(),
+            worlds_untold: false,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
+        worlds: Mutex::new(Vec::new()),
+        reused: Mutex::new(Vec::new()),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.
@@ -973,7 +1109,14 @@ fn choosing_options_passes_them_as_a_value_to_purlis_own_function() {
         .unwrap();
     let chose = &engine.sent("Runtime.callFunctionOn")[0];
     assert_eq!(chose.params["functionDeclaration"], SELECT_OPTIONS);
-    assert_eq!(chose.params["arguments"], json!([{ "value": ["Blue"] }]));
+    // The drop-down, as purlis's world holds it, then the options as a value.
+    assert_eq!(chose.params["arguments"][1], json!({ "value": ["Blue"] }));
+    assert!(
+        chose.params["arguments"][0]["objectId"]
+            .as_str()
+            .is_some_and(|o| o.starts_with("OBJECT-")),
+        "{chose:?}"
+    );
     super::lock(&engine.model).select = json!({"missing":["Teal"],"options":["Red","Blue"]});
     assert_eq!(
         browser.call(
@@ -989,6 +1132,127 @@ fn choosing_options_passes_them_as_a_value_to_purlis_own_function() {
             options: "Red, Blue".into(),
         })
     );
+}
+
+#[test]
+fn purlis_scripts_read_and_act_in_a_world_of_their_own_in_the_frame_they_act_on() {
+    // The stand-in's page lies in its own world about everything purlis's scripts read
+    // (#2138): its document is still loading and no drop-down is one.
+    let (browser, engine) = browser();
+    let text = snapshot(&browser, 1);
+    let volume = ref_of(&text, "- slider \"Volume\"");
+    let chose = browser.call(
+        &id(2),
+        Call::Select {
+            target: volume,
+            options: vec!["Blue".into()],
+        },
+    );
+    assert!(
+        matches!(&chose, Ok(a) if a.settled == Settled::Yes),
+        "{chose:?}"
+    );
+    let worlds = engine.sent("Page.createIsolatedWorld");
+    assert!(!worlds.is_empty());
+    for world in &worlds {
+        assert_eq!(
+            world.params["grantUniveralAccess"],
+            json!(false),
+            "{world:?}"
+        );
+        let frame = match world.session.as_deref() {
+            Some("S-PAGE-1") => "PAGE-1",
+            Some("S-PAYMENT") => "PAYMENT-FRAME",
+            other => panic!("a world on no frame's session: {other:?}"),
+        };
+        assert_eq!(world.params["frameId"], frame, "{world:?}");
+    }
+    every_script_ran_in_a_world_of_purlis(&engine);
+}
+
+/// Every script purlis ran named a world the engine told of by its unique id, and ran on an
+/// element of that world.
+fn every_script_ran_in_a_world_of_purlis(engine: &Engine) {
+    for sent in engine.all_sent() {
+        if matches!(
+            sent.method.as_str(),
+            "Runtime.evaluate" | "Runtime.callFunctionOn"
+        ) {
+            assert!(
+                sent.params["uniqueContextId"]
+                    .as_str()
+                    .is_some_and(|u| u.starts_with("U-")),
+                "{sent:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_world_whose_number_now_names_the_pages_own_world_is_never_run_in() {
+    // The page moved to another process before the engine said so: the number of purlis's
+    // world there names the page's own world.
+    let (browser, engine) = browser();
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let made = engine.sent("Page.createIsolatedWorld").len();
+    engine.worlds_reused_by_the_page();
+    let chose = browser.call(
+        &id(2),
+        Call::Select {
+            target: volume,
+            options: vec!["Blue".into()],
+        },
+    );
+    assert!(
+        matches!(&chose, Ok(a) if a.settled == Settled::Yes),
+        "{chose:?}"
+    );
+    assert!(engine.sent("Page.createIsolatedWorld").len() > made);
+    every_script_ran_in_a_world_of_purlis(&engine);
+}
+
+#[test]
+fn a_frame_that_loads_another_document_gets_a_new_world() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    let made = engine.sent("Page.createIsolatedWorld").len();
+    let first = engine.sent("Runtime.evaluate").last().unwrap().params["uniqueContextId"].clone();
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-9","url":"http://fixture.test/frames.html","securityOrigin":"http://fixture.test","mimeType":"text/html"}}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(20));
+    snapshot(&browser, 2);
+    assert!(engine.sent("Page.createIsolatedWorld").len() > made);
+    let after: Vec<Value> = engine
+        .sent("Runtime.evaluate")
+        .iter()
+        .map(|s| s.params["uniqueContextId"].clone())
+        .collect();
+    assert_ne!(after.last(), Some(&first), "the old world is not run in");
+}
+
+#[test]
+fn a_world_whose_document_has_gone_is_made_again() {
+    let (browser, engine) = browser();
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let made = engine.sent("Page.createIsolatedWorld").len();
+    for world in super::lock(&engine.worlds).iter_mut() {
+        world.live = false;
+    }
+    let chose = browser.call(
+        &id(2),
+        Call::Select {
+            target: volume,
+            options: vec!["Blue".into()],
+        },
+    );
+    assert!(
+        matches!(&chose, Ok(a) if a.settled == Settled::Yes),
+        "{chose:?}"
+    );
+    assert!(engine.sent("Page.createIsolatedWorld").len() > made);
 }
 
 #[test]

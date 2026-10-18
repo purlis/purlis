@@ -240,6 +240,11 @@
       "by": ["acknowledgeProjectHosts"]
     },
     {
+      "at": "sandboxing.rs acknowledge_browser_sites",
+      "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["acknowledgeProjectBrowserSites"]
+    },
+    {
       "at": "sandboxing.rs acknowledge_presets",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["acknowledgeProjectPresets"]
@@ -328,6 +333,11 @@
     {
       "at": "sandboxing.rs revoke_browser",
       "writes": "this machine's answers about the project (sandbox-grants)",
+      "by": ["revokeSandboxGrant"]
+    },
+    {
+      "at": "sandboxing.rs revoke_project_site",
+      "writes": "the project's manifest and its local settings",
       "by": ["revokeSandboxGrant"]
     },
     {

@@ -419,6 +419,12 @@ export const commands = {
 	 */
 	acknowledgeProjectHosts: (plane: PlaneId, shown: string[]) => typedError<SandboxState, string>(__TAURI_INVOKE("acknowledge_project_hosts", { plane, shown })),
 	/**
+	 *  **The person read the Notice of the project's browser sites** as it showed them, `shown`, the
+	 *  sites it named as added (#2443): each still listed reaches every chat's browser here from its
+	 *  next act. The window's alone (`WINDOW_ONLY`).
+	 */
+	acknowledgeProjectBrowserSites: (plane: PlaneId, shown: string[]) => typedError<SandboxState, string>(__TAURI_INVOKE("acknowledge_project_browser_sites", { plane, shown })),
+	/**
 	 *  The person read the Notice of the project's Internet access presets as it showed them,
 	 *  `shown` (#1385): it is not shown again until they change from that.
 	 */
@@ -673,9 +679,10 @@ export const commands = {
 	keepChatBrowserOff: (plane: PlaneId, session: number, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_chat_browser_off", { plane, session, reason })),
 	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
-	 *  browser sites at `level`, this chat or every chat of this project on this machine. A grant
-	 *  for the browser alone (ruled 2026-10-17): the chat's own commands still need their own Allow
-	 *  for each host. Its browser reaches them from its next act; the chat is told on its next turn.
+	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
+	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
+	 *  chat's own commands still need their own Allow for each host. Its browser reaches them from
+	 *  its next act; the chat is told on its next turn.
 	 */
 	allowBrowserSites: (plane: PlaneId, session: number, sites: string[], level: GrantLevel) => typedError<null, string>(__TAURI_INVOKE("allow_browser_sites", { plane, session, sites, level })),
 	/**
@@ -4032,6 +4039,16 @@ export type BrowserFrame = {
  *  Meta 4, Shift 8).
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
+
+/**
+ *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
+ *  spelled as the sandbox writes a host.
+ */
+export type BrowserSitesChanged = {
+	/**  Listed and never shown here: what the Notice sends back once it is read. */
+	added: string[],
+	removed: string[],
+};
 
 /**  What a browser view is to the person: the view they are looking at, or a thumbnail. */
 export type BrowserViewRole = "focused" | "thumbnail";
@@ -9038,6 +9055,12 @@ export type SandboxState = {
 	 *  the one-time Notice each teammate sees. `null` when nothing did.
 	 */
 	hosts_changed: HostsChanged | null,
+	/**
+	 *  How the project's browser sites for everyone in it changed since this machine last
+	 *  showed them (#2443): one each reaches no browser here until it was shown. `null` when
+	 *  nothing did.
+	 */
+	browser_sites_changed?: BrowserSitesChanged | null,
 	/**
 	 *  How the project's Internet access presets changed since this machine last told the
 	 *  person (#1385): the one-time Notice each teammate sees, so a preset that widens never
