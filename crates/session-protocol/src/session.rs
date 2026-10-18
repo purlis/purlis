@@ -170,9 +170,14 @@ use crate::view::{Limits, Views};
 /// started it without (`left_out`), and the name of that machine (`host_name`).
 ///
 /// 1.24 is unused: the change it was kept for needed no new word on the wire.
+///
+/// 1.25 added a desktop removing a runner (#2525, ADR 0078 §3): `unpair`, sent by the desktop
+/// on its link to the runner, takes it out of the runner's peers. A host before 1.25 refuses
+/// it `unknown_command`, and the runner's container and home, where its peers are, are
+/// removed all the same.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 23,
+    minor: 25,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -435,6 +440,12 @@ pub enum Command {
     /// crash, after which the host keeps its programs for the grace period. The window's alone
     /// ([`crate::grants::Power::Quit`]).
     Quit,
+    /// The desktop on this link is removing the runner (1.25, #2525, ADR 0078 §3): the runner's
+    /// host takes it out of its peers, so no later link from it is admitted, and answers
+    /// [`Answer::Done`]. Only a runner's host, on the link between hosts from the desktop it is
+    /// paired with, carries it out; every other host refuses it [`NOT_ALLOWED`]
+    /// ([`crate::grants::Power::Unpair`]).
+    Unpair,
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1145,6 +1156,7 @@ wire_words!(Command {
     SizeBrowser => "size_browser",
     LogIn => "log_in",
     TakeBack => "take_back",
+    Unpair => "unpair",
 });
 
 impl Command {
@@ -1189,6 +1201,7 @@ impl Command {
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
+            Command::Unpair => Power::Unpair,
         }
     }
 }
@@ -2223,6 +2236,12 @@ impl Client {
     /// The window is quitting: the host ends every program as a quit and stops (1.13).
     pub async fn quit(&self) -> Result<(), CallError> {
         self.done(Command::Quit).await
+    }
+
+    /// Take this link's desktop out of the runner's peers (1.25, #2525): no later link from it
+    /// is admitted. Refused by every host but a runner's, on its link from that desktop.
+    pub async fn unpair(&self) -> Result<(), CallError> {
+        self.done(Command::Unpair).await
     }
 
     /// Throw the kill switch: every program the host runs ends, and none starts until the

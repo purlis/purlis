@@ -273,4 +273,24 @@ fn a_paired_runner_whose_device_id_is_gone_links_nobody() {
     pair(folder.path(), &desktop()).unwrap();
     crate::machine::update(folder.path(), |store| store.device = None).unwrap();
     assert!(answering(folder.path()).is_err());
+fn the_paired_desktop_unpairing_leaves_a_runner_that_links_nobody_and_is_not_paired_again() {
+    let folder = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    pair(folder.path(), &ours).unwrap();
+    unpair(folder.path(), &ours).unwrap();
+    assert!(answering(folder.path()).unwrap().is_none());
+    assert!(!crate::machine::dir(folder.path()).join(PEERS_FILE).exists());
+    assert!(pair(folder.path(), &desktop()).is_err());
+    // Again is nothing to do.
+    unpair(folder.path(), &ours).unwrap();
+}
+
+#[test]
+fn another_desktop_cannot_unpair_a_runner() {
+    let folder = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    pair(folder.path(), &ours).unwrap();
+    assert!(unpair(folder.path(), &desktop()).is_err());
+    let (_, peer) = answering(folder.path()).unwrap().unwrap();
+    assert_eq!(peer, ours);
 }

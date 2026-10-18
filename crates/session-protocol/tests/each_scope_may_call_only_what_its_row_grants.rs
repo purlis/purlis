@@ -295,6 +295,8 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
         },
         Command::Quit,
+        // The desktop taken out of a runner's peers (1.25, #2525).
+        Command::Unpair,
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -384,6 +386,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "browse",
             "programs_of",
             "quit",
+            "unpair",
             "take_over",
             "browser_input",
             "size_browser",
@@ -441,6 +444,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "stop_all",
             "kill_switch",
             "take_back",
+            // The desktop removing the runner (1.25, #2525).
+            "unpair",
         ],
         Scope::FleetMcp => &[
             "list",

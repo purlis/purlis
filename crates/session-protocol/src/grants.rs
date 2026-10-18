@@ -42,6 +42,7 @@
 //! | `take_back`, a relaying host naming the window a link is for, named again the confinements of the chats that window started (1.22) | | | | | | yes |
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
+//! | `unpair`, the desktop taken out of a runner's peers (1.25) | yes | | | | | yes |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -158,6 +159,12 @@
 //!   `answer` command until the operator rules, which fails closed; `remote-link`'s relayed
 //!   `reply_heard` is the one way a hook's ask's answer reaches a runner (ruled 2026-10-15), and
 //!   its relayed `change_reach` the one way a sandbox ask's answer does (#2217).
+//! - **`unpair` is the paired desktop's, on its own link to the runner** (1.25, #2525). It takes
+//!   that desktop out of the runner's peers as the person removes the runner (ADR 0078 §3), so
+//!   only `remote-link` sends it where it is carried out, and a runner's host carries it out
+//!   for the desktop the link's handshake proved, never another. The window may send it to its
+//!   own host, which holds no peers and refuses it; a relaying host refuses it too, so it never
+//!   reaches a runner but from the desktop that removes it.
 
 use crate::auth::Scope;
 
@@ -227,6 +234,9 @@ pub enum Power {
     /// `take_back` (1.22): a relaying host names the window a link is for, and is named again
     /// the confinements of the chats that window started. Never the window's own.
     TakeBack,
+    /// `unpair` (1.25, #2525): the desktop on a link between hosts taken out of the runner's
+    /// peers, as it removes the runner.
+    Unpair,
 }
 
 impl Scope {
@@ -254,6 +264,7 @@ impl Scope {
                     | P::Heard
                     | P::Confine
                     | P::TakeBack
+                    | P::Unpair
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),
@@ -342,6 +353,14 @@ mod tests {
                 scope == Scope::RemoteLink,
                 "{scope}"
             );
+        }
+    }
+
+    #[test]
+    fn only_the_window_or_a_desktop_on_its_link_to_a_runner_unpairs() {
+        for scope in Scope::ALL {
+            let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+            assert_eq!(scope.may(Power::Unpair), windows, "{scope}");
         }
     }
 

@@ -377,6 +377,11 @@ pub fn dirs_spelled(config_root: &Path) -> Vec<PathBuf> {
 /// (`crate::runnerlink`, ADR 0078 §8).
 pub const PEERS_FILE: &str = "peers.json";
 
+/// The runners this desktop pinned, inside [`dir`] (`crate::runners`, ADR 0078 §8), and the
+/// lock its one read-modify-write takes.
+pub const RUNNERS_FILE: &str = "runners.json";
+pub const RUNNERS_LOCK: &str = "runners.json.lock";
+
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";
 

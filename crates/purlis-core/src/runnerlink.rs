@@ -125,6 +125,28 @@ pub fn answering(config_root: &Path) -> Result<Option<(Identity, Pinned)>, Strin
     Ok(Some((Identity { device, key }, desktop)))
 }
 
+/// Take `desktop` out of this runner's peers, as it removes the runner (`unpair`, #2525): its
+/// peers file is removed, so no later link is admitted, and the runner is not paired again (its
+/// key stays). Nothing is done where no peer is kept; a peer that is another desktop's is
+/// refused and kept.
+pub fn unpair(config_root: &Path, desktop: &Pinned) -> Result<(), String> {
+    match peer(config_root)? {
+        None => Ok(()),
+        Some(kept) if &kept == desktop => {
+            let store = purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config_root))
+                .map_err(|why| format!("the machine store could not be opened: {why}"))?;
+            match std::fs::remove_file(store.path().join(PEERS_FILE)) {
+                Ok(()) => Ok(()),
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(why) => Err(format!(
+                    "the desktop could not be taken out of this runner's peers: {why}"
+                )),
+            }
+        }
+        Some(_) => Err("this runner is paired with another desktop, which stays its peer".into()),
+    }
+}
+
 /// A device id and public link key as one line: `{"device":"<id>","key":"<64 hex>"}`.
 pub fn to_line(pinned: &Pinned) -> String {
     serde_json::json!({ "device": pinned.device, "key": hex_of(pinned.key.as_bytes()) }).to_string()
@@ -230,7 +252,7 @@ pub fn is_lower_hex(text: &str, len: usize) -> bool {
     text.len() == len && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-fn hex_of(bytes: &[u8]) -> String {
+pub(crate) fn hex_of(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 

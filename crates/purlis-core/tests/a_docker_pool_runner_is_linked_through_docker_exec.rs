@@ -134,17 +134,61 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
         .enable_all()
         .build()
         .unwrap();
+    let ours_again = Identity {
+        device: ours.device.clone(),
+        key: LinkKey::from_private(ours.key.private_half().unwrap()).unwrap(),
+    };
+    let ours_last = Identity {
+        device: ours.device.clone(),
+        key: LinkKey::from_private(ours.key.private_half().unwrap()).unwrap(),
+    };
     runtime.block_on(async {
         let client = linked(&docker, &made, ours, runner_pinned.clone())
             .await
             .expect("the paired desktop is linked");
         assert_eq!(client.list().await.expect("listed").len(), 0);
 
-        let refused = linked(&docker, &made, stranger, runner_pinned)
+        let refused = linked(&docker, &made, stranger, runner_pinned.clone())
             .await
             .err()
             .expect("another desktop's key is refused");
         assert!(refused.contains("refused"), "{refused}");
+
+        // The desktop keeps the runner's key once (#2525).
+        let config = tempfile::tempdir().unwrap();
+        purlis_core::runners::keep(config.path(), &made, &runner_pinned, &pinned.device)
+            .expect("the runner is kept");
+        let changed = Pinned {
+            device: runner_pinned.device.clone(),
+            key: LinkKey::generate().unwrap().public(),
+        };
+        assert!(matches!(
+            purlis_core::runners::keep(config.path(), &made, &changed, &pinned.device),
+            Err(purlis_core::runners::Refused::KeyChanged { .. })
+        ));
+
+        // Removing it unpairs it over the link, then removes its container and home.
+        let unpaired = linked(&docker, &made, ours_again, runner_pinned.clone())
+            .await
+            .expect("linked to unpair")
+            .unpair()
+            .await;
+        assert!(unpaired.is_ok(), "{unpaired:?}");
+        assert!(
+            linked(&docker, &made, ours_last, runner_pinned)
+                .await
+                .is_err(),
+            "an unpaired runner links its desktop no more"
+        );
+        let removed =
+            purlis_core::runners::remove(config.path(), &docker, made.runner.name(), None)
+                .expect("the runner is removed");
+        assert_eq!(removed.left(), None, "{removed:?}");
+        assert!(
+            purlis_core::runners::read(config.path())
+                .unwrap()
+                .is_empty()
+        );
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
 }
