@@ -515,6 +515,12 @@ enum Input {
     Dropped,
 }
 
+/// The `secret exec` inputs, held with the link the lines come over now.
+type InputsOn<'a> = (
+    MutexGuard<'a, Option<u64>>,
+    MutexGuard<'a, HashMap<u64, Input>>,
+);
+
 /// Whether, and why, the input kept for a `secret exec` not begun has ended.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Ending {
@@ -601,13 +607,7 @@ impl Heeding {
 
     /// The `secret exec` inputs, where `link` is the link the lines come over now: held with
     /// the link, so the link cannot change while they are changed.
-    fn inputs_on(
-        &self,
-        link: u64,
-    ) -> Option<(
-        MutexGuard<'_, Option<u64>>,
-        MutexGuard<'_, HashMap<u64, Input>>,
-    )> {
+    fn inputs_on(&self, link: u64) -> Option<InputsOn<'_>> {
         let on = lock(&self.link);
         if *on != Some(link) {
             return None;
