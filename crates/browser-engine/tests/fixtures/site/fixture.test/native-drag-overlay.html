@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Native drag under a frame</title>
+<style>
+  #card { position: absolute; left: 40px; top: 40px; width: 80px; height: 40px; background: #ddd; }
+  #bin { position: absolute; left: 300px; top: 200px; width: 120px; height: 80px; background: #bdf; }
+  #over { position: absolute; left: 300px; top: 200px; width: 120px; height: 80px; border: 0; opacity: 0; }
+  #board { position: absolute; left: 0; top: 0; width: 800px; height: 600px; }
+</style></head>
+<body>
+  <div id="board"></div>
+  <div id="card" draggable="true" role="button" aria-label="Card">Card</div>
+  <div id="bin" role="region" aria-label="Bin">Bin</div>
+  <iframe id="over" title="Over the bin" src="http://other.test/deep.html"></iframe>
+  <p id="said" style="position: absolute; left: 0; top: 400px">Nothing dropped</p>
+  <script>
+    let from = null;
+    const said = document.getElementById('said');
+    const card = document.getElementById('card');
+    // Where the drag began: the press on the card.
+    card.addEventListener('mousedown', (e) => {
+      from = { x: e.clientX, y: e.clientY };
+    });
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', 'card');
+    });
+    for (const zone of [document.getElementById('board'), document.getElementById('bin')]) {
+      zone.addEventListener('dragover', (e) => e.preventDefault());
+    }
+    document.getElementById('bin').addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      said.textContent = 'Dropped ' + e.dataTransfer.getData('text/plain') + ' in the bin';
+    });
+    document.getElementById('board').addEventListener('drop', (e) => {
+      e.preventDefault();
+      said.textContent = 'Dropped ' + e.dataTransfer.getData('text/plain') + ' moved by '
+        + Math.round(e.clientX - from.x) + ',' + Math.round(e.clientY - from.y);
+    });
+  </script>
+</body></html>
