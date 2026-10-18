@@ -24,7 +24,9 @@ A theme folder's id names its level because a folder of the same name can be at 
 a pick names it by its folder's name alone, and the nearest level within the pick's reach is
 read. The theme commands read the levels' folders exactly as the window does, with the same
 reach: a folder extends the folders of its own level and the levels farther out. Outside a
-plane there are no project or workspace levels.
+plane there are no project or workspace levels. What reading a level has to say (a `themes/` reached through a link, more folders than are
+read) is attached to every theme at that level: as a note on a theme that is drawn, among the
+reasons on one that is refused.
 
 `purlis theme list` shows every theme available here, the machine's first, then the project's,
 each workspace's by name, and the extensions':
