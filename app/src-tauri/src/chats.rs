@@ -2377,11 +2377,15 @@ impl Chats {
     /// Decided by comparing what each chat's sandbox was compiled to as it started
     /// ([`Running::confines`]) with what the same start compiles now, never by a settings file
     /// having been written: a change that compiles to the same sandbox leaves nothing behind.
+    ///
+    /// git is asked once about the project's local file for every chat compared (#2179).
     pub fn on_older_sandbox(&self) -> Option<OlderSandbox> {
-        self.on_older_sandbox_on(
-            &purlis_core::sandbox::Machine::this(),
-            &purlis_core::sandbox::backend::installed,
-        )
+        purlis_core::profiles::git_asked_once(|| {
+            self.on_older_sandbox_on(
+                &purlis_core::sandbox::Machine::this(),
+                &purlis_core::sandbox::backend::installed,
+            )
+        })
     }
 
     /// [`Self::on_older_sandbox`], on `machine` with `has` saying what is installed.

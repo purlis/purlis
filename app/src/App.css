@@ -8563,6 +8563,13 @@ textarea.ui-field {
   color: var(--danger-text);
 }
 
+/* Input the page moved on from (#2304): something to do again, not a refusal, so it is the
+   bar's primary text, set a little heavier to be seen while typing. */
+.browser-bar-dropped {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
 .browser-surface {
   position: relative;
   display: flex;

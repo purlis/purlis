@@ -7,6 +7,7 @@ import { cleanup, render as renderBare, screen, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import type { PlaneContribution } from "./bindings";
 
 /** The project the status line names, found by its directory: the line draws the project's
  *  name, and its directory is the item's tooltip (qw357). */
@@ -54,12 +55,13 @@ const SIDEBAR = {
 };
 
 /** What a project with something to declare contributes. */
-const CONTRIBUTES = {
+const CONTRIBUTES: PlaneContribution = {
   plugins: [["superpowers@market", "true"]],
   env: [["ANTHROPIC_BASE_URL", "https://example.invalid"]],
   starts: [['{"program":"/bin/sh","args":[],"cwd":"/home/dev/plane"}', ""]],
   profiles: [],
   grants: [["ops", '{"kubectl":""}']],
+  fonts: [],
 };
 
 /**
