@@ -47,13 +47,21 @@ fn window_on_a_runner() -> (Window, tokio::sync::broadcast::Sender<Pushed>) {
 fn window_with<H: purlis_session_protocol::session::Host + Clone>(
     host: impl FnOnce(Hosting) -> H,
 ) -> Window {
+    window_of(|started| started, host)
+}
+
+/// [`window_with`], its stand-in browsers as `browsers` makes them.
+fn window_of<H: purlis_session_protocol::session::Host + Clone>(
+    browsers: impl FnOnce(StandInBrowsers) -> StandInBrowsers,
+    host: impl FnOnce(Hosting) -> H,
+) -> Window {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .unwrap();
     let store = tempfile::tempdir().unwrap();
-    let started = StandInBrowsers::in_folder(store.path().join("browsers"));
+    let started = browsers(StandInBrowsers::in_folder(store.path().join("browsers")));
     let hosting =
         Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(started.clone());
     let (connection, _window) = crate::hostedsessions::tests::in_memory(host(hosting), &runtime);
@@ -217,6 +225,49 @@ fn past_the_devices_budget_the_next_browser_is_refused_in_words_and_one_closed_m
     until("the closed one has left the host", || {
         browsers.open(&window.root).is_ok()
     });
+}
+
+#[test]
+fn a_start_the_host_refuses_for_its_devices_budget_is_the_device_full_refusal_naming_the_setting() {
+    // #2611: the host holds every client to the budget; the window's own count lets this
+    // one through, and the host's refusal is still the person's device-full sentence.
+    let window = window_of(|browsers| browsers.budgeted(1), |hosting| hosting);
+    let browsers = WindowBrowsers::new(Arc::clone(&window.browsers.connection)).budgeted(1);
+    let generous = WindowBrowsers::new(Arc::clone(&window.browsers.connection)).budgeted(8);
+    browsers.open(&window.root).unwrap();
+
+    let refused = generous.open(&window.root).unwrap_err();
+
+    assert!(refused.contains("on this device"), "{refused}");
+    assert!(
+        refused.contains(purlis_core::browserlimits::SETTING),
+        "{refused}"
+    );
+    assert_eq!(window.started.started().len(), 1, "nothing more started");
+}
+
+#[test]
+fn a_start_refused_with_a_code_this_window_does_not_know_is_refused_in_the_hosts_words() {
+    use crate::chatbrowsers::NotStarted;
+    use purlis_session_protocol::session::{self, Refusal};
+
+    let full = Refusal {
+        code: session::DEVICE_FULL.into(),
+        why: "the host's sentence".into(),
+    };
+    assert!(matches!(
+        super::not_started(full, 3),
+        NotStarted::Full { most: 3 }
+    ));
+    // A later minor's code, as `device_full` is to a window before 1.32: its `why` is shown.
+    let later = Refusal {
+        code: "a_later_minors_code".into(),
+        why: "this device runs at most 3 browsers at once".into(),
+    };
+    match super::not_started(later, 3) {
+        NotStarted::Failed(why) => assert_eq!(why, "this device runs at most 3 browsers at once"),
+        NotStarted::Full { .. } => panic!("a code it does not know is not device_full"),
+    }
 }
 
 /// A key the person pressed, aimed at what a frame said it showed.

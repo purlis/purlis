@@ -543,6 +543,15 @@ impl HostLink {
         self.call_within(command, ANSWER_WITHIN)
     }
 
+    /// [`Self::call`], refused with the host's code where it gave one: what a browser's start
+    /// is asked with, since the host may refuse it `device_full` (#2611).
+    pub(crate) fn call_refused(
+        &self,
+        command: Command,
+    ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
+        self.call_refused_within(command, ANSWER_WITHIN)
+    }
+
     /// [`Self::call`], waiting at most `within`.
     fn call_within(&self, command: Command, within: Duration) -> Result<Answer, String> {
         self.call_refused_within(command, within)

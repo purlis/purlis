@@ -266,6 +266,13 @@ impl Browsers for EngineBrowsers {
         self.places().map(|(data, _)| browsers_in(&data))
     }
 
+    /// This device's budget (#2611): what its memory gives, or what the person set in
+    /// Settings › This machine › Browsers, read at each start. The window's host and a runner's
+    /// each read their own machine's.
+    fn budget(&self) -> Option<usize> {
+        Some(crate::browserlimits::Limits::here().on_this_device)
+    }
+
     fn start(
         &self,
         data: &Path,

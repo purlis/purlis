@@ -768,6 +768,22 @@ impl crate::browsers::Screen for StandInScreen {
 pub struct StandInBrowsers {
     folder: std::path::PathBuf,
     started: Arc<Mutex<Vec<StandInScreen>>>,
+    budget: Option<usize>,
+    starts: Arc<Starts>,
+}
+
+/// Whether starts wait to be let go, how many wait now, and whether the next one fails.
+#[derive(Default)]
+struct Starts {
+    held: Mutex<StartsHeld>,
+    let_go: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct StartsHeld {
+    holding: bool,
+    waiting: usize,
+    fail_next: bool,
 }
 
 impl StandInBrowsers {
@@ -776,7 +792,46 @@ impl StandInBrowsers {
         StandInBrowsers {
             folder: folder.into(),
             started: Arc::default(),
+            budget: None,
+            starts: Arc::default(),
         }
+    }
+
+    /// At most `budget` browsers run at once on its device (#2611).
+    pub fn budgeted(self, budget: usize) -> Self {
+        StandInBrowsers {
+            budget: Some(budget),
+            ..self
+        }
+    }
+
+    /// Each start waits until [`StandInBrowsers::let_starts_go`]: a browser still starting.
+    pub fn holding_starts(self) -> Self {
+        self.held().holding = true;
+        self
+    }
+
+    /// How many starts wait to be let go now.
+    pub fn waiting(&self) -> usize {
+        self.held().waiting
+    }
+
+    /// Lets every start waiting go on, and every one after it.
+    pub fn let_starts_go(&self) {
+        self.held().holding = false;
+        self.starts.let_go.notify_all();
+    }
+
+    /// The next start fails, as an engine that does not start does.
+    pub fn fails_next(&self) {
+        self.held().fail_next = true;
+    }
+
+    fn held(&self) -> std::sync::MutexGuard<'_, StartsHeld> {
+        self.starts
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Every browser it started, in order.
@@ -790,12 +845,31 @@ impl crate::browsers::Browsers for StandInBrowsers {
         Ok(self.folder.clone())
     }
 
+    fn budget(&self) -> Option<usize> {
+        self.budget
+    }
+
     fn start(
         &self,
         data: &std::path::Path,
         reach: Option<&purlis_session_protocol::browsing::BrowserReach>,
         kept: Option<&purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<Arc<dyn crate::browsers::Screen>, String> {
+        {
+            let mut held = self.held();
+            if std::mem::take(&mut held.fail_next) {
+                return Err("the stand-in engine did not start".into());
+            }
+            held.waiting += 1;
+            while held.holding {
+                held = self
+                    .starts
+                    .let_go
+                    .wait(held)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+            held.waiting -= 1;
+        }
         std::fs::create_dir_all(data).map_err(|why| why.to_string())?;
         let screen = StandInScreen::default();
         screen.shown().data = data.to_path_buf();
