@@ -1462,19 +1462,29 @@ and a name that holds one of those). An
 assignment to one of its properties (`st.padding = "7px"`, `st["padding-top"]`,
 ``st[`padding`]``), its CSS text set or added to (`st.cssText = "…"`, `st.cssText += "…"`), a
 `style` attribute set as text, and every `setProperty(…)` call are read, each declaration in
-CSS text on its own. A value is read where it is written out, and where a ternary picks
-between values written out.
+CSS text on its own.
+
+A value is read where it is written out, and the reader follows a value as it follows a style,
+under the same bounds (#2684): each branch of a ternary and each side of `||`, `??` and `&&`; a
+variable that holds it (`const pad = "7px"`, then `padding: pad`), and one that holds that one;
+a member of a local object (`sizes.pad`, `sizes["pad"]`) or of a destructuring; what a local
+function, an arrow or `useMemo` returns (`padding: padOf(on)`); and what a relative import gives.
+This holds for a style object's key, an assignment (`el.style.padding = pad`) and the value a
+`setProperty(…)` call sets. Each use is read on its own, so a value held once and used twice is
+two findings. A name is matched across its file, not by its block, so a parameter that shares a
+held value's name is read as that value: rename one of them.
 
 **The reader fails closed.** A style it cannot finish following fails the guard with a
 sentence that names the file and the style, and is never passed over:
 
-- a style handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it is used;
-- a style that comes from a relative import the guard cannot open: one above `src`, one whose
-  file is not found, or one in a file that is not script (`./box.css`).
+- a style or a value handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it
+  is used;
+- a style or a value that comes from a relative import the guard cannot open: one above `src`,
+  one whose file is not found, or one in a file that is not script (`./box.css`).
 
-What they do not read: a value held in a variable on its own (`const pad = "7px"`, then
-`padding: pad`), or any other value worked out; a member reached by a computed key
-(`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
+What they do not read: a value worked out (`${n}px`, `n * 4`), a member of a value
+(`pad.length`), or a value given by reassignment (`let pad; pad = "7px"`); a member reached by
+a computed key (`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
 `useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
 in a prop with another name (`boxStyle={…}`) or under an object's `style` key
 (`createElement("div", { style })`); an element's style handed to a function as a parameter

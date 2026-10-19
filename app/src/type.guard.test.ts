@@ -199,8 +199,9 @@ const offTheScale = (word: string) =>
 
 /** Each type literal a component writes: in an inline `style` or a `setProperty` call, as
  *  `style <key>: <value>` or `setProperty <name>: <value>`, and each Tailwind utility that ranks
- *  a word off the tokens, as `class <utility>`. A value that is computed (a variable, a call) is
- *  not read: only what is written out. */
+ *  a word off the tokens, as `class <utility>`. A value is read where it is written out, and
+ *  where the file hands one on (`const size = "13px"; … fontSize: size`, #2684); a value worked
+ *  out (`${n}px`, a parameter) is not. */
 export function componentLiterals(source: string, from: StyleSource = {}): string[] {
   const found: string[] = [];
   for (const { label, property, value } of styleEntries(source, from)) {
@@ -567,6 +568,31 @@ export function plantAlias(row: HTMLElement) {
       'Inbox.tsx: new type literal: style.fontSize: "15px"',
       'Inbox.tsx: new type literal: style.font-size: "11px"',
       'Inbox.tsx: new type literal: style.cssText font-weight: "500"',
+    ]);
+  });
+
+  it("follows a type value held on its own, in the real tree (#2684)", () => {
+    const planted = `${read("Inbox.tsx")}
+import { plantedFamily } from "./theme/theme";
+const plantedSize = "13px";
+const plantedWeights = { strong: 600 };
+const plantedLine = (tight: boolean) => (tight ? 1.3 : undefined);
+export const PlantedHeld = () => <p style={{ fontSize: plantedSize }} />;
+export const PlantedMember = () => <p style={{ fontWeight: plantedWeights.strong }} />;
+export const PlantedCall = () => <p style={{ lineHeight: plantedLine(true) }} />;
+export const PlantedImported = () => <p style={{ fontFamily: plantedFamily }} />;
+export function plantAssigned(row: HTMLElement) {
+  row.style.fontSize = plantedSize;
+}
+`;
+    const script = `${read("theme/theme.ts")}\nexport const plantedFamily = "Menlo";\n`;
+    const result = complaints(literalsByFile({ "Inbox.tsx": planted, "theme/theme.ts": script }));
+    expect(result.map((complaint) => complaint.split(" (")[0])).toEqual([
+      'Inbox.tsx: new type literal: style fontSize: "13px"',
+      "Inbox.tsx: new type literal: style fontWeight: 600",
+      "Inbox.tsx: new type literal: style lineHeight: 1.3",
+      'Inbox.tsx: new type literal: style fontFamily: "Menlo"',
+      'Inbox.tsx: new type literal: style.fontSize: "13px"',
     ]);
   });
 

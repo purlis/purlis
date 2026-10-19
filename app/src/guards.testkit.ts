@@ -238,11 +238,10 @@ const ENTRY = /^\s*(\w+|"--[\w-]+"|'--[\w-]+')\s*:\s*([\s\S]+?)\s*$/;
 const WRITTEN_ALONE = new RegExp(String.raw`^(?:${WRITTEN})$`);
 /** A string written out, with nothing interpolated. */
 const STRING = String.raw`"[^"]*"|'[^']*'|` + "`[^`$]*`";
-/** A `setProperty(…)` call, on `.style`, `.style?.` or any other declaration a script holds. */
-const SET_PROPERTY = new RegExp(
-  String.raw`\??\.setProperty(?:\?\.)?\(\s*(${STRING})\s*,\s*(${WRITTEN})\s*[,)]`,
-  "g",
-);
+const STRING_ALONE = new RegExp(String.raw`^(?:${STRING})$`);
+/** A `setProperty(…)` call, on `.style`, `.style?.` or any other declaration a script holds, up
+ *  to its own `(`. */
+const SET_PROPERTY = /\??\.setProperty(?:\?\.)?\(/g;
 /** A name in script. */
 const NAME = String.raw`[A-Za-z_$][\w$]*`;
 /** Between a name and its member: `.`, `?.`, `!.`. */
@@ -407,30 +406,6 @@ const isTernary = (text: string, i: number) =>
   text[i + 1] !== "?" &&
   text[i - 1] !== "?" &&
   !(text[i + 1] === "." && !/\d/.test(text[i + 2] ?? ""));
-
-/** The values an expression can give that are written out: itself when it is one, and each
- *  branch of a ternary (`on ? "7px" : 0`), however deep. A value worked out gives none. */
-export function writtenValues(expression: string): string[] {
-  const value = expression.trim();
-  if (WRITTEN_ALONE.test(value)) return [value];
-  if (value.startsWith("(") && closingBracket(value, 0) === value.length - 1) {
-    return writtenValues(value.slice(1, -1));
-  }
-  for (let i = 0; i < value.length; i++) {
-    const char = value[i];
-    if (char === '"' || char === "'" || char === "`") i = closingString(value, i);
-    else if ("{[(".includes(char)) i = closingBracket(value, i);
-    else if (isTernary(value, i)) {
-      const colon = ternaryColon(value, i);
-      if (colon < 0) return [];
-      return [
-        ...writtenValues(value.slice(i + 1, colon)),
-        ...writtenValues(value.slice(colon + 1)),
-      ];
-    }
-  }
-  return [];
-}
 
 /**
  * The expressions `span` can give as its value: each branch of a ternary (`on ? held : undefined`
@@ -670,12 +645,20 @@ function importedFile(from: string | undefined, spec: string, source: StyleSourc
 const parsedBy = new WeakMap<(file: string) => string | undefined, Map<string, Scope>>();
 
 /** One key a style sets, as the follower finds it: how the complaint names it, the key as
- *  written, the property it sets, and its value's expression. */
+ *  written, the property it sets, and where its value's expression is. */
 interface StyleKey {
   label: string;
   key: string;
   property: string;
-  expression: string;
+  scope: Scope;
+  value: Span;
+}
+
+/** A value being followed (`StyleFollower.values`): the values written out it has found, and
+ *  the names it has followed, so a cycle ends. */
+interface Values {
+  found: string[];
+  seen: Set<string>;
 }
 
 /**
@@ -730,14 +713,38 @@ class StyleFollower {
     }
   }
 
-  private follow(scope: Scope, span: Span, path: string[], label: string, depth: number) {
+  /**
+   * The values written out that the expression in `span` can give, followed as a style is: one
+   * written there (`"7px"`, `0`), a branch of a ternary or a side of `||`, `??` and `&&`, a
+   * variable that holds one (`const pad = "7px"; … padding: pad`), a member of a local object
+   * (`sizes.pad`), what a local function returns (`padOf(on)`), and what a relative import gives.
+   * Each use is followed on its own, so a value held once and used twice is read twice.
+   */
+  values(span: Span, scope = this.home, label = "a value"): string[] {
+    const value: Values = { found: [], seen: new Set() };
+    this.follow(scope, span, [], label, 0, value);
+    return value.found;
+  }
+
+  private follow(
+    scope: Scope,
+    span: Span,
+    path: string[],
+    label: string,
+    depth: number,
+    value?: Values,
+  ) {
     this.tooFar(scope, label, depth);
     const { text } = scope;
     for (const given of givenBy(text, span)) {
       const written = text.slice(given.from, given.to);
+      if (value && WRITTEN_ALONE.test(written)) {
+        if (path.length === 0) value.found.push(written);
+        continue;
+      }
       if (written.startsWith("{") && closingBracket(text, given.from) === given.to - 1) {
-        if (path.length === 0) this.object(scope, given.from, label);
-        else this.member(scope, given, path, label, depth);
+        if (path.length > 0) this.member(scope, given, path, label, depth, value);
+        else if (!value) this.object(scope, given.from, label);
         continue;
       }
       const call = CALL.exec(written);
@@ -747,11 +754,11 @@ class StyleFollower {
         if (/^(?:React\.)?useMemo$/.test(callee)) {
           const [first] = partsOf(text, args);
           for (const back of this.returns(scope, first)) {
-            this.follow(scope, back, path, label, depth + 1);
+            this.follow(scope, back, path, label, depth + 1, value);
           }
         } else {
           for (const [where, back] of this.called(scope, callee, label, depth)) {
-            this.follow(where, back, path, label, depth + 1);
+            this.follow(where, back, path, label, depth + 1, value);
           }
         }
         continue;
@@ -759,7 +766,7 @@ class StyleFollower {
       const reference = referenceOf(written);
       if (reference) {
         const [root, ...members] = reference;
-        this.name(scope, root, [...members, ...path], label, depth + 1);
+        this.name(scope, root, [...members, ...path], label, depth + 1, value);
       }
     }
   }
@@ -781,12 +788,27 @@ class StyleFollower {
       if (key === undefined) continue;
       const custom = /^["']/.test(key);
       const property = propertyOf(custom ? key.slice(1, -1) : key);
-      this.found({ label: `${label}${custom ? property : key}`, key, property, expression });
+      // The expression ends the entry, so its last match is where it starts.
+      const from = part.from + written.lastIndexOf(expression);
+      this.found({
+        label: `${label}${custom ? property : key}`,
+        key,
+        property,
+        scope,
+        value: { from, to: from + expression.length },
+      });
     }
   }
 
   /** The member `path[0]` of the object literal in `span`, followed down the rest of `path`. */
-  private member(scope: Scope, span: Span, path: string[], label: string, depth: number) {
+  private member(
+    scope: Scope,
+    span: Span,
+    path: string[],
+    label: string,
+    depth: number,
+    value?: Values,
+  ) {
     const [want, ...rest] = path;
     const { text } = scope;
     for (const part of partsOf(text, { from: span.from + 1, to: span.to - 1 })) {
@@ -799,6 +821,7 @@ class StyleFollower {
           path,
           label,
           depth + 1,
+          value,
         );
         continue;
       }
@@ -811,44 +834,64 @@ class StyleFollower {
             rest,
             label,
             depth + 1,
+            value,
           );
         }
         continue;
       }
-      if (written.trim() === want) this.name(scope, want, rest, label, depth + 1);
+      if (written.trim() === want) this.name(scope, want, rest, label, depth + 1, value);
     }
   }
 
-  /** What `name` holds in `scope`, down `path`: a variable's value, or what it imports. */
-  private name(scope: Scope, name: string, path: string[], label: string, depth: number) {
+  /** What `name` holds in `scope`, down `path`: a variable's value, or what it imports. A style
+   *  is followed down each (name, path) once per follower; a value, once per use. */
+  private name(
+    scope: Scope,
+    name: string,
+    path: string[],
+    label: string,
+    depth: number,
+    value?: Values,
+  ) {
     const id = `${scope.file ?? ""}#${name}#${path.join(".")}#${label}`;
-    if (this.done.has(id)) return;
-    this.done.add(id);
+    const done = value ? value.seen : this.done;
+    if (done.has(id)) return;
+    done.add(id);
     for (const held of scope.holders.get(name) ?? []) {
-      this.follow(scope, held.span, held.member ? [held.member, ...path] : path, label, depth);
+      const down = held.member ? [held.member, ...path] : path;
+      this.follow(scope, held.span, down, label, depth, value);
     }
     const imported = scope.imports.get(name);
     if (!imported) return;
     const there = this.scope(scope, imported.from);
     if (!there) return;
-    if (imported.name !== "*") this.exported(there, imported.name, path, label, depth);
-    else if (path.length > 0) this.exported(there, path[0], path.slice(1), label, depth);
+    if (imported.name !== "*") this.exported(there, imported.name, path, label, depth, value);
+    else if (path.length > 0) this.exported(there, path[0], path.slice(1), label, depth, value);
   }
 
   /** What a file exports as `name`, down `path`. */
-  private exported(scope: Scope, name: string, path: string[], label: string, depth: number) {
+  private exported(
+    scope: Scope,
+    name: string,
+    path: string[],
+    label: string,
+    depth: number,
+    value?: Values,
+  ) {
     if (name === "default") {
-      if (scope.defaultExport) this.follow(scope, scope.defaultExport, path, label, depth + 1);
+      if (scope.defaultExport) {
+        this.follow(scope, scope.defaultExport, path, label, depth + 1, value);
+      }
       return;
     }
     const local = [...scope.exportsAs].find(([, as]) => as === name)?.[0] ?? name;
     if (scope.holders.has(local) || scope.imports.has(local)) {
-      this.name(scope, local, path, label, depth + 1);
+      this.name(scope, local, path, label, depth + 1, value);
       return;
     }
     for (const star of scope.stars) {
       const there = this.scope(scope, star);
-      if (there) this.exported(there, name, path, label, depth + 1);
+      if (there) this.exported(there, name, path, label, depth + 1, value);
     }
   }
 
@@ -1022,16 +1065,20 @@ const propertyOf = (key: string) =>
  *   another name (`const st = el.style`, `const { style } = el`) is read as `el.style`;
  * - a `setProperty(…)` call (`el.style.setProperty(…)`, `el.style?.setProperty(…)`, `st.setProperty(…)`).
  *
- * A value is read when it is written out, or where a ternary picks between values written out
- * (`padding: on ? "7px" : 0`, each branch). A vendor-prefixed key (`WebkitBorderRadius`,
+ * A value is read where it is written out, and followed as a style is (`StyleFollower.values`):
+ * each branch of a ternary (`padding: on ? "7px" : 0`), a variable that holds it
+ * (`const pad = "7px"; … padding: pad`), what a local function returns, and what a relative
+ * import gives (#2684). A vendor-prefixed key (`WebkitBorderRadius`,
  * `msOverflow`) is its prefixed property (`-webkit-border-radius`), which a guard reads
  * `unprefixed`. `from` names the file and how to read the window's other files, so a style
  * imported from one of them is followed; without it, imports are not.
  */
 export function styleEntries(source: string, from: StyleSource = {}): StyleEntry[] {
   const found: StyleEntry[] = [];
-  const follower = new StyleFollower(source, from, ({ label, property, expression }) => {
-    for (const value of writtenValues(expression)) found.push({ label, property, value });
+  const follower: StyleFollower = new StyleFollower(source, from, (key) => {
+    for (const value of follower.values(key.value, key.scope, key.label)) {
+      found.push({ label: key.label, property: key.property, value });
+    }
   });
   const { text, holders } = follower.home;
   for (const hit of text.matchAll(/\bstyle=\{/g)) {
@@ -1061,11 +1108,15 @@ export function styleEntries(source: string, from: StyleSource = {}): StyleEntry
     String.raw`${receiver}(?:\.\s*(\w+)|\[\s*(${STRING})\s*\])\s*=(?![=>])\s*([^;\n]+)`,
     "g",
   );
-  for (const [, key, quoted, expression] of text.matchAll(assigned)) {
+  for (const hit of text.matchAll(assigned)) {
+    const [whole, key, quoted, expression] = hit;
     if (key === "cssText") continue;
     const named = key ?? quoted.slice(1, -1);
-    for (const value of writtenValues(statement(expression))) {
-      found.push({ label: `style.${named}`, property: propertyOf(named), value });
+    const at = hit.index + whole.length - expression.length;
+    const label = `style.${named}`;
+    const span = { from: at, to: at + statement(expression).length };
+    for (const value of follower.values(span, follower.home, label)) {
+      found.push({ label, property: propertyOf(named), value });
     }
   }
   const styleText = new RegExp(
@@ -1079,9 +1130,17 @@ export function styleEntries(source: string, from: StyleSource = {}): StyleEntry
       found.push({ label: `${label} ${property}`, property, value: quote + value + quote });
     }
   }
-  for (const [, name, value] of text.matchAll(SET_PROPERTY)) {
-    const property = name.slice(1, -1);
-    found.push({ label: `setProperty ${property}`, property, value });
+  for (const hit of text.matchAll(SET_PROPERTY)) {
+    const open = hit.index + hit[0].length - 1;
+    const [name, given] = partsOf(text, { from: open + 1, to: closingBracket(text, open) });
+    const written = trimmed(text, name);
+    const named = text.slice(written.from, written.to);
+    if (!given || !STRING_ALONE.test(named)) continue;
+    const property = named.slice(1, -1);
+    const label = `setProperty ${property}`;
+    for (const value of follower.values(given, follower.home, label)) {
+      found.push({ label, property, value });
+    }
   }
   return found;
 }

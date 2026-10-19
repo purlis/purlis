@@ -35,8 +35,8 @@ import { arithmeticLiteral, LENGTH_UNITS } from "./cssMath.testkit";
  * `style` object, `{{ … }}` or `{ … } as CSSProperties`; a style object held in a variable,
  * `style={held}`; `el.style.padding = "7px"`; `el.style.cssText` and a `style` attribute set as
  * text; `Object.assign(el.style, { … })`; a `setProperty(…)` call, `el.style?.setProperty(…)`
- * too; each followed wherever the file hands it on, #2566: `docs/design-system.md`, "What the
- * guards read in script"), or a Tailwind class that sets a **padding**, a **margin**, a **gap**, a **corner**, a
+ * too; each style and each value followed wherever the file hands it on, #2566 and #2684:
+ * `docs/design-system.md`, "What the guards read in script"), or a Tailwind class that sets a **padding**, a **margin**, a **gap**, a **corner**, a
  * **font size** or an **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms) takes
  * it from `theme/geometry.css`, as `var(--space-4)`, `var(--radius-md)` or
  * `var(--font-size-sm)`. A scroll margin or padding (`scroll-margin*`, `scroll-padding*`,
@@ -378,7 +378,17 @@ export function componentLiterals(
   return found;
 }
 
-const read = (file: string) => readFileSync(join(SRC, file), "utf8");
+/** A file's text, read once in a run: the guard reads the tree many times, and no test writes
+ *  to it (a planted file is passed in, not written). */
+const texts = new Map<string, string>();
+const read = (file: string) => {
+  let text = texts.get(file);
+  if (text === undefined) {
+    text = readFileSync(join(SRC, file), "utf8");
+    texts.set(file, text);
+  }
+  return text;
+};
 
 /** The window's stylesheets, the core aside, by file. */
 function sheets(): Map<string, string> {
@@ -1019,7 +1029,6 @@ export const A = () => <div style={on.padding ? given : undefined} onClick={make
         'function g(st: CSSStyleDeclaration) { st.padding = "7px"; } g(el.style);',
         [],
       ],
-      heldValue: ['const pad = "7px"; const A = () => <div style={{ padding: pad }} />;', []],
       cssTextInterpolated: ["el.style.cssText = `padding: ${x}; margin: 7px`;", []],
       cycle: ["const a = b; const b = a; const A = () => <div style={a} />;", []],
     };
@@ -1029,6 +1038,148 @@ export const A = () => <div style={on.padding ? given : undefined} onClick={make
       );
       expect(found, name).toEqual(expected);
     }
+  });
+
+  it("follows a value held on its own wherever the file hands it on, in the real tree (#2684)", () => {
+    const tsx = `${read("LayoutPanes.tsx")}
+import { plantedGap } from "./theme/theme";
+import * as plantedSizes from "./theme/theme";
+const plantedPad = "7px";
+const plantedOther = plantedPad;
+const plantedRow = 6;
+const plantedSpace = { inner: "5px", outer: { edge: "3px" } };
+const { inner: plantedInner } = plantedSpace;
+const plantedEdge = (on: boolean) => (on ? "2px" : 0);
+function plantedMargin() {
+  return "16px";
+}
+const plantedMemo = useMemo(() => "17px", []);
+export const PlantedHeld = () => <div style={{ padding: plantedPad }} />;
+export const PlantedTwice = () => <div style={{ paddingTop: plantedPad }} />;
+export const PlantedChain = () => <div style={{ margin: plantedOther }} />;
+export const PlantedNumber = () => <div style={{ gap: plantedRow }} />;
+export const PlantedEither = ({ on }: { on: boolean }) => <div style={{ marginTop: on ? plantedPad : undefined }} />;
+export const PlantedOr = ({ by }: { by?: string }) => <div style={{ marginBottom: by ?? plantedInner }} />;
+export const PlantedMember = () => <div style={{ marginLeft: plantedSpace.outer.edge }} />;
+export const PlantedCall = ({ on }: { on: boolean }) => <div style={{ marginRight: plantedEdge(on) }} />;
+export const PlantedFunction = () => <div style={{ marginInline: plantedMargin() }} />;
+export const PlantedMemo = () => <div style={{ marginBlock: plantedMemo }} />;
+export const PlantedImported = () => <div style={{ paddingLeft: plantedGap }} />;
+export const PlantedAll = () => <div style={{ paddingRight: plantedSizes.plantedFar }} />;
+const plantedHeldStyle = { paddingBottom: plantedPad };
+export const PlantedInStyle = () => <div style={plantedHeldStyle} />;
+export function plantValues(frame: HTMLElement) {
+  frame.style.paddingInline = plantedPad;
+  frame.style.setProperty("--planted-pad", plantedInner);
+}
+`;
+    const script = `${read("theme/theme.ts")}
+const plantedTheirs = "14px";
+export const plantedGap = plantedTheirs;
+export const plantedFar = "15px";
+`;
+    const css = `${read("App.css")}\n.planted { padding: var(--planted-pad); }\n`;
+    expect(
+      complaints(
+        literalsByFile({ "LayoutPanes.tsx": tsx, "theme/theme.ts": script, "App.css": css }),
+      ),
+    ).toEqual(
+      [
+        'style padding: "7px"',
+        'style paddingTop: "7px"',
+        'style margin: "7px"',
+        "style gap: 6",
+        'style marginTop: "7px"',
+        'style marginBottom: "5px"',
+        'style marginLeft: "3px"',
+        'style marginRight: "2px"',
+        'style marginInline: "16px"',
+        'style marginBlock: "17px"',
+        'style paddingLeft: "14px"',
+        'style paddingRight: "15px"',
+        'style plantedHeldStyle.paddingBottom: "7px"',
+        'style.paddingInline: "7px"',
+        'setProperty --planted-pad: "5px"',
+      ].map((entry) => `LayoutPanes.tsx: new literal, take it from a core token: ${entry}`),
+    );
+  });
+
+  it("reads a held value as far as the docs say, and no further (#2684)", () => {
+    const files: Record<string, string> = {
+      "s.ts": 'export const pad = "21px";\nexport default "22px";',
+    };
+    const read = (file: string) => files[file];
+    const cases: Record<string, [string, string[]]> = {
+      held: [
+        'const pad = "7px"; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="7px"'],
+      ],
+      both: [
+        'const pad = "7px"; const A = () => <div style={{ padding: on && pad, margin: x || "3px" }} />;',
+        ['style padding="7px"', 'style margin="3px"'],
+      ],
+      cast: [
+        'const pad = "7px" as const; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="7px"'],
+      ],
+      bracket: [
+        'const s = { "pad": "7px" }; const A = () => <div style={{ padding: s["pad"] }} />;',
+        ['style padding="7px"'],
+      ],
+      imported: [
+        'import { pad } from "./s"; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="21px"'],
+      ],
+      importedDefault: [
+        'import d from "./s"; const A = () => <div style={{ padding: d }} />;',
+        ['style padding="22px"'],
+      ],
+      assigned: ['const pad = "7px"; el.style.padding = pad;', ['style.padding="7px"']],
+      // A member of a value is not the value: `pad.length` is not "7px".
+      memberOfValue: [
+        'const pad = "7px"; const A = () => <div style={{ padding: pad.length }} />;',
+        [],
+      ],
+      // An object is not a value.
+      objectValue: [
+        'const pad = { a: "7px" }; const A = () => <div style={{ padding: pad }} />;',
+        [],
+      ],
+      // Not followed, as "What the guards read in script" says.
+      parameter: ["const A = ({ pad }) => <div style={{ padding: pad }} />;", []],
+      interpolated: ["const n = 7; const A = () => <div style={{ padding: `${n}px` }} />;", []],
+      reassigned: ['let pad; pad = "7px"; const A = () => <div style={{ padding: pad }} />;', []],
+      package: [
+        'import { pad } from "sizes"; const A = () => <div style={{ padding: pad }} />;',
+        [],
+      ],
+      cycle: ["const a = b; const b = a; const A = () => <div style={{ padding: a }} />;", []],
+    };
+    for (const [name, [source, expected]] of Object.entries(cases)) {
+      const found = styleEntries(source, { file: "a.tsx", read }).map(
+        ({ label, value }) => `${label}=${value}`,
+      );
+      expect(found, name).toEqual(expected);
+    }
+  });
+
+  it("fails a value handed on past the follow limit, or from an import it cannot open, in the real tree (#2684)", () => {
+    const chain = Array.from({ length: 30 }, (_, i) => `const plantedV${i + 1} = plantedV${i};`);
+    const deep = `${read("LayoutPanes.tsx")}
+const plantedV0 = "7px";
+${chain.join("\n")}
+export const PlantedDeep = () => <div style={{ padding: plantedV30 }} />;
+`;
+    expect(() => literalsByFile({ "LayoutPanes.tsx": deep })).toThrow(
+      `LayoutPanes.tsx: style padding is handed on more than ${FOLLOW_LIMIT} times`,
+    );
+    const far = `${read("LayoutPanes.tsx")}
+import { plantedPad } from "./theme/nowhere";
+export const PlantedFar = () => <div style={{ padding: plantedPad }} />;
+`;
+    expect(() => literalsByFile({ "LayoutPanes.tsx": far })).toThrow(
+      'LayoutPanes.tsx: a style comes from "./theme/nowhere", which the guard cannot open',
+    );
   });
 
   it("fails a style handed on past the follow limit, naming it, in the real tree (#2566)", () => {
