@@ -614,6 +614,13 @@ fn fits(density: Density, geometry: &Geometry, findings: &mut Vec<Finding>) {
 /// keeps the words' own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is
 /// not measured while the theme colours selected text.
 pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
+    let (front, back) = drawn(theme, pair)?;
+    Some(two_places(contrast(&front, &back)))
+}
+
+/// `pair`'s two colours as the screen draws them, opaque: its back laid over what it is laid on,
+/// and its front laid over that and faded as the pair says. `None` when the platform draws one.
+pub(super) fn drawn(theme: &ResolvedTheme, pair: &Pair) -> Option<(String, String)> {
     let (front, back) = measured(theme, pair)?;
     let back = theme.value(back);
     let drawn = match pair.under {
@@ -625,7 +632,7 @@ pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
         Some(opacity) => mix(&front, &drawn, opacity),
         None => front,
     };
-    Some(two_places(contrast(&front, &drawn)))
+    Some((front, drawn))
 }
 
 /// The tokens `pair` is measured between in `theme`: its own, a platform-drawn front's stand-in,
