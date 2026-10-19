@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792372560079,
+  "lastUpdate": 1792372575565,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6072,6 +6072,42 @@ window.BENCHMARK_DATA = {
             "value": 648.8,
             "unit": "MB",
             "extra": "median of 6 samples: 613.8, 636.9, 646.6, 650.9, 651.3, 734.1 MB; window 389.3 MB, session host 259.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "262caecea78dc489f89ccb192ddcf66d133d2858",
+          "message": "Browsers: pin, hand over, and reopen after quit (#2586)\n\nThe person pins a chat's browser from its row's menu or the palette: it\noutlives its chat, listed under Pinned browsers, until they stop it, Stop\nall, or a quit. A pinned browser whose chat closed, or one the person\nopened with no chat, is handed to an open chat, which gets that chat's\nreach at once; one signed in with a login goes only to a chat that may\nlog in with that login now, and a failed hand-over gives the browser\nback the reach it had or ends it. As purlis quits it keeps where the\nproject's browsers were in app/browsers-at-quit.json, addresses only,\nand the next start offers them once.\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T04:37:13+04:00",
+          "tree_id": "6f21763bb6e69cb331d2e4bf988064cfb2f3a1a9",
+          "url": "https://github.com/purlis/purlis/commit/262caecea78dc489f89ccb192ddcf66d133d2858"
+        },
+        "date": 1792372574151,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1455.6,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1310.7, 1455.6, 1488.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 629.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 592, 616.6, 628.7, 631.2, 631.5, 726.5 MB; window 388.9 MB, session host 241 MB"
           }
         ]
       }
