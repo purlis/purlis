@@ -77,6 +77,8 @@ pub struct GalleryCard {
     pub name: String,
     /// `built-in`, `machine`, `project`, `workspace` or `extension`.
     pub from: String,
+    /// Whether it ships as a preview: Purlis, until it becomes the default (#2336).
+    pub preview: bool,
     /// The extension it comes from, for an extension's theme.
     pub extension: Option<String>,
     /// Its appearances, the first what it draws when nothing chose one.
@@ -125,6 +127,7 @@ impl From<Card> for GalleryCard {
             id: card.id,
             name: card.name,
             from: from.to_owned(),
+            preview: card.preview,
             extension,
             appearances: card
                 .appearances
@@ -297,7 +300,10 @@ impl Place {
     /// Classic by any id one of its appearances has had; a theme folder at the level it names, or
     /// the nearest within reach that has it. `None` when it is no card of `cards`.
     fn card_of(&self, choice: &Choice, reach: Reach, cards: &[GalleryCard]) -> Option<String> {
-        let key = if choice.theme == theme::CLASSIC || theme::built_in(&choice.theme).is_some() {
+        // Purlis by its own id is its own card (#2336); Purlis Classic by any id it has had.
+        let key = if choice.theme == theme::PURLIS {
+            theme::PURLIS.to_owned()
+        } else if choice.theme == theme::CLASSIC || theme::built_in(&choice.theme).is_some() {
             theme::CLASSIC.to_owned()
         } else {
             let placed = choice.clone().placed(&self.folders, reach);

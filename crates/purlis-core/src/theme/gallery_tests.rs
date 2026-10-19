@@ -93,15 +93,15 @@ fn a_levels_gallery_holds_the_themes_a_choice_there_reaches() {
     let at = |reach| ids(&gallery::cards(&shelf(&folders, reach, &offered))).join(" ");
     assert_eq!(
         at(Reach::Machine),
-        "purlis-classic mine solarized/Solarized Dark"
+        "purlis-classic purlis mine solarized/Solarized Dark"
     );
     assert_eq!(
         at(Reach::Project),
-        "purlis-classic team mine solarized/Solarized Dark"
+        "purlis-classic purlis team mine solarized/Solarized Dark"
     );
     assert_eq!(
         at(Reach::Workspace),
-        "purlis-classic client team mine solarized/Solarized Dark"
+        "purlis-classic purlis client team mine solarized/Solarized Dark"
     );
     // A project keeps to the extensions it has on.
     let none: [String; 0] = [];
@@ -109,7 +109,7 @@ fn a_levels_gallery_holds_the_themes_a_choice_there_reaches() {
         on: On::Only(&none),
         ..shelf(&folders, Reach::Project, &offered)
     });
-    assert_eq!(ids(&kept), ["purlis-classic", "team", "mine"]);
+    assert_eq!(ids(&kept), ["purlis-classic", "purlis", "team", "mine"]);
 }
 
 #[test]
@@ -402,10 +402,11 @@ fn a_cards_stamp_changes_with_what_it_draws() {
     put(&places.machine(), "dusk", &dusk("Dusk", "#141414"));
     let folders = places.folders();
     let at = shelf(&folders, Reach::Machine, &[]);
-    let before = gallery::cards(&at)[1].stamp.clone();
-    assert_eq!(gallery::cards(&at)[1].stamp, before);
+    // Past the two built-in themes.
+    let before = gallery::cards(&at)[2].stamp.clone();
+    assert_eq!(gallery::cards(&at)[2].stamp, before);
     put(&places.machine(), "dusk", &dusk("Dusk", "#141415"));
-    assert_ne!(gallery::cards(&at)[1].stamp, before);
+    assert_ne!(gallery::cards(&at)[2].stamp, before);
 }
 
 #[cfg(unix)]

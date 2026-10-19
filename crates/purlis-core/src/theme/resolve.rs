@@ -39,8 +39,8 @@
 use std::sync::Arc;
 
 use super::{
-    Appearance, Complaint, Contrast, Held, Resolved, ResolvedTheme, Theme, built_in, classic,
-    default_theme,
+    Appearance, Complaint, Contrast, Held, PURLIS, Resolved, ResolvedTheme, Theme, built_in,
+    classic, default_theme, shipped,
 };
 use crate::extension::project::theme::Pick;
 
@@ -209,7 +209,11 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
             return Drawn::following(theme, inputs.system, inputs.contrast);
         }
         Some(Pick::BuiltIn(id)) => {
-            return Drawn::of(built_in(id).unwrap_or_else(default_theme));
+            // Purlis draws its high-contrast appearance when more contrast is asked for.
+            return match shipped(id) {
+                Some(theme) if *id == PURLIS => Drawn::of(theme.first_for(inputs.contrast)),
+                _ => Drawn::of(built_in(id).unwrap_or_else(default_theme)),
+            };
         }
         Some(Pick::Extension { .. }) => {}
         // A theme folder is a level's: [`super::resolve_levels`] reads the levels' folders, and

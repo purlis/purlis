@@ -161,6 +161,8 @@ mod options_tests;
 #[cfg(test)]
 mod published_tests;
 #[cfg(test)]
+mod purlis_tests;
+#[cfg(test)]
 mod reload_tests;
 #[cfg(test)]
 mod tests;
@@ -535,6 +537,102 @@ fn motion_of(raw: Option<&Value>) -> Result<Motion, &'static str> {
     Ok(Motion { durations, easings })
 }
 
+/// Purlis's id (#2336): its folder's name, which a pick names it by and a theme `extends` it
+/// by. No theme folder takes it.
+pub const PURLIS: &str = "purlis";
+
+/// Whether the built-in theme `id` ships as a preview: Purlis, until it becomes the default
+/// (spec #2313, "Preview theme"). The gallery and `purlis theme list` say so beside its name.
+pub fn is_preview(id: &str) -> bool {
+    id == PURLIS
+}
+
+/// Purlis's folder, compiled in: its `theme.json`, its icon set and its fonts.
+mod purlis_folder {
+    /// Where its folder is in purlis's source, for a sentence.
+    pub(super) const PATH: &str = "crates/purlis-core/src/theme/built-in/purlis";
+    pub(super) const THEME: &str = include_str!("theme/built-in/purlis/theme.json");
+    pub(super) const ICONS: &str = include_str!("theme/built-in/purlis/icons/icons.json");
+    pub(super) const LICENSE: &str = include_str!("theme/built-in/purlis/LICENSE");
+    /// The faces its `fonts` names, by their names in its `fonts/`: IBM Plex Sans and JetBrains
+    /// Mono, as their projects publish them, under the SIL Open Font License (its `LICENSE`).
+    pub(super) const FONTS: &[(&str, &[u8])] = &[
+        (
+            "IBMPlexSans-Regular.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Regular.woff2"),
+        ),
+        (
+            "IBMPlexSans-Medium.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Medium.woff2"),
+        ),
+        (
+            "IBMPlexSans-SemiBold.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-SemiBold.woff2"),
+        ),
+        (
+            "JetBrainsMono-Regular.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Regular.woff2"),
+        ),
+    ];
+}
+
+/// **Purlis** (#2336), built from the designer's foundation (`docs/design/foundation/`): a dark
+/// appearance, a light one derived from it and a high-contrast dark, in IBM Plex Sans and
+/// JetBrains Mono with Lucide's icons. It ships as a preview ([`is_preview`]) and is not the
+/// default: [`default_theme`] is Purlis Classic's until the switch-over. Its folder is read as
+/// any theme folder is, from the files compiled in; a test proves it complete and clean, so a gap
+/// here is a defect of this build.
+pub fn purlis() -> &'static Theme {
+    static BUILT: OnceLock<Theme> = OnceLock::new();
+    BUILT.get_or_init(|| {
+        let document: Value =
+            serde_json::from_str(purlis_folder::THEME).expect("Purlis's theme.json is JSON");
+        let folder = fonts::ThemeDir::built_in(
+            std::path::PathBuf::from(purlis_folder::PATH),
+            purlis_folder::FONTS,
+        );
+        let read =
+            Library::new().load_built_in(PURLIS, &document, Some(purlis_folder::ICONS), folder);
+        assert!(
+            !read.refused,
+            "the built-in theme Purlis is refused: {:?}",
+            read.complaints
+        );
+        read.theme
+    })
+}
+
+/// **Purlis's folder, file by file**, as `purlis theme export purlis` packs it.
+pub fn purlis_files() -> Files {
+    let mut files = Files::from([
+        (
+            THEME_JSON.to_owned(),
+            purlis_folder::THEME.as_bytes().to_vec(),
+        ),
+        (
+            "icons/icons.json".to_owned(),
+            purlis_folder::ICONS.as_bytes().to_vec(),
+        ),
+        (
+            "LICENSE".to_owned(),
+            purlis_folder::LICENSE.as_bytes().to_vec(),
+        ),
+    ]);
+    for (name, bytes) in purlis_folder::FONTS {
+        files.insert(format!("fonts/{name}"), bytes.to_vec());
+    }
+    files
+}
+
+/// **The theme built into purlis that `id` names**: Purlis Classic by its id or an id its
+/// appearances have had, or Purlis by its id; `None` for any other.
+pub fn shipped(id: &str) -> Option<&'static Theme> {
+    if id == PURLIS {
+        return Some(purlis());
+    }
+    built_in(id).map(|_| classic())
+}
+
 /// The appearance purlis draws when nothing has said otherwise: Purlis Classic's dark.
 pub fn default_theme() -> &'static ResolvedTheme {
     classic().first()
@@ -548,12 +646,16 @@ pub fn built_in_for(appearance: Appearance) -> &'static ResolvedTheme {
 
 /// The built-in appearance `id` names, by its id or by an id it had before the rename (#1838):
 /// the old ids map as the spec's table says, each to Purlis Classic's appearance of its tag
-/// until the switch-over to Purlis.
+/// until the switch-over to Purlis. Purlis Classic and Purlis by their own ids are each theme's
+/// first appearance.
 pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
     // Purlis Classic by its own id is the theme, which draws its first appearance when nothing
-    // chose another.
+    // chose another; so is Purlis by its own (#2336).
     if id == CLASSIC {
         return Some(classic().first());
+    }
+    if id == PURLIS {
+        return Some(purlis().first());
     }
     let id = [crate::names::THEME_DARK, crate::names::THEME_LIGHT]
         .into_iter()

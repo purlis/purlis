@@ -40,6 +40,7 @@ function card(over: Partial<GalleryCard> & Pick<GalleryCard, "id" | "name">): Ga
     key: level === null ? over.id : `${level}:${over.id}`,
     level,
     from: "machine",
+    preview: false,
     extension: null,
     appearances: [{ id: "dark", appearance: "dark", high_contrast: false }],
     options: [],
@@ -237,6 +238,25 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(named("Dusk")).toHaveTextContent("Yours, on this machine · 1 warning");
     expect(named("Team")).toHaveTextContent("This project's");
     expect(screen.getByText(/^Drawn here: Purlis Classic/)).toHaveTextContent("Purlis");
+  });
+
+  it("says a built-in theme that ships as a preview is one (#2336)", async () => {
+    const purlis = card({
+      id: "purlis",
+      name: "Purlis",
+      from: "built-in",
+      preview: true,
+      folder: false,
+    });
+    core({ ...GALLERY, cards: [CLASSIC, purlis, DUSK, TEAM] });
+    render(<Group at={null} />);
+    await cards();
+    expect(named("Purlis Classic")).not.toHaveTextContent("Preview");
+    expect(named("Dusk")).not.toHaveTextContent("Preview");
+    const shown = screen
+      .getAllByRole("option")
+      .find((one) => one.querySelector(".text-text-primary")?.textContent === "Purlis");
+    expect(shown).toHaveTextContent("Built in · Preview");
   });
 
   it("is one listbox and one Tab stop, the chosen card the stop, and takes no focus itself", async () => {

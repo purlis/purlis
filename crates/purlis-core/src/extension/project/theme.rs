@@ -95,7 +95,8 @@ pub const PALETTE: [&str; 8] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pick {
     /// One of [`BUILT_IN_THEMES`], by its purlis id whichever id the file named it by, or
-    /// Purlis Classic by its own id ([`crate::theme::CLASSIC`]), which draws its first appearance.
+    /// Purlis Classic by its own id ([`crate::theme::CLASSIC`]) or Purlis by its own
+    /// ([`crate::theme::PURLIS`], #2336), each of which draws its first appearance.
     BuiltIn(&'static str),
     /// charter's light theme when the system is light, its dark one otherwise.
     System,
@@ -119,6 +120,9 @@ impl Pick {
         }
         if value == crate::theme::CLASSIC {
             return Some(Self::BuiltIn(crate::theme::CLASSIC));
+        }
+        if value == crate::theme::PURLIS {
+            return Some(Self::BuiltIn(crate::theme::PURLIS));
         }
         if let Some(built) = BUILT_IN_THEMES.iter().find(|name| **name == value) {
             return Some(Self::BuiltIn(built));
