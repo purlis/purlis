@@ -391,6 +391,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         address: "https://shop.example.test/login?next=/cart".into(),
         user: None,
         password: Secret::new("fixture-word".into()),
+        keep: None,
     })
     .unwrap();
     assert_eq!(login.origin, "https://shop.example.test");
@@ -400,6 +401,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         address: "http://127.0.0.1:8123/login".into(),
         user: Some(Secret::new("fixture-user".into())),
         password: Secret::new("fixture-word".into()),
+        keep: None,
     })
     .unwrap();
     assert_eq!(local.0.origin, "http://127.0.0.1:8123");
@@ -408,6 +410,7 @@ fn a_login_is_filled_on_its_addresss_origin_and_bound_to_its_site() {
         address: "file:///etc/passwd".into(),
         user: None,
         password: Secret::new("fixture-word".into()),
+        keep: None,
     })
     .unwrap_err();
     assert!(refused.contains("not one a browser opens"), "{refused}");
@@ -422,6 +425,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         address: "http://shop.example.test/login".into(),
         user: None,
         password: Secret::new("fixture-word".into()),
+        keep: None,
     })
     .unwrap_err();
     assert!(refused.contains("plain http"), "{refused}");
@@ -429,6 +433,7 @@ fn a_login_is_refused_on_plain_http_but_this_machines_loopback() {
         address: "https://bücher.example/login".into(),
         user: None,
         password: Secret::new("fixture-word".into()),
+        keep: None,
     })
     .unwrap();
     assert_eq!(login.origin, "https://xn--bcher-kva.example");
@@ -501,4 +506,168 @@ fn a_login_binds_the_real_reach_proxy_to_its_site_alone() {
     .unwrap_err();
     assert!(refused.contains("holds a login at 127.0.0.1:"), "{refused}");
     assert!(!ran.get(), "a second login at another site runs nothing");
+}
+
+// ---- Kept logins (#2021) ----
+
+fn kept_login() -> wire::KeptLogin {
+    wire::KeptLogin {
+        profile: "claude".into(),
+        persona: "steward".into(),
+        login: "shop-login".into(),
+        identity: "0123456789abcdef0123456789abcdef".into(),
+        address: "https://shop.example.test/login".into(),
+    }
+}
+
+/// A browser's keeping, on a keyring of the test's own.
+fn keeping(
+    home: &Path,
+    folder: &Path,
+    keyring: &std::sync::Arc<crate::secrets::keyring::FileStore>,
+) -> super::Keeping {
+    let mut keeping = super::Keeping::new(home, folder);
+    keeping.keyring = keyring.clone();
+    keeping.device = Some("01JDEVICE0000000000000000".into());
+    keeping
+}
+
+fn signed_in(folder: &Path) {
+    std::fs::create_dir_all(folder.join("Default")).unwrap();
+    std::fs::write(folder.join("Default/Cookies"), "session=fixture-cookie").unwrap();
+}
+
+#[test]
+fn a_browser_that_logged_in_keeps_its_logins_and_the_next_opens_signed_in() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let first = browsers_in(&home).join("first");
+    signed_in(&first);
+    let mut it = keeping(&home, &first, &keyring);
+    assert_eq!(it.keep(&kept_login()), None);
+    it.write_back();
+    drop(it);
+    assert!(super::store_of(&kept_login()).unwrap().exists(&home));
+    let next = browsers_in(&home).join("next");
+    let mut opened = keeping(&home, &next, &keyring);
+    opened.open(&kept_login()).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(next.join("Default/Cookies")).unwrap(),
+        "session=fixture-cookie"
+    );
+    assert_eq!(opened.opened_from, Some(kept_login()));
+    assert!(opened.writes.is_some(), "it writes them back");
+    // A second browser at once gets a copy, and is told so.
+    let second = browsers_in(&home).join("second");
+    let mut copy = keeping(&home, &second, &keyring);
+    copy.open(&kept_login()).unwrap();
+    assert!(copy.writes.is_none());
+    let said = copy.keep(&kept_login()).unwrap();
+    assert!(said.contains("opened a copy"), "{said}");
+}
+
+#[test]
+fn a_folder_an_earlier_kept_browser_left_behind_is_swept_and_a_running_ones_is_not() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let running = browsers_in(&home).join("running");
+    signed_in(&running);
+    let mut live = keeping(&home, &running, &keyring);
+    assert_eq!(live.keep(&kept_login()), None);
+    let left = browsers_in(&home).join("left");
+    signed_in(&left);
+    drop(crate::browserlogins::mark(&left, &super::store_of(&kept_login()).unwrap()).unwrap());
+    let next = browsers_in(&home).join("next");
+    keeping(&home, &next, &keyring).open(&kept_login()).unwrap();
+    assert!(!left.exists(), "left behind, swept");
+    assert!(
+        running.join("Default/Cookies").exists(),
+        "a running browser's is left alone"
+    );
+}
+
+#[test]
+fn a_browser_opened_from_one_login_keeps_no_other() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let folder = browsers_in(&home).join("one");
+    let mut it = keeping(&home, &folder, &keyring);
+    it.open(&kept_login()).unwrap();
+    let other = wire::KeptLogin {
+        login: "mail-login".into(),
+        ..kept_login()
+    };
+    let said = it.keep(&other).unwrap();
+    assert!(said.contains("not kept"), "{said}");
+    assert!(it.writes.as_ref().is_some_and(|(w, _)| *w == kept_login()));
+}
+
+#[test]
+fn a_removed_profiles_running_browser_does_not_make_its_store_again() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let folder = browsers_in(&home).join("running");
+    signed_in(&folder);
+    let mut it = keeping(&home, &folder, &keyring);
+    assert_eq!(it.keep(&kept_login()), None);
+    let keys = crate::browserlogins::Keys {
+        store: &*keyring,
+        device: "01JDEVICE0000000000000000".into(),
+    };
+    crate::browserlogins::wipe_profile(&home, &browsers_in(&home), "claude", &keys).unwrap();
+    it.write_back();
+    assert!(!super::store_of(&kept_login()).unwrap().exists(&home));
+    assert!(
+        !home.join(crate::browserlogins::DIR).join("claude").exists(),
+        "nothing of the profile made again"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn the_browsers_folder_is_made_private_and_left_out_of_this_macs_backups() {
+    let base = tempfile::tempdir().unwrap();
+    let folders = browsers_in(&base.path().join("data"));
+    super::made_private_and_unbacked(&folders).unwrap();
+    let set = xattr::get(&folders, crate::browserlogins::BACKUP_EXCLUSION)
+        .unwrap()
+        .expect("excluded");
+    assert_eq!(set, crate::browserlogins::BACKUP_EXCLUDED);
+    use std::os::unix::fs::PermissionsExt as _;
+    let mode = std::fs::metadata(&folders).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+}
+
+#[test]
+fn a_browsers_folder_left_looser_by_an_earlier_version_is_tightened_and_a_link_is_refused() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let base = tempfile::tempdir().unwrap();
+    let folders = browsers_in(&base.path().join("data"));
+    std::fs::create_dir_all(folders.join("01JEARLIER")).unwrap();
+    std::fs::set_permissions(&folders, std::fs::Permissions::from_mode(0o755)).unwrap();
+    super::made_private_and_unbacked(&folders).expect("tightened, not refused");
+    let mode = std::fs::metadata(&folders).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+    assert!(folders.join("01JEARLIER").is_dir(), "what was there stays");
+    // A link in its place is refused, and nothing is made where it points.
+    let elsewhere = base.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let linked = browsers_in(&base.path().join("linked"));
+    std::fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &linked).unwrap();
+    assert!(super::made_private_and_unbacked(&linked).is_err());
+    let mode = std::fs::metadata(&elsewhere).unwrap().permissions().mode();
+    assert_ne!(mode & 0o777, 0o700, "a link's target is left as it was");
 }

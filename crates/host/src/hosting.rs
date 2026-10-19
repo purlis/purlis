@@ -1605,9 +1605,14 @@ impl Hosting {
         let hosting = self.clone();
         let named = program.clone();
         let reach = start.reach.clone();
+        let kept = start.kept.clone();
         let started = tokio::task::spawn_blocking(move || {
             let data = hosting.inner.browsers.data_folders()?.join(&named);
-            match hosting.inner.browsers.start(&data, reach.as_ref()) {
+            match hosting
+                .inner
+                .browsers
+                .start(&data, reach.as_ref(), kept.as_ref())
+            {
                 Ok(screen) => Ok((screen, data)),
                 Err(why) => {
                     let _ = std::fs::remove_dir_all(&data);

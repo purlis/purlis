@@ -60,7 +60,7 @@ use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::sandbox::browser_reach::Site;
-use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, LogIn};
+use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, KeptLogin, LogIn};
 use purlis_session_protocol::session::{Layer, Listed};
 
 /// Why the session host did not carry an act out.
@@ -85,7 +85,13 @@ pub enum NotStarted {
 /// seam so what is decided here is tested without one.
 pub trait Driver: Send + Sync + 'static {
     /// Starts a browser in the project at `root` reaching `reach`, and answers its program.
-    fn start(&self, root: &Path, reach: BrowserReach) -> Result<String, NotStarted>;
+    /// Opened from the kept login `kept` where one is named (#2021).
+    fn start(
+        &self,
+        root: &Path,
+        reach: BrowserReach,
+        kept: Option<KeptLogin>,
+    ) -> Result<String, NotStarted>;
     /// Carries `act` out on browser `program` under its own id `call_id`, the browser reaching
     /// `reach` from then on (#2018).
     fn act(
@@ -1578,7 +1584,9 @@ impl ChatBrowsers {
     /// seconds since 1970. The chat is the one whose token the line carried. With no `driver`
     /// there is no session host, and so no browser.
     /// A `browser_login` call's login, by its name, is `logins`'s to read (#2016): the
-    /// declared page and the vault's values, or why there are none.
+    /// declared page and the vault's values, with the kept login it keeps, and whether a kept
+    /// store of it is there to open (#2021); or why there are none. Read only once the chat may
+    /// have a browser, and never under the browsers' lock.
     #[allow(clippy::too_many_arguments)]
     pub fn answer(
         &self,
@@ -1588,13 +1596,24 @@ impl ChatBrowsers {
         reach: &dyn Fn() -> BrowserReach,
         confined: bool,
         as_persona: &dyn Fn() -> AsPersona,
-        logins: &dyn Fn(&str) -> Result<LogIn, String>,
+        logins: &dyn Fn(&str) -> ReadLogin,
         now: u64,
     ) -> (Answer, bool) {
         let persona = as_persona();
         self.follow_always(driver, browse.chat, &persona);
-        let (mut answer, raised) =
-            self.answer_now(driver, root, browse, reach, persona, logins, now);
+        let read = match &browse.asked {
+            Browsing::LogIn { login }
+                if self
+                    .lock()
+                    .get(&browse.chat)
+                    .is_some_and(|chat| matches!(chat.posture, Posture::Allowed { .. }))
+                    || persona.always.is_some() =>
+            {
+                Some(logins(login))
+            }
+            _ => None,
+        };
+        let (mut answer, raised) = self.answer_now(driver, root, browse, reach, persona, read, now);
         // What the browser held back for the person says so first (#2018).
         if let Answer::Browsed { browsed, .. } = &mut answer
             && !browsed.asked.is_empty()
@@ -1666,7 +1685,7 @@ impl ChatBrowsers {
         browse: &BrowseAsk,
         reach: &dyn Fn() -> BrowserReach,
         as_persona: AsPersona,
-        logins: &dyn Fn(&str) -> Result<LogIn, String>,
+        read: Option<ReadLogin>,
         now: u64,
     ) -> (Answer, bool) {
         let no = |why: &str| Answer::No {
@@ -1708,7 +1727,7 @@ impl ChatBrowsers {
         let named = browse.browser.clone().or_else(|| chat.current.clone());
         let chat_sites = chat.sites.clone();
         let per_project = (self.limits)().per_project;
-        let start = |chat: &mut Chat| -> Result<String, String> {
+        let start = |chat: &mut Chat, kept: Option<KeptLogin>| -> Result<String, String> {
             if elsewhere + chat.running() >= per_project {
                 return Err(purlis_core::browserlimits::project_full_said(per_project));
             }
@@ -1721,6 +1740,7 @@ impl ChatBrowsers {
                         &chat.sites,
                         &purlis_core::sandbox::policy::Locks::of(root),
                     ),
+                    kept,
                 )
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_said(most),
@@ -1739,7 +1759,7 @@ impl ChatBrowsers {
         };
         let act = match &browse.asked {
             Browsing::New => {
-                return match start(chat) {
+                return match start(chat, None) {
                     Ok(name) => (
                         Answer::Browsed {
                             browser: name,
@@ -1798,7 +1818,16 @@ impl ChatBrowsers {
                 );
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
-            Browsing::LogIn { login } => Doing::LogIn(login.clone()),
+            Browsing::LogIn { login } => match read {
+                Some(Ok((read, opens))) => Doing::LogIn(login.clone(), read, opens),
+                Some(Err(why)) => return (no(&why), false),
+                None => {
+                    return (
+                        no("purlis could not read this login: call browser_login again"),
+                        false,
+                    );
+                }
+            },
             // Answered before the browsers are (`crate::browserneedsyou::answered_first`).
             Browsing::NeedsYou { .. } => {
                 return (
@@ -1807,12 +1836,21 @@ impl ChatBrowsers {
                 );
             }
         };
+        // A login whose kept store is there opens in a browser of its own, from that store
+        // (#2021), already held to the login's site: the chat's other browsers stay as they are.
+        let named = match &act {
+            Doing::LogIn(_, read, true) => match start(chat, read.keep.clone()) {
+                Ok(name) => Some(name),
+                Err(why) => return (no(&why), false),
+            },
+            _ => named,
+        };
         let (name, program) = match named {
             Some(name) => match chat.program(&name) {
                 Some(program) => (name, program),
                 None => return (no(&no_such(&name)), false),
             },
-            None => match start(chat) {
+            None => match start(chat, None) {
                 Ok(name) => {
                     let program = chat.program(&name).unwrap_or_default();
                     (name, program)
@@ -1843,28 +1881,26 @@ impl ChatBrowsers {
                     .insert(program.clone(), reach_now.clone());
                 driver.act(&program, &browse.call_id, act, reach_now)
             }
-            // The login is read only now, for the browser it goes into, and handed on whole.
-            Doing::LogIn(declared) => match logins(&declared) {
-                Ok(login) => {
-                    // Held from the moment it is tried, whatever its answer (#2022): a login
-                    // that timed out, or that the person finished by hand, may have signed it in.
-                    self.logins_held
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .insert(
-                            program.clone(),
-                            HeldLogin {
-                                persona: persona_now.clone(),
-                                login: declared.clone(),
-                            },
-                        );
-                    driver.log_in(&program, login).map(|mut browsed| {
-                        browsed.note = Some(logged_in_said(&declared, browsed.note.as_deref()));
-                        browsed
-                    })
-                }
-                Err(why) => Err(Refused::Said(why)),
-            },
+            // The login was read before the lock, for the browser it goes into, and is handed on
+            // whole.
+            Doing::LogIn(declared, login, _) => {
+                // Held from the moment it is tried, whatever its answer (#2022): a login that
+                // timed out, or that the person finished by hand, may have signed it in.
+                self.logins_held
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(
+                        program.clone(),
+                        HeldLogin {
+                            persona: persona_now.clone(),
+                            login: declared.clone(),
+                        },
+                    );
+                driver.log_in(&program, login).map(|mut browsed| {
+                    browsed.note = Some(logged_in_said(&declared, browsed.note.as_deref()));
+                    browsed
+                })
+            }
         };
         match acted {
             Ok(browsed) => {
@@ -1892,11 +1928,16 @@ impl ChatBrowsers {
     }
 }
 
+/// A browser login as read for a chat (#2016): the login with the kept login it keeps, and
+/// whether a kept store of it is there to open (#2021); or why there is none.
+pub type ReadLogin = Result<(LogIn, bool), String>;
+
 /// What a chat's browser call asks of the browser itself: one of its acts, or a login of
 /// purlis's by the login's name (#2016).
 enum Doing {
     Act(Act),
-    LogIn(String),
+    /// A login by its name, as read, and whether it opens from its kept store.
+    LogIn(String, LogIn, bool),
 }
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
@@ -2059,14 +2100,41 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
 
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
 /// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
-fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<LogIn, String> {
+fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<(LogIn, bool), String> {
     // The persona the chat was started as, as every brokered read of a vault takes it, and
     // whether it runs with no sandbox at all, from the same run of it (#2560).
     let (asker, unconfined) = held
         .chats()
         .login_asker(held.root(), session)
         .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
-    purlis_core::secrets::brokered::login_for(&asker, name, unconfined)
+    let persona = asker.persona.clone().unwrap_or_default();
+    let (mut login, identity) =
+        purlis_core::secrets::brokered::login_and_identity_for(&asker, name, unconfined)?;
+    // Kept under the chat's profile on this device, bound to the login as declared and allowed
+    // (#2021), and opened from it where a store of it is there.
+    let kept = held.chats().profile_of(session).map(|profile| KeptLogin {
+        profile,
+        persona,
+        login: name.to_owned(),
+        identity,
+        address: login.address.clone(),
+    });
+    let store = kept.as_ref().and_then(|kept| {
+        purlis_core::browserlogins::Store::new(
+            &kept.profile,
+            &kept.persona,
+            &kept.login,
+            &kept.identity,
+        )
+        .ok()
+    });
+    let opens = match (&store, purlis_core::datahome::root()) {
+        (Some(store), Some(data)) => store.exists(&data),
+        _ => false,
+    };
+    // A login whose names cannot name a store keeps nothing.
+    login.keep = kept.filter(|_| store.is_some());
+    Ok((login, opens))
 }
 
 /// The persona chat `session` runs with, from the app's own record of it, never from what

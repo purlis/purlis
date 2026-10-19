@@ -52,6 +52,7 @@ fn login() -> LogIn {
         address: ADDRESS.into(),
         user: Some(Secret::new("fixture-user".into())),
         password: Secret::new("fixture-word".into()),
+        keep: None,
     }
 }
 
@@ -123,4 +124,26 @@ async fn a_login_names_no_value_in_what_the_host_says_of_it() {
         !said.contains("fixture-user") && !said.contains("fixture-word"),
         "{said}"
     );
+}
+
+#[tokio::test]
+async fn a_browser_started_from_kept_logins_is_given_them_by_the_host() {
+    let (hosting, browsers, _store, project) = hosted();
+    let client = window(&hosting, project.path()).await;
+    let kept = purlis_session_protocol::browsing::KeptLogin {
+        profile: "claude".into(),
+        persona: "steward".into(),
+        login: "shop-login".into(),
+        identity: "0123456789abcdef0123456789abcdef".into(),
+        address: ADDRESS.into(),
+    };
+    client
+        .start_program(StartProgram {
+            kept: Some(kept.clone()),
+            ..StartProgram::of(PROJECT, ProgramKind::Browser)
+        })
+        .await
+        .expect("a browser starts");
+    let screen = browsers.started().last().unwrap().clone();
+    assert_eq!(screen.shown().kept, Some(kept));
 }

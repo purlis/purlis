@@ -228,6 +228,23 @@ impl Browser {
                 && (this.shows(&target, PASSWORD_FIELD)? == Some(true)
                     || (login.user.is_some() && this.shows(&target, NAME_FIELD)? == Some(true))))
         };
+        // Opened from kept logins, a page that asks for nothing is signed in already: twice
+        // read, so a page between documents is not taken for one (#2021).
+        if login.only_if_asked && !shows_form(self)? {
+            self.pause(LOOK_AGAIN)?;
+            if !shows_form(self)? {
+                let shown = lock(&self.inner.state)
+                    .current
+                    .clone()
+                    .unwrap_or_else(|| target.clone());
+                let mut answer = self.answer_now(&shown, Content::Nothing);
+                answer.note = Some(format!(
+                    "{origin} asks for no password: this browser opened from its kept logins, \
+                     and purlis filled nothing"
+                ));
+                return Ok(answer);
+            }
+        }
         while !shows_form(self)? {
             if Instant::now() >= deadline {
                 return Err(if self.on_origin(&target, origin) {

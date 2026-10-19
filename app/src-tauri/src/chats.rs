@@ -4360,8 +4360,19 @@ impl Chats {
         }
     }
 
-    /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
-    /// `None` for a chat that is not open or was started without a sandbox.
+    /// **The profile chat `session` runs on** (#2021): the one its record names, else its
+    /// harness's built-in, whose name an adopted profile keeps. None for a chat this app does
+    /// not have open, or one that runs no harness.
+    pub fn profile_of(&self, session: u32) -> Option<String> {
+        let open = lock(&self.open);
+        let running = open.get(&session)?;
+        running
+            .chat
+            .profile
+            .clone()
+            .or_else(|| running.harness.map(|harness| harness.name().to_owned()))
+    }
+
     /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
     /// sandbox at all, read under one hold of the open chats so both
     /// come from the same run. Its persona is the one the chat was started as, as every brokered
@@ -4400,6 +4411,8 @@ impl Chats {
         ))
     }
 
+    /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
+    /// `None` for a chat that is not open or was started without a sandbox.
     pub fn confines_of(&self, session: u32) -> Option<purlis_core::sandbox::Confines> {
         lock(&self.open)
             .get(&session)

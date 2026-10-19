@@ -180,9 +180,15 @@ use crate::view::{Limits, Views};
 /// (#2590): a start that names its `confinement` may name those services of the host's machine
 /// (`alone`), which the host leaves out of the confinement it composes where its own sandbox
 /// does not give them, names in `left_out`, and asks about.
+///
+/// 1.27 added kept browser logins (#2021, the person's rulings of 2026-10-18): a browser's
+/// start may name the kept login it opens from (`kept`), and `log_in` the kept login the browser
+/// keeps once it ends (`keep`) ([`crate::browsing::KeptLogin`]). Both name a profile and a login,
+/// never a value, and are the window's alone ([`crate::grants::Power::LogIn`]): no relayed link
+/// sends either.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 26,
+    minor: 27,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -723,6 +729,11 @@ pub struct StartProgram {
     /// ([`crate::grants::Power::Confine`]), and only beside a `confinement`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alone: Vec<u16>,
+    /// For a [`ProgramKind::Browser`], the kept login it opens from (1.27, #2021): it starts
+    /// signed in from that login's store, held to the login's site from its first moment. The
+    /// window's alone ([`crate::grants::Power::LogIn`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept: Option<crate::browsing::KeptLogin>,
 }
 
 impl StartProgram {
@@ -747,6 +758,7 @@ impl StartProgram {
             reach: None,
             confinement: None,
             alone: Vec::new(),
+            kept: None,
         }
     }
 }
@@ -1817,6 +1829,19 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
         _ => false,
     };
+    // A kept login is the window's alone, as a login is (1.27).
+    if let Command::StartProgram(start) = command
+        && start.kept.is_some()
+        && !scope.may(Power::LogIn)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a browser opens from kept logins from purlis's window only, and this link is \
+                 `{scope}`"
+            ),
+        });
+    }
     if a_browser && !scope.may(Power::Browser) {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),

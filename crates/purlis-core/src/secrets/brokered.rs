@@ -1229,6 +1229,18 @@ pub fn login_for(
     name: &str,
     unconfined: bool,
 ) -> Result<purlis_session_protocol::browsing::LogIn, String> {
+    login_and_identity_for(asker, name, unconfined).map(|(login, _)| login)
+}
+
+/// **[`login_for`], and the login's identity** (#2021): a digest of the persona, the project
+/// and the login as declared and allowed, which its kept store is bound to
+/// ([`crate::browserlogins::identity_of`]), so a login of the same name of another persona or
+/// project, or declared otherwise since, never opens it.
+pub fn login_and_identity_for(
+    asker: &Asker,
+    name: &str,
+    unconfined: bool,
+) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
     use purlis_session_protocol::browsing::{LogIn, Secret};
     let (ready, ctx) = login_ready(asker, name, unconfined)?;
     let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
@@ -1245,11 +1257,27 @@ pub fn login_for(
             )
         })
     };
-    Ok(LogIn {
-        address: login.url.clone(),
-        user: user_key.map(read).transpose()?,
-        password: read(pass_key)?,
-    })
+    let project = crate::scaffold::planefile::id_to_hold_by(&asker.root)
+        .unwrap_or_else(|_| asker.root.display().to_string());
+    let identity = crate::browserlogins::identity_of(
+        asker.persona.as_deref().unwrap_or_default(),
+        &project,
+        &crate::browserlogins::Declared {
+            vault,
+            user_key,
+            password_key: pass_key,
+            page: &login.url,
+        },
+    );
+    Ok((
+        LogIn {
+            address: login.url.clone(),
+            user: user_key.map(read).transpose()?,
+            password: read(pass_key)?,
+            keep: None,
+        },
+        identity,
+    ))
 }
 
 /// **Whether chat `asker` may log in with its browser login `name` now** (#2022): every check

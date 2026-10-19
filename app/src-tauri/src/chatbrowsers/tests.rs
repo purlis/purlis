@@ -31,6 +31,8 @@ struct Hosted {
     ended: Mutex<Vec<String>>,
     /// The address of each login it performed, and its program (#2016).
     logins: Mutex<Vec<(String, String)>>,
+    /// The kept login each browser started from, in order (#2021).
+    kept: Mutex<Vec<Option<purlis_session_protocol::browsing::KeptLogin>>>,
     /// How many closes, and how many stops by id, fail from now.
     closes_fail: Mutex<u32>,
     stops_fail: Mutex<u32>,
@@ -89,10 +91,16 @@ fn fails(left: &Mutex<u32>) -> bool {
 }
 
 impl Driver for Hosted {
-    fn start(&self, _root: &Path, reach: BrowserReach) -> Result<String, NotStarted> {
+    fn start(
+        &self,
+        _root: &Path,
+        reach: BrowserReach,
+        kept: Option<purlis_session_protocol::browsing::KeptLogin>,
+    ) -> Result<String, NotStarted> {
         if let Some(most) = *self.full.lock().unwrap() {
             return Err(NotStarted::Full { most });
         }
+        self.kept.lock().unwrap().push(kept);
         let mut started = self.started.lock().unwrap();
         started.push(reach);
         Ok(format!("program-{}", started.len()))
@@ -259,15 +267,30 @@ fn answered_confined(
 }
 
 /// The one browser login a test chat has: `shop-login`, its values a test's own (#2016).
-fn logins(name: &str) -> Result<LogIn, String> {
-    if name != "shop-login" {
+fn logins(name: &str) -> Result<(LogIn, bool), String> {
+    // `shop-login` has no kept store yet; `kept-login` has one to open (#2021).
+    if name != "shop-login" && name != "kept-login" {
         return Err(format!("the persona declares no browser login {name}"));
     }
-    Ok(LogIn {
+    Ok((
+        LogIn {
+            address: "https://shop.example.test/login".into(),
+            user: None,
+            password: Secret::new(LOGIN_VALUE.into()),
+            keep: Some(kept_as(name)),
+        },
+        name == "kept-login",
+    ))
+}
+
+fn kept_as(name: &str) -> purlis_session_protocol::browsing::KeptLogin {
+    purlis_session_protocol::browsing::KeptLogin {
+        profile: "claude".into(),
+        persona: "steward".into(),
+        login: name.into(),
+        identity: "0123456789abcdef0123456789abcdef".into(),
         address: "https://shop.example.test/login".into(),
-        user: None,
-        password: Secret::new(LOGIN_VALUE.into()),
-    })
+    }
 }
 
 /// What the test login fills: a value no answer to the chat may carry.
@@ -2147,4 +2170,63 @@ fn what_is_recorded_of_a_browser_goes_when_it_ends() {
     browsers.forget(Some(&driver), 3, "Fix the login");
 
     assert_eq!(browsers.records_of("program-1"), (false, false, false));
+}
+
+// ---- Kept logins (#2021) ----
+
+#[test]
+fn a_login_with_a_kept_store_opens_in_a_browser_of_its_own_from_it() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, click()));
+    let (answer, _) = answered(&browsers, &hosted, &ask(3, log_in("kept-login")));
+    let Answer::Browsed { browser, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(browser, "b2", "a browser of its own");
+    assert_eq!(
+        *hosted.kept.lock().unwrap(),
+        [None, Some(kept_as("kept-login"))]
+    );
+    assert_eq!(
+        hosted
+            .logins
+            .lock()
+            .unwrap()
+            .last()
+            .map(|(program, _)| program.clone()),
+        Some("program-2".to_owned()),
+        "the login goes into the browser opened from its store"
+    );
+}
+
+#[test]
+fn a_login_with_no_kept_store_keeps_what_the_chats_browser_holds() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    let (answer, _) = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert_eq!(
+        *hosted.kept.lock().unwrap(),
+        [None],
+        "no browser from a store"
+    );
+}
+
+#[test]
+fn a_kept_store_is_never_opened_where_its_login_is_not_allowed_now() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    let why = refusal(answered(&browsers, &hosted, &ask(3, log_in("mail-login"))).0);
+    assert!(why.contains("declares no browser login"), "{why}");
+    assert!(
+        hosted.kept.lock().unwrap().iter().all(Option::is_none),
+        "nothing opened from a store"
+    );
 }

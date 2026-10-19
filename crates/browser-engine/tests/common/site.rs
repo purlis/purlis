@@ -149,6 +149,19 @@ fn answer(stream: TcpStream, root: &Path, heard: &std::sync::Mutex<Vec<String>>)
                 br#"{"answer":42}"#,
             );
         }
+        // A sign-in that keeps: a cookie that outlives the browser (#2021).
+        "sign-in-kept" => {
+            let _ = respond(
+                &mut out,
+                "200 OK",
+                "text/html; charset=utf-8",
+                &[(
+                    "Set-Cookie",
+                    "kept=fixture-session; Max-Age=3600; Path=/; SameSite=Lax",
+                )],
+                b"<!doctype html><title>Signed in</title><h1>Signed in</h1>",
+            );
+        }
         "redirect-to-file" => {
             let _ = respond(
                 &mut out,
@@ -221,19 +234,26 @@ pub fn started_judged(judge: Judge) -> Option<(Browser, tempfile::TempDir, Site)
 }
 
 fn started_with(judge: Option<Judge>) -> Option<(Browser, tempfile::TempDir, Site)> {
+    let data = tempfile::tempdir().unwrap();
+    let (browser, site) = started_on(&data.path().join("browser"), judge)?;
+    Some((browser, data, site))
+}
+
+/// A real engine on the data folder `folder`, as a browser opened from what an earlier one
+/// kept there starts (#2021), with the fixture site as its reach proxy, or `None` where no
+/// engine runs.
+pub fn started_on(folder: &Path, judge: Option<Judge>) -> Option<(Browser, Site)> {
     let program = engine_program()?;
     say_failures_on_ci();
     let site = serve();
-    let data = tempfile::tempdir().unwrap();
     let launch = Launch::new(
         &super::fixture::chosen(&program),
-        data.path().join("browser"),
+        folder.to_path_buf(),
         ReachProxy(site.address),
     );
     let keeper = Keeper::program(env!("CARGO_BIN_EXE_purlis-engine-keeper"));
     let engine = Engine::start(&launch, &keeper).unwrap_or_else(|why| {
-        let log =
-            std::fs::read_to_string(data.path().join("browser/engine.log")).unwrap_or_default();
+        let log = std::fs::read_to_string(folder.join("engine.log")).unwrap_or_default();
         panic!("{why}\nthe engine's log:\n{log}")
     });
     let limits = Limits {
@@ -244,5 +264,5 @@ fn started_with(judge: Option<Judge>) -> Option<(Browser, tempfile::TempDir, Sit
         Some(judge) => Browser::judged(engine, limits, judge),
         None => Browser::new(engine, limits),
     };
-    Some((browser.unwrap(), data, site))
+    Some((browser.unwrap(), site))
 }

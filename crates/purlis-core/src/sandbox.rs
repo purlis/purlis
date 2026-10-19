@@ -1603,6 +1603,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::datahome::BROWSERS),
             Access::ReadWrite,
         );
+        // The browser logins this device keeps sealed (#2021, the person's ruling of
+        // 2026-10-18): a chat neither reads nor writes any of them.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::browserlogins::DIR),
+            Access::ReadWrite,
+        );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor
