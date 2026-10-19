@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792440696985,
+  "lastUpdate": 1792447665407,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18228,6 +18228,48 @@ window.BENCHMARK_DATA = {
             "value": 104.9777785,
             "unit": "ms",
             "extra": "median of 5 runs: 103.126, 104.563, 104.978, 105.089, 105.098 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f235d3c25fa16b2ae346f01f536d2f7dd6c4ee9a",
+          "message": "The consent floors hold exactly under every workspace tint (#2703)\n\n* The consent floors hold exactly under every workspace tint\n\nA tinted shade rounds each channel toward the luminance it had, on its\nown side of WCAG's middle, so it keeps every contrast floor it kept\nuntinted at every hue. The accent-hued tokens drawn beside danger\n(focus ring, selected-row edge, accent surface, active tab) are held\napart from danger by the tint like the accent. The floors measure every\napart rule as written and per tint, measure the pairs a tint can move\nbetween hues at every whole degree, and draw a theme that falls under a\nfloor only in a tinted workspace as written with those tokens untinted.\nThe window does the same arithmetic, held by the shared tint fixture.\n\nCloses #2526\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The tint's rounding compares as clippy asks, and the window's tolerances follow it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The floors sweep every pair with a see-through colour, and keep each degree's chroma\n\nA pair with a colour written see-through is mixed on screen channel by\nchannel, so the floors measure it at every whole degree when the recipe\nturns one of its tokens, and read each side's luminance as drawn. The\nsweep finds each whole degree's chroma limit once across the floors'\nrounds while the rules' colours are unchanged, and turns only the tokens\nof the swept pairs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A see-through ask on a tinted control is measured at every hue\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The Chats list fixture draws persona marks in the tint's rounded colours\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T02:06:13+04:00",
+          "tree_id": "10ff46f3f689670ecc3df34d31bebaf166445a89",
+          "url": "https://github.com/purlis/purlis/commit/f235d3c25fa16b2ae346f01f536d2f7dd6c4ee9a"
+        },
+        "date": 1792447664220,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3653645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.360, 0.363, 0.365, 0.374, 0.381 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2400285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.177, 16.228, 16.240, 16.417, 16.469 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.331737,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.683, 101.082, 101.332, 101.913, 101.978 ms"
           }
         ]
       }
