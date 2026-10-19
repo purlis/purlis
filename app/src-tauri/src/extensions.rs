@@ -480,6 +480,7 @@ pub(crate) fn theme_in_force_of(
         },
         offered,
     );
+    let review = drawn.awaits_approval();
     let refused = drawn.refused.then(|| ThemeTrouble {
         name: drawn
             .level
@@ -505,6 +506,7 @@ pub(crate) fn theme_in_force_of(
             })
             .unwrap_or_default(),
         refused,
+        review,
         theme: drawn.theme.as_ref().map(WindowTheme::from),
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
@@ -603,6 +605,10 @@ pub struct ThemeInForce {
     /// (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
     /// font file changed since it was approved, is never a silent fallback.
     pub refused: Option<ThemeTrouble>,
+    /// Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+    /// of the project's or a workspace's theme folder that this machine's approval does not
+    /// hold. The refused Notice then offers Review and allow (`review_plane`).
+    pub review: bool,
 }
 
 /// A resolved theme as the window applies it: the window's `Theme`, every token and every

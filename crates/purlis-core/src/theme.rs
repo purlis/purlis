@@ -387,6 +387,11 @@ pub struct Complaint {
     /// The token it was about, when it was about one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// Whether it is a font file of the project's or a workspace's theme folder that this
+    /// machine's approval of the project does not hold (#2647): the project's trust ask lists
+    /// it, so a yes there lets it be drawn.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub awaits_approval: bool,
 }
 
 impl Complaint {
@@ -394,6 +399,7 @@ impl Complaint {
         Self {
             said: said.into(),
             token: None,
+            awaits_approval: false,
         }
     }
 
@@ -401,6 +407,15 @@ impl Complaint {
         Self {
             said: said.into(),
             token: Some(token.to_owned()),
+            awaits_approval: false,
+        }
+    }
+
+    /// [`Self::said`] of a project's font file the approval does not hold.
+    fn awaiting_approval(said: impl Into<String>) -> Self {
+        Self {
+            awaits_approval: true,
+            ..Self::said(said)
         }
     }
 }

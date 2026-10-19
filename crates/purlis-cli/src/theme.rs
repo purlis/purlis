@@ -938,6 +938,7 @@ fn mine(config: &Path) -> Option<Found> {
                 vec![Complaint {
                     said: why.clone(),
                     token: None,
+                    awaits_approval: false,
                 }]
             } else {
                 theirs.complaints
@@ -1023,6 +1024,7 @@ fn refusal(why: String) -> Resolved {
         complaints: vec![Complaint {
             said: why,
             token: None,
+            awaits_approval: false,
         }],
         refused: true,
     }

@@ -3374,15 +3374,36 @@ impl Planes {
         // `approve_and_open` reads again to compare what they read against what is there now.
         // The open arm keeps it, because it is about to run it.
         let reading = machine::Contribution::read(&root);
-        let consent = self.consent_to(&root, &reading.contributes);
-        if consent.must_ask() {
-            return Ok(Opening::Ask(Asking {
-                root,
-                contributes: reading.contributes,
-                consent,
-            }));
+        if let Some(asking) = self.asking(&root, reading.contributes) {
+            return Ok(Opening::Ask(asking));
         }
         Ok(Opening::Open(self.minted(&root, reading.record)))
+    }
+
+    /// **The trust ask about a project this process already holds** (#2647): what it
+    /// contributes now and how that differs from what this machine approved, read as
+    /// [`Self::open_if_approved`] reads it; `None` when the approval already holds all of it.
+    ///
+    /// What the refused theme's Review and allow shows: a project's font file added or changed
+    /// while it is open is drawn only once the approval holds it. Asking attaches nothing and
+    /// records nothing. The person's yes goes through [`Self::approve_and_open`] like any other,
+    /// which reads the project again and refuses if it is not what was shown, and whose mint
+    /// hands back the id a held plane already has without putting its record back again.
+    pub fn review(&self, plane: &PlaneId) -> Result<Option<Asking>, String> {
+        let root = self.held(plane)?.root().to_path_buf();
+        let contributes = machine::Contribution::read(&root).contributes;
+        Ok(self.asking(&root, contributes))
+    }
+
+    /// The question about `root`, which contributes `contributes` as just read, when this
+    /// machine's store does not already hold the yes to it.
+    fn asking(&self, root: &Path, contributes: machine::Contribution) -> Option<Asking> {
+        let consent = self.consent_to(root, &contributes);
+        consent.must_ask().then(|| Asking {
+            root: root.to_path_buf(),
+            contributes,
+            consent,
+        })
     }
 
     /// The operator's yes to a plane, and the open it authorises.
@@ -5005,3 +5026,7 @@ mod tests;
 #[cfg(test)]
 #[path = "planes_restoring_tests.rs"]
 mod restoring_tests;
+
+#[cfg(all(test, unix))]
+#[path = "planes_review_tests.rs"]
+mod review_tests;

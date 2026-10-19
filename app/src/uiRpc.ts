@@ -121,6 +121,7 @@ export const commands = {
 	openPlane: (path: string) => typedError<Opened, string>(__TAURI_INVOKE("open_plane", { path })),
 	folderIsAProject: __WINDOW_ONLY_RESULT,
 	approvePlane: __WINDOW_ONLY_RESULT,
+	reviewPlane: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The projects a cold launch has to put back, and every one it would not take back.
 	 * 
@@ -1343,6 +1344,12 @@ export const commands = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. The refused Notice then offers Review and allow (`review_plane`).
+	 */
+	review: boolean,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
 	themeChooseOption: __WINDOW_ONLY_RESULT,
@@ -8848,6 +8855,12 @@ export type ThemeInForce = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. The refused Notice then offers Review and allow (`review_plane`).
+	 */
+	review: boolean,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

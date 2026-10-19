@@ -41,8 +41,12 @@ export function ApprovePlane({
   ask,
   onApprove,
   onCancel,
+  yes,
 }: {
   ask: Ask;
+  /** What the yes is called, where it opens nothing: a project already open, whose refused
+   *  theme the ask can let be drawn (#2647). An open's own words by default. */
+  yes?: string;
   /** The operator's yes, carrying back the contribution they were shown — so the approval is
    *  for what was on screen and not for whatever the project says by the time it is clicked. */
   onApprove: (ask: Ask) => void;
@@ -213,7 +217,7 @@ export function ApprovePlane({
               Cancel
             </button>
             <button className="ui-button" type="button" tabIndex={0} onClick={() => onApprove(ask)}>
-              {ask.first ? "Open project" : "Open it anyway"}
+              {yes ?? (ask.first ? "Open project" : "Open it anyway")}
             </button>
           </AnswerBar>
         </Dialog.Content>

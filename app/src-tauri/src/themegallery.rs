@@ -544,6 +544,7 @@ fn card_drawn_of(
         crate::extensions::contrast_of(more_contrast),
     )?;
     Some(ThemeInForce {
+        review: drawn.awaits_approval(),
         refused: drawn.refused.then(|| crate::extensions::ThemeTrouble {
             name: id.to_owned(),
             complaints: drawn

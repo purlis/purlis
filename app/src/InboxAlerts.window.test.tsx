@@ -99,6 +99,10 @@ let readingFails: string | undefined;
 let fixAnswer: DoctorFixed | string = { fix: "", refused: null, said: [], complete: true };
 let asked: { cmd: string; args: unknown }[] = [];
 
+/** What `review_plane` answers (#2647): the project's trust ask, none, or a refusal. */
+let reviewAnswer: unknown = null;
+/** What `approve_plane` answers: the project's id, or a refusal. */
+let approveAnswer: unknown = PLANE;
 let stopped: string | null = null;
 const reading = (): PlaneAlerts[] => [{ plane: PLANE, alerts: rows, stopped }, ...others];
 const calls = (cmd: string) => asked.filter((one) => one.cmd === cmd);
@@ -125,6 +129,8 @@ beforeEach(() => {
   others = [];
   stopped = null;
   readingFails = undefined;
+  reviewAnswer = null;
+  approveAnswer = PLANE;
   asked = [];
   fixAnswer = { fix: "workspace-reinit", refused: null, said: ["✓ ide: healed"], complete: true };
   theme(null);
@@ -164,6 +170,11 @@ beforeEach(() => {
         };
       }
       if (cmd === "open_plane") return { plane: null, ask: null };
+      if (cmd === "review_plane") return reviewAnswer;
+      if (cmd === "approve_plane") {
+        if (typeof approveAnswer === "string" && approveAnswer !== PLANE) throw approveAnswer;
+        return approveAnswer;
+      }
       if (cmd === "use_built_in_theme") return "/home/op/.config/charter/theme.aside.json";
       if (cmd === "use_default_layout") return "/home/op/.config/charter/layout.aside.json";
       if (cmd === "theme_move_into_a_folder") return "my-dusk";
@@ -447,6 +458,122 @@ describe("an old single-file theme, offered once a move into a theme folder (#23
     expect(calls("see_on_this_machine").map((one) => one.args)).toEqual([
       { cause: THEME_FOLDER_OFFERED },
     ]);
+  });
+});
+
+describe("a theme refused for a project's font file, reviewed and allowed in place (#2647)", () => {
+  const NOTHING = { plugins: [], env: [], starts: [], profiles: [], grants: [], fonts: [] };
+  const FACE = "workspaces/alpha/themes/typed/fonts/ui.woff2";
+  const CHANGED = `the font file ${FACE} has changed`;
+  const ASK = {
+    path: PLANE,
+    contributes: { ...NOTHING, fonts: [[FACE, `${"b".repeat(64)} 68`]] },
+    changes: [CHANGED],
+    first: false,
+  };
+  const refusedRow = () =>
+    document.querySelector('[data-cause="alert:theme refused"]') as HTMLElement | null;
+
+  function refused(review: string | null = PLANE) {
+    sayAboutThisMachine("theme refused", {
+      severity: "warn",
+      detail: `“typed” is not drawn, and Purlis is: ${FACE} has changed since you approved this project`,
+      remedy: "review what changed and allow it",
+      ...(review === null ? {} : { review }),
+    });
+  }
+  afterEach(() => sayAboutThisMachine("theme refused", undefined));
+
+  it("shows the project's trust ask with the change first, and a yes approves what it showed and draws again", async () => {
+    reviewAnswer = ASK;
+    refused();
+    machineAlone();
+    await waitFor(() => expect(refusedRow()).not.toBeNull());
+
+    await userEvent.click(
+      within(refusedRow() as HTMLElement).getByRole("button", { name: "Review and allow" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(calls("review_plane").map((one) => one.args)).toEqual([{ plane: PLANE }]);
+    const said = dialog.textContent ?? "";
+    // The change lines first, then the font files, grouped by their theme folder.
+    expect(said.indexOf(CHANGED)).toBeGreaterThan(-1);
+    expect(said.indexOf(CHANGED)).toBeLessThan(said.indexOf("Font files its themes bring"));
+    expect(said).toContain("workspaces/alpha/themes/typed");
+    expect(calls("approve_plane")).toHaveLength(0);
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
+
+    await waitFor(() => expect(calls("approve_plane")).toHaveLength(1));
+    // What was shown goes back untouched, so the core approves only that.
+    expect(calls("approve_plane")[0].args).toEqual({ path: PLANE, contributes: ASK.contributes });
+    await waitFor(() => expect(calls("theme_in_force").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("with a no approves nothing, and the theme stays refused", async () => {
+    reviewAnswer = ASK;
+    refused();
+    machineAlone();
+    await waitFor(() => expect(refusedRow()).not.toBeNull());
+    await userEvent.click(
+      within(refusedRow() as HTMLElement).getByRole("button", { name: "Review and allow" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls("approve_plane")).toHaveLength(0);
+    expect(calls("theme_in_force")).toHaveLength(0);
+    expect(refusedRow()).not.toBeNull();
+  });
+
+  it("says the core's refusal when the face changed between the ask and the yes, and the theme stays refused", async () => {
+    reviewAnswer = ASK;
+    approveAnswer =
+      "plane changed while you were reading it, so nothing was approved and nothing was opened. Open it again to see what it contributes now.";
+    refused();
+    machineAlone();
+    await waitFor(() => expect(refusedRow()).not.toBeNull());
+    await userEvent.click(
+      within(refusedRow() as HTMLElement).getByRole("button", { name: "Review and allow" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
+
+    await waitFor(() =>
+      expect(refusedRow()).toHaveTextContent("changed while you were reading it"),
+    );
+    expect(calls("approve_plane")).toHaveLength(1);
+    expect(calls("theme_in_force")).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("draws again without a question when the approval already holds it all", async () => {
+    reviewAnswer = null;
+    refused();
+    machineAlone();
+    await waitFor(() => expect(refusedRow()).not.toBeNull());
+
+    await userEvent.click(
+      within(refusedRow() as HTMLElement).getByRole("button", { name: "Review and allow" }),
+    );
+
+    await waitFor(() => expect(calls("theme_in_force").length).toBeGreaterThan(0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls("approve_plane")).toHaveLength(0);
+  });
+
+  it("is not offered for a refusal no approval would draw", async () => {
+    refused(null);
+    machineAlone();
+    await waitFor(() => expect(refusedRow()).not.toBeNull());
+    expect(
+      within(refusedRow() as HTMLElement).queryByRole("button", { name: "Review and allow" }),
+    ).toBeNull();
   });
 });
 

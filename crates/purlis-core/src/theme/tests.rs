@@ -232,6 +232,7 @@ fn a_token_purlis_does_not_have_is_named_and_left_out_and_the_rest_is_drawn() {
         [Complaint {
             said: "gray.800 is not a purlis token, so it is left out".to_owned(),
             token: Some("gray.800".to_owned()),
+            awaits_approval: false,
         }]
     );
 }

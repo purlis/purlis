@@ -541,6 +541,28 @@ pub async fn approve_plane(
     .map_err(|err| format!("opening the project did not finish: {err}"))?
 }
 
+/// **The trust ask about a project already open** (#2647, ADR 0035): what the refused theme's
+/// Review and allow shows when a project's font file was added or changed after it was
+/// approved. The same [`Ask`] an open asks, with the changes first; `null` when this machine's
+/// approval already holds everything the project contributes.
+///
+/// The person's yes is [`approve_plane`], the one path every approval takes. The window's
+/// alone (`WINDOW_ONLY`): only the person's press asks it, and no chat reaches it.
+///
+/// On a blocking thread, for [`open_plane`]'s reason: it reads the project's settings, record
+/// and font files.
+#[tauri::command]
+#[specta::specta]
+pub async fn review_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<Option<Ask>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<Planes>()
+            .review(&plane)
+            .map(|asking| asking.map(Ask::of))
+    })
+    .await
+    .map_err(|err| format!("reading what the project contributes did not finish: {err}"))?
+}
+
 /// The projects a cold launch has to put back, and every one it would not take back.
 ///
 /// **Answered to the window rather than acted on here, and that is the whole shape of it.**

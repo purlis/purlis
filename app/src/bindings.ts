@@ -166,6 +166,40 @@ export const commands = {
 	 */
 	approvePlane: (path: string, contributes: PlaneContribution) => typedError<PlaneId, string>(__TAURI_INVOKE("approve_plane", { path, contributes })),
 	/**
+	 *  **The trust ask about a project already open** (#2647, ADR 0035): what the refused theme's
+	 *  Review and allow shows when a project's font file was added or changed after it was
+	 *  approved. The same [`Ask`] an open asks, with the changes first; `null` when this machine's
+	 *  approval already holds everything the project contributes.
+	 * 
+	 *  The person's yes is [`approve_plane`], the one path every approval takes. The window's
+	 *  alone (`WINDOW_ONLY`): only the person's press asks it, and no chat reaches it.
+	 * 
+	 *  On a blocking thread, for [`open_plane`]'s reason: it reads the project's settings, record
+	 *  and font files.
+	 */
+	reviewPlane: (plane: PlaneId) => typedError<{
+	/**
+	 *  The plane charter resolved, which is what the approval is recorded against.
+	 * 
+	 *  Shown, and not merely carried: a picker pointed at a subdirectory opens the plane above
+	 *  it, and an operator approving a directory they did not choose is the whole failure this
+	 *  dialog exists to prevent, arrived at from the friendly end.
+	 */
+	path: string,
+	/**
+	 *  What it contributes. It goes back to [`approve_plane`] untouched, and that is what
+	 *  makes the approval an answer to the question that was asked.
+	 */
+	contributes: PlaneContribution,
+	/**
+	 *  Empty when nothing has approved this plane. Otherwise every way it now differs from
+	 *  what WAS approved, in charter's own words (`machine::Change`'s own `Display`).
+	 */
+	changes: string[],
+	/**  Whether this is a first approval rather than a re-ask, so the dialog can say which. */
+	first: boolean,
+} | null, string>(__TAURI_INVOKE("review_plane", { plane })),
+	/**
 	 *  The projects a cold launch has to put back, and every one it would not take back.
 	 * 
 	 *  **Answered to the window rather than acted on here, and that is the whole shape of it.**
@@ -2614,6 +2648,12 @@ export const commands = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. The refused Notice then offers Review and allow (`review_plane`).
+	 */
+	review: boolean,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
@@ -10427,6 +10467,12 @@ export type ThemeInForce = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. The refused Notice then offers Review and allow (`review_plane`).
+	 */
+	review: boolean,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
