@@ -3,10 +3,21 @@
 
 import { Channel } from "@tauri-apps/api/core";
 import { Globe } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent, WheelEvent } from "react";
+import type {
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent,
+  WheelEvent,
+} from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CHAT_KEYBOARD } from "./actions";
-import { type BrowserFrame, type BrowserInput, commands } from "./bindings";
+import {
+  type BrowserFrame,
+  type BrowserInput,
+  commands,
+  type GrantLevel,
+  type Offered,
+} from "./bindings";
 import {
   SIZE_PRESETS,
   drivenBy,
@@ -18,12 +29,15 @@ import {
   wheelInput,
 } from "./browserDriving";
 import { frameBytes, latestOnly, paint } from "./browserFrames";
-import { addressChip, thisDevice } from "./browsers";
+import { addressChip, takeGoWhenShown, thisDevice } from "./browsers";
 import { useWindowSeen } from "./browserWatch";
+import { programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./EmptyState";
+import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
 import { Select } from "./primitives/Select";
 import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
+import { sandboxCommandReturned } from "./sandboxAsked";
 import { onAMac } from "./tabKeys";
 
 /** The keys that are only held with another. */
@@ -141,8 +155,14 @@ function useSender(
  * **A browser on a runner whose link is down says "Reconnecting…" over its last frame**
  * (#2542), quietly, as a runner's chat does (#2496), until the core says it is reconnected: the
  * link is back, or the view drew again from a new snapshot.
+ *
+ * **A browser the person opened goes where they send it** (#2176): its view has an address
+ * field, drawn by purlis outside the frame. The address goes as an address the agent writes
+ * would, so a site new to the project is held back and asked about here, once, under the
+ * field; http and https only, any other scheme refused in words. A chat's browser has none: its
+ * chat drives it.
  */
-export function BrowserView({ program }: { program: string }) {
+export function BrowserView({ plane, program }: { plane: string; program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [shown, setShown] = useState<Shown>({ kind: "opening" });
   const [driving, setDriving] = useState(false);
@@ -161,6 +181,15 @@ export function BrowserView({ program }: { program: string }) {
   const seen = inFront && windowSeen;
   const mac = onAMac();
   const { send, after, clear } = useSender(program, setSaid, setDropped);
+  const { browsers: chatBrowsers, kept, read: chatBrowsersRead } = useChatBrowsers(plane);
+  /** Whether it is one the person opened: no chat of the project's uses it, and it is no chat's
+   *  pinned past its chat (#2022), which only the window that opened it sends anywhere. */
+  const theirs = chatBrowsersRead && !programsOf(chatBrowsers, kept).has(program);
+  /** The address the person typed, the page's address once it went, and the sites it asks. */
+  const [typed, setTyped] = useState("");
+  const [address, setAddress] = useState<string | null>(null);
+  const [asking, setAsking] = useState<SitesAsked | null>(null);
+  const [going, setGoing] = useState(false);
 
   const drivingNow = useCallback((now: boolean) => {
     drives.current = now;
@@ -341,6 +370,78 @@ export function BrowserView({ program }: { program: string }) {
     });
   };
 
+  /** Sends the browser to `to`, the address as the person typed it. */
+  /** Sends the browser to `to`, the address as the person typed it, after every key and click
+   *  already queued. The browser takes an address on its own lane, so one the person drives is
+   *  handed back first; their next click or key takes it over again. */
+  const go = useCallback(
+    (to: string) => {
+      if (going) return;
+      setGoing(true);
+      after(async () => {
+        if (drives.current) {
+          const back = await commands.handBackBrowser(program);
+          if (back.status === "error") {
+            setGoing(false);
+            setSaid(back.error);
+            return;
+          }
+          setDropped(false);
+          drivingNow(false);
+        }
+        const went = await commands.goBrowser(plane, program, to);
+        setGoing(false);
+        if (went.status === "error") {
+          setSaid(went.error);
+          return;
+        }
+        setSaid(undefined);
+        if (went.data.outcome === "asks") {
+          setAsking({ address: to, sites: went.data.sites, answers: went.data.answers });
+          return;
+        }
+        setAsking(null);
+        if (went.data.address !== null) setAddress(went.data.address);
+      });
+    },
+    [going, after, plane, program, drivingNow],
+  );
+
+  // An address the window was asked to open this browser at (the browsers open at the last
+  // quit, #2022) goes once the view is live, as if the person typed it.
+  useEffect(() => {
+    if (!theirs || shown.kind !== "live") return;
+    const at = takeGoWhenShown(program);
+    if (at === undefined) return;
+    // Sent after this render, as the person's own Go would be.
+    queueMicrotask(() => go(at));
+  }, [theirs, shown.kind, program, go]);
+
+  const onGo = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    go(typed);
+  };
+
+  /** An Allow of the sites ask: on this machine (every browser of the project here) or for
+   *  everyone in the project (committed); this one goes there now. */
+  const allowSites = (ask: SitesAsked, level: GrantLevel) => {
+    void commands.allowPersonBrowserSites(plane, program, ask.sites, level).then((allowed) => {
+      if (allowed.status === "error") {
+        setSaid(allowed.error);
+        return;
+      }
+      sandboxCommandReturned();
+      setAsking(null);
+      go(ask.address);
+    });
+  };
+
+  /** One answer of the sites ask: an Allow at its scope, or Keep blocked putting it away. */
+  const answerSites = (ask: SitesAsked, one: Offered) => {
+    if (one.allows) allowSites(ask, one.id as GrantLevel);
+    else setAsking(null);
+  };
+
   if (shown.kind === "ended")
     return (
       <EmptyState
@@ -362,10 +463,57 @@ export function BrowserView({ program }: { program: string }) {
   const keyboard = driving ? { [CHAT_KEYBOARD]: "" } : {};
   return (
     <div className="browser-view" data-testid="browser-view">
+      {theirs && (
+        <form className="browser-address" aria-label="Go to an address" onSubmit={onGo}>
+          <input
+            type="text"
+            className="ui-input browser-address-text"
+            // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
+            tabIndex={0}
+            aria-label="Address"
+            placeholder="Type an address, such as https://example.com"
+            autoComplete="off"
+            spellCheck={false}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+          <button
+            type="submit"
+            className="ui-button ui-button-sm"
+            aria-disabled={going || typed.trim() === "" ? true : undefined}
+          >
+            Go
+          </button>
+        </form>
+      )}
+      {theirs && asking !== null && (
+        <NoticePaneRow>
+          <Notice
+            at="pane"
+            cause={`browser-sites:${program}`}
+            fixes={
+              // The core's answers, Keep blocked among them; Keep blocked alone were there none.
+              (asking.answers.length > 0
+                ? asking.answers.map((one): NoticeAction => ({
+                    label: one.label,
+                    allows: one.allows,
+                    onPress: () => answerSites(asking, one),
+                  }))
+                : [{ label: KEEP_SAID, onPress: () => setAsking(null) }]) as [
+                NoticeAction,
+                ...NoticeAction[],
+              ]
+            }
+          >
+            {asking.sites.join(", ")} {asking.sites.length === 1 ? "is a site" : "are sites"} new to
+            this project, so this browser did not go there.
+          </Notice>
+        </NoticePaneRow>
+      )}
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
         {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
             page, so a page cannot fake it. */}
-        <BrowserChip mac={mac} />
+        <BrowserChip mac={mac} address={address} />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
@@ -429,9 +577,15 @@ export function BrowserView({ program }: { program: string }) {
   );
 }
 
+/** What a browser the person opened held back, and the answers its sites ask offers (#2176). */
+type SitesAsked = { address: string; sites: string[]; answers: Offered[] };
+
+/** Keep blocked, where the core offered no answer that refuses. */
+const KEEP_SAID = "Keep blocked";
+
 /** A browser's address and device, as its view says them above its page (#2024). */
-function BrowserChip({ mac }: { mac: boolean }) {
-  const chip = addressChip(null, thisDevice(mac));
+function BrowserChip({ mac, address }: { mac: boolean; address: string | null }) {
+  const chip = addressChip(address, thisDevice(mac));
   return (
     <span className="browser-chip" data-testid="browser-chip" title={chip.whole ?? undefined}>
       {chip.said}

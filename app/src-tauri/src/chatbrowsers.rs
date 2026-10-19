@@ -296,6 +296,9 @@ pub struct ChatBrowsers {
     /// What each browser was last given to reach, by program (#2022): what a hand-over that
     /// fails gives back.
     reaches: Mutex<HashMap<String, BrowserReach>>,
+    /// The sites each browser the person opened asked about (#2176), by its program, until
+    /// they answer or its next address: what their Allow may name.
+    theirs: Mutex<HashMap<String, Vec<Site>>>,
 }
 
 /// **A login a browser holds** (#2022): the persona whose login purlis performed in it, and the
@@ -332,6 +335,7 @@ impl Default for ChatBrowsers {
             ending: Arc::new(Ending::after(RETRY_FIRST, RETRY_MOST)),
             listing: Arc::default(),
             told: None,
+            theirs: Mutex::default(),
         }
     }
 }
@@ -1073,6 +1077,39 @@ impl ChatBrowsers {
         self.lock()
             .get(&session)
             .map_or(Posture::Unasked, |chat| chat.posture)
+    }
+
+    /// **The person's browser `program` asked about `sites`** (#2176), new to the project, as
+    /// its answer to their address named them: what waits on them for it is these alone.
+    pub fn theirs_asked(&self, program: &str, sites: &[String]) {
+        let sites: Vec<Site> = sites_of(sites).into_iter().take(MOST_SITES_ASKED).collect();
+        let mut theirs = self.theirs.lock().unwrap_or_else(PoisonError::into_inner);
+        if sites.is_empty() {
+            theirs.remove(program);
+        } else {
+            theirs.insert(program.to_owned(), sites);
+        }
+    }
+
+    /// The sites the person's browser `program` waits on them for (#2176).
+    pub fn theirs_waiting(&self, program: &str) -> Vec<Site> {
+        self.theirs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(program)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// The person answered `sites` of their browser `program` (#2176): they wait no more.
+    fn theirs_answered(&self, program: &str, sites: &[Site]) {
+        let mut theirs = self.theirs.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(waiting) = theirs.get_mut(program) {
+            waiting.retain(|site| !sites.contains(site));
+            if waiting.is_empty() {
+                theirs.remove(program);
+            }
+        }
     }
 
     /// Every Ask that waits, oldest first.
@@ -2177,12 +2214,36 @@ fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPersona {
 /// public site only where the person let it reach the open web. Its own sites, for this chat
 /// alone, are added by [`ChatBrowsers::answer`].
 fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
-    use purlis_core::sandbox;
     let Some(confines) = held.chats().confines_now(session) else {
         return BrowserReach::default();
     };
-    let mut reach = purlis_core::browsertools::browser_reach(&confines.decides(), false);
+    with_browser_sites(
+        held.root(),
+        purlis_core::browsertools::browser_reach(&confines.decides(), false),
+    )
+}
+
+/// **What a browser the person opens from the window reaches** (#2176): it has no chat, so no
+/// chat's sandbox was compiled for it. It lists what the project's sandbox settings list for a
+/// chat on no persona, read now (`purlis_core::sandbox::browser_listing`), never the floor's
+/// reach, and the browser sites allowed here, as a chat's browser does. A site new to the
+/// project asks the person as an address the agent writes would (#2018).
+pub fn person_reach(held: &crate::planes::Held) -> BrowserReach {
     let root = held.root();
+    let listed = purlis_core::sandbox::browser_listing::listed_for(
+        root,
+        &purlis_core::sandbox::Machine::this(),
+        None,
+    )
+    .map(|reach| purlis_core::browsertools::browser_reach(&reach, false))
+    .unwrap_or_default();
+    with_browser_sites(root, listed)
+}
+
+/// `reach`, listing the browser sites you allowed for every chat here (#2018) that policy
+/// leaves in force.
+fn with_browser_sites(root: &Path, mut reach: BrowserReach) -> BrowserReach {
+    use purlis_core::sandbox;
     let locks = sandbox::policy::Locks::of(root);
     reach.listed.extend(
         sandbox::local::browser_sites_in_force(root, &locks)
@@ -2527,7 +2588,7 @@ pub fn sites_allowed(
     audit: crate::sandboxing::Audit<'_>,
     at: u64,
 ) -> Result<(), String> {
-    use purlis_core::sandbox::{self, grant::Level};
+    use purlis_core::sandbox::grant::Level;
     let sites = sites_sent(sites)?;
     if !matches!(level, Level::Chat | Level::You | Level::Project) {
         return Err(
@@ -2536,17 +2597,7 @@ pub fn sites_allowed(
                 .to_owned(),
         );
     }
-    let root = held.root();
-    let locks = sandbox::policy::Locks::of(root);
-    if let Some(why) = locks.scope_removed(level) {
-        return Err(why);
-    }
-    for site in &sites {
-        let host = sandbox::hosts::Host::parse(&site.to_string())?;
-        if let Some(why) = locks.refuses_grant(&sandbox::grant::What::Host(host), level) {
-            return Err(why);
-        }
-    }
+    sites_grantable(held.root(), &sites, level)?;
     let waiting = held
         .browsers()
         .sites_waiting()
@@ -2559,47 +2610,15 @@ pub fn sites_allowed(
     if !named_whole(&waiting.sites, &sites) {
         return Err(SITES_NOT_NAMED.to_owned());
     }
-    for site in &sites {
-        audit(
-            Some(session),
-            &sandbox::grant::Audited {
-                granted: true,
-                what: sandbox::local::BROWSER_SITE,
-                target: &site.to_string(),
-                level,
-            },
-        )?;
-    }
-    if level == Level::Project {
-        // Committed for everyone in the project (#2443): the browsers' alone, never a host of
-        // the chats' own commands, and seen here as this window wrote it.
-        for site in &sites {
-            let host = sandbox::hosts::Host::parse(&site.to_string())?;
-            sandbox::browser_sites::grant(root, &host).map_err(|why| {
-                format!("purlis could not keep {site}, so nothing was allowed: {why}")
-            })?;
-        }
-    }
-    if level == Level::You {
-        for site in &sites {
-            sandbox::local::grant_browser_site(root, site).map_err(|why| {
-                format!("purlis could not keep {site}, so nothing was allowed: {why}")
-            })?;
-            if let Err(why) = sandbox::local::record_made(
-                root,
-                sandbox::local::Made {
-                    what: sandbox::local::BROWSER_SITE.to_owned(),
-                    target: site.to_string(),
-                    level: level.word().to_owned(),
-                    at,
-                    chat: held.chats().recorded_chat(session).map(|chat| chat.name),
-                },
-            ) {
-                // The Allow stands, and is audited; only the Granted list's "when" is lost.
-                tracing::warn!("purlis: a browser site was kept without when ({why})");
-            }
-        }
-    }
+    sites_kept(
+        held.root(),
+        &sites,
+        level,
+        audit,
+        at,
+        Some(session),
+        held.chats().recorded_chat(session).map(|chat| chat.name),
+    )?;
     held.browsers()
         .sites_answered(session, &sites, level == Level::Chat)?;
     for site in &sites {
@@ -2618,6 +2637,198 @@ pub fn sites_allowed(
     held.chats().asks_may_have_moved();
     Ok(())
 }
+
+/// Whether `sites` may be kept as browser sites at `level` in the project at `root`: refused
+/// where policy removes that scope or never allows a site's host.
+fn sites_grantable(
+    root: &Path,
+    sites: &[Site],
+    level: purlis_core::sandbox::grant::Level,
+) -> Result<(), String> {
+    use purlis_core::sandbox;
+    let locks = sandbox::policy::Locks::of(root);
+    if let Some(why) = locks.scope_removed(level) {
+        return Err(why);
+    }
+    for site in sites {
+        let host = sandbox::hosts::Host::parse(&site.to_string())?;
+        if let Some(why) = locks.refuses_grant(&sandbox::grant::What::Host(host), level) {
+            return Err(why);
+        }
+    }
+    Ok(())
+}
+
+/// **Audits, then keeps, `sites` as browser sites at `level`** in the project at `root`, for
+/// chat `session` where a chat's Ask allowed them, or for a browser the person opened: committed
+/// for everyone in the project (#2443), or kept on this machine at your level with when and for
+/// which chat (`chat`); a chat's own level is its browsers' alone and kept by
+/// [`ChatBrowsers::sites_answered`].
+fn sites_kept(
+    root: &Path,
+    sites: &[Site],
+    level: purlis_core::sandbox::grant::Level,
+    audit: crate::sandboxing::Audit<'_>,
+    at: u64,
+    session: Option<u32>,
+    chat: Option<String>,
+) -> Result<(), String> {
+    use purlis_core::sandbox::{self, grant::Level};
+    for site in sites {
+        audit(
+            session,
+            &sandbox::grant::Audited {
+                granted: true,
+                what: sandbox::local::BROWSER_SITE,
+                target: &site.to_string(),
+                level,
+            },
+        )?;
+    }
+    if level == Level::Project {
+        // Committed for everyone in the project (#2443): the browsers' alone, never a host of
+        // the chats' own commands, and seen here as this window wrote it.
+        for site in sites {
+            let host = sandbox::hosts::Host::parse(&site.to_string())?;
+            sandbox::browser_sites::grant(root, &host).map_err(|why| {
+                format!("purlis could not keep {site}, so nothing was allowed: {why}")
+            })?;
+        }
+    }
+    if level == Level::You {
+        for site in sites {
+            sandbox::local::grant_browser_site(root, site).map_err(|why| {
+                format!("purlis could not keep {site}, so nothing was allowed: {why}")
+            })?;
+            if let Err(why) = sandbox::local::record_made(
+                root,
+                sandbox::local::Made {
+                    what: sandbox::local::BROWSER_SITE.to_owned(),
+                    target: site.to_string(),
+                    level: level.word().to_owned(),
+                    at,
+                    chat: chat.clone(),
+                },
+            ) {
+                // The Allow stands, and is audited; only the Granted list's "when" is lost.
+                tracing::warn!("purlis: a browser site was kept without when ({why})");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// **Allow on the sites a browser the person opened asked about** (#2176): `sites`, the sites
+/// its view showed, are browser sites at `level`: every browser of this project on this
+/// machine, or everyone in the project, committed (#2443). A grant for browsers alone, as a
+/// chat's site Allow is: no chat's own commands reach them. Refused whole unless each waits on
+/// the person for that browser now.
+#[tauri::command]
+#[specta::specta]
+pub async fn allow_person_browser_sites(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    program: String,
+    sites: Vec<String>,
+    level: crate::sandboxing::GrantLevel,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    let network = planes.network().cloned();
+    crate::off_the_window("allowing a browser's sites", move || {
+        person_sites_allowed(
+            &held,
+            &program,
+            &sites,
+            level.into(),
+            &held.audit_then_record(network.as_ref()),
+            crate::sandboxing::now_secs(),
+        )
+    })
+    .await
+}
+
+/// **The person's browser `program` held back `asked`** (#2176): the sites its ask names whole
+/// wait on the person for it, and only those, with the answers it offers: Always allow in this
+/// project on this machine, and Allow for everyone in this project where the project's sandbox
+/// is in force here (committed browser sites count only there, #2443), each unless an
+/// administrator's policy leaves its scope out; and Keep blocked.
+pub fn theirs_asked(
+    held: &crate::planes::Held,
+    program: &str,
+    asked: &[String],
+) -> (Vec<String>, Vec<crate::asking::Offered>) {
+    let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+    let (named, _, answers) = crate::asking::browser_site_answers(
+        asked,
+        &locks,
+        false,
+        everyone_counts(held.root(), &locks),
+    );
+    // Only what may be allowed waits: a site not named whole is offered Keep blocked alone.
+    let waiting: &[String] = if answers.iter().any(|one| one.allows) {
+        &named
+    } else {
+        &[]
+    };
+    held.browsers().theirs_asked(program, waiting);
+    (named, answers)
+}
+
+/// Whether a browser site for everyone in the project reaches anything here: only where the
+/// project's sandbox is in force (#2443).
+fn everyone_counts(root: &Path, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+    purlis_core::sandbox::Plane::read(root)
+        .in_force(locks)
+        .is_some()
+}
+
+/// [`allow_person_browser_sites`]'s work: judged, then audited, then kept.
+pub fn person_sites_allowed(
+    held: &crate::planes::Held,
+    program: &str,
+    sites: &[String],
+    level: purlis_core::sandbox::grant::Level,
+    audit: crate::sandboxing::Audit<'_>,
+    at: u64,
+) -> Result<(), String> {
+    use purlis_core::sandbox::grant::Level;
+    let sites = sites_sent(sites)?;
+    if !matches!(level, Level::You | Level::Project) {
+        return Err(
+            "purlis allows a site for your own browser for every browser of this project on \
+             this machine, or for everyone in the project."
+                .to_owned(),
+        );
+    }
+    if level == Level::Project
+        && !everyone_counts(
+            held.root(),
+            &purlis_core::sandbox::policy::Locks::of(held.root()),
+        )
+    {
+        return Err(
+            "Nothing was allowed: a browser site for everyone in the project reaches browsers \
+             only where the project's sandbox is on, and it is not on here. Allow it on this \
+             machine instead."
+                .to_owned(),
+        );
+    }
+    sites_grantable(held.root(), &sites, level)?;
+    let waiting = held.browsers().theirs_waiting(program);
+    if sites.is_empty() || !sites.iter().all(|site| waiting.contains(site)) {
+        return Err(SITES_WAIT_NO_MORE_THEIRS.to_owned());
+    }
+    if !named_whole(&waiting, &sites) {
+        return Err(SITES_NOT_NAMED.to_owned());
+    }
+    sites_kept(held.root(), &sites, level, audit, at, None, None)?;
+    held.browsers().theirs_answered(program, &sites);
+    Ok(())
+}
+
+/// What an answer to a person's browser's sites that wait no more is refused with (#2176).
+const SITES_WAIT_NO_MORE_THEIRS: &str = "Those sites do not wait on you for that browser any \
+                                         more: go to the address again.";
 
 /// **Keep blocked on chat `session`'s browser sites** (#2018): nothing is allowed, they wait no
 /// more, and the chat is told on its next turn not to retry, with the reason the person typed.

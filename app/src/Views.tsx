@@ -510,7 +510,7 @@ export function ViewPane({
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */
-          <BrowserView key={`${plane}\u0000${view.key}`} program={view.key} />
+          <BrowserView key={`${plane}\u0000${view.key}`} plane={plane} program={view.key} />
         ) : isRepoInstructions(view) ? (
           /* The agent instructions a workspace's repo carries, offered to its memory (FR-18a):
              a preview whose press is the only thing that writes. Keyed by both, as a

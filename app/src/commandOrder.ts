@@ -76,6 +76,8 @@ export const LANES = {
       "allowChatBrowser",
       // A browser site for every chat here is kept in this machine's answers (#2018).
       "allowBrowserSites",
+      // And one for a browser the person opened (#2176).
+      "allowPersonBrowserSites",
     ],
   },
   /**

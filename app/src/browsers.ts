@@ -14,14 +14,6 @@ import { contentsOf, openViewBeside, type Tabs, type ViewRef } from "./tabs";
  * closing a tab that shows it only closes the view: it ends with its chat.
  */
 
-/**
- * **Whether the palette offers New browser.** Not yet: until a browser the person opens can go
- * somewhere (#2176), it could show only a blank page, after the engine's first download. The
- * view, its commands and their tests are all here; #2176 turns this on where it adds the
- * address.
- */
-export const BROWSERS_OFFERED: boolean = false;
-
 /** The view a browser is drawn in. */
 export const BROWSER_VIEW = "browser";
 
@@ -105,4 +97,23 @@ export function addressChip(
     host = "";
   }
   return { said: `${host === "" ? address : host} on ${device}`, whole: address };
+}
+
+/** The address each browser the window opened is to go to once its view is live, by program. */
+const goingWhenShown = new Map<string, string>();
+
+/**
+ * **Browser `program` goes to `address` once its view is live** (#2176): as if the person typed
+ * it there, so a site new to the project is asked about in the view. What opens a browser at an
+ * address (the browsers open at the last quit, #2022) says so before it shows the view.
+ */
+export function goWhenShown(program: string, address: string): void {
+  goingWhenShown.set(program, address);
+}
+
+/** The address browser `program` is to go to, once: none after it was taken. */
+export function takeGoWhenShown(program: string): string | undefined {
+  const address = goingWhenShown.get(program);
+  goingWhenShown.delete(program);
+  return address;
 }

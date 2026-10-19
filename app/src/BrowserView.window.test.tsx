@@ -29,20 +29,18 @@ vi.mock("./browserFrames", async (actual) => ({
   },
 }));
 
-// The palette offers New browser once #2176 turns it on; these tests turn it on here.
-vi.mock("./browsers", async (actual) => ({
-  ...(await actual<typeof import("./browsers")>()),
-  BROWSERS_OFFERED: true,
-}));
-
 vi.mock("./SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
     <div data-testid="pane">session {session}</div>
   ),
 }));
 
+/** What the core answers besides, per test (#2176): a command's name, and its answer. */
+let besides: Record<string, (args: Record<string, unknown>) => unknown> = {};
+
 beforeEach(() => {
   painted.length = 0;
+  besides = {};
 });
 
 afterEach(() => {
@@ -75,6 +73,8 @@ function core(
         return { view: 4, width: 1280, height: 800, person_drives: personDrives };
       }
       if (cmd === "browser_input") return input((args ?? {}) as Record<string, unknown>);
+      const answer = besides[cmd];
+      if (answer !== undefined) return answer((args ?? {}) as Record<string, unknown>);
       return null;
     },
     { shouldMockEvents: true },
@@ -169,7 +169,7 @@ describe("a browser's view on a runner whose link is down (#2542)", () => {
   it("says Reconnecting over its last frame until it is reconnected, and has not ended", async () => {
     const { BrowserView } = await import("./BrowserView");
     const host = core();
-    render(<BrowserView program="B1" />);
+    render(<BrowserView plane={PLANE} program="B1" />);
     await waitFor(() => expect(host.asked("watch_browser")).toHaveLength(1));
     host.send("/9j/AA==");
     await waitFor(() => expect(painted).toEqual([[0xff, 0xd8, 0xff, 0x00]]));
@@ -203,7 +203,7 @@ describe("a browser's view nobody can see", () => {
     const host = core();
     const drawn = (inFront: boolean) => (
       <ProjectShownProvider value={inFront}>
-        <BrowserView program="B1" />
+        <BrowserView plane={PLANE} program="B1" />
       </ProjectShownProvider>
     );
     const { rerender } = render(drawn(false));
@@ -247,7 +247,7 @@ describe("taking a browser over from its view (#2014)", () => {
     const host = core(undefined, personDrives, input);
     const view = (seen: boolean) => (
       <ProjectShownProvider value={seen}>
-        <BrowserView program="B1" />
+        <BrowserView plane={PLANE} program="B1" />
       </ProjectShownProvider>
     );
     const { rerender } = render(view(true));
@@ -543,5 +543,168 @@ describe("taking a browser over from its view (#2014)", () => {
     expect(screen.getByRole("status")).not.toHaveTextContent(DROPPED);
     lets.splice(0).forEach((go) => go());
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(DROPPED));
+  });
+});
+
+describe("a browser the person opened goes where they send it (#2176)", () => {
+  // Each opens the whole window and goes through the palette first, which a loaded runner
+  // takes a while over.
+  vi.setConfig({ testTimeout: 15_000 });
+
+  async function opened() {
+    const host = core();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByTestId("title-about");
+    await fromThePalette("New browser");
+    await screen.findByLabelText("The browser's page");
+    return host;
+  }
+
+  it("goes to the address typed in its view tab, and its chip names where it went", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/docs" });
+    const host = await opened();
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com/docs" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    await waitFor(() =>
+      expect(host.asked("go_browser")).toEqual([
+        { plane: PLANE, program: "B1", address: "example.com/docs" },
+      ]),
+    );
+    expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
+  });
+
+  it("asks once about a site new to the project, and an Allow on this machine lets it go there", async () => {
+    let goes = 0;
+    besides.go_browser = () => {
+      goes += 1;
+      return goes === 1
+        ? {
+            outcome: "asks",
+            sites: ["example.com:443"],
+            answers: [
+              { id: "you", label: "Always allow in this project, on this machine", allows: true },
+              { id: "keep", label: "Keep blocked", allows: false },
+            ],
+          }
+        : { outcome: "went", address: "https://example.com/" };
+    };
+    besides.allow_person_browser_sites = () => null;
+    const host = await opened();
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    expect(
+      await screen.findByText(/example\.com:443 is a site new to this project/),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Always allow in this project, on this machine" }),
+    );
+
+    await waitFor(() =>
+      expect(host.asked("allow_person_browser_sites")).toEqual([
+        { plane: PLANE, program: "B1", sites: ["example.com:443"], level: "you" },
+      ]),
+    );
+    await waitFor(() => expect(host.asked("go_browser")).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.queryByText(/is a site new to this project/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the site blocked on Keep blocked, and goes nowhere", async () => {
+    besides.go_browser = () => ({
+      outcome: "asks",
+      sites: ["example.com:443"],
+      answers: [
+        { id: "you", label: "Always allow in this project, on this machine", allows: true },
+        { id: "keep", label: "Keep blocked", allows: false },
+      ],
+    });
+    const host = await opened();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    await screen.findByText(/is a site new to this project/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/is a site new to this project/)).not.toBeInTheDocument(),
+    );
+    expect(host.asked("allow_person_browser_sites")).toEqual([]);
+    expect(host.asked("go_browser")).toHaveLength(1);
+  });
+
+  it("says in words why an address of another scheme was refused", async () => {
+    const refused =
+      "A browser goes only to http and https addresses, and this one is javascript: type one " +
+      "that starts with https:// or http://.";
+    besides.go_browser = () => Promise.reject(refused);
+    await opened();
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "javascript:alert(1)" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    expect(await screen.findByText(refused)).toBeInTheDocument();
+  });
+
+  it("hands a browser the person drives back before it goes, after what they typed", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/" });
+    const host = core(undefined, true);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByTestId("title-about");
+    await fromThePalette("New browser");
+    await screen.findByRole("button", { name: "Done" });
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    await waitFor(() => expect(host.asked("go_browser")).toHaveLength(1));
+    const order = host.order().filter((cmd) => cmd === "hand_back_browser" || cmd === "go_browser");
+    expect(order).toEqual(["hand_back_browser", "go_browser"]);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Done" })).toBeNull());
+  });
+
+  it("has no address field on a chat's browser, which its chat drives", async () => {
+    let listed = false;
+    besides.chat_browsers = () => {
+      listed = true;
+      return [
+        {
+          session: 3,
+          name: "b1",
+          program: "B1",
+          unended: false,
+          pinned: false,
+          was: null,
+          login: null,
+        },
+      ];
+    };
+    await opened();
+    await waitFor(() => expect(listed).toBe(true));
+    // Long enough for the listing to have been drawn, as the other tests' field is.
+    await new Promise((settled) => setTimeout(settled, 50));
+    expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
   });
 });

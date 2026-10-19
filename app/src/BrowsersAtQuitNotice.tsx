@@ -8,10 +8,17 @@ import { Notice } from "./Notice";
 /**
  * **Where this project's browsers were when purlis last quit** (#2022, ruled 2026-10-18): quit
  * ends every browser, and this start offers each address once, as a button, never loaded by
- * itself. Until a browser the person opens can go to an address (#2176), a button copies its
- * address; Dismiss puts them away for good.
+ * itself. A button opens a browser of the person's own there (#2176), whose view asks about a
+ * site new to the project as an address they typed would; Dismiss puts them away for good.
  */
-export function BrowsersAtQuitNotice({ plane }: { plane: string }) {
+export function BrowsersAtQuitNotice({
+  plane,
+  onOpen,
+}: {
+  plane: string;
+  /** Opens a browser of the person's own at `address`, in a tab of its own. */
+  onOpen: (address: string) => void;
+}) {
   const [addresses, setAddresses] = useState<readonly string[]>([]);
   useEffect(() => {
     let gone = false;
@@ -28,14 +35,18 @@ export function BrowsersAtQuitNotice({ plane }: { plane: string }) {
   }, [plane]);
   const [first, ...rest] = addresses;
   if (first === undefined) return null;
-  const copy = (address: string) => ({
-    label: `Copy ${hostOf(address)}`,
-    onPress: () => void navigator.clipboard?.writeText(address).catch(() => undefined),
+  const open = (address: string) => ({
+    label: `Open ${hostOf(address)}`,
+    onPress: () => {
+      // Opened once: the button goes, and the rest stay offered.
+      setAddresses((now) => now.filter((one) => one !== address));
+      onOpen(address);
+    },
   });
   return (
     <Notice
       cause="browsers-at-quit"
-      fixes={[copy(first), ...rest.map(copy)]}
+      fixes={[open(first), ...rest.map(open)]}
       onDismiss={() => {
         setAddresses([]);
         void commands.putAwayBrowsersAtQuit(plane).catch(() => undefined);

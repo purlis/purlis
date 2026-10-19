@@ -2230,3 +2230,156 @@ fn a_kept_store_is_never_opened_where_its_login_is_not_allowed_now() {
         "nothing opened from a store"
     );
 }
+
+// ---- a browser the person opens (#2176) ------------------------------------------------------
+
+/// A project held by a window, whose `charter.toml` is `text`: it holds the project and its
+/// hook socket, which a sandboxed run may not, so CI runs these first.
+fn held_project(
+    text: &str,
+) -> (
+    tempfile::TempDir,
+    crate::planes::Planes,
+    crate::planes::PlaneId,
+) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    std::fs::write(purlis_core::names::manifest(&root), text).expect("its manifest");
+    let planes = crate::planes::Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    (dir, planes, id)
+}
+
+/// #2176: a browser the person opens reaches what the project's settings list for a chat on no
+/// persona, and the browser sites allowed here, never a persona's hosts nor the floor's reach.
+#[test]
+fn a_browser_the_person_opens_reaches_the_projects_hosts_and_its_browser_sites() {
+    let (_dir, planes, id) = held_project(
+        "schema = 1\n[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example\"]\n\
+         [sandbox.personas.devops]\nhosts = [\"ops.example\"]\n",
+    );
+    let held = planes.held(&id).expect("held");
+    purlis_core::sandbox::local::grant_browser_site(held.root(), &site("docs.example:443"))
+        .expect("kept");
+
+    let reach = super::person_reach(&held);
+
+    use purlis_session_protocol::session::Layer;
+    let hosts: Vec<(&str, Layer)> = reach
+        .listed
+        .iter()
+        .map(|one| (one.host.as_str(), one.layer))
+        .collect();
+    assert!(hosts.contains(&("api.example", Layer::Open)), "{hosts:?}");
+    assert!(
+        hosts.contains(&("docs.example:443", Layer::You)),
+        "{hosts:?}"
+    );
+    assert!(
+        !hosts.iter().any(|(host, _)| *host == "ops.example"),
+        "{hosts:?}"
+    );
+    assert!(!reach.open_web);
+}
+
+/// #2176: the Allow on a person's browser's sites names only what it asked about, and keeps
+/// each as a browser site of this machine's, audited, never a host of the chats' own commands.
+#[test]
+fn allow_on_a_browser_the_person_opened_keeps_only_the_sites_it_asked_about() {
+    use purlis_core::sandbox::{self, grant::Level};
+    let (_dir, planes, id) = held_project("schema = 1\n[sandbox]\nmode = \"on\"\negress = []\n");
+    let held = planes.held(&id).expect("held");
+    let audited: Mutex<Vec<String>> = Mutex::default();
+    let audit = |chat: Option<u32>, one: &sandbox::grant::Audited<'_>| {
+        assert_eq!(chat, None, "no chat's");
+        audited.lock().unwrap().push(one.target.to_owned());
+        Ok(())
+    };
+    let allow = |sites: &[&str], level| {
+        let sites: Vec<String> = sites.iter().map(|one| (*one).to_owned()).collect();
+        super::person_sites_allowed(&held, "B1", &sites, level, &audit, 7)
+    };
+
+    assert!(
+        allow(&["example.com:443"], Level::You).is_err(),
+        "nothing waits"
+    );
+    held.browsers()
+        .theirs_asked("B1", &["example.com:443".to_owned()]);
+    assert!(
+        allow(&["other.example:443"], Level::You).is_err(),
+        "not what it asked"
+    );
+    assert!(
+        allow(&["example.com:443"], Level::Chat).is_err(),
+        "no chat to keep it for"
+    );
+    allow(&["example.com:443"], Level::You).expect("allowed");
+
+    assert_eq!(*audited.lock().unwrap(), ["example.com:443"]);
+    assert_eq!(
+        sandbox::local::browser_sites(held.root()),
+        [site("example.com:443")]
+    );
+    assert!(held.browsers().theirs_waiting("B1").is_empty());
+    assert!(
+        allow(&["example.com:443"], Level::You).is_err(),
+        "answered once"
+    );
+
+    held.browsers()
+        .theirs_asked("B1", &["team.example:443".to_owned()]);
+    allow(&["team.example:443"], Level::Project).expect("allowed for everyone");
+    assert_eq!(
+        sandbox::browser_sites::in_force(held.root(), &sandbox::policy::Locks::of(held.root())),
+        [sandbox::hosts::Host::parse("team.example:443").unwrap()]
+    );
+}
+
+/// #2176: where the project's sandbox is not on, a browser site for everyone in the project
+/// reaches no browser (#2443), so the person's browser is not offered it, and it is refused.
+#[test]
+fn without_the_projects_sandbox_a_persons_browser_is_offered_this_machine_alone() {
+    use purlis_core::sandbox::{self, grant::Level};
+    let (_dir, planes, id) = held_project("schema = 1\n");
+    let held = planes.held(&id).expect("held");
+    let (named, answers) = super::theirs_asked(&held, "B1", &["example.com:443".to_owned()]);
+    assert_eq!(named, ["example.com:443"]);
+    let ids: Vec<&str> = answers.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, ["you", "keep"]);
+    assert_eq!(
+        answers[0].label,
+        "Always allow in this project, on this machine"
+    );
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| Ok(());
+    let why = super::person_sites_allowed(
+        &held,
+        "B1",
+        &["example.com:443".to_owned()],
+        Level::Project,
+        &audit,
+        7,
+    )
+    .unwrap_err();
+    assert!(why.contains("sandbox is on"), "{why}");
+    assert!(
+        sandbox::browser_sites::committed(held.root(), &sandbox::policy::Locks::of(held.root()))
+            .is_empty()
+    );
+}
+
+/// #2176: where it is on, both are offered, in the registry's words.
+#[test]
+fn with_the_projects_sandbox_a_persons_browser_is_offered_everyone_too() {
+    let (_dir, planes, id) = held_project("schema = 1\n[sandbox]\nmode = \"on\"\negress = []\n");
+    let held = planes.held(&id).expect("held");
+    let (_, answers) = super::theirs_asked(&held, "B1", &["example.com:443".to_owned()]);
+    let ids: Vec<&str> = answers.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, ["you", "project", "keep"]);
+    assert_eq!(answers[1].label, "Allow for everyone in this project");
+    assert_eq!(
+        held.browsers().theirs_waiting("B1"),
+        [site("example.com:443")]
+    );
+}

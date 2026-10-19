@@ -8,9 +8,10 @@
 //! whole frames the window decodes on a canvas ([`watch_browser`]). Frames are images handed
 //! over as bytes, never an embedded page, so the window's content policy is unchanged.
 //!
-//! **Who opens one.** In this version the person, from the window: a browser is a program
-//! started as the person, so these commands are the window's alone (`ui::WINDOW_ONLY`). Chats
-//! get browser tools later (#2013).
+//! **Who opens one.** The person, from the window: a browser is a program started as the
+//! person, so these commands are the window's alone (`ui::WINDOW_ONLY`). It reaches what the
+//! project's browsers reach (`crate::chatbrowsers::person_reach`, #2176), and goes to an address
+//! the person types in its view tab ([`go_browser`]). A chat's browsers are its own (#2013).
 //!
 //! **Watching is cheap.** The view the person looks at is the focused one, sent every frame; a
 //! thumbnail is sent about one a second; with no view attached, the browser makes no frames at
@@ -134,6 +135,22 @@ pub enum InputOutcome {
     Refused { why: String },
 }
 
+/// **Where the person's address took their browser** (#2176): the page is at `address` now, or
+/// the browser held back what it would have opened on `sites`, each new to the project, and the
+/// person is asked whether their browsers may go there, with `answers`, the sites ask's own
+/// (`crate::asking::browser_site_answers`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum Went {
+    Went {
+        address: Option<String>,
+    },
+    Asks {
+        sites: Vec<String>,
+        answers: Vec<crate::asking::Offered>,
+    },
+}
+
 /// What a frame shows, as the window holds it: `p1:5`, the page and its document.
 pub(crate) fn aim_said(aim: &purlis_session_protocol::browsing::Aim) -> String {
     format!("{}:{}", aim.page, aim.document)
@@ -223,10 +240,13 @@ mod hosted {
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
 
-    use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome};
+    use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome, Went};
     use crate::chatbrowsers::NotStarted;
     use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
     use crate::reconnecting::Reconnection;
+
+    /// What the person is told of a browser that has gone when they send it an address.
+    const GONE: &str = "This browser has ended: open a new one from the palette.";
 
     /// How long a browser command waits for the window's link to its host.
     const LINK_WITHIN: Duration = Duration::from_secs(30);
@@ -345,6 +365,8 @@ mod hosted {
         /// one start holds from its count to its start, so two never both take the last.
         budget: Arc<dyn Fn() -> usize + Send + Sync>,
         starting: Mutex<()>,
+        /// How many acts of the person's this window sent (#2176): part of each one's id.
+        acts: std::sync::atomic::AtomicU64,
         /// Each view the window watches, and whether it is dimmed while its runner's link is
         /// down (#2542).
         dimming: Arc<Mutex<Dimming>>,
@@ -387,6 +409,7 @@ mod hosted {
                 budget: Arc::new(|| purlis_core::browserlimits::budget_for(None)),
                 starting: Mutex::new(()),
                 dimming: Arc::default(),
+                acts: std::sync::atomic::AtomicU64::new(0),
             }
         }
 
@@ -438,9 +461,21 @@ mod hosted {
             Ok((link, project))
         }
 
-        /// Starts a browser in the project at `root`, and answers its id.
+        /// Starts a browser in the project at `root` reaching nothing listed, and answers its
+        /// id: what a test of the window's browsers starts.
+        #[cfg(test)]
         pub(crate) fn open(&self, root: &Path) -> Result<String, String> {
-            self.open_reaching(root, None, None)
+            self.open_for_the_person(root, None)
+        }
+
+        /// **Starts a browser the person opens** in the project at `root`, reaching `reach`
+        /// (#2176), and answers its id, or why it did not start in the person's words.
+        pub(crate) fn open_for_the_person(
+            &self,
+            root: &Path,
+            reach: Option<BrowserReach>,
+        ) -> Result<String, String> {
+            self.open_reaching(root, reach, None)
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
                     NotStarted::Failed(why) => why,
@@ -583,6 +618,92 @@ mod hosted {
                 Err(refusal) if refusal.code == session::INPUT_MISSED => InputOutcome::Missed,
                 Err(refusal) => InputOutcome::Refused { why: refusal.why },
             })
+        }
+
+        /// **The person sends `program` to `address`** (#2176), an http or https address read
+        /// before ([`purlis_core::browsers::typed`]), the browser reaching `reach` from then on.
+        /// It is judged as an address the agent writes is: a site new to the project is held
+        /// back, and the answer names it. A browser the person drives is handed back first,
+        /// since a browser takes an address only from its driver's lane; their next click takes
+        /// it over again. The current page goes there, or a new one where it has none.
+        pub(crate) fn go(
+            &self,
+            program: &str,
+            address: &str,
+            reach: &BrowserReach,
+        ) -> Result<Went, String> {
+            let link = self.link()?;
+            match link.call_refused_within(
+                Command::HandBack {
+                    program: program.to_owned(),
+                },
+                LINK_WITHIN,
+            ) {
+                Err(refusal) if refusal.code == session::NO_SUCH_CHAT => {
+                    return Err(GONE.to_owned());
+                }
+                // Not driven by the person: nothing to hand back.
+                _ => {}
+            }
+            let act = |act: Act| -> Result<Browsed, String> {
+                let command = Command::Browse {
+                    program: program.to_owned(),
+                    call_id: self.call_id(),
+                    act,
+                    reach: Some(reach.clone()),
+                };
+                match link.call_refused_within(command, AN_ACT_TAKES_AT_MOST) {
+                    Ok(Answer::Browsed(browsed)) => Ok(*browsed),
+                    Ok(other) => Err(format!(
+                        "the session host answered a browser's act with {other:?}"
+                    )),
+                    Err(refusal)
+                        if refusal.code == session::NO_SUCH_CHAT
+                            || refusal.code == session::BROWSER_ENDED =>
+                    {
+                        Err(GONE.to_owned())
+                    }
+                    Err(refusal) => Err(refusal.why),
+                }
+            };
+            let current = act(Act::Pages)?
+                .pages
+                .into_iter()
+                .find(|page| page.current)
+                .map(|page| page.page);
+            let address = address.to_owned();
+            let browsed = match current {
+                Some(page) => act(Act::Navigate {
+                    page: Some(page),
+                    address,
+                })?,
+                None => act(Act::Open { address })?,
+            };
+            Ok(if browsed.asked.is_empty() {
+                Went::Went {
+                    address: browsed
+                        .page
+                        .map(|page| page.address)
+                        .or_else(|| browsed.opened.last().map(|page| page.address.clone())),
+                }
+            } else {
+                Went::Asks {
+                    sites: browsed.asked,
+                    answers: Vec::new(),
+                }
+            })
+        }
+
+        /// An id for one of the person's acts no other act of this window's has, nor one of
+        /// an earlier window's on a browser it reattached: the host answers a repeated id as a
+        /// retry, doing nothing again.
+        fn call_id(&self) -> String {
+            let n = self.acts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let since = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            format!("person-{since}-{n}")
         }
 
         /// The person sets `program`'s pages to `width` by `height` CSS pixels (#2014).
@@ -773,18 +894,95 @@ pub async fn open_browser(
     if planes.is_stopped() {
         return Err(crate::sessions::STOPPED.to_owned());
     }
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
     #[cfg(unix)]
     {
         let browsers = browsers(&app)?;
-        crate::off_the_window("starting a browser", move || browsers.open(&root)).await
+        crate::off_the_window("starting a browser", move || {
+            // It reaches what the project's browsers reach, and asks of a new site (#2176).
+            let reach = crate::chatbrowsers::person_reach(&held);
+            browsers.open_for_the_person(held.root(), Some(reach))
+        })
+        .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, root);
+        let _ = (app, held);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }
+
+/// **The person sends browser `program` of project `plane` to the address they typed** (#2176),
+/// from its view tab: http and https only, any other scheme refused in words, and an address
+/// the browser's reach refuses outright said so before it loads. A site new to the project is
+/// held back as an address the agent writes is, and the answer names it to ask about. Never a
+/// chat's browser, which its chat drives. The window's alone (`ui::WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn go_browser(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    program: String,
+    address: String,
+) -> Result<Went, String> {
+    let held = planes.held(&plane)?;
+    // Never a chat's browser, in this project or any other the window holds.
+    if planes
+        .every_held()
+        .iter()
+        .any(|one| one.browsers().is_in_use(&program))
+    {
+        return Err(A_CHATS_BROWSER.to_owned());
+    }
+    #[cfg(unix)]
+    {
+        let browsers = browsers(&app)?;
+        // Only one the window started in this project goes with this project's reach.
+        if !browsers.started_in(held.root(), &program) {
+            return Err(NOT_THIS_PROJECTS.to_owned());
+        }
+        crate::off_the_window("sending a browser to an address", move || {
+            let address = purlis_core::browsers::typed::address_of(&address)?;
+            let reach = crate::chatbrowsers::person_reach(&held);
+            if let Some(why) = purlis_core::browsers::typed::refused_by(&reach, &address) {
+                return Err(why);
+            }
+            let went = browsers.go(&program, &address, &reach)?;
+            // What it held back waits on the person, and only what the ask names whole, with
+            // the answers the scopes policy leaves open offer (#2176).
+            Ok(match went {
+                Went::Asks { sites, .. } => {
+                    let (named, answers) =
+                        crate::chatbrowsers::theirs_asked(&held, &program, &sites);
+                    Went::Asks {
+                        sites: named,
+                        answers,
+                    }
+                }
+                went @ Went::Went { .. } => {
+                    held.browsers().theirs_asked(&program, &[]);
+                    went
+                }
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, held, program, address);
+        Err("browsers run on macOS and Linux only".to_owned())
+    }
+}
+
+/// What sending a browser the window did not start in this project to an address is refused
+/// with (#2176).
+pub const NOT_THIS_PROJECTS: &str = "This browser was not opened in this project from this \
+                                     window: open one here from the palette to go somewhere.";
+
+/// What sending a chat's browser to an address from the window is refused with (#2176).
+pub const A_CHATS_BROWSER: &str = "This browser is a chat's, and goes where its chat sends it: \
+                                   open a browser of your own from the palette to go somewhere.";
 
 /// Attaches a browser view of `program` as `role`: each whole frame, a JPEG, is sent on
 /// `frames` in base64 with what it shows (#2014); an empty one says the view has ended.
@@ -974,6 +1172,10 @@ pub async fn close_browser(
         crate::chatbrowsers::closing_refused(held.iter().map(|one| one.browsers()), &program)
     {
         return Err(why);
+    }
+    // What it asked about waits no more (#2176).
+    for one in &held {
+        one.browsers().theirs_asked(&program, &[]);
     }
     #[cfg(unix)]
     {

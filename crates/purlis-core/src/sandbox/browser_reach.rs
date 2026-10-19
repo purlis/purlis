@@ -833,7 +833,7 @@ fn new_site_said(host: &str, port: u16) -> String {
 }
 
 /// Why a verdict refused, as the browser is told.
-fn refusal_said(host: &str, port: u16, why: &Refusal) -> String {
+pub(crate) fn refusal_said(host: &str, port: u16, why: &Refusal) -> String {
     let because = match why {
         Refusal::ThisMachine => {
             "it is this machine, which a browser reaches only on a port the person allowed, at \

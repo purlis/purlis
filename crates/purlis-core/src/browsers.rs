@@ -29,9 +29,10 @@
 //!   with each act (#2018): the hosts its chat's sandbox lists, with the person's Allows since.
 //!   A site new to the project is judged by [`judge::SiteJudge`]: the page may read it, and the
 //!   agent's address, a form or a body sent there, or its typing there, asks the person first;
-//!   on the open web nothing asks. A browser started with none (the person's own, #2012)
-//!   reaches nothing listed, and every site new to the project is refused
-//!   ([`NewSites::refusing`]), so it fails closed.
+//!   on the open web nothing asks. A browser the person opens is given the project's reach for
+//!   browsers (#2176), and the address they type is judged as the agent's is ([`typed`]). A
+//!   browser started with none reaches nothing listed, and every site new to the project is
+//!   refused ([`NewSites::refusing`]), so it fails closed.
 //! - **Its acts** are the driver's own calls ([`call_of`]), answered in the protocol's words
 //!   ([`browsed`]), a screenshot made to fit the control lane ([`MOST_SCREENSHOT_BYTES`]).
 //! - **Its data folder** is the one the host gives it, under `<data>/browsers`, fresh: the host
@@ -67,6 +68,7 @@ use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{Reach, Written};
 
 pub mod judge;
+pub mod typed;
 
 /// The argument that starts this binary as an engine's keeper.
 pub const KEEPER: &str = "purlis-engine-keeper";

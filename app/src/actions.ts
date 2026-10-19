@@ -106,7 +106,7 @@ import {
   type Tabs,
   type ViewRef,
 } from "./tabs";
-import { BROWSERS_OFFERED, isBrowser } from "./browsers";
+import { isBrowser } from "./browsers";
 import { isDriven } from "./browserDriving";
 
 /**
@@ -1595,12 +1595,11 @@ export function catalogue(now: Now): Offer[] {
   });
 
   // A browser purlis runs and you watch in a tab (#2012): it never opens as a window of its own.
-  // Offered once a browser the person opens can go somewhere (#2176, `BROWSERS_OFFERED`).
-  if (BROWSERS_OFFERED)
-    offers.push({
-      ...can("browser.new", "New browser", { verb: "newBrowser" }),
-      note: "A browser purlis runs, shown live in a tab of its own.",
-    });
+  // It goes to an address you type in its tab (#2176).
+  offers.push({
+    ...can("browser.new", "New browser", { verb: "newBrowser" }),
+    note: "A browser purlis runs, shown live in a tab of its own, going where you type.",
+  });
 
   // **Always available, and available with nothing open.** ADR 0041 item 5: ADR 0035
   // shows what a project contributes in the dialog and nothing shows it afterwards, so the
