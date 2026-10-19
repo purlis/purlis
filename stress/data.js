@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792437860330,
+  "lastUpdate": 1792441212759,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3268,6 +3268,42 @@ window.BENCHMARK_DATA = {
             "value": 307.5,
             "unit": "MB",
             "extra": "median of 6 samples: 310.2, 295.1, 304.9, 310.4, 311.3, 183.6 MB; window 138.9 MB, session host 162.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "840d889d8c9a38fc265c31eea166ed1c48af8e8e",
+          "message": "The person sets a theme's option values per project and workspace (#2702)\n\n* Theme: a choice carries option values and names its folder's level\n\nA theme choice now holds the value of each of its theme's options the\nperson chose (#2527) and, for a theme folder, the level of the folder it\npicked (#2516). The theme engine builds the values onto the theme with\nTheme::with before drawing it, so the consent floors hold over every\nvalue, and a choice that names a level draws that level's folder and\nnever another of its name. Choices written before keep resolving as they\ndid and gain their level the next time they are written.\n\nSettings › Theme lists a card for each folder of one name, each with its\nlevel, and its options become choosable at You, Project and Workspace\n(theme_choose_option, window-only), each value badged with the level\nwhose choice made it.\n\nCloses #2527\nCloses #2516\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: regenerate the bindings and badge each option value with its level\n\nThe window's bindings carry the new command and the card's level. The\noptions list names the level whose choice made each value, and the\nstanding-lines guard counts the gallery's line for values an option's\npick dropped.\n\nPart of #2527\nPart of #2516\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: review follow-ups for option values and folder levels\n\n- choices::choose compares both choices as written, so an old choice\n  with no level re-chosen as another level's folder starts from its\n  defaults, and keeps only the values its theme still has.\n- Each option's radio group is named by the option alone and described\n  by its line, and has a Theme default entry that chooses no value.\n- A card's pictures are drawn with the option values chosen at the\n  level, as pointing at it draws it.\n\nPart of #2527\nPart of #2516\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T23:39:56+04:00",
+          "tree_id": "2a9bfbbf51d05c00606698d8467939523195116a",
+          "url": "https://github.com/purlis/purlis/commit/840d889d8c9a38fc265c31eea166ed1c48af8e8e"
+        },
+        "date": 1792441210926,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1048,
+            "unit": "MB",
+            "extra": "median of 3 samples: 832, 1048, 1104 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 317.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 370, 302.8, 316.9, 319, 320, 260.5 MB; window 146.3 MB, session host 171.6 MB"
           }
         ]
       }
