@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792367413204,
+  "lastUpdate": 1792368699125,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17766,6 +17766,48 @@ window.BENCHMARK_DATA = {
             "value": 104.35561100000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.696, 103.740, 104.356, 104.755, 105.390 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "28545f92ec713d0f3da662f2e8221fa4cb97459d",
+          "message": "Runners: the desktop keeps a runner's key once, and removing a runner removes its peer (#2652)\n\n* Runners: the desktop keeps a runner's key once, and removing a runner removes its peer (#2525)\n\nThe desktop keeps each Docker pool runner it pairs in runners.json, as\nruled 2026-10-18, and refuses a later answer with another device id or\nkey for a runner it keeps, keeping the pin. Removing a runner unpairs it\nover the link (session protocol 1.25, `unpair`), then removes its\ncontainer and home volume part by part, and says what is left with the\ncommand that removes it, keeping the runner until all of it is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Runners: unpair waits for no other command (#2525)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: clippy's type and copy rules (#2525)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: the remote-link row lists unpair in the order its commands are sent (#2525)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: unpair is remote-link's alone, and the runner ends the link it unpaired on (#2525)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: one way to mint a device id, and a refusal that names each way a home got one (#2525)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T04:10:27+04:00",
+          "tree_id": "0841096d1417221c2445c5e3c8b54ac88101378a",
+          "url": "https://github.com/purlis/purlis/commit/28545f92ec713d0f3da662f2e8221fa4cb97459d"
+        },
+        "date": 1792368697510,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27819950000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.257, 0.275, 0.278, 0.288, 0.290 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.468599,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.353, 16.468, 16.469, 16.537, 16.671 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.56663,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.571, 100.761, 101.567, 101.700, 102.315 ms"
           }
         ]
       }
