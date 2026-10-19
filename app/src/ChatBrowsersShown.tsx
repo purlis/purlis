@@ -3,8 +3,10 @@
 
 import { memo, useRef } from "react";
 import { Globe } from "lucide-react";
+import type { Catalogued, Offer } from "./actions";
 import type { ChatBrowser } from "./bindings";
 import { chatBrowserTitle } from "./browsers";
+import { Menued } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
 
@@ -15,8 +17,17 @@ import { useProjectShown } from "./projectShown";
  * it over (#2014).
  */
 
-/** A browser of a chat's, as it is drawn: the browser, and its chat by the name it has here. */
+/** A browser of a chat's, as it is drawn: the browser, and its chat by the name it has here,
+ *  or for a pinned one whose chat closed, by what that chat was called (#2022). */
 export type BrowserShown = { browser: ChatBrowser; chat: string };
+
+/** What a row says of a pinned browser, whole, on its hover (#2022). */
+const PINNED =
+  "Pinned: it outlives its chat, until you stop it, Stop all ends it, or purlis quits.";
+
+/** No rows of the catalogue: rows drawn without a menu, in a test. */
+const NO_OFFERS: Catalogued = new Map();
+const NO_CHATS: readonly number[] = [];
 
 /**
  * **A browser, live and small** (#2024): its thumbnail view, about a frame a second, drawn on
@@ -99,6 +110,10 @@ export const BrowserRows = memo(function BrowserRows({
   level,
   browsers,
   onOpen,
+  label,
+  offers = NO_OFFERS,
+  onPress,
+  handTo = NO_CHATS,
 }: {
   /** The chat they are of, by the name its row has. */
   chat: string;
@@ -106,34 +121,67 @@ export const BrowserRows = memo(function BrowserRows({
   level: number;
   browsers: readonly BrowserShown[];
   onOpen: (shown: BrowserShown) => void;
+  /** What the group is called: `Browsers of <chat>` unless said. */
+  label?: string;
+  /** The catalogue, for each row's menu (#2022): Pin, Hand to a chat, Stop. */
+  offers?: Catalogued;
+  onPress?: (offer: Offer) => void;
+  /** The open chats a browser no chat uses may be handed to, by number. */
+  handTo?: readonly number[];
 }) {
   if (browsers.length === 0) return null;
   return (
     <li role="none" className="chat-browsers" data-level={level}>
-      <div role="group" aria-label={`Browsers of ${chat}`}>
+      <div role="group" aria-label={label ?? `Browsers of ${chat}`}>
         {browsers.map((shown) => (
-          <button
+          <Menued
             key={shown.browser.program}
-            type="button"
-            className="ui-row ui-tree-row chat-browser"
-            // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-            tabIndex={0}
-            title={
-              shown.browser.unended
-                ? `${chatBrowserTitle(shown.chat, shown.browser.name)}\n${NOT_ENDED_YET}`
-                : chatBrowserTitle(shown.chat, shown.browser.name)
-            }
-            onClick={() => onOpen(shown)}
+            on={{ on: "browser", program: shown.browser.program, handTo }}
+            offers={offers}
+            onPress={onPress ?? (() => undefined)}
           >
-            <Globe className="node-icon" aria-hidden="true" />
-            <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
-            {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
-            {shown.browser.unended && (
-              <span className="chat-browser-unended ui-text-meta" title={NOT_ENDED_YET}>
-                not ended yet
-              </span>
-            )}
-          </button>
+            <button
+              key={shown.browser.program}
+              type="button"
+              className="ui-row ui-tree-row chat-browser"
+              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+              tabIndex={0}
+              title={[
+                chatBrowserTitle(shown.chat, shown.browser.name),
+                ...(shown.browser.unended ? [NOT_ENDED_YET] : []),
+                ...(shown.browser.pinned ? [PINNED] : []),
+              ].join("\n")}
+              onClick={() => onOpen(shown)}
+            >
+              <Globe className="node-icon" aria-hidden="true" />
+              <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
+              {/* A pinned one whose chat closed says which chat it was of (#2022). */}
+              {shown.browser.was !== null && (
+                <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
+              )}
+              {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
+                log in with it. */}
+              {shown.browser.login !== null && (
+                <span
+                  className="chat-browser-login ui-text-meta"
+                  title={`Signed in with ${shown.browser.login}`}
+                >
+                  signed in
+                </span>
+              )}
+              {shown.browser.pinned && (
+                <span className="chat-browser-pinned ui-text-meta" title={PINNED}>
+                  pinned
+                </span>
+              )}
+              {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
+              {shown.browser.unended && (
+                <span className="chat-browser-unended ui-text-meta" title={NOT_ENDED_YET}>
+                  not ended yet
+                </span>
+              )}
+            </button>
+          </Menued>
         ))}
       </div>
     </li>

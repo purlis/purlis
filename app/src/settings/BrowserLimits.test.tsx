@@ -114,6 +114,21 @@ describe("You › This machine › Browsers", () => {
     await waitFor(() => expect(sent).toEqual([{ limit: "on_this_device", to: null }]));
   });
 
+  it("puts a field left blank back to its default, never to 0", async () => {
+    limits = { ...limits, idle_minutes: shown(25, 10, 1440, 0) };
+    const group = await browsersGroup();
+    const idle = await within(group).findByRole("textbox", {
+      name: "Minutes before an unused browser stops",
+    });
+    await waitFor(() => expect(idle).toHaveValue("25"));
+
+    await userEvent.clear(idle);
+    await userEvent.tab();
+
+    await waitFor(() => expect(sent).toEqual([{ limit: "idle_minutes", to: null }]));
+    await waitFor(() => expect(idle).toHaveValue("10"));
+  });
+
   it("refuses a value out of its bounds in its row, and writes nothing", async () => {
     const group = await browsersGroup();
     const project = await within(group).findByRole("textbox", { name: "Browsers per project" });

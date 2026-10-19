@@ -282,6 +282,7 @@ export function ChatsSection({
   onEndConfirm,
   onChanges,
   browsers,
+  kept,
   onBrowser,
 }: {
   rows: readonly ChatRow[];
@@ -338,6 +339,8 @@ export function ChatsSection({
   onChanges?: (task: FinishedTask) => void;
   /** Each chat's browsers, by its number (#2024): rows under its own. */
   browsers?: ReadonlyMap<number, readonly BrowserShown[]>;
+  /** The pinned browsers whose chat closed (#2022): rows of their own, after the chats. */
+  kept?: readonly BrowserShown[];
   /** A browser's row was pressed: open its view. No rows are drawn without it. */
   onBrowser?: (shown: BrowserShown) => void;
 }) {
@@ -1070,6 +1073,8 @@ export function ChatsSection({
                         level={row.level + 1}
                         browsers={browsers?.get(row.session) ?? NO_BROWSER_ROWS}
                         onOpen={onBrowser}
+                        offers={offers}
+                        onPress={press}
                       />
                     ),
                     // The finished tasks of each chat whose rows end here (#1485): this
@@ -1096,6 +1101,21 @@ export function ChatsSection({
                     )),
                   ];
                 })}
+                {/* **Pinned browsers whose chat closed** (#2022): the workspace's now, after
+                    every chat, each by what its chat was called, handed to a chat or stopped
+                    from its menu. */}
+                {onBrowser !== undefined && kept !== undefined && (
+                  <BrowserRows
+                    chat="Pinned browsers"
+                    label="Pinned browsers"
+                    level={1}
+                    browsers={kept}
+                    onOpen={onBrowser}
+                    offers={offers}
+                    onPress={press}
+                    handTo={listed}
+                  />
+                )}
               </ul>
             </RovingFocusGroup.Root>
           )}
