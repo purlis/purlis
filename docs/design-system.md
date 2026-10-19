@@ -253,18 +253,27 @@ window keeps no list of its own (#2393). Purlis Classic's recipe, the one a them
 The strip shades (`layer.workspace`, `layer.chat`, `layer.selected`, `layer.divider`) are only
 ever tinted on a workspace's own tab and chat strip, never on the window. `app/src/theme/tint.ts`
 does the arithmetic in OKLCH, the same as the engine's (`purlis_core::theme::tint`, held to one
-another by `theme/tint-cases.json`), and then keeps each token's **relative luminance** exactly,
-so a tinted shade clears every contrast floor the theme's own cleared, up to one channel's
-rounding; the contrast check runs every hue of the theme's recipe, and holds two pairs the tint
-adds — the mark (`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint
-holds two consent floors itself, at every hue, custom colours included** (`tint::APART`, OKLab
-0.1 each): the accent stays apart from the danger colour, and Allow and Keep blocked stay apart
-(`accent.base` from `border.strong`, as the tint draws it); every rule holds whichever side a
-theme tints. At a hue that would bring either pair
+another by `theme/tint-cases.json`), and then keeps each token's **relative luminance**: each
+channel is rounded to the byte that keeps the luminance nearest the original on its own side of
+WCAG's middle (where black and white contrast with a colour alike), so a dark shade is never
+rounded lighter and a light one never darker, and a tinted shade keeps every contrast floor the
+theme's own kept against a colour across the middle, at every hue (#2526). The contrast check
+runs every hue of the theme's recipe, and holds two pairs the tint adds — the mark
+(`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint holds the consent
+floors that keep colours apart itself, at every hue, custom colours included** (`tint::APART`,
+OKLab 0.1 each): the accent and the accent-hued tokens drawn beside danger (`focus.ring`,
+`list.selected-edge`, `accent.surface`, `tab.active`, `tint::ACCENT_KIN`) stay apart from the
+danger colour, and Allow and Keep blocked stay apart (`accent.base` from `border.strong`, as the
+tint draws it); every rule holds whichever side a theme tints. At a hue that would bring a pair
 nearer, the tint keeps the hue and gives less colour, in steps of 0.005 chroma, so a red
-workspace stays red; a colour no amount holds apart is drawn untinted. Purlis Classic's light
-appearance gives less colour at `red`, `orange` and `pink`. The consent floors are also measured
-under every tint of the theme's own recipe, and a token whose tint breaks one is drawn
+workspace stays red, and a grey accent keeps as much of its small tint as holds it apart; a
+colour no amount holds apart is drawn untinted. Purlis Classic's light appearance gives less
+colour at `red`, `orange` and `pink`. The consent floors are also measured under every tint of
+the theme's own recipe, danger apart from the accent and its kin included, and a pair a tint can
+move from one hue to another (words on a wash, faded words, or a shade read against one on its
+own side of the middle) at every whole degree of a workspace's own colour. A theme that clears
+the floors as written and would fall under one only in a tinted workspace keeps its values, and
+the tokens of that pair are drawn
 untinted. A neutral grey is given a small fixed chroma,
 felt rather than noticed, as the strips are meant to be; white stays white. No colour is written
 for this anywhere but `app/src/theme/`: a component asks `tabTint` and sets what it answers.

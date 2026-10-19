@@ -7,8 +7,9 @@
 //! tinted at all, which tokens, and the hue each workspace colour gives.
 //!
 //! The shift is done in OKLCH, and then the lightness is searched for until the tinted colour
-//! has **the relative luminance the original had**, so every contrast ratio a theme cleared its
-//! tinted shades clear too, up to the rounding of one 8-bit channel. A grey is given
+//! has **the relative luminance the original had**, and each channel is rounded to its byte on
+//! the side of that luminance away from the middle ([`rounded`]), so every contrast ratio a
+//! theme cleared between a dark shade and a light one its tinted shades clear too. A grey is given
 //! [`NEUTRAL_CHROMA`]; a colour keeps its own chroma, lowered (never the lightness) until the
 //! screen can show it.
 //!
@@ -105,13 +106,8 @@ pub fn tint_hex_within(hex: &str, hue: f64, most: f64) -> String {
             high = middle;
         }
     }
-    let rgb = at((low + high) / 2.0);
-    format!(
-        "#{}{}{}{alpha}",
-        channel(rgb[0]),
-        channel(rgb[1]),
-        channel(rgb[2])
-    )
+    let [r, g, b] = rounded(at((low + high) / 2.0), target);
+    format!("#{r:02x}{g:02x}{b:02x}{alpha}")
 }
 
 /// One workspace colour's hue in a theme: a [`PALETTE`] name and its OKLCH hue in degrees.
@@ -192,20 +188,40 @@ pub struct Apart {
 }
 
 /// **What every tint holds apart**, at every hue, a workspace's own colour included: the accent
-/// from the danger colour (danger is distinguishable from primary), and Allow's edge from Keep
-/// blocked's (Allow is distinguishable from Keep blocked), the consent floors of ADR 0097 §6.
-pub const APART: [Apart; 2] = [
-    Apart {
-        token: "accent.base",
-        from: "danger.base",
-        distance: DANGER_APART,
-    },
+/// from the danger colour (danger is distinguishable from primary), Allow's edge from Keep
+/// blocked's (Allow is distinguishable from Keep blocked), the consent floors of ADR 0097 §6, and
+/// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]).
+pub const APART: [Apart; 6] = [
+    danger_apart("accent.base"),
     Apart {
         token: "accent.base",
         from: "border.strong",
         distance: ALLOW_APART,
     },
+    danger_apart(ACCENT_KIN[0]),
+    danger_apart(ACCENT_KIN[1]),
+    danger_apart(ACCENT_KIN[2]),
+    danger_apart(ACCENT_KIN[3]),
 ];
+
+/// The tokens in the accent's hue that the window draws beside the danger colour: the focus
+/// ring, the selected row's edge, the accent's surface and the active tab (#2526). Each is kept
+/// apart from danger as the accent is, by the tint and by the floors.
+pub const ACCENT_KIN: [&str; 4] = [
+    "focus.ring",
+    "list.selected-edge",
+    "accent.surface",
+    "tab.active",
+];
+
+/// `token` held [`DANGER_APART`] from `danger.base`.
+const fn danger_apart(token: &'static str) -> Apart {
+    Apart {
+        token,
+        from: "danger.base",
+        distance: DANGER_APART,
+    }
+}
 
 /// What the window is handed: the two lists, the hues, and the rules a tint holds.
 #[derive(serde::Serialize)]
@@ -383,16 +399,25 @@ fn hue_of_any(hex: &str) -> Option<f64> {
 /// there ([`Tint`]): what the window draws on that workspace's tab and chat strip. The theme as
 /// it is for a theme that is not tinted, and for a colour with no hue.
 ///
-/// **Every tint holds [`APART`]**: the accent apart from the danger colour, and Allow's edge from
-/// Keep blocked's. At a hue that would bring them closer, the tint keeps the hue and gives less
-/// colour ([`apart_chroma`]), so a
-/// red workspace stays red and stays apart from danger. A theme with no such amount is drawn
-/// untinted in that colour.
+/// **Every tint holds [`APART`]**: the accent and the accent-hued tokens beside danger apart
+/// from the danger colour, and Allow's edge from Keep blocked's. At a hue that would bring them
+/// closer, the tint keeps the hue and gives less colour ([`apart_chroma`]), so a red workspace
+/// stays red and stays apart from danger. A theme with no such amount is drawn untinted in that
+/// colour.
 pub fn tinted(theme: &ResolvedTheme, colour: &str) -> ResolvedTheme {
+    match theme.tint.hue(colour) {
+        Some(hue) => tinted_at(theme, hue),
+        None => theme.clone(),
+    }
+}
+
+/// [`tinted`] by a hue in degrees: what the floors measure at each hue a workspace's own colour
+/// can take.
+pub(super) fn tinted_at(theme: &ResolvedTheme, hue: f64) -> ResolvedTheme {
     let tokens = theme.tint.tabs();
-    let Some(hue) = theme.tint.hue(colour).filter(|_| !tokens.is_empty()) else {
+    if tokens.is_empty() {
         return theme.clone();
-    };
+    }
     let Some(most) = apart_chroma(theme, hue) else {
         return theme.clone();
     };
@@ -403,6 +428,23 @@ pub fn tinted(theme: &ResolvedTheme, colour: &str) -> ResolvedTheme {
         }
     }
     tint
+}
+
+/// A theme value's relative luminance, its alpha left out; `None` for a value that is not a
+/// colour.
+pub(super) fn luminance_of(hex: &str) -> Option<f64> {
+    parse(hex).map(|(rgb, _)| luminance(rgb))
+}
+
+/// Whether a colour of luminance `of` is on the light side of [`middle`]: the side a tint rounds
+/// it away from the middle on.
+pub(super) fn light_side(of: f64) -> bool {
+    of >= middle()
+}
+
+/// How far a luminance is from [`middle`].
+pub(super) fn from_middle(of: f64) -> f64 {
+    (of - middle()).abs()
 }
 
 /// The step the chroma a tint gives is lowered by to hold its accent apart.
@@ -569,17 +611,51 @@ fn parse(hex: &str) -> Option<(Vec3, String)> {
     Some((rgb, long.get(6..8).unwrap_or_default().to_owned()))
 }
 
-/// One linear channel as two hex digits.
-fn channel(linear_value: f64) -> String {
+/// WCAG's middle luminance: a colour this bright contrasts with black exactly as much as with
+/// white. A darker colour is read against lighter ones, and a lighter against darker ones.
+fn middle() -> f64 {
+    (1.05_f64 * 0.05).sqrt() - 0.05
+}
+
+/// **A colour in linear sRGB as three bytes, its luminance kept on its own side** (#2526): each
+/// channel rounded down or up, whichever of the eight ways gives the luminance nearest `target`,
+/// the luminance the colour had, without passing it toward [`middle`]. A dark shade is never
+/// rounded lighter than it was and a light one never darker, so whatever it was read against
+/// on the other side of the middle it contrasts with at least as much as before it was tinted.
+fn rounded(rgb: Vec3, target: f64) -> [u8; 3] {
+    let exact = rgb.map(|v| gamma(v) * 255.0);
+    let lighter = light_side(target);
+    let mut best = [0_u8; 3];
+    let mut best_key = (true, f64::INFINITY);
+    for pick in 0..8_u8 {
+        let bytes: [u8; 3] = std::array::from_fn(|at| {
+            let up = f64::from((pick >> (2 - at)) & 1);
+            // A byte, by the clamp.
+            (exact[at].floor() + up).clamp(0.0, 255.0) as u8
+        });
+        let shade = luminance(bytes.map(|byte| to_linear(f64::from(byte) / 255.0)));
+        let past = if lighter {
+            shade < target
+        } else {
+            shade > target
+        };
+        let key = (past, (shade - target).abs());
+        if key.0 < best_key.0 || (key.0 == best_key.0 && key.1 < best_key.1) {
+            best = bytes;
+            best_key = key;
+        }
+    }
+    best
+}
+
+/// One linear channel gamma-encoded, 0 to 1.
+fn gamma(linear_value: f64) -> f64 {
     let v = linear_value.clamp(0.0, 1.0);
-    let gamma = if v <= 0.003_130_8 {
+    if v <= 0.003_130_8 {
         12.92 * v
     } else {
         1.055 * v.powf(1.0 / 2.4) - 0.055
-    };
-    // JavaScript's `Math.round`, which rounds a half up; the value is never negative here.
-    let rounded = (gamma * 255.0 + 0.5).floor().clamp(0.0, 255.0);
-    format!("{:02x}", rounded as u8)
+    }
 }
 
 fn to_linear(v: f64) -> f64 {

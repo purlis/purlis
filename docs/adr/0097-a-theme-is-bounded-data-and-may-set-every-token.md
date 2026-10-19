@@ -97,7 +97,11 @@ floors. The window receives a resolved theme and its complaints and draws them.
   option values: when a theme's consent-surface or state-mark colours break a consent floor, the
   engine draws purlis's own values for those tokens, with a Notice naming the floor; the rest of
   the theme draws as written. The floors are held after the option values are layered, so no
-  option value can bring a consent surface below its floor.
+  option value can bring a consent surface below its floor. They hold in every workspace tint
+  too, custom colours included (#2526): danger stays apart from the accent and from the
+  accent-hued tokens drawn beside it, and a theme that clears the floors as written but would
+  fall under one only in a tinted workspace keeps its values, with those tokens drawn untinted
+  there.
   Contrast between other tokens stays a warning.
 - **A consent surface's wording, icons and placement are purlis's**, and are not theme data. A
   theme colours a prompt; it cannot draw one.

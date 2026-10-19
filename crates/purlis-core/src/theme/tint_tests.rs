@@ -533,8 +533,11 @@ fn the_accent_is_held_apart_exactly_as_the_window_holds_it() {
             .unwrap()
             .iter()
             .map(|rule| Rule {
-                token: field("accent"),
-                token_tinted: case["accent_tinted"].as_bool().unwrap(),
+                // A rule may name a token of its own beside the accent: one of the accent's kin.
+                token: rule["token"].as_str().unwrap_or(field("accent")),
+                token_tinted: rule["token_tinted"]
+                    .as_bool()
+                    .unwrap_or(case["accent_tinted"].as_bool().unwrap()),
                 from: rule["from"].as_str().unwrap(),
                 from_tinted: rule["tinted"].as_bool().unwrap(),
                 distance: rule["distance"].as_f64().unwrap(),
@@ -596,37 +599,94 @@ fn a_colour_no_amount_of_chroma_keeps_apart_from_danger_is_drawn_untinted() {
     assert_eq!(tinted(&theme, "red"), theme);
 }
 
+/// A theme whose accent is read against its controls from its own side of the middle, a dark
+/// accent on darker controls, sitting on the floor of 3: rounding the accent away from the middle
+/// takes it nearer the controls in a tinted workspace.
+fn accent_on_its_own_side(on: bool) -> ResolvedTheme {
+    drawn(&json!({
+        "name": "Dim",
+        "tint": { "on": on, "tokens": ["accent.base"] },
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": { "accent.base": "#3365e6", "control.hover": "#262623" }
+        }]
+    }))
+}
+
+/// Every consent pair of `tint` at or above its floor.
+fn floors_hold(tint: &ResolvedTheme) -> bool {
+    let pairs = floors::pairs()
+        .all(|(_, pair)| check::ratio(tint, pair).is_none_or(|ratio| ratio >= pair.floor));
+    pairs && rules_hold(tint)
+}
+
+/// Every rule of [`APART`] held in `tint`.
+fn rules_hold(tint: &ResolvedTheme) -> bool {
+    APART
+        .iter()
+        .all(|rule| oklab_apart(tint.value(rule.token), tint.value(rule.from)) >= rule.distance)
+}
+
+/// Every colour a workspace can be tinted by, to sweep: the palette's names, and a hue of every
+/// whole degree.
+fn every_hue(theme: &ResolvedTheme) -> impl Iterator<Item = ResolvedTheme> + '_ {
+    let named = PALETTE.iter().map(|(name, _)| tinted(theme, name));
+    named.chain((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))))
+}
+
 #[test]
-fn the_consent_floors_are_held_under_the_theme_s_own_recipe() {
-    // A theme that tints the controls: at some hues a channel's rounding takes a hundredth off
-    // the danger colour on a control, under its 4.5. The floors measure the theme's own tints:
-    // the control is drawn untinted, so the floor holds at every hue; with its tint off, the
-    // theme is drawn as written.
-    let controls = |on: bool| {
-        drawn(&json!({
-            "name": "Controls",
-            "tint": { "on": on, "tokens": ["control.base", "accent.base"] },
-            "appearances": [{ "id": "dark", "appearance": "dark" }]
-        }))
-    };
-    let on = draw(&controls(true));
+fn a_theme_on_the_danger_floor_keeps_it_under_every_tint_of_its_controls() {
+    // Classic dark's danger colour on its control sits on the floor of 4.5. A tint keeps each
+    // shade's luminance on its own side of the middle, so a recipe that turns the controls holds
+    // the floor at every hue: the theme is drawn as written, with its tint.
+    let controls = drawn(&json!({
+        "name": "Controls",
+        "tint": { "tokens": ["control.base", "control.hover", "accent.base"] },
+        "appearances": [{ "id": "dark", "appearance": "dark" }]
+    }));
+    let on_the_floor = PAIRS
+        .iter()
+        .find(|pair| pair.front == "danger.base" && pair.back == "control.base")
+        .expect("the danger colour is held on a control");
+    assert_eq!(check::ratio(&controls, on_the_floor), Some(4.5));
+    let shown = draw(&controls);
+    assert_eq!(shown.held, None);
+    assert_eq!(shown.theme.as_ref(), Some(&controls));
+    for tint in every_hue(&controls) {
+        assert!(floors_hold(&tint), "{:?}", tint.values.get("control.base"));
+    }
+}
+
+#[test]
+fn a_shade_a_tint_would_bring_under_a_floor_is_drawn_untinted_and_the_theme_as_written() {
+    // As written the dim accent clears its floor on the controls; in a tinted workspace it would
+    // fall a hundredth under it. The floors measure the pair at every whole degree, and purlis
+    // draws the accent untinted there, the rest of the theme as written.
+    let theme = accent_on_its_own_side(true);
+    let pair = PAIRS
+        .iter()
+        .find(|pair| pair.front == "accent.base" && pair.back == "control.hover")
+        .expect("the accent is held on a control");
+    assert_eq!(check::ratio(&theme, pair), Some(3.0));
+    assert!(every_hue(&theme).any(|tint| !floors_hold(&tint)));
+    let on = draw(&theme);
     let held = on.held.clone().expect("the floor was held");
     assert_eq!(held.tokens, Vec::<&str>::new());
-    assert_eq!(held.untinted, ["control.base"]);
+    assert_eq!(held.untinted, ["accent.base"]);
     assert!(
         held.said()
-            .starts_with("In a tinted workspace, Controls would fall"),
+            .starts_with("In a tinted workspace, Dim would fall"),
         "{}",
         held.said()
     );
     let shown = on.theme.expect("a theme is always drawn");
-    let danger_fails = check(&shown).findings.into_iter().any(
-        |one| matches!(one, Finding::Contrast { pair, .. } if pair.front.starts_with("danger.")),
-    );
-    assert!(!danger_fails);
-    assert!(!shown.tint.tabs().contains(&"control.base"));
-    assert!(shown.tint.tabs().contains(&"accent.base"));
-    assert_eq!(draw(&controls(false)).held, None);
+    assert_eq!(shown.values, theme.values);
+    assert!(!shown.tint.tabs().contains(&"accent.base"));
+    for tint in every_hue(&shown) {
+        assert!(floors_hold(&tint));
+    }
+    // With its tint off, the theme is only ever drawn as it is, and clears the floors so.
+    assert_eq!(draw(&accent_on_its_own_side(false)).held, None);
 }
 
 #[test]
@@ -871,4 +931,318 @@ fn the_floors_hold_allow_apart_from_keep_blocked_through_each_tint_and_with_it_o
         .expect("the floor was held with the tint off too");
     assert_eq!(off.floors, held.floors);
     assert!(off.untinted.is_empty());
+}
+
+// ---------------------------------------------------------------------------------------
+// The consent floors hold exactly under every tint (#2526)
+// ---------------------------------------------------------------------------------------
+
+/// WCAG's relative luminance of a `#rrggbb`.
+fn luminance(hex: &str) -> f64 {
+    let channel = |at: usize| {
+        let v = f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap()) / 255.0;
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+}
+
+#[test]
+fn a_tinted_shade_keeps_its_luminance_on_its_own_side_at_every_whole_degree() {
+    // Where black and white contrast with a colour alike: a darker shade is never rounded
+    // lighter than it was, and a lighter one never darker, so it contrasts at least as much with
+    // whatever it is read against across the middle.
+    let middle = (1.05_f64 * 0.05).sqrt() - 0.05;
+    for theme in built_ins() {
+        for token in vocabulary::TINTABLE {
+            let value = theme.value(token);
+            if !value.starts_with('#') {
+                continue;
+            }
+            let was = luminance(&value[..7]);
+            for degree in 0..360 {
+                let now = luminance(&tint_hex(value, f64::from(degree))[..7]);
+                let kept = if was >= middle {
+                    now >= was
+                } else {
+                    now <= was
+                };
+                assert!(kept, "{} {token} {value} at {degree}°", theme.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn every_tint_a_theme_may_name_keeps_classic_s_floors_exactly_at_every_hue() {
+    // Every token a theme may tint, tinted at once on both of Classic's appearances: every pair
+    // the check holds clears its floor at each palette hue and at every whole degree of a
+    // workspace's own colour, as it does untinted.
+    for appearance in ["dark", "light"] {
+        let theme = drawn(&json!({
+            "name": "Everything",
+            "tint": { "tokens": vocabulary::TINTABLE },
+            "appearances": [{ "id": appearance, "appearance": appearance }]
+        }));
+        assert_eq!(check(&theme).findings, [], "{appearance}");
+        assert_eq!(draw(&theme).held, None, "{appearance}");
+        for tint in every_hue(&theme) {
+            for pair in PAIRS {
+                if let Some(ratio) = check::ratio(&tint, pair) {
+                    assert!(ratio >= pair.floor, "{appearance}: {pair:?} {ratio}");
+                }
+            }
+            assert!(rules_hold(&tint), "{appearance}");
+        }
+    }
+}
+
+#[test]
+fn purlis_classic_s_tints_are_these() {
+    // Classic's tint of each token its recipe turns, at each palette hue (D-2329-8 held the
+    // accent of light red, orange and pink apart from danger). Since #2526 each channel is
+    // rounded toward the luminance the shade had, on its own side of the middle, rather than to
+    // the nearest byte: most of these moved by one step of one or two channels, and light red
+    // and pink's accent by two steps of red, where that rounding let the accent keep one more
+    // (red) or one less (pink) step of colour apart from danger. The operator ruled for the
+    // rounding on 2026-10-19.
+    const CLASSIC: [(&str, &str, [&str; 11]); 16] = [
+        (
+            "purlis-dark",
+            "red",
+            [
+                "#f69890", "#3b2625", "#f69890", "#3f2c2b", "#36211f", "#f69890", "#f69890",
+                "#f69890", "#261413", "#2a1817", "#382523",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "orange",
+            [
+                "#eca06b", "#3a271c", "#eca06b", "#3e2d24", "#352217", "#eca06b", "#eca06b",
+                "#eca06b", "#25150c", "#291910", "#37261c",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "yellow",
+            [
+                "#c7b156", "#312b18", "#c7b156", "#363020", "#2c2613", "#c7b156", "#c7b156",
+                "#c7b156", "#1e1808", "#221c0c", "#2f2919",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "green",
+            [
+                "#7ec180", "#212f20", "#7ec180", "#273427", "#1b2a1c", "#7ec180", "#7ec180",
+                "#7ec180", "#101b10", "#132013", "#202d1f",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "teal",
+            [
+                "#3ec4bc", "#14302e", "#3ec4bc", "#1d3533", "#0f2a2a", "#3ec4bc", "#3ec4bc",
+                "#3ec4bc", "#051c1c", "#092020", "#172d2d",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "blue",
+            [
+                "#7fb5f7", "#212c3c", "#7fb5f7", "#273140", "#1b2738", "#7fb5f7", "#7fb5f7",
+                "#7fb5f7", "#101927", "#141d2b", "#202a39",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "purple",
+            [
+                "#c6a2ef", "#30283a", "#c6a2ef", "#352e3d", "#2b2335", "#c6a2ef", "#c6a2ef",
+                "#c6a2ef", "#1d1624", "#201a2a", "#2d2737",
+            ],
+        ),
+        (
+            "purlis-dark",
+            "pink",
+            [
+                "#ec98c0", "#39262f", "#ec98c0", "#3d2c34", "#342129", "#ec98c0", "#ec98c0",
+                "#ec98c0", "#24141c", "#281820", "#37242d",
+            ],
+        ),
+        (
+            "purlis-light",
+            "red",
+            [
+                "#7b5350", "#fde8e5", "#7b5350", "#f9dbd6", "#fde1df", "#7b5350", "#7b5350",
+                "#7b5350", "#feeae7", "#fef4f2", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "orange",
+            [
+                "#7d5438", "#fbe9df", "#7d5438", "#f5ddcc", "#f8e4d5", "#7d5438", "#7d5438",
+                "#7d5438", "#feebdd", "#fff4ee", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "yellow",
+            [
+                "#6d5c18", "#f1edda", "#6d5c18", "#e8e2c7", "#ede8d1", "#6d5c18", "#6d5c18",
+                "#6d5c18", "#f5eed8", "#fbf7df", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "green",
+            [
+                "#39673c", "#e3f0e1", "#39673c", "#d2e7d2", "#dbecda", "#39673c", "#39673c",
+                "#39673c", "#e1f3e1", "#e9fbe8", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "teal",
+            [
+                "#016964", "#dbf1ee", "#016964", "#c7e8e4", "#d1edea", "#016964", "#016964",
+                "#016964", "#d7f4f2", "#dffcf9", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "blue",
+            [
+                "#395f8e", "#e1eefc", "#395f8e", "#d2e3f8", "#dae9fb", "#395f8e", "#395f8e",
+                "#395f8e", "#e3f0fe", "#f0f7fe", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "purple",
+            [
+                "#6c5288", "#f0eafa", "#6c5288", "#e8ddf5", "#ece4f8", "#6c5288", "#6c5288",
+                "#6c5288", "#f3ebfe", "#f8f5fe", "#ffffff",
+            ],
+        ),
+        (
+            "purlis-light",
+            "pink",
+            [
+                "#804e67", "#fae8ef", "#804e67", "#f6dae6", "#f9e1ec", "#804e67", "#804e67",
+                "#804e67", "#fee9f1", "#fff3f8", "#ffffff",
+            ],
+        ),
+    ];
+    for (name, colour, values) in CLASSIC {
+        let theme = built_in(name).unwrap();
+        let tint = tinted(theme, colour);
+        let drawn: Vec<&str> = TINTED.iter().map(|token| tint.value(token)).collect();
+        assert_eq!(drawn, values, "{name} {colour}");
+    }
+}
+
+/// A dark theme whose `token` is the danger colour turned to teal: apart from danger as written,
+/// and nearly danger itself under a red tint that turned it whole.
+fn kin_near_danger_under_red(token: &str) -> ResolvedTheme {
+    let danger = default_theme().value("danger.base");
+    drawn(&json!({
+        "name": "Kin",
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": { token: tint_hex(danger, 190.0) }
+        }]
+    }))
+}
+
+#[test]
+fn every_accent_hued_token_beside_danger_stays_apart_from_it_at_every_whole_degree() {
+    for token in ACCENT_KIN {
+        let theme = kin_near_danger_under_red(token);
+        let danger = theme.value("danger.base");
+        assert!(
+            oklab_apart(theme.value(token), danger) >= DANGER_APART,
+            "{token}"
+        );
+        assert!(
+            oklab_apart(&tint_hex(theme.value(token), 25.0), danger) < DANGER_APART,
+            "{token}"
+        );
+        assert_eq!(draw(&theme).held, None, "{token}");
+        for tint in every_hue(&theme) {
+            let apart = oklab_apart(tint.value(token), tint.value("danger.base"));
+            assert!(apart >= DANGER_APART, "{token}: {apart}");
+            assert!(rules_hold(&tint), "{token}");
+        }
+        // Still a tint where one keeps it apart.
+        assert_ne!(
+            tinted(&theme, "blue").value(token),
+            theme.value(token),
+            "{token}"
+        );
+    }
+}
+
+#[test]
+fn the_floors_measure_danger_apart_from_the_accent_and_its_kin_as_written_and_per_tint() {
+    // The focus ring written as the danger colour: the floors find danger and primary one colour,
+    // with the tint on and off, and draw the ring as purlis's. Under every tint the drawn theme
+    // keeps danger apart from the accent and from each token beside it.
+    let ring = |on: bool| {
+        drawn(&json!({
+            "name": "Ring",
+            "tint": { "on": on },
+            "appearances": [{
+                "id": "dark", "appearance": "dark",
+                "tokens": { "focus.ring": default_theme().value("danger.base") }
+            }]
+        }))
+    };
+    for on in [true, false] {
+        let shown = draw(&ring(on));
+        let held = shown.held.expect("the floor was held");
+        assert_eq!(held.floors, [Floor::DangerApart], "{on}");
+        assert_eq!(held.tokens, ["focus.ring"], "{on}");
+        let shown = shown.theme.expect("a theme is always drawn");
+        assert_eq!(
+            shown.value("focus.ring"),
+            default_theme().value("focus.ring")
+        );
+        for one in &shown.tint.hues {
+            assert!(rules_hold(&tinted(&shown, one.name)), "{on} {}", one.name);
+        }
+    }
+    // Classic itself is drawn as it is.
+    for theme in built_ins() {
+        assert_eq!(draw(theme).held, None, "{}", theme.name);
+    }
+}
+
+#[test]
+fn a_grey_accent_keeps_a_tint_apart_from_danger_at_every_whole_degree() {
+    // A grey accent is given a little colour, and where that would bring it near danger, as much
+    // of it as keeps them apart rather than none.
+    let theme = drawn(&json!({
+        "name": "Grey",
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": { "accent.base": "#808080", "focus.ring": "#808080", "list.selected-edge": "#808080" }
+        }]
+    }));
+    let danger = theme.value("danger.base");
+    assert!(oklab_apart("#808080", danger) >= DANGER_APART);
+    assert!(oklab_apart(&tint_hex("#808080", 25.0), danger) < DANGER_APART);
+    let most = apart_chroma(&theme, 25.0).expect("a chroma apart from danger");
+    assert!(most > 0.0 && most < 0.03, "{most}");
+    for degree in 0..360 {
+        let tint = tint::tinted_at(&theme, f64::from(degree));
+        let accent = tint.value("accent.base");
+        assert_ne!(accent, "#808080", "{degree}°");
+        assert!(rules_hold(&tint), "{degree}°: {accent}");
+    }
 }

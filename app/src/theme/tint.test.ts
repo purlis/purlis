@@ -76,7 +76,13 @@ describe("the core's copy of the tint", () => {
       apart: {
         accent: string;
         accent_tinted: boolean;
-        rules: { from: string; tinted: boolean; distance: number }[];
+        rules: {
+          token?: string;
+          token_tinted?: boolean;
+          from: string;
+          tinted: boolean;
+          distance: number;
+        }[];
         hue: number;
         most: number | null | "none";
         tinted: string | null;
@@ -102,8 +108,9 @@ describe("the core's copy of the tint", () => {
     for (const { accent, accent_tinted, rules, hue, most, tinted: want } of cases.apart) {
       const got = apartChroma(
         rules.map((rule) => ({
-          token: accent,
-          tokenTinted: accent_tinted,
+          // A rule may name a token of its own beside the accent: one of the accent's kin.
+          token: rule.token ?? accent,
+          tokenTinted: rule.token_tinted ?? accent_tinted,
           from: rule.from,
           fromTinted: rule.tinted,
           distance: rule.distance,
@@ -336,5 +343,102 @@ describe("a recipe that turns only Keep blocked's edge", () => {
       if (tint.values["border.strong"] !== edge.values["border.strong"]) turned++;
     }
     expect(turned).toBeGreaterThan(300);
+  });
+});
+
+/** WCAG's middle luminance: black and white contrast with a colour this bright alike. */
+const MIDDLE = Math.sqrt(1.05 * 0.05) - 0.05;
+
+/** The tokens in the accent's hue drawn beside danger, which every tint keeps apart from it. */
+const ACCENT_KIN = ["focus.ring", "list.selected-edge", "accent.surface", "tab.active"] as const;
+
+describe("the consent floors under every tint (#2526)", () => {
+  it.each(Object.keys(BUILT_IN))(
+    "keep every shade of %s on its own side of the middle at every whole degree",
+    (name) => {
+      const theme = BUILT_IN[name];
+      for (const token of TOKENS) {
+        const value = theme.values[token];
+        if (typeof value !== "string" || !/^#[0-9a-f]{6}/i.test(value)) continue;
+        const was = luminance(value.slice(0, 7));
+        for (let degree = 0; degree < 360; degree++) {
+          const now = luminance(tintHex(value, degree).slice(0, 7));
+          expect(was >= MIDDLE ? now >= was : now <= was, `${token} ${value} at ${degree}`).toBe(
+            true,
+          );
+        }
+      }
+    },
+  );
+
+  it("is handed a rule keeping each accent-hued token apart from danger", () => {
+    for (const token of ACCENT_KIN)
+      expect(DEFAULT_THEME.tint.apart).toContainEqual({
+        token,
+        from: "danger.base",
+        distance: 0.1,
+      });
+  });
+
+  it.each(ACCENT_KIN)("keeps %s apart from danger at every whole degree", (token) => {
+    // The token written as danger turned to teal: apart as written, one colour with danger under
+    // a red tint that turned it whole.
+    const danger = DEFAULT_THEME.values["danger.base"];
+    const kin = {
+      ...DEFAULT_THEME,
+      values: { ...DEFAULT_THEME.values, [token]: tintHex(danger, 190) },
+    };
+    expect(oklabDistance(kin.values[token], danger)).toBeGreaterThanOrEqual(0.1);
+    expect(oklabDistance(tintHex(kin.values[token], 25), danger)).toBeLessThan(0.1);
+    for (let degree = 0; degree < 360; degree++) {
+      const tint = tinted(kin, tintHex("#c0392b", degree));
+      for (const rule of DEFAULT_THEME.tint.apart)
+        expect(
+          oklabDistance(tint.values[rule.token as Token], tint.values[rule.from as Token]),
+          `${rule.token} at ${degree}`,
+        ).toBeGreaterThanOrEqual(rule.distance);
+    }
+    expect(tinted(kin, "blue").values[token]).not.toBe(kin.values[token]);
+  });
+
+  it("gives a grey accent as much colour as keeps it apart from danger, not none", () => {
+    const grey = {
+      ...DEFAULT_THEME,
+      values: {
+        ...DEFAULT_THEME.values,
+        "accent.base": "#808080",
+        "focus.ring": "#808080",
+        "list.selected-edge": "#808080",
+      },
+    };
+    const danger = grey.values["danger.base"];
+    expect(oklabDistance(tintHex("#808080", 25), danger)).toBeLessThan(0.1);
+    for (let degree = 0; degree < 360; degree++) {
+      const accent = tinted(grey, tintHex("#c0392b", degree)).values["accent.base"];
+      expect(accent, `${degree}`).not.toBe("#808080");
+      expect(oklabDistance(accent, danger), `${degree}`).toBeGreaterThanOrEqual(0.1);
+    }
+  });
+
+  it("keeps a persona's mark on its floor in a theme that turns the workspace tint off", () => {
+    // A mark's initial is the accent on the accent's surface, tinted by the persona's colour
+    // whatever the recipe says: its contrast holds at every whole degree as it does untinted.
+    for (const theme of Object.values(BUILT_IN)) {
+      const off = withTint(theme, { window: [], tabs: [] });
+      const ratio = (front: string, back: string) => {
+        const [a, b] = [luminance(front), luminance(back)];
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+      const was = ratio(off.values["accent.base"], off.values["accent.surface"]);
+      for (let degree = 0; degree < 360; degree++) {
+        const mark = tintVariables(off, tintHex("#c0392b", degree), [
+          "accent.base",
+          "accent.surface",
+        ]);
+        const drawn = (token: Token) => mark[property(token)] ?? off.values[token];
+        const now = ratio(drawn("accent.base"), drawn("accent.surface"));
+        expect(now, `${theme.name} at ${degree}`).toBeGreaterThanOrEqual(was);
+      }
+    }
   });
 });
