@@ -1003,6 +1003,12 @@ jobs:
       - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
         if: runner.os == 'macOS'
         working-directory: app
+      - name: DO NOT MERGE - a busy runner
+        if: runner.os == 'Linux'
+        run: |
+          n=$(( $(nproc) * ${{ matrix.rep }} / 2 ))
+          for i in $(seq 1 $n); do nohup sh -c 'while :; do :; done' >/dev/null 2>&1 & done
+          echo "started $n busy loops on $(nproc) cpus"
       - run: xvfb-run -a npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
         if: runner.os == 'Linux'
         working-directory: app
