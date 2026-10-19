@@ -286,6 +286,7 @@ import {
 import {
   BROWSER_TITLE,
   browserView,
+  goWhenShown,
   browsersLetGo,
   chatBrowserTitle,
   isBrowser,
@@ -3658,6 +3659,23 @@ export const PlaneView = memo(function PlaneView({
       showView(browserView(opened.data), BROWSER_TITLE);
     });
   }, [plane, refusedBy, showView, succeeded]);
+
+  /** A browser of the person's own, opened at `address` (#2176): it goes there once its view
+   *  is live, as if they typed it, so a site new to the project asks there. */
+  const newBrowserAt = useCallback(
+    (address: string) => {
+      void commands.openBrowser(plane).then((opened) => {
+        if (opened.status === "error") {
+          refusedBy("browser", opened.error);
+          return;
+        }
+        succeeded("browser");
+        goWhenShown(opened.data, address);
+        showView(browserView(opened.data), BROWSER_TITLE);
+      });
+    },
+    [plane, refusedBy, showView, succeeded],
+  );
 
   /** The browsers of this project's chats (#2024): rows under their chats, live on their tabs. */
   const {
@@ -8128,7 +8146,7 @@ export const PlaneView = memo(function PlaneView({
         settle={settleNotices}
       />
       {/* **Where this project's browsers were at the last quit** (#2022): offered once. */}
-      <BrowsersAtQuitNotice plane={plane} />
+      <BrowsersAtQuitNotice plane={plane} onOpen={newBrowserAt} />
       {/* **A workspace's repo left off its default branch, or on a moved remote** (#1985): one
           Notice per repo, with the Fix that loses no work. */}
       <StaleCloneNotices

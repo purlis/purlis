@@ -689,7 +689,17 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     let listed = false;
     besides.chat_browsers = () => {
       listed = true;
-      return [{ session: 3, name: "b1", program: "B1", unended: false }];
+      return [
+        {
+          session: 3,
+          name: "b1",
+          program: "B1",
+          unended: false,
+          pinned: false,
+          was: null,
+          login: null,
+        },
+      ];
     };
     await opened();
     await waitFor(() => expect(listed).toBe(true));

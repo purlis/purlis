@@ -126,6 +126,8 @@ function core(browsers: ChatBrowser[]) {
     if (cmd === "browser_input") return { outcome: "taken" };
     if (cmd === "hand_browser_to_chat") return "b2";
     if (cmd === "browsers_at_quit") return atQuit;
+    if (cmd === "open_browser") return "B7";
+    if (cmd === "go_browser") return { outcome: "went", address: a.address ?? null };
     if (cmd === "finished_tasks") return [];
     if (cmd === "stopping_chats") return [];
     if (cmd === "chat_states") return [];
@@ -557,9 +559,27 @@ describe("the browsers open when purlis last quit (#2022)", () => {
 
     const notice = await screen.findByText(/When purlis last quit/);
     expect(notice).toHaveTextContent("https://staging.example.test/cart");
-    expect(screen.getByRole("button", { name: "Copy staging.example.test" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy 127.0.0.1:5173" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open staging.example.test" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open 127.0.0.1:5173" })).toBeInTheDocument();
     expect(host.asked("open_browser")).toEqual([]);
+  });
+
+  it("opens a browser of the person's own at an address pressed, which goes there (#2176)", async () => {
+    atQuit = ["https://staging.example.test/cart", "http://127.0.0.1:5173/"];
+    const host = core([]);
+    await opened();
+    await screen.findByText(/When purlis last quit/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open staging.example.test" }));
+
+    await waitFor(() =>
+      expect(host.asked("go_browser")).toEqual([
+        { plane: PLANE, program: "B7", address: "https://staging.example.test/cart" },
+      ]),
+    );
+    expect(host.asked("open_browser")).toEqual([{ plane: PLANE }]);
+    expect(screen.queryByRole("button", { name: "Open staging.example.test" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open 127.0.0.1:5173" })).toBeInTheDocument();
   });
 
   it("are put away for good by Dismiss", async () => {

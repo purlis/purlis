@@ -461,13 +461,6 @@ mod hosted {
             Ok((link, project))
         }
 
-        /// Whether the window started `program` in the project at `root` (#2176).
-        pub(crate) fn started_in(&self, root: &Path, program: &str) -> bool {
-            self.projects()
-                .get(root)
-                .is_some_and(|held| held.browsers.iter().any(|one| one == program))
-        }
-
         /// Starts a browser in the project at `root` reaching nothing listed, and answers its
         /// id: what a test of the window's browsers starts.
         #[cfg(test)]

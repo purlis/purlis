@@ -41,3 +41,7 @@ of the amendment *a browser's new sites are judged by its driver*.
 5. **Each of the person's acts has an id of its own**, so the session host never answers one as
    a retry of another, a browser reattached after a crash of the window included. *Decided in
    implementation, D-2176-5, to be confirmed.*
+6. **An address a browser was at when purlis last quit opens one there, on the person's press**
+   (#2022): the button opens a browser of the person's own, which goes to that address once its
+   view is live, as if they typed it, so a site new to the project asks there. Nothing loads
+   until they press it. *Decided in implementation, D-2176-6, to be confirmed.*

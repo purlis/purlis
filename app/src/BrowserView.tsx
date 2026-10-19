@@ -29,7 +29,7 @@ import {
   wheelInput,
 } from "./browserDriving";
 import { frameBytes, latestOnly, paint } from "./browserFrames";
-import { addressChip, thisDevice } from "./browsers";
+import { addressChip, takeGoWhenShown, thisDevice } from "./browsers";
 import { useWindowSeen } from "./browserWatch";
 import { programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./EmptyState";
@@ -181,9 +181,10 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const seen = inFront && windowSeen;
   const mac = onAMac();
   const { send, after, clear } = useSender(program, setSaid, setDropped);
-  const { browsers: chatBrowsers, read: chatBrowsersRead } = useChatBrowsers(plane);
-  /** Whether it is the person's own: no chat of the project's uses it. */
-  const theirs = chatBrowsersRead && !programsOf(chatBrowsers).has(program);
+  const { browsers: chatBrowsers, kept, read: chatBrowsersRead } = useChatBrowsers(plane);
+  /** Whether it is one the person opened: no chat of the project's uses it, and it is no chat's
+   *  pinned past its chat (#2022), which only the window that opened it sends anywhere. */
+  const theirs = chatBrowsersRead && !programsOf(chatBrowsers, kept).has(program);
   /** The address the person typed, the page's address once it went, and the sites it asks. */
   const [typed, setTyped] = useState("");
   const [address, setAddress] = useState<string | null>(null);
@@ -373,35 +374,48 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** Sends the browser to `to`, the address as the person typed it, after every key and click
    *  already queued. The browser takes an address on its own lane, so one the person drives is
    *  handed back first; their next click or key takes it over again. */
-  const go = (to: string) => {
-    if (going) return;
-    setGoing(true);
-    after(async () => {
-      if (drives.current) {
-        const back = await commands.handBackBrowser(program);
-        if (back.status === "error") {
-          setGoing(false);
-          setSaid(back.error);
+  const go = useCallback(
+    (to: string) => {
+      if (going) return;
+      setGoing(true);
+      after(async () => {
+        if (drives.current) {
+          const back = await commands.handBackBrowser(program);
+          if (back.status === "error") {
+            setGoing(false);
+            setSaid(back.error);
+            return;
+          }
+          setDropped(false);
+          drivingNow(false);
+        }
+        const went = await commands.goBrowser(plane, program, to);
+        setGoing(false);
+        if (went.status === "error") {
+          setSaid(went.error);
           return;
         }
-        setDropped(false);
-        drivingNow(false);
-      }
-      const went = await commands.goBrowser(plane, program, to);
-      setGoing(false);
-      if (went.status === "error") {
-        setSaid(went.error);
-        return;
-      }
-      setSaid(undefined);
-      if (went.data.outcome === "asks") {
-        setAsking({ address: to, sites: went.data.sites, answers: went.data.answers });
-        return;
-      }
-      setAsking(null);
-      if (went.data.address !== null) setAddress(went.data.address);
-    });
-  };
+        setSaid(undefined);
+        if (went.data.outcome === "asks") {
+          setAsking({ address: to, sites: went.data.sites, answers: went.data.answers });
+          return;
+        }
+        setAsking(null);
+        if (went.data.address !== null) setAddress(went.data.address);
+      });
+    },
+    [going, after, plane, program, drivingNow],
+  );
+
+  // An address the window was asked to open this browser at (the browsers open at the last
+  // quit, #2022) goes once the view is live, as if the person typed it.
+  useEffect(() => {
+    if (!theirs || shown.kind !== "live") return;
+    const at = takeGoWhenShown(program);
+    if (at === undefined) return;
+    // Sent after this render, as the person's own Go would be.
+    queueMicrotask(() => go(at));
+  }, [theirs, shown.kind, program, go]);
 
   const onGo = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
