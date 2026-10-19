@@ -640,7 +640,8 @@ fn rounded(rgb: Vec3, target: f64) -> [u8; 3] {
             shade > target
         };
         let key = (past, (shade - target).abs());
-        if key.0 < best_key.0 || (key.0 == best_key.0 && key.1 < best_key.1) {
+        // Not past it before past it, then the nearer: the window compares the same way.
+        if key < best_key {
             best = bytes;
             best_key = key;
         }

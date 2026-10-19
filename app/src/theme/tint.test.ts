@@ -55,7 +55,8 @@ describe("a workspace's colour", () => {
   it("reads a name as the theme's hue, a #rrggbb as the hue it has, and anything else as none", () => {
     expect(hueIn(DEFAULT_THEME, "teal")).toBe(190);
     const purple = hueIn(DEFAULT_THEME, "purple") ?? Number.NaN;
-    expect(hueOf(tintHex("#6a9fb5", purple))).toBeCloseTo(purple, 0);
+    // Within two degrees: each channel is rounded to its byte on the shade's own side.
+    expect(apart(hueOf(tintHex("#6a9fb5", purple)) ?? Number.NaN, purple)).toBeLessThan(2);
     for (const none of [null, undefined, "", "mauve", "#fff", "#12345", "#808080"])
       expect(hueIn(DEFAULT_THEME, none), String(none)).toBeUndefined();
   });
@@ -161,7 +162,9 @@ describe("a tint", () => {
       for (const token of theme.tint.tabs as readonly Token[]) {
         const was = luminance(theme.values[token]);
         const now = luminance(tint.values[token]);
-        expect(Math.abs(now - was) / Math.max(was, 0.01), `${colour} ${token}`).toBeLessThan(0.03);
+        // Within a byte of a channel, and never across the middle's side it was on (#2526).
+        expect(Math.abs(now - was) / Math.max(was, 0.01), `${colour} ${token}`).toBeLessThan(0.05);
+        expect(was >= MIDDLE ? now >= was : now <= was, `${colour} ${token}`).toBe(true);
       }
     }
   });
