@@ -39,7 +39,7 @@
 
 use std::collections::BTreeSet;
 
-use super::check::{PAIRS, Pair, ratio};
+use super::check::{self, PAIRS, Pair, ratio};
 use super::{Appearance, ResolvedTheme, built_in_for, tint};
 
 /// One consent floor.
@@ -190,7 +190,40 @@ struct Failure {
 /// Every consent floor `theme` breaks, as it is and tinted by every workspace colour of its own
 /// recipe: the contrast floors, Allow apart from Keep blocked, and danger apart from the accent
 /// and from each accent-hued token drawn beside it ([`tint::APART`]).
-fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
+/// The chroma each whole degree's tint gives ([`tint::apart_chroma`]), kept for the rules it was
+/// found under: a round of [`hold`] that changes neither side of any rule asks again for nothing.
+#[derive(Default)]
+struct Chromas {
+    rules: Vec<(String, bool, String, bool)>,
+    at: Vec<Option<f64>>,
+}
+
+impl Chromas {
+    /// Each whole degree's chroma for `theme`, found again only when its rules are not the last.
+    fn of(&mut self, theme: &ResolvedTheme) -> &[Option<f64>] {
+        let held = tint::held_rules(theme);
+        let rules: Vec<(String, bool, String, bool)> = held
+            .iter()
+            .map(|rule| {
+                (
+                    rule.token.to_owned(),
+                    rule.token_tinted,
+                    rule.from.to_owned(),
+                    rule.from_tinted,
+                )
+            })
+            .collect();
+        if self.at.is_empty() || rules != self.rules {
+            self.at = (0..360)
+                .map(|degree| tint::apart_chroma_of(&held, f64::from(degree)))
+                .collect();
+            self.rules = rules;
+        }
+        &self.at
+    }
+}
+
+fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
     let mut found = Vec::new();
     let failing = |drawn: &ResolvedTheme, tinted: bool, (floor, pair): (Floor, &Pair)| {
         ratio(drawn, pair)
@@ -230,9 +263,15 @@ fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
     let moving: Vec<(Floor, &Pair)> = pairs()
         .filter(|(_, pair)| moves_with_hue(theme, pair))
         .collect();
-    if !moving.is_empty() {
-        for degree in 0..360 {
-            let drawn = tint::tinted_at(theme, f64::from(degree));
+    if !moving.is_empty() && !theme.tint.tabs().is_empty() {
+        // Only the tokens of those pairs are turned: each is drawn as the whole tint draws it.
+        let only: Vec<&'static str> = moving
+            .iter()
+            .flat_map(|(_, pair)| [Some(pair.front), Some(pair.back), pair.under])
+            .flatten()
+            .collect();
+        for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
+            let drawn = tint::turned_at(theme, f64::from(degree), most, &only);
             found.extend(moving.iter().filter_map(|one| failing(&drawn, true, *one)));
         }
     }
@@ -240,22 +279,25 @@ fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
 }
 
 /// Whether a tint can move `pair`'s contrast from one hue to another: the recipe turns one of its
-/// tokens, and the pair is words on a wash or faded words, whose drawn colours are mixed, or a
-/// turned shade is read against a colour on its own side of the middle and no farther from it, so
-/// rounding the shade away from the middle brings it nearer.
+/// tokens, and the pair's colours are mixed as they are drawn (words on a wash, faded words, or a
+/// colour written see-through), or a turned shade is read against a colour on its own side of the
+/// middle and no farther from it, so rounding the shade away from the middle brings it nearer.
 fn moves_with_hue(theme: &ResolvedTheme, pair: &Pair) -> bool {
     let turned = |token: &str| theme.tint.tabs().contains(&token);
     let tokens = [Some(pair.front), Some(pair.back), pair.under];
     if !tokens.into_iter().flatten().any(turned) {
         return false;
     }
-    if pair.under.is_some() || pair.fade.is_some() {
+    let see_through = |token: &str| matches!(theme.value(token).len(), 5 | 9);
+    if pair.under.is_some() || pair.fade.is_some() || tokens.into_iter().flatten().any(see_through)
+    {
         return true;
     }
-    let (Some(front), Some(back)) = (
-        tint::luminance_of(theme.value(pair.front)),
-        tint::luminance_of(theme.value(pair.back)),
-    ) else {
+    // The two as the screen draws them, any alpha laid over what it is drawn on.
+    let Some((front, back)) = check::drawn(theme, pair) else {
+        return false;
+    };
+    let (Some(front), Some(back)) = (tint::luminance_of(&front), tint::luminance_of(&back)) else {
         return false;
     };
     let nearer = |one: f64, other: f64| {
@@ -305,8 +347,9 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
     let mut floors = BTreeSet::new();
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();
     let mut untinted: BTreeSet<&'static str> = BTreeSet::new();
+    let mut chromas = Chromas::default();
     loop {
-        let failing = failures(&drawn);
+        let failing = failures(&drawn, &mut chromas);
         if failing.is_empty() {
             break;
         }

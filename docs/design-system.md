@@ -270,8 +270,8 @@ workspace stays red, and a grey accent keeps as much of its small tint as holds 
 colour no amount holds apart is drawn untinted. Purlis Classic's light appearance gives less
 colour at `red`, `orange` and `pink`. The consent floors are also measured under every tint of
 the theme's own recipe, danger apart from the accent and its kin included, and a pair a tint can
-move from one hue to another (words on a wash, faded words, or a shade read against one on its
-own side of the middle) at every whole degree of a workspace's own colour. A theme that clears
+move from one hue to another (words on a wash, faded words, a colour written see-through, or a
+shade read against one on its own side of the middle) at every whole degree of a workspace's own colour. A theme that clears
 the floors as written and would fall under one only in a tinted workspace keeps its values, and
 the tokens of that pair are drawn
 untinted. A neutral grey is given a small fixed chroma,

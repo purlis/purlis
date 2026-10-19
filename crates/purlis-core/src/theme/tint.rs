@@ -430,6 +430,31 @@ pub(super) fn tinted_at(theme: &ResolvedTheme, hue: f64) -> ResolvedTheme {
     tint
 }
 
+/// `theme` with those of `only` its recipe turns drawn at `hue` and at most `most` chroma, as
+/// [`tinted_at`] draws them when [`apart_chroma`] answers `most`; the theme as it is for `None`.
+pub(super) fn turned_at(
+    theme: &ResolvedTheme,
+    hue: f64,
+    most: Option<f64>,
+    only: &[&'static str],
+) -> ResolvedTheme {
+    let mut tint = theme.clone();
+    let Some(most) = most else {
+        return tint;
+    };
+    for token in theme
+        .tint
+        .tabs()
+        .iter()
+        .filter(|token| only.contains(token))
+    {
+        if let Some(value) = tint.values.get_mut(token) {
+            *value = tint_hex_within(value, hue, most);
+        }
+    }
+    tint
+}
+
 /// A theme value's relative luminance, its alpha left out; `None` for a value that is not a
 /// colour.
 pub(super) fn luminance_of(hex: &str) -> Option<f64> {
@@ -485,8 +510,13 @@ impl Rule<'_> {
 /// a theme tints. The window does the same arithmetic (`tint.ts`' `apartChroma`), held to it by
 /// the shared fixture.
 pub fn apart_chroma(theme: &ResolvedTheme, hue: f64) -> Option<f64> {
+    apart_chroma_of(&held_rules(theme), hue)
+}
+
+/// The rules of [`APART`] as `theme` draws them, each with a side its recipe turns.
+pub(super) fn held_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
     let tokens = theme.tint.tabs();
-    let held: Vec<Rule<'_>> = APART
+    APART
         .iter()
         .map(|rule| Rule {
             token: theme.value(rule.token),
@@ -496,8 +526,7 @@ pub fn apart_chroma(theme: &ResolvedTheme, hue: f64) -> Option<f64> {
             distance: rule.distance,
         })
         .filter(|rule| rule.token_tinted || rule.from_tinted)
-        .collect();
-    apart_chroma_of(&held, hue)
+        .collect()
 }
 
 /// [`apart_chroma`] of the rules as drawn: what the shared fixture holds.

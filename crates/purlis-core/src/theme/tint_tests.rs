@@ -1246,3 +1246,39 @@ fn a_grey_accent_keeps_a_tint_apart_from_danger_at_every_whole_degree() {
         assert!(rules_hold(&tint), "{degree}°: {accent}");
     }
 }
+
+#[test]
+fn a_see_through_front_on_a_tinted_ground_keeps_its_floor_at_every_whole_degree() {
+    // An ask's words written see-through over a dialog the recipe tints: the screen mixes the two
+    // channel by channel, so the pair's contrast moves with the hue. The floors measure it at every
+    // whole degree, between the palette's hues too, and purlis draws the ground untinted where a
+    // tint would bring the words under their floor, the words as written.
+    let veil = |on: bool| {
+        drawn(&json!({
+            "name": "Veil",
+            "tint": { "on": on, "tokens": ["surface.overlay"] },
+            "appearances": [{
+                "id": "dark", "appearance": "dark",
+                "tokens": { "text.primary": "#f5f3ee9b" }
+            }]
+        }))
+    };
+    let theme = veil(true);
+    assert!(floors_hold(&theme));
+    assert!(
+        PALETTE
+            .iter()
+            .all(|(name, _)| floors_hold(&tinted(&theme, name)))
+    );
+    assert!(every_hue(&theme).any(|tint| !floors_hold(&tint)));
+    let on = draw(&theme);
+    let held = on.held.expect("the floor was held");
+    assert_eq!(held.tokens, Vec::<&str>::new());
+    assert_eq!(held.untinted, ["surface.overlay"]);
+    let shown = on.theme.expect("a theme is always drawn");
+    assert_eq!(shown.values, theme.values);
+    for tint in every_hue(&shown) {
+        assert!(floors_hold(&tint));
+    }
+    assert_eq!(draw(&veil(false)).held, None);
+}
