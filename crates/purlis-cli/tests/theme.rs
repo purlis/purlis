@@ -153,16 +153,18 @@ fn every_file(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 #[test]
-fn purlis_classic_is_listed_with_its_appearances_and_where_it_comes_from() {
+fn the_built_in_themes_are_listed_with_their_appearances_and_where_they_come_from() {
     let rig = Rig::new();
 
     let ran = rig.run(&["list"]);
 
     assert_eq!(ran.code, 0, "{}", ran.err);
+    // Purlis ships as a preview (#2336), and the table says so.
     assert_eq!(
         ran.out,
-        "  ID              NAME            APPEARANCES  FROM\n\
-         \x20 purlis-classic  Purlis Classic  dark, light  built-in\n"
+        "  ID              NAME              APPEARANCES                                            FROM\n\
+         \x20 purlis-classic  Purlis Classic    dark, light                                            built-in\n\
+         \x20 purlis          Purlis (preview)  dark, light, dark-high-contrast (dark, high contrast)  built-in\n"
     );
 }
 
@@ -180,14 +182,14 @@ fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_in() {
 
     assert_eq!(ran.code, 0, "{}", ran.err);
     let lines: Vec<&str> = ran.out.lines().collect();
-    assert_eq!(lines.len(), 4, "{}", ran.out);
+    assert_eq!(lines.len(), 5, "{}", ran.out);
     let words = |line: &str| {
         line.split_whitespace()
             .map(str::to_owned)
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        words(lines[2]),
+        words(lines[3]),
         [
             "mine",
             "Late",
@@ -197,7 +199,7 @@ fn the_person_s_own_theme_and_an_extension_s_are_listed_after_the_built_in() {
         ]
     );
     assert_eq!(
-        words(lines[3]),
+        words(lines[4]),
         [
             "solarized/Solarized",
             "Light",
@@ -246,17 +248,20 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
             "from": { "kind": "built-in" }, "refused": null
         })
     );
-    assert_eq!(themes[1]["id"], "mine");
-    assert_eq!(themes[1]["from"]["kind"], "mine");
-    assert_eq!(themes[1]["name"], serde_json::Value::Null);
+    assert_eq!(themes[1]["id"], "purlis");
+    assert_eq!(themes[1]["name"], "Purlis");
+    assert_eq!(themes[1]["combinations"], 3);
+    assert_eq!(themes[2]["id"], "mine");
+    assert_eq!(themes[2]["from"]["kind"], "mine");
+    assert_eq!(themes[2]["name"], serde_json::Value::Null);
     assert!(
-        themes[1]["refused"]
+        themes[2]["refused"]
             .as_str()
             .is_some_and(|why| why.contains("a theme is a JSON object")),
         "{themes}"
     );
     assert_eq!(
-        themes[2],
+        themes[3],
         serde_json::json!({
             "id": "nord/Nord", "name": "Nord",
             "appearances": [{ "id": "dark", "appearance": "dark", "high_contrast": false }],
@@ -279,6 +284,23 @@ fn purlis_classic_checks_clean_in_both_appearances_and_exits_zero() {
          left out: nothing\n\
          warnings: none\n\
          consent floors: none held in 2 combinations\n\
+         hard floors: not checked by this purlis yet\n"
+    );
+}
+
+#[test]
+fn purlis_checks_clean_in_every_appearance_and_exits_zero() {
+    let rig = Rig::new();
+
+    let ran = rig.run(&["check", "purlis"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    assert_eq!(
+        ran.out,
+        "Purlis — built-in, dark, light, dark-high-contrast (dark, high contrast)\n\
+         left out: nothing\n\
+         warnings: none\n\
+         consent floors: none held in 3 combinations\n\
          hard floors: not checked by this purlis yet\n"
     );
 }
@@ -778,6 +800,18 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
                 "light",
                 "built-in"
             ],
+            vec![
+                "purlis",
+                "Purlis",
+                "(preview)",
+                "dark,",
+                "light,",
+                "dark-high-contrast",
+                "(dark,",
+                "high",
+                "contrast)",
+                "built-in"
+            ],
             vec!["machine:base", "Base", "dark", "machine", &shown(&base)],
             vec!["project:team", "Team", "dark", "project", &shown(&team)],
             vec![
@@ -817,6 +851,7 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
         levels,
         [
             ("purlis-classic", "built-in"),
+            ("purlis", "built-in"),
             ("machine:base", "machine"),
             ("project:team", "project"),
             ("workspace:alpha:client", "workspace"),
@@ -825,16 +860,16 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
         ]
     );
     assert_eq!(
-        themes[3]["from"],
+        themes[4]["from"],
         serde_json::json!({
             "kind": "workspace", "workspace": "alpha", "folder": "client", "path": shown(&client)
         })
     );
     assert_eq!(
-        themes[2]["from"],
+        themes[3]["from"],
         serde_json::json!({ "kind": "project", "folder": "team", "path": shown(&team) })
     );
-    assert_eq!(themes[3]["refused"], serde_json::Value::Null, "{themes:?}");
+    assert_eq!(themes[4]["refused"], serde_json::Value::Null, "{themes:?}");
 }
 
 #[test]
@@ -859,7 +894,7 @@ fn outside_a_plane_only_the_machine_s_theme_folders_are_listed() {
         .iter()
         .filter_map(|one| one["id"].as_str())
         .collect();
-    assert_eq!(ids, ["purlis-classic", "machine:base"]);
+    assert_eq!(ids, ["purlis-classic", "purlis", "machine:base"]);
 }
 
 #[test]
@@ -1357,6 +1392,32 @@ fn purlis_classic_exports_as_a_copy_beside_the_built_in() {
         std::fs::read_to_string(back.join("purlis-classic-copy/theme.json")).expect("read"),
         purlis_core::theme::CLASSIC_THEME_JSON
     );
+}
+
+#[test]
+fn purlis_exports_as_a_copy_with_its_fonts_icons_and_licence() {
+    let rig = Rig::new();
+    let zip = rig.dir.path().join("purlis.zip");
+    let back = rig.dir.path().join("back");
+
+    let exported = rig.run(&["export", "purlis", "--to", zip.to_str().expect("a path")]);
+    let imported = rig.run(&[
+        "import",
+        zip.to_str().expect("a path"),
+        "--into",
+        back.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(exported.code, 0, "{}", exported.err);
+    assert_eq!(imported.code, 0, "{}{}", imported.out, imported.err);
+    let copy = back.join("purlis-copy");
+    for (name, bytes) in purlis_core::theme::purlis_files() {
+        assert_eq!(
+            std::fs::read(copy.join(&name)).expect("read"),
+            bytes,
+            "{name}"
+        );
+    }
 }
 
 #[test]
