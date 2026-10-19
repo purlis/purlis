@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792379752086,
+  "lastUpdate": 1792381610770,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3090,6 +3090,42 @@ window.BENCHMARK_DATA = {
             "value": 355.7,
             "unit": "MB",
             "extra": "median of 6 samples: 401.9, 399, 369.8, 340.8, 341.7, 243.3 MB; window 161.4 MB, session host 194.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a4d3afcfd392248b9d8eb42e6da2fc74bbed5257",
+          "message": "Browsers: a browser the person opens reaches the project's sites and goes to an address they type (#2643)\n\n* Browsers: a browser the person opens reaches the project's sites and goes to an address they type\n\nA browser opened from the window starts with what the project's sandbox\nsettings list for a chat on no persona and the browser sites allowed\nhere, and its view tab has an address field. Only http and https\naddresses go; a site new to the project asks once, under the field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: a person's browser may allow a site for everyone in the project\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4XB4GEA0C3CMJM6MM7Y5XXB\nPurlis-Persona: steward\n\n* Browsers: bindings, formatting and palette tests for a person's browser\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the reconnecting view test names its project\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the address tests get a loaded runner's budget\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the address box is named where the views' native controls are\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a person's browser asks in the sites ask's words, and goes after what they typed\n\nIts sites ask offers the registry's answers at the scopes policy leaves\nopen, and for everyone in the project only where the sandbox is on. A\npublic site on another port asks. The address goes through the view's\nqueue, handed back first where the person drives. Tests move to files of\ntheir own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: bindings for the sites ask's words\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a person's browser that cannot start says why in the device budget's words\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: an address kept at quit opens a browser there on the person's press\n\nThe quit Notice's buttons open a browser of the person's own, which goes\nto the address once its view is live, as a typed one does. A pinned\nbrowser past its chat has no address field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: formatting after kept logins\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T06:58:34+04:00",
+          "tree_id": "cd864a55bd8813b43aab72a318fd6948872b63dd",
+          "url": "https://github.com/purlis/purlis/commit/a4d3afcfd392248b9d8eb42e6da2fc74bbed5257"
+        },
+        "date": 1792381608548,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 616,
+            "unit": "MB",
+            "extra": "median of 3 samples: 506, 616, 645 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 484,
+            "unit": "MB",
+            "extra": "median of 6 samples: 467.2, 479.6, 482.9, 485, 486, 832.9 MB; window 226.8 MB, session host 257.7 MB"
           }
         ]
       }
