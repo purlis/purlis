@@ -99,8 +99,10 @@ describe("the window's stylesheet", () => {
         expect(PLATFORM_DRAWN as readonly string[]).toContain(gate);
   });
 
-  it("draws a chart's series in the first chart colour, which turns with the accent", () => {
+  it("draws each chart point in the chart palette in turn, the first turning with the accent", () => {
     expect(readers(app, "chart.1")).toEqual([".chart-bar | background"]);
+    for (const at of [2, 3, 4, 5, 6, 7, 8] as const)
+      expect(readers(app, `chart.${at}`)).toEqual([`.chart-bar[data-series="${at}"] | background`]);
     expect(readers(app, "accent.base")).not.toContain(".chart-bar | background");
     expect(DEFAULT_THEME.tint.window).toEqual(expect.arrayContaining(["chart.1", "markdown.link"]));
   });

@@ -74,7 +74,7 @@ them:
 | `markdown.*`                           | `link` `code` `code-block` `quote` `heading`                                                    | a markdown render: a memory, a todo, a session record, a release's notes (`.release-notes`)       |
 | `selection.*`, `caret`, `placeholder`  | `background` `text`                                                                             | the window's text selection and its words, a field's caret and its placeholder; `platform` leaves each to the platform |
 | `scrollbar.*`                          | `thumb` `track`                                                                                 | the window's scrollbars; a `platform` thumb is the platform's, and the track is drawn only with a thumb |
-| `chart.*`                              | `1` … `8`                                                                                       | a chart's series, a categorical palette: a chart draws one series today, in `chart.1`             |
+| `chart.*`                              | `1` … `8`                                                                                       | a chart's series, a categorical palette: each point of a chart is its own series, in turn         |
 | `window.*`                             | `background`                                                                                    | the native window's colour before the first frame (#2328, #2331); the page itself is `surface.base` |
 
 **Tokens that are not colours** (#2327) sit in an appearance's `tokens` beside the colours, each
@@ -94,8 +94,10 @@ and the check says so when a theme colours one without the other. No palette may
 `platform`. The window's rules stop at the light editor, which draws its own selection and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
-the ANSI colour the editor borrowed for it, a markdown link and `chart.1` the accent (and both
-turn with a workspace's colour, as the accent does), markdown's code, quotes and headings the
+the ANSI colour the editor borrowed for it (but light's `property` and `attribute`, `#1283ff`
+rather than the bright blue's `#218bff`, so they read on the editor's current line, #2522), a
+markdown link and `chart.1` the accent (and both turn with a workspace's colour, as the accent
+does), markdown's code, quotes and headings the
 words' colour, `window.background` the window's surface (the native window's colour, #2328), and the terminal's extras xterm's own
 defaults.
 

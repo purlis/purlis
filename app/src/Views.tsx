@@ -1284,9 +1284,9 @@ export type ChartBlock = Extract<PanelBlock, { kind: "chart" }>;
 /**
  * **A chart, drawn by charter from numbers and words** — `purlis_core::panel::Chart`.
  *
- * Everything that makes it look like something is charter's: the bars are one theme token
- * (`accent.base`) on another (`surface.sunken`), scaled to the largest value here, and every
- * label is a text node. The producer chose the numbers, the words and one of two shapes; it
+ * Everything that makes it look like something is charter's: each point is its own series, its
+ * bar the chart palette's next colour (`chart.1` to `chart.8`, then round again, #2522) on the
+ * track's `surface.sunken`, scaled to the largest value here, and every label is a text node. The producer chose the numbers, the words and one of two shapes; it
  * could not choose a colour, a width, a font or an axis, because the vocabulary has no word for
  * any of them.
  *
@@ -1319,6 +1319,7 @@ export function Chart({ chart }: { chart: ChartBlock }) {
               point={point}
               share={point.value / most}
               columns={columns}
+              series={(at % CHART_SERIES) + 1}
             />
           ))}
         </ol>
@@ -1327,14 +1328,21 @@ export function Chart({ chart }: { chart: ChartBlock }) {
   );
 }
 
+/** How many colours the chart palette has (`chart.1` to `chart.8`): a ninth point takes the
+ *  first again. */
+const CHART_SERIES = 8;
+
 function ChartPoint({
   point,
   share,
   columns,
+  series,
 }: {
   point: PanelPoint;
   share: number;
   columns: boolean;
+  /** Which of the chart palette's colours its bar is drawn in, 1 to 8. */
+  series: number;
 }) {
   // A percentage of the track, which is a length and not a colour or a timing, so it is the
   // one inline style this file writes. Never zero-width for a non-zero value: a bar that
@@ -1347,7 +1355,11 @@ function ChartPoint({
         {point.label}
       </span>
       <span className="chart-track" aria-hidden="true">
-        <span className="chart-bar" style={columns ? { blockSize: size } : { inlineSize: size }} />
+        <span
+          className="chart-bar"
+          data-series={series}
+          style={columns ? { blockSize: size } : { inlineSize: size }}
+        />
       </span>
       <span className="chart-value">
         {point.value}

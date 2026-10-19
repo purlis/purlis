@@ -7047,10 +7047,39 @@ h2.sidebar-title .node-icon {
   overflow: hidden;
 }
 
-/* A chart's one series is the first of the chart palette (#2327). */
+/* Each point of a chart is its own series, the chart palette in turn (#2327, #2522): the first
+   is `chart.1`, and a ninth point takes it again (`Views.tsx`, `data-series`). */
 .chart-bar {
   display: block;
   background: var(--chart-1);
+}
+
+.chart-bar[data-series="2"] {
+  background: var(--chart-2);
+}
+
+.chart-bar[data-series="3"] {
+  background: var(--chart-3);
+}
+
+.chart-bar[data-series="4"] {
+  background: var(--chart-4);
+}
+
+.chart-bar[data-series="5"] {
+  background: var(--chart-5);
+}
+
+.chart-bar[data-series="6"] {
+  background: var(--chart-6);
+}
+
+.chart-bar[data-series="7"] {
+  background: var(--chart-7);
+}
+
+.chart-bar[data-series="8"] {
+  background: var(--chart-8);
 }
 
 /* Bars: label, track, value on one line each, the labels in a column of their own so every
