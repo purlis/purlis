@@ -358,6 +358,10 @@ struct Running {
     /// persona grants a handoff left it holding, and what a person had granted this chat. A
     /// start compiled now with the same two differs from [`Self::confines`] only by settings.
     started_with: StartedWith,
+    /// **How its run is sandboxed, by the record of how it started** (#2636): this window's own,
+    /// for a run it started, or the session host's, for one it reattached. `None` where that
+    /// record cannot be read, which is taken as sandboxed.
+    ran: Option<purlis_session_protocol::session::RunSandbox>,
 }
 
 /// [`Running::started_with`].
@@ -3185,14 +3189,26 @@ impl Chats {
         // that is the plan its confinement in the host was started from; otherwise none, so its
         // sandbox reads as one that changed while no window was there, and it is offered a
         // restart on the sandbox of now as any chat a change left behind is (#1428).
-        let confines = match (reattaching, chat.number) {
-            (true, Some(number)) => {
+        // **How its run is sandboxed** (#2636): by the host's record of a run reattached, read
+        // before it is taken back; by this window's own of one it starts. A run the host has no
+        // record of is taken as sandboxed, with no sandbox of now standing in for it, so it is
+        // offered a restart (#1428); a run that started without the sandbox has none.
+        let mut ran = match (reattaching, chat.number) {
+            (true, Some(number)) => self.sessions.ran_in(number),
+            // The runner composes it, with the sandbox it compiles there: its record is the
+            // runner's, taken as sandboxed until the start says otherwise, below.
+            _ if on_the_runner => None,
+            _ => Some(ran_as_started(sandbox, harness)),
+        };
+        let confines = match (reattaching, chat.number, &ran) {
+            (true, Some(number), Some(purlis_session_protocol::session::RunSandbox::By(_))) => {
                 let now = sandbox.and_then(purlis_core::sandbox::Applied::plan);
                 let then = self.sessions.ran_with(number);
                 (now == then)
                     .then(|| sandbox.map(|applied| applied.confines().clone()))
                     .flatten()
             }
+            (true, _, _) => None,
             _ => sandbox.map(|applied| applied.confines().clone()),
         };
         let hearing = purlis_core::sandbox::plan::Hearing {
@@ -3345,6 +3361,13 @@ impl Chats {
                 );
             }
         };
+        // A person's own opt-out of a chat the runner composes (#2446).
+        let runner_without_sandbox = unsandboxed.is_some_and(|lifted| {
+            matches!(
+                lifted.by,
+                purlis_core::sandbox::By::Person | purlis_core::sandbox::By::YourLevel(_)
+            )
+        });
         let opened = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.reattach(number, &announce),
             _ if on_the_runner => self
@@ -3361,13 +3384,7 @@ impl Chats {
                         first_message: first_message.map(str::to_owned),
                         // A person's own opt-out, which a runner takes from no link but its own
                         // window's: such a start is refused there, never run sandboxed silently.
-                        without_sandbox: unsandboxed.is_some_and(|lifted| {
-                            matches!(
-                                lifted.by,
-                                purlis_core::sandbox::By::Person
-                                    | purlis_core::sandbox::By::YourLevel(_)
-                            )
-                        }),
+                        without_sandbox: runner_without_sandbox,
                         alone,
                         size,
                     },
@@ -3375,6 +3392,12 @@ impl Chats {
                     &announce,
                 )
                 .map(|(session, composed)| {
+                    // Started without the sandbox, as asked, where the runner composed no
+                    // confinement for it (#2636): the one start on a runner this window knows
+                    // to be off, since the runner refuses that start rather than sandbox it.
+                    if runner_without_sandbox && composed.is_none() {
+                        ran = Some(purlis_session_protocol::session::RunSandbox::Off);
+                    }
                     confinement = composed;
                     session
                 }),
@@ -3476,6 +3499,7 @@ impl Chats {
                     held: chat.held.clone(),
                     grants: self.grants_of(chat),
                 },
+                ran,
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -4374,7 +4398,8 @@ impl Chats {
     }
 
     /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
-    /// sandbox at all, read under one hold of the open chats so both
+    /// sandbox at all by the record of how its run started (#2636), read under one hold of the
+    /// open chats so both
     /// come from the same run. Its persona is the one the chat was started as, as every brokered
     /// read of a vault takes it (`crate::vaults`), never a fallback. None for a chat this app
     /// does not have open.
@@ -4393,10 +4418,9 @@ impl Chats {
                 confines.allow_live(&host, by);
             }
         }
-        // No sandbox compiled for it and none holding it: a chat reattached under a sandbox
-        // that changed while no window was there (D-2006-11) has no compiled sandbox recorded
-        // but is still held, so it is not one.
-        let unconfined = running.confines.is_none() && running.confinement.is_none();
+        // By the record of how its run started (#2636), never by what this window holds for it
+        // now: a run whose record cannot be read is taken as sandboxed.
+        let unconfined = running.ran == Some(purlis_session_protocol::session::RunSandbox::Off);
         Some((
             purlis_core::secrets::brokered::Asker {
                 root: root.to_path_buf(),
@@ -5672,6 +5696,25 @@ fn what_its_hooks_read(
         env,
         &purlis_core::hoststart::Watched { cwd, sandboxed, id },
     );
+}
+
+/// **How a run this window starts is sandboxed, by its own record** (#2636): in the sandbox
+/// `sandbox` compiled, by this machine's backend for `harness`, or off where it starts without
+/// one.
+fn ran_as_started(
+    sandbox: Option<&purlis_core::sandbox::Applied>,
+    harness: Option<Harness>,
+) -> purlis_session_protocol::session::RunSandbox {
+    use purlis_session_protocol::session::RunSandbox;
+    match sandbox {
+        Some(_) => RunSandbox::By(
+            purlis_core::sandbox::Os::this()
+                .backend_word(harness)
+                .unwrap_or("proxy")
+                .to_owned(),
+        ),
+        None => RunSandbox::Off,
+    }
 }
 
 #[cfg(test)]

@@ -2156,6 +2156,13 @@ impl SessionHost for HostedSessions {
             .ok()
     }
 
+    /// How the host says it applied the sandbox to chat `number`'s run: none from a host before
+    /// 1.28 (#2636).
+    fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
+        self.link().ok()?;
+        lock(&self.left).get(&number)?.sandbox.clone()
+    }
+
     fn close_what_was_not_reattached(&self) {
         if self.link().is_err() {
             return;

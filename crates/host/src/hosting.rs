@@ -110,6 +110,19 @@ pub trait Compose: Send + Sync + 'static {
     /// The program to run for `starting`, or why it cannot be started, in a sentence. Called
     /// off the host's runtime: it may read files and wait on [`ToCompose::beside`].
     fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String>;
+
+    /// **How the run of `spec` is sandboxed, as this host applies it** (#2636), where
+    /// `confined` says whether a confinement holds it: read from what is started, never from
+    /// the start. A binary that wraps its programs says by which sandbox; by default a
+    /// confined run is held by its proxy, and any other is off.
+    fn sandbox_of(&self, spec: &Spec, confined: bool) -> session::RunSandbox {
+        let _ = spec;
+        if confined {
+            session::RunSandbox::By("proxy".to_owned())
+        } else {
+            session::RunSandbox::Off
+        }
+    }
 }
 
 /// **What the host does beside a start its binary composes itself** (#2171): a start with no
@@ -703,6 +716,8 @@ struct Hosted {
     exit: Option<Exit>,
     /// The host's own act that is ending it, where one is ([`Stopped`]).
     stopping: Arc<Mutex<Option<Stopped>>>,
+    /// How its run is sandboxed, as this host applied it (#2636).
+    sandbox: session::RunSandbox,
 }
 
 /// Says the host's act `by` is ending a program, keeping the highest where another is already.
@@ -1446,6 +1461,16 @@ impl Hosting {
         }
         // Where it runs, for a start the host composed: what its project's saver waits on.
         let cwd = spec.cwd.clone();
+        // How it runs sandboxed, read from what is started and the confinement that holds it
+        // now, never from the start (#2636).
+        let sandbox = {
+            let confined = self
+                .state()
+                .confinements
+                .values()
+                .any(|held| held.owner == Owner::Program(program.clone()));
+            self.inner.compose.sandbox_of(&spec, confined)
+        };
         // Starting a program opens a terminal and forks: off the runtime.
         let hosting = self.clone();
         let running = match tokio::task::spawn_blocking(move || hosting.inner.run.run(spec)).await {
@@ -1486,6 +1511,7 @@ impl Hosting {
                 ended: false,
                 exit: None,
                 stopping: Arc::clone(&stopping),
+                sandbox: sandbox.clone(),
             },
         );
         // Written down before the start is answered, so a host killed from here on leaves it
@@ -1500,6 +1526,7 @@ impl Hosting {
                 process,
                 process_started: running.process_started(),
                 boot: crate::hostrecord::this_boot(),
+                sandbox: Some(sandbox),
             });
         }
         // A stop thrown while this one was being started: it is listed by now, so either the
@@ -1643,6 +1670,9 @@ impl Hosting {
                 exit: None,
                 // A browser's end leaves nothing in the event log.
                 stopping: Arc::default(),
+                // An engine the host starts outside every chat's sandbox, its reach its own
+                // proxy's: no chat's run.
+                sandbox: session::RunSandbox::Off,
             },
         );
         let hosting = self.clone();
@@ -1798,6 +1828,7 @@ impl Hosting {
                     .values()
                     .find(|held| held.owner == Owner::Program(id.clone()))
                     .map(|held| held.plan.clone()),
+                sandbox: Some(hosted.sandbox.clone()),
                 cols: hosted.size.columns,
                 rows: hosted.size.rows,
             })

@@ -223,6 +223,7 @@ fn left_in(process: u32, started: Option<String>, boot: Option<String>) -> Start
         process: Some(process),
         process_started: started,
         boot,
+        sandbox: None,
     }
 }
 
