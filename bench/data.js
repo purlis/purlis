@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792373310478,
+  "lastUpdate": 1792374882091,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17934,6 +17934,48 @@ window.BENCHMARK_DATA = {
             "value": 104.74956399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.610, 104.587, 104.750, 104.785, 104.884 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7ba7867a0db1d5cc584b7ce88549ab48d9ec65a3",
+          "message": "Browsers: a profile keeps its browser logins sealed on this device (#2021) (#2654)\n\nA browser that performed a declared login keeps it, sealed under this\ndevice's key, once it ends; the next chat of that profile whose login is\nallowed starts signed in, held to the login's site from the first moment.\nThe store is bound to the login as declared and its generation, denied to\nchats, left out of backups, one writer at a time, and wiped with its\nprofile. Session protocol 1.27.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T05:53:08+04:00",
+          "tree_id": "eba756b48a6d3919fefc5b615522c9423549a7d3",
+          "url": "https://github.com/purlis/purlis/commit/7ba7867a0db1d5cc584b7ce88549ab48d9ec65a3"
+        },
+        "date": 1792374880522,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.528136,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.520, 0.528, 0.534, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.04754,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.969, 17.013, 17.048, 17.095, 17.112 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.06993,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.604, 103.670, 104.070, 104.075, 104.867 ms"
           }
         ]
       }
