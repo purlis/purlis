@@ -37,6 +37,17 @@ fn login_on(page: &str, origin: &str) -> Login {
     }
 }
 
+/// How a login ended, in words fixed in this file: what a login answers may carry what its page
+/// showed, so a failing test names only the kind of answer, never its words.
+fn ended_as<T>(outcome: &Result<T, Refusal>) -> &'static str {
+    match outcome {
+        Ok(_) => "it answered",
+        Err(Refusal::NotLoggedIn(_)) => "not logged in",
+        Err(Refusal::Ended) => "the browser ended",
+        Err(_) => "another refusal",
+    }
+}
+
 /// Whether `text` holds either value, in any case.
 fn holds_a_value(text: &str) -> bool {
     let text = text.to_lowercase();
@@ -62,7 +73,10 @@ fn a_declared_login_goes_through_and_no_value_reaches_the_agent() {
     );
     let page = answer.page.expect("the page it left");
     // The page it landed on carries the values in its address: neither is shown.
-    assert!(!holds_a_value(&page.address), "{}", page.address);
+    assert!(
+        !holds_a_value(&page.address),
+        "the address the login landed on shows a value"
+    );
     let shown = snapshot(&browser);
     assert!(shown.contains("Account"), "{shown}");
     assert!(!holds_a_value(&shown), "{shown}");
@@ -108,7 +122,7 @@ fn a_login_that_does_not_go_through_is_cleared_and_its_toggle_shows_nothing() {
             assert!(why.contains("did not go through"), "{why}");
             assert!(!holds_a_value(&why), "{why}");
         }
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert_eq!(ended.driver, Driver::Agent);
     // What purlis filled is cleared: the page says its field holds nothing.
@@ -133,7 +147,7 @@ fn a_login_on_another_origin_fills_nothing() {
         .expect("the login runs");
     match ended.outcome {
         Err(Refusal::NotLoggedIn(why)) => assert!(why.contains("nothing was filled"), "{why}"),
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     let shown = snapshot(&browser);
     assert!(shown.contains("Sign in"), "{shown}");
@@ -156,7 +170,10 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     let answer = ended.outcome.expect("the login goes through");
     assert_eq!(ended.driver, Driver::Agent);
     let page = answer.page.expect("the page it left");
-    assert!(page.address.contains("account.html"), "{}", page.address);
+    assert!(
+        page.address.contains("account.html"),
+        "the login landed on the account page"
+    );
     let shown = snapshot(&browser);
     assert!(shown.contains("Account"), "{shown}");
     assert!(!holds_a_value(&shown), "{shown}");

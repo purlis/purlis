@@ -174,6 +174,20 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
     submitted
 }
 
+/// How a login ended, in words fixed in this file: what a login answers may carry what its page
+/// showed, so a failing test names only the kind of answer, never its words.
+fn ended_as<T>(outcome: &Result<T, Refusal>) -> &'static str {
+    match outcome {
+        Ok(_) => "it answered",
+        Err(Refusal::NotLoggedIn(_)) => "not logged in",
+        Err(Refusal::Interrupted) => "cut",
+        Err(Refusal::PersonDriving) => "the person drives",
+        Err(Refusal::PurlisDriving) => "another login runs",
+        Err(Refusal::Ended) => "the browser ended",
+        Err(_) => "another refusal",
+    }
+}
+
 fn inserted(engine: &Engine) -> Vec<String> {
     engine
         .sent("Input.insertText")
@@ -263,7 +277,7 @@ fn a_page_on_another_origin_has_nothing_filled_and_the_browser_is_not_bound() {
             why.contains("not on https://shop.example.test, so nothing was filled"),
             "{why}"
         ),
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert!(inserted(&engine).is_empty());
     assert_eq!(bound.load(Ordering::SeqCst), 0);
@@ -279,7 +293,7 @@ fn a_browser_that_cannot_be_held_to_the_origin_has_nothing_filled() {
         .unwrap();
     match ended.outcome {
         Err(Refusal::NotLoggedIn(why)) => assert!(why.contains("nothing was filled"), "{why}"),
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert!(inserted(&engine).is_empty());
 }
@@ -297,7 +311,7 @@ fn a_login_that_does_not_go_through_clears_what_it_filled_and_still_keeps_it_out
             );
             assert!(!why.contains(FILLED), "{why}");
         }
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     let cleared = engine
         .sent("Runtime.callFunctionOn")
@@ -323,7 +337,7 @@ fn a_login_is_refused_while_the_person_drives_and_fills_nothing() {
     browser.take_over();
     match browser.log_in(&login_at(ORIGIN), &|| Ok(())) {
         Err(Refusal::PersonDriving) => {}
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert!(inserted(&engine).is_empty());
     assert_eq!(browser.driver(), Driver::Person);
@@ -353,7 +367,7 @@ fn a_page_that_loads_another_document_as_purlis_fills_it_ends_the_browser() {
             assert!(why.contains("ended this browser"), "{why}");
             assert!(!why.contains(FILLED), "{why}");
         }
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert_eq!(engine.sent("Browser.close").len(), 1);
     let after = browser.call(
@@ -445,7 +459,7 @@ fn ends_the_browser(twist: Twist) {
     let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
     match ended.outcome {
         Err(Refusal::NotLoggedIn(why)) => assert!(why.contains("ended this browser"), "{why}"),
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert_eq!(engine.sent("Browser.close").len(), 1);
     let after = browser.call(
@@ -487,7 +501,10 @@ fn a_page_that_asks_for_nothing_is_signed_in_from_kept_logins_and_nothing_is_fil
         .unwrap();
     let answer = ended.outcome.unwrap();
     let note = answer.note.unwrap_or_default();
-    assert!(note.contains("asks for no password"), "{note}");
+    assert!(
+        note.contains("asks for no password"),
+        "the note says the page asks for no password"
+    );
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
@@ -513,8 +530,8 @@ fn every_script_a_login_runs_on_its_page_runs_in_purlis_s_own_world() {
     let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
     assert!(
         matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
-        "{:?}",
-        ended.outcome
+        "not logged in: {}",
+        ended_as(&ended.outcome)
     );
     assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
     let finds: Vec<_> = engine
@@ -570,7 +587,7 @@ fn a_login_with_no_world_of_purlis_s_own_fills_nothing_and_hands_the_browser_bac
             why.contains("could not read the login page on http://fixture.test"),
             "{why}"
         ),
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert!(inserted(&engine).is_empty());
     assert_eq!(ended.driver, Driver::Agent);
@@ -587,7 +604,7 @@ fn a_login_whose_world_ends_before_the_fill_fills_nothing_and_hands_the_browser_
         Err(Refusal::NotLoggedIn(why)) => {
             assert!(why.contains("could not fill the login"), "{why}");
         }
-        other => panic!("refused: {other:?}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
     }
     assert!(inserted(&engine).is_empty());
     assert_eq!(ended.driver, Driver::Agent);
