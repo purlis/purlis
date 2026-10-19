@@ -142,7 +142,7 @@
   {
    "hex": "#086a56",
    "colour": "orange",
-   "tinted": "#85512b"
+   "tinted": "#86502b"
   },
   {
    "hex": "#086a56",
@@ -152,22 +152,22 @@
   {
    "hex": "#086a56",
    "colour": "green",
-   "tinted": "#39683b"
+   "tinted": "#39673c"
   },
   {
    "hex": "#086a56",
    "colour": "teal",
-   "tinted": "#006965"
+   "tinted": "#016964"
   },
   {
    "hex": "#086a56",
    "colour": "blue",
-   "tinted": "#3a5f8e"
+   "tinted": "#395f8e"
   },
   {
    "hex": "#086a56",
    "colour": "purple",
-   "tinted": "#6b5288"
+   "tinted": "#6c5288"
   },
   {
    "hex": "#086a56",
@@ -177,42 +177,42 @@
   {
    "hex": "#086a56",
    "colour": "#3a7bd5",
-   "tinted": "#3d5e8e"
+   "tinted": "#3d5e8f"
   },
   {
    "hex": "#086a56",
    "colour": "#c0392b",
-   "tinted": "#8b4c42"
+   "tinted": "#8c4b43"
   },
   {
    "hex": "#112b25",
    "colour": "red",
-   "tinted": "#37211f"
+   "tinted": "#36211f"
   },
   {
    "hex": "#112b25",
    "colour": "orange",
-   "tinted": "#342317"
+   "tinted": "#352217"
   },
   {
    "hex": "#112b25",
    "colour": "yellow",
-   "tinted": "#2c2612"
+   "tinted": "#2c2613"
   },
   {
    "hex": "#112b25",
    "colour": "green",
-   "tinted": "#1b2a1b"
+   "tinted": "#1b2a1c"
   },
   {
    "hex": "#112b25",
    "colour": "teal",
-   "tinted": "#0f2b29"
+   "tinted": "#0f2a2a"
   },
   {
    "hex": "#112b25",
    "colour": "blue",
-   "tinted": "#1b2737"
+   "tinted": "#1b2738"
   },
   {
    "hex": "#112b25",
@@ -222,7 +222,7 @@
   {
    "hex": "#112b25",
    "colour": "pink",
-   "tinted": "#35212a"
+   "tinted": "#342129"
   },
   {
    "hex": "#112b25",
@@ -232,17 +232,17 @@
   {
    "hex": "#112b25",
    "colour": "#c0392b",
-   "tinted": "#37211e"
+   "tinted": "#36211e"
   },
   {
    "hex": "#17302a",
    "colour": "red",
-   "tinted": "#3c2624"
+   "tinted": "#3b2625"
   },
   {
    "hex": "#17302a",
    "colour": "orange",
-   "tinted": "#39281c"
+   "tinted": "#3a271c"
   },
   {
    "hex": "#17302a",
@@ -252,17 +252,17 @@
   {
    "hex": "#17302a",
    "colour": "green",
-   "tinted": "#202f20"
+   "tinted": "#212f20"
   },
   {
    "hex": "#17302a",
    "colour": "teal",
-   "tinted": "#15302e"
+   "tinted": "#14302e"
   },
   {
    "hex": "#17302a",
    "colour": "blue",
-   "tinted": "#202c3c"
+   "tinted": "#212c3c"
   },
   {
    "hex": "#17302a",
@@ -272,17 +272,17 @@
   {
    "hex": "#17302a",
    "colour": "pink",
-   "tinted": "#3a262f"
+   "tinted": "#39262f"
   },
   {
    "hex": "#17302a",
    "colour": "#3a7bd5",
-   "tinted": "#212c3c"
+   "tinted": "#212c3d"
   },
   {
    "hex": "#17302a",
    "colour": "#c0392b",
-   "tinted": "#3c2623"
+   "tinted": "#3c2622"
   },
   {
    "hex": "#191917",
@@ -292,32 +292,32 @@
   {
    "hex": "#191917",
    "colour": "orange",
-   "tinted": "#24160c"
+   "tinted": "#25150c"
   },
   {
    "hex": "#191917",
    "colour": "yellow",
-   "tinted": "#1d1908"
+   "tinted": "#1e1808"
   },
   {
    "hex": "#191917",
    "colour": "green",
-   "tinted": "#0f1c10"
+   "tinted": "#101b10"
   },
   {
    "hex": "#191917",
    "colour": "teal",
-   "tinted": "#051c1b"
+   "tinted": "#051c1c"
   },
   {
    "hex": "#191917",
    "colour": "blue",
-   "tinted": "#0f1927"
+   "tinted": "#101927"
   },
   {
    "hex": "#191917",
    "colour": "purple",
-   "tinted": "#1d1625"
+   "tinted": "#1d1624"
   },
   {
    "hex": "#191917",
@@ -332,7 +332,7 @@
   {
    "hex": "#191917",
    "colour": "#c0392b",
-   "tinted": "#261411"
+   "tinted": "#261412"
   },
   {
    "hex": "#1d1d1b",
@@ -342,12 +342,12 @@
   {
    "hex": "#1d1d1b",
    "colour": "orange",
-   "tinted": "#281a0f"
+   "tinted": "#291910"
   },
   {
    "hex": "#1d1d1b",
    "colour": "yellow",
-   "tinted": "#211d0c"
+   "tinted": "#221c0c"
   },
   {
    "hex": "#1d1d1b",
@@ -357,22 +357,22 @@
   {
    "hex": "#1d1d1b",
    "colour": "teal",
-   "tinted": "#08211f"
+   "tinted": "#092020"
   },
   {
    "hex": "#1d1d1b",
    "colour": "blue",
-   "tinted": "#131e2b"
+   "tinted": "#141d2b"
   },
   {
    "hex": "#1d1d1b",
    "colour": "purple",
-   "tinted": "#211a29"
+   "tinted": "#201a2a"
   },
   {
    "hex": "#1d1d1b",
    "colour": "pink",
-   "tinted": "#291820"
+   "tinted": "#281820"
   },
   {
    "hex": "#1d1d1b",
@@ -382,22 +382,22 @@
   {
    "hex": "#1d1d1b",
    "colour": "#c0392b",
-   "tinted": "#2a1815"
+   "tinted": "#2a1816"
   },
   {
    "hex": "#1f3530",
    "colour": "red",
-   "tinted": "#402c2a"
+   "tinted": "#3f2c2b"
   },
   {
    "hex": "#1f3530",
    "colour": "orange",
-   "tinted": "#3d2e23"
+   "tinted": "#3e2d24"
   },
   {
    "hex": "#1f3530",
    "colour": "yellow",
-   "tinted": "#353120"
+   "tinted": "#363020"
   },
   {
    "hex": "#1f3530",
@@ -407,32 +407,32 @@
   {
    "hex": "#1f3530",
    "colour": "teal",
-   "tinted": "#1e3533"
+   "tinted": "#1d3533"
   },
   {
    "hex": "#1f3530",
    "colour": "blue",
-   "tinted": "#273240"
+   "tinted": "#273140"
   },
   {
    "hex": "#1f3530",
    "colour": "purple",
-   "tinted": "#352e3e"
+   "tinted": "#352e3d"
   },
   {
    "hex": "#1f3530",
    "colour": "pink",
-   "tinted": "#3e2c34"
+   "tinted": "#3d2c34"
   },
   {
    "hex": "#1f3530",
    "colour": "#3a7bd5",
-   "tinted": "#273240"
+   "tinted": "#283140"
   },
   {
    "hex": "#1f3530",
    "colour": "#c0392b",
-   "tinted": "#402c29"
+   "tinted": "#402c28"
   },
   {
    "hex": "#2a2a26",
@@ -442,42 +442,42 @@
   {
    "hex": "#2a2a26",
    "colour": "orange",
-   "tinted": "#36261c"
+   "tinted": "#37261c"
   },
   {
    "hex": "#2a2a26",
    "colour": "yellow",
-   "tinted": "#2e2a18"
+   "tinted": "#2f2919"
   },
   {
    "hex": "#2a2a26",
    "colour": "green",
-   "tinted": "#202d20"
+   "tinted": "#202d1f"
   },
   {
    "hex": "#2a2a26",
    "colour": "teal",
-   "tinted": "#162e2c"
+   "tinted": "#172d2d"
   },
   {
    "hex": "#2a2a26",
    "colour": "blue",
-   "tinted": "#202b39"
+   "tinted": "#202a39"
   },
   {
    "hex": "#2a2a26",
    "colour": "purple",
-   "tinted": "#2e2737"
+   "tinted": "#2d2737"
   },
   {
    "hex": "#2a2a26",
    "colour": "pink",
-   "tinted": "#36252d"
+   "tinted": "#37242d"
   },
   {
    "hex": "#2a2a26",
    "colour": "#3a7bd5",
-   "tinted": "#202a39"
+   "tinted": "#212a39"
   },
   {
    "hex": "#2a2a26",
@@ -487,37 +487,37 @@
   {
    "hex": "#52c4a6",
    "colour": "red",
-   "tinted": "#f59891"
+   "tinted": "#f69890"
   },
   {
    "hex": "#52c4a6",
    "colour": "orange",
-   "tinted": "#eca06c"
+   "tinted": "#eca06b"
   },
   {
    "hex": "#52c4a6",
    "colour": "yellow",
-   "tinted": "#c7b057"
+   "tinted": "#c7b156"
   },
   {
    "hex": "#52c4a6",
    "colour": "green",
-   "tinted": "#7fc181"
+   "tinted": "#7ec180"
   },
   {
    "hex": "#52c4a6",
    "colour": "teal",
-   "tinted": "#3fc4bd"
+   "tinted": "#3ec4bc"
   },
   {
    "hex": "#52c4a6",
    "colour": "blue",
-   "tinted": "#7fb4f8"
+   "tinted": "#7fb5f7"
   },
   {
    "hex": "#52c4a6",
    "colour": "purple",
-   "tinted": "#c5a2ef"
+   "tinted": "#c6a2ef"
   },
   {
    "hex": "#52c4a6",
@@ -527,7 +527,7 @@
   {
    "hex": "#52c4a6",
    "colour": "#3a7bd5",
-   "tinted": "#83b3f9"
+   "tinted": "#82b4f8"
   },
   {
    "hex": "#52c4a6",
@@ -537,37 +537,37 @@
   {
    "hex": "#52c4a655",
    "colour": "red",
-   "tinted": "#f5989155"
+   "tinted": "#f6989055"
   },
   {
    "hex": "#52c4a655",
    "colour": "orange",
-   "tinted": "#eca06c55"
+   "tinted": "#eca06b55"
   },
   {
    "hex": "#52c4a655",
    "colour": "yellow",
-   "tinted": "#c7b05755"
+   "tinted": "#c7b15655"
   },
   {
    "hex": "#52c4a655",
    "colour": "green",
-   "tinted": "#7fc18155"
+   "tinted": "#7ec18055"
   },
   {
    "hex": "#52c4a655",
    "colour": "teal",
-   "tinted": "#3fc4bd55"
+   "tinted": "#3ec4bc55"
   },
   {
    "hex": "#52c4a655",
    "colour": "blue",
-   "tinted": "#7fb4f855"
+   "tinted": "#7fb5f755"
   },
   {
    "hex": "#52c4a655",
    "colour": "purple",
-   "tinted": "#c5a2ef55"
+   "tinted": "#c6a2ef55"
   },
   {
    "hex": "#52c4a655",
@@ -577,7 +577,7 @@
   {
    "hex": "#52c4a655",
    "colour": "#3a7bd5",
-   "tinted": "#83b3f955"
+   "tinted": "#82b4f855"
   },
   {
    "hex": "#52c4a655",
@@ -587,17 +587,17 @@
   {
    "hex": "#c9e8de",
    "colour": "red",
-   "tinted": "#fadad7"
+   "tinted": "#f9dbd6"
   },
   {
    "hex": "#c9e8de",
    "colour": "orange",
-   "tinted": "#f6ddcc"
+   "tinted": "#f5ddcc"
   },
   {
    "hex": "#c9e8de",
    "colour": "yellow",
-   "tinted": "#e8e1c7"
+   "tinted": "#e8e2c7"
   },
   {
    "hex": "#c9e8de",
@@ -607,17 +607,17 @@
   {
    "hex": "#c9e8de",
    "colour": "teal",
-   "tinted": "#c6e8e5"
+   "tinted": "#c7e8e4"
   },
   {
    "hex": "#c9e8de",
    "colour": "blue",
-   "tinted": "#d2e3f9"
+   "tinted": "#d2e3f8"
   },
   {
    "hex": "#c9e8de",
    "colour": "purple",
-   "tinted": "#e8ddf6"
+   "tinted": "#e8ddf5"
   },
   {
    "hex": "#c9e8de",
@@ -627,27 +627,27 @@
   {
    "hex": "#c9e8de",
    "colour": "#3a7bd5",
-   "tinted": "#d3e3f9"
+   "tinted": "#d2e3f9"
   },
   {
    "hex": "#c9e8de",
    "colour": "#c0392b",
-   "tinted": "#f9dad5"
+   "tinted": "#f9dbd5"
   },
   {
    "hex": "#d3ede4",
    "colour": "red",
-   "tinted": "#fce1de"
+   "tinted": "#fde1df"
   },
   {
    "hex": "#d3ede4",
    "colour": "orange",
-   "tinted": "#f9e3d6"
+   "tinted": "#f8e4d5"
   },
   {
    "hex": "#d3ede4",
    "colour": "yellow",
-   "tinted": "#ede7d1"
+   "tinted": "#ede8d1"
   },
   {
    "hex": "#d3ede4",
@@ -667,22 +667,22 @@
   {
    "hex": "#d3ede4",
    "colour": "purple",
-   "tinted": "#ede4f9"
+   "tinted": "#ece4f8"
   },
   {
    "hex": "#d3ede4",
    "colour": "pink",
-   "tinted": "#f9e1eb"
+   "tinted": "#f9e1ec"
   },
   {
    "hex": "#d3ede4",
    "colour": "#3a7bd5",
-   "tinted": "#dbe8fc"
+   "tinted": "#dae9fb"
   },
   {
    "hex": "#d3ede4",
    "colour": "#c0392b",
-   "tinted": "#fce2dd"
+   "tinted": "#fbe2dc"
   },
   {
    "hex": "#dcf1ea",
@@ -692,62 +692,62 @@
   {
    "hex": "#dcf1ea",
    "colour": "orange",
-   "tinted": "#fae9de"
+   "tinted": "#fbe9df"
   },
   {
    "hex": "#dcf1ea",
    "colour": "yellow",
-   "tinted": "#f1ecdb"
+   "tinted": "#f1edda"
   },
   {
    "hex": "#dcf1ea",
    "colour": "green",
-   "tinted": "#e2f0e2"
+   "tinted": "#e3f0e1"
   },
   {
    "hex": "#dcf1ea",
    "colour": "teal",
-   "tinted": "#daf1ef"
+   "tinted": "#dbf1ee"
   },
   {
    "hex": "#dcf1ea",
    "colour": "blue",
-   "tinted": "#e2edfd"
+   "tinted": "#e1eefc"
   },
   {
    "hex": "#dcf1ea",
    "colour": "purple",
-   "tinted": "#f1e9fa"
+   "tinted": "#f0eafa"
   },
   {
    "hex": "#dcf1ea",
    "colour": "pink",
-   "tinted": "#fbe7f0"
+   "tinted": "#fae8ef"
   },
   {
    "hex": "#dcf1ea",
    "colour": "#3a7bd5",
-   "tinted": "#e2edfd"
+   "tinted": "#e2eefc"
   },
   {
    "hex": "#dcf1ea",
    "colour": "#c0392b",
-   "tinted": "#fde8e4"
+   "tinted": "#fde8e3"
   },
   {
    "hex": "#f0eee8",
    "colour": "red",
-   "tinted": "#ffe9e7"
+   "tinted": "#feeae7"
   },
   {
    "hex": "#f0eee8",
    "colour": "orange",
-   "tinted": "#ffeadd"
+   "tinted": "#feebdd"
   },
   {
    "hex": "#f0eee8",
    "colour": "yellow",
-   "tinted": "#f4eed8"
+   "tinted": "#f5eed8"
   },
   {
    "hex": "#f0eee8",
@@ -757,52 +757,52 @@
   {
    "hex": "#f0eee8",
    "colour": "teal",
-   "tinted": "#d7f4f1"
+   "tinted": "#d7f4f2"
   },
   {
    "hex": "#f0eee8",
    "colour": "blue",
-   "tinted": "#e3efff"
+   "tinted": "#e3f0fe"
   },
   {
    "hex": "#f0eee8",
    "colour": "purple",
-   "tinted": "#f3ebff"
+   "tinted": "#f3ebfe"
   },
   {
    "hex": "#f0eee8",
    "colour": "pink",
-   "tinted": "#ffe8f2"
+   "tinted": "#fee9f1"
   },
   {
    "hex": "#f0eee8",
    "colour": "#3a7bd5",
-   "tinted": "#e4efff"
+   "tinted": "#e3f0fe"
   },
   {
    "hex": "#f0eee8",
    "colour": "#c0392b",
-   "tinted": "#ffe9e6"
+   "tinted": "#feeae5"
   },
   {
    "hex": "#f7f6f2",
    "colour": "red",
-   "tinted": "#fff4f2"
+   "tinted": "#fef4f2"
   },
   {
    "hex": "#f7f6f2",
    "colour": "orange",
-   "tinted": "#fff4ed"
+   "tinted": "#fff4ee"
   },
   {
    "hex": "#f7f6f2",
    "colour": "yellow",
-   "tinted": "#fcf6e0"
+   "tinted": "#fbf7df"
   },
   {
    "hex": "#f7f6f2",
    "colour": "green",
-   "tinted": "#e9fbe9"
+   "tinted": "#e9fbe8"
   },
   {
    "hex": "#f7f6f2",
@@ -812,12 +812,12 @@
   {
    "hex": "#f7f6f2",
    "colour": "blue",
-   "tinted": "#f0f7ff"
+   "tinted": "#f0f7fe"
   },
   {
    "hex": "#f7f6f2",
    "colour": "purple",
-   "tinted": "#f9f4ff"
+   "tinted": "#f8f5fe"
   },
   {
    "hex": "#f7f6f2",
@@ -827,12 +827,12 @@
   {
    "hex": "#f7f6f2",
    "colour": "#3a7bd5",
-   "tinted": "#f1f7ff"
+   "tinted": "#f0f7fe"
   },
   {
    "hex": "#f7f6f2",
    "colour": "#c0392b",
-   "tinted": "#fff4f2"
+   "tinted": "#fef4f1"
   },
   {
    "hex": "#fff",
@@ -1003,6 +1003,26 @@
     "token": "accent.base",
     "from": "border.strong",
     "distance": 0.1
+   },
+   {
+    "token": "focus.ring",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "list.selected-edge",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "accent.surface",
+    "from": "danger.base",
+    "distance": 0.1
+   },
+   {
+    "token": "tab.active",
+    "from": "danger.base",
+    "distance": 0.1
    }
   ]
  },
@@ -1011,7 +1031,7 @@
    "accent": "#52c4a6",
    "hue": 25.0,
    "most": null,
-   "tinted": "#f59891",
+   "tinted": "#f69890",
    "rules": [
     {
      "from": "#c97474",
@@ -1025,7 +1045,7 @@
    "accent": "#52c4a6",
    "hue": 55.0,
    "most": null,
-   "tinted": "#eca06c",
+   "tinted": "#eca06b",
    "rules": [
     {
      "from": "#c97474",
@@ -1039,7 +1059,7 @@
    "accent": "#52c4a6",
    "hue": 95.0,
    "most": null,
-   "tinted": "#c7b057",
+   "tinted": "#c7b156",
    "rules": [
     {
      "from": "#c97474",
@@ -1053,7 +1073,7 @@
    "accent": "#52c4a6",
    "hue": 145.0,
    "most": null,
-   "tinted": "#7fc181",
+   "tinted": "#7ec180",
    "rules": [
     {
      "from": "#c97474",
@@ -1067,7 +1087,7 @@
    "accent": "#52c4a6",
    "hue": 190.0,
    "most": null,
-   "tinted": "#3fc4bd",
+   "tinted": "#3ec4bc",
    "rules": [
     {
      "from": "#c97474",
@@ -1081,7 +1101,7 @@
    "accent": "#52c4a6",
    "hue": 255.0,
    "most": null,
-   "tinted": "#7fb4f8",
+   "tinted": "#7fb5f7",
    "rules": [
     {
      "from": "#c97474",
@@ -1095,7 +1115,7 @@
    "accent": "#52c4a6",
    "hue": 305.0,
    "most": null,
-   "tinted": "#c5a2ef",
+   "tinted": "#c6a2ef",
    "rules": [
     {
      "from": "#c97474",
@@ -1165,7 +1185,7 @@
    "accent": "#52c4a6",
    "hue": 97.5,
    "most": null,
-   "tinted": "#c4b157",
+   "tinted": "#c4b257",
    "rules": [
     {
      "from": "#c97474",
@@ -1179,7 +1199,7 @@
    "accent": "#52c4a6",
    "hue": 127.5,
    "most": null,
-   "tinted": "#9bbc6c",
+   "tinted": "#9bbc6d",
    "rules": [
     {
      "from": "#c97474",
@@ -1193,7 +1213,7 @@
    "accent": "#52c4a6",
    "hue": 157.5,
    "most": null,
-   "tinted": "#6ac391",
+   "tinted": "#6ac390",
    "rules": [
     {
      "from": "#c97474",
@@ -1207,7 +1227,7 @@
    "accent": "#52c4a6",
    "hue": 187.5,
    "most": null,
-   "tinted": "#41c4b9",
+   "tinted": "#40c4b9",
    "rules": [
     {
      "from": "#c97474",
@@ -1221,7 +1241,7 @@
    "accent": "#52c4a6",
    "hue": 217.5,
    "most": null,
-   "tinted": "#47bfdd",
+   "tinted": "#47c0dd",
    "rules": [
     {
      "from": "#c97474",
@@ -1235,7 +1255,7 @@
    "accent": "#52c4a6",
    "hue": 247.5,
    "most": null,
-   "tinted": "#73b7f5",
+   "tinted": "#73b7f4",
    "rules": [
     {
      "from": "#c97474",
@@ -1249,7 +1269,7 @@
    "accent": "#52c4a6",
    "hue": 277.5,
    "most": null,
-   "tinted": "#a1acfa",
+   "tinted": "#a1acfb",
    "rules": [
     {
      "from": "#c97474",
@@ -1263,7 +1283,7 @@
    "accent": "#52c4a6",
    "hue": 307.5,
    "most": null,
-   "tinted": "#c8a1ed",
+   "tinted": "#c8a2ec",
    "rules": [
     {
      "from": "#c97474",
@@ -1277,7 +1297,7 @@
    "accent": "#52c4a6",
    "hue": 337.5,
    "most": null,
-   "tinted": "#e599cf",
+   "tinted": "#e49acf",
    "rules": [
     {
      "from": "#c97474",
@@ -1290,8 +1310,8 @@
   {
    "accent": "#086a56",
    "hue": 25.0,
-   "most": 0.05,
-   "tinted": "#795451",
+   "most": 0.055,
+   "tinted": "#7b5350",
    "rules": [
     {
      "from": "#a83232",
@@ -1305,7 +1325,7 @@
    "accent": "#086a56",
    "hue": 55.0,
    "most": 0.07,
-   "tinted": "#7e5437",
+   "tinted": "#7d5438",
    "rules": [
     {
      "from": "#a83232",
@@ -1333,7 +1353,7 @@
    "accent": "#086a56",
    "hue": 145.0,
    "most": null,
-   "tinted": "#39683b",
+   "tinted": "#39673c",
    "rules": [
     {
      "from": "#a83232",
@@ -1347,7 +1367,7 @@
    "accent": "#086a56",
    "hue": 190.0,
    "most": null,
-   "tinted": "#006965",
+   "tinted": "#016964",
    "rules": [
     {
      "from": "#a83232",
@@ -1361,7 +1381,7 @@
    "accent": "#086a56",
    "hue": 255.0,
    "most": null,
-   "tinted": "#3a5f8e",
+   "tinted": "#395f8e",
    "rules": [
     {
      "from": "#a83232",
@@ -1375,7 +1395,7 @@
    "accent": "#086a56",
    "hue": 305.0,
    "most": null,
-   "tinted": "#6b5288",
+   "tinted": "#6c5288",
    "rules": [
     {
      "from": "#a83232",
@@ -1388,8 +1408,8 @@
   {
    "accent": "#086a56",
    "hue": 350.0,
-   "most": 0.08,
-   "tinted": "#824d67",
+   "most": 0.075,
+   "tinted": "#804e67",
    "rules": [
     {
      "from": "#a83232",
@@ -1417,7 +1437,7 @@
    "accent": "#086a56",
    "hue": 37.5,
    "most": 0.055,
-   "tinted": "#7b5449",
+   "tinted": "#7b5448",
    "rules": [
     {
      "from": "#a83232",
@@ -1431,7 +1451,7 @@
    "accent": "#086a56",
    "hue": 67.5,
    "most": null,
-   "tinted": "#7f5421",
+   "tinted": "#7f5422",
    "rules": [
     {
      "from": "#a83232",
@@ -1445,7 +1465,7 @@
    "accent": "#086a56",
    "hue": 97.5,
    "most": null,
-   "tinted": "#6b5d18",
+   "tinted": "#6b5d19",
    "rules": [
     {
      "from": "#a83232",
@@ -1459,7 +1479,7 @@
    "accent": "#086a56",
    "hue": 127.5,
    "most": null,
-   "tinted": "#4e652b",
+   "tinted": "#4e642c",
    "rules": [
     {
      "from": "#a83232",
@@ -1487,7 +1507,7 @@
    "accent": "#086a56",
    "hue": 187.5,
    "most": null,
-   "tinted": "#006963",
+   "tinted": "#016963",
    "rules": [
     {
      "from": "#a83232",
@@ -1501,7 +1521,7 @@
    "accent": "#086a56",
    "hue": 217.5,
    "most": null,
-   "tinted": "#00677b",
+   "tinted": "#01667b",
    "rules": [
     {
      "from": "#a83232",
@@ -1515,7 +1535,7 @@
    "accent": "#086a56",
    "hue": 247.5,
    "most": null,
-   "tinted": "#30618c",
+   "tinted": "#31608c",
    "rules": [
     {
      "from": "#a83232",
@@ -1557,7 +1577,7 @@
    "accent": "#086a56",
    "hue": 337.5,
    "most": null,
-   "tinted": "#804c72",
+   "tinted": "#804c73",
    "rules": [
     {
      "from": "#a83232",
@@ -1597,7 +1617,7 @@
    ],
    "hue": 12.5,
    "most": null,
-   "tinted": "#f497a2",
+   "tinted": "#f597a1",
    "accent_tinted": true
   },
   {
@@ -1635,7 +1655,7 @@
    ],
    "hue": 72.5,
    "most": null,
-   "tinted": "#dfa75d",
+   "tinted": "#dfa75c",
    "accent_tinted": true
   },
   {
@@ -1654,7 +1674,7 @@
    ],
    "hue": 102.5,
    "most": null,
-   "tinted": "#beb359",
+   "tinted": "#bfb359",
    "accent_tinted": true
   },
   {
@@ -1673,7 +1693,7 @@
    ],
    "hue": 132.5,
    "most": null,
-   "tinted": "#93be71",
+   "tinted": "#92be71",
    "accent_tinted": true
   },
   {
@@ -1692,7 +1712,7 @@
    ],
    "hue": 162.5,
    "most": null,
-   "tinted": "#62c398",
+   "tinted": "#62c497",
    "accent_tinted": true
   },
   {
@@ -1711,7 +1731,7 @@
    ],
    "hue": 192.5,
    "most": null,
-   "tinted": "#3dc3c0",
+   "tinted": "#3dc4bf",
    "accent_tinted": true
   },
   {
@@ -1730,7 +1750,7 @@
    ],
    "hue": 222.5,
    "most": null,
-   "tinted": "#4dbee2",
+   "tinted": "#4dbfe2",
    "accent_tinted": true
   },
   {
@@ -1749,7 +1769,7 @@
    ],
    "hue": 252.5,
    "most": null,
-   "tinted": "#7bb5f7",
+   "tinted": "#7cb5f7",
    "accent_tinted": true
   },
   {
@@ -1768,7 +1788,7 @@
    ],
    "hue": 282.5,
    "most": null,
-   "tinted": "#a8aaf9",
+   "tinted": "#a9aafa",
    "accent_tinted": true
   },
   {
@@ -1787,7 +1807,7 @@
    ],
    "hue": 312.5,
    "most": null,
-   "tinted": "#cea0e9",
+   "tinted": "#cea0e8",
    "accent_tinted": true
   },
   {
@@ -1806,7 +1826,7 @@
    ],
    "hue": 342.5,
    "most": null,
-   "tinted": "#e899c9",
+   "tinted": "#e799ca",
    "accent_tinted": true
   },
   {
@@ -1825,7 +1845,7 @@
    ],
    "hue": 12.5,
    "most": 0.055,
-   "tinted": "#7b5357",
+   "tinted": "#7c5257",
    "accent_tinted": true
   },
   {
@@ -1844,7 +1864,7 @@
    ],
    "hue": 42.5,
    "most": 0.06,
-   "tinted": "#7c5444",
+   "tinted": "#7c5443",
    "accent_tinted": true
   },
   {
@@ -1863,7 +1883,7 @@
    ],
    "hue": 72.5,
    "most": null,
-   "tinted": "#7d561e",
+   "tinted": "#7c561d",
    "accent_tinted": true
   },
   {
@@ -1882,7 +1902,7 @@
    ],
    "hue": 102.5,
    "most": null,
-   "tinted": "#675f1a",
+   "tinted": "#675e1b",
    "accent_tinted": true
   },
   {
@@ -1901,7 +1921,7 @@
    ],
    "hue": 132.5,
    "most": null,
-   "tinted": "#486630",
+   "tinted": "#496530",
    "accent_tinted": true
   },
   {
@@ -1920,7 +1940,7 @@
    ],
    "hue": 162.5,
    "most": null,
-   "tinted": "#206a4c",
+   "tinted": "#20694c",
    "accent_tinted": true
   },
   {
@@ -1939,7 +1959,7 @@
    ],
    "hue": 192.5,
    "most": null,
-   "tinted": "#006967",
+   "tinted": "#016867",
    "accent_tinted": true
   },
   {
@@ -1958,7 +1978,7 @@
    ],
    "hue": 222.5,
    "most": null,
-   "tinted": "#01667f",
+   "tinted": "#026580",
    "accent_tinted": true
   },
   {
@@ -1977,7 +1997,7 @@
    ],
    "hue": 252.5,
    "most": null,
-   "tinted": "#37608d",
+   "tinted": "#375f8e",
    "accent_tinted": true
   },
   {
@@ -1996,7 +2016,7 @@
    ],
    "hue": 282.5,
    "most": null,
-   "tinted": "#58588f",
+   "tinted": "#575890",
    "accent_tinted": true
   },
   {
@@ -2015,7 +2035,7 @@
    ],
    "hue": 312.5,
    "most": null,
-   "tinted": "#715184",
+   "tinted": "#725084",
    "accent_tinted": true
   },
   {
@@ -2034,7 +2054,7 @@
    ],
    "hue": 342.5,
    "most": null,
-   "tinted": "#824c6e",
+   "tinted": "#834b6f",
    "accent_tinted": true
   },
   {
@@ -2710,7 +2730,7 @@
     }
    ],
    "hue": 225.0,
-   "most": 0.02,
+   "most": 0.025,
    "tinted": "#52c4a6"
   },
   {
@@ -2768,6 +2788,97 @@
    "hue": 345.0,
    "most": null,
    "tinted": "#52c4a6"
+  },
+  {
+   "accent": "#52c4a6",
+   "hue": 25.0,
+   "most": 0.005,
+   "tinted": "#b4b1af",
+   "rules": [
+    {
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    },
+    {
+     "token": "#079d96",
+     "token_tinted": true,
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    }
+   ],
+   "accent_tinted": true
+  },
+  {
+   "accent": "#52c4a6",
+   "hue": 30.0,
+   "most": 0.005,
+   "tinted": "#b4b1af",
+   "rules": [
+    {
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    },
+    {
+     "token": "#079d96",
+     "token_tinted": true,
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    }
+   ],
+   "accent_tinted": true
+  },
+  {
+   "accent": "#52c4a6",
+   "hue": 190.0,
+   "most": null,
+   "tinted": "#3ec4bc",
+   "rules": [
+    {
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    },
+    {
+     "token": "#079d96",
+     "token_tinted": true,
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    }
+   ],
+   "accent_tinted": true
+  },
+  {
+   "accent": "#808080",
+   "hue": 25.0,
+   "most": 0.02,
+   "tinted": "#8c7d7a",
+   "rules": [
+    {
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    }
+   ],
+   "accent_tinted": true
+  },
+  {
+   "accent": "#808080",
+   "hue": 190.0,
+   "most": null,
+   "tinted": "#6c8583",
+   "rules": [
+    {
+     "from": "#c97474",
+     "tinted": false,
+     "distance": 0.1
+    }
+   ],
+   "accent_tinted": true
   }
  ]
 }

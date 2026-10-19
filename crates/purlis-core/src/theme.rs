@@ -123,8 +123,8 @@ pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tint::{
-    APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of, tint_hex,
-    tint_hex_within, tinted,
+    ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of,
+    tint_hex, tint_hex_within, tinted,
 };
 pub use typed::Typed;
 use vocabulary::{
