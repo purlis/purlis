@@ -361,14 +361,14 @@ export function componentLiterals(
   from: StyleSource = {},
 ): string[] {
   const found: string[] = [];
-  for (const { label, property, value } of styleEntries(source, from)) {
+  for (const { label, property, value, origin } of styleEntries(source, from)) {
     if (!(CUSTOM.test(property) ? customs.has(property) : isGeometry(property))) {
       continue;
     }
     const literal = /^-?\d/.test(value)
       ? Number(value) !== 0
       : writesALiteral(value.slice(1, -1), lengths);
-    if (literal) found.push(`${label}: ${value}`);
+    if (literal) found.push(`${label}: ${value}${origin ? ` (${origin})` : ""}`);
   }
   for (const tag of openingTags(source, /^[A-Za-z]/)) {
     for (const word of classUtilities(classNameOf(tag.text))) {
@@ -1042,7 +1042,7 @@ export const A = () => <div style={on.padding ? given : undefined} onClick={make
 
   it("follows a value held on its own wherever the file hands it on, in the real tree (#2684)", () => {
     const tsx = `${read("LayoutPanes.tsx")}
-import { plantedGap } from "./theme/theme";
+import { plantedGap, plantedPanel, plantedVv, plantedBoth, plantedAlso } from "./theme/theme";
 import * as plantedSizes from "./theme/theme";
 const plantedPad = "7px";
 const plantedOther = plantedPad;
@@ -1058,14 +1058,22 @@ export const PlantedHeld = () => <div style={{ padding: plantedPad }} />;
 export const PlantedTwice = () => <div style={{ paddingTop: plantedPad }} />;
 export const PlantedChain = () => <div style={{ margin: plantedOther }} />;
 export const PlantedNumber = () => <div style={{ gap: plantedRow }} />;
+export const PlantedNegative = () => <div style={{ top: -plantedRow }} />;
 export const PlantedEither = ({ on }: { on: boolean }) => <div style={{ marginTop: on ? plantedPad : undefined }} />;
 export const PlantedOr = ({ by }: { by?: string }) => <div style={{ marginBottom: by ?? plantedInner }} />;
 export const PlantedMember = () => <div style={{ marginLeft: plantedSpace.outer.edge }} />;
 export const PlantedCall = ({ on }: { on: boolean }) => <div style={{ marginRight: plantedEdge(on) }} />;
 export const PlantedFunction = () => <div style={{ marginInline: plantedMargin() }} />;
 export const PlantedMemo = () => <div style={{ marginBlock: plantedMemo }} />;
+export const PlantedDefault = ({ plantedSide = "9px" }: { plantedSide?: string }) => <div style={{ paddingBlock: plantedSide }} />;
+export function PlantedDefaultParameter(plantedEnd = "10px") {
+  return <div style={{ paddingInlineEnd: plantedEnd }} />;
+}
 export const PlantedImported = () => <div style={{ paddingLeft: plantedGap }} />;
 export const PlantedAll = () => <div style={{ paddingRight: plantedSizes.plantedFar }} />;
+export const PlantedAliasedStyle = () => <div style={plantedPanel} />;
+export const PlantedAliasedValue = () => <div style={{ scrollMarginTop: plantedVv }} />;
+export const PlantedBothNames = () => <div style={{ scrollPaddingTop: plantedBoth, scrollMarginBottom: plantedAlso }} />;
 const plantedHeldStyle = { paddingBottom: plantedPad };
 export const PlantedInStyle = () => <div style={plantedHeldStyle} />;
 export function plantValues(frame: HTMLElement) {
@@ -1073,10 +1081,17 @@ export function plantValues(frame: HTMLElement) {
   frame.style.setProperty("--planted-pad", plantedInner);
 }
 `;
+    // An export under another name (`export { a as b }`), of a style and of a value, and a
+    // name still exported beside its alias.
     const script = `${read("theme/theme.ts")}
 const plantedTheirs = "14px";
 export const plantedGap = plantedTheirs;
 export const plantedFar = "15px";
+const plantedBox = { padding: "19px" };
+const plantedV = "20px";
+export { plantedBox as plantedPanel, plantedV as plantedVv };
+export const plantedBoth = "18px";
+export { plantedBoth as plantedAlso };
 `;
     const css = `${read("App.css")}\n.planted { padding: var(--planted-pad); }\n`;
     expect(
@@ -1085,79 +1100,231 @@ export const plantedFar = "15px";
       ),
     ).toEqual(
       [
-        'style padding: "7px"',
-        'style paddingTop: "7px"',
-        'style margin: "7px"',
-        "style gap: 6",
-        'style marginTop: "7px"',
-        'style marginBottom: "5px"',
-        'style marginLeft: "3px"',
-        'style marginRight: "2px"',
-        'style marginInline: "16px"',
-        'style marginBlock: "17px"',
-        'style paddingLeft: "14px"',
-        'style paddingRight: "15px"',
-        'style plantedHeldStyle.paddingBottom: "7px"',
-        'style.paddingInline: "7px"',
-        'setProperty --planted-pad: "5px"',
+        'style padding: "7px" (held as plantedPad)',
+        'style paddingTop: "7px" (held as plantedPad)',
+        'style margin: "7px" (held as plantedOther)',
+        "style gap: 6 (held as plantedRow)",
+        "style top: -6 (held as -plantedRow)",
+        'style marginTop: "7px" (held as plantedPad)',
+        'style marginBottom: "5px" (held as plantedInner)',
+        'style marginLeft: "3px" (held as plantedSpace.outer.edge)',
+        'style marginRight: "2px" (returned by plantedEdge())',
+        'style marginInline: "16px" (returned by plantedMargin())',
+        'style marginBlock: "17px" (held as plantedMemo)',
+        'style paddingBlock: "9px" (held as plantedSide)',
+        'style paddingInlineEnd: "10px" (held as plantedEnd)',
+        'style paddingLeft: "14px" (held as plantedGap)',
+        'style paddingRight: "15px" (held as plantedSizes.plantedFar)',
+        'style plantedPanel.padding: "19px"',
+        'style scrollMarginTop: "20px" (held as plantedVv)',
+        'style scrollPaddingTop: "18px" (held as plantedBoth)',
+        'style scrollMarginBottom: "18px" (held as plantedAlso)',
+        'style plantedHeldStyle.paddingBottom: "7px" (held as plantedPad)',
+        'style.paddingInline: "7px" (held as plantedPad)',
+        'setProperty --planted-pad: "5px" (held as plantedInner)',
       ].map((entry) => `LayoutPanes.tsx: new literal, take it from a core token: ${entry}`),
     );
   });
 
-  it("reads a held value as far as the docs say, and no further (#2684)", () => {
+  it("reads a held value as far as the docs say, and no further: the review's probes (#2684)", () => {
     const files: Record<string, string> = {
-      "s.ts": 'export const pad = "21px";\nexport default "22px";',
+      "s.ts": [
+        'export const pad = "21px";',
+        'export const sizes = { edge: "22px" };',
+        'export default "23px";',
+        'export function padOf() { return "24px"; }',
+        "export { pad as alias };",
+        'const hidden = "25px"; export { hidden };',
+      ].join("\n"),
+      "r.ts": 'export * from "./s";',
+      "al.ts":
+        'const box = { padding: "31px" }; const v = "32px"; export { box as panel, v as vv };',
+      "al2.ts": 'export const pad = "41px"; export { pad as other };',
     };
     const read = (file: string) => files[file];
+    // The last rows are not read, as "What the guards read in script" says.
     const cases: Record<string, [string, string[]]> = {
       held: [
         'const pad = "7px"; const A = () => <div style={{ padding: pad }} />;',
-        ['style padding="7px"'],
+        ['style padding="7px" (held as pad)'],
       ],
-      both: [
-        'const pad = "7px"; const A = () => <div style={{ padding: on && pad, margin: x || "3px" }} />;',
-        ['style padding="7px"', 'style margin="3px"'],
+      heldChain: [
+        'const a = "7px"; const b = a; const A = () => <div style={{ padding: b }} />;',
+        ['style padding="7px" (held as b)'],
       ],
-      cast: [
+      asConst: [
         'const pad = "7px" as const; const A = () => <div style={{ padding: pad }} />;',
-        ['style padding="7px"'],
+        ['style padding="7px" (held as pad)'],
       ],
-      bracket: [
-        'const s = { "pad": "7px" }; const A = () => <div style={{ padding: s["pad"] }} />;',
-        ['style padding="7px"'],
+      typed: [
+        'const pad: string = "7px"; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
+      ],
+      parens: [
+        'const pad = ("7px"); const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
+      ],
+      numeric: [
+        "const pad = 7; const A = () => <div style={{ padding: pad }} />;",
+        ["style padding=7 (held as pad)"],
+      ],
+      negative: [
+        "const pad = -7; const A = () => <div style={{ margin: pad }} />;",
+        ["style margin=-7 (held as pad)"],
+      ],
+      unaryMinus: [
+        "const pad = 7; const A = () => <div style={{ margin: -pad }} />;",
+        ["style margin=-7 (held as -pad)"],
+      ],
+      unaryMinusString: [
+        'const pad = "-7px"; const A = () => <div style={{ margin: -pad }} />;',
+        ['style margin="7px" (held as -pad)'],
+      ],
+      template: [
+        "const pad = `7px`; const A = () => <div style={{ padding: pad }} />;",
+        ["style padding=`7px` (held as pad)"],
+      ],
+      objectMember: [
+        'const S = { pad: "7px" } as const; const A = () => <div style={{ padding: S.pad }} />;',
+        ['style padding="7px" (held as S.pad)'],
+      ],
+      bracketMember: [
+        'const S = { pad: "7px" }; const A = () => <div style={{ padding: S["pad"] }} />;',
+        ['style padding="7px" (held as S["pad"])'],
+      ],
+      nestedMember: [
+        'const S = { a: { b: "7px" } }; const A = () => <div style={{ padding: S.a.b }} />;',
+        ['style padding="7px" (held as S.a.b)'],
+      ],
+      spreadMember: [
+        'const base = { pad: "7px" }; const S = { ...base }; const A = () => <div style={{ padding: S.pad }} />;',
+        ['style padding="7px" (held as S.pad)'],
+      ],
+      destructured: [
+        'const { pad } = { pad: "7px" }; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
+      ],
+      logical: [
+        'const A = () => <div style={{ padding: x || "7px", margin: y ?? "3px", gap: on && "5px" }} />;',
+        ['style padding="7px"', 'style margin="3px"', 'style gap="5px"'],
+      ],
+      ternaryHeld: [
+        'const a = "7px"; const A = () => <div style={{ padding: on ? a : 0 }} />;',
+        ['style padding="7px" (held as a)', "style padding=0"],
+      ],
+      functionReturns: [
+        'function p(o) { if (o) return "7px"; return 0; } const A = () => <div style={{ padding: p(1) }} />;',
+        ['style padding="7px" (returned by p())', "style padding=0 (returned by p())"],
+      ],
+      arrowReturns: [
+        'const p = (o) => { if (o) { return "7px" } else { return "0" } }; const A = () => <div style={{ padding: p(1) }} />;',
+        ['style padding="7px" (returned by p())', 'style padding="0" (returned by p())'],
+      ],
+      memo: [
+        'const A = () => { const p = useMemo(() => "7px", []); return <div style={{ padding: p }} />; };',
+        ['style padding="7px" (held as p)'],
+      ],
+      defaultInPattern: [
+        'const A = ({ pad = "7px" }) => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
+      ],
+      defaultRenamed: [
+        'const A = ({ edge: pad = "7px" }: Props) => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
+      ],
+      defaultParameter: [
+        'function A(pad = "7px") { return <div style={{ padding: pad }} />; }',
+        ['style padding="7px" (held as pad)'],
+      ],
+      defaultTyped: [
+        'const A = (pad: string = "7px"): JSX.Element => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
+      ],
+      defaultStyle: [
+        'const A = ({ style = { padding: "7px" } }) => <div style={style} />;',
+        ['style style.padding="7px"'],
+      ],
+      methodDefault: [
+        'const o = { r(pad = "7px") { return <div style={{ padding: pad }} />; } };',
+        [],
+      ],
+      shadowedByParameter: [
+        'const pad = "7px"; const A = ({ pad }) => <div style={{ padding: pad }} />;',
+        ['style padding="7px" (held as pad)'],
       ],
       imported: [
-        'import { pad } from "./s"; const A = () => <div style={{ padding: pad }} />;',
-        ['style padding="21px"'],
+        'import { pad, sizes, padOf, alias, hidden } from "./s"; const A = () => <div style={{ padding: pad, margin: sizes.edge, gap: padOf(), top: alias, left: hidden }} />;',
+        [
+          'style padding="21px" (held as pad)',
+          'style margin="22px" (held as sizes.edge)',
+          'style gap="24px" (returned by padOf())',
+          'style top="21px" (held as alias)',
+          'style left="25px" (held as hidden)',
+        ],
+      ],
+      importedAll: [
+        'import * as s from "./s"; const A = () => <div style={{ padding: s.pad, margin: s.padOf() }} />;',
+        ['style padding="21px" (held as s.pad)', 'style margin="24px" (returned by s.padOf())'],
       ],
       importedDefault: [
         'import d from "./s"; const A = () => <div style={{ padding: d }} />;',
-        ['style padding="22px"'],
+        ['style padding="23px" (held as d)'],
       ],
-      assigned: ['const pad = "7px"; el.style.padding = pad;', ['style.padding="7px"']],
-      // A member of a value is not the value: `pad.length` is not "7px".
+      reexported: [
+        'import { pad } from "./r"; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="21px" (held as pad)'],
+      ],
+      aliasedStyle: [
+        'import { panel } from "./al"; const A = () => <div style={panel} />;',
+        ['style panel.padding="31px"'],
+      ],
+      aliasedValue: [
+        'import { vv } from "./al"; const A = () => <div style={{ padding: vv }} />;',
+        ['style padding="32px" (held as vv)'],
+      ],
+      originalBesideAlias: [
+        'import { pad, other } from "./al2"; const A = () => <div style={{ padding: pad, margin: other }} />;',
+        ['style padding="41px" (held as pad)', 'style margin="41px" (held as other)'],
+      ],
+      assigned: [
+        'const pad = "7px"; el.style.paddingInline = pad;',
+        ['style.paddingInline="7px" (held as pad)'],
+      ],
+      setPropertyValue: [
+        'const pad = "7px"; el.style.setProperty("padding", pad);',
+        ['setProperty padding="7px" (held as pad)'],
+      ],
       memberOfValue: [
         'const pad = "7px"; const A = () => <div style={{ padding: pad.length }} />;',
         [],
       ],
-      // An object is not a value.
       objectValue: [
         'const pad = { a: "7px" }; const A = () => <div style={{ padding: pad }} />;',
         [],
       ],
-      // Not followed, as "What the guards read in script" says.
+      letReadAtDeclaration: [
+        'let pad = "0"; pad = "7px"; const A = () => <div style={{ padding: pad }} />;',
+        ['style padding="0" (held as pad)'],
+      ],
       parameter: ["const A = ({ pad }) => <div style={{ padding: pad }} />;", []],
       interpolated: ["const n = 7; const A = () => <div style={{ padding: `${n}px` }} />;", []],
-      reassigned: ['let pad; pad = "7px"; const A = () => <div style={{ padding: pad }} />;', []],
       package: [
         'import { pad } from "sizes"; const A = () => <div style={{ padding: pad }} />;',
         [],
       ],
+      enumMember: ['enum P { s = "7px" } const A = () => <div style={{ padding: P.s }} />;', []],
+      arrayIndex: ['const P = ["7px"]; const A = () => <div style={{ padding: P[0] }} />;', []],
+      classField: [
+        'class K { pad = "7px"; r() { return <div style={{ padding: this.pad }} />; } }',
+        [],
+      ],
+      comma: ['const pad = (0, "7px"); const A = () => <div style={{ padding: pad }} />;', []],
+      setPropertyHeldName: ['const n = "padding"; el.style.setProperty(n, "7px");', []],
       cycle: ["const a = b; const b = a; const A = () => <div style={{ padding: a }} />;", []],
     };
     for (const [name, [source, expected]] of Object.entries(cases)) {
       const found = styleEntries(source, { file: "a.tsx", read }).map(
-        ({ label, value }) => `${label}=${value}`,
+        ({ label, value, origin }) => `${label}=${value}${origin ? ` (${origin})` : ""}`,
       );
       expect(found, name).toEqual(expected);
     }

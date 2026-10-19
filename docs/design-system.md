@@ -1467,12 +1467,17 @@ CSS text on its own.
 A value is read where it is written out, and the reader follows a value as it follows a style,
 under the same bounds (#2684): each branch of a ternary and each side of `||`, `??` and `&&`; a
 variable that holds it (`const pad = "7px"`, then `padding: pad`), and one that holds that one;
-a member of a local object (`sizes.pad`, `sizes["pad"]`) or of a destructuring; what a local
-function, an arrow or `useMemo` returns (`padding: padOf(on)`); and what a relative import gives.
-This holds for a style object's key, an assignment (`el.style.padding = pad`) and the value a
-`setProperty(…)` call sets. Each use is read on its own, so a value held once and used twice is
-two findings. A name is matched across its file, not by its block, so a parameter that shares a
-held value's name is read as that value: rename one of them.
+a parameter's default (`({ pad = "7px" }) =>`, `({ edge: pad = "7px" })`,
+`function A(pad = "7px")`), for a style as for a value; a member of a local object (`sizes.pad`,
+`sizes["pad"]`) or of a destructuring; the operand of a unary `-` (`margin: -pad`); what a local
+function, an arrow or `useMemo` returns (`padding: padOf(on)`); and what a relative import gives,
+an export under another name (`export { pad as gap }`) among them. This holds for a style
+object's key, an assignment (`el.style.padding = pad`) and the value a `setProperty(…)` call
+sets. Each use is read on its own, so a value held once and used twice is two findings, and a
+finding says where a value not written at its use came from: `style padding: "7px" (held as
+pad)`, `style margin: "2px" (returned by edgeOf())`. A name is matched across its file, not by
+its block, so a parameter that shares a held value's name is read as that value: rename one of
+them.
 
 **The reader fails closed.** A style it cannot finish following fails the guard with a
 sentence that names the file and the style, and is never passed over:
@@ -1483,9 +1488,12 @@ sentence that names the file and the style, and is never passed over:
   one whose file is not found, or one in a file that is not script (`./box.css`).
 
 What they do not read: a value worked out (`${n}px`, `n * 4`), a member of a value
-(`pad.length`), or a value given by reassignment (`let pad; pad = "7px"`); a member reached by
-a computed key (`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
-`useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
+(`pad.length`), or a value given after its declaration: only a `let`'s declaration is read
+(`let pad = "0"; pad = "7px"` reads `"0"`); an enum member (`P.s`), an array's item (`P[0]`), a
+class field (`this.pad`), a comma expression (`(0, "7px")`), a default of a method's parameter,
+and a `setProperty(…)` whose property name is held (`setProperty(name, "7px")`); a member
+reached by a computed key (`styles[name]`), and a method of a local object (`styles.box()`); a
+wrapper other than `useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
 in a prop with another name (`boxStyle={…}`) or under an object's `style` key
 (`createElement("div", { style })`); an element's style handed to a function as a parameter
 (`g(el.style)`), or held by a name assigned after it is declared (`let st; st = el.style`);

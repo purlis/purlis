@@ -204,11 +204,13 @@ const offTheScale = (word: string) =>
  *  out (`${n}px`, a parameter) is not. */
 export function componentLiterals(source: string, from: StyleSource = {}): string[] {
   const found: string[] = [];
-  for (const { label, property, value } of styleEntries(source, from)) {
+  for (const { label, property, value, origin } of styleEntries(source, from)) {
     const name = unprefixed(property);
     if (!(name in MAY_BE)) continue;
     const written = /^-?[\d.]/.test(value) ? value : value.slice(1, -1);
-    if (!isOnTheScale(name, written)) found.push(`${label}: ${value}`);
+    if (!isOnTheScale(name, written)) {
+      found.push(`${label}: ${value}${origin ? ` (${origin})` : ""}`);
+    }
   }
   for (const tag of openingTags(source, /^[A-Za-z]/)) {
     for (const word of classUtilities(classNameOf(tag.text))) {
@@ -253,13 +255,16 @@ const ROLES_SAID = 'docs/ui-primitives.md "Text roles"';
  * nearest for a font size, the strong modifier or a role's own weight for a weight, and the
  * rule a colour, a line height or a family broke.
  */
+/** Where a value came from, at an entry's end (`(held as size)`), which names no role. */
+const ORIGIN = / \((?:held as|returned by) .*\)$/;
+
 export function roleFor(entry: string): string {
   const utility = /^class (.+)$/.exec(entry)?.[1];
   const set = utility === undefined ? undefined : offTheScale(utility)[0];
   const [, name = "", value = ""] = set
     ? ["", set.name, set.value]
     : (/(?:\| |^style (?:attribute |[\w$]+\.)?|^style\.(?:cssText )?|^setProperty )([\w-]+): ?(.*)$/.exec(
-        entry.replace(/["'`]/g, ""),
+        entry.replace(ORIGIN, "").replace(/["'`]/g, ""),
       ) ?? []);
   const key = unprefixed(STYLE_KEY[name] ?? name);
   if (key === "font-size" || key === "font") {

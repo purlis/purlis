@@ -467,6 +467,84 @@ interface Scope {
   defaultExport: Span | undefined;
   /** Where the parameters of `export default function` open. */
   defaultFunction: number | undefined;
+  /** Each parameter's default value (`({ pad = "7px" }) =>`, `function f(pad = "7px")`), found
+   *  the first time a name in the file is followed (`parametersOf`). */
+  parameters?: Map<string, Held[]>;
+}
+
+/** An arrow's parameters, up to its `=>`: `(…) =>`, `(…): Type =>`. */
+const ARROW_PARAMETERS = /\)\s*(?::[^=;{}()]*?)?=>/g;
+/** A function's parameters, up to their own `(`: `function f(`, `function (`, `function* f<T>(`. */
+const FUNCTION_PARAMETERS = new RegExp(
+  String.raw`\bfunction\b\s*\*?\s*(?:${NAME})?\s*(?:<[^<>()]*>)?\s*\(`,
+  "g",
+);
+
+/** Where the bracket that closes at `close` opened, strings skipped whole. */
+function openingBracket(text: string, close: number): number {
+  let depth = 0;
+  for (let i = close; i >= 0; i--) {
+    const char = text[i];
+    if (char === '"' || char === "'" || char === "`") {
+      i--;
+      while (i > 0 && !(text[i] === char && text[i - 1] !== "\\")) i--;
+    } else if (")]}".includes(char)) depth++;
+    else if ("([{".includes(char) && --depth === 0) return i;
+  }
+  return 0;
+}
+
+/** The default values of a file's arrows' and functions' parameters, by name, read once. */
+function parametersOf(scope: Scope): Map<string, Held[]> {
+  if (scope.parameters) return scope.parameters;
+  const found = new Map<string, Held[]>();
+  const { text } = scope;
+  const hold = (name: string, held: Held) => found.set(name, [...(found.get(name) ?? []), held]);
+  const lists: Span[] = [];
+  for (const hit of text.matchAll(ARROW_PARAMETERS)) {
+    const close = hit.index;
+    lists.push({ from: openingBracket(text, close) + 1, to: close });
+  }
+  for (const hit of text.matchAll(FUNCTION_PARAMETERS)) {
+    const open = hit.index + hit[0].length - 1;
+    lists.push({ from: open + 1, to: closingBracket(text, open) });
+  }
+  for (const list of lists) defaultsIn(text, list, false, hold);
+  scope.parameters = found;
+  return found;
+}
+
+/** Each name in a parameter list or a pattern in it that is given a default (`pad = "7px"`,
+ *  `{ pad = "7px" }`, `{ edge: pad = "7px" }`, `[pad = "7px"]`). `keyed` is an object pattern,
+ *  where `a: b` names `b`; in a list, `a: T` is a type. */
+function defaultsIn(
+  text: string,
+  span: Span,
+  keyed: boolean,
+  hold: (name: string, held: Held) => void,
+) {
+  for (const part of partsOf(text, span)) {
+    let { from: at } = trimmed(text, part);
+    const { to } = trimmed(text, part);
+    if (text.startsWith("...", at)) at += 3;
+    if (keyed) {
+      const key = new RegExp(String.raw`^${NAME}\s*:\s*`).exec(text.slice(at, to));
+      if (key) at += key[0].length;
+    }
+    if (text[at] === "{" || text[at] === "[") {
+      const close = closingBracket(text, at);
+      defaultsIn(text, { from: at + 1, to: close }, text[at] === "{", hold);
+      continue;
+    }
+    const name = new RegExp(String.raw`^${NAME}`).exec(text.slice(at, to));
+    if (!name) continue;
+    const equals = atTopLevel(text, { from: at + name[0].length, to }, (i) =>
+      text[i] === "=" && !"=>".includes(text[i + 1]) && !"=!<>".includes(text[i - 1])
+        ? i
+        : undefined,
+    );
+    if (equals !== undefined) hold(name[0], new Held(text, equals + 1, undefined));
+  }
 }
 
 /** The body of the function whose parameters open at `open`: its block, past any return type
@@ -654,6 +732,18 @@ interface StyleKey {
   value: Span;
 }
 
+/** A value the follower found, and where it came from when it is not written where it is used. */
+interface Given {
+  value: string;
+  origin?: string;
+}
+
+/** A value written out, negated: `7` is `-7`, `"-7px"` is `"7px"`. */
+function negated(value: string): string {
+  const flip = (written: string) => (written.startsWith("-") ? written.slice(1) : `-${written}`);
+  return /^["'`]/.test(value) ? value[0] + flip(value.slice(1, -1)) + value[0] : flip(value);
+}
+
 /** A value being followed (`StyleFollower.values`): the values written out it has found, and
  *  the names it has followed, so a cycle ends. */
 interface Values {
@@ -717,13 +807,27 @@ class StyleFollower {
    * The values written out that the expression in `span` can give, followed as a style is: one
    * written there (`"7px"`, `0`), a branch of a ternary or a side of `||`, `??` and `&&`, a
    * variable that holds one (`const pad = "7px"; … padding: pad`), a member of a local object
-   * (`sizes.pad`), what a local function returns (`padOf(on)`), and what a relative import gives.
-   * Each use is followed on its own, so a value held once and used twice is read twice.
+   * (`sizes.pad`), a parameter's default (`({ pad = "7px" })`), what a local function returns
+   * (`padOf(on)`), the operand of a unary `-` (`-pad`), and what a relative import gives. Each use
+   * is followed on its own, so a value held once and used twice is read twice. A value not written
+   * where it is used says where it came from (`held as pad`, `returned by padOf()`).
    */
-  values(span: Span, scope = this.home, label = "a value"): string[] {
-    const value: Values = { found: [], seen: new Set() };
-    this.follow(scope, span, [], label, 0, value);
-    return value.found;
+  values(span: Span, scope = this.home, label = "a value"): Given[] {
+    const values: Given[] = [];
+    const seen = new Set<string>();
+    for (const given of givenBy(scope.text, span)) {
+      const written = scope.text.slice(given.from, given.to).replace(/\s+/g, "");
+      const value: Values = { found: [], seen };
+      this.follow(scope, given, [], label, 0, value);
+      const call = WRITTEN_ALONE.test(written) ? null : CALL.exec(written);
+      const origin = WRITTEN_ALONE.test(written)
+        ? undefined
+        : call && written.endsWith(")")
+          ? `returned by ${call[1]}()`
+          : `held as ${written}`;
+      for (const one of value.found) values.push(origin ? { value: one, origin } : { value: one });
+    }
+    return values;
   }
 
   private follow(
@@ -740,6 +844,14 @@ class StyleFollower {
       const written = text.slice(given.from, given.to);
       if (value && WRITTEN_ALONE.test(written)) {
         if (path.length === 0) value.found.push(written);
+        continue;
+      }
+      const minus = value && /^-\s*(?=[A-Za-z_$(])/.exec(written);
+      if (value && minus) {
+        const operand: Values = { found: [], seen: value.seen };
+        const rest = { from: given.from + minus[0].length, to: given.to };
+        this.follow(scope, rest, path, label, depth + 1, operand);
+        value.found.push(...operand.found.map(negated));
         continue;
       }
       if (written.startsWith("{") && closingBracket(text, given.from) === given.to - 1) {
@@ -857,9 +969,10 @@ class StyleFollower {
     const done = value ? value.seen : this.done;
     if (done.has(id)) return;
     done.add(id);
-    for (const held of scope.holders.get(name) ?? []) {
-      const down = held.member ? [held.member, ...path] : path;
-      this.follow(scope, held.span, down, label, depth, value);
+    const held = [...(scope.holders.get(name) ?? []), ...(parametersOf(scope).get(name) ?? [])];
+    for (const one of held) {
+      const down = one.member ? [one.member, ...path] : path;
+      this.follow(scope, one.span, down, label, depth, value);
     }
     const imported = scope.imports.get(name);
     if (!imported) return;
@@ -884,7 +997,7 @@ class StyleFollower {
       }
       return;
     }
-    const local = [...scope.exportsAs].find(([, as]) => as === name)?.[0] ?? name;
+    const local = scope.exportsAs.get(name) ?? name;
     if (scope.holders.has(local) || scope.imports.has(local)) {
       this.name(scope, local, path, label, depth + 1, value);
       return;
@@ -930,8 +1043,7 @@ class StyleFollower {
           for (const back of this.returns(there, there.defaultExport)) backs.push([there, back]);
         }
       } else {
-        const local =
-          [...there.exportsAs].find(([, as]) => as === imported.name)?.[0] ?? imported.name;
+        const local = there.exportsAs.get(imported.name) ?? imported.name;
         backs.push(...this.called(there, local, label, depth + 1));
       }
     }
@@ -1038,6 +1150,8 @@ export interface StyleEntry {
   label: string;
   property: string;
   value: string;
+  /** Where a value not written where it is used came from: `held as pad`, `returned by padOf()`. */
+  origin?: string;
 }
 
 /** The property a style key sets: `paddingTop` is `padding-top`; a custom property
@@ -1076,8 +1190,8 @@ const propertyOf = (key: string) =>
 export function styleEntries(source: string, from: StyleSource = {}): StyleEntry[] {
   const found: StyleEntry[] = [];
   const follower: StyleFollower = new StyleFollower(source, from, (key) => {
-    for (const value of follower.values(key.value, key.scope, key.label)) {
-      found.push({ label: key.label, property: key.property, value });
+    for (const given of follower.values(key.value, key.scope, key.label)) {
+      found.push({ label: key.label, property: key.property, ...given });
     }
   });
   const { text, holders } = follower.home;
@@ -1115,8 +1229,8 @@ export function styleEntries(source: string, from: StyleSource = {}): StyleEntry
     const at = hit.index + whole.length - expression.length;
     const label = `style.${named}`;
     const span = { from: at, to: at + statement(expression).length };
-    for (const value of follower.values(span, follower.home, label)) {
-      found.push({ label, property: propertyOf(named), value });
+    for (const given of follower.values(span, follower.home, label)) {
+      found.push({ label, property: propertyOf(named), ...given });
     }
   }
   const styleText = new RegExp(
@@ -1138,8 +1252,8 @@ export function styleEntries(source: string, from: StyleSource = {}): StyleEntry
     if (!given || !STRING_ALONE.test(named)) continue;
     const property = named.slice(1, -1);
     const label = `setProperty ${property}`;
-    for (const value of follower.values(given, follower.home, label)) {
-      found.push({ label, property, value });
+    for (const one of follower.values(given, follower.home, label)) {
+      found.push({ label, property, ...one });
     }
   }
   return found;
