@@ -455,7 +455,7 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             if *json {
                 println!("{}", checked_json(&found, &checked));
             } else {
-                print!("{}", checked_text(&found, &checked));
+                print!("{}", checked_text(&found, &checked, &|_, _| None));
             }
             ExitCode::from(u8::from(found.refused.is_some()))
         }
@@ -628,7 +628,18 @@ fn imported_text(
             ));
         }
     }
-    out.push_str(&checked_text(found, checked));
+    // A terminal's own colours are never tuned (#2589): a warning about one names the palette
+    // entry that holds it, where the person changes it.
+    let terminal = matches!(
+        imported.kind,
+        theme::SourceKind::Iterm | theme::SourceKind::Ghostty
+    );
+    let entry = |appearance: &str, token: &str| {
+        terminal
+            .then(|| imported.palette_entry(appearance, token))
+            .flatten()
+    };
+    out.push_str(&checked_text(found, checked, &entry));
     if let Some(path) = written {
         let path = shown::readable(&path.display().to_string(), PATH_LIMIT);
         out.push_str(&format!(
@@ -1191,7 +1202,12 @@ fn options_line(theme: &Theme) -> Option<String> {
 }
 
 /// The check as a person reads it.
-fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
+/// `entry` names the palette entry holding a terminal colour a warning is about, for an import.
+fn checked_text(
+    found: &Found,
+    checked: &[theme::Checked],
+    entry: &dyn Fn(&str, &str) -> Option<String>,
+) -> String {
     let mut out = String::new();
     let Some(theme) = &found.theme else {
         // The person's own is the one the window would have drawn, and a level's folder is
@@ -1228,7 +1244,7 @@ fn checked_text(found: &Found, checked: &[theme::Checked]) -> String {
             out.push_str(&format!("  {}\n", shown::readable(&note.said, 240)));
         }
     }
-    let said = theme::warnings_said(theme, checked);
+    let said = theme::warnings_said_naming(theme, checked, entry);
     if said.is_empty() {
         out.push_str("warnings: none\n");
     } else {

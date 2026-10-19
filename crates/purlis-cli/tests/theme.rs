@@ -1235,6 +1235,24 @@ fn what_a_source_has_that_no_token_takes_is_listed() {
 }
 
 #[test]
+fn a_base16_scheme_imports_tuned_to_read_with_no_warnings() {
+    let rig = Rig::new();
+    let source = rig.fixture("harbor.yaml");
+    let themes = rig.themes();
+
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        themes.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    assert!(ran.out.contains("warnings: none\n"), "{}", ran.out);
+    assert!(ran.out.contains("consent floors: none held"), "{}", ran.out);
+}
+
+#[test]
 fn an_import_with_no_folder_named_goes_into_your_own_themes() {
     let rig = Rig::new();
     let source = rig.fixture("moss");
@@ -1555,4 +1573,37 @@ fn a_level_s_folder_windows_cannot_hold_is_checked_and_refused_with_why() {
         "{}",
         ran.out
     );
+}
+
+#[test]
+fn a_terminal_import_s_ansi_warning_names_the_palette_entry_to_change() {
+    let rig = Rig::new();
+    let source = rig.fixture("moss");
+    let themes = rig.themes();
+
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        themes.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let black = ran
+        .out
+        .lines()
+        .find(|line| {
+            line.trim_start()
+                .starts_with("terminal.ansi.black on terminal.background")
+        })
+        .unwrap_or_default();
+    assert!(
+        black.contains("change `palette-0` in theme.json"),
+        "{}",
+        ran.out
+    );
+    // `purlis theme check` of the folder says the check's own words.
+    let written = themes.join("moss");
+    let checked = rig.run(&["check", written.to_str().expect("a path")]);
+    assert!(!checked.out.contains("palette-0"), "{}", checked.out);
 }

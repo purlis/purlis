@@ -110,8 +110,8 @@ pub use format::{Library, MOST_APPEARANCES, Named, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use import::{
-    Files, Imported, LeftOut, MOST_SOURCE_BYTES, SCOPES, SourceKind, detect, folder_name, import,
-    scopes_markdown, table, table_markdown,
+    Files, Imported, LeftOut, MOST_SOURCE_BYTES, Recipe, SCOPES, SourceKind, TOWARD_STEPS, detect,
+    folder_name, import, recipes, recipes_markdown, scopes_markdown, table, table_markdown,
 };
 pub use levels::{Choice, Folders, FoundFolder, Level, LevelInputs, Levels, resolve_levels};
 pub use native::{Native, first_frame};
@@ -130,7 +130,9 @@ pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
-pub use warnings::{combination as combination_said, said as warnings_said};
+pub use warnings::{
+    combination as combination_said, said as warnings_said, said_naming as warnings_said_naming,
+};
 
 #[cfg(test)]
 mod choice_tests;
