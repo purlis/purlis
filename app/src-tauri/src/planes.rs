@@ -1044,9 +1044,16 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
-        // Its browsers end with it (#2013), and leave its rows and its tab (#2024).
+        // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
+        // one runs on, listed by what the chat was called (#2022).
+        let was = self
+            .chats
+            .recorded_chat(session)
+            .map(|chat| chat.name)
+            .unwrap_or_default();
         let listing = self.browsers.listing();
-        self.browsers.forget(self.browser_driver.as_ref(), session);
+        self.browsers
+            .forget(self.browser_driver.as_ref(), session, &was);
         self.browsers_listed_since(listing);
         self.proposals.forget(session);
         self.mcp_failures.forget(session);
@@ -4318,6 +4325,10 @@ impl Planes {
             .iter()
             .map(|held| (held.root.clone(), held.mid_turn_everywhere()))
             .collect();
+        // Where each project's browsers are, before they end with its chats (#2022).
+        for held in &all {
+            crate::chatbrowsers::kept_at_quit(held);
+        }
         for held in all {
             held.let_go(to_update);
             (self.released)(&held.root);

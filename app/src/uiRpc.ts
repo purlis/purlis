@@ -394,6 +394,9 @@ export const commands = {
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
+	pinChatBrowser: __WINDOW_ONLY_RESULT,
+	browsersAtQuit: __WINDOW_ONLY_RESULT,
+	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
@@ -560,6 +563,7 @@ export const commands = {
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
 	closeBrowser: __WINDOW_ONLY_RESULT,
+	handBrowserToChat: __WINDOW_ONLY_RESULT,
 	takeOverBrowser: __WINDOW_ONLY_RESULT,
 	handBackBrowser: __WINDOW_ONLY_RESULT,
 	browserInput: __WINDOW_ONLY_RESULT,
@@ -2923,6 +2927,15 @@ export type ChatBrowser = {
 	 *  purlis keeps trying, and Stop all ends it now.
 	 */
 	unended: boolean,
+	/**  The person pinned it (#2022): it outlives its chat. */
+	pinned: boolean,
+	/**
+	 *  Where its chat has closed, what that chat was called: it is pinned, no chat uses it, and
+	 *  it runs until the person stops it, Stop all, or the app quits (#2022).
+	 */
+	was: string | null,
+	/**  The login purlis performed in it, where it holds one (#2022). */
+	login: string | null,
 };
 
 /**

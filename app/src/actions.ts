@@ -403,6 +403,12 @@ export type Does =
   | { verb: "removePersona"; persona: string }
   /** Closes one of the focused workspace's todos as done: the journal records it first. */
   | { verb: "closeTodo"; workspace: string; slug: string }
+  /** Pins a chat's browser, so it outlives its chat, or unpins it (#2022). */
+  | { verb: "pinBrowser"; program: string; session: number; pinned: boolean }
+  /** Hands a browser no chat uses to an open chat, whose browser tools use it from then (#2022). */
+  | { verb: "handBrowser"; program: string; session: number }
+  /** Stops a pinned browser whose chat has closed (#2022): it ends, and what it held. */
+  | { verb: "stopBrowser"; program: string }
   /** Drops one of the focused workspace's todos with nothing journalled. */
   | { verb: "forgetTodo"; workspace: string; slug: string }
   /** **Names the worktree it acts on**, and never "whichever one is in front".
@@ -686,6 +692,12 @@ export type Now = {
    */
   todos?: readonly { slug: string; title: string }[];
   /**
+   * The project's chats' browsers (#2022): a Pin or Unpin row each, and for a pinned one whose
+   * chat has closed, a row to hand it to each chat of `listed`, and Stop. `chat` is what its
+   * chat is called, or was called when it closed.
+   */
+  browsers?: readonly BrowserOffered[];
+  /**
    * The views approved extensions offer this window (`extension_views`), one row each. The
    * palette is how a keyboard reaches them; the personas panel's heading is how a pointer does.
    */
@@ -945,6 +957,11 @@ export type Doing = {
    *  owed — which todo closed, and that the journal has it or does not. */
   closeTodo: (workspace: string, slug: string) => Promise<Ran>;
   forgetTodo: (workspace: string, slug: string) => Promise<Ran>;
+  /** Each answers a `Ran`: the core can refuse (#2022), a browser gone meanwhile, a chat
+   *  already holding as many as a project may. */
+  pinBrowser: (program: string, session: number, pinned: boolean) => Promise<Ran>;
+  handBrowser: (program: string, session: number) => Promise<Ran>;
+  stopBrowser: (program: string) => Promise<Ran>;
   /** Each takes the piece it acts on. The window no longer decides which worktree a removal
    *  meant by looking at what happens to be in front (charter-app#174). */
   removeWorktree: (cut: Cut, force: boolean) => Promise<Ran>;
@@ -1514,6 +1531,30 @@ export function sessionOffers(records: readonly ListedRecord[] | undefined): Off
     ),
   ]);
 }
+
+/** One of the project's chats' browsers, as the catalogue offers rows for it (#2022). */
+export type BrowserOffered = {
+  program: string;
+  /** What its chat calls it: `b1`. */
+  name: string;
+  /** The chat it is of, or was of. */
+  session: number;
+  /** What that chat is called, or was called when it closed. */
+  chat: string;
+  pinned: boolean;
+  /** Pinned, and its chat has closed: the workspace's. */
+  kept: boolean;
+  /** The login purlis performed in it, where it holds one: said on its hand-over rows. */
+  login: string | null;
+};
+
+/** The id of the row that pins or unpins browser `program` (#2022). */
+export const browserPinId = (program: string): string => `browser.pin:${program}`;
+/** The id of the row that hands browser `program` to chat `session` (#2022). */
+export const browserHandId = (program: string, session: number): string =>
+  `browser.hand:${program}:${session}`;
+/** The id of the row that stops browser `program` (#2022). */
+export const browserStopId = (program: string): string => `browser.stop:${program}`;
 
 /**
  * Every offer, in the order a palette lists them and a bar picks from them.
@@ -2360,6 +2401,49 @@ export function catalogue(now: Now): Offer[] {
       });
     }
   }
+  // **The project's chats' browsers** (#2022): a chat's is pinned or unpinned; a pinned one
+  // whose chat has closed is the workspace's, handed to an open chat or stopped.
+  for (const one of now.browsers ?? []) {
+    const of = `browser ${one.name} of ${one.chat}`;
+    if (!one.kept) {
+      offers.push({
+        ...can(
+          browserPinId(one.program),
+          one.pinned ? `Unpin ${of}` : `Pin ${of}`,
+          { verb: "pinBrowser", program: one.program, session: one.session, pinned: !one.pinned },
+          of,
+        ),
+        note: one.pinned
+          ? "It ends with its chat again."
+          : "It outlives its chat, until you stop it, Stop all ends it, or purlis quits.",
+      });
+      continue;
+    }
+    for (const to of now.listed ?? []) {
+      const name = now.nameOf(to.session);
+      offers.push({
+        ...can(
+          browserHandId(one.program, to.session),
+          one.login === null
+            ? `Hand ${of} to ${name}`
+            : `Hand ${of}, signed in with ${one.login}, to ${name}`,
+          { verb: "handBrowser", program: one.program, session: to.session },
+          of,
+        ),
+        note: `${name}'s browser tools use it from its next browser call, on the page it shows now.`,
+      });
+    }
+    offers.push({
+      ...can(
+        browserStopId(one.program),
+        `Stop ${of}`,
+        { verb: "stopBrowser", program: one.program },
+        of,
+      ),
+      note: "Ends it, and everything it held.",
+    });
+  }
+
   // **Every open memory tab's own rows** (SI-9b): its heading's Edit and Delete are these, so
   // they are about THAT memory whichever place is in front. A new memory's tab has nothing yet
   // to edit or delete, and no rows.
@@ -3063,6 +3147,12 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "closeTodo":
       return doing.closeTodo(does.workspace, does.slug);
+    case "pinBrowser":
+      return doing.pinBrowser(does.program, does.session, does.pinned);
+    case "handBrowser":
+      return doing.handBrowser(does.program, does.session);
+    case "stopBrowser":
+      return doing.stopBrowser(does.program);
     case "forgetTodo":
       return doing.forgetTodo(does.workspace, does.slug);
     case "removeWorktree":
@@ -4437,6 +4527,9 @@ export type MenuOn =
   | { on: "persona"; persona: string }
   /** One of the plane's vaults, by name — the Vaults panel's rows (SI-3). */
   | { on: "vault"; vault: string }
+  /** One of the project's chats' browsers, by its program (#2022): a row under its chat, or
+   *  under Pinned browsers once its chat has closed, with the chats it may be handed to. */
+  | { on: "browser"; program: string; handTo: readonly number[] }
   /** One of the focused workspace's open todos, by slug — the Todos panel's rows (SI-3). The
    *  workspace is the focused one on the one surface that draws them. */
   | { on: "todo"; slug: string }
@@ -4610,6 +4703,14 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           "persona.create",
         ],
         below: [`persona.remove:${what.persona}`],
+      };
+    case "browser":
+      return {
+        above: [
+          browserPinId(what.program),
+          ...what.handTo.map((session) => browserHandId(what.program, session)),
+        ],
+        below: [browserStopId(what.program)],
       };
     case "vault":
       return {
