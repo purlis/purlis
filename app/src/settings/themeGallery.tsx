@@ -493,6 +493,8 @@ function Cards({
           {gallery.cards.map((card) => {
             const isChosen = card.key === chosen?.key;
             const marks = [
+              // A built-in theme that is not the default yet says so (#2336).
+              card.preview ? "Preview" : undefined,
               isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
               card.refused
                 ? "Refused"

@@ -334,6 +334,60 @@ else in the window; `no_old_name_is_spelled_outside_the_name_module` does the sa
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
 rewrites the file; the next pick made in Settings writes the new id.
 
+### Purlis, the preview theme
+
+**Purlis** (#2336) is the second built-in theme, built from the designer's foundation
+(`docs/design/foundation/README.md`): a lavender accent on cool dark neutrals, in IBM Plex Sans
+for the interface and JetBrains Mono for code, paths and the terminal, with Lucide's icons. Its
+folder is `crates/purlis-core/src/theme/built-in/purlis/`, compiled into the core and read by
+the same reader as any theme folder, its fonts and icon set included (`theme::purlis`). A pick
+names it `purlis`; no theme folder takes that id, and a theme may `extend` it. It ships as a
+**preview**: the gallery marks its card Preview, `purlis theme list` names it "Purlis
+(preview)", each built-in theme's entry in `purlis theme list --json` has `"preview"` (true for
+Purlis, false for Purlis Classic, absent on every other theme), and Purlis Classic stays the
+theme the window comes up in until the switch-over (#2338).
+
+It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
+naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
+combination clears the theme check with no warning and holds no consent floor, and a test keeps
+it so (`purlis_tests.rs`). Where its values come from:
+
+- **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
+  Where the record lacks a value, one rule derives it from the record's palette:
+  - a wash the record gives with alpha is laid over the surface the record draws it on, so the
+    selected row is `#2b2a37`, the colour the record read off the frame;
+  - a colour the record has no role for (running, failed, unreadable, danger, needs-you, the
+    file icons' hues, most of the terminal's sixteen) is Purlis Classic's hue for that role at
+    the lightness and chroma of the record's two state colours, `#e5c08a` and `#8fc79a`
+    (OKLCH L 0.803, C 0.084); a bright ANSI colour is one step lighter, the step between the
+    record's two greens;
+  - the needs-you count is the window's base on its chip, which is light;
+  - the code colours the record names are the syntax roles they draw (keys, strings, literals,
+    punctuation), and the other roles take Classic's ANSI colour for them.
+  `text.muted` is the record's `#a09eab`, the grey it names as the nearest, because its
+  quieter `#8a8896` measures 4.44 on a card; `#8a8896` is the placeholder.
+- **Geometry is the foundation's where a core token draws the same thing**: controls' corners
+  7, menus' and dialogs' 10, a control 26 high and a chrome row 24, body text at a line height
+  of 1.55, and no shadow under a raised surface. `radius.xl` is 12, the record's largest card
+  corner: it draws the Welcome screen's doors. Panels' 12 has no token yet. The type sizes and
+  the spacing the record uses are core's already.
+- **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
+  the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
+  hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
+  lightness away from its ground by 0.01 until it clears: today only the comment and punctuation
+  grey, on the editor's current line (`#7c7a84`).
+- **High-contrast dark** moves each text step up one (primary to white), each edge up to a text
+  grey, and the accent to the record's lighter lavender `#c3baf5`.
+
+**The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
+Regular, Medium and SemiBold (IBM's complete woff2, which covers Latin, Greek and Cyrillic), and
+JetBrains Mono 2.304 Regular. Both are under the SIL Open Font License 1.1, whose text is in the
+folder's `LICENSE` beside Lucide's ISC licence. Only the weights the foundation draws are
+shipped, 289 KB in all. They are not cut down further: IBM Plex reserves its name, so a cut-down
+copy could not be called Plex, and the terminal needs JetBrains Mono's box-drawing and arrows.
+The window is served each face from the bytes compiled in, by its digest, as it is any theme
+folder's.
+
 ## What a theme looks like
 
 **A theme is a folder** (format 2, spec #2313): a `theme.json`, and beside it, optionally, its

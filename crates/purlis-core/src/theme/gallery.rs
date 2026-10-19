@@ -7,12 +7,13 @@
 //!
 //! # A card per theme within reach
 //!
-//! A level's gallery holds the themes a choice made there reaches ([`Reach`]): Purlis Classic;
-//! the theme folders of that level and of the levels farther out, nearest first, each with its
-//! level, so two folders of one name at two levels are two cards a choice tells apart (#2516);
-//! and the themes of the extensions in force there. So the machine's gallery is Purlis Classic, the person's own
-//! folders and every approved extension's themes; a project's adds the project's folders and
-//! keeps to the extensions it has on; a workspace's adds the workspace's.
+//! A level's gallery holds the themes a choice made there reaches ([`Reach`]): Purlis Classic and
+//! Purlis (a preview, #2336); the theme folders of that level and of the levels farther out,
+//! nearest first, each with its level, so two folders of one name at two levels are two cards a
+//! choice tells apart (#2516); and the themes of the extensions in force there. So the machine's
+//! gallery is the built-in themes, the person's own folders and every approved extension's themes;
+//! a project's adds the project's folders and keeps to the extensions it has on; a workspace's adds
+//! the workspace's.
 //!
 //! Each card says what the engine read: the theme's name, its appearances and options, whether
 //! it is refused and why, what was left out of it, the check's warnings in every combination of
@@ -30,7 +31,7 @@
 //! [`duplicate`] makes a theme folder of the person's own (`themes/` in purlis's config folder)
 //! whose `theme.json` names the card's theme as the one it `extends`, and nothing else: a theme
 //! that starts as its parent and holds only what the person changes. A person's folder reaches
-//! the person's own folders and Purlis Classic, so those are the cards it is offered on
+//! the person's own folders and the built-in themes, so those are the cards it is offered on
 //! ([`Card::duplicable`]). It never writes over anything: the folder is made new, under a name
 //! no folder there has, and every step to it is opened refusing a link.
 
@@ -43,8 +44,8 @@ use super::levels::Choice;
 use super::levels::appear;
 use super::resolve::{Drawn, Offered, On};
 use super::{
-    Appearance, CLASSIC, Contrast, Resolved, SCHEMA_URL, THEME_JSON, ThemeOption, Values,
-    check_every, classic, is_folder_name,
+    Appearance, CLASSIC, Contrast, PURLIS, Resolved, SCHEMA_URL, THEME_JSON, ThemeOption, Values,
+    check_every, classic, is_folder_name, purlis, shipped,
 };
 use crate::extension::project::theme::Pick;
 
@@ -52,7 +53,7 @@ use crate::extension::project::theme::Pick;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum From {
-    /// Compiled into purlis: Purlis Classic.
+    /// Compiled into purlis: Purlis Classic, or Purlis.
     BuiltIn,
     /// A theme folder of the person's own, on this machine.
     Machine,
@@ -82,6 +83,9 @@ pub struct Card {
     /// What a person calls it.
     pub name: String,
     pub from: From,
+    /// Whether it ships as a preview (spec #2313, "Preview theme"): Purlis, until it becomes the
+    /// default. The card says so beside its name.
+    pub preview: bool,
     /// Its appearances in its order: the first is what it draws when nothing chose one. A
     /// refused theme has none of its own.
     pub appearances: Vec<CardAppearance>,
@@ -136,20 +140,25 @@ pub struct Shelf<'a> {
     pub offered: &'a [Offered],
 }
 
-/// **Every theme a choice within `shelf`'s reach may name**, a card each: Purlis Classic first,
-/// then the theme folders nearest level first and by name within one, a name two levels have
+/// **Every theme a choice within `shelf`'s reach may name**, a card each: Purlis Classic first
+/// and Purlis, the built-in themes; then the theme folders nearest level first and by name within one, a name two levels have
 /// once at each (#2516), then each extension's theme in force in the order the survey found
 /// them.
 pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
-    let mut cards = vec![card(
-        CLASSIC.to_owned(),
-        From::BuiltIn,
-        &Resolved {
-            theme: classic().clone(),
-            complaints: Vec::new(),
-            refused: false,
-        },
-    )];
+    let mut cards: Vec<Card> = [(CLASSIC, classic()), (PURLIS, purlis())]
+        .into_iter()
+        .map(|(id, theme)| {
+            card(
+                id.to_owned(),
+                From::BuiltIn,
+                &Resolved {
+                    theme: theme.clone(),
+                    complaints: Vec::new(),
+                    refused: false,
+                },
+            )
+        })
+        .collect();
     for (level, name) in shelf.folders.each(shelf.reach) {
         // A folder whose name a pick reads as something else (an old built-in id) is no
         // folder a choice can name.
@@ -187,8 +196,8 @@ pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
 /// name, as a choice reads it. `None` when no card of the gallery has that id.
 pub fn theme_of(shelf: &Shelf<'_>, id: &str, level: Option<Reach>) -> Option<Resolved> {
     match Pick::parse(id)? {
-        Pick::BuiltIn(_) => Some(Resolved {
-            theme: classic().clone(),
+        Pick::BuiltIn(id) => Some(Resolved {
+            theme: shipped(id).unwrap_or_else(classic).clone(),
             complaints: Vec::new(),
             refused: false,
         }),
@@ -309,7 +318,7 @@ pub fn choose_option(
 
 /// **The theme folder the card `id` of `level` is**, for **Open folder**: that level's folder
 /// when one is named, else the nearest level within reach that has a folder of its name, as a
-/// choice reads it. `None` for a card with no folder of its own (Purlis Classic, an extension's
+/// choice reads it. `None` for a card with no folder of its own (a built-in theme, an extension's
 /// theme) and for a name no level within reach has.
 pub fn folder_of(shelf: &Shelf<'_>, id: &str, level: Option<Reach>) -> Option<PathBuf> {
     let Some(Pick::Folder(name)) = Pick::parse(id) else {
@@ -346,12 +355,14 @@ fn card(id: String, from: From, resolved: &Resolved) -> Card {
         .collect();
     let duplicable = !resolved.refused && matches!(from, From::BuiltIn | From::Machine);
     let folder = matches!(from, From::Machine | From::Project | From::Workspace);
+    let preview = matches!(from, From::BuiltIn) && super::is_preview(&id);
     if resolved.refused {
         return Card {
             name: id.clone(),
             stamp: stamp_of(&said),
             id,
             from,
+            preview,
             appearances: Vec::new(),
             options: Vec::new(),
             refused: true,
@@ -373,6 +384,7 @@ fn card(id: String, from: From, resolved: &Resolved) -> Card {
         id,
         name: theme.name.clone(),
         from,
+        preview,
         appearances: theme
             .appearances
             .iter()
@@ -415,7 +427,7 @@ const MINE: &str = "mine";
 /// choice names it by.
 ///
 /// Offered only on a card a folder of the person's own can extend ([`Card::duplicable`]):
-/// Purlis Classic and the person's own folders. Nothing is written over: the folder is made
+/// the built-in themes and the person's own folders. Nothing is written over: the folder is made
 /// new under the first name of `<id>-mine`, `<id>-mine-2`, … that no folder there has, and every
 /// step to it is opened refusing a link.
 pub fn duplicate(

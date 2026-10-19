@@ -9,6 +9,12 @@ You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
+The built-in Purlis theme bundles third-party files under their own licences:
+the IBM Plex Sans and JetBrains Mono fonts (SIL Open Font License 1.1) and an
+icon set converted from Lucide (ISC License; some icons derived from Feather,
+MIT License). Their copyright notices and licence texts are in
+crates/purlis-core/src/theme/built-in/purlis/LICENSE.
+
 "Purlis" and the Purlis logo are trademarks of Purlis. The License does
 not grant permission to use these trademarks, except as required for
 reasonable and customary use in describing the origin of the Work.
