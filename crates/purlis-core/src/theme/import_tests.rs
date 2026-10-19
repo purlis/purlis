@@ -1511,3 +1511,104 @@ fn each_kind_s_recipes_tune_only_purlis_tokens_and_the_docs_print_them() {
     }
     assert!(recipes(SourceKind::Zip).is_empty());
 }
+
+/// How far apart two hues must stay after tuning, in OKLab: the least a person can see.
+const SEEN_APART: f64 = 0.02;
+
+#[test]
+fn the_state_and_icon_hues_stay_apart_from_each_other_after_tuning() {
+    const STATES: &[&str] = &[
+        "state.running",
+        "state.waiting",
+        "state.failed",
+        "state.success",
+        "state.unreadable",
+    ];
+    const ICONS: &[&str] = &[
+        "icon.red",
+        "icon.orange",
+        "icon.yellow",
+        "icon.green",
+        "icon.teal",
+        "icon.blue",
+        "icon.purple",
+        "icon.pink",
+    ];
+    for (kind, name, bytes) in FIXTURES {
+        let imported = import(*kind, name, bytes).expect("imported");
+        let theme = drawn(&imported);
+        let rows = table(*kind);
+        // The source key a token's row takes first, among those the source has: two tokens the
+        // source gives one colour (danger and failed are both red) are not held apart.
+        let key_of = |token: &str| {
+            rows.iter()
+                .find(|(it, _)| *it == token)
+                .and_then(|(_, keys)| keys.first().copied())
+        };
+        for one in &theme.appearances {
+            for group in [STATES, ICONS] {
+                for (at, a) in group.iter().enumerate() {
+                    for b in &group[at + 1..] {
+                        let (Some(key_a), Some(key_b)) = (key_of(a), key_of(b)) else {
+                            continue;
+                        };
+                        if key_a == key_b {
+                            continue;
+                        }
+                        let apart = tint::distance(
+                            tint::oklab_of(one.value(a)).expect("a colour"),
+                            tint::oklab_of(one.value(b)).expect("a colour"),
+                        );
+                        assert!(
+                            apart >= SEEN_APART,
+                            "{name} {}: {a} {} and {b} {} are {apart:.3} apart",
+                            one.id,
+                            one.value(a),
+                            one.value(b)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {
+    let imported = import(SourceKind::Ghostty, "moss", MOSS).expect("imported");
+    let theme = drawn(&imported);
+    let checked = check_every(&theme);
+
+    assert_eq!(
+        imported
+            .palette_entry("dark", "terminal.ansi.black")
+            .as_deref(),
+        Some("palette-0")
+    );
+    assert_eq!(
+        imported.palette_entry("dark", "text.muted"),
+        None,
+        "walked: hex"
+    );
+    assert_eq!(imported.palette_entry("light", "terminal.ansi.black"), None);
+    let said = warnings_said_naming(&theme, &checked, |appearance, token| {
+        imported.palette_entry(appearance, token)
+    });
+    let black = said
+        .iter()
+        .find(|line| line.starts_with("terminal.ansi.black on terminal.background"))
+        .expect("a warning");
+    assert!(
+        black.ends_with(
+            "; it is the palette's `palette-0`: change `palette-0` in theme.json to lift it"
+        ),
+        "{black}"
+    );
+    // Without an entry, the line is the check's own.
+    assert!(
+        warnings_said(&theme, &checked)
+            .iter()
+            .all(|line| !line.contains("palette-0")),
+        "{said:?}"
+    );
+}

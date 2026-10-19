@@ -130,7 +130,9 @@ pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
-pub use warnings::{combination as combination_said, said as warnings_said};
+pub use warnings::{
+    combination as combination_said, said as warnings_said, said_naming as warnings_said_naming,
+};
 
 #[cfg(test)]
 mod choice_tests;

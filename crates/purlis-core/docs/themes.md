@@ -245,7 +245,8 @@ the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home
   reads already is left as the source wrote it, and a walked one is written as hex. A
   terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and
   its selection) are what it draws, and are never tuned: what the check finds in them is the
-  source's own. The window draws every imported theme through the consent floors, as it draws
+  source's own, and the import's warning about one names the palette entry that holds it
+  (``…; it is the palette's `palette-0`: change `palette-0` in theme.json to lift it``). The window draws every imported theme through the consent floors, as it draws
   any theme.
 - **Nothing is dropped silently.** `not taken` lists every key of the source that gave no token a
   value, with why: no token takes it, a nearer key gave its token the value, it is not a colour, it names another file (a VS Code
@@ -360,7 +361,7 @@ Tuned after the table (#2589): a VS Code theme names a colour for nearly every r
 
 | Token | Tuned |
 |---|---|
-| `selection.text` | when the table left it and the source fills `selection.background`: `editor.foreground`, `foreground` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -481,7 +482,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | Token | Tuned |
 |---|---|
 | `surface.hover` | halfway between `base01` and `base02` |
-| `selection.text` | when the table left it and the source fills `selection.background`: `base05` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
 | `syntax.comment` | toward `base04`, then `base05` |
@@ -638,7 +639,7 @@ Tuned as a base16 scheme is, after the table (#2589):
 | Token | Tuned |
 |---|---|
 | `surface.hover` | halfway between `base01` and `base02` |
-| `selection.text` | when the table left it and the source fills `selection.background`: `base05` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
 | `syntax.comment` | toward `base04`, then `base05` |
@@ -774,7 +775,7 @@ Tuned after the table (#2589). The terminal's own colours (its background, its w
 
 | Token | Tuned |
 |---|---|
-| `selection.text` | when the table left it and the source fills `selection.background`: `Foreground Color` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
 | `text.muted` | toward `Foreground Color` |
 | `syntax.comment` | toward `Foreground Color` |
 | `danger.base` | toward `Foreground Color` |
@@ -894,7 +895,7 @@ Tuned as an iTerm2 preset is, after the table (#2589):
 
 | Token | Tuned |
 |---|---|
-| `selection.text` | when the table left it and the source fills `selection.background`: `foreground` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `foreground` |
 | `text.muted` | toward `foreground` |
 | `syntax.comment` | toward `foreground` |
 | `danger.base` | toward `foreground` |

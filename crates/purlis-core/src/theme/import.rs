@@ -132,6 +132,25 @@ pub struct Imported {
     pub left_out: Vec<LeftOut>,
 }
 
+impl Imported {
+    /// **The palette entry `token` is written as** in the appearance `appearance` (its id) of
+    /// the theme this import wrote: `None` when it is written as hex, or when the import has no
+    /// such appearance or token.
+    pub fn palette_entry(&self, appearance: &str, token: &str) -> Option<String> {
+        let document: Value = serde_json::from_slice(self.files.get(super::THEME_JSON)?).ok()?;
+        let palette = document.get("palette")?;
+        let written = document
+            .get("appearances")?
+            .as_array()?
+            .iter()
+            .find(|one| one.get("id").and_then(Value::as_str) == Some(appearance))?
+            .get("tokens")?
+            .get(token)?
+            .as_str()?;
+        palette.get(written).is_some().then(|| written.to_owned())
+    }
+}
+
 /// **The kind of `file_name` holding `bytes`**, from its extension and then its first words;
 /// `None` when neither says.
 pub fn detect(file_name: &str, bytes: &[u8]) -> Option<SourceKind> {
@@ -1094,7 +1113,7 @@ pub fn recipes_markdown(kind: SourceKind) -> String {
     for (token, recipe) in recipes(kind) {
         let said = match recipe {
             Recipe::Fill { keys, when } => format!(
-                "when the table left it and the source fills `{when}`: {}",
+                "when the theme's `{when}` is filled and the table left it: {}",
                 keys.iter()
                     .map(|key| format!("`{key}`"))
                     .collect::<Vec<_>>()
@@ -1126,7 +1145,8 @@ fn tune(
     let mut document = document.clone();
     let resolved = |document: &mut Value, tokens: &Map<String, Value>| -> Option<ResolvedTheme> {
         document["appearances"][0]["tokens"] = Value::Object(tokens.clone());
-        let loaded = super::Library::new().load(None, document);
+        // Read only to check: a walk registers none of the theme's fonts.
+        let loaded = super::Library::new().checking().load(None, document);
         (!loaded.refused).then(|| loaded.theme.first().clone())
     };
     for (token, recipe) in recipes {
