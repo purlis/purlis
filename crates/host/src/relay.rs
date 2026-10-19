@@ -22,15 +22,16 @@
 //! client's views again, each with a snapshot, under the numbers the client knows them by and at
 //! their next epoch, so the client draws each again as a view that came back. A hold is carried
 //! once the other host takes it (#2535): a project it will not hold on the new link is no longer
-//! kept for the client, and the other host refuses the client's next command for it. A link renewed
+//! kept for the client, and the client is pushed `not_held` for it, in the other host's words, as
+//! the carry-over ends, so it holds the project again itself (#2645). A link renewed
 //! ahead of its limit carries the client's commands until the new one carries all of that, and only
 //! then ends; after a drop, the client's commands wait while it is carried over. **No command the
 //! client sent is sent again**: one the link ended under is refused as unanswered, and while no
 //! link is up every command is refused in words saying so, and is not kept. **The client is told
 //! the link is down**, pushed `link_down` once each time no link is up, and `link_back` once one is
 //! up again and carries what its link stands on (#2496): a link renewed ahead of its limit is
-//! neither, and a relay made with [`Relay::new`] tells its client both as a kept one does. Both are
-//! this host's own words: the other host's are never handed on, and neither holds up linking again
+//! neither, and a relay made with [`Relay::new`] tells its client both as a kept one does. These,
+//! and `not_held`, are this host's own words: the other host's are never handed on, and neither holds up linking again
 //! for a client that has stopped reading. A view the other host will not attach again has ended for
 //! good, and the client is told so.
 //!
@@ -724,19 +725,33 @@ async fn carry_over(
 
 /// The projects the new link's last pass could not hold are no longer kept for the client: no
 /// later link holds them in its name, and the other host refuses the client's next command for
-/// one as a project it does not hold. The client is not told of it here, and goes on counting
-/// the project as held (#2645).
-fn not_held_on(client: &ClientLink, refused: Refused) {
-    let mut kept = client.kept();
-    for (project, (path, why)) in refused {
-        if kept.held.get(&project) == Some(&path) {
-            kept.held.remove(&project);
-            crate::say(&format!(
-                "project {project} is not held at {path} on the new link to the other host, \
-                 which refused it: {why}"
-            ));
+/// one as a project it does not hold. The client is told of each, in the other host's words
+/// (`not_held`, #2645), so it holds the project again itself: one word for each, in order, on a
+/// task of its own that waits for room, so it never holds up the link.
+fn not_held_on(client: &Arc<ClientLink>, refused: Refused) {
+    let mut told = Vec::new();
+    {
+        let mut kept = client.kept();
+        for (project, (path, why)) in refused {
+            if kept.held.get(&project) == Some(&path) {
+                kept.held.remove(&project);
+                crate::say(&format!(
+                    "project {project} is not held at {path} on the new link to the other host, \
+                     which refused it: {why}"
+                ));
+                told.push(Pushed::NotHeld { project, why });
+            }
         }
     }
+    if told.is_empty() {
+        return;
+    }
+    let client = Arc::clone(client);
+    tokio::spawn(async move {
+        for pushed in told {
+            client.tell(pushed).await;
+        }
+    });
 }
 
 /// The holds a pass of a carry-over sent that the other host refused: by project, where the
@@ -826,7 +841,7 @@ async fn carry(
                 Err(CallError::Closed(_)) => return Err(LinkEnded),
                 // Still held where it was carried, so it is not held at the new path.
                 Err(why) => {
-                    refused.insert(project, (path, why.to_string()));
+                    refused.insert(project, (path, words(&why)));
                     continue;
                 }
             }
@@ -837,7 +852,7 @@ async fn carry(
             }
             Err(CallError::Closed(_)) => return Err(LinkEnded),
             Err(why) => {
-                refused.insert(project, (path, why.to_string()));
+                refused.insert(project, (path, words(&why)));
             }
         }
     }
@@ -878,6 +893,12 @@ async fn carry(
         }
     }
     Ok(refused)
+}
+
+/// The other host's words for why it refused, or what else went wrong.
+fn words(why: &CallError) -> String {
+    why.refusal()
+        .map_or_else(|| why.to_string(), |refusal| refusal.why.clone())
 }
 
 /// Joins each view's stream the other host opens on one link to a new stream on the client's
@@ -959,9 +980,9 @@ async fn push_on(
                 };
                 client.view_ended(ours, why).await;
             }
-            // Whether the link to the other host is up is this host's to say, never the other
-            // host's (#2496).
-            Pushed::LinkDown { .. } | Pushed::LinkBack {} => {}
+            // Whether the link to the other host is up, and which projects it holds for the
+            // client, is this host's to say, never the other host's (#2496, #2645).
+            Pushed::LinkDown { .. } | Pushed::LinkBack {} | Pushed::NotHeld { .. } => {}
             pushed => client.tell(pushed).await,
         }
     }

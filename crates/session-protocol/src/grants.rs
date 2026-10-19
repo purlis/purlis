@@ -22,7 +22,7 @@
 //! | `subscribe`, `unsubscribe`, and the pushed `link_down` and `link_back` a relaying host says to every subscriber (1.17) | yes | yes | yes | yes | | yes |
 //! | `close` (1.2) | yes | yes | yes | yes | | yes |
 //! | `readiness` (1.2) | yes | yes | yes | yes | | yes |
-//! | `hold_project`, `let_go_of_project` (1.2) | yes | | | | | relayed |
+//! | `hold_project`, `let_go_of_project` (1.2), and the pushed `not_held` a relaying host says to the client that held the project (1.30) | yes | | | | | relayed |
 //! | `stop_all` (1.5) | yes | yes | yes | yes | | yes |
 //! | `kill_switch`, the switch's state (1.5) | yes | yes | yes | yes | | yes |
 //! | `rearm` (1.5) | yes | | | | | |
