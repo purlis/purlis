@@ -99,8 +99,7 @@ function shown(over: Partial<ThemeGallery>): ThemeGallery {
     yours === null
       ? undefined
       : gallery.cards.find(
-          (one) =>
-            one.id === yours.theme && (yours.from === null || one.level === yours.from),
+          (one) => one.id === yours.theme && (yours.from === null || one.level === yours.from),
         )?.key;
   return { ...gallery, chosen: over.chosen ?? theirs ?? gallery.drawn };
 }
@@ -340,8 +339,7 @@ describe("Settings › Theme's cards (#2331)", () => {
 
 describe("under the chosen card (#2331)", () => {
   it("offers its appearances and says what following the system does with one tag", async () => {
-    const { asked } = core(shown({ yours: mine("dusk", null),
-      drawn: "machine:dusk" }));
+    const { asked } = core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     const appearance = await screen.findByRole("radiogroup");
     expect(within(appearance).getAllByRole("radio")).toHaveLength(3);
@@ -366,8 +364,7 @@ describe("under the chosen card (#2331)", () => {
   });
 
   it("duplicates it as a theme of your own and opens its folder", async () => {
-    const { asked } = core(shown({ yours: mine("dusk", null),
-      drawn: "machine:dusk" }));
+    const { asked } = core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     await cards();
     fireEvent.click(screen.getByRole("button", { name: "Duplicate as my theme" }));
@@ -376,27 +373,30 @@ describe("under the chosen card (#2331)", () => {
     ).toBeTruthy();
     expect(asked("theme_duplicate")).toEqual([{ at: null, theme: "dusk", from: "machine" }]);
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
-    await waitFor(() => expect(asked("theme_open_folder")).toEqual([
-        { at: null, theme: "dusk", from: "machine" },
-      ]),
+    await waitFor(() =>
+      expect(asked("theme_open_folder")).toEqual([{ at: null, theme: "dusk", from: "machine" }]),
     );
   });
 
   it("offers neither on a theme a folder of your own cannot extend, nor a folder it has not", async () => {
-    core(shown({ cards: [
-        CLASSIC,
-        TEAM,
-        card({
-          id: "sol/Dark",
-          name: "Dark",
-          from: "extension",
-          extension: "sol",
-          duplicable: false,
-          folder: false,
-        }),
-      ],
-      yours: mine("sol/Dark", null),
-      drawn: "sol/Dark" }));
+    core(
+      shown({
+        cards: [
+          CLASSIC,
+          TEAM,
+          card({
+            id: "sol/Dark",
+            name: "Dark",
+            from: "extension",
+            extension: "sol",
+            duplicable: false,
+            folder: false,
+          }),
+        ],
+        yours: mine("sol/Dark", null),
+        drawn: "sol/Dark",
+      }),
+    );
     render(<Group at={{ plane: PLANE, workspace: null }} />);
     await cards();
     expect(screen.getByRole("button", { name: "Duplicate as my theme" })).toBeDisabled();
@@ -497,13 +497,14 @@ describe("a preview never outlives its card (#2331 review)", () => {
 
 describe("choosing nothing, and a refused card (#2331 review)", () => {
   it("takes the choice here away with Use the default, and Undo brings it back", async () => {
-    const { asked } = core(shown({ yours: mine("dusk", "dark"),
-      drawn: "machine:dusk" }));
+    const { asked } = core(shown({ yours: mine("dusk", "dark"), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     await cards();
     fireEvent.click(screen.getByRole("button", { name: "Use the default" }));
     await waitFor(() =>
-      expect(asked("theme_choose_machine")).toEqual([{ theme: null, appearance: null, from: null }]),
+      expect(asked("theme_choose_machine")).toEqual([
+        { theme: null, appearance: null, from: null },
+      ]),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
     await waitFor(() =>
@@ -674,7 +675,11 @@ describe("the chosen theme's options (#2527)", () => {
 
   it("shows each value with the level that chose it, and keeps a value picked at the level", async () => {
     const { asked } = core(
-      shown({ yours: mine("dusk", null, "machine"), drawn: "machine:dusk", options: [ACCENT, LOUD] }),
+      shown({
+        yours: mine("dusk", null, "machine"),
+        drawn: "machine:dusk",
+        options: [ACCENT, LOUD],
+      }),
     );
     render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
     const options = await screen.findByRole("region", { name: "Options" });

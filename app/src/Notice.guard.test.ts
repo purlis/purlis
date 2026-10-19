@@ -515,11 +515,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "the settings set's filter count, a row's refusal and a range's value: inline, per field",
   },
   "settings/themeGallery.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
       ". Settings › Theme's lines (#2331): the gallery's read refusal, standing in for its " +
-      "cards, and what Duplicate as my theme just made; the cards and the group's buttons are " +
+      "cards, what Duplicate as my theme just made, and the values an option's pick dropped " +
+      "(#2527); the cards, the group's buttons and the options' choices are " +
       "the way on",
   },
   "settings/thisMachine.tsx": {

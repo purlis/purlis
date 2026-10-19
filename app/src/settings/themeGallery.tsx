@@ -412,9 +412,7 @@ function galleryRow(group: string, at: ThemeAt | null): LiveSetting {
                   was?.theme ?? null,
                   was?.appearance ?? null,
                   was?.from ?? null,
-                ).then((why) =>
-                  setError(why === undefined ? undefined : [why]),
-                );
+                ).then((why) => setError(why === undefined ? undefined : [why]));
               },
         control: (ids) => <Cards read={read} at={at} ids={ids} onPick={pick} />,
       };
@@ -621,8 +619,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
       const yours = gallery?.yours ?? null;
       // Only a choice made here has an appearance to change: with none, the levels underneath
       // decide, and picking an appearance would quietly choose the card drawn.
-      const chosenHere =
-        gallery !== undefined && card !== undefined && yoursCard(gallery) === card;
+      const chosenHere = gallery !== undefined && card !== undefined && yoursCard(gallery) === card;
       const value = chosenHere ? (yours?.appearance ?? "") : "";
       return {
         grouped: true,

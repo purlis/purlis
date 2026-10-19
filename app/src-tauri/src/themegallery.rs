@@ -111,6 +111,7 @@ pub struct GalleryAppearance {
 
 impl From<Card> for GalleryCard {
     fn from(card: Card) -> Self {
+        let level = card.level();
         let (from, extension) = match card.from {
             CardFrom::BuiltIn => ("built-in", None),
             CardFrom::Machine => ("machine", None),
@@ -118,7 +119,6 @@ impl From<Card> for GalleryCard {
             CardFrom::Workspace => ("workspace", None),
             CardFrom::Extension { extension } => ("extension", Some(extension)),
         };
-        let level = card.level();
         Self {
             key: key_of(&card.id, level),
             level: level.map(|one| one.word().to_owned()),
@@ -260,8 +260,8 @@ impl Place {
     }
 
     /// Where the person's choice at this level is kept; `None` for a project purlis cannot tell.
-    fn slot<'a>(&'a self, key: &'a Option<String>) -> Option<choices::Slot<'a>> {
-        match (&self.plane, key, &self.workspace) {
+    fn slot<'a>(&'a self, key: Option<&'a str>) -> Option<choices::Slot<'a>> {
+        match (&self.plane, key, self.workspace.as_deref()) {
             (None, _, _) => Some(choices::Slot::Machine),
             (Some(_), Some(key), Some(name)) => Some(choices::Slot::Workspace(key, name)),
             (Some(_), Some(key), None) => Some(choices::Slot::Project(key)),
@@ -670,7 +670,7 @@ fn choose_option_of(
     };
     let (choice, notes) = gallery::choose_option(&place.shelf(), &base, option, value)?;
     let key = place.plane.as_deref().and_then(theme::levels::project_key);
-    let slot = place.slot(&key).ok_or_else(|| {
+    let slot = place.slot(key.as_deref()).ok_or_else(|| {
         "purlis cannot tell which project this is, so it keeps no choice".to_owned()
     })?;
     choices::set(&place.config, slot, Some(choice)).map_err(|why| why.to_string())?;
