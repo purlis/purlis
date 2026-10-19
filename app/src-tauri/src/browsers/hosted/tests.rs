@@ -617,7 +617,7 @@ fn a_browser_the_person_opened_goes_to_their_address_on_its_current_page_reachin
     let window = window();
     let program = window
         .browsers
-        .open_reaching(&window.root, Some(reaching("api.example")))
+        .open_reaching(&window.root, Some(reaching("api.example")), None)
         .unwrap();
     let screen = window.started.started()[0].clone();
     assert_eq!(screen.shown().reach, Some(reaching("api.example")));
@@ -668,7 +668,7 @@ fn a_browser_with_no_page_opens_one_at_the_address() {
     let window = window();
     let program = window
         .browsers
-        .open_reaching(&window.root, Some(reaching("api.example")))
+        .open_reaching(&window.root, Some(reaching("api.example")), None)
         .unwrap();
     let screen = window.started.started()[0].clone();
 
@@ -692,7 +692,7 @@ fn a_site_new_to_the_project_held_back_is_named_to_ask_about() {
     let window = window();
     let program = window
         .browsers
-        .open_reaching(&window.root, Some(reaching("api.example")))
+        .open_reaching(&window.root, Some(reaching("api.example")), None)
         .unwrap();
     let screen = window.started.started()[0].clone();
     screen.answers(Ok(Browsed::default()));
@@ -721,7 +721,7 @@ fn a_browser_the_person_drives_is_handed_back_and_goes_and_each_act_has_an_id_of
     let window = window();
     let program = window
         .browsers
-        .open_reaching(&window.root, Some(reaching("api.example")))
+        .open_reaching(&window.root, Some(reaching("api.example")), None)
         .unwrap();
     let screen = window.started.started()[0].clone();
     window.browsers.take_over(&program).unwrap();
@@ -752,7 +752,7 @@ fn a_browser_that_has_ended_says_so() {
     let window = window();
     let program = window
         .browsers
-        .open_reaching(&window.root, Some(reaching("api.example")))
+        .open_reaching(&window.root, Some(reaching("api.example")), None)
         .unwrap();
     window.browsers.close(&program).unwrap();
 

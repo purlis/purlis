@@ -472,11 +472,20 @@ mod hosted {
         /// id: what a test of the window's browsers starts.
         #[cfg(test)]
         pub(crate) fn open(&self, root: &Path) -> Result<String, String> {
-            self.open_reaching(root, None, None)
-                .map_err(|not| match not {
-                    NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
-                    NotStarted::Failed(why) => why,
-                })
+            self.open_for_the_person(root, None)
+        }
+
+        /// **Starts a browser the person opens** in the project at `root`, reaching `reach`
+        /// (#2176), and answers its id, or why it did not start in the person's words.
+        pub(crate) fn open_for_the_person(
+            &self,
+            root: &Path,
+            reach: Option<BrowserReach>,
+        ) -> Result<String, String> {
+            self.open_reaching(root, reach, None).map_err(|not| match not {
+                NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
+                NotStarted::Failed(why) => why,
+            })
         }
 
         /// Starts a browser in the project at `root` reaching `reach` (#2013), or with none,
@@ -898,7 +907,7 @@ pub async fn open_browser(
         crate::off_the_window("starting a browser", move || {
             // It reaches what the project's browsers reach, and asks of a new site (#2176).
             let reach = crate::chatbrowsers::person_reach(&held);
-            browsers.open_reaching(held.root(), Some(reach))
+            browsers.open_for_the_person(held.root(), Some(reach))
         })
         .await
     }
