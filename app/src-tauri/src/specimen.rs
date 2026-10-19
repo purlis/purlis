@@ -118,8 +118,10 @@ pub fn painted(
             let started = Instant::now();
             let picture = painter.paint(&WindowTheme::from(&theme))?;
             Ok(Painted {
+                preview: purlis_core::theme::is_preview(&specimen.theme),
                 theme: specimen.theme.clone(),
                 appearance: theme.appearance,
+                high_contrast: theme.high_contrast,
                 width: picture.width,
                 height: picture.height,
                 millis: u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX),
@@ -191,11 +193,16 @@ pub async fn theme_specimen(
             && themepreview::chosen(&Specimen {
                 theme: theme.clone(),
                 appearance: *appearance,
+                high_contrast: false,
             })
             .is_ok()
     });
     let specimen = match built_in {
-        Some(appearance) => Ask::BuiltIn(Specimen { theme, appearance }),
+        Some(appearance) => Ask::BuiltIn(Specimen {
+            theme,
+            appearance,
+            high_contrast: false,
+        }),
         None => {
             let place = match at {
                 Some(crate::extensions::ThemeAt { plane, workspace }) => {

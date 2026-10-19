@@ -1563,7 +1563,8 @@ fn facts_in(
 /// One theme a project may pick, as the Theme select lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ThemeOption {
-    /// What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`.
+    /// What the file holds: `purlis-classic`, `purlis`, `purlis-dark`, `purlis-light`, `system`,
+    /// or `<extension>/<theme>`.
     pub value: String,
     /// What the select shows.
     pub label: String,
@@ -1780,11 +1781,18 @@ fn project_theme_of(
         })
         .collect();
     let icons_why = theme::resolve_icons(&on, Some(&icons), said).why;
-    let mut options: Vec<ThemeOption> = extension::BUILT_IN_THEMES
-        .iter()
+    // The built-in themes whole, each drawing its first appearance (#2709), then Purlis
+    // Classic's two appearances by their own ids.
+    let mut options: Vec<ThemeOption> = [purlis_core::theme::CLASSIC, purlis_core::theme::PURLIS]
+        .into_iter()
+        .chain(extension::BUILT_IN_THEMES)
         .map(|name| ThemeOption {
-            value: (*name).to_owned(),
-            label: format!("{name} (built in)"),
+            value: name.to_owned(),
+            label: if purlis_core::theme::is_preview(name) {
+                format!("{name} (built in, preview)")
+            } else {
+                format!("{name} (built in)")
+            },
         })
         .collect();
     options.push(ThemeOption {
@@ -2698,6 +2706,27 @@ mod tests {
     }
 
     #[test]
+    fn a_project_file_may_pick_purlis_or_purlis_classic_whole() {
+        // #2709: the select offers both built-in themes, and a file that picks one draws it.
+        let dir = tempfile::tempdir().expect("a directory");
+        let config = dir.path().join("config");
+        let seen = extension::survey(&config, &extension::BuiltIn::none());
+        for pick in [purlis_core::theme::PURLIS, purlis_core::theme::CLASSIC] {
+            let shared = format!("[theme]\nuse = \"{pick}\"\n");
+            let choices = extension::project::Choices::from_text(Some(&shared), None);
+            let said = extension::project::theme::Said::from_text(Some(&shared), None);
+            let theme = project_theme_of(&seen, &choices, &said);
+            assert!(
+                theme.options.iter().any(|one| one.value == pick),
+                "{pick} is offered"
+            );
+            assert_eq!(theme.picked.as_deref(), Some(pick));
+            assert_eq!(theme.draws.as_deref(), Some(pick));
+            assert_eq!(theme.why, None);
+        }
+    }
+
+    #[test]
     fn a_projects_theme_offers_every_approved_theme_and_says_why_one_turned_off_is_not_drawn() {
         // charter-app#273.
         let (_dir, at, config) = made();
@@ -2721,6 +2750,8 @@ mod tests {
                 .map(|one| (one.value.as_str(), one.label.as_str()))
                 .collect::<Vec<_>>(),
             vec![
+                ("purlis-classic", "purlis-classic (built in)"),
+                ("purlis", "purlis (built in, preview)"),
                 ("purlis-dark", "purlis-dark (built in)"),
                 ("purlis-light", "purlis-light (built in)"),
                 ("system", "Follow the system"),

@@ -3089,6 +3089,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             specimens: vec![purlis_core::themepreview::Specimen {
                 theme: "purlis-classic".to_owned(),
                 appearance: None,
+                high_contrast: false,
             }],
         }),
     ];
