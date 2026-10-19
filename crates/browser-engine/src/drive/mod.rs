@@ -7,10 +7,9 @@
 //! itself and hands none of it out: what a caller gets is a snapshot of a page with a
 //! reference for each element, the elements a find matched, a screenshot, and the outcome of
 //! an action. No call runs script the caller wrote; the small scripts purlis runs in a page are
-//! constants, and the caller's words reach them only as values. Those that say whether a
-//! document has loaded, choose a drop-down's options, read what a field holds and say whether
-//! something has the focus run in a world of purlis's own in the frame they act on (#2138), so
-//! what they read and do is the document's own, whatever the page's scripts redefine.
+//! constants, and the caller's words reach them only as values. Every one of them runs in a
+//! world of purlis's own in the frame it acts on (#2138, #2613), so what it reads and does is
+//! the document's own, whatever the page's scripts redefine.
 //!
 //! - **References.** A snapshot deals each element a reference (`e12`). It names the same
 //!   element in every later snapshot of the same document, and dies when its frame loads

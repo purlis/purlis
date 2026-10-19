@@ -3,7 +3,8 @@
 
 //! A login purlis performs (#2016), against the stand-in engine: its frames page plays the
 //! login form, its "Secret word" field the password field, and its line "You typed open sesame
-//! just now" a page that echoes what was typed, as a show-password toggle does.
+//! just now" a page that echoes what was typed, as a show-password toggle does. In the page's
+//! own world its scripts hide the form: only a script run in purlis's own world finds it (#2613).
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,7 +13,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::super::login::{
-    CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, NAME_FIELD, PASSWORD_FIELD, origin_of,
+    CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, FOCUS_FIELD, NAME_FIELD, PASSWORD_FIELD, origin_of,
 };
 use super::{Engine, browser_with, id, limits, snapshot};
 use crate::WebAddress;
@@ -63,6 +64,10 @@ enum Twist {
     Unread,
     /// The page asks for no password at all: signed in already.
     AsksNothing,
+    /// The engine makes no world of purlis's own in the page.
+    NoWorld,
+    /// purlis's world in the page ends once the field is found, before it is filled.
+    WorldGone,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -122,6 +127,29 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 let held = typed.load(Ordering::SeqCst);
                 let held = if twist == Twist::Shortens { held - 1 } else { held };
                 Some(Ok(json!({ "result": { "type": "number", "value": held } })))
+            }
+            "Page.createIsolatedWorld" if twist == Twist::NoWorld => {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "No frame for given id found".into(),
+                }))
+            }
+            "Runtime.callFunctionOn"
+                if p["functionDeclaration"] == FOCUS_FIELD && twist == Twist::WorldGone =>
+            {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "Cannot find context with specified id".into(),
+                }))
+            }
+            // The page's own world finds no field: the page redefined what finding one uses.
+            "Runtime.evaluate"
+                if (p["expression"] == PASSWORD_FIELD || p["expression"] == NAME_FIELD)
+                    && !matches!(engine.by_unique(&p["uniqueContextId"], sent.session.as_deref()), Ok(Some(_))) =>
+            {
+                Some(engine.by_unique(&p["uniqueContextId"], sent.session.as_deref()).map(|_| {
+                    json!({ "result": { "type": "object", "subtype": "null", "value": null } })
+                }))
             }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
                 Some(Ok(if twist == Twist::AsksNothing || (goes && seen.load(Ordering::SeqCst)) {
@@ -474,4 +502,94 @@ fn a_page_that_asks_is_filled_though_the_browser_opened_from_kept_logins() {
     let ended = browser.log_in(&login, &|| Ok(())).unwrap();
     assert!(ended.outcome.is_ok());
     assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
+}
+
+/// Every script a login runs on its page runs in purlis's own world (#2613): the fields are
+/// found by scripts that name the world, and focused, asked and cleared through objects of it.
+#[test]
+fn every_script_a_login_runs_on_its_page_runs_in_purlis_s_own_world() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, false);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{:?}",
+        ended.outcome
+    );
+    assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
+    let finds: Vec<_> = engine
+        .sent("Runtime.evaluate")
+        .into_iter()
+        .filter(|sent| {
+            sent.params["expression"] == PASSWORD_FIELD || sent.params["expression"] == NAME_FIELD
+        })
+        .collect();
+    assert!(!finds.is_empty());
+    for find in &finds {
+        assert!(
+            find.params["uniqueContextId"].is_string(),
+            "a find names purlis's world: {find:?}"
+        );
+    }
+    let run_on: Vec<_> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| {
+            [FOCUS_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, CLEAR_FIELD]
+                .iter()
+                .any(|f| sent.params["functionDeclaration"] == *f)
+        })
+        .collect();
+    assert!(
+        run_on
+            .iter()
+            .any(|sent| sent.params["functionDeclaration"] == CLEAR_FIELD)
+    );
+    for sent in &run_on {
+        let object = sent.params["objectId"].as_str().unwrap_or_default();
+        assert!(
+            object == "PASSWORD-1" || object.starts_with("OBJECT-"),
+            "run on an object of purlis's world: {sent:?}"
+        );
+    }
+    for resolved in engine.sent("DOM.resolveNode") {
+        assert!(
+            resolved.params["executionContextId"].is_i64(),
+            "resolved into purlis's world: {resolved:?}"
+        );
+    }
+}
+
+#[test]
+fn a_login_with_no_world_of_purlis_s_own_fills_nothing_and_hands_the_browser_back() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::NoWorld);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => assert!(
+            why.contains("could not read the login page on http://fixture.test"),
+            "{why}"
+        ),
+        other => panic!("refused: {other:?}"),
+    }
+    assert!(inserted(&engine).is_empty());
+    assert_eq!(ended.driver, Driver::Agent);
+    assert_eq!(browser.driver(), Driver::Agent);
+    assert!(engine.sent("Browser.close").is_empty());
+}
+
+#[test]
+fn a_login_whose_world_ends_before_the_fill_fills_nothing_and_hands_the_browser_back() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::WorldGone);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    match ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => {
+            assert!(why.contains("could not fill the login"), "{why}");
+        }
+        other => panic!("refused: {other:?}"),
+    }
+    assert!(inserted(&engine).is_empty());
+    assert_eq!(ended.driver, Driver::Agent);
+    assert!(engine.sent("Browser.close").is_empty());
 }
