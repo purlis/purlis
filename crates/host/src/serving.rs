@@ -54,6 +54,18 @@ impl Place {
 /// link, and an `Err` when what it keeps cannot be read safely, which admits none either.
 pub type Answering = Arc<dyn Fn() -> Result<Option<(Identity, Pinned)>, String> + Send + Sync>;
 
+/// Takes the desktop a link proved out of a runner's peers, as that desktop removes the runner
+/// (`unpair`, 1.25, #2525): no later link from it is admitted.
+pub type Unpairing = Arc<dyn Fn(&Pinned) -> Result<(), String> + Send + Sync>;
+
+/// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
+/// and how the desktop it admits is taken out of its peers ([`Unpairing`]).
+#[derive(Clone)]
+pub struct Pairing {
+    pub answering: Answering,
+    pub unpairing: Unpairing,
+}
+
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
 pub const LOCK: &str = "purlisd.lock";
 
@@ -104,13 +116,13 @@ pub async fn serve(
 }
 
 /// [`serve`], and, for a runner's host, links from the desktop it is paired with on
-/// [`Place::link`] (`answering`): each is the link between hosts (ADR 0078 §3), served as
+/// [`Place::link`] (`pairing`): each is the link between hosts (ADR 0078 §3), served as
 /// `remote-link` once its handshake proves the desktop's pinned key.
 pub async fn serve_answering(
     place: &Place,
     window: Option<Window>,
     hosting: Hosting,
-    answering: Option<Answering>,
+    pairing: Option<Pairing>,
     ready: impl FnOnce(),
     until: impl Future<Output = ()>,
 ) -> Result<(), HostError> {
@@ -123,8 +135,8 @@ pub async fn serve_answering(
     let settling = hosting.clone();
     let _ = tokio::task::spawn_blocking(move || settling.take_over_from_the_last_host()).await;
     let listener = bind(&place.socket)?;
-    let links = match answering {
-        Some(answering) => Some((bind(&place.link())?, answering)),
+    let links = match pairing {
+        Some(pairing) => Some((bind(&place.link())?, pairing)),
         None => None,
     };
     let credentials = Arc::new(
@@ -135,9 +147,8 @@ pub async fn serve_answering(
     // A stop written elsewhere is heard with no window there, as the host starts and every few
     // seconds while it serves; every start looks first too (#2190).
     let heeding = tokio::spawn(hosting.clone().heed_stops_written_elsewhere());
-    let answering_links = links.map(|(listener, answering)| {
-        tokio::spawn(answer_links(listener, answering, hosting.clone()))
-    });
+    let answering_links = links
+        .map(|(listener, pairing)| tokio::spawn(answer_links(listener, pairing, hosting.clone())));
     ready();
 
     let served = accept(&listener, &credentials, &hosting, until).await;
@@ -155,8 +166,8 @@ pub async fn serve_answering(
 }
 
 /// Answers each link on a runner's link socket: as `remote-link`, from the one desktop
-/// `answering` names, through the link between hosts' handshake. Nothing else is served there.
-async fn answer_links(listener: Listener, answering: Answering, hosting: Hosting) {
+/// `pairing` names, through the link between hosts' handshake. Nothing else is served there.
+async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
     loop {
         let peer = match listener.accept().await {
             Ok(Ok(peer)) => peer,
@@ -170,7 +181,7 @@ async fn answer_links(listener: Listener, answering: Answering, hosting: Hosting
             }
         };
         // What the runner keeps is read off the runtime: two files, read as each link arrives.
-        let reading = Arc::clone(&answering);
+        let reading = Arc::clone(&pairing.answering);
         let paired = tokio::task::spawn_blocking(move || reading())
             .await
             .unwrap_or_else(|why| Err(format!("its pairing could not be read: {why}")));
@@ -186,6 +197,7 @@ async fn answer_links(listener: Listener, answering: Answering, hosting: Hosting
             }
         };
         let hosting = hosting.clone();
+        let unpairing = Arc::clone(&pairing.unpairing);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -199,11 +211,85 @@ async fn answer_links(listener: Listener, answering: Answering, hosting: Hosting
             .await
             {
                 Ok(answered) => {
-                    let _ = session::serve(answered.link, hosting, None).await;
+                    let unpaired = Arc::new(tokio::sync::Notify::new());
+                    let paired = PairedLink {
+                        hosting,
+                        desktop,
+                        unpairing,
+                        unpaired: Arc::clone(&unpaired),
+                    };
+                    let serving = session::serve(answered.link, paired, None);
+                    tokio::pin!(serving);
+                    // A desktop that unpaired is linked no more: its link ends once its
+                    // `done` has had time to go out, whether or not it closes the link itself.
+                    tokio::select! {
+                        _ = &mut serving => {}
+                        () = unpaired.notified() => {
+                            let _ = tokio::time::timeout(UNPAIRED_LINK_ENDS, &mut serving).await;
+                        }
+                    }
                 }
                 Err(refused) => say(&format!("a link was refused: {refused}")),
             }
         });
+    }
+}
+
+/// The session protocol on a link from the desktop a runner is paired with: the host's own,
+/// and `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of
+/// the runner's peers.
+struct PairedLink {
+    hosting: Hosting,
+    desktop: Pinned,
+    unpairing: Unpairing,
+    /// Told once the desktop is unpaired, so its link ends.
+    unpaired: Arc<tokio::sync::Notify>,
+}
+
+/// How long the link of a desktop that unpaired stays open after its answer, for the answer to
+/// reach it.
+const UNPAIRED_LINK_ENDS: std::time::Duration = std::time::Duration::from_secs(2);
+
+impl session::Host for PairedLink {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<session::Answer, session::Refusal> {
+        if command != session::Command::Unpair {
+            return session::Host::call(&self.hosting, command, peer).await;
+        }
+        let (unpairing, desktop) = (Arc::clone(&self.unpairing), self.desktop.clone());
+        let unpaired = tokio::task::spawn_blocking(move || unpairing(&desktop))
+            .await
+            .unwrap_or_else(|why| Err(format!("the unpairing did not finish: {why}")));
+        match unpaired {
+            Ok(()) => {
+                say("the desktop this runner was paired with unpaired it");
+                self.unpaired.notify_one();
+                Ok(session::Answer::Done)
+            }
+            Err(why) => Err(session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            }),
+        }
+    }
+
+    async fn elicits_a_secret(&self, chat: &str, ask: &str) -> bool {
+        session::Host::elicits_a_secret(&self.hosting, chat, ask).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        session::Host::link_ended(&self.hosting, peer).await
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        session::Host::subscribe(&self.hosting, since, peer).await
     }
 }
 

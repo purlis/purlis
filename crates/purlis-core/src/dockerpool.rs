@@ -179,6 +179,11 @@ impl Runner {
         self.user
     }
 
+    /// The image's `HOME`, where the runner's home volume is mounted.
+    pub fn home(&self) -> &str {
+        &self.home
+    }
+
     /// The container's name.
     pub fn container(&self) -> String {
         format!("{PREFIX}{}", self.name)
@@ -718,7 +723,72 @@ impl Docker {
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.
     pub fn remove(&self, made: &Made) -> Result<(), Refused> {
-        self.remove_named(made.container.as_str(), &made.runner.volume())
+        let (container, volume) = self.remove_each(made);
+        container.and(volume)
+    }
+
+    /// [`Docker::remove`], part by part: the container, then the home volume, each tried
+    /// whatever the other did. One that is already gone is removed; one that is still there
+    /// after its removal failed is said with Docker's words and the command that removes it.
+    pub fn remove_each(&self, made: &Made) -> (Result<(), Refused>, Result<(), Refused>) {
+        let id = made.container.as_str();
+        let container = self.removed_or_gone(
+            &["container", "rm", "--force", "--volumes", id],
+            &[
+                "container",
+                "ls",
+                "--all",
+                "--quiet",
+                "--no-trunc",
+                "--filter",
+                &format!("id={id}"),
+            ],
+            id,
+            &format!("runner {}'s container {id}", made.runner.name()),
+            &format!("docker container rm --force {id}"),
+        );
+        let volume = made.runner.volume();
+        let volume_gone = self.removed_or_gone(
+            &["volume", "rm", "--force", &volume],
+            &[
+                "volume",
+                "ls",
+                "--quiet",
+                "--filter",
+                &format!("name={volume}"),
+            ],
+            &volume,
+            &format!("runner {}'s home volume {volume}", made.runner.name()),
+            &format!("docker volume rm --force {volume}"),
+        );
+        (container, volume_gone)
+    }
+
+    /// Runs `removing`; when it fails, asks `listing` whether a line of exactly `listed` is
+    /// still there, and only then refuses, saying `what` is left and `how` to remove it.
+    fn removed_or_gone(
+        &self,
+        removing: &[&str],
+        listing: &[&str],
+        listed: &str,
+        what: &str,
+        how: &str,
+    ) -> Result<(), Refused> {
+        let words = |words: &[&str]| {
+            words
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let Err(why) = self.run(&words(removing), None, MOST_INSPECTED) else {
+            return Ok(());
+        };
+        match self.run(&words(listing), None, MOST_INSPECTED) {
+            Ok(list) if !list.lines().any(|line| line.trim() == listed) => Ok(()),
+            _ => Err(refused(format!(
+                "{what} could not be removed ({why}); remove it with `{how}`"
+            ))),
+        }
     }
 
     fn remove_named(&self, container: &str, volume: &str) -> Result<(), Refused> {
@@ -754,4 +824,4 @@ const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
 const MOST_SAID: u64 = 64 * 1024;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

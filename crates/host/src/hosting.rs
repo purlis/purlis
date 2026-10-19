@@ -2611,6 +2611,14 @@ impl session::Host for Hosting {
             }),
             // `serve` keeps these: 1.0's words come as the hosted-program ones, and the
             // subscription is the link's.
+            // A runner's host carries it out on its link from the desktop it is paired with
+            // (`serving`), before this host hears of it (1.25, #2525).
+            Command::Unpair => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so there is nothing to \
+                      unpair"
+                    .into(),
+            }),
             Command::Start(_)
             | Command::Attach { .. }
             | Command::Detach { .. }

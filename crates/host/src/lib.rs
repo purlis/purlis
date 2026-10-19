@@ -96,7 +96,9 @@ pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
-pub use serving::{Answering, HostError, LOCK, Place, Window, serve, serve_answering};
+pub use serving::{
+    Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
+};
 
 /// The argument that starts the window's binary as its session host. Its word is the window's
 /// own business: the binary is the window's, and only the window starts it so.
@@ -154,19 +156,19 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
 }
 
 /// [`serve_alone`], as a runner's host: it also answers links from the one desktop it is paired
-/// with ([`Answering`]) on its link socket ([`Place::link`]), which the bridge a connector runs
+/// with ([`Pairing`]) on its link socket ([`Place::link`]), which the bridge a connector runs
 /// opens (ADR 0078 §2).
 #[cfg(unix)]
 pub fn serve_alone_answering(
     place: &Place,
     hosting: impl FnOnce(&Place) -> Hosting,
-    answering: Answering,
+    pairing: Pairing,
 ) -> i32 {
     run(
         place,
         None,
         hosting(place),
-        Some(answering),
+        Some(pairing),
         std::future::pending(),
     )
 }
@@ -176,7 +178,7 @@ fn run(
     place: &Place,
     window: Option<Window>,
     hosting: Hosting,
-    answering: Option<Answering>,
+    pairing: Option<Pairing>,
     until: impl Future<Output = ()>,
 ) -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -197,7 +199,7 @@ fn run(
         let _ = writeln!(out, "{READY}").and_then(|()| out.flush());
     };
     match runtime.block_on(serve_answering(
-        place, window, hosting, answering, ready, until,
+        place, window, hosting, pairing, ready, until,
     )) {
         Ok(()) => 0,
         Err(why) => {

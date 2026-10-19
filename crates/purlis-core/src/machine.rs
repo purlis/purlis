@@ -382,6 +382,11 @@ pub fn dirs_spelled(config_root: &Path) -> Vec<PathBuf> {
 /// (`crate::runnerlink`, ADR 0078 §8).
 pub const PEERS_FILE: &str = "peers.json";
 
+/// The runners this desktop pinned, inside [`dir`] (`crate::runners`, ADR 0078 §8), and the
+/// lock its one read-modify-write takes.
+pub const RUNNERS_FILE: &str = "runners.json";
+pub const RUNNERS_LOCK: &str = "runners.json.lock";
+
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";
 
@@ -1028,15 +1033,7 @@ pub struct Device {
 /// store refuses (not unix, ADR 0031) there is no device id, and this says so.
 pub fn device_id(config_root: &Path) -> io::Result<String> {
     let loaded = update(config_root, |store| {
-        if store.device.is_none() {
-            store.device = Some(Device {
-                id: ulid::Ulid::generate().to_string(),
-                created: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|since| since.as_secs())
-                    .unwrap_or_default(),
-            });
-        }
+        mint_into(store);
     })?;
     loaded
         .store
@@ -1053,20 +1050,24 @@ pub fn device_id(config_root: &Path) -> io::Result<String> {
 /// there is one already.
 pub fn mint_device_id(config_root: &Path) -> io::Result<Option<String>> {
     let mut minted = None;
-    update(config_root, |store| {
-        if store.device.is_none() {
-            let id = ulid::Ulid::generate().to_string();
-            store.device = Some(Device {
-                id: id.clone(),
-                created: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|since| since.as_secs())
-                    .unwrap_or_default(),
-            });
-            minted = Some(id);
-        }
-    })?;
+    update(config_root, |store| minted = mint_into(store))?;
     Ok(minted)
+}
+
+/// Mints a device id into `store` when it holds none, and says the id it minted.
+fn mint_into(store: &mut Store) -> Option<String> {
+    if store.device.is_some() {
+        return None;
+    }
+    let id = ulid::Ulid::generate().to_string();
+    store.device = Some(Device {
+        id: id.clone(),
+        created: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or_default(),
+    });
+    Some(id)
 }
 
 /// This device's id if one has been minted, and `None` otherwise: never mints one.
