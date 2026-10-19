@@ -83,6 +83,7 @@ mod icons;
 mod import;
 pub mod levels;
 mod native;
+mod opened;
 mod options;
 mod person;
 pub mod portable;
@@ -105,14 +106,14 @@ pub use fonts::{
     CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
     Style, served,
 };
-pub use format::{Library, MOST_APPEARANCES, THEME_JSON};
+pub use format::{Library, MOST_APPEARANCES, Named, THEME_JSON};
 pub use geometry::Geometry;
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use import::{
     Files, Imported, LeftOut, MOST_SOURCE_BYTES, SCOPES, SourceKind, detect, folder_name, import,
     scopes_markdown, table, table_markdown,
 };
-pub use levels::{Choice, Folders, Level, LevelInputs, Levels, resolve_levels};
+pub use levels::{Choice, Folders, FoundFolder, Level, LevelInputs, Levels, resolve_levels};
 pub use native::{Native, first_frame};
 pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
@@ -141,6 +142,8 @@ mod format_tests;
 mod gallery_tests;
 #[cfg(test)]
 mod geometry_tests;
+#[cfg(test)]
+mod handles_tests;
 #[cfg(test)]
 mod icons_tests;
 #[cfg(test)]
@@ -745,18 +748,8 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
 /// [`load`] of a theme's text. Text that is not JSON is refused like any other theme that is
 /// not one: Purlis is drawn, and the complaint says why.
 pub fn load_text(text: &str) -> Resolved {
-    load_text_in(text, None)
-}
-
-/// [`load_text`] of a `theme.json` read from `folder`, the theme's folder, whose `fonts/` its
-/// fonts are read from: the person's own, in their config folder ([`read_theirs`]), whose
-/// handle is opened when the text has been read.
-pub(crate) fn load_text_in(text: &str, folder: Option<&std::path::Path>) -> Resolved {
     match load_text_document(text) {
-        Ok(document) => match folder {
-            Some(folder) => Library::new().load_in(None, &document, folder),
-            None => Library::new().load(None, &document),
-        },
+        Ok(document) => Library::new().load(None, &document),
         Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
     }
 }
@@ -875,53 +868,113 @@ pub struct Theirs {
 }
 
 /// Reads the person's own theme under `config_root` and resolves it. A machine with no config
-/// home has none. Bounded and link-refusing, as every file beside `machine.json` is read
-/// ([`crate::windowprefs::read_theme_text`]).
+/// home has none. Bounded and link-refusing, and read through a handle on the config folder
+/// ([`TheirsOpened`]).
 pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
-    let Some(root) = config_root else {
-        return Theirs::default();
-    };
-    let reading = crate::windowprefs::read_theme_text(root);
-    let Some(text) = reading.text else {
-        return Theirs {
-            path: reading.path,
-            found: reading.found,
-            trouble: reading.trouble,
-            ..Theirs::default()
+    match config_root {
+        Some(root) => TheirsOpened::open(root).read(),
+        None => Theirs::default(),
+    }
+}
+
+/// **The person's config folder, opened** (#2604): from the config root, which the caller
+/// trusts, every step down to purlis's own folder opened refusing a link. Their `theme.json`,
+/// the icon set it names and its fonts are all read from this handle, so nothing is looked up
+/// again by path after the folder is opened.
+#[derive(Debug)]
+pub(crate) struct TheirsOpened {
+    /// Purlis's own folder in the config root: the person's theme folder.
+    folder: std::path::PathBuf,
+    /// Its handle; `None` when there is no such folder, or why it could not be opened.
+    dir: Result<Option<opened::Held>, String>,
+}
+
+impl TheirsOpened {
+    /// The config folder under `config_root`, opened now.
+    pub(crate) fn open(config_root: &std::path::Path) -> Self {
+        let folder = crate::machine::dir(config_root);
+        let below = folder.strip_prefix(config_root).unwrap_or(&folder);
+        let dir = opened::walk(config_root, below, &folder.display().to_string());
+        Self { folder, dir }
+    }
+
+    /// **Their `theme.json`, as text**, read from the folder's handle, or why it could not be.
+    pub(crate) fn text(&self) -> crate::windowprefs::ThemeText {
+        let file = self.folder.join(THEME_JSON);
+        let path = file.display().to_string();
+        let read = self.dir.as_ref().map_err(Clone::clone).and_then(|dir| {
+            dir.as_ref()
+                .map_or(Ok(None), |dir| opened::text(dir, THEME_JSON, &path))
+        });
+        match read {
+            Ok(None) => crate::windowprefs::ThemeText {
+                path,
+                ..crate::windowprefs::ThemeText::default()
+            },
+            Ok(Some(text)) => crate::windowprefs::ThemeText {
+                path,
+                found: true,
+                text: Some(text),
+                trouble: None,
+            },
+            // The refusal already names the path; saying it twice reads as two files.
+            Err(why) => crate::windowprefs::ThemeText {
+                path,
+                found: true,
+                text: None,
+                trouble: Some(format!("purlis could not read it: {why}")),
+            },
+        }
+    }
+
+    /// **Their theme, resolved**: `theme.json`, its icon set and its fonts, each read from the
+    /// folder's handle.
+    pub(crate) fn read(&self) -> Theirs {
+        let reading = self.text();
+        let (Some(text), Ok(Some(dir))) = (reading.text, self.dir.as_ref()) else {
+            return Theirs {
+                path: reading.path,
+                found: reading.found,
+                trouble: reading.trouble,
+                ..Theirs::default()
+            };
         };
-    };
-    // The person's `theme.json` sits in their config folder, which is its theme folder: its
-    // fonts are that folder's `fonts/`.
-    let resolved = load_text_in(&text, Some(&crate::machine::dir(root)));
-    let format_1 = serde_json::from_str::<Value>(&text)
-        .ok()
-        .as_ref()
-        .and_then(Value::as_object)
-        .is_some_and(|document| !is_format_2(document));
-    // A refused theme is not in force: the window draws Purlis and says why. What refused it is
-    // kept as it was found, beside the sentence.
-    if resolved.refused {
-        let why: Vec<&str> = resolved
-            .complaints
-            .iter()
-            .map(|one| one.said.as_str())
-            .collect();
-        return Theirs {
+        // The person's `theme.json` sits in their config folder, which is its theme folder: its
+        // icon set and its fonts are read from that folder's handle.
+        let resolved = match load_text_document(&text) {
+            Ok(document) => Library::new().load_held_in(&document, &self.folder, dir),
+            Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
+        };
+        let format_1 = serde_json::from_str::<Value>(&text)
+            .ok()
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|document| !is_format_2(document));
+        // A refused theme is not in force: the window draws Purlis and says why. What refused it
+        // is kept as it was found, beside the sentence.
+        if resolved.refused {
+            let why: Vec<&str> = resolved
+                .complaints
+                .iter()
+                .map(|one| one.said.as_str())
+                .collect();
+            return Theirs {
+                path: reading.path,
+                found: true,
+                trouble: Some(format!("purlis cannot draw it: {}", why.join("; "))),
+                theme: None,
+                complaints: resolved.complaints,
+                format_1: false,
+            };
+        }
+        Theirs {
             path: reading.path,
             found: true,
-            trouble: Some(format!("purlis cannot draw it: {}", why.join("; "))),
-            theme: None,
+            trouble: None,
             complaints: resolved.complaints,
-            format_1: false,
-        };
-    }
-    Theirs {
-        path: reading.path,
-        found: true,
-        trouble: None,
-        complaints: resolved.complaints,
-        theme: Some(resolved.theme),
-        format_1,
+            theme: Some(resolved.theme),
+            format_1,
+        }
     }
 }
 

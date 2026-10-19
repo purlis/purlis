@@ -53,13 +53,14 @@
 //!   and its own hues ([`super::tint`]). What it does not say is its parent's.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
 use super::fonts::{Fonts, ThemeDir};
 use super::geometry::{self, Geometry};
 use super::icons::{self, Icons};
+use super::opened;
 use super::options::{self, MOST_COMBINATIONS};
 use super::tint;
 use super::typed::Typed;
@@ -78,10 +79,6 @@ pub const MOST_APPEARANCES: usize = 64;
 
 /// The most colours a palette may name.
 const MOST_COLOURS: usize = 256;
-
-/// The largest `theme.json` purlis reads: the one cap every theme file is read under, the
-/// person's own included.
-const MOST_BYTES: u64 = crate::windowprefs::MAX_BYTES;
 
 /// The keys of a format 2 `theme.json` this purlis reads.
 const KEYS: &[&str] = &[
@@ -250,14 +247,21 @@ impl Library {
         self.load_beside(id, document, &Beside::Nothing)
     }
 
-    /// [`Self::load`] of a `theme.json` read from `folder`, the theme's own folder: the icon set
-    /// and the fonts it names are read from inside it. The person's own theme is read so, from
-    /// the config folder its `theme.json` is in, which holds more than the theme: so its icon
-    /// set is a plain file beside `theme.json` or one in its own `icons/`, never a deeper path.
-    pub fn load_in(&self, id: Option<&str>, document: &Value, folder: &Path) -> Resolved {
+    /// [`Self::load`] of a `theme.json` read from the folder `folder` that `dir` holds, the
+    /// theme's own folder: the icon set and the fonts it names are read from that handle. The
+    /// person's own theme is read so, from the config folder its `theme.json` is in, which holds
+    /// more than the theme: so its icon set is a plain file beside `theme.json` or one in its
+    /// own `icons/`, never a deeper path.
+    pub(crate) fn load_held_in(
+        &self,
+        document: &Value,
+        folder: &Path,
+        dir: &opened::Held,
+    ) -> Resolved {
+        let shown = folder.display().to_string();
         let icons = match document.get("icons") {
             Some(Value::String(named)) if beside_or_in_icons(named) => {
-                Some(read_icons(folder, folder, named))
+                Some(opened::icons(dir, &shown, named))
             }
             Some(Value::String(named)) => Some(Err(format!(
                 "icons is {}, which is not a file beside theme.json or in its icons/ folder",
@@ -267,9 +271,9 @@ impl Library {
         };
         let beside = Beside::Folder {
             icons,
-            folder: ThemeDir::open(folder, None),
+            folder: ThemeDir::opened(folder.to_path_buf(), opened::again(dir, &shown)),
         };
-        self.load_beside(id, document, &beside)
+        self.load_beside(None, document, &beside)
     }
 
     /// [`Self::load`] of a theme with what was read beside it.
@@ -554,49 +558,52 @@ fn is_classic(id: &str) -> bool {
             .any(|name| name.recognises(id) || name.write == id)
 }
 
-/// The theme folder `name` inside `themes`: its `theme.json`, parsed, and the icon set it names,
-/// or why not. `themes` is the containment root: `name` is one plain folder name, nothing on the
-/// way from `themes` to either file is a link, each file is a plain file under the cap, and each
-/// read itself stops at the cap. A theme folder may be anybody's. Its fonts are read when
-/// `fonts`, the library's [`Library::reading_named_fonts`], says so.
-fn read_folder(themes: &Path, name: &str, fonts: bool) -> Result<Held, String> {
+/// Why `name` is not one plain theme folder name, or `None` when it is.
+fn not_a_folder_name(name: &str) -> Option<String> {
     let plain = !name.is_empty()
         && name != "."
         && name != ".."
         && !name.contains(['/', '\\', ':'])
         && Path::new(name).components().count() == 1;
     if !plain {
-        return Err(format!(
+        return Some(format!(
             "{} is not the name of a theme folder",
             stringify(&Value::String(name.to_owned()))
         ));
     }
-    if let Some(why) = super::portable::refusal(name, name) {
+    super::portable::refusal(name, name)
+}
+
+/// The theme folder `name` inside `themes`: its `theme.json`, parsed, and the icon set it names,
+/// or why not. `themes` is opened as the caller trusts it, `name` is one plain folder name
+/// opened from it refusing a link, and every file is read from that handle ([`opened`]). A theme
+/// folder may be anybody's. Its fonts are read when `fonts`, the library's
+/// [`Library::reading_named_fonts`], says so.
+fn read_folder(themes: &Path, name: &str, fonts: bool) -> Result<Held, String> {
+    if let Some(why) = not_a_folder_name(name) {
         return Err(why);
     }
     let folder = themes.join(name);
-    // Held before `theme.json` is read: its fonts are read from this handle.
+    let shown = folder.display().to_string();
+    let at = opened::root(themes)?.ok_or_else(|| format!("there is no folder {shown}"))?;
+    let dir = opened::folder(&at, name, &shown)?;
+    read_held(&dir, folder, fonts)
+}
+
+/// The theme folder at `folder`, held by `dir`: its `theme.json`, the icon set it names and its
+/// fonts, each read from the handle. Its fonts are read when `fonts` says so.
+fn read_held(dir: &opened::Held, folder: PathBuf, fonts: bool) -> Result<Held, String> {
+    let shown = folder.display().to_string();
+    let (document, icons) = opened::theme_json(dir, &shown)?;
     let held = if fonts {
-        ThemeDir::open(themes, Some(name))
+        ThemeDir::opened(folder, opened::again(dir, &shown))
     } else {
         ThemeDir::refusing(
-            folder.clone(),
+            folder,
             "a theme folder's fonts are read when it is one of your theme folders, or one you \
              name yourself"
                 .to_owned(),
         )
-    };
-    let file = folder.join(THEME_JSON);
-    let text = read_capped(themes, &file, || {
-        format!("{} has no {THEME_JSON}", folder.display())
-    })?;
-    let document = match super::load_text_document(&text) {
-        Ok(document) => document,
-        Err(why) => return Err(format!("{}: {why}", file.display())),
-    };
-    let icons = match document.get("icons") {
-        Some(Value::String(named)) => Some(read_icons(themes, &folder, named)),
-        _ => None,
     };
     Ok(Held {
         document,
@@ -605,6 +612,113 @@ fn read_folder(themes: &Path, name: &str, fonts: bool) -> Result<Held, String> {
             folder: held,
         },
     })
+}
+
+/// The most parents a named folder's `extends` chain is read through: the engine says a circle
+/// or a missing parent itself, so this only bounds the walk.
+const MOST_PARENTS: usize = 16;
+
+/// **A theme folder the person named** (`purlis theme check <folder>`, #2604), opened: the
+/// folder that holds it, as they typed it, and the folder itself, opened from that one refusing
+/// a link. Its `theme.json`, its icon set, its fonts and every folder beside it that its
+/// `extends` chain names are read from these handles when it is [`Self::load`]ed, so nothing
+/// is looked up again by path after it is opened.
+#[derive(Debug)]
+pub struct Named {
+    folder: PathBuf,
+    name: String,
+    opened: Result<(opened::Held, opened::Held), String>,
+    /// Whether it is read only to check ([`Library::checking`]).
+    checking: bool,
+}
+
+impl Named {
+    /// The theme folder at `path`, opened now.
+    pub fn open(path: &Path) -> Self {
+        let name = path
+            .file_name()
+            .and_then(|it| it.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        let themes = match path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        };
+        let folder = themes.join(&name);
+        let shown = folder.display().to_string();
+        let opened = match not_a_folder_name(&name) {
+            Some(why) => Err(why),
+            None => opened::root(themes)
+                .and_then(|at| at.ok_or_else(|| format!("there is no folder {shown}")))
+                .and_then(|at| opened::folder(&at, &name, &shown).map(|dir| (at, dir))),
+        };
+        Self {
+            folder,
+            name,
+            opened,
+            checking: false,
+        }
+    }
+
+    /// **The folder, read only to check** ([`Library::checking`]): a theme it accepts registers
+    /// none of its faces to be served, for a folder about to move or go (a staged import).
+    #[must_use]
+    pub fn checking(mut self) -> Self {
+        self.checking = true;
+        self
+    }
+
+    /// The folder's name: the theme's id.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// **The theme**, read from the handles [`Self::open`] opened, with its fonts, and the
+    /// folders beside it its `extends` chain names, each read from the same handles.
+    pub fn load(&self) -> Resolved {
+        let (themes, dir) = match &self.opened {
+            Ok(opened) => opened,
+            Err(why) => return Resolved::refusal(vec![Complaint::said(why.clone())]),
+        };
+        let own = match read_held(dir, self.folder.clone(), true) {
+            Ok(own) => own,
+            Err(why) => return Resolved::refusal(vec![Complaint::said(why)]),
+        };
+        let mut library = Library {
+            checking: self.checking,
+            ..Library::default()
+        };
+        let mut chain: Vec<String> = Vec::new();
+        let mut parent = extends(&own.document);
+        while let Some(at) = parent.take() {
+            if chain.len() >= MOST_PARENTS
+                || at == self.name
+                || chain.contains(&at)
+                || not_a_folder_name(&at).is_some()
+            {
+                break;
+            }
+            let folder = self.folder.with_file_name(&at);
+            let shown = folder.display().to_string();
+            // A parent that is not a folder there ends the walk: the engine says it is missing.
+            let Ok(beside) = opened::folder(themes, &at, &shown) else {
+                break;
+            };
+            let read = read_held(&beside, folder, true);
+            parent = read.as_ref().ok().and_then(|held| extends(&held.document));
+            library.folders.insert(at.clone(), read);
+            chain.push(at);
+        }
+        library.load_beside(Some(&self.name), &own.document, &own.beside)
+    }
+}
+
+/// The theme a `theme.json` extends, when it names one.
+fn extends(document: &Value) -> Option<String> {
+    document
+        .get("extends")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
 }
 
 /// Whether `named` is one plain file name, or `icons/` and one plain file name.
@@ -617,71 +731,6 @@ fn beside_or_in_icons(named: &str) -> bool {
             [first, one] => *first == std::path::Component::Normal("icons".as_ref()) && plain(one),
             _ => false,
         }
-}
-
-/// The icon set `named` inside the theme folder `folder`, parsed, or why not: `named` is a
-/// relative path of plain names, so it stays inside the folder, and the file is read as
-/// `theme.json` is, from the same containment root.
-fn read_icons(themes: &Path, folder: &Path, named: &str) -> Result<Value, String> {
-    let inside = !named.is_empty()
-        && named.len() <= MOST_ICONS_PATH
-        && !named.contains(['\\', ':'])
-        && Path::new(named)
-            .components()
-            .all(|part| matches!(part, std::path::Component::Normal(_)));
-    if !inside {
-        return Err(format!(
-            "icons is {}, which is not a path inside the theme's folder",
-            stringify(&Value::String(named.to_owned()))
-        ));
-    }
-    if let Some(why) = super::portable::path_refusal(named, named) {
-        return Err(format!("icons: {why}"));
-    }
-    let file = folder.join(named);
-    let text = read_capped(themes, &file, || {
-        format!("{} has no {named}", folder.display())
-    })?;
-    serde_json::from_str::<Value>(&text)
-        .map_err(|why| format!("{}: an icon set is JSON: {why}", file.display()))
-}
-
-/// The text of `file`, read under the containment root `themes` and the cap, or why not;
-/// `missing` says the file is not there.
-fn read_capped(
-    themes: &Path,
-    file: &Path,
-    missing: impl FnOnce() -> String,
-) -> Result<String, String> {
-    use std::io::Read;
-    let shown = file.display();
-    let mut open = match crate::contain::open_no_link(themes, file) {
-        Ok(open) => open,
-        Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => return Err(missing()),
-        Err(why) => return Err(format!("purlis could not read {shown}: {why}")),
-    };
-    let found = open
-        .metadata()
-        .map_err(|why| format!("purlis could not read {shown}: {why}"))?;
-    if !found.file_type().is_file() {
-        return Err(format!("{shown} is not a plain file"));
-    }
-    let too_big = |bytes: u64| {
-        format!("{shown} is {bytes} bytes, and a theme's file is never larger than {MOST_BYTES}")
-    };
-    if found.len() > MOST_BYTES {
-        return Err(too_big(found.len()));
-    }
-    // The file can grow after its size was asked: the read stops one byte past the cap.
-    let mut text = String::new();
-    (&mut open)
-        .take(MOST_BYTES + 1)
-        .read_to_string(&mut text)
-        .map_err(|why| format!("purlis could not read {shown}: {why}"))?;
-    if text.len() as u64 > MOST_BYTES {
-        return Err(too_big(text.len() as u64));
-    }
-    Ok(text)
 }
 
 /// The icon set a theme names in `raw`, read from what is `beside` it, saying what is wrong with

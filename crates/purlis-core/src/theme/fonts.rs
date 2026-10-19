@@ -234,21 +234,34 @@ impl ThemeDir {
         }
     }
 
-    /// The folder `name` inside `root`, or `root` itself, opened now: `root` is the caller's to
-    /// trust, and `name` is opened from it refusing a link. For a theme whose `theme.json` is
-    /// read from that folder by its path: the person's own, and one named on the command line.
-    pub(crate) fn open(root: &Path, name: Option<&str>) -> Self {
-        let path = name.map_or_else(|| root.to_path_buf(), |name| root.join(name));
-        let handle = held::open(root, name).map_err(|why| {
-            format!(
-                "purlis could not open {} to read its fonts: {why}",
-                path.display()
-            )
-        });
-        Self {
-            path,
-            handle,
-            approved: None,
+    /// The folder at `path`, held by `dir`, a handle on it the caller opened refusing a link,
+    /// or why it could not be: a theme folder named on the command line, and the person's own
+    /// config folder (`super::opened`).
+    pub(crate) fn opened(path: PathBuf, dir: Result<super::opened::Held, String>) -> Self {
+        match dir {
+            #[cfg(unix)]
+            Ok(dir) => Self::held(path, dir),
+            #[cfg(not(unix))]
+            Ok(dir) => match dir {},
+            Err(why) => Self::refusing(
+                path.clone(),
+                format!(
+                    "purlis could not open {} to read its fonts: {why}",
+                    path.display()
+                ),
+            ),
+        }
+    }
+
+    /// **The handle the folder is held by**, or why it is not held: what an export packs from
+    /// (`super::folders::FoundFolder`).
+    pub(crate) fn dir(&self) -> Result<&super::opened::Held, String> {
+        match &self.handle {
+            #[cfg(unix)]
+            Ok(handle) => Ok(handle.as_ref()),
+            #[cfg(not(unix))]
+            Ok(handle) => match *handle {},
+            Err(why) => Err(why.clone()),
         }
     }
 
@@ -750,7 +763,6 @@ mod held {
     //! descriptor that was opened.
 
     use std::os::fd::OwnedFd;
-    use std::path::Path;
     use std::sync::Arc;
 
     use rustix::fs::{Mode, OFlags, openat};
@@ -772,20 +784,6 @@ mod held {
             Errno::LOOP | Errno::NOTDIR | Errno::MLINK => Missed::Linked,
             why => Missed::Failed(why.to_string()),
         }
-    }
-
-    /// `root`, opened as the caller trusts it, and then `name` inside it refusing a link.
-    pub(super) fn open(root: &Path, name: Option<&str>) -> rustix::io::Result<Handle> {
-        let at = rustix::fs::open(
-            root,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-            Mode::empty(),
-        )?;
-        let at = match name {
-            Some(name) => openat(&at, name, DIRECTORY, Mode::empty())?,
-            None => at,
-        };
-        Ok(Arc::new(at))
     }
 
     /// The folder's `fonts/`, opened from its handle refusing a link.
@@ -827,16 +825,10 @@ mod held {
     //! which this build cannot express, and a guard that cannot be expressed refuses rather
     //! than degrades (ADR 0031), as the theme folders' reads do.
 
-    use std::path::Path;
-
     use super::Missed;
 
     /// No folder is held here.
     pub(crate) type Handle = std::convert::Infallible;
-
-    pub(super) fn open(_root: &Path, _name: Option<&str>) -> Result<Handle, String> {
-        Err("fonts are read from theme folders on macOS and Linux".to_owned())
-    }
 
     pub(super) fn fonts(dir: &Handle) -> Result<Handle, Missed> {
         match *dir {}

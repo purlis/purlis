@@ -32,8 +32,9 @@
 //! **What a region means is the window's**, because the vocabulary is: the regions are
 //! `app/src/regions.ts`'s catalogue, and its `load` takes whatever this module hands it, falls
 //! back field by field and says what it put right. **What a token means is the theme engine's**
-//! ([`crate::theme`]): [`crate::theme::read_theirs`] reads the theme file's text through
-//! [`read_theme_text`] and resolves it before the window is handed anything.
+//! ([`crate::theme`]): [`crate::theme::read_theirs`] reads the theme file's text through a
+//! handle on the config folder, as [`read_theme_text`] does, and resolves it before the window
+//! is handed anything.
 //!
 //! # Everything read back is attacker-influenced
 //!
@@ -238,27 +239,7 @@ pub struct ThemeText {
 /// it could not be read. Nothing about what it says is judged here: whether it is JSON, an
 /// object and a theme is the engine's one rule, the same for every theme wherever it comes from.
 pub fn read_theme_text(config_root: &Path) -> ThemeText {
-    let target = crate::machine::dir(config_root).join(THEME);
-    let path = target.display().to_string();
-    match crate::machine::read_beside(config_root, THEME, MAX_BYTES, "the operator's theme") {
-        Ok(None) => ThemeText {
-            path,
-            ..ThemeText::default()
-        },
-        Ok(Some(text)) => ThemeText {
-            path,
-            found: true,
-            text: Some(text),
-            trouble: None,
-        },
-        // The refusal already names the path; saying it twice reads as two files.
-        Err(why) => ThemeText {
-            path,
-            found: true,
-            text: None,
-            trouble: Some(format!("purlis could not read it: {why}")),
-        },
-    }
+    crate::theme::TheirsOpened::open(config_root).text()
 }
 
 fn read(
