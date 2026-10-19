@@ -447,18 +447,22 @@ fn a_save_whose_option_breaks_a_floor_is_held_too() {
 #[test]
 fn a_save_whose_tint_would_break_a_floor_is_held_under_its_own_recipe() {
     let places = Places::new();
-    let controls = |on: bool| {
+    // A dim accent on its controls, on the floor as written and under it in a tinted workspace.
+    let dim = |on: bool| {
         json!({
-            "name": "Controls",
-            "tint": { "on": on, "tokens": ["control.base", "accent.base"] },
-            "appearances": [{ "id": "dark", "appearance": "dark" }]
+            "name": "Dim",
+            "tint": { "on": on, "tokens": ["accent.base"] },
+            "appearances": [{
+                "id": "dark", "appearance": "dark",
+                "tokens": { "accent.base": "#3365e6", "control.hover": "#262623" }
+            }]
         })
     };
-    put(&places.project(), "controls", &controls(false));
-    assert_eq!(drawn_with(&places, "controls").held, None);
-    put(&places.project(), "controls", &controls(true));
-    let held = drawn_with(&places, "controls").held.expect("held");
-    assert_eq!(held.untinted, ["control.base"]);
+    put(&places.project(), "dim", &dim(false));
+    assert_eq!(drawn_with(&places, "dim").held, None);
+    put(&places.project(), "dim", &dim(true));
+    let held = drawn_with(&places, "dim").held.expect("held");
+    assert_eq!(held.untinted, ["accent.base"]);
 }
 
 #[test]

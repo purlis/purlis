@@ -17,9 +17,10 @@
  * perceived lightness, where HSL's does not (HSL's yellow and blue at one "lightness" are
  * nothing alike). But perceived lightness is still not WCAG's relative luminance, and WCAG's is
  * what `contrast.test.ts` holds every pair to. So after the hue is set, the lightness is searched
- * for until the tinted colour has **the relative luminance the original had**: every contrast
- * ratio a theme cleared, its tinted shades clear too, whatever the hue, up to the rounding of
- * one 8-bit channel. The test runs every palette hue on both built-ins to hold that.
+ * for until the tinted colour has **the relative luminance the original had**, and each channel
+ * is rounded to its byte on the side of that luminance away from the middle (`rounded`): every
+ * contrast ratio a theme cleared between a dark shade and a light one, its tinted shades clear
+ * too, whatever the hue. The tests sweep every whole degree on both built-ins to hold that.
  *
  * **A grey gets a little colour; a colour keeps its own amount.** The layer shades are neutral
  * greys with no hue to turn, so they are given {@link NEUTRAL_CHROMA} — a tint, felt rather than
@@ -139,8 +140,8 @@ export function tintHex(hex: string, hue: number, most = Number.POSITIVE_INFINIT
     if (luminance(at(middle)) < target) low = middle;
     else high = middle;
   }
-  return `#${at((low + high) / 2)
-    .map(channel)
+  return `#${rounded(at((low + high) / 2), target)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("")}${alpha}`;
 }
 
@@ -181,13 +182,43 @@ function parse(hex: string): { rgb: Vec3; alpha: string } {
   return { rgb: rgb as Vec3, alpha: long.slice(6, 8) };
 }
 
-/** One linear channel as two hex digits. */
-function channel(linearValue: number): string {
+/** WCAG's middle luminance: a colour this bright contrasts with black exactly as much as with
+ *  white. A darker colour is read against lighter ones, and a lighter against darker ones. */
+const MIDDLE = Math.sqrt(1.05 * 0.05) - 0.05;
+
+/**
+ * **A colour in linear sRGB as three bytes, its luminance kept on its own side**
+ * (`purlis_core::theme::tint`'s `rounded`): each channel rounded down or up, whichever of the
+ * eight ways gives the luminance nearest `target`, the luminance the colour had, without passing
+ * it toward {@link MIDDLE}. A dark shade is never rounded lighter than it was and a light one never
+ * darker.
+ */
+function rounded(rgb: Vec3, target: number): Vec3 {
+  const exact = rgb.map((v) => gamma(v) * 255);
+  const lighter = target >= MIDDLE;
+  let best: Vec3 = [0, 0, 0];
+  let bestPast = true;
+  let bestOff = Number.POSITIVE_INFINITY;
+  for (let pick = 0; pick < 8; pick++) {
+    const bytes = exact.map((value, at) =>
+      Math.min(255, Math.max(0, Math.floor(value) + ((pick >> (2 - at)) & 1))),
+    ) as Vec3;
+    const shade = luminance(bytes.map((byte) => toLinear(byte / 255)) as Vec3);
+    const past = lighter ? shade < target : shade > target;
+    const off = Math.abs(shade - target);
+    if ((!past && bestPast) || (past === bestPast && off < bestOff)) {
+      best = bytes;
+      bestPast = past;
+      bestOff = off;
+    }
+  }
+  return best;
+}
+
+/** One linear channel gamma-encoded, 0 to 1. */
+function gamma(linearValue: number): number {
   const v = Math.min(1, Math.max(0, linearValue));
-  const gamma = v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
-  return Math.round(gamma * 255)
-    .toString(16)
-    .padStart(2, "0");
+  return v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
 }
 
 function toLinear(v: number): number {

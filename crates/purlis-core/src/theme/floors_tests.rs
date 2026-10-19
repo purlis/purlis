@@ -425,3 +425,28 @@ fn the_needs_you_mark_is_held_on_a_hovered_control() {
     assert_eq!(held.floors, [Floor::StateMarks]);
     assert_eq!(held.tokens, ["needs-you.base"]);
 }
+
+#[test]
+fn a_see_through_ask_on_a_tinted_control_is_measured_at_every_hue() {
+    // An ask's words written see-through on a dark control the recipe turns: the screen mixes the
+    // two, so their contrast moves with the hue, and the floors sweep the pair.
+    let resolved = load(&json!({
+        "name": "Veiled",
+        "tint": { "tokens": ["control.base"] },
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": { "text.primary": "#ffffffcc", "control.base": "#262623" }
+        }]
+    }));
+    assert!(!resolved.refused, "{:?}", resolved.complaints);
+    let theme = resolved.theme.first();
+    let pair = check::PAIRS
+        .iter()
+        .find(|pair| {
+            (pair.front, pair.back) == ("text.primary", "control.base")
+                && pair.under.is_none()
+                && pair.fade.is_none()
+        })
+        .expect("an ask's words are held on its answers' buttons");
+    assert!(floors::moves_with_hue(theme, pair));
+}
