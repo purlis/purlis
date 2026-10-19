@@ -90,8 +90,12 @@ selection, caret, placeholder and scrollbars, and each terminal cell's own colou
 The window writes no rule for one left to the platform (`data-theme-draws`), and the contrast
 check does not measure what the platform draws. A colour is drawn as given, so a transparent
 thumb hides the scrollbars. Selected text is coloured only on a selection the theme colours too,
-and the check says so when a theme colours one without the other. No palette may name a colour
-`platform`. The window's rules stop at the light editor, which draws its own selection and caret.
+and the check says so when a theme colours one without the other. A see-through selection is
+measured laid over each ground it is drawn on: the window, a field, a pane, a Notice, a dialog
+and a trouble Notice. While selected text keeps its own colour, the window's words and the
+danger words are held on the selection at the floor for words, the danger words as a consent
+floor. No palette may name a colour `platform`. The window's rules stop at the light editor,
+which draws its own selection and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
 the ANSI colour the editor borrowed for it (but light's `property` and `attribute`, `#1283ff`

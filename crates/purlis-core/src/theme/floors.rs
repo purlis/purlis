@@ -18,7 +18,7 @@
 //!   contrasts with its ground, at rest and under the pointer;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
-//!   window draws it on;
+//!   window draws it on, a theme's selection included;
 //! - **danger is distinguishable from primary** ([`Floor::DangerApart`]): the danger colour is
 //!   at least [`DANGER_APART`] apart as OKLab draws colour from the accent and from each
 //!   accent-hued token drawn beside it ([`tint::ACCENT_KIN`]), as the theme writes them and under

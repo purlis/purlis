@@ -359,37 +359,119 @@ pub const PAIRS: &[Pair] = &[
     p("markdown.code-block", "surface.sunken", TEXT),
     p("markdown.quote", "surface.sunken", TEXT),
     p("markdown.heading", "surface.sunken", TEXT),
-    // - The window's own text selection, caret and placeholder, on a field's ground. A token
-    //   left to the platform is not measured (`PLATFORM_DRAWN`); selected text left to it keeps
-    //   its own colour, measured as the window's words.
+    // - The window's own text selection, on each ground it is drawn on (#2706): the window, a
+    //   field, a pane and a Notice, a dialog, and a trouble Notice. A see-through selection is
+    //   measured laid over each. A token left to the platform is not measured (`PLATFORM_DRAWN`);
+    //   selected text left to it keeps its own colour, measured as the window's words.
     p("selection.text", "selection.background", TEXT).over("surface.base"),
+    p("selection.text", "selection.background", TEXT).over("surface.sunken"),
+    p("selection.text", "selection.background", TEXT).over("surface.raised"),
+    p("selection.text", "selection.background", TEXT).over("surface.overlay"),
+    p("selection.text", "selection.background", TEXT).over("danger.surface"),
     // - Words selected in their own colour (#2522): while selected text is the platform's, the
     //   window's secondary, muted, accent and state words keep their colours on a theme's
-    //   selection, beside its primary words above.
+    //   selection, beside its primary words above, over the window, a pane and a Notice, and a
+    //   dialog.
     p("text.secondary", "selection.background", TEXT)
         .over("surface.base")
+        .selected(),
+    p("text.secondary", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("text.secondary", "selection.background", TEXT)
+        .over("surface.overlay")
         .selected(),
     p("text.muted", "selection.background", TEXT)
         .over("surface.base")
         .selected(),
+    p("text.muted", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("text.muted", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
     p("accent.base", "selection.background", TEXT)
         .over("surface.base")
+        .selected(),
+    p("accent.base", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("accent.base", "selection.background", TEXT)
+        .over("surface.overlay")
         .selected(),
     p("state.running", "selection.background", TEXT)
         .over("surface.base")
         .selected(),
+    p("state.running", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("state.running", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
     p("state.waiting", "selection.background", TEXT)
         .over("surface.base")
+        .selected(),
+    p("state.waiting", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("state.waiting", "selection.background", TEXT)
+        .over("surface.overlay")
         .selected(),
     p("state.failed", "selection.background", TEXT)
         .over("surface.base")
         .selected(),
+    p("state.failed", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("state.failed", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
     p("state.success", "selection.background", TEXT)
         .over("surface.base")
+        .selected(),
+    p("state.success", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("state.success", "selection.background", TEXT)
+        .over("surface.overlay")
         .selected(),
     p("state.unreadable", "selection.background", TEXT)
         .over("surface.base")
         .selected(),
+    p("state.unreadable", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("state.unreadable", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    // - Danger words selected in their own colour (#2706): a Notice's trouble and an answer
+    //   that ends something stay readable while selected, over each ground they are drawn on.
+    //   They are the danger colours, so the consent floors hold them.
+    p("danger.text", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("danger.text", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("danger.text", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    p("danger.text", "selection.background", TEXT)
+        .over("danger.surface")
+        .selected(),
+    p("danger.base", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("danger.base", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("danger.base", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    p("danger.base", "selection.background", TEXT)
+        .over("danger.surface")
+        .selected(),
+    // - A field's caret and placeholder, on its ground.
     p("placeholder", "surface.sunken", TEXT),
     p("caret", "surface.sunken", 3.0),
     // - A scrollbar's thumb on its track, laid over the window: a hairline's floor.
@@ -447,9 +529,11 @@ pub struct Fit {
     pub height: &'static str,
 }
 
-/// **Every line that has to fit in its box.** A control's label and a field's text are the
-/// window's words (`font-size.base`) on its own line (`line-height.body`, the `:root`'s); a strip's
-/// largest words are a tab's title (`font-size.md`, `.tabs [role="tab"]`) on the same line.
+/// **Every line that has to fit in its box.** The control's box is a field (`.ui-input`): it is
+/// `size.control` tall and its text is the window's words (`font-size.base`) on the body line
+/// (`line-height.body`, the `:root`'s). A button is as tall, and its label sits on a line of 1
+/// (`.ui-button`), so it fits wherever a field's text does; a strip's largest words are a tab's
+/// title (`font-size.md`, `.tabs [role="tab"]`) on the body line.
 pub const FITS: &[Fit] = &[
     Fit {
         size: "font-size.base",
