@@ -73,6 +73,75 @@ fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_thi
 }
 
 #[test]
+fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
+    let args = runner().create_args();
+    assert!(args.iter().any(|a| a == "--read-only"), "{args:?}");
+    assert!(
+        has_pair(&args, "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=1024m"),
+        "{args:?}"
+    );
+}
+
+#[test]
+fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
+    let args = runner().create_args();
+    for (flag, value) in [
+        ("--cpus", "2"),
+        ("--memory", "4096m"),
+        ("--memory-swap", "4096m"),
+        ("--pids-limit", "1024"),
+    ] {
+        assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
+    }
+    let limits = Limits::new(1500, 8192, 256, 512).unwrap();
+    let limited = runner().limited(limits);
+    let args = limited.create_args();
+    for (flag, value) in [
+        ("--cpus", "1.500"),
+        ("--memory", "8192m"),
+        ("--memory-swap", "8192m"),
+        ("--pids-limit", "256"),
+        ("--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m"),
+    ] {
+        assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
+    }
+    // The check holds the container to the limits it was made with.
+    let made = Made {
+        container: ContainerId::new(ID).unwrap(),
+        runner: limited,
+    };
+    assert!(check(&inspected(), &made).is_err());
+    let held = with(|c| {
+        c["HostConfig"]["NanoCpus"] = 1_500_000_000u64.into();
+        c["HostConfig"]["Memory"] = 8_589_934_592u64.into();
+        c["HostConfig"]["MemorySwap"] = 8_589_934_592u64.into();
+        c["HostConfig"]["PidsLimit"] = 256.into();
+        c["HostConfig"]["Tmpfs"] =
+            serde_json::json!({ "/tmp": "rw,nosuid,nodev,noexec,size=512m" });
+    });
+    assert_eq!(check(&held, &made), Ok(()));
+}
+
+#[test]
+fn a_pools_limits_leave_a_runner_room_to_start_a_chat() {
+    assert!(Limits::new(2000, 4096, 1024, 1024).is_ok());
+    assert!(Limits::new(10, 512, 64, 512).is_ok(), "the least of each");
+    for (cpus, memory, pids, tmp) in [
+        (0, 4096, 1024, 1024),
+        (9, 4096, 1024, 1024),
+        (2000, 256, 1024, 128),
+        (2000, 4096, 8, 1024),
+        (2000, 4096, 1024, 0),
+        (2000, 4096, 1024, 8192),
+    ] {
+        assert!(
+            Limits::new(cpus, memory, pids, tmp).is_err(),
+            "{cpus} {memory} {pids} {tmp} was taken"
+        );
+    }
+}
+
+#[test]
 fn a_runner_container_is_named_and_labelled_as_the_pools() {
     let args = runner().create_args();
     assert!(has_pair(&args, "--name", "purlis-runner-first"), "{args:?}");
@@ -157,7 +226,8 @@ pub(crate) fn made() -> Made {
 }
 
 /// What `docker inspect` printed for a container made by [`Runner::create_args`] (Docker
-/// 29.8, 2026-10-17), cut to the fields the check reads and a few beside them.
+/// 29.8, 2026-10-17; the limits, read-only root and `/tmp` measured 2026-10-18), cut to the
+/// fields the check reads and a few beside them.
 pub(crate) fn inspected() -> serde_json::Value {
     serde_json::json!([{
         "Id": ID,
@@ -179,7 +249,13 @@ pub(crate) fn inspected() -> serde_json::Value {
             "DeviceRequests": null,
             "Binds": null,
             "VolumesFrom": null,
-            "ReadonlyRootfs": false,
+            "ReadonlyRootfs": true,
+            "Tmpfs": { "/tmp": "rw,nosuid,nodev,noexec,size=1024m" },
+            "NanoCpus": 2_000_000_000u64,
+            "Memory": 4_294_967_296u64,
+            "MemorySwap": 4_294_967_296u64,
+            "PidsLimit": 1024,
+            "OomKillDisable": null,
             "Runtime": "runc",
             "PortBindings": {},
             "PublishAllPorts": false
@@ -405,6 +481,58 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
         (
             "a memory-backed folder",
             Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::json!({ "/run": "" })),
+        ),
+        (
+            "a memory-backed folder beside its /tmp",
+            Box::new(|c| {
+                c["HostConfig"]["Tmpfs"] =
+                    serde_json::json!({ "/tmp": "rw,nosuid,nodev,noexec,size=1024m", "/run": "" })
+            }),
+        ),
+        (
+            "a /tmp that may run programs",
+            Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::json!({ "/tmp": "rw,size=1024m" })),
+        ),
+        (
+            "no /tmp of its own",
+            Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::Value::Null),
+        ),
+        (
+            "a writable root",
+            Box::new(|c| c["HostConfig"]["ReadonlyRootfs"] = false.into()),
+        ),
+        (
+            "no CPU limit",
+            Box::new(|c| c["HostConfig"]["NanoCpus"] = 0.into()),
+        ),
+        (
+            "no memory limit",
+            Box::new(|c| c["HostConfig"]["Memory"] = 0.into()),
+        ),
+        (
+            "swap without end",
+            Box::new(|c| c["HostConfig"]["MemorySwap"] = (-1).into()),
+        ),
+        (
+            "no process limit",
+            Box::new(|c| c["HostConfig"]["PidsLimit"] = serde_json::Value::Null),
+        ),
+        (
+            "a process limit of none",
+            Box::new(|c| c["HostConfig"]["PidsLimit"] = 0.into()),
+        ),
+        (
+            "the out-of-memory killer turned off",
+            Box::new(|c| c["HostConfig"]["OomKillDisable"] = true.into()),
+        ),
+        (
+            "no word of the out-of-memory killer",
+            Box::new(|c| {
+                c["HostConfig"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("OomKillDisable");
+            }),
         ),
         (
             "a kernel setting",
