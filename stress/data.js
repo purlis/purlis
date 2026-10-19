@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792435092744,
+  "lastUpdate": 1792437843166,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3232,6 +3232,42 @@ window.BENCHMARK_DATA = {
             "value": 312.8,
             "unit": "MB",
             "extra": "median of 6 samples: 351.8, 303.2, 312.7, 312.9, 313.8, 262.4 MB; window 141.1 MB, session host 166.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6fb516d20de78e65177a29cda211aaf88d74ea82",
+          "message": "Theme: every theme file is read through a checked handle; names every platform holds (#2704)\n\nEvery theme file is read from a handle on the folder that was opened\n(theme/opened.rs): a folder is opened from the one before it refusing a\nlink, and each file from that handle, a plain file under the cap.\n\n- purlis theme check <folder> opens the folder once (theme::Named) and\n  reads theme.json, its icon set, its fonts and the folders its extends\n  chain names from those handles (#2604).\n- The person's own theme.json, its icon set and fonts are read through a\n  handle on their config folder (#2604).\n- purlis theme export <level id> packs every file from the handle the\n  level reader found the folder through (Folders::folder_at,\n  FoundFolder::export); export by path packs from a handle too (#2670).\n- A theme folder's name and every name inside it hold none of\n  < > : \" / \\ | ? * nor a control character, beside the device-name\n  rule (contain::unspellable, portable::not_held), so import, export and\n  the folder reader refuse such a name in one sentence (#2671).\n\nCloses #2604\nCloses #2670\nCloses #2671\nPart of #2313\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T22:44:58+04:00",
+          "tree_id": "0532d74562814e2258384395b4114666e6d31c26",
+          "url": "https://github.com/purlis/purlis/commit/6fb516d20de78e65177a29cda211aaf88d74ea82"
+        },
+        "date": 1792437840141,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1036,
+            "unit": "MB",
+            "extra": "median of 3 samples: 856, 1036, 1067 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 307.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 310.2, 295.1, 304.9, 310.4, 311.3, 183.6 MB; window 138.9 MB, session host 162.4 MB"
           }
         ]
       }
