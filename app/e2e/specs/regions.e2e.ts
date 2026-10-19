@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect, $, $$ } from "@wdio/globals";
-import { textOfEach } from "../reading.js";
+import { untilTheStripLists } from "../reading.js";
 import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 
@@ -69,14 +69,7 @@ async function onAlpha(): Promise<void> {
 
 /** Waits until the plane has been read, so a workspace can be focused. */
 async function untilTheStripIsRead(): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      // In one pass: the strip is drawn while it is polled (charter#506, `reading.ts`).
-      const names = await textOfEach('[data-strip="Workspaces"] [role="tab"] .workspace-name');
-      return names.join(",") === "alpha,beta";
-    },
-    { timeout: 30_000, interval: 250, timeoutMsg: "the strip never listed the fixture plane" },
-  );
+  await untilTheStripLists(["alpha", "beta"]);
 }
 
 /**
