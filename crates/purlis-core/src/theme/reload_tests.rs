@@ -570,7 +570,7 @@ fn approved_with_a_face(places: &Places, fill: u8) -> PathBuf {
     let face = places.workspace().join("typed/fonts/ui.woff2");
     std::fs::create_dir_all(face.parent().unwrap()).unwrap();
     std::fs::write(&face, woff2(fill)).unwrap();
-    approve(&places);
+    approve(places);
     assert!(!drawn_with(places, "typed").refused);
     face
 }
