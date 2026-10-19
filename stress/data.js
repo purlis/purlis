@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792368020802,
+  "lastUpdate": 1792368038218,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5928,6 +5928,42 @@ window.BENCHMARK_DATA = {
             "value": 632.2,
             "unit": "MB",
             "extra": "median of 6 samples: 592.9, 620.9, 628.7, 635.7, 636.1, 725.7 MB; window 393.1 MB, session host 239.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d44a455cd5381ceefde692f7ff27dc1aa05c0a77",
+          "message": "Sandbox: a socket grant never names the system's name-lookup sockets (#2675)\n\n* Sandbox: a socket grant never names the system's name lookup (#2657)\n\nservices::socket refuses each socket of RESOLVER_SOCKETS, written whole\nor as a unix:// address, before it looks at what is there, in one\nsentence (NAME_LOOKUP). Every Allow is judged through it, so a block's\nNotice, the centralized Ask and Settings refuse it at every level, and\nthe one keep (kept_for) refuses it too. A kept one is never compiled in\n(still_sockets), and the Granted list marks it as reaching no chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Sandbox: the Mac's own name lookup is refused too (#2657)\n\nReview of #2675. The name lookup a grant never names is Linux's\n(RESOLVER_SOCKETS, which still sorts a refusal as a lookup) and the\nMac's own. services::socket and services::service refuse it, kept_for\nrefuses it, a start never compiles one in, the Granted list marks a\nkept one and Doctor counts it as held. A path is read with . and ..\ntaken lexically. NAME_LOOKUP_REFUSED says the rule, then why. Tests\nloop over every path and level, for this project and for every\nproject. ADR 0093 amended, to be confirmed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Sandbox: every name of the Mac's lookup socket is refused (#2657)\n\nis_name_lookup compares every name a path goes by (as written, as the\nkernel names it, across a firmlink) and, where something is there, the\nfile itself. Tests cover the socket's names on the data volume for a\ngrant, a start and the Granted list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T03:09:06+04:00",
+          "tree_id": "f76612a1dfbee6ef686a9236293d063fdf8c9602",
+          "url": "https://github.com/purlis/purlis/commit/d44a455cd5381ceefde692f7ff27dc1aa05c0a77"
+        },
+        "date": 1792368036338,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1472.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1361.8, 1472.9, 1616.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 631.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 593.4, 619.4, 625.5, 638.2, 638.6, 737 MB; window 385.8 MB, session host 246.6 MB"
           }
         ]
       }
