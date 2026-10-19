@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
+import { THEME_FOLDERS_CHANGED } from "../Extensions";
 import { SPECIMEN_BUSY, type GalleryCard, type ThemeAt, type ThemeGallery } from "../bindings";
 import { putBack, showing } from "../theme/hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
@@ -88,35 +90,38 @@ function core(
   let painting = 0;
   let most = 0;
   let painted = 0;
-  mockIPC(async (cmd, args) => {
-    asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-    switch (cmd) {
-      case "theme_gallery":
-        return gallery;
-      case "theme_card_drawn":
-        if (held) await new Promise<void>((done) => waiting.push(done));
-        return { theme: LIGHT, complaints: [], follows_system: false, floors: null, options: [] };
-      case "theme_specimen": {
-        const refused = painter(++painted);
-        if (refused !== undefined) throw refused;
-        painting++;
-        most = Math.max(most, painting);
-        await new Promise((done) => setTimeout(done, 1));
-        painting--;
-        return { png: "AA==", width: 1280, height: 800, millis: 1, appearance: "dark" };
+  mockIPC(
+    async (cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      switch (cmd) {
+        case "theme_gallery":
+          return gallery;
+        case "theme_card_drawn":
+          if (held) await new Promise<void>((done) => waiting.push(done));
+          return { theme: LIGHT, complaints: [], follows_system: false, floors: null, options: [] };
+        case "theme_specimen": {
+          const refused = painter(++painted);
+          if (refused !== undefined) throw refused;
+          painting++;
+          most = Math.max(most, painting);
+          await new Promise((done) => setTimeout(done, 1));
+          painting--;
+          return { png: "AA==", width: 1280, height: 800, millis: 1, appearance: "dark" };
+        }
+        case "theme_choose":
+        case "theme_choose_machine":
+        case "theme_open_folder":
+          return null;
+        case "theme_duplicate":
+          return "dusk-mine";
+        case "theme_in_force":
+          return { theme: DEFAULT_THEME, complaints: [], follows_system: false, options: [] };
+        default:
+          return null;
       }
-      case "theme_choose":
-      case "theme_choose_machine":
-      case "theme_open_folder":
-        return null;
-      case "theme_duplicate":
-        return "dusk-mine";
-      case "theme_in_force":
-        return { theme: DEFAULT_THEME, complaints: [], follows_system: false, options: [] };
-      default:
-        return null;
-    }
-  });
+    },
+    { shouldMockEvents: true },
+  );
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
     most: () => most,
@@ -542,5 +547,21 @@ describe("a choice of a theme the level no longer has (#2331 review)", () => {
     expect(appearance).toHaveAccessibleDescription(
       "Your choice here, gone, is no theme this level has, so the levels underneath decide: choose a theme above to pick its appearance.",
     );
+  });
+});
+
+describe("a theme folder saved (#2324)", () => {
+  it("is read again when a theme folder changes on disk (#2324)", async () => {
+    const mock = core();
+    render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
+    await cards();
+    const before = mock.asked("theme_gallery").length;
+    await act(async () => {
+      await emit(THEME_FOLDERS_CHANGED, { survey: false });
+    });
+    await waitFor(() => expect(mock.asked("theme_gallery").length).toBe(before + 1));
+    expect(mock.asked("theme_gallery").at(-1)).toEqual({
+      at: { plane: PLANE, workspace: "alpha" },
+    });
   });
 });

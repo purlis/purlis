@@ -1270,6 +1270,10 @@ export const commands = {
 	 *  every extension's files, so it is taken only when the answer needs one and kept until
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
+	 * 
+	 *  **And the theme folders it is read from are watched for this window** (#2324,
+	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
+	 *  the window or a chat names. A save in one tells the window to ask again.
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
@@ -1329,6 +1333,12 @@ export const commands = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light, moreContrast })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,
@@ -8805,6 +8815,12 @@ export type ThemeInForce = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

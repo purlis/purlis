@@ -87,6 +87,7 @@ mod options;
 mod person;
 pub mod portable;
 mod published;
+pub mod reload;
 mod resolve;
 mod schema;
 mod tint;
@@ -152,6 +153,8 @@ mod native_tests;
 mod options_tests;
 #[cfg(test)]
 mod published_tests;
+#[cfg(test)]
+mod reload_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

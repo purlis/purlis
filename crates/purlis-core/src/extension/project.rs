@@ -333,9 +333,11 @@ impl Installed {
     }
 
     /// Every extension the record names, approved when the record holds a yes — the answer
-    /// without reading a single extension's directory. Its settings are not known, so it is for
+    /// without walking a single extension's directory. Its settings are not known, so it is for
     /// asking what is on and nothing else. A built-in is approved through the app, and one
-    /// turned off on this machine is left out, as [`Self::from_survey`] leaves it.
+    /// turned off on this machine is left out, as [`Self::from_survey`] leaves it. An installed
+    /// extension whose manifest contributes only themes needs no yes (ADR 0098 §3): its manifest,
+    /// and nothing else in its directory, is read to say so.
     pub fn from_record(loaded: &super::Loaded) -> Vec<Self> {
         loaded
             .registry
@@ -345,11 +347,21 @@ impl Installed {
             .map(|(id, entry)| Self {
                 id: id.clone(),
                 name: id.clone(),
-                approved: entry.approved.is_some() || entry.source == super::Source::App,
+                approved: entry.approved.is_some()
+                    || entry.source == super::Source::App
+                    || themes_only(id, entry),
                 settings: Vec::new(),
             })
             .collect()
     }
+}
+
+/// Whether the installed extension `id` the record holds at `entry` contributes only themes, by
+/// its manifest alone ([`super::Manifest::themes_only`]).
+fn themes_only(id: &str, entry: &super::Entry) -> bool {
+    entry.source == super::Source::Installed
+        && super::manifest_at(&entry.path)
+            .is_ok_and(|manifest| manifest.id == id && manifest.themes_only())
 }
 
 /// One setting's value in this project, and where it came from.

@@ -43,6 +43,21 @@ impl Made {
         self.at()
     }
 
+    /// An extension contributing one theme and a panel: one that is approved by its
+    /// fingerprint, which an extension of themes alone is not (ADR 0098 §3).
+    fn approvable(&self) -> PathBuf {
+        self.manifest(
+            r#"{"version":1,"id":"solarized","name":"Solarized",
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
+        );
+        self.file(
+            "dark.json",
+            r#"{"name":"Solarized Dark","appearance":"dark","tokens":{}}"#,
+        );
+        self.at()
+    }
+
     fn manifest(&self, text: &str) {
         self.file(MANIFEST, text);
     }
@@ -1099,7 +1114,7 @@ fn installing_writes_a_row_with_no_approval_on_it() {
     // consent step for ADR 0022's reason, and the same sentence makes `install` here a thing
     // that records a path and asks nothing.
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
 
     let loaded = read(&made.config(), &BuiltIn::none());
     let entry = loaded.entry("solarized").expect("a row");
@@ -1111,7 +1126,7 @@ fn installing_writes_a_row_with_no_approval_on_it() {
 #[test]
 fn an_approval_is_of_the_bytes_that_were_shown() {
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     let asked = prompt(&found, Standing::New);
     approve(&made.config(), &asked.id, &found.path, &asked.fingerprint).expect("approved");
 
@@ -1123,7 +1138,7 @@ fn an_approval_is_of_the_bytes_that_were_shown() {
 #[test]
 fn an_extension_that_changed_after_approval_asks_again() {
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
     made.file(
         "dark.json",
@@ -1142,7 +1157,7 @@ fn an_extension_approved_at_one_path_is_not_approved_at_another() {
     // The operator approved a thing at a place. The same bytes in another directory are
     // another extension that kept a name — `machine::still_a_plane`'s reasoning, one level in.
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
 
     let moved = Extension {
@@ -1170,7 +1185,7 @@ fn an_approval_that_is_not_a_fingerprint_in_the_file_reads_as_no_approval() {
     // approval. The state this keeps out is a record whose `"approved": true` grants
     // everything.
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     for forged in ["true", "\"yes\"", "1", "{}", "\"abc\""] {
         std::fs::write(
             file(&made.config()),
@@ -1350,7 +1365,7 @@ fn re_installing_something_that_did_not_change_keeps_its_approval() {
     // Otherwise the operator is asked again for pressing the button that was already answered,
     // which is how a prompt becomes a reflex.
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
     install(&made.config(), &BuiltIn::none(), &made.at()).expect("installed again");
 
@@ -1363,7 +1378,7 @@ fn re_installing_something_that_did_not_change_keeps_its_approval() {
 #[test]
 fn re_installing_something_that_changed_drops_its_approval() {
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
     made.file(
         "dark.json",
@@ -1485,7 +1500,7 @@ fn the_survey_names_charters_own_themes_as_well_as_the_installed_ones() {
 #[test]
 fn nothing_is_in_force_until_it_is_approved() {
     let made = Made::new();
-    install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
 
     let seen = survey(&made.config(), &BuiltIn::none());
     assert!(
@@ -1574,7 +1589,7 @@ fn a_panel_charter_will_not_read_refuses_the_whole_extension_rather_than_going_q
 #[test]
 fn an_extension_that_changed_contributes_nothing_until_it_is_asked_about_again() {
     let made = Made::new();
-    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &BuiltIn::none(), &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
     made.file(
         "dark.json",
@@ -2331,7 +2346,7 @@ fn bundle(made: &Made) -> BuiltIn {
 fn turning_a_built_in_off_keeps_every_installed_extension_and_its_yes() {
     let made = Made::new();
     let built_in = bundle(&made);
-    let found = install(&made.config(), &built_in, &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &built_in, &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
 
     set_on(&made.config(), &built_in, "stats", false).expect("turned off");
@@ -2372,7 +2387,7 @@ fn an_unreadable_record_leaves_every_built_in_off_rather_than_forgetting_it_was_
 fn only_a_built_in_is_turned_off_and_an_installed_one_keeps_its_row() {
     let made = Made::new();
     let built_in = bundle(&made);
-    let found = install(&made.config(), &built_in, &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &built_in, &made.approvable()).expect("installed");
     approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
 
     let refused = set_on(&made.config(), &built_in, "solarized", false)
@@ -3197,7 +3212,7 @@ fn approvals(installed: &[project::Installed]) -> Vec<(&str, bool)> {
 fn the_record_alone_counts_an_extension_approved_by_its_yes_or_by_shipping_with_the_app() {
     let made = Made::new();
     let built_in = bundle(&made);
-    let found = install(&made.config(), &built_in, &made.ordinary()).expect("installed");
+    let found = install(&made.config(), &built_in, &made.approvable()).expect("installed");
     assert_eq!(
         approvals(&project::Installed::from_record(&read(
             &made.config(),
@@ -3232,7 +3247,7 @@ fn the_survey_hands_each_extension_on_this_machine_with_its_name_and_standing() 
 // -------------------------------------------------------------------------------------
 
 #[test]
-fn an_icon_theme_is_contributed_as_data_and_in_force_only_once_approved() {
+fn an_icon_theme_is_contributed_as_data_and_an_extension_of_icon_themes_alone_needs_no_approval() {
     let made = Made::new();
     made.manifest(
         r#"{"version":1,"id":"seti","name":"Seti",
@@ -3261,13 +3276,160 @@ fn an_icon_theme_is_contributed_as_data_and_in_force_only_once_approved() {
         "the approval names what it contributes"
     );
 
+    // It contributes icon themes alone: a set of theme folders (ADR 0098 §3), in force as
+    // installed, with nothing to approve.
     install(&made.config(), &BuiltIn::none(), &made.at()).expect("installed");
     let seen = survey(&made.config(), &BuiltIn::none());
-    assert!(seen.installed[0].icon_themes_in_force().is_empty());
-    assert_eq!(seen.built_in_icon_themes, BUILT_IN_ICON_THEMES.to_vec());
-    approve(&made.config(), found.id(), &found.path, &found.fingerprint).expect("approved");
-    let seen = survey(&made.config(), &BuiltIn::none());
+    assert_eq!(seen.installed[0].standing, Standing::Themes);
     assert_eq!(seen.installed[0].icon_themes_in_force().len(), 1);
+    assert_eq!(seen.built_in_icon_themes, BUILT_IN_ICON_THEMES.to_vec());
+}
+
+// -------------------------------------------------------------------------------------
+// An extension of themes alone is a set of theme folders (ADR 0098 §3, #2324)
+// -------------------------------------------------------------------------------------
+
+#[test]
+fn an_extension_of_themes_alone_is_in_force_as_installed_and_asks_nothing_when_its_theme_is_edited()
+{
+    let made = Made::new();
+    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    assert!(found.manifest.themes_only());
+    let loaded = read(&made.config(), &BuiltIn::none());
+    assert_eq!(
+        loaded.entry("solarized").expect("a row").approved,
+        None,
+        "nothing was approved"
+    );
+    assert_eq!(loaded.standing(&found), Standing::Themes);
+    assert!(Standing::Themes.may_contribute());
+    let seen = survey(&made.config(), &BuiltIn::none());
+    assert_eq!(seen.installed[0].themes_in_force().len(), 1);
+
+    // Its theme is edited: still in force, still asking nothing, and the new text is drawn.
+    let edited = r#"{"name":"Solarized Dark","appearance":"light","tokens":{}}"#;
+    made.file("dark.json", edited);
+    let seen = survey(&made.config(), &BuiltIn::none());
+    let row = &seen.installed[0];
+    assert_eq!(row.standing, Standing::Themes);
+    let theme = &row.themes_in_force()[0];
+    assert_eq!(
+        row.found.as_ref().expect("read").theme_text(theme),
+        Some(edited)
+    );
+}
+
+#[test]
+fn an_extension_that_adds_anything_but_themes_is_approved_by_its_fingerprint() {
+    let made = Made::new();
+    let theme = r#"{"name":"Solarized Dark","file":"dark.json"}"#;
+    made.file(
+        "dark.json",
+        r#"{"name":"Solarized Dark","appearance":"dark","tokens":{}}"#,
+    );
+    for adds in [
+        format!(r#""contributes":{{"themes":[{theme}],"panels":[{{"id":"p","title":"P"}}]}}"#),
+        format!(r#""state":"cache","contributes":{{"themes":[{theme}]}}"#),
+    ] {
+        made.manifest(&format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized",{adds}}}"#
+        ));
+        let found = read_at(&made.at()).expect("an extension");
+        assert!(!found.manifest.themes_only(), "{adds}");
+        install(&made.config(), &BuiltIn::none(), &made.at()).expect("installed");
+        assert_eq!(
+            read(&made.config(), &BuiltIn::none()).standing(&found),
+            Standing::New,
+            "{adds}"
+        );
+        assert!(
+            survey(&made.config(), &BuiltIn::none()).installed[0]
+                .themes_in_force()
+                .is_empty()
+        );
+        forget(&made.config(), "solarized").expect("forgotten");
+    }
+}
+
+#[test]
+fn a_key_this_purlis_does_not_know_never_counts_as_themes_alone() {
+    let made = Made::new();
+    made.file(
+        "dark.json",
+        r#"{"name":"Solarized Dark","appearance":"dark","tokens":{}}"#,
+    );
+    let theme = r#"{"name":"Solarized Dark","file":"dark.json"}"#;
+    for manifest in [
+        format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized","hooks":{{}},"contributes":{{"themes":[{theme}]}}}}"#
+        ),
+        format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized","contributes":{{"themes":[{theme}],"later":[]}}}}"#
+        ),
+        format!(
+            r#"{{"version":1,"id":"solarized","name":"Solarized","capabilities":[],"contributes":{{"themes":[{theme}]}}}}"#
+        ),
+    ] {
+        made.manifest(&manifest);
+        let Ok(found) = read_at(&made.at()) else {
+            // Refused outright is fail-closed too.
+            continue;
+        };
+        assert!(!found.manifest.themes_only(), "{manifest}");
+        install(&made.config(), &BuiltIn::none(), &made.at()).expect("installed");
+        assert_eq!(
+            read(&made.config(), &BuiltIn::none()).standing(&found),
+            Standing::New,
+            "{manifest}"
+        );
+        forget(&made.config(), "solarized").expect("forgotten");
+    }
+}
+
+#[test]
+fn an_extension_of_themes_alone_that_adds_a_panel_stops_being_one_and_asks() {
+    let made = Made::new();
+    let found = install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    assert_eq!(
+        read(&made.config(), &BuiltIn::none()).standing(&found),
+        Standing::Themes
+    );
+    made.approvable();
+    let now = read_at(&made.at()).expect("an extension");
+    assert_eq!(
+        read(&made.config(), &BuiltIn::none()).standing(&now),
+        Standing::New
+    );
+}
+
+#[test]
+fn nothing_that_runs_takes_an_extension_of_themes_alone_as_approved() {
+    // The executor, the events and the facts each hold a standing of `Approved` and nothing
+    // else as the yes to act on; an extension of themes alone declares none of them anyway.
+    assert_ne!(Standing::Themes, Standing::Approved);
+    assert_eq!(Standing::Themes.as_str(), "themes");
+}
+
+#[test]
+fn the_record_alone_counts_an_extension_of_themes_alone_as_needing_no_yes() {
+    let made = Made::new();
+    install(&made.config(), &BuiltIn::none(), &made.ordinary()).expect("installed");
+    assert_eq!(
+        approvals(&project::Installed::from_record(&read(
+            &made.config(),
+            &BuiltIn::none()
+        ))),
+        [("solarized", true)]
+    );
+    // Once it brings a panel, the record's yes is what counts, and there is none.
+    made.approvable();
+    assert_eq!(
+        approvals(&project::Installed::from_record(&read(
+            &made.config(),
+            &BuiltIn::none()
+        ))),
+        [("solarized", false)]
+    );
 }
 
 /// #1145: a theme's `name` is drawn in the settings tabs' picks and the approval, so the core

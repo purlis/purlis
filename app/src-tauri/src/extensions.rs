@@ -203,9 +203,16 @@ pub struct ExtensionTheme {
 /// every extension's files, so it is taken only when the answer needs one and kept until
 /// `reread` (an approval or a removal changes them). An extension that is new, changed or
 /// unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
+///
+/// **And the theme folders it is read from are watched for this window** (#2324,
+/// [`crate::themewatch`]): from the config home and the plane root held here, never from a path
+/// the window or a chat names. A save in one tells the window to ask again.
 #[tauri::command]
 #[specta::specta]
+// The window and the state are Tauri's to hand in; the rest is the window's question.
+#[allow(clippy::too_many_arguments)]
 pub async fn theme_in_force(
+    window: tauri::WebviewWindow,
     planes: tauri::State<'_, crate::planes::Planes>,
     pick: Option<String>,
     on: Option<Vec<String>>,
@@ -222,6 +229,14 @@ pub async fn theme_in_force(
         None => (None, None),
     };
     tauri::async_runtime::spawn_blocking(move || {
+        crate::themewatch::follow(
+            &window,
+            crate::themewatch::Target {
+                config: root.clone(),
+                plane: at.clone(),
+                workspace: workspace.clone(),
+            },
+        );
         if reread {
             *offered_kept() = None;
         }
@@ -424,12 +439,25 @@ pub(crate) fn theme_in_force_of(
         },
         offered,
     );
+    let refused = drawn.refused.then(|| ThemeTrouble {
+        name: drawn
+            .level
+            .and_then(|level| levels.each().find(|(at, _)| *at == level))
+            .map_or_else(|| "chosen".to_owned(), |(_, choice)| choice.theme.clone()),
+        complaints: drawn
+            .complaints
+            .iter()
+            .map(|one| one.said.clone())
+            .collect(),
+        refused: true,
+    });
     ThemeInForce {
         options: drawn
             .theme
             .as_ref()
             .map(|theme| theme.options.iter().map(WindowOption::from).collect())
             .unwrap_or_default(),
+        refused,
         theme: drawn.theme.as_ref().map(WindowTheme::from),
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
@@ -508,6 +536,10 @@ pub struct ThemeInForce {
     /// The options of the theme drawn, each with the value it is drawn with (#2325): empty for
     /// a theme with none.
     pub options: Vec<WindowOption>,
+    /// The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+    /// (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+    /// font file changed since it was approved, is never a silent fallback.
+    pub refused: Option<ThemeTrouble>,
 }
 
 /// A resolved theme as the window applies it: the window's `Theme`, every token and every
@@ -1005,20 +1037,22 @@ pub async fn pick_extension(app: tauri::AppHandle) -> Result<Option<String>, Str
 }
 
 /// Read the extension at `path`, write it into the record **unapproved**, and hand back the
-/// question to ask about it.
+/// question to ask about it — none for an extension that contributes only themes, which is a set
+/// of theme folders and needs no approval (ADR 0098 §3).
 ///
 /// An extension charter cannot read is an error here rather than a silent nothing: the
 /// operator pointed at a directory and is owed the reason it is not one.
 #[tauri::command]
 #[specta::specta]
-pub async fn install_extension(path: String) -> Result<ExtensionAsk, String> {
+pub async fn install_extension(path: String) -> Result<Option<ExtensionAsk>, String> {
     let root = config_root()?;
     tauri::async_runtime::spawn_blocking(move || {
         let at = std::path::PathBuf::from(path);
         let built_in = built_in();
         let found = extension::install(&root, &built_in, &at).map_err(|why| why.to_string())?;
         let standing = extension::read(&root, &built_in).standing(&found);
-        Ok(ExtensionAsk::from(extension::prompt(&found, standing)))
+        Ok((standing != extension::Standing::Themes)
+            .then(|| ExtensionAsk::from(extension::prompt(&found, standing))))
     })
     .await
     .map_err(|err| format!("reading that extension did not finish: {err}"))?
@@ -1825,7 +1859,8 @@ mod tests {
         std::fs::write(
             at.join(extension::MANIFEST),
             r#"{"version":1,"id":"solarized","name":"Solarized",
-                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}]}}"#,
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
         )
         .expect("a manifest");
         std::fs::write(at.join("dark.json"), "{}").expect("a theme");
@@ -1909,6 +1944,24 @@ mod tests {
         assert!(off.columns.is_empty() && off.badges.is_empty(), "{off:?}");
         let project = facts_in(&config, plane.path(), None, chrono::Utc::now());
         assert_eq!(project.columns.len(), 1, "the project has it on");
+    }
+
+    #[test]
+    fn an_extension_of_themes_alone_is_listed_as_themes_drawing_with_nothing_to_ask() {
+        let (_dir, at, config) = made();
+        std::fs::write(
+            at.join(extension::MANIFEST),
+            r#"{"version":1,"id":"solarized","name":"Solarized",
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}]}}"#,
+        )
+        .expect("a manifest");
+        extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+
+        let listed = listed(&extension::survey(&config, &extension::BuiltIn::none()));
+        let row = &listed.extensions[0];
+        assert_eq!(row.standing, "themes");
+        assert_eq!(row.themes_in_force, ["Solarized Dark"]);
+        assert_eq!(row.ask, None);
     }
 
     #[test]
@@ -2072,7 +2125,8 @@ mod tests {
         std::fs::write(
             at.join(extension::MANIFEST),
             r#"{"version":1,"id":"solarized","name":"Solarized","state":"cache",
-                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}]}}"#,
+                "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
         )
         .expect("a manifest with a state directory");
         extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
@@ -2407,7 +2461,8 @@ mod tests {
         std::fs::write(
             at.join(extension::MANIFEST),
             r#"{"version":1,"id":"seti","name":"Seti",
-                "contributes":{"icon_themes":[{"name":"Seti","file":"seti.json"}]}}"#,
+                "contributes":{"icon_themes":[{"name":"Seti","file":"seti.json"}],
+                               "panels":[{"id":"p","title":"P"}]}}"#,
         )
         .expect("a manifest");
         std::fs::write(at.join("seti.json"), r#"{"symbols":{}}"#).expect("an icon theme");

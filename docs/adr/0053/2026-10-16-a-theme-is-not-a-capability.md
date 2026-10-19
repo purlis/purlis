@@ -10,4 +10,4 @@ program and only themes and icon themes under `contributes` is treated as theme 
 fingerprint and no prompt. A manifest that names a capability or a program is approved as this
 record says, and its themes are part of what is approved.
 
-**Built by #2324.** Until then, extensions are approved as today, their themes included.
+**Built by #2324.**

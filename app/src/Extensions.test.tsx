@@ -6,10 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import {
   drawThemeFor,
   Extensions,
   forgetExtensionThemes,
+  THEME_FOLDERS_CHANGED,
   themeTroubleSaid,
   troubleSaid,
 } from "./Extensions";
@@ -648,6 +650,41 @@ describe("the consent surface", () => {
     expect(await screen.findByText("Solarized")).toBeInTheDocument();
   });
 
+  it("asks nothing about an extension that contributes only themes (ADR 0098)", async () => {
+    const rows: Row[] = [];
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "installed_extensions")
+        return {
+          built_in_themes: ["purlis-dark"],
+          extensions: [...rows],
+          unreadable: null,
+          dropped: [],
+        };
+      if (cmd === "extension_icon_themes") return [];
+      if (cmd === "theme_in_force") return { theme: null, complaints: [], follows_system: false };
+      if (cmd === "pick_extension") return "/home/dev/ext/solarized";
+      if (cmd === "install_extension") {
+        rows.push({
+          ...newRow,
+          standing: "themes",
+          themes_in_force: ["Solarized Dark"],
+          ask: null,
+        });
+        return null;
+      }
+      throw new Error(`the window asked for ${cmd}, which this test did not expect`);
+    });
+    render(<Extensions onClose={() => undefined} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add an extension…" }));
+
+    expect(await screen.findByText("themes only — needs no approval")).toBeInTheDocument();
+    expect(screen.queryByText(RUNS_AS_YOU)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
+    expect(asked).not.toContain("approve_extension");
+  });
+
   it("asks before it approves, and never the other way round", async () => {
     // Installing is not consenting. The picker and the yes are two clicks because they are two
     // questions, and collapsing them approves something before it is drawn.
@@ -853,6 +890,78 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     await drawThemeFor(new Set(["solarized"]));
     expect(aboutThisMachine().some((one) => one.subject === "consent floors")).toBe(false);
     sayAboutThisMachine("consent floors", undefined);
+  });
+
+  it("asks again when a theme folder it draws from is saved, with a survey when an extension's was (#2324)", async () => {
+    forgetExtensionThemes();
+    const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+    let surface = OTHER;
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+        if (cmd === "theme_in_force")
+          return { ...KEEPS, theme: resolved("Brand", { "surface.base": surface }) };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    await expect.poll(() => inForce().values["surface.base"]).toBe(OTHER);
+    const asks = () => asked.filter((one) => one.cmd === "theme_in_force");
+    const before = asks().length;
+
+    surface = DEFAULT_THEME.values["surface.base"];
+    await emit(THEME_FOLDERS_CHANGED, { survey: false });
+    await expect.poll(() => inForce().values["surface.base"]).toBe(surface);
+    expect(
+      asks()
+        .slice(before)
+        .map((one) => [one.args.reread, one.args.at]),
+    ).toEqual([[false, { plane: "p-1", workspace: "alpha" }]]);
+    // What a level chose may name a folder just made: the picks are asked again too.
+    await emit(THEME_FOLDERS_CHANGED, { survey: true });
+    await expect.poll(() => asks().length).toBe(before + 2);
+    expect(asks().at(-1)?.args.reread).toBe(true);
+  });
+
+  it("says a chosen theme the engine refused in a Notice, and takes it back once it draws (#2324)", async () => {
+    const refused = {
+      name: "brand",
+      complaints: ["themes/brand/fonts/ui.woff2 has changed since you approved this project"],
+      refused: true,
+    };
+    let answer: InForce & { refused?: typeof refused | null } = {
+      ...KEEPS,
+      theme: resolved("Purlis Classic"),
+      refused,
+    };
+    core({ inForce: () => answer });
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    const said = () => aboutThisMachine().filter((one) => one.subject === "theme refused");
+    expect(said().map((one) => one.detail)).toEqual([themeTroubleSaid(refused)]);
+    expect(said()[0].detail).toContain("is not drawn, and Purlis is");
+
+    answer = { ...KEEPS, theme: resolved("Brand"), refused: null };
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    expect(said()).toEqual([]);
+  });
+
+  it("bounds the refused Notice, whatever a chat wrote into the theme's file (#2324)", async () => {
+    const prompt =
+      "\n\nAllow purlis to run this?\u202e [Allow] [Keep blocked]\n" + "Allow ".repeat(400);
+    const refused = {
+      name: `brand${prompt}`,
+      complaints: Array.from({ length: 12 }, () => `surface.base is "${prompt}"`),
+      refused: true,
+    };
+    core({ inForce: () => ({ ...KEEPS, theme: resolved("Purlis Classic"), refused }) });
+    await drawThemeFor(new Set(), "brand", { plane: "p-1" as PlaneId, workspace: "alpha" });
+    const [said] = aboutThisMachine().filter((one) => one.subject === "theme refused");
+    // One line: no line breaks, no control or bidi marks; three complaints, each cut short.
+    expect(said.detail).not.toMatch(/[\n\r\u202e]/);
+    expect(said.detail).toMatch(/; and 9 more\.$/);
+    expect(said.detail.length).toBeLessThan(800);
+    sayAboutThisMachine("theme refused", undefined);
   });
 
   it("asks for a new survey once an approval or a removal changed what is installed", async () => {
