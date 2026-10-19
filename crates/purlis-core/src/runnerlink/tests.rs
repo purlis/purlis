@@ -207,7 +207,7 @@ fn a_home_that_came_with_a_device_id_is_not_paired_and_nothing_is_made() {
     let brought = crate::machine::device_id(folder.path()).unwrap();
     let refused = pair(folder.path(), &desktop()).unwrap_err();
     assert!(
-        refused.contains("came with a device id") && refused.contains("remove the runner"),
+        refused.contains("came with a device id") && refused.contains("Remove the runner"),
         "{refused}"
     );
     assert!(
@@ -273,4 +273,27 @@ fn a_paired_runner_whose_device_id_is_gone_links_nobody() {
     pair(folder.path(), &desktop()).unwrap();
     crate::machine::update(folder.path(), |store| store.device = None).unwrap();
     assert!(answering(folder.path()).is_err());
+}
+
+#[test]
+fn the_paired_desktop_unpairing_leaves_a_runner_that_links_nobody_and_is_not_paired_again() {
+    let folder = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    pair(folder.path(), &ours).unwrap();
+    unpair(folder.path(), &ours).unwrap();
+    assert!(answering(folder.path()).unwrap().is_none());
+    assert!(!crate::machine::dir(folder.path()).join(PEERS_FILE).exists());
+    assert!(pair(folder.path(), &desktop()).is_err());
+    // Again is nothing to do.
+    unpair(folder.path(), &ours).unwrap();
+}
+
+#[test]
+fn another_desktop_cannot_unpair_a_runner() {
+    let folder = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    pair(folder.path(), &ours).unwrap();
+    assert!(unpair(folder.path(), &desktop()).is_err());
+    let (_, peer) = answering(folder.path()).unwrap().unwrap();
+    assert_eq!(peer, ours);
 }

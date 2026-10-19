@@ -1571,6 +1571,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::PEERS_FILE),
                 Access::ReadWrite,
             );
+            // The runners this desktop pinned (ADR 0078 §8, #2525): denied to chats.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::RUNNERS_FILE),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).

@@ -189,6 +189,8 @@ pub mod roster;
 pub mod rulespelling;
 #[cfg(unix)]
 pub mod runnerlink;
+#[cfg(unix)]
+pub mod runners;
 pub mod sandbox;
 pub mod sandboxblock;
 pub mod savefix;

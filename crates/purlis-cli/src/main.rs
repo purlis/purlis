@@ -814,6 +814,15 @@ fn serve() -> ExitCode {
         let config = config.clone();
         std::sync::Arc::new(move || purlis_core::runnerlink::answering(&config))
     };
+    // The desktop it is paired with takes itself out of its peers as it removes the runner
+    // (#2525).
+    let pairing = purlis_host::Pairing {
+        answering,
+        unpairing: {
+            let config = config.clone();
+            std::sync::Arc::new(move |desktop| purlis_core::runnerlink::unpair(&config, desktop))
+        },
+    };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(
             &place,
@@ -836,7 +845,7 @@ fn serve() -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone())),
                 )
             },
-            answering,
+            pairing,
         ))
         .unwrap_or(1),
     )

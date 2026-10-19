@@ -1030,6 +1030,15 @@ impl session::Host for Relay {
                     .into(),
             });
         }
+        // A runner is unpaired by the desktop that removes it, on a link of its own (#2525):
+        // never sent on for a client.
+        if command == Command::Unpair {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a runner is unpaired as purlis removes it, never through a relaying host"
+                    .into(),
+            });
+        }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
