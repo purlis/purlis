@@ -244,6 +244,8 @@ function core(
             { id: "brand", name: "Brand", from: "project" },
           ].map((one) => ({
             ...one,
+            key: one.from === "project" ? `project:${one.id}` : one.id,
+            level: one.from === "project" ? "project" : null,
             extension: null,
             appearances: [{ id: "dark", appearance: "dark", high_contrast: false }],
             options: [],
@@ -257,7 +259,9 @@ function core(
             stamp: "0",
           })),
           yours: null,
-          drawn: "brand",
+          drawn: "project:brand",
+          chosen: "project:brand",
+          options: [],
           level: "project-default",
           from: "charter.toml",
         };
@@ -496,7 +500,7 @@ describe("every workspace setting there is, at the Workspace level", () => {
 
     await waitFor(() =>
       expect(asked("theme_choose")).toEqual([
-        { plane: PLANE, workspace: "alpha", theme: "brand", appearance: null },
+        { plane: PLANE, workspace: "alpha", theme: "brand", appearance: null, from: "project" },
       ]),
     );
     // Never a project file.

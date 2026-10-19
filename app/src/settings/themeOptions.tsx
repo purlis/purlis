@@ -5,13 +5,14 @@ import { useEffect, useState } from "react";
 import type { WindowOption } from "../bindings";
 import { themeOptionsInForce } from "../Extensions";
 import { onDrawn } from "../theme/theme";
-import type { Badge, RowIds } from "./components";
+import { Choice, type Badge, type RowIds } from "./components";
 
 /**
  * **A theme's options** (#2325), as Settings › Theme shows them (#2331): each option, the value
- * it is drawn with, and a badge saying where that value comes from — the theme's default, or a
- * choice. The core's theme engine answers (`theme_in_force` for the theme drawn, the gallery's
- * card for another), and the list only shows it.
+ * it is drawn with, and a badge saying where that value comes from — the theme's default, or the
+ * level whose choice made it (#2527). The core's theme engine answers (`theme_in_force` for the
+ * theme drawn, the gallery for the chosen theme), and the list shows it; handed `onChoose`, each
+ * option's values are the person's to pick.
  */
 /** The options of the theme in force, asked again whenever the window draws another theme. */
 export function useOptionsInForce(): readonly WindowOption[] | undefined {
@@ -29,13 +30,27 @@ export function useOptionsInForce(): readonly WindowOption[] | undefined {
   return options;
 }
 
-/** Where an option's value comes from, as its badge says it. */
+/** The level whose choice made a value, as its badge names it, and where that choice is kept. */
+const LEVELS: Record<string, { label: string; where: string }> = {
+  "workspace-choice": { label: "Workspace", where: "your choice for this workspace" },
+  "project-choice": { label: "Project", where: "your choice for this project" },
+  "machine-default": { label: "This machine", where: "your machine default" },
+};
+
+/** Where an option's value comes from, as its badge says it: the level whose choice made it,
+ *  or the theme's default. */
 export function optionBadge(option: WindowOption): Badge {
-  return option.chosen
+  if (!option.chosen)
+    return {
+      label: "Theme default",
+      says: `Nothing chose a value for ${option.label}, so the theme's default is drawn.`,
+    };
+  const level = option.level === null ? undefined : LEVELS[option.level];
+  return level === undefined
     ? { label: "Chosen", says: `${option.label} is drawn as it was chosen for this theme.` }
     : {
-        label: "Theme default",
-        says: `Nothing chose a value for ${option.label}, so the theme's default is drawn.`,
+        label: level.label,
+        says: `${option.label} is drawn as ${level.where} on this machine has it.`,
       };
 }
 
@@ -58,11 +73,17 @@ export function OptionsList({
   options,
   ids,
   none = "The theme drawn here has no options.",
+  onChoose,
+  disabled,
 }: {
   options: readonly WindowOption[] | undefined;
   ids: RowIds;
   /** What the list says of a theme with none. */
   none?: string;
+  /** The person picked `value` of `option`: each option is then a choice of its values. */
+  onChoose?: (option: WindowOption, value: string) => void;
+  /** The choices are out of reach while what was picked is kept. */
+  disabled?: boolean;
 }) {
   const said =
     options === undefined
@@ -79,11 +100,31 @@ export function OptionsList({
       aria-describedby={ids.describedBy}
     >
       {said !== undefined && <p className="ui-setting-help">{said}</p>}
-      {options?.map((option) => (
-        <p key={option.id} className="ui-setting-help" title={option.description || undefined}>
-          {option.label}: {valueLabel(option)} <OptionBadge badge={optionBadge(option)} />
-        </p>
-      ))}
+      {options?.map((option) =>
+        onChoose === undefined ? (
+          <p key={option.id} className="ui-setting-help" title={option.description || undefined}>
+            {option.label}: {valueLabel(option)} <OptionBadge badge={optionBadge(option)} />
+          </p>
+        ) : (
+          <div key={option.id} className="flex flex-col gap-1">
+            <p
+              id={`${ids.id}-${option.id}`}
+              className="ui-setting-help"
+              title={option.description || undefined}
+            >
+              {option.label} <OptionBadge badge={optionBadge(option)} />
+            </p>
+            <Choice
+              kind="radio"
+              ids={{ id: `${ids.id}-${option.id}-values`, labelledBy: `${ids.id}-${option.id}` }}
+              disabled={disabled}
+              options={option.values.map((one) => ({ value: one.id, label: one.label }))}
+              value={option.value}
+              onValueChange={(to) => onChoose(option, to)}
+            />
+          </div>
+        ),
+      )}
     </div>
   );
 }

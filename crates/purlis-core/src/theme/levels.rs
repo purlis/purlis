@@ -37,6 +37,15 @@
 //! as before; level 6 is the first theme in force from an extension the project has on, else
 //! Purlis.
 //!
+//! **A choice of a theme folder names the folder's level** (#2516), so that level's folder of
+//! the name is drawn and never a folder of the name at another level; a choice made before
+//! choices named one reads the nearest level within reach that has the name, as before, and
+//! gains its level when it is next written. **A choice carries option values** (#2527): the
+//! theme it chose is drawn with them, built onto the theme before it is drawn
+//! ([`Theme::with`]), so the consent floors hold over every value; an option it names no value
+//! for draws the theme's default. The values are the choice's own, as its appearance is: the
+//! nearest level that chose draws its values, never another level's.
+//!
 //! A choice reaches theme folders of its own level and the levels farther out, never a nearer
 //! one ([`super::folders`]). **A choice that names no theme folder within its reach, nor any
 //! other theme purlis has, is passed over with a sentence and the next level's is used**, as a
@@ -51,7 +60,7 @@ use super::choices::{self, Choices};
 pub(crate) use super::folders::plane_fonts;
 pub use super::folders::{Folders, Found, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
-use super::{Appearance, Complaint, Contrast, Theme, built_in, classic, default_theme};
+use super::{Appearance, Complaint, Contrast, Theme, Values, built_in, classic, default_theme};
 use crate::extension::project::theme::{Pick, SYSTEM, Said, is_appearance};
 use crate::settings::Source;
 
@@ -85,13 +94,26 @@ impl Level {
 }
 
 /// **A choice of theme**: a theme, by what a pick names it (a theme folder's name, an
-/// extension's `<extension>/<theme>`, Purlis Classic by its id or an old one, or `system`), and
-/// which of its appearances, by its id or `system`; none draws the theme's first.
+/// extension's `<extension>/<theme>`, Purlis Classic by its id or an old one, or `system`);
+/// which of its appearances, by its id or `system`, none drawing the theme's first; for a theme
+/// folder, the level of the folder it picked (#2516); and the value of each of the theme's
+/// options it chose (#2527), every other option drawing its default.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Choice {
     pub theme: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<String>,
+    /// **The level of the theme folder it picked** (#2516): that level's folder of the name is
+    /// drawn and no other. `None` for a choice of no folder, and for a choice made before
+    /// choices named a level, which reads the nearest level within reach that has a folder of
+    /// the name, as it always did, and gains its level the next time it is written
+    /// ([`Self::placed`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<Reach>,
+    /// **The value of each option it chose** (#2527), by the option's id: drawn over the theme
+    /// with [`Theme::with`], each option it names no value for drawing its default.
+    #[serde(skip_serializing_if = "Values::is_empty")]
+    pub options: Values,
 }
 
 impl Choice {
@@ -104,7 +126,53 @@ impl Choice {
         Some(Self {
             theme: theme.to_owned(),
             appearance: appearance.map(str::to_owned),
+            from: None,
+            options: Values::new(),
         })
+    }
+
+    /// **The choice of the theme folder at `level`** (#2516); a choice of anything else names no
+    /// level, so it is unchanged.
+    #[must_use]
+    pub fn at(mut self, level: Reach) -> Self {
+        self.from = matches!(Pick::parse(&self.theme), Some(Pick::Folder(_))).then_some(level);
+        self
+    }
+
+    /// The choice with `options` as its option values.
+    #[must_use]
+    pub fn with_options(mut self, options: Values) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// **The choice as it is written** (#2516): a choice of a theme folder that names no level
+    /// gains the level a choice made at `reach` reads it from now, the nearest within reach
+    /// that has a folder of the name in `folders`. A choice that already names one, a choice of
+    /// no folder, and one of a name no level within reach has are unchanged.
+    #[must_use]
+    pub fn placed(self, folders: &Folders, reach: Reach) -> Self {
+        let Some(Pick::Folder(name)) = Pick::parse(&self.theme) else {
+            return self;
+        };
+        if self.from.is_some() {
+            return self;
+        }
+        match folders
+            .named(reach)
+            .into_iter()
+            .find(|(_, one)| *one == name)
+        {
+            Some((level, _)) => self.at(level),
+            None => self,
+        }
+    }
+
+    /// **Whether this choice and `other` pick the same theme**: the same name, and for a theme
+    /// folder the same level, where both name one.
+    pub fn same_theme(&self, other: &Self) -> bool {
+        self.theme == other.theme
+            && (self.from.is_none() || other.from.is_none() || self.from == other.from)
     }
 
     /// **What the window is told this choice draws**, as `project_theme_drawn` answers: a pick
@@ -140,6 +208,13 @@ impl Levels {
     /// The nearest level that chose, and its choice; `None` when no level did.
     pub fn chosen(&self) -> Option<(Level, &Choice)> {
         self.each().next()
+    }
+
+    /// The choice the level `level` made, when it made one.
+    pub fn of_level(&self, level: Level) -> Option<&Choice> {
+        self.each()
+            .find(|(one, _)| *one == level)
+            .map(|(_, choice)| choice)
     }
 
     /// Every level that chose, nearest first.
@@ -327,9 +402,13 @@ pub fn resolve_levels(inputs: &LevelInputs<'_>, offered: impl FnOnce() -> Arc<[O
     }
 }
 
-/// What `choice`, made at a level that reaches `reach`, draws: its theme in its appearance, or
-/// Purlis and why; or, when it names a theme folder no level within reach has, what reading
-/// the levels had to say.
+/// What `choice`, made at a level that reaches `reach`, draws: its theme in its appearance with
+/// its option values, or Purlis and why; or, when it names a theme folder no level within reach
+/// has, what reading the levels had to say.
+///
+/// **The option values are drawn onto the theme before it is drawn** ([`Theme::with`], then
+/// [`appear`], which holds the consent floors): a value is never layered over a theme already
+/// drawn, so every combination of values is held to the floors.
 fn drawn_for(
     choice: &Choice,
     reach: Reach,
@@ -337,6 +416,16 @@ fn drawn_for(
     offered: &mut impl FnMut() -> Arc<[Offered]>,
 ) -> Result<Drawn, Vec<Complaint>> {
     let appearance = choice.appearance.as_deref();
+    // `theme` in the choice's appearance, drawn with its option values, after what reading it
+    // said (`before`).
+    let valued = |theme: &Theme, before: Vec<Complaint>| {
+        let (theme, left_out) = theme.with(&choice.options);
+        let drawn = appear(&theme, appearance, inputs.system, inputs.contrast);
+        Drawn {
+            complaints: [before, left_out, drawn.complaints.clone()].concat(),
+            ..drawn
+        }
+    };
     Ok(match Pick::parse(&choice.theme) {
         // The old id: the person's own theme following the system when it has both
         // appearances, else Purlis Classic (#2322, D-2322-19).
@@ -345,11 +434,33 @@ fn drawn_for(
                 theme.of(Appearance::Dark).is_some() && theme.of(Appearance::Light).is_some()
             };
             let theme = inputs.theirs.filter(two).unwrap_or_else(|| classic());
-            follow(theme, inputs.system, inputs.contrast)
+            let (theme, left_out) = theme.with(&choice.options);
+            let drawn = follow(&theme, inputs.system, inputs.contrast);
+            Drawn {
+                complaints: [left_out, drawn.complaints.clone()].concat(),
+                ..drawn
+            }
         }
         Some(Pick::BuiltIn(id)) => match appearance {
-            None => Drawn::of(built_in(id).unwrap_or_else(default_theme)),
-            Some(_) => appear(classic(), appearance, inputs.system, inputs.contrast),
+            // An appearance of Purlis Classic by the id a pick names it by.
+            None => {
+                let (theme, left_out) = classic().with(&choice.options);
+                let drawn = match built_in(id) {
+                    Some(one) => Drawn::of(
+                        theme
+                            .appearances
+                            .iter()
+                            .find(|valued| valued.id == one.id)
+                            .unwrap_or(one),
+                    ),
+                    None => Drawn::of(default_theme()),
+                };
+                Drawn {
+                    complaints: left_out,
+                    ..drawn
+                }
+            }
+            Some(_) => valued(classic(), Vec::new()),
         },
         Some(Pick::Extension { id, name }) => {
             let offered = offered();
@@ -366,32 +477,34 @@ fn drawn_for(
                     refused: true,
                     ..Drawn::of(default_theme())
                 },
-                Some(one) => {
-                    let drawn =
-                        appear(&one.theme.theme, appearance, inputs.system, inputs.contrast);
-                    Drawn {
-                        complaints: [one.theme.complaints.clone(), drawn.complaints.clone()]
-                            .concat(),
-                        ..drawn
-                    }
-                }
+                Some(one) => valued(&one.theme.theme, one.theme.complaints.clone()),
             }
         }
-        Some(Pick::Folder(name)) => match inputs.folders.find(&name, reach) {
-            Found::Missing(said) => return Err(said),
-            Found::Read(resolved) if resolved.refused => Drawn {
-                complaints: resolved.complaints,
-                refused: true,
-                ..Drawn::of(default_theme())
-            },
-            Found::Read(resolved) => {
-                let drawn = appear(&resolved.theme, appearance, inputs.system, inputs.contrast);
-                Drawn {
-                    complaints: [resolved.complaints, drawn.complaints.clone()].concat(),
-                    ..drawn
+        Some(Pick::Folder(name)) => {
+            let found = match choice.from {
+                // A level nearer than the choice reaches is never its to draw.
+                Some(level) if level < reach => {
+                    return Err(vec![Complaint::said(format!(
+                        "{name} is chosen from {}'s theme folders, which a choice here does not \
+                         reach",
+                        level.word()
+                    ))]);
                 }
+                // The folder of that level, and no other of its name.
+                Some(level) => inputs.folders.find_in(&name, level),
+                // A choice made before choices named a level: the nearest within reach.
+                None => inputs.folders.find(&name, reach),
+            };
+            match found {
+                Found::Missing(said) => return Err(said),
+                Found::Read(resolved) if resolved.refused => Drawn {
+                    complaints: resolved.complaints,
+                    refused: true,
+                    ..Drawn::of(default_theme())
+                },
+                Found::Read(resolved) => valued(&resolved.theme, resolved.complaints),
             }
-        },
+        }
         None => return Err(Vec::new()),
     })
 }
@@ -471,6 +584,11 @@ pub fn adopt(
     if copy_local.is_none() && copy_workspace.is_none() && outranked.is_none() {
         return Ok(Vec::new());
     }
+    // A choice copied names the level of the folder it reads now (#2516).
+    let folders = Folders::of(Some(config_root), Some(plane), workspace);
+    let copy_local = copy_local.map(|choice| choice.placed(&folders, Reach::Project));
+    let copy_workspace =
+        copy_workspace.map(|(name, choice)| (name, choice.placed(&folders, Reach::Workspace)));
     let mut said = Vec::new();
     choices::edit(config_root, |held: &mut Choices| {
         let mine = held.projects.entry(key.clone()).or_default();
@@ -579,7 +697,9 @@ pub fn move_into_a_folder(config_root: &Path) -> Result<Moved, String> {
                 return Err(format!("purlis could not move {}: {why}", from.display()));
             }
         }
-        let choice = Choice::new(&name, None).expect("a folder name made here is a pick");
+        let choice = Choice::new(&name, None)
+            .expect("a folder name made here is a pick")
+            .at(Reach::Machine);
         let mut chosen = false;
         let kept = choices::edit(config_root, |held| {
             if held.machine.is_none() {

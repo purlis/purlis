@@ -8,9 +8,9 @@
 //! # A card per theme within reach
 //!
 //! A level's gallery holds the themes a choice made there reaches ([`Reach`]): Purlis Classic;
-//! the theme folders of that level and of the levels farther out, nearest first, a nearer
-//! level's folder of a name in a farther one's place, as a choice reads them; and the themes
-//! of the extensions in force there. So the machine's gallery is Purlis Classic, the person's own
+//! the theme folders of that level and of the levels farther out, nearest first, each with its
+//! level, so two folders of one name at two levels are two cards a choice tells apart (#2516);
+//! and the themes of the extensions in force there. So the machine's gallery is Purlis Classic, the person's own
 //! folders and every approved extension's themes; a project's adds the project's folders and
 //! keeps to the extensions it has on; a workspace's adds the workspace's.
 //!
@@ -18,6 +18,12 @@
 //! it is refused and why, what was left out of it, the check's warnings in every combination of
 //! appearance and option values ([`super::check_every`], in [`super::warnings_said`]'s words),
 //! the consent floors it breaks, and what following the system does with it.
+//!
+//! # A card's option values
+//!
+//! [`drawn`] draws a card with option values, built onto the theme before it is drawn
+//! ([`super::Theme::with`]), so the consent floors hold for every value; [`choose_option`] is
+//! what the person's choice at the level becomes when they set one of its theme's options.
 //!
 //! # Duplicate as my theme
 //!
@@ -33,11 +39,12 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use super::folders::{Folders, Found, Reach};
+use super::levels::Choice;
 use super::levels::appear;
 use super::resolve::{Drawn, Offered, On};
 use super::{
-    Appearance, CLASSIC, Contrast, Resolved, SCHEMA_URL, THEME_JSON, ThemeOption, check_every,
-    classic, is_folder_name,
+    Appearance, CLASSIC, Contrast, Resolved, SCHEMA_URL, THEME_JSON, ThemeOption, Values,
+    check_every, classic, is_folder_name,
 };
 use crate::extension::project::theme::Pick;
 
@@ -101,6 +108,24 @@ pub struct Card {
     pub stamp: String,
 }
 
+impl Card {
+    /// **The level of the theme folder it is** (#2516); `None` for a card that is no folder.
+    pub fn level(&self) -> Option<Reach> {
+        match self.from {
+            From::Workspace => Some(Reach::Workspace),
+            From::Project => Some(Reach::Project),
+            From::Machine => Some(Reach::Machine),
+            From::BuiltIn | From::Extension { .. } => None,
+        }
+    }
+
+    /// **Whether this is the card `id` of the level `level`**: a theme folder's card is told
+    /// from another of its name by its level, where one is named.
+    pub fn is(&self, id: &str, level: Option<Reach>) -> bool {
+        self.id == id && (level.is_none() || self.level() == level)
+    }
+}
+
 /// **What a gallery is read from**: the levels' folders, how far a choice at its level reaches,
 /// whose extension themes are in force, and those themes.
 #[derive(Debug, Clone, Copy)]
@@ -112,8 +137,9 @@ pub struct Shelf<'a> {
 }
 
 /// **Every theme a choice within `shelf`'s reach may name**, a card each: Purlis Classic first,
-/// then the theme folders nearest level first and by name within one, then each extension's
-/// theme in force in the order the survey found them.
+/// then the theme folders nearest level first and by name within one, a name two levels have
+/// once at each (#2516), then each extension's theme in force in the order the survey found
+/// them.
 pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
     let mut cards = vec![card(
         CLASSIC.to_owned(),
@@ -124,13 +150,13 @@ pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
             refused: false,
         },
     )];
-    for (level, name) in shelf.folders.named(shelf.reach) {
+    for (level, name) in shelf.folders.each(shelf.reach) {
         // A folder whose name a pick reads as something else (an old built-in id) is no
         // folder a choice can name.
         if !matches!(Pick::parse(&name), Some(Pick::Folder(_))) {
             continue;
         }
-        let Found::Read(resolved) = shelf.folders.find(&name, shelf.reach) else {
+        let Found::Read(resolved) = shelf.folders.find_in(&name, level) else {
             continue;
         };
         cards.push(card(name, from_level(level), &resolved));
@@ -156,18 +182,26 @@ pub fn cards(shelf: &Shelf<'_>) -> Vec<Card> {
     cards
 }
 
-/// **The theme the card `id` names**, as the engine reads it within `shelf`'s reach: `None`
-/// when no card of the gallery has that id.
-pub fn theme_of(shelf: &Shelf<'_>, id: &str) -> Option<Resolved> {
+/// **The theme the card `id` names**, as the engine reads it within `shelf`'s reach: for a theme
+/// folder, the folder of `level` when one is named, else the nearest within reach that has the
+/// name, as a choice reads it. `None` when no card of the gallery has that id.
+pub fn theme_of(shelf: &Shelf<'_>, id: &str, level: Option<Reach>) -> Option<Resolved> {
     match Pick::parse(id)? {
         Pick::BuiltIn(_) => Some(Resolved {
             theme: classic().clone(),
             complaints: Vec::new(),
             refused: false,
         }),
-        Pick::Folder(name) => match shelf.folders.find(&name, shelf.reach) {
-            Found::Read(resolved) => Some(resolved),
-            Found::Missing(_) => None,
+        Pick::Folder(name) => match level {
+            Some(level) if level < shelf.reach => None,
+            Some(level) => match shelf.folders.find_in(&name, level) {
+                Found::Read(resolved) => Some(resolved),
+                Found::Missing(_) => None,
+            },
+            None => match shelf.folders.find(&name, shelf.reach) {
+                Found::Read(resolved) => Some(resolved),
+                Found::Missing(_) => None,
+            },
         },
         Pick::Extension { id, name } => shelf
             .offered
@@ -179,37 +213,113 @@ pub fn theme_of(shelf: &Shelf<'_>, id: &str) -> Option<Resolved> {
     }
 }
 
-/// **What the card `id` draws in `appearance`**: one of its appearances by id, `system` to
-/// follow `system`, or `None` for its first, with `contrast` as the operating system asks it;
-/// the consent floors held, as every theme drawn is.
-/// `None` when no card of the gallery has that id. A refused theme draws Purlis.
+/// **What the card `id` of `level` draws in `appearance`** with the option values `values`:
+/// one of its appearances by id, `system` to follow `system`, or `None` for its first, with
+/// `contrast` as the operating system asks it. The values are built onto the theme
+/// ([`super::Theme::with`]) before it is drawn, so the consent floors are held over them, as
+/// every theme drawn is. `None` when no card of the gallery has that id. A refused theme draws
+/// Purlis.
 pub fn drawn(
     shelf: &Shelf<'_>,
     id: &str,
+    level: Option<Reach>,
     appearance: Option<&str>,
+    values: &Values,
     system: Appearance,
     contrast: Contrast,
 ) -> Option<Drawn> {
-    let resolved = theme_of(shelf, id)?;
-    let drawn = appear(&resolved.theme, appearance, system, contrast);
+    let resolved = theme_of(shelf, id, level)?;
+    let (theme, left_out) = resolved.theme.with(values);
+    let drawn = appear(&theme, appearance, system, contrast);
     Some(Drawn {
-        complaints: [resolved.complaints, drawn.complaints.clone()].concat(),
+        complaints: [resolved.complaints, left_out, drawn.complaints.clone()].concat(),
         ..drawn
     })
 }
 
-/// **The theme folder the card `id` is**, for **Open folder**: the nearest level within reach
-/// that has a folder of its name, as a choice reads it. `None` for a card with no folder of its
-/// own (Purlis Classic, an extension's theme) and for a name no level within reach has.
-pub fn folder_of(shelf: &Shelf<'_>, id: &str) -> Option<PathBuf> {
+/// **What the person's choice at `shelf`'s level becomes when they set `option` to `value`**
+/// (#2527): `base` (their choice there, or the choice that draws the theme there when they
+/// have none) with that value, or with none (`None`), so the theme's default is drawn. The
+/// choice names its folder's level from now on ([`Choice::placed`]). Values `base` holds that
+/// its theme no longer has are dropped, with a sentence each.
+///
+/// Refused, keeping nothing, when the theme is not one the gallery has or is refused, or when it
+/// has no option `option` or no value `value` of it.
+pub fn choose_option(
+    shelf: &Shelf<'_>,
+    base: &Choice,
+    option: &str,
+    value: Option<&str>,
+) -> Result<(Choice, Vec<String>), String> {
+    let resolved = theme_of(shelf, &base.theme, base.from)
+        .ok_or_else(|| format!("{} is no theme here, so nothing was kept", base.theme))?;
+    if resolved.refused {
+        return Err(format!(
+            "{} is refused, so it has no options to choose",
+            base.theme
+        ));
+    }
+    let theme = &resolved.theme;
+    let Some(chosen) = theme.options.iter().find(|one| one.id == option) else {
+        return Err(format!(
+            "{} has no option {option}, so nothing was kept",
+            theme.name
+        ));
+    };
+    if let Some(value) = value
+        && !chosen.values.iter().any(|one| one.id == value)
+    {
+        return Err(format!(
+            "the option {option} of {} has no value {value}, so nothing was kept",
+            theme.name
+        ));
+    }
+    let mut notes = Vec::new();
+    let mut values = Values::new();
+    for (id, given) in &base.options {
+        match theme.options.iter().find(|one| one.id == *id) {
+            None => notes.push(format!(
+                "{} has no option {id} any more, so your value for it was dropped.",
+                theme.name
+            )),
+            Some(one) if !one.values.iter().any(|it| it.id == *given) => notes.push(format!(
+                "The option {id} of {} has no value {given} any more, so it was dropped and its \
+                 default is drawn.",
+                theme.name
+            )),
+            Some(_) => {
+                values.insert(id.clone(), given.clone());
+            }
+        }
+    }
+    match value {
+        Some(value) => {
+            values.insert(option.to_owned(), value.to_owned());
+        }
+        None => {
+            values.remove(option);
+        }
+    }
+    let choice = base
+        .clone()
+        .placed(shelf.folders, shelf.reach)
+        .with_options(values);
+    Ok((choice, notes))
+}
+
+/// **The theme folder the card `id` of `level` is**, for **Open folder**: that level's folder
+/// when one is named, else the nearest level within reach that has a folder of its name, as a
+/// choice reads it. `None` for a card with no folder of its own (Purlis Classic, an extension's
+/// theme) and for a name no level within reach has.
+pub fn folder_of(shelf: &Shelf<'_>, id: &str, level: Option<Reach>) -> Option<PathBuf> {
     let Some(Pick::Folder(name)) = Pick::parse(id) else {
         return None;
     };
     let level = shelf
         .folders
-        .named(shelf.reach)
+        .each(shelf.reach)
         .into_iter()
-        .find(|(_, one)| *one == name)
+        .find(|(at, one)| *one == name && level.is_none_or(|level| level == *at))
         .map(|(level, _)| level)?;
     let path = shelf.folders.at(level)?.path().join(&name);
     // Read refusing a link when the gallery was read; asked again now, as the folder is shown.
@@ -308,10 +418,15 @@ const MINE: &str = "mine";
 /// Purlis Classic and the person's own folders. Nothing is written over: the folder is made
 /// new under the first name of `<id>-mine`, `<id>-mine-2`, … that no folder there has, and every
 /// step to it is opened refusing a link.
-pub fn duplicate(config_root: &Path, shelf: &Shelf<'_>, id: &str) -> Result<String, String> {
+pub fn duplicate(
+    config_root: &Path,
+    shelf: &Shelf<'_>,
+    id: &str,
+    level: Option<Reach>,
+) -> Result<String, String> {
     let card = cards(shelf)
         .into_iter()
-        .find(|one| one.id == id)
+        .find(|one| one.is(id, level))
         .ok_or_else(|| format!("there is no theme {id} here, so nothing was made"))?;
     if !card.duplicable {
         return Err(format!(

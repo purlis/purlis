@@ -51,34 +51,116 @@ fn the_machines_gallery_is_classic_and_the_persons_folders_and_says_what_is_draw
 fn choosing_at_the_machines_level_is_the_machine_default_with_its_badge() {
     let home = tempfile::tempdir().unwrap();
     let place = machine(home.path());
-    choose_machine_of(home.path(), Some("dusk"), Some("dark")).unwrap();
+    choose_machine_of(home.path(), Some("dusk"), Some("dark"), None).unwrap();
     let shown = gallery_of(&place, None);
+    // Written, the choice names the level of the folder it picked (#2516).
     assert_eq!(
         shown.yours,
         Some(YourTheme {
             theme: "dusk".into(),
             appearance: Some("dark".into()),
+            from: Some("machine".into()),
+            options: Default::default(),
         })
     );
-    assert_eq!(shown.drawn.as_deref(), Some("dusk"));
+    assert_eq!(shown.drawn.as_deref(), Some("machine:dusk"));
+    assert_eq!(shown.chosen.as_deref(), Some("machine:dusk"));
     assert_eq!(shown.level, "machine-default");
     assert_eq!(shown.from, "your machine default");
     // Taken away, nothing is chosen again.
-    choose_machine_of(home.path(), None, None).unwrap();
+    choose_machine_of(home.path(), None, None, None).unwrap();
     assert_eq!(gallery_of(&place, None).yours, None);
-    // A value no choice can hold keeps nothing.
-    assert!(choose_machine_of(home.path(), Some("../dusk"), None).is_err());
+    // A value no choice can hold keeps nothing, nor a level the machine's choice cannot reach.
+    assert!(choose_machine_of(home.path(), Some("../dusk"), None, None).is_err());
+    assert!(choose_machine_of(home.path(), Some("dusk"), None, Some("project")).is_err());
+    assert!(choose_machine_of(home.path(), Some("dusk"), None, Some("elsewhere")).is_err());
 }
 
 #[test]
 fn a_card_draws_its_theme_in_the_appearance_asked_for_and_nothing_else_is_drawn() {
     let home = tempfile::tempdir().unwrap();
     let place = machine(home.path());
-    let dusk = card_drawn_of(&place, "dusk", None, false, false).unwrap();
+    let none = Values::new();
+    let dusk = card_drawn_of(&place, "dusk", None, None, &none, false, false).unwrap();
     let theme = dusk.theme.unwrap();
     assert_eq!(theme.values["surface.base"], "#141414");
-    let light = card_drawn_of(&place, "purlis-classic", Some("system"), true, false).unwrap();
+    let light = card_drawn_of(
+        &place,
+        "purlis-classic",
+        None,
+        Some("system"),
+        &none,
+        true,
+        false,
+    )
+    .unwrap();
     assert!(light.follows_system);
     assert_eq!(light.theme.unwrap().appearance, "light");
-    assert!(card_drawn_of(&place, "nowhere", None, false, false).is_none());
+    assert!(card_drawn_of(&place, "nowhere", None, None, &none, false, false).is_none());
+}
+
+/// The machine's level with a theme folder `accented` of the person's, whose accent is an
+/// option: lavender by default, or teal.
+fn accented(config: &Path) -> Place {
+    let place = machine(config);
+    let folder = purlis_core::machine::dir(config)
+        .join(theme::levels::THEMES)
+        .join("accented");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join(theme::THEME_JSON),
+        serde_json::json!({
+            "name": "Accented",
+            "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {} }],
+            "options": [{
+                "id": "accent", "kind": "choice", "label": "Accent", "default": "lavender",
+                "values": [
+                    { "id": "lavender", "label": "Lavender", "tokens": { "accent.base": "#b4a7f5" } },
+                    { "id": "teal", "label": "Teal", "tokens": { "accent.base": "#2bb3a3" } }
+                ]
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    Place {
+        folders: Folders::of(Some(config), None, None),
+        ..place
+    }
+}
+
+#[test]
+fn an_option_set_at_the_level_is_kept_drawn_and_badged_with_the_level() {
+    let home = tempfile::tempdir().unwrap();
+    let place = accented(home.path());
+    choose_machine_of(home.path(), Some("accented"), None, Some("machine")).unwrap();
+    let shown = gallery_of(&place, None);
+    assert_eq!(shown.options[0].value, "lavender");
+    assert_eq!(shown.options[0].level, None);
+
+    assert_eq!(
+        choose_option_of(&place, None, "accent", Some("teal")).unwrap(),
+        Vec::<String>::new()
+    );
+    let shown = gallery_of(&place, None);
+    assert_eq!(shown.options[0].value, "teal");
+    assert!(shown.options[0].chosen);
+    assert_eq!(shown.options[0].level.as_deref(), Some("machine-default"));
+    // Choosing another appearance of the same theme keeps the value.
+    choose_machine_of(home.path(), Some("accented"), Some("dark"), Some("machine")).unwrap();
+    assert_eq!(gallery_of(&place, None).options[0].value, "teal");
+    // Back to the theme's default.
+    choose_option_of(&place, None, "accent", None).unwrap();
+    assert_eq!(gallery_of(&place, None).options[0].value, "lavender");
+    // A value the option does not have keeps nothing.
+    assert!(choose_option_of(&place, None, "accent", Some("pink")).is_err());
+}
+
+#[test]
+fn an_option_set_where_nothing_was_chosen_makes_the_drawn_choice_the_persons() {
+    let home = tempfile::tempdir().unwrap();
+    let place = accented(home.path());
+    // Nothing is chosen: Purlis Classic, which has no options, refuses one.
+    assert!(choose_option_of(&place, None, "accent", Some("teal")).is_err());
+    assert_eq!(gallery_of(&place, None).yours, None);
 }

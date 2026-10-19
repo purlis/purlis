@@ -51,7 +51,11 @@ const MOST_BYTES: u64 = crate::windowprefs::MAX_BYTES;
 
 /// **How far out a choice reaches**: the nearest level whose folders it may name. A choice
 /// reaches that level and every level farther out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// It is also **a level a theme folder is of** (#2516): the workspace's, the project's or the
+/// person's own, written `workspace`, `project` or `machine`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Reach {
     /// The workspace's folders, the project's and the person's.
     Workspace,
@@ -59,6 +63,26 @@ pub enum Reach {
     Project,
     /// The person's own folders alone.
     Machine,
+}
+
+impl Reach {
+    /// The three levels, nearest first.
+    pub const EVERY: [Self; 3] = [Self::Workspace, Self::Project, Self::Machine];
+
+    /// **The level's word**, as a choice and the gallery write it: `workspace`, `project` or
+    /// `machine`.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Workspace => "workspace",
+            Self::Project => "project",
+            Self::Machine => "machine",
+        }
+    }
+
+    /// The level a word names ([`Self::word`]); `None` for any other.
+    pub fn of_word(word: &str) -> Option<Self> {
+        Self::EVERY.into_iter().find(|one| one.word() == word)
+    }
 }
 
 /// **One level's `themes/` folder**: the root of its level (the plane, or the config home),
@@ -189,10 +213,24 @@ impl Folders {
     /// faces is registered to be served. `Missing` when that level has no folder of that name:
     /// a farther level's folder of the name is not read in its place.
     pub fn find_at(&self, name: &str, at: Reach) -> Found {
+        self.found_at(name, at, Library::checking)
+    }
+
+    /// **The theme folder `name` of the level `at` itself, to draw** (#2516): what a choice that
+    /// names that level's folder draws, read with a library of that level and the levels
+    /// farther out, as [`Self::find`] reads the nearest. `Missing` when that level has no folder
+    /// of that name: a folder of the name at another level is never read in its place.
+    pub fn find_in(&self, name: &str, at: Reach) -> Found {
+        self.found_at(name, at, |library| library)
+    }
+
+    /// [`Self::find_at`] and [`Self::find_in`]: the folder `name` of the level `at`, read with
+    /// the library `library` makes.
+    fn found_at(&self, name: &str, at: Reach, library: impl FnOnce(Library) -> Library) -> Found {
         let (levels, said) = self.read_within(at);
         match levels.first() {
             Some(held) if self.level(at).is_some() && held.contains_key(name) => {
-                Found::Read(load(&library_of(&levels).checking(), name, said))
+                Found::Read(load(&library(library_of(&levels)), name, said))
             }
             _ => Found::Missing(said),
         }
@@ -289,6 +327,22 @@ impl Folders {
             }
         }
         named
+    }
+
+    /// **Every theme folder within `reach`, with its level** (#2516): nearest level first, by
+    /// name within one, a name that two levels have once at each, so a gallery tells them
+    /// apart.
+    pub fn each(&self, reach: Reach) -> Vec<(Reach, String)> {
+        let mut said = Vec::new();
+        self.levels(reach)
+            .into_iter()
+            .flat_map(|(level, folder)| {
+                read_level(folder, &mut said)
+                    .into_keys()
+                    .map(move |name| (level, name))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 
     /// The `themes/` folder of `level`, when there is one.

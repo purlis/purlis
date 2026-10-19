@@ -602,6 +602,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "theme_choose_machine",
     "theme_duplicate",
     "theme_open_folder",
+    // The value of a theme option at a level (#2527): it writes how the person's window looks
+    // on this machine, so only their press in Settings › Theme makes it.
+    "theme_choose_option",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

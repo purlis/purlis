@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The person's theme choices** (spec #2313, #2323): which theme, and which of its
-//! appearances, they chose for this machine, for each project and for each workspace in one.
+//! **The person's theme choices** (spec #2313, #2323): which theme, which of its appearances
+//! and which value of each of its options (#2527) they chose for this machine, for each project
+//! and for each workspace in one; and, for a theme folder, which level's folder (#2516).
 //!
 //! **Machine config, keyed by project id, never committed**: a file beside `machine.json`
 //! ([`FILE`]), for the reason [`crate::windowprefs`] gives for the layout and the theme, which
@@ -14,15 +15,30 @@
 //! ```json
 //! {
 //!   "version": 1,
-//!   "machine": { "theme": "dusk", "appearance": "system" },
+//!   "machine": { "theme": "dusk", "from": "machine", "appearance": "system" },
 //!   "projects": {
 //!     "01J…": {
 //!       "theme": "purlis-classic", "appearance": "light",
-//!       "workspaces": { "alpha": { "theme": "brand" } }
+//!       "workspaces": {
+//!         "alpha": { "theme": "brand", "from": "project", "options": { "accent": "teal" } }
+//!       }
 //!     }
 //!   }
 //! }
 //! ```
+//!
+//! A choice is `theme`, and optionally:
+//!
+//! - **`appearance`**: one of the theme's by its id, or `system`;
+//! - **`from`** (#2516): for a theme folder, the level of the folder it picked, `workspace`,
+//!   `project` or `machine`. That level's folder of the name is drawn and never another's. A
+//!   choice with none, written before choices named a level, reads the nearest level within
+//!   reach that has the folder, as it always did, and gains its level the next time it is
+//!   written;
+//! - **`options`** (#2527): the value of each of the theme's options it chose, by the option's
+//!   id (a toggle's `on` or `off`, a choice's value id). An option it names no value for draws
+//!   the theme's default. A value the theme does not have is said when it is drawn, and is
+//!   dropped, with a sentence, the next time the choice is written.
 //!
 //! **Bounded, least recently used out first**: each project's entry keeps when it was last
 //! changed (`used`, seconds since the epoch), and a change that would take the file past its cap
@@ -30,8 +46,9 @@
 //!
 //! **Everything read back is untrusted**, as every file beside `machine.json` is: read through
 //! the same bounded, link-refusing read ([`crate::machine::read_beside`]), every choice held to
-//! the grammar a pick has, and an entry that is not one is left out. A file purlis cannot read
-//! is never written over.
+//! the grammar a pick has, and an entry that is not one is left out: a `from` that names no
+//! level leaves the whole choice out, and an option value that is not an id is left out of it.
+//! A file purlis cannot read is never written over.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -39,7 +56,10 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use super::levels::Choice;
+use super::Values;
+use super::format::is_name;
+use super::levels::{Choice, Reach};
+use super::options::MOST_OPTIONS;
 
 /// The file, inside purlis's own folder in the config home.
 pub const FILE: &str = "theme-choices.json";
@@ -161,15 +181,46 @@ fn choice_of(entry: &Value) -> Option<Choice> {
         Some(Value::String(it)) => Some(it.as_str()),
         Some(_) => return None,
     };
-    Choice::new(theme, appearance)
+    // A level that is not one leaves the choice out: which folder it picked cannot be told.
+    let from = match entry.get("from") {
+        None => None,
+        Some(Value::String(word)) => Some(Reach::of_word(word)?),
+        Some(_) => return None,
+    };
+    let choice = Choice::new(theme, appearance)?.with_options(values_of(entry.get("options")));
+    Some(match from {
+        Some(level) => choice.at(level),
+        None => choice,
+    })
+}
+
+/// The option values an entry's `options` holds: each whose option and value are ids, at most
+/// as many as a theme has options; anything else is left out.
+fn values_of(options: Option<&Value>) -> Values {
+    options
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(id, value)| {
+            let value = value.as_str()?;
+            (is_name(id) && is_name(value)).then(|| (id.clone(), value.to_owned()))
+        })
+        .take(MOST_OPTIONS)
+        .collect()
 }
 
 /// The entry a choice is written as.
 fn entry_of(choice: &Choice) -> Map<String, Value> {
     let mut entry = Map::new();
     entry.insert("theme".into(), Value::String(choice.theme.clone()));
+    if let Some(level) = choice.from {
+        entry.insert("from".into(), Value::String(level.word().to_owned()));
+    }
     if let Some(appearance) = &choice.appearance {
         entry.insert("appearance".into(), Value::String(appearance.clone()));
+    }
+    if !choice.options.is_empty() {
+        entry.insert("options".into(), json!(choice.options));
     }
     entry
 }
@@ -264,6 +315,32 @@ fn within_cap(choices: &mut Choices, changed: &[String]) -> io::Result<String> {
 /// **Keeps `choice` at `slot`**, or takes the choice there away with `None`. A project id that is
 /// not a ULID, or a workspace name that is not one, is refused.
 pub fn set(config_root: &Path, slot: Slot<'_>, choice: Option<Choice>) -> io::Result<()> {
+    replace(config_root, slot, |_| choice)
+}
+
+/// **Chooses `choice` at `slot`, keeping its option values** (#2527): a choice of the same theme
+/// as the one there ([`Choice::same_theme`]) that names no option values keeps the values the
+/// person chose for it, so choosing another appearance never forgets them; a choice of another
+/// theme starts from its defaults. `None` takes the choice away, values and all.
+pub fn choose(config_root: &Path, slot: Slot<'_>, choice: Option<Choice>) -> io::Result<()> {
+    replace(config_root, slot, |before| {
+        let choice = choice?;
+        Some(match before {
+            Some(before) if choice.options.is_empty() && before.same_theme(&choice) => {
+                let options = before.options.clone();
+                choice.with_options(options)
+            }
+            _ => choice,
+        })
+    })
+}
+
+/// The choice at `slot` replaced by what `change` makes of the one there, under the file's lock.
+fn replace(
+    config_root: &Path,
+    slot: Slot<'_>,
+    change: impl FnOnce(Option<&Choice>) -> Option<Choice>,
+) -> io::Result<()> {
     let refused = |why: String| Err(io::Error::new(io::ErrorKind::InvalidInput, why));
     let project = match slot {
         Slot::Machine => None,
@@ -280,14 +357,14 @@ pub fn set(config_root: &Path, slot: Slot<'_>, choice: Option<Choice>) -> io::Re
         return refused(format!("{name:?} is not a workspace's name"));
     }
     edit(config_root, |held| match slot {
-        Slot::Machine => held.machine = choice,
+        Slot::Machine => held.machine = change(held.machine.as_ref()),
         Slot::Project(id) => {
             let mine = held.projects.entry(id.to_owned()).or_default();
-            mine.project = choice;
+            mine.project = change(mine.project.as_ref());
         }
         Slot::Workspace(id, name) => {
             let mine = held.projects.entry(id.to_owned()).or_default();
-            match choice {
+            match change(mine.workspaces.get(name)) {
                 Some(choice) => {
                     mine.workspaces.insert(name.to_owned(), choice);
                 }

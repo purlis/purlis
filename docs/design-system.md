@@ -386,8 +386,8 @@ rewrites the file; the next pick made in Settings writes the new id.
   parent's id takes that one's place. The theme check covers every appearance × option
   combination, so a theme has at most 64, and one past that is refused with its count. The
   theme engine takes the option values as an input (`Theme::with`), by the same precedence as
-  the appearance, and Settings › Theme shows the chosen theme's options with where each value
-  comes from.
+  the appearance, and Settings › Theme sets the chosen theme's options at each level with where
+  each value comes from (#2527).
 - **`tint`** says how a workspace's colour tints the theme (#2329), the same in each of its
   appearances: `"tint": { "on": true, "tokens": ["accent.base", "surface.raised"], "hues":
   { "red": "#c0392b" } }`. `on: false` and a workspace's colour tints nothing in it. `tokens`
@@ -612,15 +612,31 @@ file's 64 KiB cap the projects changed longest ago are dropped first:
 ```json
 {
   "version": 1,
-  "machine": { "theme": "dusk", "appearance": "system" },
+  "machine": { "theme": "dusk", "from": "machine", "appearance": "system" },
   "projects": {
     "<project id>": {
       "theme": "purlis-classic", "appearance": "light",
-      "workspaces": { "alpha": { "theme": "brand" } }
+      "workspaces": {
+        "alpha": { "theme": "brand", "from": "project", "options": { "accent": "teal" } }
+      }
     }
   }
 }
 ```
+
+A choice is `theme` and, optionally, `appearance`; **`from`**, for a theme folder, the level of
+the folder it picked (`workspace`, `project` or `machine`, #2516), so that level's folder of the
+name is drawn and a folder of the name at another level never is; and **`options`**, the value
+of each of the theme's options the person chose, by the option's id (#2527). A choice with no
+`from`, written before choices named a level, reads the nearest level within reach that has the
+folder, as before, and gains its level the next time it is written. The theme a level chose is
+drawn with that level's option values, built onto the theme before it is drawn
+(`Theme::with`, then the consent floors), and an option it names no value for draws the theme's
+default: the values are the choice's own, as its appearance is, never another level's. A value
+the theme does not have is said when it is drawn and dropped, with a sentence, the next time the
+choice is written; choosing another appearance of the same theme keeps the values, and choosing
+another theme starts from its defaults. A `from` that names no level leaves the choice out, and
+a value that is not an id is left out of it.
 
 A project's `charter.local.toml` `[theme]` pick, and a LOCAL workspace's `settings.theme`, are
 the person's choice where that file holds none, and are copied into it once, with a Notice. A
@@ -653,8 +669,8 @@ person's press in the window makes it.
 
 **A card per theme a choice at the level may name** (spec #2313, #2331,
 `purlis_core::theme::gallery`): Purlis Classic, the theme folders within the level's reach
-(nearest level first, a nearer level's folder of a name in a farther one's place, as a choice
-reads them), and the themes of the extensions in force there. You is the machine's level (its
+(nearest level first, each card saying its level, so two folders of one name at two levels are
+two cards a choice tells apart, #2516), and the themes of the extensions in force there. You is the machine's level (its
 choice is the machine default), Project the project's and Workspace the workspace's. The
 person's own single-file `theme.json` is no card, since no choice names it; when it is what is
 drawn, the gallery says so.
@@ -682,8 +698,11 @@ drawn, the gallery says so.
   offered only for a choice made at the level, so picking one never quietly makes a choice. A
   refused card chooses nothing and says why as its description.
 - **Under the cards**: the chosen theme's appearances (one by id, its first, or Follow the
-  system, which says when a theme of one tag stays in it); its options, each value with its
-  badge; the theme check's findings, in the words `purlis theme check` prints
+  system, which says when a theme of one tag stays in it); its options, each a choice of its
+  values kept in the person's choice at the level (`theme_choose_option`, #2527), with a badge
+  naming the level whose choice made the value, or the theme's default (with no choice at the
+  level yet, the choice that draws the theme there becomes the person's, with the value); the
+  theme check's findings, in the words `purlis theme check` prints
   (`theme::warnings_said`), with what was left out of the theme and the consent floors it
   breaks; and **Duplicate as my theme** and **Open folder**.
 - **Duplicate as my theme** makes a theme folder of the person's own whose `theme.json`
@@ -696,8 +715,8 @@ drawn, the gallery says so.
 - **The keyboard and a screen reader**: the cards are a listbox, one Tab stop, the chosen card
   the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
   cards writes nothing. Nothing in the group takes the focus by itself.
-- The machine default, a duplicate and Open folder are the window's alone (`WINDOW_ONLY`); the
-  gallery's reads are served as `theme_in_force` is.
+- The machine default, an option's value, a duplicate and Open folder are the window's alone
+  (`WINDOW_ONLY`); the gallery's reads are served as `theme_in_force` is.
 
 ### Where a user's theme lives
 
