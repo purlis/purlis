@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792368699125,
+  "lastUpdate": 1792370306513,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17808,6 +17808,48 @@ window.BENCHMARK_DATA = {
             "value": 101.56663,
             "unit": "ms",
             "extra": "median of 5 runs: 100.571, 100.761, 101.567, 101.700, 102.315 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "262caecea78dc489f89ccb192ddcf66d133d2858",
+          "message": "Browsers: pin, hand over, and reopen after quit (#2586)\n\nThe person pins a chat's browser from its row's menu or the palette: it\noutlives its chat, listed under Pinned browsers, until they stop it, Stop\nall, or a quit. A pinned browser whose chat closed, or one the person\nopened with no chat, is handed to an open chat, which gets that chat's\nreach at once; one signed in with a login goes only to a chat that may\nlog in with that login now, and a failed hand-over gives the browser\nback the reach it had or ends it. As purlis quits it keeps where the\nproject's browsers were in app/browsers-at-quit.json, addresses only,\nand the next start offers them once.\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T04:37:13+04:00",
+          "tree_id": "6f21763bb6e69cb331d2e4bf988064cfb2f3a1a9",
+          "url": "https://github.com/purlis/purlis/commit/262caecea78dc489f89ccb192ddcf66d133d2858"
+        },
+        "date": 1792370305206,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.28297399999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.275, 0.281, 0.283, 0.291, 0.307 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5724665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.439, 16.512, 16.572, 16.616, 16.624 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.5786405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.014, 100.383, 100.579, 101.656, 101.711 ms"
           }
         ]
       }
