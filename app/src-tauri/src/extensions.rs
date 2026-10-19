@@ -320,9 +320,11 @@ fn moved_said(moved: &purlis_core::theme::levels::Moved) -> String {
 }
 
 /// **The person's own theme choice** for the project at `plane`, or for `workspace` in it
-/// (#2323, [`purlis_core::theme::choices`]): `theme` and `appearance` as a pick names them, kept
-/// in machine config by the project's id and never in a project file; `theme` of `None` takes
-/// the choice away. What Settings › Appearance › Your theme writes.
+/// (#2323, [`purlis_core::theme::choices`]): `theme` and `appearance` as a pick names them, and
+/// `from`, the level of the theme folder it picks (`workspace`, `project` or `machine`, #2516),
+/// kept in machine config by the project's id and never in a project file; `theme` of `None`
+/// takes the choice away. A choice of the theme already chosen there keeps its option values
+/// (#2527). What Settings › Theme writes at the Project and Workspace levels.
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_choose(
@@ -331,6 +333,7 @@ pub async fn theme_choose(
     workspace: Option<String>,
     theme: Option<String>,
     appearance: Option<String>,
+    from: Option<String>,
 ) -> Result<(), String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     let config = config_root()?;
@@ -341,6 +344,7 @@ pub async fn theme_choose(
             workspace.as_deref(),
             theme.as_deref(),
             appearance.as_deref(),
+            from.as_deref(),
         )
     })
     .await
@@ -354,22 +358,59 @@ fn theme_choose_of(
     workspace: Option<&str>,
     theme: Option<&str>,
     appearance: Option<&str>,
+    from: Option<&str>,
 ) -> Result<(), String> {
-    use purlis_core::theme::{Choice, choices, levels};
+    use purlis_core::theme::{Folders, choices, levels};
     let key = levels::project_key(root).ok_or_else(|| {
         "purlis cannot tell which project this is, so it keeps no choice".to_owned()
     })?;
-    let choice = match theme {
-        None => None,
-        Some(theme) => Some(Choice::new(theme, appearance).ok_or_else(|| {
-            format!("{theme} is not a theme a choice can name, so nothing was kept")
-        })?),
+    let reach = if workspace.is_some() {
+        levels::Reach::Workspace
+    } else {
+        levels::Reach::Project
     };
+    let folders = Folders::of(Some(config), Some(root), workspace);
+    let choice = choice_of(theme, appearance, from, &folders, reach)?;
+    let named = choice
+        .as_ref()
+        .and_then(|one| crate::themegallery::theme_named(&folders, reach, one));
     let slot = match workspace {
         Some(name) => choices::Slot::Workspace(&key, name),
         None => choices::Slot::Project(&key),
     };
-    choices::set(config, slot, choice).map_err(|why| why.to_string())
+    choices::choose(config, slot, choice, &folders, reach, named.as_ref())
+        .map_err(|why| why.to_string())
+}
+
+/// **The choice the window asks for** at a level that reaches `reach`: `theme` in `appearance`,
+/// of the theme folder of the level `from` names, or, with none, the nearest level within reach
+/// that has it (#2516). `None` for no theme; refused for a theme or a level a choice cannot name.
+pub(crate) fn choice_of(
+    theme: Option<&str>,
+    appearance: Option<&str>,
+    from: Option<&str>,
+    folders: &purlis_core::theme::Folders,
+    reach: purlis_core::theme::levels::Reach,
+) -> Result<Option<purlis_core::theme::Choice>, String> {
+    use purlis_core::theme::{Choice, levels::Reach};
+    let Some(theme) = theme else {
+        return Ok(None);
+    };
+    let choice = Choice::new(theme, appearance)
+        .ok_or_else(|| format!("{theme} is not a theme a choice can name, so nothing was kept"))?;
+    let choice = match from {
+        None => choice,
+        Some(word) => match Reach::of_word(word) {
+            Some(level) if level >= reach => choice.at(level),
+            _ => {
+                return Err(format!(
+                    "{word} is not a level whose theme folders a choice here reaches, so nothing \
+                     was kept"
+                ));
+            }
+        },
+    };
+    Ok(Some(choice.placed(folders, reach)))
 }
 
 /// **Where the window is**, for [`theme_in_force`] (#2323): the project in front and the
@@ -455,7 +496,13 @@ pub(crate) fn theme_in_force_of(
         options: drawn
             .theme
             .as_ref()
-            .map(|theme| theme.options.iter().map(WindowOption::from).collect())
+            .map(|theme| {
+                theme
+                    .options
+                    .iter()
+                    .map(|one| WindowOption::from(one).chosen_at(drawn.level))
+                    .collect()
+            })
             .unwrap_or_default(),
         refused,
         theme: drawn.theme.as_ref().map(WindowTheme::from),
@@ -484,6 +531,21 @@ pub struct WindowOption {
     pub default: String,
     /// Whether a choice made the value drawn; `false` when it is the theme's default.
     pub chosen: bool,
+    /// **The level whose choice made the value drawn** (#2527: `workspace-choice`,
+    /// `project-choice` or `machine-default`), as the source badge names it; `null` when it is
+    /// the theme's default.
+    pub level: Option<String>,
+}
+
+impl WindowOption {
+    /// The option as the choice of `level` drew it: a chosen value names that level.
+    pub(crate) fn chosen_at(self, level: Option<purlis_core::theme::Level>) -> Self {
+        let level = level
+            .filter(|_| self.chosen)
+            .and_then(|level| serde_json::to_value(level).ok())
+            .and_then(|it| it.as_str().map(str::to_owned));
+        Self { level, ..self }
+    }
 }
 
 /// One value of a theme option.
@@ -516,6 +578,7 @@ impl From<&purlis_core::theme::OptionDrawn> for WindowOption {
             value: drawn.value.clone(),
             default: option.default.clone(),
             chosen: drawn.chosen,
+            level: None,
         }
     }
 }
@@ -1561,6 +1624,22 @@ pub struct ProjectTheme {
 pub struct YourTheme {
     pub theme: String,
     pub appearance: Option<String>,
+    /// The level of the theme folder it picked (`workspace`, `project` or `machine`, #2516);
+    /// `null` for a choice of no folder, and for one made before choices named a level.
+    pub from: Option<String>,
+    /// The value of each option it chose, by the option's id (#2527).
+    pub options: std::collections::BTreeMap<String, String>,
+}
+
+impl From<purlis_core::theme::Choice> for YourTheme {
+    fn from(choice: purlis_core::theme::Choice) -> Self {
+        Self {
+            theme: choice.theme,
+            appearance: choice.appearance,
+            from: choice.from.map(|level| level.word().to_owned()),
+            options: choice.options,
+        }
+    }
 }
 
 /// This project's theme, with every theme it may pick — in `workspace`, when one is named, whose
@@ -1657,10 +1736,7 @@ fn with_levels(
             Some(name) => mine.workspaces.get(name).cloned(),
             None => mine.project,
         })
-        .map(|one| YourTheme {
-            theme: one.theme,
-            appearance: one.appearance,
-        });
+        .map(YourTheme::from);
     let reach = if workspace.is_some() {
         levels::Reach::Workspace
     } else {
@@ -2221,7 +2297,15 @@ mod tests {
             "[project]\nid = \"01JABCDEFGHJKMNPQRSTVWXYZ0\"\n",
         )
         .expect("a manifest");
-        theme_choose_of(&config, &plane, Some("alpha"), Some("purlis-light"), None).expect("kept");
+        theme_choose_of(
+            &config,
+            &plane,
+            Some("alpha"),
+            Some("purlis-light"),
+            None,
+            None,
+        )
+        .expect("kept");
         let levels = purlis_core::theme::Levels::read(Some(&config), Some(&plane), Some("alpha"));
         assert_eq!(
             levels
@@ -2235,13 +2319,13 @@ mod tests {
             "a project file was written"
         );
         // Taken away, and a value that is no pick refused.
-        theme_choose_of(&config, &plane, Some("alpha"), None, None).expect("taken away");
+        theme_choose_of(&config, &plane, Some("alpha"), None, None, None).expect("taken away");
         assert!(
             purlis_core::theme::Levels::read(Some(&config), Some(&plane), Some("alpha"))
                 .workspace_choice
                 .is_none()
         );
-        assert!(theme_choose_of(&config, &plane, None, Some("Not A Theme"), None).is_err());
+        assert!(theme_choose_of(&config, &plane, None, Some("Not A Theme"), None, None).is_err());
     }
 
     /// The levels with no project in front, the window having been told to draw `pick`.
@@ -2345,6 +2429,7 @@ mod tests {
                 value: "on".to_owned(),
                 default: "on".to_owned(),
                 chosen: false,
+                level: None,
             }]
         );
         assert_eq!(

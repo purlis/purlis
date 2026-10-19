@@ -133,6 +133,8 @@ use vocabulary::{
 pub use warnings::{combination as combination_said, said as warnings_said};
 
 #[cfg(test)]
+mod choice_tests;
+#[cfg(test)]
 mod floors_tests;
 #[cfg(test)]
 mod folders_tests;

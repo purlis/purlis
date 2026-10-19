@@ -7,7 +7,14 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { THEME_FOLDERS_CHANGED } from "../Extensions";
-import { SPECIMEN_BUSY, type GalleryCard, type ThemeAt, type ThemeGallery } from "../bindings";
+import {
+  SPECIMEN_BUSY,
+  type GalleryCard,
+  type ThemeAt,
+  type ThemeGallery,
+  type WindowOption,
+  type YourTheme,
+} from "../bindings";
 import { putBack, showing } from "../theme/hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
@@ -27,7 +34,11 @@ const PLANE = "/home/dev/plane";
 const LIGHT = BUILT_IN["purlis-light"];
 
 function card(over: Partial<GalleryCard> & Pick<GalleryCard, "id" | "name">): GalleryCard {
+  const from = over.from ?? "machine";
+  const level = ["machine", "project", "workspace"].includes(from) ? from : null;
   return {
+    key: level === null ? over.id : `${level}:${over.id}`,
+    level,
     from: "machine",
     extension: null,
     appearances: [{ id: "dark", appearance: "dark", high_contrast: false }],
@@ -70,7 +81,28 @@ const GALLERY: ThemeGallery = {
   drawn: "purlis-classic",
   level: "purlis",
   from: "nothing chose one",
+  chosen: "purlis-classic",
+  options: [],
 };
+
+/** The person's own choice of `theme`, of the folder level `from`. */
+function mine(theme: string, appearance: string | null, from: string | null = null): YourTheme {
+  return { theme, appearance, from, options: {} };
+}
+
+/** The gallery with `over`, its chosen card the core's: the person's choice here, else what is
+ *  drawn. */
+function shown(over: Partial<ThemeGallery>): ThemeGallery {
+  const gallery = { ...GALLERY, ...over };
+  const yours = gallery.yours;
+  const theirs =
+    yours === null
+      ? undefined
+      : gallery.cards.find(
+          (one) => one.id === yours.theme && (yours.from === null || one.level === yours.from),
+        )?.key;
+  return { ...gallery, chosen: over.chosen ?? theirs ?? gallery.drawn };
+}
 
 /** The core: the gallery, what each card draws, and every write, recorded. */
 function core(
@@ -112,6 +144,8 @@ function core(
         case "theme_choose_machine":
         case "theme_open_folder":
           return null;
+        case "theme_choose_option":
+          return ["Accented has no option gone any more, so your value for it was dropped."];
         case "theme_duplicate":
           return "dusk-mine";
         case "theme_in_force":
@@ -206,7 +240,7 @@ describe("Settings › Theme's cards (#2331)", () => {
   });
 
   it("is one listbox and one Tab stop, the chosen card the stop, and takes no focus itself", async () => {
-    core({ ...GALLERY, yours: { theme: "dusk", appearance: null }, drawn: "dusk" });
+    core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     await cards();
     const list = screen.getByRole("listbox");
@@ -230,7 +264,14 @@ describe("Settings › Theme's cards (#2331)", () => {
     await waitFor(() => expect(inForce()).toBe(LIGHT));
     expect(surface()).toBe(LIGHT.values["surface.base"]);
     expect(asked("theme_card_drawn")).toEqual([
-      { at: null, theme: "dusk", appearance: "system", light: false, moreContrast: false },
+      {
+        at: null,
+        theme: "dusk",
+        from: "machine",
+        appearance: "system",
+        light: false,
+        moreContrast: false,
+      },
     ]);
     fireEvent.pointerLeave(named("Dusk"));
     await waitFor(() => expect(inForce()).toBe(before));
@@ -252,18 +293,20 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(asked("theme_choose_machine")).toEqual([]);
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(asked("theme_choose_machine")).toEqual([{ theme: "dusk", appearance: null }]),
+      expect(asked("theme_choose_machine")).toEqual([
+        { theme: "dusk", appearance: null, from: "machine" },
+      ]),
     );
   });
 
   it("writes a project's choice where the theme levels read it, and Undo puts the last back", async () => {
-    const { asked } = core({ ...GALLERY, yours: { theme: "purlis-classic", appearance: "light" } });
+    const { asked } = core(shown({ yours: mine("purlis-classic", "light") }));
     render(<Group at={{ plane: PLANE, workspace: null }} />);
     await cards();
     fireEvent.click(named("Team"));
     await waitFor(() =>
       expect(asked("theme_choose")).toEqual([
-        { plane: PLANE, workspace: null, theme: "team", appearance: null },
+        { plane: PLANE, workspace: null, theme: "team", appearance: null, from: "project" },
       ]),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
@@ -273,6 +316,7 @@ describe("Settings › Theme's cards (#2331)", () => {
         workspace: null,
         theme: "purlis-classic",
         appearance: "light",
+        from: null,
       }),
     );
     expect(asked("theme_choose_machine")).toEqual([]);
@@ -288,17 +332,14 @@ describe("Settings › Theme's cards (#2331)", () => {
       theme: "purlis-classic",
       appearance: "light",
       at: null,
+      from: null,
     });
   });
 });
 
 describe("under the chosen card (#2331)", () => {
   it("offers its appearances and says what following the system does with one tag", async () => {
-    const { asked } = core({
-      ...GALLERY,
-      yours: { theme: "dusk", appearance: null },
-      drawn: "dusk",
-    });
+    const { asked } = core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     const appearance = await screen.findByRole("radiogroup");
     expect(within(appearance).getAllByRole("radio")).toHaveLength(3);
@@ -307,12 +348,14 @@ describe("under the chosen card (#2331)", () => {
     );
     fireEvent.click(within(appearance).getByRole("radio", { name: "Follow the system" }));
     await waitFor(() =>
-      expect(asked("theme_choose_machine")).toEqual([{ theme: "dusk", appearance: "system" }]),
+      expect(asked("theme_choose_machine")).toEqual([
+        { theme: "dusk", appearance: "system", from: "machine" },
+      ]),
     );
   });
 
   it("says the theme check's findings in purlis theme check's words", async () => {
-    core({ ...GALLERY, yours: { theme: "dusk", appearance: null }, drawn: "dusk" });
+    core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     const check = await screen.findByRole("region", { name: "Theme check" });
     await waitFor(() =>
@@ -321,40 +364,39 @@ describe("under the chosen card (#2331)", () => {
   });
 
   it("duplicates it as a theme of your own and opens its folder", async () => {
-    const { asked } = core({
-      ...GALLERY,
-      yours: { theme: "dusk", appearance: null },
-      drawn: "dusk",
-    });
+    const { asked } = core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     await cards();
     fireEvent.click(screen.getByRole("button", { name: "Duplicate as my theme" }));
     expect(
       await screen.findByText("Made dusk-mine, a theme of your own that extends Dusk."),
     ).toBeTruthy();
-    expect(asked("theme_duplicate")).toEqual([{ at: null, theme: "dusk" }]);
+    expect(asked("theme_duplicate")).toEqual([{ at: null, theme: "dusk", from: "machine" }]);
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
-    await waitFor(() => expect(asked("theme_open_folder")).toEqual([{ at: null, theme: "dusk" }]));
+    await waitFor(() =>
+      expect(asked("theme_open_folder")).toEqual([{ at: null, theme: "dusk", from: "machine" }]),
+    );
   });
 
   it("offers neither on a theme a folder of your own cannot extend, nor a folder it has not", async () => {
-    core({
-      ...GALLERY,
-      cards: [
-        CLASSIC,
-        TEAM,
-        card({
-          id: "sol/Dark",
-          name: "Dark",
-          from: "extension",
-          extension: "sol",
-          duplicable: false,
-          folder: false,
-        }),
-      ],
-      yours: { theme: "sol/Dark", appearance: null },
-      drawn: "sol/Dark",
-    });
+    core(
+      shown({
+        cards: [
+          CLASSIC,
+          TEAM,
+          card({
+            id: "sol/Dark",
+            name: "Dark",
+            from: "extension",
+            extension: "sol",
+            duplicable: false,
+            folder: false,
+          }),
+        ],
+        yours: mine("sol/Dark", null),
+        drawn: "sol/Dark",
+      }),
+    );
     render(<Group at={{ plane: PLANE, workspace: null }} />);
     await cards();
     expect(screen.getByRole("button", { name: "Duplicate as my theme" })).toBeDisabled();
@@ -455,20 +497,22 @@ describe("a preview never outlives its card (#2331 review)", () => {
 
 describe("choosing nothing, and a refused card (#2331 review)", () => {
   it("takes the choice here away with Use the default, and Undo brings it back", async () => {
-    const { asked } = core({
-      ...GALLERY,
-      yours: { theme: "dusk", appearance: "dark" },
-      drawn: "dusk",
-    });
+    const { asked } = core(shown({ yours: mine("dusk", "dark"), drawn: "machine:dusk" }));
     render(<Group at={null} />);
     await cards();
     fireEvent.click(screen.getByRole("button", { name: "Use the default" }));
     await waitFor(() =>
-      expect(asked("theme_choose_machine")).toEqual([{ theme: null, appearance: null }]),
+      expect(asked("theme_choose_machine")).toEqual([
+        { theme: null, appearance: null, from: null },
+      ]),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
     await waitFor(() =>
-      expect(asked("theme_choose_machine")[1]).toEqual({ theme: "dusk", appearance: "dark" }),
+      expect(asked("theme_choose_machine")[1]).toEqual({
+        theme: "dusk",
+        appearance: "dark",
+        from: null,
+      }),
     );
   });
 
@@ -493,7 +537,7 @@ describe("choosing nothing, and a refused card (#2331 review)", () => {
       said: ["surface.base is not a colour"],
       appearances: [],
     });
-    const { asked } = core({ ...GALLERY, cards: [CLASSIC, BROKEN] });
+    const { asked } = core(shown({ cards: [CLASSIC, BROKEN] }));
     render(<Group at={null} />);
     await cards();
     const broken = named("Broken");
@@ -541,7 +585,7 @@ describe("a card's pictures when the painter is busy (#2331 review)", () => {
 
 describe("a choice of a theme the level no longer has (#2331 review)", () => {
   it("says so on the appearance, rather than that nothing is chosen", async () => {
-    core({ ...GALLERY, yours: { theme: "gone", appearance: null } });
+    core(shown({ yours: mine("gone", null) }));
     render(<Group at={null} />);
     const appearance = await screen.findByRole("radiogroup");
     expect(appearance).toHaveAccessibleDescription(
@@ -563,5 +607,144 @@ describe("a theme folder saved (#2324)", () => {
     expect(mock.asked("theme_gallery").at(-1)).toEqual({
       at: { plane: PLANE, workspace: "alpha" },
     });
+  });
+});
+
+describe("two folders of one name (#2516)", () => {
+  const THEIRS = card({ id: "brand", name: "Brand, the team's", from: "project" });
+  const OURS = card({ id: "brand", name: "Brand, mine", from: "machine" });
+
+  it("are two cards, each saying its level, and a press names the level it picked", async () => {
+    const { asked } = core(shown({ cards: [CLASSIC, THEIRS, OURS] }));
+    render(<Group at={{ plane: PLANE, workspace: null }} />);
+    await cards();
+    expect(named("Brand, the team's")).toHaveTextContent("This project's");
+    expect(named("Brand, mine")).toHaveTextContent("Yours, on this machine");
+    fireEvent.click(named("Brand, mine"));
+    await waitFor(() =>
+      expect(asked("theme_choose")).toEqual([
+        { plane: PLANE, workspace: null, theme: "brand", appearance: null, from: "machine" },
+      ]),
+    );
+  });
+
+  it("marks the card of the level the choice names, and no other of its name", async () => {
+    core(
+      shown({
+        cards: [CLASSIC, THEIRS, OURS],
+        yours: mine("brand", null, "machine"),
+        drawn: "machine:brand",
+      }),
+    );
+    render(<Group at={{ plane: PLANE, workspace: null }} />);
+    await cards();
+    expect(named("Brand, mine")).toHaveAttribute("aria-selected", "true");
+    expect(named("Brand, the team's")).toHaveAttribute("aria-selected", "false");
+  });
+});
+
+describe("the chosen theme's options (#2527)", () => {
+  const ACCENT: WindowOption = {
+    id: "accent",
+    label: "Accent",
+    description: "",
+    kind: "choice",
+    values: [
+      { id: "lavender", label: "Lavender" },
+      { id: "teal", label: "Teal" },
+    ],
+    value: "teal",
+    default: "lavender",
+    chosen: true,
+    level: "project-choice",
+  };
+  const LOUD: WindowOption = {
+    id: "loud",
+    label: "Loud",
+    description: "",
+    kind: "toggle",
+    values: [
+      { id: "off", label: "Off" },
+      { id: "on", label: "On" },
+    ],
+    value: "off",
+    default: "off",
+    chosen: false,
+    level: null,
+  };
+
+  it("shows each value with the level that chose it, and keeps a value picked at the level", async () => {
+    const { asked } = core(
+      shown({
+        yours: mine("dusk", null, "machine"),
+        drawn: "machine:dusk",
+        options: [ACCENT, LOUD],
+      }),
+    );
+    render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
+    const options = await screen.findByRole("region", { name: "Options" });
+    expect(
+      within(options)
+        .getByText(/^Accent/)
+        .closest("p"),
+    ).toHaveTextContent("Project");
+    expect(within(options).getByText(/^Loud/).closest("p")).toHaveTextContent("Theme default");
+    const loud = within(options).getByRole("radiogroup", { name: "Loud" });
+    fireEvent.click(within(loud).getByRole("radio", { name: "On" }));
+    await waitFor(() =>
+      expect(asked("theme_choose_option")).toEqual([
+        { at: { plane: PLANE, workspace: "alpha" }, option: "loud", value: "on" },
+      ]),
+    );
+    // What the core said it dropped is said, and the gallery is asked again.
+    expect(
+      await within(options).findByText(
+        "Accented has no option gone any more, so your value for it was dropped.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(asked("theme_gallery").length).toBeGreaterThan(1));
+  });
+
+  it("names each option's values by the option alone, described by its line", async () => {
+    core(
+      shown({
+        yours: mine("dusk", null, "machine"),
+        drawn: "machine:dusk",
+        options: [{ ...ACCENT, description: "The colour of what you act on." }],
+      }),
+    );
+    render(<Group at={null} />);
+    const options = await screen.findByRole("region", { name: "Options" });
+    const accent = within(options).getByRole("radiogroup", { name: "Accent" });
+    expect(accent).toHaveAccessibleDescription("The colour of what you act on.");
+  });
+
+  it("goes back to the theme's default with Theme default, which sends no value", async () => {
+    const { asked } = core(
+      shown({
+        yours: mine("dusk", null, "machine"),
+        drawn: "machine:dusk",
+        options: [ACCENT, LOUD],
+      }),
+    );
+    render(<Group at={null} />);
+    const options = await screen.findByRole("region", { name: "Options" });
+    const accent = within(options).getByRole("radiogroup", { name: "Accent" });
+    const back = within(accent).getByRole("radio", { name: "Theme default (Lavender)" });
+    expect(back).not.toBeChecked();
+    // A value nothing chose stands on Theme default, and pressing it again keeps nothing.
+    const loud = within(options).getByRole("radiogroup", { name: "Loud" });
+    expect(within(loud).getByRole("radio", { name: "Theme default (Off)" })).toBeChecked();
+    fireEvent.click(back);
+    await waitFor(() =>
+      expect(asked("theme_choose_option")).toEqual([{ at: null, option: "accent", value: null }]),
+    );
+  });
+
+  it("says a theme with none has none", async () => {
+    core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
+    render(<Group at={null} />);
+    const options = await screen.findByRole("region", { name: "Options" });
+    await waitFor(() => expect(options).toHaveTextContent("The chosen theme has no options."));
   });
 });

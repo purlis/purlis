@@ -167,8 +167,9 @@ pub fn label(n: u64) -> String {
 /// `theme` by id and `appearance` (`dark`, `light`, or none for the theme's first), as a chat's
 /// `theme_preview` is drawn. With `at`, or for a theme that is not Purlis Classic, `theme` is a
 /// card of the gallery at the level `at` names (the machine's with none, #2331) and
-/// `appearance` one of its appearances by id: the engine resolves it there, with the floors
-/// held, and the page is handed that theme alone.
+/// `appearance` one of its appearances by id, and `from` the level of the theme folder it is
+/// (#2516): the engine resolves it there, with the floors held, and the page is handed that
+/// theme alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_specimen(
@@ -176,6 +177,7 @@ pub async fn theme_specimen(
     theme: String,
     appearance: Option<String>,
     at: Option<crate::extensions::ThemeAt>,
+    from: Option<String>,
 ) -> Result<SpecimenPicture, String> {
     let tagged = match appearance.as_deref() {
         None => Some(None),
@@ -185,6 +187,7 @@ pub async fn theme_specimen(
     };
     let built_in = tagged.filter(|appearance| {
         at.is_none()
+            && from.is_none()
             && themepreview::chosen(&Specimen {
                 theme: theme.clone(),
                 appearance: *appearance,
@@ -203,6 +206,7 @@ pub async fn theme_specimen(
             Ask::Card {
                 place,
                 theme,
+                from,
                 appearance,
             }
         }
@@ -216,9 +220,15 @@ pub async fn theme_specimen(
         Ask::Card {
             place,
             theme,
+            from,
             appearance,
         } => {
-            let theme = crate::themegallery::specimen_theme(place, &theme, appearance.as_deref())?;
+            let theme = crate::themegallery::specimen_theme(
+                place,
+                &theme,
+                from.as_deref(),
+                appearance.as_deref(),
+            )?;
             let painter = painter().ok_or_else(|| NO_PAINTER.to_owned())?;
             let started = Instant::now();
             let picture = painter.paint(&theme)?;
@@ -257,6 +267,8 @@ enum Ask {
         /// The plane's root and the workspace in it; `None` for the machine's level.
         place: Option<(std::path::PathBuf, Option<String>)>,
         theme: String,
+        /// The level of the theme folder it is, as the window names it (#2516).
+        from: Option<String>,
         appearance: Option<String>,
     },
 }

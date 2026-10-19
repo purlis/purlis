@@ -29,6 +29,7 @@ const BORDERS: WindowOption = {
   value: "on",
   default: "on",
   chosen: false,
+  level: null,
 };
 
 const ACCENT: WindowOption = {
@@ -43,6 +44,7 @@ const ACCENT: WindowOption = {
   value: "teal",
   default: "lavender",
   chosen: true,
+  level: null,
 };
 
 /** The options of the theme drawn, as Settings › Theme's Options row lists them. */
@@ -65,6 +67,16 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     expect(borders.getAttribute("title")).toBe("A rule between panes.");
     const accent = screen.getByText(/^Accent: Teal/);
     expect(accent.textContent).toContain("Chosen");
+  });
+
+  it("names the level whose choice made a value (#2527)", async () => {
+    answering(() => [{ ...ACCENT, level: "workspace-choice" }]);
+    render(<Row />);
+    const accent = await screen.findByText(/^Accent: Teal/);
+    expect(accent.textContent).toContain("Workspace");
+    expect(accent.querySelector(".ui-setting-badge")?.getAttribute("title")).toBe(
+      "Accent is drawn as your choice for this workspace on this machine has it.",
+    );
   });
 
   it("says when the theme drawn has no options", async () => {

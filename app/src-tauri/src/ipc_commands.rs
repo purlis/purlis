@@ -373,6 +373,7 @@ macro_rules! app_commands {
                 themegallery::theme_gallery,
                 themegallery::theme_card_drawn,
                 themegallery::theme_choose_machine,
+                themegallery::theme_choose_option,
                 themegallery::theme_duplicate,
                 themegallery::theme_open_folder,
                 extensions::extension_icon_themes,

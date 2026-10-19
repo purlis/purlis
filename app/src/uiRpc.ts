@@ -1307,15 +1307,17 @@ export const commands = {
 	workspace: string | null,
 } | null) => typedError<ThemeGallery, string>(__TAURI_INVOKE("theme_gallery", { at })),
 	/**
-	 *  **What the card `theme` draws** at the level `at` names, in `appearance` (an appearance's
-	 *  id, `system` to follow the operating system, which is light when `light`, or `null` for its
-	 *  first), with more contrast when the system asks for it: what the window draws while the pointer or the keyboard is on the card, and puts
-	 *  back when it leaves. Nothing is written. `null` when the gallery has no such card.
+	 *  **What the card `theme` of the level `from` draws** at the level `at` names, in `appearance`
+	 *  (an appearance's id, `system` to follow the operating system, which is light when `light`,
+	 *  or `null` for its first), with more contrast when the system asks for it: what the window
+	 *  draws while the pointer or the keyboard is on the card, and puts back when it leaves. A card
+	 *  of the theme the person chose here is drawn with the option values they chose for it. Nothing
+	 *  is written. `null` when the gallery has no such card.
 	 */
 	themeCardDrawn: (at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, theme: string, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
+} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
 	/**
 	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
 	 *  JSON at all, which nothing picked).
@@ -1341,8 +1343,9 @@ export const commands = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
-} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light, moreContrast })),
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
+	themeChooseOption: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
 	/**
@@ -4618,8 +4621,18 @@ export type GalleryAppearance = {
 
 /**  **One card of a gallery**: what the theme engine read of one theme. */
 export type GalleryCard = {
+	/**
+	 *  **What tells it from every other card**: its id, and for a theme folder its level too
+	 *  (`project:brand`), since two levels may each have a folder of one name (#2516).
+	 */
+	key: string,
 	/**  What a choice names it by. */
 	id: string,
+	/**
+	 *  The level of the theme folder it is (`workspace`, `project` or `machine`); `null` for a
+	 *  card that is no folder.
+	 */
+	level: string | null,
 	name: string,
 	/**  `built-in`, `machine`, `project`, `workspace` or `extension`. */
 	from: string,
@@ -8794,6 +8807,16 @@ export type ThemeGallery = {
 	 *  machine", "charter.toml", …
 	 */
 	from: string,
+	/**
+	 *  The [`GalleryCard::key`] of the chosen card: the person's choice here, else what is drawn
+	 *  here; `null` when that is no card of this gallery.
+	 */
+	chosen: string | null,
+	/**
+	 *  The chosen card's options, each with the value it is drawn with here and the level whose
+	 *  choice made it (#2527).
+	 */
+	options: WindowOption[],
 };
 
 /**  What [`theme_in_force`] answers. */
@@ -9405,6 +9428,12 @@ export type WindowOption = {
 	default: string,
 	/**  Whether a choice made the value drawn; `false` when it is the theme's default. */
 	chosen: boolean,
+	/**
+	 *  **The level whose choice made the value drawn** (#2527: `workspace-choice`,
+	 *  `project-choice` or `machine-default`), as the source badge names it; `null` when it is
+	 *  the theme's default.
+	 */
+	level: string | null,
 };
 
 /**  One value of a theme option. */
@@ -9614,6 +9643,13 @@ export type YourLevel = {
 export type YourTheme = {
 	theme: string,
 	appearance: string | null,
+	/**
+	 *  The level of the theme folder it picked (`workspace`, `project` or `machine`, #2516);
+	 *  `null` for a choice of no folder, and for one made before choices named a level.
+	 */
+	from: string | null,
+	/**  The value of each option it chose, by the option's id (#2527). */
+	options: { [key in string]: string },
 };
 
 /* Tauri Specta runtime */

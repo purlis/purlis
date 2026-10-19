@@ -113,7 +113,7 @@ fn a_levels_gallery_holds_the_themes_a_choice_there_reaches() {
 }
 
 #[test]
-fn a_nearer_levels_folder_of_a_name_takes_a_farther_ones_place() {
+fn a_name_two_levels_have_is_a_card_at_each_nearest_first() {
     let places = Places::new();
     put(&places.machine(), "brand", &dusk("Brand, mine", "#101010"));
     put(
@@ -124,9 +124,11 @@ fn a_nearer_levels_folder_of_a_name_takes_a_farther_ones_place() {
     let folders = places.folders();
     let cards = gallery::cards(&shelf(&folders, Reach::Project, &[]));
     let brand: Vec<&Card> = cards.iter().filter(|one| one.id == "brand").collect();
-    assert_eq!(brand.len(), 1);
+    assert_eq!(brand.len(), 2);
     assert_eq!(brand[0].name, "Brand, the team's");
     assert_eq!(brand[0].from, From::Project);
+    assert_eq!(brand[1].name, "Brand, mine");
+    assert_eq!(brand[1].from, From::Machine);
 }
 
 #[test]
@@ -183,7 +185,7 @@ fn a_card_carries_the_checks_warnings_and_what_following_the_system_does() {
         Some("Murk has only a dark appearance, so following the system stays dark")
     );
     // The same lines `purlis theme check` prints.
-    let read = gallery::theme_of(&shelf(&folders, Reach::Machine, &[]), "murk").unwrap();
+    let read = gallery::theme_of(&shelf(&folders, Reach::Machine, &[]), "murk", None).unwrap();
     assert_eq!(
         murk.warnings,
         warnings_said(&read.theme, &check_every(&read.theme))
@@ -215,12 +217,23 @@ fn a_card_draws_in_the_appearance_asked_for_with_the_floors_held() {
     put(&places.project(), "team", &dusk("Team", "#141414"));
     let folders = places.folders();
     let at = shelf(&folders, Reach::Project, &[]);
-    let team = gallery::drawn(&at, "team", None, Appearance::Light, Contrast::Standard).unwrap();
+    let team = gallery::drawn(
+        &at,
+        "team",
+        None,
+        None,
+        &Values::new(),
+        Appearance::Light,
+        Contrast::Standard,
+    )
+    .unwrap();
     assert_eq!(team.theme.unwrap().value("surface.base"), "#141414");
     let light = gallery::drawn(
         &at,
         "purlis-classic",
+        None,
         Some("light"),
+        &Values::new(),
         Appearance::Dark,
         Contrast::Standard,
     )
@@ -229,7 +242,9 @@ fn a_card_draws_in_the_appearance_asked_for_with_the_floors_held() {
     let followed = gallery::drawn(
         &at,
         "purlis-classic",
+        None,
         Some("system"),
+        &Values::new(),
         Appearance::Light,
         Contrast::Standard,
     );
@@ -238,10 +253,32 @@ fn a_card_draws_in_the_appearance_asked_for_with_the_floors_held() {
         Appearance::Light
     );
     // A theme the gallery does not hold draws nothing: the window keeps what it draws.
-    assert!(gallery::drawn(&at, "nowhere", None, Appearance::Dark, Contrast::Standard).is_none());
+    assert!(
+        gallery::drawn(
+            &at,
+            "nowhere",
+            None,
+            None,
+            &Values::new(),
+            Appearance::Dark,
+            Contrast::Standard
+        )
+        .is_none()
+    );
     // A workspace's folder is out of a project's reach.
     put(&places.workspace(), "client", &dusk("Client", "#303030"));
-    assert!(gallery::drawn(&at, "client", None, Appearance::Dark, Contrast::Standard).is_none());
+    assert!(
+        gallery::drawn(
+            &at,
+            "client",
+            None,
+            None,
+            &Values::new(),
+            Appearance::Dark,
+            Contrast::Standard
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -251,12 +288,12 @@ fn open_folder_shows_a_folder_within_reach_and_nothing_else() {
     let folders = places.folders();
     let at = shelf(&folders, Reach::Project, &[]);
     assert_eq!(
-        gallery::folder_of(&at, "team"),
+        gallery::folder_of(&at, "team", None),
         Some(places.project().join("team"))
     );
-    assert_eq!(gallery::folder_of(&at, "purlis-classic"), None);
-    assert_eq!(gallery::folder_of(&at, "missing"), None);
-    assert_eq!(gallery::folder_of(&at, "../team"), None);
+    assert_eq!(gallery::folder_of(&at, "purlis-classic", None), None);
+    assert_eq!(gallery::folder_of(&at, "missing", None), None);
+    assert_eq!(gallery::folder_of(&at, "../team", None), None);
 }
 
 #[test]
@@ -265,7 +302,7 @@ fn duplicate_as_my_theme_makes_a_folder_of_my_own_that_extends_the_original() {
     put(&places.machine(), "dusk", &dusk("Dusk", "#141414"));
     let folders = places.folders();
     let at = shelf(&folders, Reach::Machine, &[]);
-    let made = gallery::duplicate(&places.config, &at, "dusk").unwrap();
+    let made = gallery::duplicate(&places.config, &at, "dusk", None).unwrap();
     assert_eq!(made, "dusk-mine");
     let written: Value = serde_json::from_str(
         &std::fs::read_to_string(places.machine().join("dusk-mine").join(THEME_JSON)).unwrap(),
@@ -279,12 +316,20 @@ fn duplicate_as_my_theme_makes_a_folder_of_my_own_that_extends_the_original() {
     let mine = cards.iter().find(|one| one.id == "dusk-mine").unwrap();
     assert_eq!(mine.name, "Dusk (mine)");
     assert!(!mine.refused, "{:?}", mine.said);
-    let drawn =
-        gallery::drawn(&at, "dusk-mine", None, Appearance::Dark, Contrast::Standard).unwrap();
+    let drawn = gallery::drawn(
+        &at,
+        "dusk-mine",
+        None,
+        None,
+        &Values::new(),
+        Appearance::Dark,
+        Contrast::Standard,
+    )
+    .unwrap();
     assert_eq!(drawn.theme.unwrap().value("surface.base"), "#141414");
     // A second duplicate takes the next free name; nothing is written over.
     assert_eq!(
-        gallery::duplicate(&places.config, &at, "dusk").unwrap(),
+        gallery::duplicate(&places.config, &at, "dusk", None).unwrap(),
         "dusk-mine-2"
     );
 }
@@ -295,12 +340,14 @@ fn purlis_classic_is_duplicated_into_a_themes_folder_made_for_it() {
     let folders = places.folders();
     let at = shelf(&folders, Reach::Workspace, &[]);
     assert!(!places.machine().exists());
-    let made = gallery::duplicate(&places.config, &at, "purlis-classic").unwrap();
+    let made = gallery::duplicate(&places.config, &at, "purlis-classic", None).unwrap();
     assert_eq!(made, "purlis-classic-mine");
     let drawn = gallery::drawn(
         &at,
         &made,
+        None,
         Some("light"),
+        &Values::new(),
         Appearance::Dark,
         Contrast::Standard,
     )
@@ -326,9 +373,12 @@ fn a_theme_a_folder_of_my_own_cannot_extend_is_not_duplicated() {
     for id in ["team", "solarized/Solarized Dark"] {
         let card = cards.iter().find(|one| one.id == id).unwrap();
         assert!(!card.duplicable, "{id}");
-        assert!(gallery::duplicate(&places.config, &at, id).is_err(), "{id}");
+        assert!(
+            gallery::duplicate(&places.config, &at, id, None).is_err(),
+            "{id}"
+        );
     }
-    assert!(gallery::duplicate(&places.config, &at, "nowhere").is_err());
+    assert!(gallery::duplicate(&places.config, &at, "nowhere", None).is_err());
     assert!(!places.machine().exists(), "nothing was made");
 }
 
@@ -342,7 +392,7 @@ fn duplicate_refuses_a_themes_folder_reached_through_a_link() {
     std::os::unix::fs::symlink(&elsewhere, places.machine()).unwrap();
     let folders = places.folders();
     let at = shelf(&folders, Reach::Machine, &[]);
-    assert!(gallery::duplicate(&places.config, &at, "purlis-classic").is_err());
+    assert!(gallery::duplicate(&places.config, &at, "purlis-classic", None).is_err());
     assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
 }
 

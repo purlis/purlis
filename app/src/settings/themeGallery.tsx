@@ -27,7 +27,7 @@ import {
 } from "../theme/theme";
 import { Choice, SettingActions, type Badge, type RowIds } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
-import { OptionsList, useOptionsInForce } from "./themeOptions";
+import { OptionsList } from "./themeOptions";
 import { useSpecimen } from "./themeSpecimens";
 
 /**
@@ -45,7 +45,13 @@ import { useSpecimen } from "./themeSpecimens";
  * **The level is where the tab is**: You is the machine default, the picker that was missing;
  * Project and Workspace are the person's choice for them, on this machine. Each is written
  * where the theme levels read it (#2323): the machine default by `theme_choose_machine`, the
- * others by `theme_choose`.
+ * others by `theme_choose`, and the chosen theme's option values by `theme_choose_option`
+ * (#2527), each value with a badge naming the level whose choice made it.
+ *
+ * **A theme folder's card names its level** (#2516): two folders of one name at two levels are
+ * two cards, each saying where it comes from, told apart by the card's `key`; a choice names the
+ * level of the folder it picked, so a folder of the name at another level is never drawn in its
+ * place.
  *
  * **The keyboard**: the cards are one Tab stop, a listbox, moved through with the arrow keys
  * (`roving.ts`), the chosen card the stop at rest. Moving to a card draws it as pointing does;
@@ -190,19 +196,34 @@ function answered(read: Read): read is ThemeGallery {
   return read !== undefined && !("trouble" in read);
 }
 
-/** The card the person's choice here names: a card by its id, Purlis Classic by any id one of
+/** The card a choice names: a card by its id, of the level the choice names (the nearest of
+ *  the name when it names none, as the cards are nearest first); Purlis Classic by any id one of
  *  its appearances has had. */
-function cardNamed(gallery: ThemeGallery, id: string | undefined | null): GalleryCard | undefined {
+function cardNamed(
+  gallery: ThemeGallery,
+  id: string | undefined | null,
+  from: string | null = null,
+): GalleryCard | undefined {
   if (id == null) return undefined;
-  const found = gallery.cards.find((one) => one.id === id);
+  const found = gallery.cards.find(
+    (one) => one.id === id && (from === null || one.level === null || one.level === from),
+  );
   if (found !== undefined) return found;
   const known = Object.prototype.hasOwnProperty.call(THEME_ALIASES, id) || id in BUILT_IN;
   return known || id === SYSTEM ? gallery.cards.find((one) => one.id === CLASSIC) : undefined;
 }
 
-/** **The chosen card**: the person's choice here, else what the levels draw here. */
+/** The card the person's own choice here names. */
+function yoursCard(gallery: ThemeGallery): GalleryCard | undefined {
+  return gallery.yours === null
+    ? undefined
+    : cardNamed(gallery, gallery.yours.theme, gallery.yours.from);
+}
+
+/** **The chosen card**: the person's choice here, else what the levels draw here, as the core
+ *  says it. */
 function chosenCard(gallery: ThemeGallery): GalleryCard | undefined {
-  return cardNamed(gallery, gallery.yours?.theme) ?? cardNamed(gallery, gallery.drawn);
+  return gallery.cards.find((one) => one.key === gallery.chosen) ?? yoursCard(gallery);
 }
 
 /** Where what is drawn here comes from, as the gallery's badge says it. */
@@ -253,27 +274,43 @@ function appearanceSaid(one: GalleryCard["appearances"][number]): string {
 // Choosing, writing where the level reads it
 // ---------------------------------------------------------------------------------------
 
-/** Writes the person's choice at `at`: the machine default with no project. */
+/** Writes the person's choice at `at`: the machine default with no project. `from` is the level
+ *  of the theme folder it picks. */
 async function choose(
   at: ThemeAt | null,
   theme: string | null,
   appearance: string | null,
+  from: string | null,
 ): Promise<string | undefined> {
   const done =
     at === null
-      ? await commands.themeChooseMachine(theme, appearance)
-      : await commands.themeChoose(at.plane, at.workspace, theme, appearance);
+      ? await commands.themeChooseMachine(theme, appearance, from)
+      : await commands.themeChoose(at.plane, at.workspace, theme, appearance, from);
   if (done.status === "error") return done.error;
+  redraw(at);
+  return undefined;
+}
+
+/** The window draws what a change at `at` chose, and the gallery is asked again. */
+function redraw(at: ThemeAt | null): void {
   if (at === null) void drawWhatIsInForce();
   else projectThemeChanged(at.plane);
   reread(at);
-  return undefined;
+}
+
+/** Whether `yours` is a choice of `card`: its theme, of the level `card` is, where it names one. */
+function isYours(card: GalleryCard, yours: YourTheme | null): boolean {
+  return (
+    yours !== null &&
+    yours.theme === card.id &&
+    (yours.from === null || card.level === null || yours.from === card.level)
+  );
 }
 
 /** The appearance a new choice of `card` keeps: following the system, when the last choice
  *  did and `card` can; else its first. */
 function appearanceFor(card: GalleryCard, yours: YourTheme | null): string | null {
-  if (yours?.theme === card.id) return yours.appearance;
+  if (yours !== null && isYours(card, yours)) return yours.appearance;
   return yours?.appearance === SYSTEM && card.follows === null ? SYSTEM : null;
 }
 
@@ -300,14 +337,15 @@ function enter(
   const appearance = appearanceFor(card, yours) ?? SYSTEM;
   const light = systemIsLight();
   const more = systemAsksMoreContrast();
-  const key = `${keyOf(at)}\u0000${card.id}\u0000${card.stamp}\u0000${appearance}\u0000${light}\u0000${more}`;
+  const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
+  const key = `${keyOf(at)}\u0000${card.key}\u0000${card.stamp}\u0000${appearance}\u0000${values}\u0000${light}\u0000${more}`;
   const kept = drawnThemes.get(key);
   if (kept) {
     showWhileOn(kept, ticket, cards);
     return;
   }
   void commands
-    .themeCardDrawn(at, card.id, appearance, light, more)
+    .themeCardDrawn(at, card.id, card.level, appearance, light, more)
     .then((answer) => {
       const theme =
         answer.status === "ok" && answer.data?.theme
@@ -341,7 +379,7 @@ function galleryRow(group: string, at: ThemeAt | null): LiveSetting {
         if (!answered(read) || card.refused) return;
         const was = read.yours;
         putBack();
-        void choose(at, card.id, appearanceFor(card, was)).then((why) => {
+        void choose(at, card.id, appearanceFor(card, was), card.level).then((why) => {
           setError(why === undefined ? undefined : [why]);
           setBefore(why === undefined ? { was } : undefined);
         });
@@ -357,7 +395,7 @@ function galleryRow(group: string, at: ThemeAt | null): LiveSetting {
           onReset: () => {
             const was = yours;
             putBack();
-            void choose(at, null, null).then((why) => {
+            void choose(at, null, null, null).then((why) => {
               setError(why === undefined ? undefined : [why]);
               setBefore(why === undefined ? { was } : undefined);
             });
@@ -369,9 +407,12 @@ function galleryRow(group: string, at: ThemeAt | null): LiveSetting {
             : () => {
                 const was = before.was;
                 setBefore(undefined);
-                void choose(at, was?.theme ?? null, was?.appearance ?? null).then((why) =>
-                  setError(why === undefined ? undefined : [why]),
-                );
+                void choose(
+                  at,
+                  was?.theme ?? null,
+                  was?.appearance ?? null,
+                  was?.from ?? null,
+                ).then((why) => setError(why === undefined ? undefined : [why]));
               },
         control: (ids) => <Cards read={read} at={at} ids={ids} onPick={pick} />,
       };
@@ -399,8 +440,8 @@ function Cards({
     aimed: string | null;
   }>({ pointer: null, focus: null, aimed: null });
   const stop = useTabStop(
-    chosen?.id,
-    (gallery?.cards ?? []).map((card) => card.id),
+    chosen?.key,
+    (gallery?.cards ?? []).map((card) => card.key),
   );
   if (gallery === undefined)
     return (
@@ -419,8 +460,8 @@ function Cards({
   // the focus is on; the person's theme goes back only when neither is on a card.
   const aim = () => {
     const on = owner.current.pointer ?? owner.current.focus;
-    if (on?.id === owner.current.aimed) return;
-    owner.current.aimed = on?.id ?? null;
+    if (on?.key === owner.current.aimed) return;
+    owner.current.aimed = on?.key ?? null;
     if (on === null) putBackSoon();
     else enter(at, on, gallery.yours, list.current);
   };
@@ -450,7 +491,7 @@ function Cards({
           onPointerLeave={() => point(null)}
         >
           {gallery.cards.map((card) => {
-            const isChosen = card.id === chosen?.id;
+            const isChosen = card.key === chosen?.key;
             const marks = [
               isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
               card.refused
@@ -460,13 +501,14 @@ function Cards({
                   : undefined,
             ].filter((one): one is string => one !== undefined);
             return (
-              <RovingFocusGroup.Item key={card.id} asChild tabStopId={card.id}>
+              <RovingFocusGroup.Item key={card.key} asChild tabStopId={card.key}>
                 <div
                   role="option"
                   aria-selected={isChosen}
                   aria-disabled={card.refused || undefined}
-                  aria-describedby={card.refused ? `${ids.id}-${card.id}-refused` : undefined}
+                  aria-describedby={card.refused ? `${ids.id}-${card.key}-refused` : undefined}
                   data-theme-card={card.id}
+                  data-theme-level={card.level ?? undefined}
                   className={
                     "flex flex-col gap-1 rounded-md border border-border-subtle p-2 " +
                     "hover:bg-surface-hover aria-selected:border-accent-base"
@@ -478,7 +520,12 @@ function Cards({
                   onClick={card.refused ? undefined : () => onPick(card)}
                   onKeyDown={card.refused ? undefined : keyed(card)}
                 >
-                  <Pictures at={at} card={card} refusedId={`${ids.id}-${card.id}-refused`} />
+                  <Pictures
+                    at={at}
+                    card={card}
+                    yours={gallery.yours}
+                    refusedId={`${ids.id}-${card.key}-refused`}
+                  />
                   <span className="text-text-primary">{card.name}</span>
                   <span className="text-sm text-text-secondary">
                     {[fromSaid(card), ...marks].join(" · ")}
@@ -506,14 +553,18 @@ function SourceBadge({ badge }: { badge: Badge }) {
 /** The most appearances a card shows a picture of; the rest are said. */
 const MOST_PICTURES = 3;
 
-/** A card's pictures: the specimen in each of its appearances. */
+/** A card's pictures: the specimen in each of its appearances, drawn with the option values
+ *  the person chose for it here, as pointing at it draws it (#2527). */
 function Pictures({
   at,
   card,
+  yours,
   refusedId,
 }: {
   at: ThemeAt | null;
   card: GalleryCard;
+  /** The person's choice here: a card of its theme is pictured with its values. */
+  yours: YourTheme | null;
   /** The id of the line saying why a refused card is refused: the card's description. */
   refusedId: string;
 }) {
@@ -525,10 +576,18 @@ function Pictures({
     );
   const shown = card.appearances.slice(0, MOST_PICTURES);
   const more = card.appearances.length - shown.length;
+  // A picture is kept by what it is drawn with: the theme's stamp and the values chosen here.
+  const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
   return (
     <div className="flex gap-1">
       {shown.map((one) => (
-        <Picture key={one.id} at={at} card={card} appearance={one.id} />
+        <Picture
+          key={one.id}
+          at={at}
+          card={card}
+          stamp={`${card.stamp}\u0000${values}`}
+          appearance={one.id}
+        />
       ))}
       {more > 0 && <span className="text-sm text-text-secondary">+{more}</span>}
     </div>
@@ -538,13 +597,16 @@ function Pictures({
 function Picture({
   at,
   card,
+  stamp,
   appearance,
 }: {
   at: ThemeAt | null;
   card: GalleryCard;
+  /** What the picture is kept by. */
+  stamp: string;
   appearance: string;
 }) {
-  const picture = useSpecimen(at, card.id, card.stamp, appearance);
+  const picture = useSpecimen(at, card.id, card.level, stamp, appearance);
   // The card names the theme; a picture adds nothing a screen reader needs.
   if (picture.state === "drawn")
     return (
@@ -577,8 +639,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
       const yours = gallery?.yours ?? null;
       // Only a choice made here has an appearance to change: with none, the levels underneath
       // decide, and picking an appearance would quietly choose the card drawn.
-      const chosenHere =
-        gallery !== undefined && yours !== null && cardNamed(gallery, yours.theme) === card;
+      const chosenHere = gallery !== undefined && card !== undefined && yoursCard(gallery) === card;
       const value = chosenHere ? (yours?.appearance ?? "") : "";
       return {
         grouped: true,
@@ -594,7 +655,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
             <div className="flex flex-col gap-1">
               {!chosenHere && (
                 <p className="ui-setting-help" id={`${ids.id}-why`}>
-                  {yours !== null && gallery !== undefined && !cardNamed(gallery, yours.theme)
+                  {yours !== null && gallery !== undefined && yoursCard(gallery) === undefined
                     ? `Your choice here, ${yours.theme}, is no theme this level has, so the levels underneath decide: choose a theme above to pick its appearance.`
                     : "Nothing is chosen here: choose a theme above to pick its appearance."}
                 </p>
@@ -626,7 +687,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
                 ]}
                 value={value}
                 onValueChange={(to) =>
-                  void choose(at, card.id, to === "" ? null : to).then((why) =>
+                  void choose(at, card.id, to === "" ? null : to, card.level).then((why) =>
                     setError(why === undefined ? undefined : [why]),
                   )
                 }
@@ -638,28 +699,58 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
   };
 }
 
-/** **The chosen theme's options**: each value, and a badge saying where it comes from. */
+/** **The chosen theme's options**: each value, choosable at this level (#2527), with a badge
+ *  naming the level whose choice made it. */
 function optionsRow(group: string, at: ThemeAt | null): LiveSetting {
   return {
     id: `${group}.options`,
     label: "Options",
-    help: "The chosen theme's options: the value of each, and what decided it.",
-    writes: "nothing",
+    help: "The chosen theme's options: pick a value for each, kept here on this machine. The badge says what decided each value.",
+    writes: "this machine",
     useControl: function useThemeOptions() {
       const read = useGallery(at);
+      const [error, setError] = useState<readonly string[]>();
+      const [said, setSaid] = useState<readonly string[]>();
+      const [keeping, setKeeping] = useState(false);
       const gallery = answered(read) ? read : undefined;
       const card = gallery === undefined ? undefined : chosenCard(gallery);
-      const drawnHere =
-        gallery !== undefined &&
-        card !== undefined &&
-        card.id === cardNamed(gallery, gallery.drawn)?.id;
-      const inForce = useOptionsInForce();
       const options: readonly WindowOption[] | undefined =
-        card === undefined ? undefined : drawnHere ? inForce : card.options;
+        card === undefined ? undefined : card.refused ? [] : gallery?.options;
+      const pick = (option: WindowOption, value: string | null) => {
+        // Nothing to keep: the value is already the one chosen, or the default already drawn.
+        if (value === null ? !option.chosen : option.chosen && value === option.value) return;
+        setKeeping(true);
+        void commands
+          .themeChooseOption(at, option.id, value)
+          .then((done) => {
+            if (done.status === "error") {
+              setError([done.error]);
+              return;
+            }
+            setError(undefined);
+            setSaid(done.data.length > 0 ? done.data : undefined);
+            redraw(at);
+          })
+          .finally(() => setKeeping(false));
+      };
       return {
         grouped: true,
+        error,
         control: (ids) => (
-          <OptionsList options={options} ids={ids} none="The chosen theme has no options." />
+          <div className="flex flex-col gap-1">
+            <OptionsList
+              options={options}
+              ids={ids}
+              none="The chosen theme has no options."
+              onChoose={pick}
+              disabled={keeping}
+            />
+            {said?.map((line) => (
+              <p key={line} className="ui-setting-help" role="status">
+                {line}
+              </p>
+            ))}
+          </div>
         ),
       };
     },
@@ -730,7 +821,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
       const [error, setError] = useState<readonly string[]>();
       const duplicate = () => {
         if (card === undefined) return;
-        void commands.themeDuplicate(at, card.id).then((made) => {
+        void commands.themeDuplicate(at, card.id, card.level).then((made) => {
           if (made.status === "error") {
             setError([made.error]);
             return;
@@ -743,7 +834,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
       const open = () => {
         if (card === undefined) return;
         void commands
-          .themeOpenFolder(at, card.id)
+          .themeOpenFolder(at, card.id, card.level)
           .then((done) => setError(done.status === "error" ? [done.error] : undefined));
       };
       return {

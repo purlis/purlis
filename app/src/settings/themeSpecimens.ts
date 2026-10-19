@@ -42,10 +42,13 @@ function told() {
 export function pictureKey(
   at: ThemeAt | null,
   theme: string,
+  from: string | null,
   stamp: string,
   appearance: string,
 ): string {
-  return [at?.plane ?? "", at?.workspace ?? "", theme, stamp, appearance].join("\u0000");
+  return [at?.plane ?? "", at?.workspace ?? "", theme, from ?? "", stamp, appearance].join(
+    "\u0000",
+  );
 }
 
 /** Draws the next picture asked for, once the last is done. */
@@ -66,12 +69,17 @@ function next() {
     });
 }
 
-/** Asks the app for the specimen of `theme` in `appearance`, again after a wait while the
- *  painter is busy, {@link BUSY_TRIES} times at most. */
-async function asked(at: ThemeAt | null, theme: string, appearance: string): Promise<Picture> {
+/** Asks the app for the specimen of `theme` (of the folder level `from`) in `appearance`, again
+ *  after a wait while the painter is busy, {@link BUSY_TRIES} times at most. */
+async function asked(
+  at: ThemeAt | null,
+  theme: string,
+  from: string | null,
+  appearance: string,
+): Promise<Picture> {
   for (let tries = 1; ; tries++) {
     try {
-      const answer = await commands.themeSpecimen(theme, appearance, at);
+      const answer = await commands.themeSpecimen(theme, appearance, at, from);
       if (answer.status === "ok")
         return { state: "drawn", src: `data:image/png;base64,${answer.data.png}` };
       if (answer.error !== SPECIMEN_BUSY || tries >= BUSY_TRIES)
@@ -83,14 +91,16 @@ async function asked(at: ThemeAt | null, theme: string, appearance: string): Pro
   }
 }
 
-/** **The picture of `theme` in `appearance`**, asked for the first time a card shows it. */
+/** **The picture of `theme` in `appearance`**, asked for the first time a card shows it: of the
+ *  theme folder of the level `from`, for a folder's card (#2516). */
 export function useSpecimen(
   at: ThemeAt | null,
   theme: string,
+  from: string | null,
   stamp: string,
   appearance: string,
 ): Picture {
-  const key = pictureKey(at, theme, stamp, appearance);
+  const key = pictureKey(at, theme, from, stamp, appearance);
   const picture = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
@@ -103,7 +113,7 @@ export function useSpecimen(
     const kept = pictures.get(key);
     if (kept !== undefined && kept.state !== "none") return;
     pictures.set(key, DRAWING);
-    queue.push({ key, ask: () => asked(at, theme, appearance) });
+    queue.push({ key, ask: () => asked(at, theme, from, appearance) });
     told();
     next();
     // `key` holds every input the ask is made from.
