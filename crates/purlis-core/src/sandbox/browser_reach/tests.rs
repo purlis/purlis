@@ -92,6 +92,10 @@ fn only_a_public_unicast_address_is_public() {
         ("64:ff9b::a00:5", false),
         ("2002:a00:5::1", false),
         ("2002:7f00:1::1", false),
+        // An ISATAP address is judged as itself and as the IPv4 address it carries (#2678).
+        ("2606:4700:1::5efe:a00:5", false),
+        ("2606:4700:1:0:200:5efe:c0a8:101", false),
+        ("2606:4700:1::5efe:101:101", true),
     ] {
         assert_eq!(public_address(ip(address), &[]), public, "{address}");
     }

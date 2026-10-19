@@ -357,10 +357,13 @@ pub(super) fn metadata_address(ip: IpAddr) -> bool {
     let v4 = |ip: Ipv4Addr| metadata_v4(ip) || METADATA_LINK_LOCAL.contains(&ip);
     match ip {
         IpAddr::V4(ip) => v4(ip),
-        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
-            [] => metadata_v6(ip),
-            carried => carried.iter().any(|one| v4(*one)),
-        },
+        IpAddr::V6(ip) => {
+            let as_itself = match carried_v4(ip).as_slice() {
+                [] => metadata_v6(ip),
+                carried => carried.iter().any(|one| v4(*one)),
+            };
+            as_itself || tunnelled_v4(ip).into_iter().any(v4)
+        }
     }
 }
 
@@ -380,8 +383,21 @@ fn metadata(name: &str) -> String {
 /// interface addresses), link-local, multicast and broadcast addresses, and the cloud metadata
 /// addresses — the set Claude Code's sandbox runtime refuses. purlis's egress proxy asks it of
 /// every address a listed name resolves to, at every connect, so a name that resolves, or is
-/// rebound, to one of them reaches nothing.
+/// rebound, to one of them reaches nothing. A Teredo or ISATAP address is refused as itself and
+/// as each IPv4 address it carries ([`tunnelled_v4`]).
 pub fn refused_address(ip: IpAddr, own: &[IpAddr]) -> bool {
+    let tunnelled = match ip {
+        IpAddr::V4(_) => Vec::new(),
+        IpAddr::V6(ip) => tunnelled_v4(ip),
+    };
+    refused_as_itself(ip, own)
+        || tunnelled
+            .into_iter()
+            .any(|one| refused_as_itself(IpAddr::V4(one), own))
+}
+
+/// [`refused_address`], with a Teredo or ISATAP address judged as itself alone.
+pub(super) fn refused_as_itself(ip: IpAddr, own: &[IpAddr]) -> bool {
     if own.contains(&ip) {
         return true;
     }
@@ -404,7 +420,7 @@ pub fn refused_address(ip: IpAddr, own: &[IpAddr]) -> bool {
             }
             carried => carried
                 .iter()
-                .any(|one| refused_address(IpAddr::V4(*one), own)),
+                .any(|one| refused_as_itself(IpAddr::V4(*one), own)),
         },
     }
 }
@@ -543,6 +559,28 @@ pub(super) fn carried_v4(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
     }
 }
 
+/// **The IPv4 addresses a Teredo or an ISATAP address carries** (#2678), which it reaches its
+/// node through, so it is judged as itself and as each of them: Teredo's (`2001::/32`, RFC
+/// 4380) server address in bits 32 to 63 and its client's, every bit flipped, in the last 32;
+/// ISATAP's (RFC 5214) in the last 32 bits behind a `0:5efe` or `200:5efe` interface identifier,
+/// under any prefix (the group bit, `100:5efe` and `300:5efe`, is read too).
+pub(super) fn tunnelled_v4(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
+    let s = ip.segments();
+    let of = |hi: u16, lo: u16| {
+        let ([a, b], [c, d]) = (hi.to_be_bytes(), lo.to_be_bytes());
+        Ipv4Addr::new(a, b, c, d)
+    };
+    let mut carried = Vec::new();
+    if s[0] == 0x2001 && s[1] == 0 {
+        carried.push(of(s[2], s[3]));
+        carried.push(of(!s[6], !s[7]));
+    }
+    if s[4] & 0xfcff == 0 && s[5] == 0x5efe {
+        carried.push(of(s[6], s[7]));
+    }
+    carried
+}
+
 /// The IPv4 address an IPv6 address carries, in each form Claude Code's sandbox runtime
 /// decodes (2.1.291): IPv4-mapped `::ffff:0:0/96`, SIIT `::ffff:0:0:0/96`, NAT64
 /// `64:ff9b::/96`, IPv4-compatible `::/96` (not `::` or `::1`), and 6to4 `2002::/16`.
@@ -572,7 +610,7 @@ fn v6(ip: Ipv6Addr) -> Result<Ipv6Addr, String> {
         ));
     }
     // An address that carries an IPv4 one reaches it, so it is judged as that one.
-    for carried in carried_v4(ip) {
+    for carried in carried_v4(ip).into_iter().chain(tunnelled_v4(ip)) {
         v4(carried).map_err(|why| format!("[{ip}] carries the IPv4 address {carried}. {why}"))?;
     }
     if ip.is_loopback() || ip.is_unspecified() {

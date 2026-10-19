@@ -11,7 +11,8 @@
 //! where the runner's own policy lists them ([`super::policy`]'s `relayed-internal`, ruled
 //! 2026-10-18), by the name asked for, by that address or by a range it is in ([`Entry`],
 //! #2530). An IPv6 address a NAT64 prefix carries an IPv4 one in, this machine's own among them
-//! ([`super::nat64`]), is judged as that one. That is how a cluster's administrator
+//! ([`super::nat64`]), is judged as that one, and a Teredo or ISATAP address as each internal
+//! IPv4 address it carries and as itself (#2678). That is how a cluster's administrator
 //! lets a runner's relayed chats reach an internal service. A cloud metadata service is never
 //! one.
 //!
@@ -22,7 +23,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
-use super::hosts::{Host, Network, carried_v4, metadata_address, refused_address};
+use super::hosts::{Host, Network, carried_v4, metadata_address, refused_as_itself, tunnelled_v4};
 use super::nat64::{self, Nat64};
 
 mod entry;
@@ -31,8 +32,14 @@ pub use entry::{Entry, Range};
 /// **Whether `ip` is an address of a private network, a cluster's or a link's**: `10/8`,
 /// `172.16/12`, `192.168/16`, the shared `100.64/10` many clusters give their pods and services,
 /// IPv4 and IPv6 link-local, and IPv6's unique-local `fc00::/7` and site-local `fec0::/10`. An
-/// IPv6 address that carries an IPv4 one is judged as that one.
+/// IPv6 address that carries an IPv4 one is judged as that one, and a Teredo or ISATAP address
+/// as itself and as each IPv4 address it carries ([`tunnelled_v4`], #2678).
 pub fn private_address(ip: IpAddr) -> bool {
+    private_as_itself(ip) || tunnelled(ip).into_iter().any(private_v4)
+}
+
+/// [`private_address`], with a Teredo or ISATAP address judged as itself alone.
+fn private_as_itself(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => private_v4(ip),
         IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
@@ -42,6 +49,14 @@ pub fn private_address(ip: IpAddr) -> bool {
             }
             carried => carried.iter().any(|one| private_v4(*one)),
         },
+    }
+}
+
+/// The IPv4 addresses `ip` carries as a Teredo or ISATAP address: none for any other.
+fn tunnelled(ip: IpAddr) -> Vec<Ipv4Addr> {
+    match ip {
+        IpAddr::V4(_) => Vec::new(),
+        IpAddr::V6(ip) => tunnelled_v4(ip),
     }
 }
 
@@ -178,7 +193,8 @@ impl Internal {
 
     /// **Whether the listing covers `ip` on `port`, asked for by `name`** (#2530). An address
     /// under this machine's own NAT64 prefix is judged as each IPv4 address it carries, and
-    /// every one of them must be covered. An address of this machine's own, or one where its
+    /// every one of them must be covered. A Teredo or ISATAP address is judged as each internal
+    /// IPv4 address it carries, and as itself where it is internal as itself (#2678). An address of this machine's own, or one where its
     /// addresses could not be read, is covered only by an entry naming that address and that
     /// port exactly, never by a range, a name or an address without a port. Any other address
     /// is covered by an entry that covers it, or the name asked for.
@@ -194,10 +210,24 @@ impl Internal {
             return false;
         }
         let readings = self.through_nat64(ip);
-        let judged = if readings.is_empty() {
-            vec![ip]
-        } else {
+        let tunnelled = tunnelled(ip);
+        let judged = if !readings.is_empty() {
             readings
+        } else if !tunnelled.is_empty() {
+            // A Teredo or ISATAP address: itself where it is internal as itself, and each
+            // internal IPv4 address it carries, as that address (#2678).
+            held_as_itself(ip, own)
+                .then_some(ip)
+                .into_iter()
+                .chain(
+                    tunnelled
+                        .into_iter()
+                        .map(IpAddr::V4)
+                        .filter(|one| held(*one, own)),
+                )
+                .collect()
+        } else {
+            vec![ip]
         };
         judged.iter().all(|one| {
             if self.is_own(*one, own) {
@@ -220,6 +250,7 @@ impl Internal {
             IpAddr::V4(_) => Vec::new(),
             IpAddr::V6(v6) => carried_v4(v6)
                 .into_iter()
+                .chain(tunnelled_v4(v6))
                 .map(IpAddr::V4)
                 .chain(self.through_nat64(ip))
                 .collect(),
@@ -239,9 +270,18 @@ fn host_at(ip: IpAddr, port: Option<u16>) -> Option<Host> {
 }
 
 /// Whether `ip` is internal (module docs): not `127.0.0.1` or `::1`, and an address of this
-/// machine, of a network it is on, a link-local or cloud metadata one ([`refused_address`]),
-/// or a private network's.
+/// machine, of a network it is on, a link-local or cloud metadata one
+/// ([`super::hosts::refused_address`]), or a private network's. A Teredo or ISATAP address is
+/// held where it is as itself or as an IPv4 address it carries (#2678).
 pub(crate) fn held(ip: IpAddr, own: Option<&[Network]>) -> bool {
+    held_as_itself(ip, own)
+        || tunnelled(ip)
+            .into_iter()
+            .any(|one| held_as_itself(IpAddr::V4(one), own))
+}
+
+/// [`held`], with a Teredo or ISATAP address judged as itself alone.
+fn held_as_itself(ip: IpAddr, own: Option<&[Network]>) -> bool {
     if ip == Ipv4Addr::LOCALHOST || ip == Ipv6Addr::LOCALHOST {
         return false;
     }
@@ -249,7 +289,9 @@ pub(crate) fn held(ip: IpAddr, own: Option<&[Network]>) -> bool {
         return true;
     };
     let addresses: Vec<IpAddr> = own.iter().map(|one| one.address).collect();
-    refused_address(ip, &addresses) || private_address(ip) || own.iter().any(|one| one.holds(ip))
+    refused_as_itself(ip, &addresses)
+        || private_as_itself(ip)
+        || own.iter().any(|one| one.holds(ip))
 }
 
 #[cfg(test)]

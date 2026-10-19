@@ -273,6 +273,9 @@ fn a_range_that_takes_in_what_no_host_may_be_is_refused() {
         "[64:ff9b:1::/48]",
         "[::ffff:0:0/96]",
         "[2002::/16]",
+        "[2001::/32]",
+        "[2001:0:a00::/48]",
+        "[2000::/3]",
     ] {
         assert!(
             refused(typed).contains("relayed chat never reaches"),
@@ -368,4 +371,75 @@ fn an_address_this_machines_nat64_carries_is_listed_as_the_ipv4_one() {
         at("[fd00:64:1::a60:1]:443"),
         Some(&[Network::host(ip("fd00:64:1::a60:1"))])
     ));
+}
+
+/// A Teredo address is judged as the server and the client IPv4 addresses it carries, the
+/// client's with every bit flipped (#2678).
+#[test]
+fn a_teredo_address_carrying_an_internal_server_or_client_is_held() {
+    // Server 203.0.113.7, client 10.0.0.5 (f5ff:fffa flipped).
+    let client = at("[2001:0:cb00:7107::f5ff:fffa]:443");
+    // Server 10.0.0.5, client 198.51.100.9 (39cc:9bf6 flipped).
+    let server = at("[2001:0:a00:5::39cc:9bf6]:443");
+    // Server 203.0.113.7, client 198.51.100.9.
+    let public = at("[2001:0:cb00:7107::39cc:9bf6]:443");
+
+    assert!(private_address(client.ip()) && private_address(server.ip()));
+    assert!(!private_address(public.ip()));
+    assert!(!listing(&[]).carries("db.example", client, Some(&[])));
+    assert!(!listing(&[]).carries("db.example", server, Some(&[])));
+    assert!(listing(&[]).carries("api.example", public, Some(&[])));
+    // Client 169.254.169.254 (5601:5601 flipped) is never carried, whatever is listed.
+    assert!(!listing(&["db.example"]).carries(
+        "db.example",
+        at("[2001:0:cb00:7107::5601:5601]:80"),
+        Some(&[])
+    ));
+}
+
+/// An ISATAP address, `::5efe:` or `::200:5efe:` before an IPv4 address in its interface
+/// identifier, is judged as that IPv4 address as well as itself (#2678).
+#[test]
+fn an_isatap_address_carrying_an_internal_ipv4_one_is_held() {
+    for typed in [
+        "[2001:db8:1:2::5efe:a00:5]:443",
+        "[2001:db8:1:2:200:5efe:a00:5]:443",
+        "[2001:db8:1:2:200:5efe:c0a8:101]:443",
+    ] {
+        assert!(private_address(at(typed).ip()), "{typed}");
+        assert!(
+            !listing(&[]).carries("db.example", at(typed), Some(&[])),
+            "{typed}"
+        );
+    }
+    assert!(listing(&[]).carries(
+        "api.example",
+        at("[2001:db8:1:2::5efe:cb00:7107]:443"),
+        Some(&[])
+    ));
+    // On a unique local prefix it is held as itself whatever IPv4 address it carries.
+    assert!(!listing(&[]).carries("db.example", at("[fd00:1::5efe:cb00:7107]:443"), Some(&[])));
+}
+
+/// A Teredo or ISATAP address is covered by what lists the IPv4 address it carries, never by an
+/// IPv6 range around it (#2678).
+#[test]
+fn a_tunnelled_address_is_listed_as_the_ipv4_one_it_carries() {
+    let services = listing(&["10.0.0.0/8"]);
+    let site = listing(&["[2001:db8:1:2::/64]"]);
+    let isatap = at("[2001:db8:1:2::5efe:a00:5]:443");
+    let teredo = at("[2001:0:cb00:7107::f5ff:fffa]:443");
+
+    assert!(services.carries("db.example", isatap, Some(&[])));
+    assert!(services.carries("db.example", teredo, Some(&[])));
+    assert!(services.lists_entry("[2001:db8:1:2::5efe:a00:5]:443", Some(&[])));
+    assert!(!site.carries("db.example", isatap, Some(&[])));
+    assert!(!site.lists_entry("[2001:db8:1:2::5efe:a00:5]:443", Some(&[])));
+    // A unique local ISATAP address needs its IPv6 network and the IPv4 address it carries.
+    let ula = at("[fd00:1::5efe:a00:5]:443");
+    assert!(!services.carries("db.example", ula, Some(&[])));
+    assert!(!listing(&["[fd00:1::/64]"]).carries("db.example", ula, Some(&[])));
+    assert!(listing(&["[fd00:1::/64]", "10.0.0.0/8"]).carries("db.example", ula, Some(&[])));
+    // A listed name covers what it resolves to.
+    assert!(listing(&["db.example"]).carries("db.example", isatap, Some(&[])));
 }
