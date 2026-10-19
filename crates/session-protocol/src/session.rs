@@ -175,9 +175,14 @@ use crate::view::{Limits, Views};
 /// on its link to the runner, takes it out of the runner's peers. A host before 1.25 refuses
 /// it `unknown_command`, and the runner's container and home, where its peers are, are
 /// removed all the same.
+///
+/// 1.26 added what the window allowed a chat alone, for a chat its host composes by its names
+/// (#2590): a start that names its `confinement` may name those services of the host's machine
+/// (`alone`), which the host leaves out of the confinement it composes where its own sandbox
+/// does not give them, names in `left_out`, and asks about.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 25,
+    minor: 26,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -710,6 +715,14 @@ pub struct StartProgram {
     /// asks nobody.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confinement: Option<String>,
+    /// For a start that names its `confinement`, the services of the host's machine, by port,
+    /// the person allowed this chat for it alone where the chat was planned (1.26, #2590): the
+    /// host leaves out of the confinement it composes each one its own sandbox does not give,
+    /// names them in that confinement's `left_out` ([`Confined::left_out`]), and its proxy asks
+    /// the link it is named to about each. Taken from a link that may confine alone
+    /// ([`crate::grants::Power::Confine`]), and only beside a `confinement`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alone: Vec<u16>,
 }
 
 impl StartProgram {
@@ -733,6 +746,7 @@ impl StartProgram {
             launch: None,
             reach: None,
             confinement: None,
+            alone: Vec::new(),
         }
     }
 }
@@ -1840,7 +1854,7 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
-        && start.confinement.is_some()
+        && (start.confinement.is_some() || !start.alone.is_empty())
         && !scope.may(Power::Confine)
     {
         return Some(Refusal {

@@ -292,6 +292,8 @@ pub struct Confinement {
     pub confine: Confine,
     /// Where its plan was made, as the host said (#2445).
     pub planned: crate::confining::Planned,
+    /// What the window allowed the chat it was composed for alone, as the host said (#2590).
+    pub alone: Vec<u16>,
     pub changes: Vec<ReachChange>,
     pub ended: bool,
     tell: Tell,
@@ -446,6 +448,7 @@ impl crate::confining::Confine for StandInConfines {
         self.seen().push(Confinement {
             confine: confining.confine.clone(),
             planned: confining.planned,
+            alone: confining.alone.to_vec(),
             changes: Vec::new(),
             ended: false,
             tell,

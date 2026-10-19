@@ -971,7 +971,10 @@ async fn push_on(
 fn the_windows_alone(command: &Command) -> bool {
     match command {
         Command::StartProgram(start) => {
-            start.launch.is_some() || start.without_sandbox || start.confinement.is_some()
+            start.launch.is_some()
+                || start.without_sandbox
+                || start.confinement.is_some()
+                || !start.alone.is_empty()
         }
         command => the_windows_power(command.power()),
     }

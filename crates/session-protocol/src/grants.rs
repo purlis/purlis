@@ -30,7 +30,7 @@
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | relayed |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | relayed |
 //! | a start's sandbox opt-out (`without_sandbox`) | yes | | | | | |
-//! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4); a start's `confinement`, the composed confinement named to its link (1.16) | yes | | | | | relayed |
+//! | `confine`, `let_go_of_confinement`, `change_reach`, `reach_of`, and the pushed `sandbox` (1.4); a start's `confinement`, the composed confinement named to its link (1.16), and its `alone` (1.26) | yes | | | | | relayed |
 //! | a start's `launch` that names a harness, the window's composed chat | yes | | | | | |
 //! | `start_program` of kind `browser`, `attach_view` of kind `browser` (1.6) | yes | | | | | |
 //! | `start_saving`, `stop_saving`, `fetch_project`, `mid_turn`, and the pushed `saving` and `who_is_mid_turn` (1.7) | yes | | | | | |

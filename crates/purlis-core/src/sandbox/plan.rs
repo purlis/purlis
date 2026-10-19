@@ -230,10 +230,9 @@ impl Plan {
     /// as planned.
     pub fn as_the_runner_starts_it(&self, given_here: &[u16]) -> (Plan, Vec<u16>) {
         let left_out: Vec<u16> = self
-            .given
-            .iter()
-            .copied()
-            .filter(|port| !given_here.contains(port) && self.for_this_chat_alone(*port))
+            .given_for_this_chat_alone()
+            .into_iter()
+            .filter(|port| !given_here.contains(port))
             .collect();
         if left_out.is_empty() {
             return (self.clone(), left_out);
@@ -248,6 +247,18 @@ impl Plan {
             .listed
             .retain(|(entry, by)| !(*by == By::Chat && entries.contains(entry)));
         (plan, left_out)
+    }
+
+    /// **The services of this machine the plan gives for this chat alone** (#2590): each port it
+    /// gives whose loopback entries it lists at the chat's layer and at no other, as the window
+    /// plans a service the person allowed for one chat. What the window tells a runner that
+    /// composes the chat, which leaves out those its own sandbox does not give.
+    pub fn given_for_this_chat_alone(&self) -> Vec<u16> {
+        self.given
+            .iter()
+            .copied()
+            .filter(|port| self.for_this_chat_alone(*port))
+            .collect()
     }
 
     /// Whether the plan gives the service on `port` for this chat alone, as the window plans a
@@ -300,19 +311,28 @@ impl Plan {
         self.starting(telling, Some(internal), left_out)
     }
 
+    /// [`Self::start`], for a plan the host composed for a chat it starts by its names (#2590):
+    /// a service of this machine in `left_out`, one the window allowed for that chat alone and
+    /// the plan does not give, is asked about where the proxy asks live, and carried once the
+    /// person allows it for this chat, as for a plan made elsewhere.
+    pub fn start_leaving_out(
+        &self,
+        telling: Telling,
+        left_out: Vec<u16>,
+    ) -> std::io::Result<Confinement> {
+        self.starting(telling, None, left_out)
+    }
+
     fn starting(
         &self,
         telling: Telling,
         internal: Option<Internal>,
         left_out: Vec<u16>,
     ) -> std::io::Result<Confinement> {
-        // Only a plan made on another machine leaves a service out, to be asked about there
-        // ([`egress::Serving::left_out`]): a proxy planned here never asks about a port of
-        // its machine.
-        debug_assert!(
-            left_out.is_empty() || internal.is_some(),
-            "a service is left out only of a plan made on another machine"
-        );
+        // Only a plan made on another machine, or one the host composed for a chat it starts
+        // by its names, leaves a service out, to be asked about there
+        // ([`egress::Serving::left_out`]): [`Self::start`], a plan the window made here, never
+        // does, so its proxy never asks about a port of its machine.
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
             return Err(std::io::Error::other(

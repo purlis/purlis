@@ -38,8 +38,12 @@ pub type Askable = Arc<dyn Fn() -> bool + Send + Sync + 'static>;
 /// **Where a confinement's plan was made** (#2445).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Planned {
-    /// On this machine, by its own window, or by the host for a chat it composes.
+    /// On this machine, by its own window.
     Here,
+    /// On this machine, by the host, for a chat it composes by its names (#2590): what the
+    /// window allowed for that chat alone and this machine's plan does not give is left out of
+    /// it, and asked about where its proxy asks live.
+    Composed,
     /// On another machine, as the desktop's window plans a chat on a runner: it is started only
     /// where it fits this machine ([`fits_here`]), and its proxy reaches an internal address
     /// only where this machine's policy lists it ([`super::internal`]).
@@ -62,24 +66,18 @@ pub struct Hosted {
 /// **Starts the confinement `confine` plans, in the project at `project_path`**, its proxy
 /// telling `tell` what it does, and holding a connection while the person is asked only while
 /// `askable` says so; a host already allowed in the project's files is found as the window's
-/// board finds one. Or why it was not started, in a sentence.
+/// board finds one. Or why it was not started, in a sentence. `alone` is what the window allowed
+/// a chat the host composes for it alone ([`Planned::Composed`]); nothing, for any other.
 pub fn start(
     project_path: &Path,
     confine: &session::Confine,
     planned: Planned,
+    alone: &[u16],
     tell: Tell,
     askable: Askable,
 ) -> Result<Hosted, String> {
     let planned_as = Plan::from_wire(&confine.plan)?;
-    // A plan made elsewhere is started without what it gives for this chat alone and this
-    // machine does not give (#2510).
-    let (plan, left_out) = match planned {
-        Planned::Here => (planned_as, Vec::new()),
-        Planned::Elsewhere => {
-            let (plan, left_out) = planned_as.as_the_runner_starts_it(&given_here(project_path));
-            (plan, askable_here(project_path, left_out))
-        }
-    };
+    let (plan, left_out) = started_here(planned, planned_as, alone, project_path);
     let root = project_path.to_path_buf();
     let board = confine.asks.then(|| {
         Asking {
@@ -137,6 +135,7 @@ pub fn start(
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),
+        Planned::Composed => plan.start_leaving_out(telling, left_out.clone()),
         Planned::Elsewhere => {
             plan.start_held(telling, Internal::of(project_path), left_out.clone())
         }
@@ -203,10 +202,38 @@ fn given_here(root: &Path) -> Vec<u16> {
     super::Widened::default().and_ports(&yours, &locks).ports
 }
 
-/// **The services left out of a relayed plan that may be asked about here** (#2510): `left_out`,
-/// unless this machine's own administrator's policy (`Locks::of(project_path)`) forbids a chat
-/// a service on it, turns the live ask off, or keeps an Allow at neither one-chat scope. Then
-/// none is asked about, none is said left out, and the chat does not reach it.
+/// **The plan as this machine starts it, and the services it leaves out to be asked about**
+/// (#2510, #2590): a plan made elsewhere without what it gives for this chat alone and this
+/// machine does not give; one composed here without what the window allowed the chat alone and
+/// it does not give; each only as this machine's policy lets one be asked about
+/// ([`askable_here`]). A plan the window made here leaves nothing out.
+fn started_here(
+    planned: Planned,
+    planned_as: Plan,
+    alone: &[u16],
+    project_path: &Path,
+) -> (Plan, Vec<u16>) {
+    // A plan made elsewhere is started without what it gives for this chat alone and this
+    // machine does not give (#2510); one composed here, without what the window allowed for
+    // the chat alone and it does not give (#2590).
+    match planned {
+        Planned::Here => (planned_as, Vec::new()),
+        Planned::Composed => {
+            let left_out = left_out_of(&planned_as, alone);
+            (planned_as, askable_here(project_path, left_out))
+        }
+        Planned::Elsewhere => {
+            let (plan, left_out) = planned_as.as_the_runner_starts_it(&given_here(project_path));
+            (plan, askable_here(project_path, left_out))
+        }
+    }
+}
+
+/// **The services left out of a relayed or composed plan that may be asked about here**
+/// (#2510, #2590): `left_out`, unless this machine's own administrator's policy
+/// (`Locks::of(project_path)`) forbids a chat a service on it, turns the live ask off, or keeps
+/// an Allow at neither one-chat scope. Then none is asked about, none is said left out, and the
+/// chat does not reach it.
 fn askable_here(project_path: &Path, left_out: Vec<u16>) -> Vec<u16> {
     use super::grant::Level;
     let locks = super::policy::Locks::of(project_path);
@@ -214,6 +241,18 @@ fn askable_here(project_path: &Path, left_out: Vec<u16>) -> Vec<u16> {
         || locks.forbids_live_asks()
         || (!locks.keeps_scope(Level::Once) && !locks.keeps_scope(Level::Chat));
     if forbidden { Vec::new() } else { left_out }
+}
+
+/// The services of `alone` that `composed` does not give, once each and in order (#2590).
+fn left_out_of(composed: &Plan, alone: &[u16]) -> Vec<u16> {
+    let mut left_out: Vec<u16> = alone
+        .iter()
+        .copied()
+        .filter(|port| !composed.given.contains(port))
+        .collect();
+    left_out.sort_unstable();
+    left_out.dedup();
+    left_out
 }
 
 /// What the window's answer to an ask names ([`answered_about`]).
@@ -227,16 +266,17 @@ enum Answered {
 
 /// **What the window's answer about `typed` names, in a confinement planned `planned`** (#2510,
 /// ruled 2026-10-18). A host off this machine is as it says. A service of this machine's
-/// loopback is answered only in a confinement planned on another machine, and only where it is
-/// one the runner `left_out` of what the plan gave for this chat alone: allowed, it is carried
-/// for this chat for as long as the confinement runs. Any other is refused in a sentence, as a
-/// host of this machine always is.
+/// loopback is answered only in a confinement planned on another machine or composed here for a
+/// chat started by its names (#2590), and only where it is one the runner `left_out` of what
+/// the window allowed for this chat alone: allowed, it is carried for this chat for as long as
+/// the confinement runs. Any other is refused in a sentence, as a host of this machine always
+/// is.
 fn answered_about(planned: Planned, left_out: &[u16], typed: &str) -> Result<Answered, String> {
     match super::localport::loopback_port(typed) {
-        Some(port) if planned == Planned::Elsewhere && left_out.contains(&port) => {
+        Some(port) if planned != Planned::Here && left_out.contains(&port) => {
             Ok(Answered::LeftOut(port))
         }
-        Some(port) if planned == Planned::Elsewhere => Err(format!(
+        Some(port) if planned != Planned::Here => Err(format!(
             "the runner does not let this chat reach port {port} of its own: it was not \
              allowed for this chat alone where the chat was planned"
         )),

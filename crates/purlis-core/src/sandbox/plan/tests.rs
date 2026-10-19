@@ -39,6 +39,54 @@ fn a_plan_whose_given_port_purlis_listens_on_now_starts_nothing() {
     localport::release(50811);
 }
 
+/// #2590: a plan the host composed for a chat it starts by its names, started leaving out a
+/// service the window allowed the chat alone, asks about that service when the chat reaches for
+/// it, by its loopback address, and holds the connection meanwhile.
+#[test]
+fn a_composed_plan_started_leaving_a_service_out_asks_about_it() {
+    use std::io::Write;
+    let asks = Arc::new(crate::sandbox::asks::Asks::timed(
+        Arc::new(|_| {}),
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(20),
+    ));
+    let routes = tempfile::tempdir().expect("a folder");
+    let composed = Plan {
+        beside: Beside::ProxyOnly {
+            routes: routes.path().into(),
+        },
+        ..plan(Vec::new())
+    };
+
+    let confinement = composed
+        .start_leaving_out(
+            super::Telling {
+                asks: Some(Arc::clone(&asks)),
+                ..super::Telling::default()
+            },
+            vec![5432],
+        )
+        .expect("started");
+    let mut client =
+        std::net::TcpStream::connect(("127.0.0.1", confinement.placed().http)).expect("its proxy");
+    client
+        .write_all(b"CONNECT localhost:5432 HTTP/1.1\r\nHost: localhost:5432\r\n\r\n")
+        .expect("asked");
+    for _ in 0..1000 {
+        if asks.holding() == 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert_eq!(
+        asks.holding(),
+        1,
+        "the connection is held while the person is asked"
+    );
+    assert_eq!(asks.asked(), ["127.0.0.1:5432"]);
+}
+
 /// What the session host holds of a chat's proxy, as the window reaches it.
 #[derive(Debug, Default)]
 struct Holder {
@@ -490,6 +538,19 @@ mod made_elsewhere {
                 ("127.0.0.1:6379".to_owned(), By::You),
             ]
         );
+    }
+
+    #[test]
+    fn the_services_a_plan_gives_for_this_chat_alone_are_those_listed_at_its_layer_alone() {
+        let mut planned = for_this_chat_alone(5432, vec![5432, 6379, 8080]);
+        planned.reach.listed.extend(
+            crate::sandbox::localport::reach_entries(6379)
+                .into_iter()
+                .map(|entry| (entry, By::You)),
+        );
+
+        assert_eq!(planned.given_for_this_chat_alone(), [5432]);
+        assert!(plan(vec![5432]).given_for_this_chat_alone().is_empty());
     }
 
     #[test]
