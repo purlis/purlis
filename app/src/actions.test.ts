@@ -146,6 +146,18 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`forgetTodo:${workspace},${slug}`);
       return { ok: true as const };
     }),
+    pinBrowser: vi.fn(async (program: string, session: number, pinned: boolean) => {
+      calls.push(`pinBrowser:${program},${session},${pinned}`);
+      return { ok: true as const };
+    }),
+    handBrowser: vi.fn(async (program: string, session: number) => {
+      calls.push(`handBrowser:${program},${session}`);
+      return { ok: true as const };
+    }),
+    stopBrowser: vi.fn(async (program: string) => {
+      calls.push(`stopBrowser:${program}`);
+      return { ok: true as const };
+    }),
     ignoreNeedsYou: vi.fn(async (session: number) => {
       calls.push(`ignoreNeedsYou:${session}`);
       return { ok: true as const };

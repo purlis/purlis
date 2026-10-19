@@ -1481,6 +1481,10 @@ function App() {
       editPersona: async () => nowhere(),
       closeTodo: async () => nowhere(),
       forgetTodo: async () => nowhere(),
+      // No plane, no browsers of its chats (#2022).
+      pinBrowser: async () => nowhere(),
+      handBrowser: async () => nowhere(),
+      stopBrowser: async () => nowhere(),
       pinTab: async () => nowhere(),
       pinWorkspace: async () => nowhere(),
       pinProject: windowDoes.pinProject,
