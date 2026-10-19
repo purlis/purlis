@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792374997647,
+  "lastUpdate": 1792377446939,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3018,6 +3018,42 @@ window.BENCHMARK_DATA = {
             "value": 345.9,
             "unit": "MB",
             "extra": "median of 6 samples: 245.2, 347.2, 346.1, 345.8, 346.6, 257 MB; window 152.2 MB, session host 193.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7ba7867a0db1d5cc584b7ce88549ab48d9ec65a3",
+          "message": "Browsers: a profile keeps its browser logins sealed on this device (#2021) (#2654)\n\nA browser that performed a declared login keeps it, sealed under this\ndevice's key, once it ends; the next chat of that profile whose login is\nallowed starts signed in, held to the login's site from the first moment.\nThe store is bound to the login as declared and its generation, denied to\nchats, left out of backups, one writer at a time, and wiped with its\nprofile. Session protocol 1.27.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T05:53:08+04:00",
+          "tree_id": "eba756b48a6d3919fefc5b615522c9423549a7d3",
+          "url": "https://github.com/purlis/purlis/commit/7ba7867a0db1d5cc584b7ce88549ab48d9ec65a3"
+        },
+        "date": 1792377445633,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 977,
+            "unit": "MB",
+            "extra": "median of 3 samples: 847, 977, 1056 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 318.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 299.9, 310.3, 326.1, 328.7, 329.5, 259.5 MB; window 154.7 MB, session host 165.2 MB"
           }
         ]
       }
