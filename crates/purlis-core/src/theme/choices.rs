@@ -56,10 +56,10 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use super::Values;
 use super::format::is_name;
 use super::levels::{Choice, Reach};
 use super::options::MOST_OPTIONS;
+use super::{Folders, Theme, Values};
 
 /// The file, inside purlis's own folder in the config home.
 pub const FILE: &str = "theme-choices.json";
@@ -322,17 +322,46 @@ pub fn set(config_root: &Path, slot: Slot<'_>, choice: Option<Choice>) -> io::Re
 /// as the one there ([`Choice::same_theme`]) that names no option values keeps the values the
 /// person chose for it, so choosing another appearance never forgets them; a choice of another
 /// theme starts from its defaults. `None` takes the choice away, values and all.
-pub fn choose(config_root: &Path, slot: Slot<'_>, choice: Option<Choice>) -> io::Result<()> {
+///
+/// Both choices are compared as written ([`Choice::placed`] in `folders` at `reach`), so a choice
+/// made before choices named a level is the folder it reads now, not any folder of its name.
+/// `theme` is the theme `choice` names, when the caller could read it: the values kept are only
+/// the ones it still has, so a value it lost is not said again on every draw.
+pub fn choose(
+    config_root: &Path,
+    slot: Slot<'_>,
+    choice: Option<Choice>,
+    folders: &Folders,
+    reach: Reach,
+    theme: Option<&Theme>,
+) -> io::Result<()> {
     replace(config_root, slot, |before| {
-        let choice = choice?;
+        let choice = choice?.placed(folders, reach);
+        let before = before.map(|one| one.clone().placed(folders, reach));
         Some(match before {
             Some(before) if choice.options.is_empty() && before.same_theme(&choice) => {
-                let options = before.options.clone();
+                let options = match theme {
+                    Some(theme) => kept(theme, before.options),
+                    None => before.options,
+                };
                 choice.with_options(options)
             }
             _ => choice,
         })
     })
+}
+
+/// The values of `values` that `theme` has: each of its options, with one of that option's values.
+pub fn kept(theme: &Theme, values: Values) -> Values {
+    values
+        .into_iter()
+        .filter(|(id, value)| {
+            theme
+                .options
+                .iter()
+                .any(|one| one.id == *id && one.values.iter().any(|it| it.id == *value))
+        })
+        .collect()
 }
 
 /// The choice at `slot` replaced by what `change` makes of the one there, under the file's lock.

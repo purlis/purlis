@@ -683,9 +683,13 @@ describe("the chosen theme's options (#2527)", () => {
     );
     render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
     const options = await screen.findByRole("region", { name: "Options" });
-    expect(within(options).getByText(/^Accent/)).toHaveTextContent("Project");
-    expect(within(options).getByText(/^Loud/)).toHaveTextContent("Theme default");
-    const loud = within(options).getAllByRole("radiogroup")[1];
+    expect(
+      within(options)
+        .getByText(/^Accent/)
+        .closest("p"),
+    ).toHaveTextContent("Project");
+    expect(within(options).getByText(/^Loud/).closest("p")).toHaveTextContent("Theme default");
+    const loud = within(options).getByRole("radiogroup", { name: "Loud" });
     fireEvent.click(within(loud).getByRole("radio", { name: "On" }));
     await waitFor(() =>
       expect(asked("theme_choose_option")).toEqual([
@@ -699,6 +703,42 @@ describe("the chosen theme's options (#2527)", () => {
       ),
     ).toBeTruthy();
     await waitFor(() => expect(asked("theme_gallery").length).toBeGreaterThan(1));
+  });
+
+  it("names each option's values by the option alone, described by its line", async () => {
+    core(
+      shown({
+        yours: mine("dusk", null, "machine"),
+        drawn: "machine:dusk",
+        options: [{ ...ACCENT, description: "The colour of what you act on." }],
+      }),
+    );
+    render(<Group at={null} />);
+    const options = await screen.findByRole("region", { name: "Options" });
+    const accent = within(options).getByRole("radiogroup", { name: "Accent" });
+    expect(accent).toHaveAccessibleDescription("The colour of what you act on.");
+  });
+
+  it("goes back to the theme's default with Theme default, which sends no value", async () => {
+    const { asked } = core(
+      shown({
+        yours: mine("dusk", null, "machine"),
+        drawn: "machine:dusk",
+        options: [ACCENT, LOUD],
+      }),
+    );
+    render(<Group at={null} />);
+    const options = await screen.findByRole("region", { name: "Options" });
+    const accent = within(options).getByRole("radiogroup", { name: "Accent" });
+    const back = within(accent).getByRole("radio", { name: "Theme default (Lavender)" });
+    expect(back).not.toBeChecked();
+    // A value nothing chose stands on Theme default, and pressing it again keeps nothing.
+    const loud = within(options).getByRole("radiogroup", { name: "Loud" });
+    expect(within(loud).getByRole("radio", { name: "Theme default (Off)" })).toBeChecked();
+    fireEvent.click(back);
+    await waitFor(() =>
+      expect(asked("theme_choose_option")).toEqual([{ at: null, option: "accent", value: null }]),
+    );
   });
 
   it("says a theme with none has none", async () => {

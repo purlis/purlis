@@ -146,6 +146,12 @@ fn an_option_set_at_the_level_is_kept_drawn_and_badged_with_the_level() {
     assert_eq!(shown.options[0].value, "teal");
     assert!(shown.options[0].chosen);
     assert_eq!(shown.options[0].level.as_deref(), Some("machine-default"));
+    // A card of the chosen theme is drawn, pointed at and pictured, with the value chosen here.
+    assert_eq!(
+        place.values_for("accented", Some(Reach::Machine)),
+        [("accent".to_owned(), "teal".to_owned())].into()
+    );
+    assert!(place.values_for("dusk", Some(Reach::Machine)).is_empty());
     // Choosing another appearance of the same theme keeps the value.
     choose_machine_of(home.path(), Some("accented"), Some("dark"), Some("machine")).unwrap();
     assert_eq!(gallery_of(&place, None).options[0].value, "teal");

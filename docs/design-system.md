@@ -635,7 +635,9 @@ drawn with that level's option values, built onto the theme before it is drawn
 default: the values are the choice's own, as its appearance is, never another level's. A value
 the theme does not have is said when it is drawn and dropped, with a sentence, the next time the
 choice is written; choosing another appearance of the same theme keeps the values, and choosing
-another theme starts from its defaults. A `from` that names no level leaves the choice out, and
+another theme starts from its defaults, and re-choosing a theme drops the values it no longer
+has. Both choices are compared as written, so a choice with no `from` is the folder it reads now.
+A `from` that names no level leaves the choice out, and
 a value that is not an id is left out of it.
 
 A project's `charter.local.toml` `[theme]` pick, and a LOCAL workspace's `settings.theme`, are
@@ -678,7 +680,8 @@ drawn, the gallery says so.
 - **Each card shows the theme specimen in each of its appearances** (up to three, then a
   count): the specimen #2330 draws for a chat's `theme_preview`, asked by the window with
   `theme_specimen` and the level, one at a time, and kept for the window's life by the card's
-  `stamp`, which changes whenever anything the theme draws does. While a chat's
+  `stamp`, which changes whenever anything the theme draws does. A card of the theme chosen at
+  the level is pictured, as it is drawn when pointed at, with the option values chosen there. While a chat's
   `theme_preview` holds the painter, the app answers `SPECIMEN_BUSY`, and the window asks again
   after a wait longer than one specimen's budget, a few times; a picture that could not be
   drawn is never kept.
@@ -699,7 +702,8 @@ drawn, the gallery says so.
   refused card chooses nothing and says why as its description.
 - **Under the cards**: the chosen theme's appearances (one by id, its first, or Follow the
   system, which says when a theme of one tag stays in it); its options, each a choice of its
-  values kept in the person's choice at the level (`theme_choose_option`, #2527), with a badge
+  values, or Theme default to choose none, kept in the person's choice at the level
+  (`theme_choose_option`, #2527), with a badge
   naming the level whose choice made the value, or the theme's default (with no choice at the
   level yet, the choice that draws the theme there becomes the person's, with the value); the
   theme check's findings, in the words `purlis theme check` prints

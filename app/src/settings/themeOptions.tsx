@@ -64,6 +64,11 @@ function OptionBadge({ badge }: { badge: Badge }) {
   );
 }
 
+/** What an option's default is called. */
+function defaultLabel(option: WindowOption): string {
+  return option.values.find((one) => one.id === option.default)?.label ?? option.default;
+}
+
 /** What an option's value is called: its value's label, or its id when the theme gives none. */
 function valueLabel(option: WindowOption): string {
   return option.values.find((one) => one.id === option.value)?.label ?? option.value;
@@ -80,8 +85,9 @@ export function OptionsList({
   ids: RowIds;
   /** What the list says of a theme with none. */
   none?: string;
-  /** The person picked `value` of `option`: each option is then a choice of its values. */
-  onChoose?: (option: WindowOption, value: string) => void;
+  /** The person picked `value` of `option`, or the theme's default (`null`): each option is
+   *  then a choice of its values. */
+  onChoose?: (option: WindowOption, value: string | null) => void;
   /** The choices are out of reach while what was picked is kept. */
   disabled?: boolean;
 }) {
@@ -107,20 +113,31 @@ export function OptionsList({
           </p>
         ) : (
           <div key={option.id} className="flex flex-col gap-1">
-            <p
-              id={`${ids.id}-${option.id}`}
-              className="ui-setting-help"
-              title={option.description || undefined}
-            >
-              {option.label} <OptionBadge badge={optionBadge(option)} />
+            <p className="ui-setting-help">
+              {/* The group's name is the option's alone; its badge is said as its own. */}
+              <span id={`${ids.id}-${option.id}-name`}>{option.label}</span>{" "}
+              <OptionBadge badge={optionBadge(option)} />
             </p>
+            {option.description && (
+              <p id={`${ids.id}-${option.id}-says`} className="ui-setting-help">
+                {option.description}
+              </p>
+            )}
             <Choice
               kind="radio"
-              ids={{ id: `${ids.id}-${option.id}-values`, labelledBy: `${ids.id}-${option.id}` }}
+              ids={{
+                id: `${ids.id}-${option.id}-values`,
+                labelledBy: `${ids.id}-${option.id}-name`,
+                describedBy: option.description ? `${ids.id}-${option.id}-says` : undefined,
+              }}
               disabled={disabled}
-              options={option.values.map((one) => ({ value: one.id, label: one.label }))}
-              value={option.value}
-              onValueChange={(to) => onChoose(option, to)}
+              options={[
+                // Back to the theme's own: no value chosen here.
+                { value: "", label: `Theme default (${defaultLabel(option)})` },
+                ...option.values.map((one) => ({ value: one.id, label: one.label })),
+              ]}
+              value={option.chosen ? option.value : ""}
+              onValueChange={(to) => onChoose(option, to === "" ? null : to)}
             />
           </div>
         ),

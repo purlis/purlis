@@ -369,18 +369,17 @@ fn theme_choose_of(
     } else {
         levels::Reach::Project
     };
-    let choice = choice_of(
-        theme,
-        appearance,
-        from,
-        &Folders::of(Some(config), Some(root), workspace),
-        reach,
-    )?;
+    let folders = Folders::of(Some(config), Some(root), workspace);
+    let choice = choice_of(theme, appearance, from, &folders, reach)?;
+    let named = choice
+        .as_ref()
+        .and_then(|one| crate::themegallery::theme_named(&folders, reach, one));
     let slot = match workspace {
         Some(name) => choices::Slot::Workspace(&key, name),
         None => choices::Slot::Project(&key),
     };
-    choices::choose(config, slot, choice).map_err(|why| why.to_string())
+    choices::choose(config, slot, choice, &folders, reach, named.as_ref())
+        .map_err(|why| why.to_string())
 }
 
 /// **The choice the window asks for** at a level that reaches `reach`: `theme` in `appearance`,

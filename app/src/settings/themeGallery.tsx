@@ -520,7 +520,12 @@ function Cards({
                   onClick={card.refused ? undefined : () => onPick(card)}
                   onKeyDown={card.refused ? undefined : keyed(card)}
                 >
-                  <Pictures at={at} card={card} refusedId={`${ids.id}-${card.key}-refused`} />
+                  <Pictures
+                    at={at}
+                    card={card}
+                    yours={gallery.yours}
+                    refusedId={`${ids.id}-${card.key}-refused`}
+                  />
                   <span className="text-text-primary">{card.name}</span>
                   <span className="text-sm text-text-secondary">
                     {[fromSaid(card), ...marks].join(" · ")}
@@ -548,14 +553,18 @@ function SourceBadge({ badge }: { badge: Badge }) {
 /** The most appearances a card shows a picture of; the rest are said. */
 const MOST_PICTURES = 3;
 
-/** A card's pictures: the specimen in each of its appearances. */
+/** A card's pictures: the specimen in each of its appearances, drawn with the option values
+ *  the person chose for it here, as pointing at it draws it (#2527). */
 function Pictures({
   at,
   card,
+  yours,
   refusedId,
 }: {
   at: ThemeAt | null;
   card: GalleryCard;
+  /** The person's choice here: a card of its theme is pictured with its values. */
+  yours: YourTheme | null;
   /** The id of the line saying why a refused card is refused: the card's description. */
   refusedId: string;
 }) {
@@ -567,10 +576,18 @@ function Pictures({
     );
   const shown = card.appearances.slice(0, MOST_PICTURES);
   const more = card.appearances.length - shown.length;
+  // A picture is kept by what it is drawn with: the theme's stamp and the values chosen here.
+  const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
   return (
     <div className="flex gap-1">
       {shown.map((one) => (
-        <Picture key={one.id} at={at} card={card} appearance={one.id} />
+        <Picture
+          key={one.id}
+          at={at}
+          card={card}
+          stamp={`${card.stamp}\u0000${values}`}
+          appearance={one.id}
+        />
       ))}
       {more > 0 && <span className="text-sm text-text-secondary">+{more}</span>}
     </div>
@@ -580,13 +597,16 @@ function Pictures({
 function Picture({
   at,
   card,
+  stamp,
   appearance,
 }: {
   at: ThemeAt | null;
   card: GalleryCard;
+  /** What the picture is kept by. */
+  stamp: string;
   appearance: string;
 }) {
-  const picture = useSpecimen(at, card.id, card.level, card.stamp, appearance);
+  const picture = useSpecimen(at, card.id, card.level, stamp, appearance);
   // The card names the theme; a picture adds nothing a screen reader needs.
   if (picture.state === "drawn")
     return (
@@ -696,8 +716,9 @@ function optionsRow(group: string, at: ThemeAt | null): LiveSetting {
       const card = gallery === undefined ? undefined : chosenCard(gallery);
       const options: readonly WindowOption[] | undefined =
         card === undefined ? undefined : card.refused ? [] : gallery?.options;
-      const pick = (option: WindowOption, value: string) => {
-        if (value === option.value && option.chosen) return;
+      const pick = (option: WindowOption, value: string | null) => {
+        // Nothing to keep: the value is already the one chosen, or the default already drawn.
+        if (value === null ? !option.chosen : option.chosen && value === option.value) return;
         setKeeping(true);
         void commands
           .themeChooseOption(at, option.id, value)

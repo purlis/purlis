@@ -656,55 +656,135 @@ fn an_option_or_a_value_the_theme_does_not_have_is_refused() {
 #[test]
 fn choosing_the_same_theme_again_keeps_its_option_values_and_another_theme_starts_afresh() {
     let places = Places::new();
+    put(
+        &places.themes(Reach::Machine),
+        "accented",
+        &accented("Accented"),
+    );
+    put(
+        &places.themes(Reach::Project),
+        "accented",
+        &accented("Team's"),
+    );
+    let folders = places.folders();
     let slot = Slot::Project(PROJECT);
-    let valued = choice("accented", &[("accent", "teal")])
-        .unwrap()
-        .at(Reach::Machine);
-    choices::choose(&places.config, slot, Some(valued.clone())).unwrap();
-    // Another appearance of the same theme: the values stay.
-    let night = Choice::new("accented", Some("dark"))
-        .unwrap()
-        .at(Reach::Machine);
-    choices::choose(&places.config, slot, Some(night)).unwrap();
-    let kept = choices::read(&places.config).projects[PROJECT]
-        .project
-        .clone()
-        .unwrap();
-    assert_eq!(kept.appearance.as_deref(), Some("dark"));
-    assert_eq!(kept.options, valued.options);
-    // Another theme: its defaults.
-    choices::choose(&places.config, slot, choice("brand", &[])).unwrap();
-    let kept = choices::read(&places.config).projects[PROJECT]
-        .project
-        .clone()
-        .unwrap();
-    assert_eq!(kept.theme, "brand");
-    assert!(kept.options.is_empty());
-    // The same name from another level's folder is another theme.
-    choices::choose(
-        &places.config,
-        slot,
-        Some(valued.clone().at(Reach::Project)),
-    )
-    .unwrap();
-    choices::choose(
-        &places.config,
-        slot,
-        Choice::new("accented", None).map(|one| one.at(Reach::Machine)),
-    )
-    .unwrap();
-    let kept = choices::read(&places.config).projects[PROJECT]
-        .project
-        .clone()
-        .unwrap();
-    assert!(kept.options.is_empty());
-    // Taken away.
-    choices::choose(&places.config, slot, None).unwrap();
-    assert_eq!(
+    let choose = |choice: Option<Choice>| {
+        choices::choose(&places.config, slot, choice, &folders, Reach::Project, None).unwrap();
+    };
+    let held = || {
         choices::read(&places.config)
             .projects
             .get(PROJECT)
-            .and_then(|one| one.project.clone()),
-        None
+            .and_then(|one| one.project.clone())
+    };
+    let valued = choice("accented", &[("accent", "teal")])
+        .unwrap()
+        .at(Reach::Machine);
+    choose(Some(valued.clone()));
+    // Another appearance of the same theme: the values stay.
+    choose(Choice::new("accented", Some("dark")).map(|one| one.at(Reach::Machine)));
+    let kept = held().unwrap();
+    assert_eq!(kept.appearance.as_deref(), Some("dark"));
+    assert_eq!(kept.options, valued.options);
+    // Another theme: its defaults.
+    choose(choice("brand", &[]));
+    assert!(held().unwrap().options.is_empty());
+    // The same name from another level's folder is another theme.
+    choose(Some(valued.clone()));
+    choose(Choice::new("accented", None).map(|one| one.at(Reach::Project)));
+    assert!(held().unwrap().options.is_empty());
+    // Taken away.
+    choose(None);
+    assert_eq!(held(), None);
+}
+
+#[test]
+fn an_old_choice_with_no_level_re_chosen_at_another_level_starts_from_its_defaults() {
+    let places = Places::new();
+    put(
+        &places.themes(Reach::Machine),
+        "accented",
+        &accented("Accented"),
     );
+    put(
+        &places.themes(Reach::Project),
+        "accented",
+        &accented("Team's"),
+    );
+    let folders = places.folders();
+    let slot = Slot::Project(PROJECT);
+    // Written before choices named a level: it reads the project's folder, the nearest.
+    choices::set(
+        &places.config,
+        slot,
+        choice("accented", &[("accent", "teal")]),
+    )
+    .unwrap();
+    // Re-chosen as the person's own folder of the name: another theme, so no values.
+    let mine = Choice::new("accented", None).map(|one| one.at(Reach::Machine));
+    choices::choose(&places.config, slot, mine, &folders, Reach::Project, None).unwrap();
+    let held = choices::read(&places.config).projects[PROJECT]
+        .project
+        .clone()
+        .unwrap();
+    assert_eq!(held.from, Some(Reach::Machine));
+    assert!(held.options.is_empty());
+    // Re-chosen as the folder it read, it keeps them and gains its level.
+    choices::set(
+        &places.config,
+        slot,
+        choice("accented", &[("accent", "teal")]),
+    )
+    .unwrap();
+    let theirs = Choice::new("accented", None).map(|one| one.at(Reach::Project));
+    choices::choose(&places.config, slot, theirs, &folders, Reach::Project, None).unwrap();
+    let held = choices::read(&places.config).projects[PROJECT]
+        .project
+        .clone()
+        .unwrap();
+    assert_eq!(held.from, Some(Reach::Project));
+    assert_eq!(held.options, values(&[("accent", "teal")]));
+}
+
+#[test]
+fn re_choosing_a_theme_drops_the_values_it_no_longer_has() {
+    let places = Places::new();
+    put(
+        &places.themes(Reach::Machine),
+        "accented",
+        &accented("Accented"),
+    );
+    let folders = places.folders();
+    let theme = load(&accented("Accented")).theme;
+    let slot = Slot::Machine;
+    choices::set(
+        &places.config,
+        slot,
+        choice(
+            "accented",
+            &[("accent", "pink"), ("gone", "on"), ("loud", "on")],
+        )
+        .map(|one| one.at(Reach::Machine)),
+    )
+    .unwrap();
+    choices::choose(
+        &places.config,
+        slot,
+        Choice::new("accented", Some("dark")).map(|one| one.at(Reach::Machine)),
+        &folders,
+        Reach::Machine,
+        Some(&theme),
+    )
+    .unwrap();
+    let held = choices::read(&places.config).machine.unwrap();
+    assert_eq!(held.options, values(&[("loud", "on")]));
+    // Drawn, nothing is said about what was dropped.
+    let got = drawn(
+        &Levels {
+            machine_default: Some(held),
+            ..Levels::default()
+        },
+        &folders,
+    );
+    assert_eq!(got.complaints, []);
 }

@@ -259,6 +259,30 @@ impl Place {
         }
     }
 
+    /// **The option values the card `theme` of `level` is drawn with here**: the person's
+    /// choice's at this level when it is a choice of that card, else none, each option at its
+    /// default. What a card shows, pointed at and in its pictures, is what choosing it draws.
+    fn values_for(&self, theme: &str, level: Option<Reach>) -> Values {
+        let asked = Choice::new(theme, None).map(|one| {
+            match level {
+                Some(level) => one.at(level),
+                None => one,
+            }
+            .placed(&self.folders, self.reach)
+        });
+        match (self.yours(), asked) {
+            (Some(yours), Some(asked))
+                if yours
+                    .clone()
+                    .placed(&self.folders, self.reach)
+                    .same_theme(&asked) =>
+            {
+                yours.options
+            }
+            _ => Values::new(),
+        }
+    }
+
     /// Where the person's choice at this level is kept; `None` for a project purlis cannot tell.
     fn slot<'a>(&'a self, key: Option<&'a str>) -> Option<choices::Slot<'a>> {
         match (&self.plane, key, self.workspace.as_deref()) {
@@ -281,6 +305,25 @@ impl Place {
         };
         cards.iter().any(|card| card.key == key).then_some(key)
     }
+}
+
+/// **The theme `choice` names**, read from `folders` as a choice made at a level that reaches
+/// `reach` reads it: Purlis Classic or a theme folder; `None` for an extension's theme, which a
+/// choice is not read with here, and for a theme that is not there or is refused.
+pub(crate) fn theme_named(
+    folders: &Folders,
+    reach: Reach,
+    choice: &Choice,
+) -> Option<theme::Theme> {
+    let shelf = Shelf {
+        folders,
+        reach,
+        on: On::Every,
+        offered: &[],
+    };
+    gallery::theme_of(&shelf, &choice.theme, choice.from)
+        .filter(|read| !read.refused)
+        .map(|read| read.theme)
 }
 
 /// The level `at` names, read off the window's thread.
@@ -455,25 +498,7 @@ pub async fn theme_card_drawn(
     let (config, plane, workspace) = place_of(&planes, at).await?;
     tauri::async_runtime::spawn_blocking(move || {
         let place = Place::read(config, plane, workspace);
-        // The card as a choice here would name it, and the person's choice here.
-        let asked = Choice::new(&theme, None).map(|one| {
-            match level {
-                Some(level) => one.at(level),
-                None => one,
-            }
-            .placed(&place.folders, place.reach)
-        });
-        let values = match (place.yours(), asked) {
-            (Some(yours), Some(asked))
-                if yours
-                    .clone()
-                    .placed(&place.folders, place.reach)
-                    .same_theme(&asked) =>
-            {
-                yours.options
-            }
-            _ => Values::new(),
-        };
+        let values = place.values_for(&theme, level);
         card_drawn_of(
             &place,
             &theme,
@@ -535,8 +560,9 @@ fn card_drawn_of(
 }
 
 /// **The theme a specimen of the card `theme` of the level `from` is drawn in** (#2330's
-/// painter, for the gallery's cards): the card in `appearance` at the level `at` names, each
-/// option at its default, with the floors held.
+/// painter, for the gallery's cards): the card in `appearance` at the level `at` names, with
+/// the option values the person chose for it there ([`Place::values_for`]), as pointing at the
+/// card draws it, with the floors held.
 pub(crate) fn specimen_theme(
     place: Option<(PathBuf, Option<String>)>,
     theme: &str,
@@ -547,17 +573,10 @@ pub(crate) fn specimen_theme(
     let (plane, workspace) =
         place.map_or((None, None), |(root, workspace)| (Some(root), workspace));
     let place = Place::read(config_root()?, plane, workspace);
-    card_drawn_of(
-        &place,
-        theme,
-        level,
-        appearance,
-        &Values::new(),
-        false,
-        false,
-    )
-    .and_then(|drawn| drawn.theme)
-    .ok_or_else(|| format!("there is no theme {theme} here to draw the specimen of"))
+    let values = place.values_for(theme, level);
+    card_drawn_of(&place, theme, level, appearance, &values, false, false)
+        .and_then(|drawn| drawn.theme)
+        .ok_or_else(|| format!("there is no theme {theme} here to draw the specimen of"))
 }
 
 /// **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
@@ -598,7 +617,19 @@ fn choose_machine_of(
         &Folders::of(Some(config), None, None),
         Reach::Machine,
     )?;
-    choices::choose(config, choices::Slot::Machine, choice).map_err(|why| why.to_string())
+    let folders = Folders::of(Some(config), None, None);
+    let theme = choice
+        .as_ref()
+        .and_then(|one| theme_named(&folders, Reach::Machine, one));
+    choices::choose(
+        config,
+        choices::Slot::Machine,
+        choice,
+        &folders,
+        Reach::Machine,
+        theme.as_ref(),
+    )
+    .map_err(|why| why.to_string())
 }
 
 /// **The value of the chosen theme's option `option`** at the level `at` names (#2527): `value`,
