@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792451153651,
+  "lastUpdate": 1792452474176,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18354,6 +18354,48 @@ window.BENCHMARK_DATA = {
             "value": 101.199115,
             "unit": "ms",
             "extra": "median of 5 runs: 100.207, 101.023, 101.199, 101.515, 101.651 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c437ac2a51bf5f7262b2b8577586d93fa2f3909",
+          "message": "The guards follow a value held on its own, not only style objects (#2711)\n\n* The guards follow a value held on its own (#2684)\n\nThe style reader now follows a value as it follows a style, under the\nsame bounds: const pad = \"7px\" then padding: pad, a variable that holds\nthat one, a member of a local object or a destructuring, each branch of\na ternary and each side of ||, ?? and &&, what a local function, an\narrow or useMemo returns, and what a relative import gives. It does so\nfor a style object's key, an assignment to an element's style and the\nvalue a setProperty call sets. A value handed on past FOLLOW_LIMIT, or\nfrom a relative import the guard cannot open, fails the guard.\n\nFollowing values found no real violation in the window. The geometry\nguard reads each file once per run, so the three guards run faster than\nbefore with the new tests.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The guards read an aliased export, a default and a negation (#2684)\n\nAn export under another name (export { box as panel }) was looked up\nbackwards, so a style or a value imported by its alias, or by its\noriginal name beside an alias, was passed over. The follower now reads\nthe alias the way the file declares it.\n\nA parameter's default value is now held, for a style as for a value\n(({ pad = \"7px\" }) =>, function A(pad = \"7px\")), and the operand of a\nunary minus is followed (margin: -pad). A finding names where a value\nnot written at its use came from: style padding: \"7px\" (held as pad).\nThe docs list what is still not read: enum members, array items, class\nfields, comma expressions, a method's parameter defaults, a held\nsetProperty name, and a let's later assignments.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T03:24:39+04:00",
+          "tree_id": "502bccff3082b3bde8a0f96f108aadf7c053924d",
+          "url": "https://github.com/purlis/purlis/commit/8c437ac2a51bf5f7262b2b8577586d93fa2f3909"
+        },
+        "date": 1792452471899,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5322425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.488, 0.517, 0.532, 0.545, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.032538000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.922, 17.032, 17.033, 17.135, 17.230 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.554976,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.299, 103.526, 103.555, 104.377, 105.847 ms"
           }
         ]
       }
