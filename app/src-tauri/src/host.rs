@@ -403,6 +403,14 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **How chat `number`, left running, is sandboxed, as its host applied it** (#2636): `None`
+    /// where its host keeps no such record, which the window takes as sandboxed. Read before
+    /// it is reattached.
+    fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
+        let _ = number;
+        None
+    }
+
     /// Every chat this plane left running in the host that nothing reattached is closed
     /// (#2006): what a put back that settled leaves no tab for, so nothing runs unseen.
     fn close_what_was_not_reattached(&self) {}
@@ -552,6 +560,8 @@ pub(crate) mod pretend {
         /// The chats left running from before this window, and the plan each ran in
         /// ([`Pretend::leaves_running`], #2006).
         left: Mutex<Vec<(u32, Option<purlis_core::sandbox::plan::Plan>)>>,
+        /// How each chat left running is sandboxed, as its host recorded it (#2636).
+        ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
         /// The chats reattached, in order.
         reattached: Mutex<Vec<u32>>,
         /// The chats left running that nothing reattached, closed.
@@ -578,7 +588,25 @@ pub(crate) mod pretend {
         /// Chat `number` runs from before this window, in `plan` where it is confined: a window
         /// that comes back reattaches it (#2006).
         pub fn leaves_running(&self, number: u32, plan: Option<purlis_core::sandbox::plan::Plan>) {
+            self.leaves_running_in(
+                number,
+                plan,
+                Some(purlis_session_protocol::session::RunSandbox::By(
+                    "seatbelt".to_owned(),
+                )),
+            );
+        }
+
+        /// [`Self::leaves_running`], its run sandboxed as `ran` says, as the host recorded it:
+        /// `None` for a host that keeps no such record (#2636).
+        pub fn leaves_running_in(
+            &self,
+            number: u32,
+            plan: Option<purlis_core::sandbox::plan::Plan>,
+            ran: Option<purlis_session_protocol::session::RunSandbox>,
+        ) {
             lock(&self.seen.left).push((number, plan));
+            lock(&self.seen.ran_in).push((number, ran));
         }
 
         /// The chats reattached, in order.
@@ -852,6 +880,12 @@ pub(crate) mod pretend {
                 .iter()
                 .find(|(one, _)| *one == number)
                 .and_then(|(_, plan)| plan.clone())
+        }
+        fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
+            lock(&self.seen.ran_in)
+                .iter()
+                .find(|(one, _)| *one == number)
+                .and_then(|(_, ran)| ran.clone())
         }
         fn reattach(&self, number: u32, announce: &dyn Fn(u32)) -> Result<u32, String> {
             let mut left = lock(&self.seen.left);

@@ -75,6 +75,10 @@ pub struct Started {
     /// start counted from boot means nothing after the next one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boot: Option<String>,
+    /// How its run is sandboxed, as the host applied it (#2636): none in a line an older host
+    /// wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<purlis_session_protocol::session::RunSandbox>,
 }
 
 /// **This boot of the machine**, where the system names it: Linux's `boot_id`, new at every
@@ -361,6 +365,7 @@ mod tests {
             process: Some(4000 + number),
             process_started: Some("12345".to_owned()),
             boot: Some("a boot".to_owned()),
+            sandbox: None,
         }
     }
 

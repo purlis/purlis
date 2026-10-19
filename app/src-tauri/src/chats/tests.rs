@@ -2570,6 +2570,9 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             confinement: None,
             confines: Some(applied.confines().clone()),
             started_with: StartedWith::default(),
+            ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                "seatbelt".to_owned(),
+            )),
         },
     );
 
@@ -2637,6 +2640,9 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 confinement: None,
                 confines: Some(compiled_with(&grants)),
                 started_with: StartedWith { held: None, grants },
+                ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                    "seatbelt".to_owned(),
+                )),
             },
         );
     };
@@ -3065,6 +3071,9 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                     held,
                     grants: purlis_core::sandbox::grant::Grants::default(),
                 },
+                ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                    "seatbelt".to_owned(),
+                )),
             },
         );
     };
@@ -5594,6 +5603,72 @@ fn a_chat_whose_sandbox_narrowed_while_no_window_was_there_is_reattached_and_off
     );
 }
 
+/// Whether chat 3, reattached from `host` on the project at `plane`, is judged to run with no
+/// sandbox at all, as a browser login judges it (#2560).
+fn reattached_runs_unconfined(plane: &std::path::Path, host: Pretend) -> (Chats, bool) {
+    let chats = restartable_chats_of(plane, host.clone());
+    chats.put_back(&left_running_in(plane, a_resumable_chat_in(plane)), SIZE);
+    assert_eq!(host.reattached(), [3]);
+    let (_, unconfined) = chats.login_asker(plane, 3).expect("open");
+    (chats, unconfined)
+}
+
+/// #2636: a chat its host ran sandboxed, reattached after the project's sandbox was turned
+/// off while no window was there, is judged by how its run started: sandboxed.
+#[test]
+fn a_sandboxed_run_reattached_after_the_sandbox_was_turned_off_is_judged_sandboxed() {
+    use purlis_session_protocol::session::RunSandbox;
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(
+        plane.path().join(purlis_core::plane::MANIFEST),
+        "[sandbox]\nmode = \"off\"\n",
+    )
+    .expect("charter.toml");
+    let host = Pretend::default();
+    host.leaves_running_in(3, None, Some(RunSandbox::By("seatbelt".to_owned())));
+
+    let (_, unconfined) = reattached_runs_unconfined(plane.path(), host);
+
+    assert!(!unconfined, "it runs in the sandbox it started in");
+}
+
+/// #2636: a chat its host ran with no sandbox, reattached after the project's sandbox was
+/// turned on while no window was there, is judged by how its run started: unconfined, with no
+/// sandbox of now standing in for it.
+#[test]
+fn an_unsandboxed_run_reattached_after_the_sandbox_was_turned_on_is_judged_unconfined() {
+    use purlis_session_protocol::session::RunSandbox;
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.leaves_running_in(3, None, Some(RunSandbox::Off));
+
+    let (chats, unconfined) = reattached_runs_unconfined(plane.path(), host);
+
+    assert!(unconfined, "it runs with no sandbox, as it started");
+    assert!(
+        chats.confines_of(3).is_none(),
+        "no sandbox of now stands in"
+    );
+}
+
+/// #2636: a chat whose host keeps no record of how its run started (a host before it kept
+/// one) is judged sandboxed, and offered a restart.
+#[test]
+fn a_reattached_run_with_no_record_of_its_sandbox_is_judged_sandboxed_and_offered_a_restart() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.leaves_running_in(3, None, None);
+
+    let (chats, unconfined) = reattached_runs_unconfined(plane.path(), host);
+
+    assert!(!unconfined, "taken as sandboxed");
+    assert!(chats.confines_of(3).is_none());
+    assert_eq!(
+        older(&chats).expect("it is offered a restart").sessions(),
+        [3]
+    );
+}
+
 // ----- who a chat is beyond this clone, and its runs (ADR 0066, #834) -----
 
 const CHAT_ID: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7F";
@@ -7061,6 +7136,52 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
     assert_eq!(host.named().len(), 1);
 }
 
+/// #2636: a harness chat on a runner that the person started without the sandbox, which the
+/// runner composed with no confinement, is judged unconfined, so its browser logins are its
+/// persona's as an unsandboxed local chat's are; one started in the runner's sandbox is judged
+/// sandboxed.
+#[test]
+fn a_runner_chat_started_without_the_sandbox_is_judged_unconfined_and_one_in_it_is_not() {
+    let host = Pretend::default();
+    host.on_a_runner();
+    let project = tempfile::tempdir().expect("a project");
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        project.path().to_path_buf(),
+    );
+    let unsandboxed = chats
+        .start_ready(
+            &on_the_profile_work(),
+            &purlis_core::start::Ready {
+                unsandboxed: Some(a_person_lifted_it()),
+                ..a_harness_ready(None)
+            },
+            SIZE,
+        )
+        .expect("it starts on the runner");
+    let sandboxed = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert!(host.named()[0].1.without_sandbox);
+
+    let unconfined = |session| {
+        chats
+            .login_asker(project.path(), session)
+            .map(|(_, free)| free)
+    };
+    assert_eq!(
+        unconfined(unsandboxed),
+        Some(true),
+        "started without the sandbox"
+    );
+    assert_eq!(
+        unconfined(sandboxed),
+        Some(false),
+        "the runner's to record: sandboxed"
+    );
+}
+
 /// A chat on a runner put back on its conversation carries that conversation on there, and
 /// one the runner refuses is a start that did not start (#2446).
 #[test]
@@ -7470,6 +7591,12 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 declared: None,
                 workspace: None,
                 confinement: None,
+                ran: Some(match confines {
+                    Some(_) => {
+                        purlis_session_protocol::session::RunSandbox::By("seatbelt".to_owned())
+                    }
+                    None => purlis_session_protocol::session::RunSandbox::Off,
+                }),
                 confines,
                 started_with: StartedWith::default(),
             },
@@ -7520,6 +7647,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 confinement: None,
                 confines: None,
                 started_with: StartedWith::default(),
+                ran: Some(purlis_session_protocol::session::RunSandbox::Off),
             },
         );
     };
@@ -7625,6 +7753,9 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 confinement: Some(confinement),
                 confines: None,
                 started_with: StartedWith::default(),
+                ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                    "seatbelt".to_owned(),
+                )),
             },
         );
     }
