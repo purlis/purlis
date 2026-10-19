@@ -58,7 +58,7 @@ use std::sync::Arc;
 
 use super::choices::{self, Choices};
 pub(crate) use super::folders::plane_fonts;
-pub use super::folders::{Folders, Found, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
+pub use super::folders::{Folders, Found, FoundFolder, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
 use super::{Appearance, Complaint, Contrast, Theme, Values, built_in, classic, default_theme};
 use crate::extension::project::theme::{Pick, SYSTEM, Said, is_appearance};

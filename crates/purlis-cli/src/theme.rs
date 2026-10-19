@@ -519,16 +519,10 @@ fn import(
     };
     let target = into.join(&imported.folder);
     // Read only to check: nothing of the stage is left registered once it moves or goes.
-    let staged_name = staged
-        .path()
-        .file_name()
-        .and_then(|it| it.to_str())
-        .unwrap_or_default();
-    let library = extends_library(&into, staged_name);
     let found = Found::of(
         imported.folder.clone(),
         From::Folder(target.display().to_string()),
-        staged.read(library),
+        staged.read(),
     );
     let checked = checks(&found);
     let written = if found.refused.is_some() {
@@ -659,8 +653,9 @@ fn export(here: Here<'_>, asked: &str, to: Option<&str>, force: bool) -> ExitCod
             left_out: Vec::new(),
         })
     } else if let Some((level, folder)) = Level::of_id(asked) {
-        match level_folder(here, &level, folder) {
-            Ok(path) => theme::export(&path),
+        // Packed from the handle the level's folder was found through.
+        match folders(here, &level).folder_at(folder, level.reach()) {
+            Ok(found) => found.export(),
             Err(said) => {
                 eprintln!(
                     "purlis: there is no theme folder '{}' at the {} level — `{}` exports a \
@@ -848,23 +843,6 @@ fn one_at_level(here: Here<'_>, level: &Level, folder: &str) -> Result<Found, Ve
     }
 }
 
-/// The path of the theme folder `folder` of `level` itself, once the engine has found it there
-/// as a choice made at that level finds it ([`Folders::find_at`]); what reading the levels said
-/// when that level has no such folder. A farther level's folder of the name is never taken.
-fn level_folder(
-    here: Here<'_>,
-    level: &Level,
-    folder: &str,
-) -> Result<std::path::PathBuf, Vec<Complaint>> {
-    let folders = folders(here, level);
-    match folders.find_at(folder, level.reach()) {
-        AtLevel::Missing(said) => Err(said),
-        AtLevel::Read(_) => themes_of(&folders, level)
-            .map(|themes| themes.path().join(folder))
-            .ok_or_else(Vec::new),
-    }
-}
-
 /// The `themes/` folder of `level` itself, when it has one.
 fn themes_of<'a>(folders: &'a Folders, level: &Level) -> Option<&'a theme::levels::ThemesFolder> {
     match level {
@@ -1024,14 +1002,12 @@ fn read_file(path: &Path) -> Result<Resolved, String> {
     Ok(theme::load_text(&text))
 }
 
-/// A theme folder named on the command line, read by the engine inside the folder that holds
-/// it, as a level's `themes/` folder is. The library is handed only the folders its `extends`
-/// chain names, so nothing else beside it is read. The engine refuses a folder or a
-/// `theme.json` that is a link.
+/// A theme folder named on the command line, opened by the engine from the folder that holds
+/// it, refusing a link ([`theme::Named`]): its `theme.json`, its icon set, its fonts and the
+/// folders beside it its `extends` chain names are all read from those handles.
 fn read_folder(path: &Path, shown: String) -> Found {
     let from = From::Folder(shown);
-    let (Some(themes), Some(name)) = (path.parent(), path.file_name().and_then(|it| it.to_str()))
-    else {
+    if path.file_name().and_then(|it| it.to_str()).is_none() {
         return Found::of(
             path.display().to_string(),
             from,
@@ -1040,67 +1016,9 @@ fn read_folder(path: &Path, shown: String) -> Found {
                 path.display()
             )),
         );
-    };
-    let themes = if themes.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        themes
-    };
-    Found::of(
-        name.to_owned(),
-        from,
-        extends_library(themes, name).load_folder(themes, name),
-    )
-}
-
-/// The library of the folders beside `name` in `themes` that its `extends` chain names.
-fn extends_library(themes: &Path, name: &str) -> theme::Library {
-    // A folder the person named: its fonts are read, as the window would read their own.
-    let mut library = theme::Library::new().reading_named_fonts();
-    for parent in extends_chain(themes, name) {
-        library = library.with_folder(themes, &parent);
     }
-    library
-}
-
-/// The most parents a folder's `extends` chain is followed through: the engine says a circle
-/// or a missing parent itself, so this only bounds the walk.
-const MOST_PARENTS: usize = 16;
-
-/// The folders beside `name` in `themes` that its `extends` chain names, nearest first: only
-/// what the engine needs to resolve it. A parent that is not a plain folder there (Purlis
-/// Classic, a missing one, a link) ends the walk, and the engine says what is wrong with it.
-fn extends_chain(themes: &Path, name: &str) -> Vec<String> {
-    use std::io::Read;
-    let mut chain: Vec<String> = Vec::new();
-    let mut at = name.to_owned();
-    while chain.len() < MOST_PARENTS {
-        let file = themes.join(&at).join(theme::THEME_JSON);
-        let plain = std::fs::symlink_metadata(&file).is_ok_and(|it| it.file_type().is_file());
-        let mut text = String::new();
-        let read = plain
-            && std::fs::File::open(&file)
-                .and_then(|it| {
-                    it.take(purlis_core::windowprefs::MAX_BYTES)
-                        .read_to_string(&mut text)
-                })
-                .is_ok();
-        let parent = read
-            .then(|| serde_json::from_str::<Value>(&text).ok())
-            .flatten()
-            .and_then(|it| it.get("extends").and_then(Value::as_str).map(str::to_owned));
-        let Some(parent) = parent else { break };
-        let folder = std::fs::symlink_metadata(themes.join(&parent));
-        if parent == name
-            || chain.contains(&parent)
-            || !folder.is_ok_and(|it| it.file_type().is_dir())
-        {
-            break;
-        }
-        chain.push(parent.clone());
-        at = parent;
-    }
-    chain
+    let named = theme::Named::open(path);
+    Found::of(named.name().to_owned(), from, named.load())
 }
 
 /// A theme's appearances as the table says them: each id, with its tag when the id is not it,

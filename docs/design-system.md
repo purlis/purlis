@@ -581,6 +581,13 @@ default the workspace's, the project's and the person's. Within that reach the n
 that has a folder of the name is read, and a folder `extends` by the same rule. Each `themes/`
 folder is opened from its level's root one folder at a time refusing a link, and its folders,
 `theme.json` and icon set are read from those handles (`crates/purlis-core/src/theme/folders.rs`).
+A folder named on the command line (`purlis theme check <folder>`), the person's own
+`theme.json` in their config folder, and `purlis theme export <level id>` read the same way: the
+folder is opened once refusing a link, and every file is read from its handle
+(`crates/purlis-core/src/theme/opened.rs`). A theme folder's name and every name inside it hold
+none of `< > : " / \ | ? *` nor a control character, and are no name Windows keeps for a
+device, so a theme made on one platform opens on every other; import, export and the folder
+reader each refuse such a name in one sentence (`crates/purlis-core/src/theme/portable.rs`).
 
 **The precedence**, nearest first; at each level the person's choice beats the committed
 default (`purlis_core::theme::resolve_levels`):
