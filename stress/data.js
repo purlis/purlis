@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792384233359,
+  "lastUpdate": 1792399663505,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3162,6 +3162,40 @@ window.BENCHMARK_DATA = {
             "value": 339.2,
             "unit": "MB",
             "extra": "median of 6 samples: 342.7, 334.2, 344.6, 338.8, 339.6, 282.9 MB; window 163.9 MB, session host 175.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "cb31e95f40b6ebd89f76b20d4562c1e05e38889c",
+          "message": "Browsers: a chat without the sandbox is given what a sandboxed chat of its persona lists (#2677)\n\n* Browsers: a chat without the sandbox is given what a sandboxed chat of its persona lists\n\nA chat started without the sandbox has no record of a compiled sandbox,\nso its browser's listing is compiled at each call from the project's\nsettings for its persona, never the floor's reach. Its sites ask as any\nchat's do, and its posture Ask says what each answer gives it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\nAssisted-by: claude-code:claude-opus-5-5\n\n* Browsers: a chat without the sandbox is one with none compiled and none holding it\n\nA sandboxed chat reattached under a sandbox whose compile was not\nrecorded is given nothing listed, and its Ask is a sandboxed chat's.\nWhether a chat started without the sandbox is the chat's, not its\npersona's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a chat's sites ask offers everyone in the project only where the sandbox is on\n\nA committed browser site reaches a browser only where the project's\nsandbox is in force, so a chat's sites ask offers it only there, and an\nAllow at that level is refused elsewhere, as for the person's own\nbrowser.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T03:31:54Z",
+          "url": "https://github.com/purlis/purlis/commit/cb31e95f40b6ebd89f76b20d4562c1e05e38889c"
+        },
+        "date": 1792399661844,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 925,
+            "unit": "MB",
+            "extra": "median of 3 samples: 820, 925, 1013 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 324.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 285.3, 356.3, 348.5, 324.1, 324.3, 204 MB; window 153.2 MB, session host 174.7 MB"
           }
         ]
       }
