@@ -836,7 +836,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!("no extension is named"),
-            || None,
+            |_| None,
         );
         assert_eq!(
             serde_json::to_value(answered.theme).unwrap(),

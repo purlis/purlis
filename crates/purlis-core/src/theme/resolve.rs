@@ -142,7 +142,25 @@ impl Drawn {
     /// Review and allow for it; a yes records the approval, and the next draw reads the face.
     #[must_use]
     pub fn awaits_approval(&self) -> bool {
-        self.refused && self.complaints.iter().any(|one| one.awaits_approval)
+        !self.awaiting_faces().is_empty()
+    }
+
+    /// **The faces a refused theme waits on the project's approval for** (#2647), each as
+    /// `<path in the project> <sha-256 of the bytes read>`, sorted, once each; empty when it
+    /// waits on none. What a caller keys the review by: the set changes only when a face does.
+    #[must_use]
+    pub fn awaiting_faces(&self) -> Vec<&str> {
+        if !self.refused {
+            return Vec::new();
+        }
+        let mut faces: Vec<&str> = self
+            .complaints
+            .iter()
+            .filter_map(|one| one.awaits_approval.as_deref())
+            .collect();
+        faces.sort_unstable();
+        faces.dedup();
+        faces
     }
 
     /// `theme` as it is drawn: with the consent floors held ([`super::floors`]).

@@ -1521,7 +1521,12 @@ fn a_project_s_font_files_are_listed_under_one_budget_and_one_past_it_is_never_d
     // A face past a limit is never listed, so approving the project again cannot draw it: its
     // refusal does not await the approval (#2647).
     for refused in [&wide, &last] {
-        assert!(refused.complaints.iter().all(|one| !one.awaits_approval));
+        assert!(
+            refused
+                .complaints
+                .iter()
+                .all(|one| one.awaits_approval.is_none())
+        );
     }
 }
 

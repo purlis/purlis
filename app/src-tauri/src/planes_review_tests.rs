@@ -58,7 +58,8 @@ fn drawn(config: &Path, root: &Path) -> crate::extensions::ThemeInForce {
         false,
         theme::Contrast::Standard,
         || Arc::from(Vec::new()),
-        || crate::planes::theme_review(config, root),
+        // Found fresh on every draw here: what is kept is `review_kept`'s, tested below.
+        |_| crate::planes::theme_review(config, root),
     )
 }
 
@@ -248,4 +249,85 @@ fn a_font_only_change_is_offered_from_the_theme() {
     assert_eq!(drawn(&at.config, &at.root).review, Some(ThemeReview::Fonts));
     let asked = at.planes.review(&at.plane).expect("held").expect("it asks");
     assert!(asked.consent.grew_in_fonts_alone());
+}
+
+#[test]
+fn a_project_never_approved_here_is_not_offered_and_says_so() {
+    // A held plane nobody approved on this machine (held as the launch holds its own plane,
+    // with no approval recorded), whose theme folder then brings a face.
+    let dir = tempfile::tempdir().expect("a directory");
+    let config = dir.path().join("config");
+    let root = dir.path().join("plane");
+    std::fs::create_dir_all(&root).expect("the plane");
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        format!("[project]\nid = \"{PROJECT}\"\n"),
+    )
+    .expect("its charter.toml");
+    let planes = planes_keeping(&config);
+    let plane = planes.open(&root);
+    let root = planes.held(&plane).expect("held").root().to_path_buf();
+    a_project_with_a_face(&root, 1);
+
+    assert_eq!(
+        crate::planes::theme_review(&config, &root),
+        Some(ThemeReview::Unapproved)
+    );
+    let why = planes.review(&plane).err().expect("refused, not asked");
+    assert_eq!(why, NOT_APPROVED);
+    assert!(!why.contains("since you approved"));
+}
+
+#[test]
+fn the_ask_names_the_theme_and_workspace_its_font_files_belong_to() {
+    let at = refused();
+    let asked = at.planes.review(&at.plane).expect("held").expect("it asks");
+    assert_eq!(
+        crate::planes::font_themes(&asked.consent),
+        [("typed".to_owned(), None)]
+    );
+    let changes = purlis_core::machine::Consent::Grew(vec![
+        purlis_core::machine::Change::FontChanged(
+            "workspaces/alpha/themes/brand/fonts/a.woff2".to_owned(),
+        ),
+        purlis_core::machine::Change::FontAdded(
+            "workspaces/alpha/themes/brand/fonts/b.woff2".to_owned(),
+        ),
+        purlis_core::machine::Change::FontAdded("themes/typed/fonts/c.woff2".to_owned()),
+        purlis_core::machine::Change::FontRemoved("themes/gone/fonts/d.woff2".to_owned()),
+    ]);
+    assert_eq!(
+        crate::planes::font_themes(&changes),
+        [
+            ("brand".to_owned(), Some("alpha".to_owned())),
+            ("typed".to_owned(), None)
+        ]
+    );
+}
+
+#[test]
+fn the_review_state_is_found_once_per_set_of_faces_a_refusal_waits_on() {
+    use std::cell::Cell;
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("kept");
+    let found = Cell::new(0);
+    let find = || {
+        found.set(found.get() + 1);
+        Some(ThemeReview::Fonts)
+    };
+    let one = ["themes/a/fonts/ui.woff2 aa"];
+    assert_eq!(
+        crate::extensions::review_kept(&root, &one, find),
+        Some(ThemeReview::Fonts)
+    );
+    // Redraws that changed no face read nothing.
+    for _ in 0..5 {
+        let again = crate::extensions::review_kept(&root, &one, || unreachable!("kept"));
+        assert_eq!(again, Some(ThemeReview::Fonts));
+    }
+    assert_eq!(found.get(), 1);
+    // The face saved again: found once more.
+    let two = ["themes/a/fonts/ui.woff2 bb"];
+    let more = crate::extensions::review_kept(&root, &two, || Some(ThemeReview::More));
+    assert_eq!(more, Some(ThemeReview::More));
 }

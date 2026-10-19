@@ -257,6 +257,24 @@ impl Ask {
     }
 }
 
+/// **The trust ask a refused theme's Review and allow draws** (#2647): the project's [`Ask`],
+/// about font files alone, and the theme folders those files belong to, which the dialog names.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct FontReview {
+    pub ask: Ask,
+    /// Each theme folder whose font files changed, in the order the changes name them.
+    pub themes: Vec<FontTheme>,
+}
+
+/// One theme folder whose font files a [`FontReview`] is about.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct FontTheme {
+    /// The theme folder's name.
+    pub theme: String,
+    /// The workspace it is in; `null` for the project's own `themes/`.
+    pub workspace: Option<String>,
+}
+
 /// What came of asking to open a plane: it is open, or there is a question to answer first.
 ///
 /// Two nullable fields rather than a tagged union, and told apart by shape the way
@@ -553,11 +571,20 @@ pub async fn approve_plane(
 /// and font files.
 #[tauri::command]
 #[specta::specta]
-pub async fn review_plane(app: tauri::AppHandle, plane: PlaneId) -> Result<Option<Ask>, String> {
+pub async fn review_plane(
+    app: tauri::AppHandle,
+    plane: PlaneId,
+) -> Result<Option<FontReview>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<Planes>()
-            .review(&plane)
-            .map(|asking| asking.map(Ask::of))
+        app.state::<Planes>().review(&plane).map(|asking| {
+            asking.map(|asking| FontReview {
+                themes: crate::planes::font_themes(&asking.consent)
+                    .into_iter()
+                    .map(|(theme, workspace)| FontTheme { theme, workspace })
+                    .collect(),
+                ask: Ask::of(asking),
+            })
+        })
     })
     .await
     .map_err(|err| format!("reading what the project contributes did not finish: {err}"))?

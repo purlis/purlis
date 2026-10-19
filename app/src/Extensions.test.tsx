@@ -952,7 +952,7 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       complaints: ["themes/brand/fonts/ui.woff2 has changed since you approved this project"],
       refused: true,
     };
-    let review: "fonts" | "more" | null = "fonts";
+    let review: "fonts" | "more" | "unapproved" | null = "fonts";
     core({
       inForce: () => ({ ...KEEPS, theme: resolved("Purlis Classic"), refused, review }) as InForce,
     });
@@ -968,6 +968,13 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     expect(said().map((one) => one.review)).toEqual([undefined]);
     expect(said()[0].remedy).toContain("asks for more than font files");
     expect(said()[0].remedy).toContain("close the project and open it again");
+
+    // A project never approved here: no button, and a sentence of its own.
+    review = "unapproved";
+    await drawThemeFor(new Set(), "brand", { plane: "p-4" as PlaneId, workspace: "delta" });
+    expect(said().map((one) => one.review)).toEqual([undefined]);
+    expect(said()[0].remedy).toContain("has not been approved on this machine");
+    expect(said()[0].remedy).not.toContain("since you approved");
 
     review = null;
     await drawThemeFor(new Set(), "brand", { plane: "p-3" as PlaneId, workspace: "gamma" });

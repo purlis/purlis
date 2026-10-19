@@ -595,8 +595,8 @@ function followThemeFolders() {
  * **When the engine says the project's approval would let it be drawn** (`review`, #2647), the
  * Notice offers Review and allow for the project in front — its trust ask, asked again in place
  * — only when what the project asks for again is font files alone (`fonts`). When it asks for
- * more (`more`), the Notice offers no button and says the project is reviewed where it is
- * opened.
+ * more (`more`), or this machine never approved it (`unapproved`), the Notice offers no button
+ * and says the project is reviewed where it is opened.
  */
 function sayTheRefused(refused: ThemeTrouble | null | undefined, review: ThemeReview | null) {
   if (refused == null) {
@@ -612,7 +612,9 @@ function sayTheRefused(refused: ThemeTrouble | null | undefined, review: ThemeRe
         ? "review the font files that changed and allow them, and the theme is drawn with them; or fix it in its theme folder"
         : review === "more"
           ? "this project asks for more than font files since you approved it, so it is not allowed from a theme; close the project and open it again to review everything it asks for, or fix it in its theme folder"
-          : "fix it in its theme folder, and it is drawn again when you save; a project's font file is drawn once you approve the project again",
+          : review === "unapproved"
+            ? "this project has not been approved on this machine, so its font files are not allowed from a theme; close the project and open it again to review everything it asks for, or fix it in its theme folder"
+            : "fix it in its theme folder, and it is drawn again when you save; a project's font file is drawn once you approve the project again",
     ...(plane === undefined ? {} : { review: plane }),
   });
 }

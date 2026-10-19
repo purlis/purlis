@@ -618,6 +618,29 @@ fn a_face_changed_while_the_project_is_open_awaits_its_approval_and_a_yes_draws_
 }
 
 #[test]
+fn the_faces_a_refused_theme_awaits_are_named_by_path_and_digest_and_change_only_with_a_face() {
+    // What the app keys the review by, so nothing is read again on a redraw that changed no face.
+    let places = Places::new();
+    let face = approved_with_a_face(&places, 1);
+    std::fs::write(&face, woff2(2)).unwrap();
+    let first = drawn_with(&places, "typed");
+    let faces = first.awaiting_faces();
+    assert_eq!(faces.len(), 1, "{:?}", first.complaints);
+    let (path, digest) = faces[0].split_once(' ').unwrap();
+    assert_eq!(path, "workspaces/alpha/themes/typed/fonts/ui.woff2");
+    assert_eq!(digest.len(), 64);
+    // A redraw of the same bytes waits on the same face.
+    assert_eq!(drawn_with(&places, "typed").awaiting_faces(), faces);
+    // The face saved again: another key.
+    std::fs::write(&face, woff2(3)).unwrap();
+    let again = drawn_with(&places, "typed");
+    assert_ne!(again.awaiting_faces(), faces);
+    // A theme that draws waits on nothing.
+    yes_to(&places, shown(&places));
+    assert!(drawn_with(&places, "typed").awaiting_faces().is_empty());
+}
+
+#[test]
 fn a_face_added_while_the_project_is_open_awaits_its_approval_too() {
     let places = Places::new();
     let face = approved_with_a_face(&places, 1);

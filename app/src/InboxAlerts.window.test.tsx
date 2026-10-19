@@ -485,7 +485,7 @@ describe("a theme refused for a project's font file, reviewed and allowed in pla
   afterEach(() => sayAboutThisMachine("theme refused", undefined));
 
   it("shows the project's trust ask with the change first, and a yes approves what it showed and draws again", async () => {
-    reviewAnswer = ASK;
+    reviewAnswer = { ask: ASK, themes: [{ theme: "typed", workspace: "alpha" }] };
     refused();
     machineAlone();
     await waitFor(() => expect(refusedRow()).not.toBeNull());
@@ -501,6 +501,11 @@ describe("a theme refused for a project's font file, reviewed and allowed in pla
     expect(said.indexOf(CHANGED)).toBeGreaterThan(-1);
     expect(said.indexOf(CHANGED)).toBeLessThan(said.indexOf("Font files its themes bring"));
     expect(said).toContain("workspaces/alpha/themes/typed");
+    // Whose fonts they are, and what reads them (#2647 review).
+    expect(said).toContain("These font files belong to the theme typed in workspace alpha.");
+    expect(said).toContain(
+      "Font files are read by your system’s font engine; allow only fonts you or your team added.",
+    );
     expect(calls("approve_plane")).toHaveLength(0);
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Allow these fonts" }));
@@ -513,7 +518,7 @@ describe("a theme refused for a project's font file, reviewed and allowed in pla
   });
 
   it("with a no approves nothing, and the theme stays refused", async () => {
-    reviewAnswer = ASK;
+    reviewAnswer = { ask: ASK, themes: [{ theme: "typed", workspace: "alpha" }] };
     refused();
     machineAlone();
     await waitFor(() => expect(refusedRow()).not.toBeNull());
@@ -531,7 +536,7 @@ describe("a theme refused for a project's font file, reviewed and allowed in pla
   });
 
   it("says the core's refusal when the face changed between the ask and the yes, and the theme stays refused", async () => {
-    reviewAnswer = ASK;
+    reviewAnswer = { ask: ASK, themes: [{ theme: "typed", workspace: "alpha" }] };
     approveAnswer =
       "plane changed while you were reading it, so nothing was approved and nothing was opened. Open it again to see what it contributes now.";
     refused();

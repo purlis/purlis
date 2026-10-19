@@ -606,26 +606,25 @@ pub(super) fn read(
     complaints: &mut Vec<super::Complaint>,
 ) -> Fonts {
     let mut said = Vec::new();
-    let mut awaiting = Vec::new();
+    let mut awaiting: Vec<(usize, String)> = Vec::new();
     let fonts = read_said(raw, base, folder, &mut said, &mut awaiting);
     complaints.extend(said.into_iter().enumerate().map(|(at, one)| {
-        if awaiting.contains(&at) {
-            super::Complaint::awaiting_approval(one)
-        } else {
-            super::Complaint::said(one)
+        match awaiting.iter().find(|(place, _)| *place == at) {
+            Some((_, face)) => super::Complaint::awaiting_approval(one, face.clone()),
+            None => super::Complaint::said(one),
         }
     }));
     fonts
 }
 
 /// [`read`], in sentences: `awaiting` gets the place in `complaints` of each that awaits the
-/// project's approval.
+/// project's approval, with its face as `<path> <sha-256>`.
 fn read_said(
     raw: Option<&Value>,
     base: &Fonts,
     folder: Option<&ThemeDir>,
     complaints: &mut Vec<String>,
-    awaiting: &mut Vec<usize>,
+    awaiting: &mut Vec<(usize, String)>,
 ) -> Fonts {
     let mut fonts = base.clone();
     let Some(raw) = raw else {
@@ -683,7 +682,7 @@ struct Inside<'a> {
     folder: &'a Path,
     /// The place in the complaints of each face the approval does not hold but would, once the
     /// project is approved again.
-    awaiting: std::cell::RefCell<Vec<usize>>,
+    awaiting: std::cell::RefCell<Vec<(usize, String)>>,
 }
 
 /// One slot's font, or `None` (and why).
@@ -851,7 +850,10 @@ fn face_of(
                     let before = fonts.names_before(&file);
                     let (why, listed) = unapproved(&named, bytes.len() as u64, approved, before);
                     if listed {
-                        folder.awaiting.borrow_mut().push(complaints.len());
+                        folder
+                            .awaiting
+                            .borrow_mut()
+                            .push((complaints.len(), format!("{named} {asset}")));
                     }
                     complaints.push(why);
                     return None;

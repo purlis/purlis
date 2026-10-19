@@ -8,8 +8,8 @@ import {
   commands,
   type AlertRow,
   type AlertWay,
-  type Ask,
   type DoctorFixed,
+  type FontReview,
   type PlaneId,
 } from "./bindings";
 import type { AlertsReading } from "./alerts";
@@ -448,7 +448,7 @@ function ThemeFolderOffer({ alert }: { alert: MachineAlert }) {
  * Both presses are the person's own: the two commands are the window's alone (`WINDOW_ONLY`).
  */
 function RefusedThemeReview({ alert, plane }: { alert: MachineAlert; plane: PlaneId }) {
-  const [asking, setAsking] = useState<Ask>();
+  const [asking, setAsking] = useState<FontReview>();
   const [said, setSaid] = useState<string>();
   const failed = (err: unknown) => setSaid(String(err));
   const review = () => {
@@ -470,7 +470,7 @@ function RefusedThemeReview({ alert, plane }: { alert: MachineAlert; plane: Plan
       })
       .catch(failed);
   };
-  const allow = (ask: Ask) => {
+  const allow = (ask: FontReview["ask"]) => {
     setAsking(undefined);
     void commands
       .approvePlane(ask.path, ask.contributes)
@@ -502,7 +502,8 @@ function RefusedThemeReview({ alert, plane }: { alert: MachineAlert; plane: Plan
       </Notice>
       {asking !== undefined && (
         <ApprovePlane
-          ask={asking}
+          ask={asking.ask}
+          fonts={asking.themes}
           yes="Allow these fonts"
           onApprove={allow}
           onCancel={() => setAsking(undefined)}

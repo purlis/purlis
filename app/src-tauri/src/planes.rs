@@ -3398,6 +3398,7 @@ impl Planes {
         let root = self.held(plane)?.root().to_path_buf();
         let contributes = machine::Contribution::read(&root).contributes;
         match self.asking(&root, contributes) {
+            Some(asking) if asking.first() => Err(NOT_APPROVED.to_owned()),
             Some(asking) if !asking.consent.grew_in_fonts_alone() => {
                 Err(MORE_THAN_FONTS.to_owned())
             }
@@ -4439,17 +4440,54 @@ pub(crate) const MORE_THAN_FONTS: &str = "this project asks for more than font f
      approved it, so it is not allowed from a theme. Close the project and open it again to \
      review everything it asks for";
 
+/// Why a refused theme's Review and allow is not offered for a project this machine never
+/// approved (#2647): it is reviewed where it is opened.
+pub(crate) const NOT_APPROVED: &str = "this project has not been approved on this machine, so \
+     its font files are not allowed from a theme. Close the project and open it again to review \
+     everything it asks for";
+
 /// **What a refused theme's Notice may offer for the project at `root`** (#2647), from the
-/// store in `config`: Review and allow when it asks again about font files alone; that it
-/// asks for more, and no button, otherwise; `None` when it asks about nothing.
+/// store in `config`: Review and allow when it asks again about font files alone; no button,
+/// and why, when it asks for more or was never approved here; `None` when it asks about
+/// nothing. It reads and hashes what the project contributes, so the window's theme asks it
+/// only when the faces its refusal waits on change ([`crate::extensions::review_kept`]).
 pub(crate) fn theme_review(config: &Path, root: &Path) -> Option<crate::extensions::ThemeReview> {
+    use crate::extensions::ThemeReview;
     let contributes = machine::Contribution::read(root).contributes;
     let asking = asking_of(Some(config), root, contributes)?;
-    Some(if asking.consent.grew_in_fonts_alone() {
-        crate::extensions::ThemeReview::Fonts
+    Some(if asking.first() {
+        ThemeReview::Unapproved
+    } else if asking.consent.grew_in_fonts_alone() {
+        ThemeReview::Fonts
     } else {
-        crate::extensions::ThemeReview::More
+        ThemeReview::More
     })
+}
+
+/// **The theme folders whose font files an ask is about** (#2647): each changed font file's
+/// theme folder, and the workspace it is in (`None` for the project's own `themes/`), in the
+/// order the changes name them, once each. What Review and allow names in its dialog.
+pub(crate) fn font_themes(consent: &machine::Consent) -> Vec<(String, Option<String>)> {
+    let mut themes: Vec<(String, Option<String>)> = Vec::new();
+    for change in consent.changes() {
+        let (machine::Change::FontAdded(path) | machine::Change::FontChanged(path)) = change else {
+            continue;
+        };
+        let parts: Vec<&str> = path.split('/').collect();
+        let found = match parts.as_slice() {
+            ["themes", theme, "fonts", _] => Some(((*theme).to_owned(), None)),
+            ["workspaces", workspace, "themes", theme, "fonts", _] => {
+                Some(((*theme).to_owned(), Some((*workspace).to_owned())))
+            }
+            _ => None,
+        };
+        if let Some(one) = found
+            && !themes.contains(&one)
+        {
+            themes.push(one);
+        }
+    }
+    themes
 }
 
 /// What the operator is being asked about, when a plane must be approved before it opens.

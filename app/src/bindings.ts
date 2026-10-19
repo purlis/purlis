@@ -178,26 +178,9 @@ export const commands = {
 	 *  and font files.
 	 */
 	reviewPlane: (plane: PlaneId) => typedError<{
-	/**
-	 *  The plane charter resolved, which is what the approval is recorded against.
-	 * 
-	 *  Shown, and not merely carried: a picker pointed at a subdirectory opens the plane above
-	 *  it, and an operator approving a directory they did not choose is the whole failure this
-	 *  dialog exists to prevent, arrived at from the friendly end.
-	 */
-	path: string,
-	/**
-	 *  What it contributes. It goes back to [`approve_plane`] untouched, and that is what
-	 *  makes the approval an answer to the question that was asked.
-	 */
-	contributes: PlaneContribution,
-	/**
-	 *  Empty when nothing has approved this plane. Otherwise every way it now differs from
-	 *  what WAS approved, in charter's own words (`machine::Change`'s own `Display`).
-	 */
-	changes: string[],
-	/**  Whether this is a first approval rather than a re-ask, so the dialog can say which. */
-	first: boolean,
+	ask: Ask,
+	/**  Each theme folder whose font files changed, in the order the changes name them. */
+	themes: FontTheme[],
 } | null, string>(__TAURI_INVOKE("review_plane", { plane })),
 	/**
 	 *  The projects a cold launch has to put back, and every one it would not take back.
@@ -2653,6 +2636,7 @@ export const commands = {
 	 *  of the project's or a workspace's theme folder that this machine's approval does not
 	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
 	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `unapproved`: this machine never approved the project, and the
 	 *  Notice offers no button. `null` otherwise.
 	 */
 	review: ThemeReview | null,
@@ -6095,6 +6079,24 @@ export type FolderListing_Serialize = {
 	entries: FolderEntry_Serialize[],
 	/**  How many entries past those are not listed. */
 	more: number,
+};
+
+/**
+ *  **The trust ask a refused theme's Review and allow draws** (#2647): the project's [`Ask`],
+ *  about font files alone, and the theme folders those files belong to, which the dialog names.
+ */
+export type FontReview = {
+	ask: Ask,
+	/**  Each theme folder whose font files changed, in the order the changes name them. */
+	themes: FontTheme[],
+};
+
+/**  One theme folder whose font files a [`FontReview`] is about. */
+export type FontTheme = {
+	/**  The theme folder's name. */
+	theme: string,
+	/**  The workspace it is in; `null` for the project's own `themes/`. */
+	workspace: string | null,
 };
 
 /**  One forge account, as Settings lists it. */
@@ -10474,6 +10476,7 @@ export type ThemeInForce = {
 	 *  of the project's or a workspace's theme folder that this machine's approval does not
 	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
 	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `unapproved`: this machine never approved the project, and the
 	 *  Notice offers no button. `null` otherwise.
 	 */
 	review: ThemeReview | null,
@@ -10492,7 +10495,9 @@ export type ThemeReview =
 /**  The project asks again about font files alone: Review and allow. */
 "fonts" | 
 /**  It asks for more than font files: no button, and where it is reviewed instead. */
-"more";
+"more" | 
+/**  This machine never approved it: no button, and where it is reviewed instead. */
+"unapproved";
 
 /**
  *  What is wrong with one colour theme an extension is contributing (#2321), in the theme
