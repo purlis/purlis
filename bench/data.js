@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792432118176,
+  "lastUpdate": 1792435603407,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18144,6 +18144,48 @@ window.BENCHMARK_DATA = {
             "value": 101.65308049999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.893, 101.637, 101.653, 102.279, 102.715 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6fb516d20de78e65177a29cda211aaf88d74ea82",
+          "message": "Theme: every theme file is read through a checked handle; names every platform holds (#2704)\n\nEvery theme file is read from a handle on the folder that was opened\n(theme/opened.rs): a folder is opened from the one before it refusing a\nlink, and each file from that handle, a plain file under the cap.\n\n- purlis theme check <folder> opens the folder once (theme::Named) and\n  reads theme.json, its icon set, its fonts and the folders its extends\n  chain names from those handles (#2604).\n- The person's own theme.json, its icon set and fonts are read through a\n  handle on their config folder (#2604).\n- purlis theme export <level id> packs every file from the handle the\n  level reader found the folder through (Folders::folder_at,\n  FoundFolder::export); export by path packs from a handle too (#2670).\n- A theme folder's name and every name inside it hold none of\n  < > : \" / \\ | ? * nor a control character, beside the device-name\n  rule (contain::unspellable, portable::not_held), so import, export and\n  the folder reader refuse such a name in one sentence (#2671).\n\nCloses #2604\nCloses #2670\nCloses #2671\nPart of #2313\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T22:44:58+04:00",
+          "tree_id": "0532d74562814e2258384395b4114666e6d31c26",
+          "url": "https://github.com/purlis/purlis/commit/6fb516d20de78e65177a29cda211aaf88d74ea82"
+        },
+        "date": 1792435602022,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5365435000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.503, 0.536, 0.537, 0.545, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.098350500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.419, 16.976, 17.098, 17.141, 17.226 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.49793199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.819, 104.496, 104.498, 106.621, 106.693 ms"
           }
         ]
       }
