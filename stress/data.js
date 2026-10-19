@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792372575565,
+  "lastUpdate": 1792374983492,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2982,6 +2982,42 @@ window.BENCHMARK_DATA = {
             "value": 371.2,
             "unit": "MB",
             "extra": "median of 6 samples: 281.8, 391.9, 377.4, 370.8, 371.6, 240.4 MB; window 153 MB, session host 217.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c16f80e506f6edb0c6feff8874cf89995feb086",
+          "message": "A runner chat composed by its names is asked about a service allowed for it alone (#2673)\n\n* A runner chat composed by its names is asked about a service allowed for it alone\n\nSession protocol 1.26: a start by names that names its confinement may name the services the\nwindow allowed the chat alone (`alone`). The runner leaves out of the confinement it composes\neach one its own sandbox does not give, names them in `confined.left_out`, and asks the window\nabout each, as for a plan made elsewhere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\nAssisted-by: claude-code:claude-opus-5-5\n\n* A composed plan may leave a service out of its proxy, and a test starts one\n\nPlan::starting no longer holds that only a plan made elsewhere leaves a service out: a plan\nthe host composed for a chat started by its names does too. The egress docs say both.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The runner's policy binds what a composed chat is asked about\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T05:10:51+04:00",
+          "tree_id": "2d49aa1d6bbd04406217132c7e15fef1480e6e4d",
+          "url": "https://github.com/purlis/purlis/commit/0c16f80e506f6edb0c6feff8874cf89995feb086"
+        },
+        "date": 1792374982258,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 926,
+            "unit": "MB",
+            "extra": "median of 3 samples: 807, 926, 1031 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 345.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 245.2, 347.2, 346.1, 345.8, 346.6, 257 MB; window 152.2 MB, session host 193.1 MB"
           }
         ]
       }
