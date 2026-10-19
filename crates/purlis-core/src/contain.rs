@@ -187,13 +187,24 @@ pub fn mintable(name: &str) -> Result<(), Elsewhere> {
     if name.contains(':') {
         return Err(Elsewhere::Stream);
     }
-    if name.contains(['<', '>', '"', '|', '?', '*']) || name.contains(char::is_control) {
+    if unspellable(name).is_some() {
         return Err(Elsewhere::Unspellable);
     }
     if name.contains('~') {
         return Err(Elsewhere::ShortName);
     }
     Ok(())
+}
+
+/// The characters Windows holds in no file or folder name, beside the control characters.
+pub(crate) const UNSPELLABLE: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
+/// **The first character of `name` Windows cannot hold in a file or folder name**: one of
+/// [`UNSPELLABLE`] or a control character, or `None`. Asked of one name, as [`dos_device`] is;
+/// a theme's names ask it too (`crate::theme::portable`).
+pub(crate) fn unspellable(name: &str) -> Option<char> {
+    name.chars()
+        .find(|c| UNSPELLABLE.contains(c) || c.is_control())
 }
 
 /// Does Windows read `name` as one of its devices?

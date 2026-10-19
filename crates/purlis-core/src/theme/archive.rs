@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 
 use super::THEME_JSON;
 use super::import::{Files, LeftOut};
+use super::opened::{self, Kind};
 
 /// The most files a theme folder's zip holds.
 pub const MOST_FILES: usize = 64;
@@ -123,7 +124,8 @@ pub struct Packed {
 
 /// **Packs the theme folder `folder`** into a zip whose one top folder is named as `folder` is.
 /// A folder that is a link, one without a plain `theme.json`, and one past the bounds are
-/// refused with a sentence.
+/// refused with a sentence. The folder that holds it is opened as the path says, the folder
+/// itself from that one refusing a link, and every file is read from its handle.
 pub fn export(folder: &Path) -> Result<Packed, String> {
     let name = folder
         .file_name()
@@ -133,26 +135,56 @@ pub fn export(folder: &Path) -> Result<Packed, String> {
     if !is_folder_id(&name) {
         return Err(not_an_id(&name));
     }
-    let (files, left_out) = gather(folder)?;
-    let bytes = pack(&name, &files)?;
+    let dir = open_named(folder, &name)?;
+    export_held(&name, &dir, &folder.display().to_string())
+}
+
+/// **Packs the theme folder `name` held by `dir`**: every file read from that handle and from
+/// the handles of the folders opened from it. `shown` names it in a sentence.
+pub(crate) fn export_held(name: &str, dir: &opened::Held, shown: &str) -> Result<Packed, String> {
+    if !is_folder_id(name) {
+        return Err(not_an_id(name));
+    }
+    let (files, left_out) = gather_held(dir, shown)?;
+    let bytes = pack(name, &files)?;
     Ok(Packed {
-        name,
+        name: name.to_owned(),
         bytes,
         files: files.len(),
         left_out,
     })
 }
 
-/// The files of the theme folder `folder` a zip carries, and what it does not.
+/// The theme folder `folder`, whose last name is `name`, opened: the folder holding it as the
+/// path says, and it from that one refusing a link.
+fn open_named(folder: &Path, name: &str) -> Result<opened::Held, String> {
+    let shown = folder.display().to_string();
+    let holder = match folder.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    let at = opened::root(holder)?.ok_or_else(|| format!("there is no folder {shown}"))?;
+    opened::folder(&at, name, &shown)
+}
+
+/// The files of the theme folder `folder` a zip carries, and what it does not, each read from
+/// the folder's handle.
 pub fn gather(folder: &Path) -> Result<(Files, Vec<LeftOut>), String> {
-    let shown = folder.display();
-    let meta = std::fs::symlink_metadata(folder)
-        .map_err(|why| format!("{shown} could not be read: {why}"))?;
-    if !meta.file_type().is_dir() {
-        return Err(format!("{shown} is not a folder"));
-    }
-    let theme = std::fs::symlink_metadata(folder.join(THEME_JSON));
-    if !theme.is_ok_and(|it| it.file_type().is_file()) {
+    let name = folder
+        .file_name()
+        .and_then(|it| it.to_str())
+        .ok_or_else(|| format!("{} is not a theme folder purlis can name", folder.display()))?;
+    let dir = open_named(folder, name)?;
+    gather_held(&dir, &folder.display().to_string())
+}
+
+/// The files of the theme folder held by `dir` a zip carries, and what it does not.
+fn gather_held(dir: &opened::Held, shown: &str) -> Result<(Files, Vec<LeftOut>), String> {
+    let listed = opened::entries(dir, shown)?;
+    if !listed
+        .iter()
+        .any(|(name, kind)| name == THEME_JSON && *kind == Kind::File)
+    {
         return Err(format!(
             "{shown} has no {THEME_JSON}, so it is not a theme folder"
         ));
@@ -160,113 +192,66 @@ pub fn gather(folder: &Path) -> Result<(Files, Vec<LeftOut>), String> {
     let mut files = Files::new();
     let mut left_out = Vec::new();
     let mut total = 0u64;
-    let mut take = |path: String, at: &Path, files: &mut Files| -> Result<(), String> {
-        if files.len() >= MOST_FILES {
-            return Err(format!(
-                "{shown} holds more than {MOST_FILES} files, the most a theme folder's zip carries"
-            ));
-        }
-        let bytes = read_capped(folder, at, MOST_FILE_BYTES)?;
-        total += bytes.len() as u64;
-        if total > MOST_FOLDER_BYTES {
-            return Err(format!(
-                "{shown} holds more than {} MiB, the most a theme folder's zip carries",
-                MOST_FOLDER_BYTES / 1024 / 1024
-            ));
-        }
-        files.insert(path, bytes);
-        Ok(())
-    };
-    for (name, at, kind) in entries(folder)? {
+    let mut take =
+        |path: String, at: &opened::Held, name: &str, files: &mut Files| -> Result<(), String> {
+            if files.len() >= MOST_FILES {
+                return Err(format!(
+                    "{shown} holds more than {MOST_FILES} files, the most a theme folder's zip \
+                     carries"
+                ));
+            }
+            let file = format!("{shown}/{path}");
+            let bytes = opened::bytes(at, name, &file, MOST_FILE_BYTES)?
+                .ok_or_else(|| format!("{file} could not be read: it is gone"))?;
+            total += bytes.len() as u64;
+            if total > MOST_FOLDER_BYTES {
+                return Err(format!(
+                    "{shown} holds more than {} MiB, the most a theme folder's zip carries",
+                    MOST_FOLDER_BYTES / 1024 / 1024
+                ));
+            }
+            files.insert(path, bytes);
+            Ok(())
+        };
+    for (name, kind) in listed {
         // A name Windows cannot hold is not carried: the zip opens on every platform.
         if let Some(why) = super::portable::refusal(&name, &name) {
             left_out.push(LeftOut::new(name, why));
             continue;
         }
         match kind {
-            Entry::File if is_plain(&name) => take(name, &at, &mut files)?,
-            Entry::Folder if KEPT_FOLDERS.contains(&name.as_str()) => {
-                for (inner, inner_at, inner_kind) in entries(&at)? {
+            Kind::File if is_plain(&name) => take(name.clone(), dir, &name, &mut files)?,
+            Kind::Folder if KEPT_FOLDERS.contains(&name.as_str()) => {
+                let inner_shown = format!("{shown}/{name}");
+                let inner_dir = opened::folder(dir, &name, &inner_shown)?;
+                for (inner, inner_kind) in opened::entries(&inner_dir, &inner_shown)? {
                     let path = format!("{name}/{inner}");
                     if let Some(why) = super::portable::refusal(&path, &inner) {
                         left_out.push(LeftOut::new(path, why));
                         continue;
                     }
                     match inner_kind {
-                        Entry::File if is_plain(&inner) => take(path, &inner_at, &mut files)?,
-                        other => left_out.push(LeftOut::new(path, other.why(&inner))),
+                        Kind::File if is_plain(&inner) => {
+                            take(path, &inner_dir, &inner, &mut files)?;
+                        }
+                        other => left_out.push(LeftOut::new(path, why_not(other, &inner))),
                     }
                 }
             }
-            other => left_out.push(LeftOut::new(name.clone(), other.why(&name))),
+            other => left_out.push(LeftOut::new(name.clone(), why_not(other, &name))),
         }
     }
     Ok((files, left_out))
 }
 
-/// What a folder's entry is.
-#[derive(Clone, Copy)]
-enum Entry {
-    File,
-    Folder,
-    Link,
-    Other,
-}
-
-impl Entry {
-    /// Why a zip does not carry an entry `name` of this kind.
-    fn why(self, name: &str) -> &'static str {
-        match self {
-            _ if name.starts_with('.') => "a hidden file is not carried",
-            Self::Link => "a link is not carried",
-            Self::Folder => "a theme folder's zip carries only fonts/ and icons/",
-            Self::File | Self::Other => "is not a plain file a theme folder keeps",
-        }
+/// Why a zip does not carry an entry `name` of the kind `kind`.
+fn why_not(kind: Kind, name: &str) -> &'static str {
+    match kind {
+        _ if name.starts_with('.') => "a hidden file is not carried",
+        Kind::Link => "a link is not carried",
+        Kind::Folder => "a theme folder's zip carries only fonts/ and icons/",
+        Kind::File | Kind::Other => "is not a plain file a theme folder keeps",
     }
-}
-
-/// The entries of `folder`, by name, in order: a name that is not text is said as it is.
-fn entries(folder: &Path) -> Result<Vec<(String, PathBuf, Entry)>, String> {
-    let listed = std::fs::read_dir(folder)
-        .map_err(|why| format!("{} could not be read: {why}", folder.display()))?;
-    let mut found = Vec::new();
-    for entry in listed {
-        let entry =
-            entry.map_err(|why| format!("{} could not be read: {why}", folder.display()))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let kind = match std::fs::symlink_metadata(entry.path()).map(|it| it.file_type()) {
-            Ok(kind) if kind.is_symlink() => Entry::Link,
-            Ok(kind) if kind.is_dir() => Entry::Folder,
-            Ok(kind) if kind.is_file() => Entry::File,
-            _ => Entry::Other,
-        };
-        found.push((name, entry.path(), kind));
-    }
-    found.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(found)
-}
-
-/// The bytes of the plain file `at` inside `folder`, at most `most`: opened refusing a link on
-/// the way or at the file, and read only when the handle is a plain file.
-fn read_capped(folder: &Path, at: &Path, most: u64) -> Result<Vec<u8>, String> {
-    let failed = |why: std::io::Error| format!("{} could not be read: {why}", at.display());
-    let mut open = crate::contain::open_no_link(folder, at).map_err(failed)?;
-    if !open.metadata().map_err(failed)?.file_type().is_file() {
-        return Err(format!("{} is not a plain file", at.display()));
-    }
-    let mut bytes = Vec::new();
-    (&mut open)
-        .take(most + 1)
-        .read_to_end(&mut bytes)
-        .map_err(failed)?;
-    if bytes.len() as u64 > most {
-        return Err(format!(
-            "{} is larger than {} KiB, the most one file of a theme folder may be",
-            at.display(),
-            most / 1024
-        ));
-    }
-    Ok(bytes)
 }
 
 /// **`files` as a zip** under the one folder `name`: each file deflated, in order, with one
@@ -633,19 +618,11 @@ impl Staged {
     }
 
     /// **The engine's read of the staged folder**, as it reads any theme folder the person
-    /// named, its fonts included (`library` holds the folders beside it its `extends` may name),
-    /// but only to check ([`super::Library::checking`]): the stage is moved or removed next, so
-    /// none of its fonts is registered to be served from where it is now.
-    pub fn read(&self, library: super::Library) -> super::Resolved {
-        let staged = self
-            .path
-            .file_name()
-            .and_then(|it| it.to_str())
-            .unwrap_or_default();
-        library
-            .reading_named_fonts()
-            .checking()
-            .load_folder(&self.into, staged)
+    /// named ([`super::Named`]), its fonts and the folders beside it its `extends` names
+    /// included, but only to check: the stage is moved or removed next, so none of its fonts is
+    /// registered to be served from where it is now.
+    pub fn read(&self) -> super::Resolved {
+        super::Named::open(&self.path).checking().load()
     }
 
     /// **Puts the theme folder in place**: `into/name`. Without `force` given to [`stage`], it

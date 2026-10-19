@@ -1016,7 +1016,7 @@ fn a_staged_import_that_goes_in_place_leaves_no_font_registered_under_the_stage(
         false,
     )
     .expect("staged");
-    let read = staged.read(Library::new());
+    let read = staged.read();
     assert!(!read.refused, "{:?}", read.complaints);
     assert_eq!(read.theme.first().fonts.ui.faces[0].asset, asset);
     assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
@@ -1050,7 +1050,7 @@ fn a_staged_import_that_fails_leaves_no_font_registered_under_the_stage() {
     .expect("staged");
     let stage_path = staged.path().to_path_buf();
     std::fs::create_dir_all(themes.join("inked")).expect("a folder there meanwhile");
-    let read = staged.read(Library::new());
+    let read = staged.read();
     assert!(!read.refused, "{:?}", read.complaints);
     assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));
     assert_eq!(
@@ -1074,7 +1074,7 @@ fn a_staged_import_that_fails_leaves_no_font_registered_under_the_stage() {
     )
     .expect("staged");
     let stage_path = staged.path().to_path_buf();
-    assert!(staged.read(Library::new()).refused);
+    assert!(staged.read().refused);
     drop(staged);
     assert!(!stage_path.exists());
     assert_eq!(served(&asset), Err(NEVER_REGISTERED.to_owned()));

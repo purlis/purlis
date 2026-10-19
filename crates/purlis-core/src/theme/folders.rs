@@ -32,12 +32,12 @@
 //! folders' faces need no approval.
 
 use std::collections::BTreeMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use super::format::FolderRead;
-use super::{Complaint, Library, Resolved, THEME_JSON};
+use super::{Complaint, Library, Resolved};
 
 /// The reserved folder a level keeps its theme folders in.
 pub const THEMES: &str = "themes";
@@ -45,9 +45,6 @@ pub const THEMES: &str = "themes";
 /// The most theme folders one level's `themes/` is read for: a level past it is read for the
 /// first this many by name, and the rest are said and left out.
 pub const MOST_FOLDERS: usize = 64;
-
-/// The largest `theme.json` read: the one cap of every theme file.
-const MOST_BYTES: u64 = crate::windowprefs::MAX_BYTES;
 
 /// **How far out a choice reaches**: the nearest level whose folders it may name. A choice
 /// reaches that level and every level farther out.
@@ -198,6 +195,26 @@ impl Folders {
         }
     }
 
+    /// **The theme folder `name` of the level `at` itself, held** (#2670): found as
+    /// [`Self::find_at`] finds it, with the handle its `theme.json` was read through, so what is
+    /// done with it next ([`FoundFolder::export`]) reads every file from inside the folder that
+    /// was found, never by a path looked up again. `Err`, with what reading the level said,
+    /// when it has no folder of that name.
+    pub fn folder_at(&self, name: &str, at: Reach) -> Result<FoundFolder, Vec<Complaint>> {
+        let Some(level) = self.level(at) else {
+            return Err(Vec::new());
+        };
+        let mut said = Vec::new();
+        match read_level(level, &mut said).remove(name) {
+            Some(read) => Ok(FoundFolder {
+                name: name.to_owned(),
+                path: level.path().join(name),
+                read: read.map(|(_, _, folder)| folder),
+            }),
+            None => Err(said),
+        }
+    }
+
     /// **Every theme folder of the level `at` itself**, by name, each read exactly as
     /// [`Self::find_at`] reads it, only to check: what `purlis theme list` lists for that
     /// level. Empty when
@@ -250,6 +267,34 @@ impl Folders {
             }
         }
         names
+    }
+}
+
+/// **A level's theme folder as found** ([`Folders::folder_at`]): its name, where it is, and the
+/// handle it was read through, or why it could not be read.
+#[derive(Debug)]
+pub struct FoundFolder {
+    name: String,
+    path: PathBuf,
+    read: Result<super::fonts::ThemeDir, String>,
+}
+
+impl FoundFolder {
+    /// The folder's name: the theme's id.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Where the folder is, for a sentence.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// **The folder as one zip** ([`super::export`]), every file read from the handle it was
+    /// found through.
+    pub fn export(&self) -> Result<super::Packed, String> {
+        let folder = self.read.as_ref().map_err(Clone::clone)?;
+        super::archive::export_held(&self.name, folder.dir()?, &self.path.display().to_string())
     }
 }
 
@@ -357,34 +402,22 @@ pub(crate) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
     read::plane_fonts(plane)
 }
 
-/// Whether `below` is a plain relative path of folder names, which is all a level's `themes/`
-/// is below its root.
-fn plain_below(below: &Path) -> bool {
-    below
-        .components()
-        .all(|part| matches!(part, Component::Normal(_)))
-}
-
 #[cfg(unix)]
 mod read {
     //! The reads, from handles: every step opened with `O_NOFOLLOW`, the file read from the
     //! descriptor that was checked.
 
     use std::collections::BTreeMap;
-    use std::io::Read;
     use std::os::fd::OwnedFd;
 
     use rustix::fs::{Dir, Mode, OFlags, openat};
-    use rustix::io::Errno;
 
-    use std::path::{Component, Path};
+    use std::path::Path;
 
-    use super::{
-        FontGate, Held, MOST_BYTES, MOST_FOLDERS, THEME_JSON, ThemesFolder, Value, in_project,
-        plain_below,
-    };
+    use super::{FontGate, Held, MOST_FOLDERS, ThemesFolder, Value, in_project};
     use crate::theme::fonts;
     use crate::theme::fonts::ThemeDir;
+    use crate::theme::opened;
 
     const DIRECTORY: OFlags = OFlags::RDONLY
         .union(OFlags::DIRECTORY)
@@ -396,38 +429,11 @@ mod read {
     pub(super) fn level(folder: &ThemesFolder) -> Result<(Held, Vec<String>), String> {
         let shown = folder.path();
         let shown = shown.display();
-        if !plain_below(&folder.below) {
-            return Err(format!("{shown} is not a folder purlis reads themes from"));
-        }
         // The level's root is the caller's to trust (a temp directory is itself reached through
         // a link on macOS); every step below it is opened refusing one.
-        let mut at: OwnedFd = match rustix::fs::open(
-            &folder.root,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
-            Mode::empty(),
-        ) {
-            Ok(fd) => fd,
-            Err(Errno::NOENT) => return Ok((Held::new(), Vec::new())),
-            Err(why) => {
-                return Err(format!(
-                    "purlis could not open {}: {why}",
-                    folder.root.display()
-                ));
-            }
+        let Some(at) = opened::walk(&folder.root, &folder.below, &shown.to_string())? else {
+            return Ok((Held::new(), Vec::new()));
         };
-        for step in folder.below.components() {
-            at = match openat(&at, step.as_os_str(), DIRECTORY, Mode::empty()) {
-                Ok(fd) => fd,
-                Err(Errno::NOENT) => return Ok((Held::new(), Vec::new())),
-                Err(Errno::LOOP | Errno::NOTDIR | Errno::MLINK) => {
-                    return Err(format!(
-                        "{shown} is reached through a link or something that is not a folder, \
-                         so no theme is read from it"
-                    ));
-                }
-                Err(why) => return Err(format!("purlis could not open {shown}: {why}")),
-            };
-        }
         let names = names_in(&at).map_err(|why| format!("purlis could not list {shown}: {why}"))?;
         let mut notes = Vec::new();
         if names.len() > MOST_FOLDERS {
@@ -597,115 +603,9 @@ mod read {
     /// each read from a handle opened from `themes` refusing a link, and that handle; or why not.
     fn theme_json(themes: &OwnedFd, shown: &str, name: &str) -> Result<Opened, String> {
         let folder = format!("{shown}/{name}");
-        let dir = match openat(themes, name, DIRECTORY, Mode::empty()) {
-            Ok(fd) => fd,
-            Err(Errno::LOOP | Errno::NOTDIR | Errno::MLINK) => {
-                return Err(format!(
-                    "{folder} is a link or not a folder, so it is not read"
-                ));
-            }
-            Err(why) => return Err(format!("purlis could not open {folder}: {why}")),
-        };
-        let file = format!("{folder}/{THEME_JSON}");
-        let text = read_capped(&dir, THEME_JSON, &file, || {
-            format!("{folder} has no {THEME_JSON}")
-        })?;
-        let document =
-            crate::theme::load_text_document(&text).map_err(|why| format!("{file}: {why}"))?;
-        let icons = match document.get("icons") {
-            Some(Value::String(named)) => Some(icons(&dir, &folder, named)),
-            _ => None,
-        };
+        let dir = opened::folder(themes, name, &folder)?;
+        let (document, icons) = opened::theme_json(&dir, &folder)?;
         Ok((document, icons, dir))
-    }
-
-    /// The icon set `named` inside the folder `dir`, parsed, or why not: a relative path of
-    /// plain names, each folder on the way opened from the last refusing a link.
-    fn icons(dir: &OwnedFd, folder: &str, named: &str) -> Result<Value, String> {
-        let path = Path::new(named);
-        let inside = !named.is_empty()
-            && named.len() <= crate::theme::format::MOST_ICONS_PATH
-            && !named.contains(['\\', ':'])
-            && path
-                .components()
-                .all(|part| matches!(part, Component::Normal(_)));
-        if !inside {
-            return Err(format!(
-                "icons is {}, which is not a path inside the theme's folder",
-                serde_json::to_string(named).unwrap_or_default()
-            ));
-        }
-        if let Some(why) = crate::theme::portable::path_refusal(named, named) {
-            return Err(format!("icons: {why}"));
-        }
-        let parts: Vec<_> = path.components().map(|part| part.as_os_str()).collect();
-        let Some((last, on_the_way)) = parts.split_last() else {
-            return Err(format!("{folder} has no {named}"));
-        };
-        let mut at =
-            rustix::io::dup(dir).map_err(|why| format!("purlis could not open {folder}: {why}"))?;
-        for step in on_the_way {
-            at = match openat(&at, *step, DIRECTORY, Mode::empty()) {
-                Ok(fd) => fd,
-                Err(Errno::NOENT) => return Err(format!("{folder} has no {named}")),
-                Err(Errno::LOOP | Errno::NOTDIR | Errno::MLINK) => {
-                    return Err(format!(
-                        "{folder}/{named} is reached through a link, so it is not read"
-                    ));
-                }
-                Err(why) => return Err(format!("purlis could not read {folder}/{named}: {why}")),
-            };
-        }
-        let file = format!("{folder}/{named}");
-        let text = read_capped(&at, *last, &file, || format!("{folder} has no {named}"))?;
-        serde_json::from_str::<Value>(&text)
-            .map_err(|why| format!("{file}: an icon set is JSON: {why}"))
-    }
-
-    /// The text of the file `name` in `dir`, opened refusing a link, a plain file under the
-    /// cap, read from the descriptor that was checked; `missing` says it is not there.
-    fn read_capped(
-        dir: &OwnedFd,
-        name: impl rustix::path::Arg,
-        file: &str,
-        missing: impl FnOnce() -> String,
-    ) -> Result<String, String> {
-        let fd = match openat(
-            dir,
-            name,
-            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-            Mode::empty(),
-        ) {
-            Ok(fd) => fd,
-            Err(Errno::NOENT) => return Err(missing()),
-            Err(Errno::LOOP | Errno::MLINK) => {
-                return Err(format!("{file} is a link, so it is not read"));
-            }
-            Err(why) => return Err(format!("purlis could not read {file}: {why}")),
-        };
-        let mut open = std::fs::File::from(fd);
-        let found = open
-            .metadata()
-            .map_err(|why| format!("purlis could not read {file}: {why}"))?;
-        if !found.file_type().is_file() {
-            return Err(format!("{file} is not a plain file"));
-        }
-        let too_big = |bytes: u64| {
-            format!("{file} is {bytes} bytes, and a theme's file is never larger than {MOST_BYTES}")
-        };
-        if found.len() > MOST_BYTES {
-            return Err(too_big(found.len()));
-        }
-        // The file can grow after its size was asked: the read stops one byte past the cap.
-        let mut text = String::new();
-        (&mut open)
-            .take(MOST_BYTES + 1)
-            .read_to_string(&mut text)
-            .map_err(|why| format!("purlis could not read {file}: {why}"))?;
-        if text.len() as u64 > MOST_BYTES {
-            return Err(too_big(text.len() as u64));
-        }
-        Ok(text)
     }
 }
 
