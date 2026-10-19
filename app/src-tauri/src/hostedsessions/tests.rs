@@ -1694,9 +1694,13 @@ fn a_chat_the_host_composes_by_its_names_is_heard_by_the_window_and_answered_fro
         }),
     };
 
-    let (_id, confinement) = sessions
+    let crate::host::Composed {
+        confinement, ran, ..
+    } = sessions
         .open_named(None, &by_its_names(), hearing, &|_| {})
         .expect("composed in the host");
+    // How the host applied the sandbox to the run it composed, as its start answered (#2692).
+    assert_eq!(ran, Some(session::RunSandbox::By("proxy".to_owned())));
     let confinement = confinement.expect("named to the window");
     let id = confinement.held_as().expect("held in the host").to_owned();
     confines.proxy_did(
@@ -1754,7 +1758,7 @@ fn a_chat_started_by_its_names_with_a_hearing_that_asks_nobody_names_nothing_to_
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
 
-    let (_id, confinement) = sessions
+    let crate::host::Composed { confinement, .. } = sessions
         .open_named(
             None,
             &by_its_names(),
@@ -1796,10 +1800,13 @@ fn a_chat_started_by_its_names_tells_the_host_what_was_allowed_it_alone_where_it
         ..Hearing::default()
     };
 
-    let (_id, confinement) = sessions
+    let crate::host::Composed { confinement, .. } = sessions
         .open_named(None, &alone, asking(), &|_| {})
         .expect("composed in the host");
-    let (_unheard, unasked) = sessions
+    let crate::host::Composed {
+        confinement: unasked,
+        ..
+    } = sessions
         .open_named(None, &alone, Hearing::default(), &|_| {})
         .expect("composed in the host");
 
@@ -2186,7 +2193,11 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     };
     assert!(sessions.composes_its_harness_chats());
 
-    let (id, confinement) = sessions
+    let crate::host::Composed {
+        number: id,
+        confinement,
+        ..
+    } = sessions
         .open_named(None, &by_its_names(), hearing, &|_| {})
         .expect("composed on the runner");
     let confinement = confinement.expect("named to the window");

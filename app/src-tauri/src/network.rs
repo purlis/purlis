@@ -548,9 +548,11 @@ fn chat_network_of(
             local_ports: None,
         };
     };
+    // Sandboxed by the record of how its run started and the compile this window holds
+    // (#2692): one with no record is shown as unsandboxed, with nothing open or blocked.
     let confines = chats
         .confines_of(session)
-        .filter(|_| !chats.unsandboxed(session));
+        .filter(|_| chats.runs_sandboxed(session));
     let Some(confines) = confines else {
         return ChatNetwork {
             open: true,

@@ -472,7 +472,8 @@ pub struct Ground<'a> {
     /// Whether chat `session` is one this app has open now.
     pub is_open: &'a dyn Fn(u32) -> bool,
     /// Whether this app started chat `session` inside a sandbox: its own record of what the
-    /// chat's sandbox was compiled to, never a word the chat sent (#1446).
+    /// chat's sandbox was compiled to and the record of how its run started, never a word the
+    /// chat sent (#1446, #2692). A run with no record is not one.
     pub sandboxed: &'a dyn Fn(u32) -> bool,
     /// Writes the audit of a grant or revoke, and answers whether it was written.
     pub audit: Audit<'a>,
@@ -2100,7 +2101,7 @@ pub fn requested_as(
             root,
             locks: &locks,
             is_open: &|session| held.chats().recorded_chat(session).is_some(),
-            sandboxed: &|session| held.chats().confines_of(session).is_some(),
+            sandboxed: &|session| held.chats().runs_sandboxed(session),
             audit,
             at: now_secs(),
         },
@@ -2268,7 +2269,7 @@ fn with_ground<T>(held: &crate::planes::Held, with: impl FnOnce(&Ground<'_>) -> 
         root,
         locks: &locks,
         is_open: &|session| held.chats().recorded_chat(session).is_some(),
-        sandboxed: &|session| held.chats().confines_of(session).is_some(),
+        sandboxed: &|session| held.chats().runs_sandboxed(session),
         audit: &|number, audited| held.hooks().record_dispatch_grant(root, number, audited),
         at: now_secs(),
     })

@@ -333,16 +333,20 @@ fn shown(plane: &PlaneId, session: u32, not: NotTagged) -> VaultRefused {
 /// time, told to the window. Everything it notes is the app's record of the chat and the
 /// registry's; the line gave only the vault's name, which must be one the registry holds.
 ///
-/// Only for a chat the app started sandboxed: any other reads its vault itself, and is not
-/// refused here.
+/// Only for a chat whose run started sandboxed, by the record of how it started (#2692), never
+/// by what the window holds for it now: `unsandboxed` is that record saying it started without
+/// the sandbox ([`crate::chats::Chats::started_unsandboxed`]). Such a chat reads its vault
+/// itself, and is not refused here. A run whose record cannot be read is told, as a sandboxed
+/// one is: the Notice decides nothing, and its Allow is the person's.
 pub fn refused(
     plane: &PlaneId,
     refusals: &Refusals,
     asker: &brokered::Asker,
+    unsandboxed: bool,
     vault: &str,
     tell: &(dyn Fn(VaultRefused) + Send + Sync),
 ) {
-    if asker.confines.is_none() {
+    if unsandboxed {
         return;
     }
     let ctx = Ctx::new(&asker.root, asker.env.clone());

@@ -79,6 +79,7 @@ fn a_refused_vault_raises_one_notice_however_often_the_chat_tries() {
             &plane(root),
             &refusals,
             &asker(root, Some("steward")),
+            false,
             "devops",
             &tell,
         );
@@ -99,6 +100,22 @@ fn a_refused_vault_raises_one_notice_however_often_the_chat_tries() {
     assert_eq!(refusals.of(3).len(), 1);
 }
 
+/// #2692: the Notice goes by the record of how the chat's run started, never by what the window
+/// holds for it now. A chat a sandbox holds whose compile the window keeps no record of (a
+/// runner's, or one reattached under a sandbox that changed) is still told.
+#[test]
+fn a_chat_whose_run_started_sandboxed_is_told_though_no_compile_of_its_sandbox_is_held() {
+    let project = project();
+    let root = project.path();
+    let refusals = Refusals::default();
+    let (heard, tell) = told();
+    let mut held = asker(root, Some("steward"));
+    held.confines = None;
+    refused(&plane(root), &refusals, &held, false, "devops", &tell);
+    assert_eq!(heard.lock().unwrap().len(), 1, "told once");
+    assert_eq!(refusals.of(3).len(), 1);
+}
+
 #[test]
 fn nothing_is_raised_where_there_is_nothing_to_allow() {
     let project = project();
@@ -111,6 +128,7 @@ fn nothing_is_raised_where_there_is_nothing_to_allow() {
         &plane(root),
         &refusals,
         &asker(root, Some("devops")),
+        false,
         "devops",
         &tell,
     );
@@ -118,13 +136,27 @@ fn nothing_is_raised_where_there_is_nothing_to_allow() {
         &plane(root),
         &refusals,
         &asker(root, Some("steward")),
+        false,
         "made-up",
         &tell,
     );
-    refused(&plane(root), &refusals, &asker(root, None), "devops", &tell);
-    let mut unsandboxed = asker(root, Some("steward"));
-    unsandboxed.confines = None;
-    refused(&plane(root), &refusals, &unsandboxed, "devops", &tell);
+    refused(
+        &plane(root),
+        &refusals,
+        &asker(root, None),
+        false,
+        "devops",
+        &tell,
+    );
+    // Started without the sandbox, by the record of how its run started (#2692).
+    refused(
+        &plane(root),
+        &refusals,
+        &asker(root, Some("steward")),
+        true,
+        "devops",
+        &tell,
+    );
     assert_eq!(*heard.lock().unwrap(), []);
     assert_eq!(refusals.of(3), []);
 }
@@ -140,6 +172,7 @@ fn allow_is_audited_kept_on_this_machine_and_never_written_to_the_registry() {
         &plane(root),
         &refusals,
         &asker(root, Some("steward")),
+        false,
         "devops",
         &tell,
     );
@@ -260,6 +293,7 @@ fn an_allow_answers_every_chat_it_cured_and_a_second_press_says_already_allowed(
             &plane(root),
             &refusals,
             &steward_chat(root, session),
+            false,
             "devops",
             &tell,
         );
@@ -342,6 +376,7 @@ fn a_press_where_the_grant_already_stands_puts_the_notice_away_and_changes_nothi
         &plane(root),
         &refusals,
         &asker(root, Some("steward")),
+        false,
         "devops",
         &tell,
     );
@@ -374,6 +409,7 @@ fn allow_follows_a_refusal_an_audit_and_the_apps_own_record_of_the_chat() {
         &plane(root),
         &refusals,
         &asker(root, Some("steward")),
+        false,
         "devops",
         &tell,
     );
@@ -414,6 +450,7 @@ fn policy_forbids_the_allow_and_the_notice_says_who_locked_it() {
         &plane(root),
         &refusals,
         &asker(root, Some("steward")),
+        false,
         "devops",
         &tell,
     );

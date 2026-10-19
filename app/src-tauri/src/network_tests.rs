@@ -744,3 +744,36 @@ fn a_started_sandboxed_chat_shows_what_its_sandbox_reaches_and_only_its_own_refu
     );
     chats.close(session).expect("closed");
 }
+
+/// #2692: the network record shows a chat as sandboxed only by the record of how its run
+/// started, with its compile held: a run with no record is shown as unsandboxed, with nothing
+/// open or blocked. Writes a manifest, so it first runs on CI.
+#[test]
+fn a_chat_with_no_record_of_how_its_run_started_is_shown_as_unsandboxed() {
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        project.path().join(purlis_core::plane::MANIFEST),
+        "[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example.com\"]\n",
+    )
+    .expect("the project's file");
+    let chats = crate::chats::tests::restartable_chats_of(
+        project.path(),
+        crate::host::pretend::Pretend::default(),
+    );
+    let session = chats
+        .start(
+            &crate::chats::tests::a_resumable_chat_in(project.path()),
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("starts");
+    let compiled = chats.confines_of(session).expect("it started sandboxed");
+    assert!(chat_network_of(project.path(), &chats, session, &[], None, 100).sandboxed);
+
+    chats.runs_as_recorded(session, Some(compiled), None);
+    let shown = chat_network_of(project.path(), &chats, session, &[], None, 100);
+    assert!(shown.open && !shown.sandboxed, "{shown:?}");
+    assert!(shown.reach.is_empty());
+}

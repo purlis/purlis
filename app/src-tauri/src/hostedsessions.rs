@@ -1707,7 +1707,7 @@ impl HostedSessions {
         start: StartProgram,
         operator_shell: bool,
         announce: &dyn Fn(u32),
-    ) -> Result<(u32, Option<session::Confined>), String> {
+    ) -> Result<Begun, String> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let started = match link.call(Command::StartProgram(Box::new(start))) {
@@ -1727,22 +1727,31 @@ impl HostedSessions {
                 program,
                 process,
                 confined,
+                sandbox,
                 ..
-            }) => (program, process, confined),
+            }) => (program, process, confined, sandbox),
             Ok(other) => {
                 return Err(format!("the session host answered a start with {other:?}"));
             }
             Err(why) => return Err(why),
         };
-        let (program, pid, confined) = started;
+        let (program, pid, confined, ran) = started;
         self.runs(link, id, &program, pid);
         lock(&self.lost).remove(&id);
         // A stop that landed while this program was being started is carried out now.
         if !operator_shell && self.kill_switch.is_stopped() {
             link.send(Command::Stop { chat: program });
         }
-        Ok((id, confined))
+        Ok(Begun { id, confined, ran })
     }
+}
+
+/// What [`HostedSessions::started`] heard of a start: its number, the confinement the host named
+/// to this link where it named one, and how the host applied the sandbox to its run (1.29).
+struct Begun {
+    id: u32,
+    confined: Option<session::Confined>,
+    ran: Option<session::RunSandbox>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -1780,7 +1789,7 @@ impl SessionHost for HostedSessions {
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)
-            .map(|(id, _)| id)
+            .map(|begun| begun.id)
     }
 
     fn open_named(
@@ -1789,7 +1798,7 @@ impl SessionHost for HostedSessions {
         named: &Named,
         hearing: purlis_core::sandbox::plan::Hearing,
         announce: &dyn Fn(u32),
-    ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
+    ) -> Result<crate::host::Composed, String> {
         use crate::hostedconfinement::{Hears, HeldInTheHost, placed};
         if self.kill_switch.is_stopped() {
             return Err(STOPPED.to_owned());
@@ -1833,7 +1842,8 @@ impl SessionHost for HostedSessions {
                 link.unhear(confinement);
             }
         };
-        let (id, confined) = self
+        // How the host applied the sandbox to the run it composed, by its own record (#2692).
+        let Begun { id, confined, ran } = self
             .started(&link, id, start, false, announce)
             .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
@@ -1842,7 +1852,11 @@ impl SessionHost for HostedSessions {
             confined.filter(|confined| confinement.as_ref() == Some(&confined.confinement));
         let (Some(confinement), Some(confined)) = (confinement.clone(), named_here) else {
             unheard(&confinement);
-            return Ok((id, None));
+            return Ok(crate::host::Composed {
+                number: id,
+                confinement: None,
+                ran,
+            });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
         // One the window cannot hold is let go of, and the chat that runs in it is closed with
@@ -1857,7 +1871,11 @@ impl SessionHost for HostedSessions {
                 ));
             }
         };
-        Ok((id, Some(confinement)))
+        Ok(crate::host::Composed {
+            number: id,
+            confinement: Some(confinement),
+            ran,
+        })
     }
 
     fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {

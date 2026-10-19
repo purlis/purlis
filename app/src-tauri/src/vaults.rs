@@ -208,6 +208,7 @@ pub(crate) fn run_brokered(
         plane,
         held.vault_refusals(),
         &asker,
+        held.chats().started_unsandboxed(ask.chat),
         &ask.secret_exec.vault,
         refused,
     );
@@ -341,20 +342,29 @@ pub(crate) fn keys_for_chat(
         confines: held.chats().confines_now(chat),
         harness: open.harness,
     };
-    keys_answered(plane, held.vault_refusals(), &asker, vault, refused)
+    let unsandboxed = held.chats().started_unsandboxed(chat);
+    keys_answered(
+        plane,
+        held.vault_refusals(),
+        (&asker, unsandboxed),
+        vault,
+        refused,
+    )
 }
 
 /// [`keys_for_chat`] once the chat is found: noted for the Notice where refused, then the
 /// core's answer.
+/// `unsandboxed` is whether its run started without the sandbox, by the record of how it
+/// started (#2692).
 fn keys_answered(
     plane: &PlaneId,
     refusals: &crate::vaultroute::Refusals,
-    asker: &purlis_core::secrets::brokered::Asker,
+    (asker, unsandboxed): (&purlis_core::secrets::brokered::Asker, bool),
     vault: &str,
     refused: &(dyn Fn(crate::vaultroute::VaultRefused) + Send + Sync),
 ) -> purlis_core::hookwire::Answer {
     use purlis_core::hookwire::Answer;
-    crate::vaultroute::refused(plane, refusals, asker, vault, refused);
+    crate::vaultroute::refused(plane, refusals, asker, unsandboxed, vault, refused);
     let ctx = Ctx::new(&asker.root, asker.env.clone());
     match purlis_core::secrets::brokered::keys_for(&ctx, asker.persona.as_deref(), vault) {
         Ok(keys) => Answer::Keys { keys },

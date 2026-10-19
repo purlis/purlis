@@ -5479,6 +5479,46 @@ fn a_chat_nobody_is_at_starts_no_chat_in_another_workspace_without_a_standing_gr
     assert!(told.is_none());
 }
 
+/// #2692: a handoff's crossing reads the record of how the asking chat's run started, as the
+/// refusal it defers to does: a chat whose compile is held but whose run has no record counts as
+/// unsandboxed, so a crossing to another persona is refused as one with no sandbox, grant or
+/// not, and never let through by a grant a sandboxed chat would go by.
+#[test]
+fn a_crossing_of_a_chat_with_no_record_of_how_its_run_started_is_refused_as_unsandboxed() {
+    let plane = a_plane_with_personas();
+    std::fs::create_dir_all(plane.root.join("workspaces/beta")).expect("beta");
+    let planes = planes_recording_events(&plane.root.join("events"));
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let alpha = held.root().join("workspaces").join("alpha");
+    let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &alpha);
+    held.unattended().heard(asking, true);
+    // As though its start had compiled a sandbox, with no record of how its run started.
+    held.chats().runs_as_recorded(
+        asking,
+        Some(purlis_core::sandbox::Confines::default()),
+        None,
+    );
+    purlis_core::sandbox::local::grant_dispatch(&plane.root, "steward", "devops")
+        .expect("the person allowed it on this machine");
+
+    let (said, told) = dispatch_in(
+        &held,
+        &id,
+        &Tickets::default(),
+        asking,
+        (Some("devops"), "check the queue"),
+        "workspace:beta",
+    );
+    assert_eq!(
+        said,
+        Answer::No {
+            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say(),
+        }
+    );
+    assert!(told.is_none());
+}
+
 #[test]
 fn a_chat_nobody_is_at_with_no_sandbox_is_told_so_before_a_limit() {
     // #1543 l3: dispatch is off in this project (a limit of 0), and the chat runs with no

@@ -2542,7 +2542,7 @@ fn dispatch_noting(
     let unsandboxed_to_another = crossing_stands_aside(
         pair.to.as_deref(),
         asking_as.persona.as_deref(),
-        held.chats().confines_of(from).is_some(),
+        held.chats().runs_sandboxed(from),
     );
     if let (Attendance::Unattended, By::Chat, Some(name)) = (attended, wanted.by, crosses_into)
         && workspace.as_deref() != Some(name)

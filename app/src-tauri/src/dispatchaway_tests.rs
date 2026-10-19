@@ -1106,3 +1106,90 @@ fn a_crossing_is_settled_by_a_never_as_any_entry_is() {
     assert!(listed_now(&world).is_empty());
     assert!(purlis_core::dispatchaway::list(world.root(), NOW).is_empty());
 }
+
+/// Starts a chat as `persona` in a project the app holds, with personas steward and devops. It
+/// opens a terminal and the project's hook socket, which a sandboxed chat may not: CI runs it
+/// first.
+fn a_held_chat(persona: &str) -> (tempfile::TempDir, std::sync::Arc<crate::planes::Held>, u32) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    for name in ["steward", "devops"] {
+        let persona = root.join("personas").join(name);
+        std::fs::create_dir_all(&persona).expect("a persona");
+        std::fs::write(
+            persona.join("persona.md"),
+            format!("---\nname: {name}\n---\n# {name}\n"),
+        )
+        .expect("its file");
+    }
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("the project");
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let chat = purlis_core::reopen::Chat {
+        program: "/bin/sh".to_owned(),
+        args: vec!["-c".to_owned(), "sleep 5".to_owned()],
+        name: "sh".to_owned(),
+        persona: Some(persona.to_owned()),
+        ..Default::default()
+    };
+    let session = held
+        .chats()
+        .start(
+            &chat,
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("it runs");
+    (dir, held, session)
+}
+
+/// #2692: a crossing refused while nobody was there is kept for the person only for a chat
+/// sandboxed by the record of how its run started, with its compile held: one with no record of
+/// its run counts as unsandboxed, so it is told as it was and nothing is kept.
+#[test]
+fn a_crossing_of_a_chat_with_no_record_of_how_its_run_started_is_not_kept() {
+    use purlis_session_protocol::session::RunSandbox;
+    let (_dir, held, session) = a_held_chat("steward");
+    let asking = Asking {
+        session,
+        ..chat(Some("steward"))
+    };
+    let said = "refused".to_owned();
+    let crossing = || {
+        refused_crossing(
+            &held,
+            &asking,
+            Some("devops"),
+            said.clone(),
+            ("web", away::Road::Task),
+        )
+    };
+    let compiled = Some(purlis_core::sandbox::Confines::default());
+
+    held.chats()
+        .runs_as_recorded(session, compiled.clone(), None);
+    assert_eq!(crossing(), said, "no record: told as it was");
+    assert!(
+        purlis_core::dispatchaway::list(held.root(), now_secs()).is_empty(),
+        "nothing kept"
+    );
+
+    held.chats().runs_as_recorded(
+        session,
+        compiled,
+        Some(RunSandbox::By("seatbelt".to_owned())),
+    );
+    crossing();
+    assert_eq!(
+        purlis_core::dispatchaway::list(held.root(), now_secs()).len(),
+        1,
+        "kept for a chat recorded in its sandbox"
+    );
+}

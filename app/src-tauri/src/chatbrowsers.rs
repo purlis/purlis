@@ -2209,10 +2209,9 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
 fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     // The persona the chat was started as, as every brokered read of a vault takes it, and
     // whether it runs with no sandbox at all, from the same run of it (#2560).
-    let (asker, unconfined) = held
-        .chats()
-        .login_asker(held.root(), session)
-        .ok_or_else(|| format!("chat {session} is not one this app has open"))?;
+    let (asker, unconfined) = login_asker_of(held, session, name).map_err(|why| {
+        why.unwrap_or_else(|| format!("chat {session} is not one this app has open"))
+    })?;
     let persona = asker.persona.clone().unwrap_or_default();
     let (mut login, identity) =
         purlis_core::secrets::brokered::login_and_identity_for(&asker, name, unconfined)?;
@@ -2245,6 +2244,30 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
         opens,
         identity,
     })
+}
+
+/// **Who asks for chat `session`'s browser login `name`, and whether it runs with no sandbox at
+/// all** ([`crate::chats::Chats::login_asker`]). A chat its host composed in a sandbox there is
+/// refused in words (#2692): its tools are what the runner armed, which this window holds no
+/// record of, and a restart would not give it one. `Err(None)` for a chat this app does not
+/// have open.
+fn login_asker_of(
+    held: &crate::planes::Held,
+    session: u32,
+    name: &str,
+) -> Result<(purlis_core::secrets::brokered::Asker, bool), Option<String>> {
+    if held.chats().sandboxed_by_its_host(session) {
+        return Err(Some(in_its_hosts_sandbox(name)));
+    }
+    held.chats().login_asker(held.root(), session).ok_or(None)
+}
+
+/// What a browser login of a chat its runner composed in its sandbox is refused with (#2692).
+pub(crate) fn in_its_hosts_sandbox(name: &str) -> String {
+    format!(
+        "this chat runs in its runner's sandbox, whose tools the runner armed there, so purlis \
+         performs no browser login {name} for it from this window, and nothing was filled"
+    )
 }
 
 /// The persona chat `session` runs with, from the app's own record of it, never from what
@@ -3126,10 +3149,9 @@ pub fn handed(
     // it (spec #2008).
     // The identity compared whole (#2699): persona, project and declaration.
     let may_log_in = |login: &HeldLogin| -> Result<(), String> {
-        let (asker, unconfined) = held
-            .chats()
-            .login_asker(held.root(), session)
-            .ok_or_else(|| "that chat is not open in this window".to_owned())?;
+        let (asker, unconfined) = login_asker_of(held, session, &login.login).map_err(|why| {
+            why.unwrap_or_else(|| "that chat is not open in this window".to_owned())
+        })?;
         login.may_go_to(
             asker.persona.as_deref(),
             purlis_core::secrets::brokered::login_allowed(&asker, &login.login, unconfined),

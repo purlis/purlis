@@ -374,6 +374,10 @@ struct Running {
     /// for a run it started, or the session host's, for one it reattached. `None` where that
     /// record cannot be read, which is taken as sandboxed.
     ran: Option<purlis_session_protocol::session::RunSandbox>,
+    /// **Whether its host composed it by its names** (#2446): a runner's chat, whose sandbox,
+    /// tools and line the runner compiled there, so this window holds no record of what its
+    /// sandbox compiled to, and a restart would not give it one (#2692).
+    composed_by_its_host: bool,
 }
 
 /// [`Running::started_with`].
@@ -3228,7 +3232,7 @@ impl Chats {
         let mut ran = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.ran_in(number),
             // The runner composes it, with the sandbox it compiles there: its record is the
-            // runner's, taken as sandboxed until the start says otherwise, below.
+            // runner's, which its start answers, below (#2692).
             _ if on_the_runner => None,
             _ => Some(ran_as_started(sandbox, harness)),
         };
@@ -3423,15 +3427,13 @@ impl Chats {
                     composed_hearing.unwrap_or_default(),
                     &announce,
                 )
-                .map(|(session, composed)| {
-                    // Started without the sandbox, as asked, where the runner composed no
-                    // confinement for it (#2636): the one start on a runner this window knows
-                    // to be off, since the runner refuses that start rather than sandbox it.
-                    if runner_without_sandbox && composed.is_none() {
-                        ran = Some(purlis_session_protocol::session::RunSandbox::Off);
-                    }
-                    confinement = composed;
-                    session
+                .map(|composed| {
+                    // How the runner applied the sandbox to the run it composed, by the runner
+                    // host's own record as its start answered it (#2692): none from a runner
+                    // that keeps no such record, which is taken as sandboxed.
+                    ran = composed.ran;
+                    confinement = composed.confinement;
+                    composed.number
                 }),
             _ => self.sessions.open(
                 // The number this chat already answers to, where it has one. A chat put
@@ -3532,6 +3534,7 @@ impl Chats {
                     grants: self.grants_of(chat),
                 },
                 ran,
+                composed_by_its_host: on_the_runner,
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -3832,15 +3835,6 @@ impl Chats {
             (None, Some(harness)) => Some(harness.newline().to_owned()),
             (None, None) => None,
         }
-    }
-
-    /// Whether a person started this run of chat `session` without the sandbox (ruling V78 a),
-    /// as its record says: what a git action the app makes for it is held to (#1335, D-5).
-    /// `false` for a chat that is not open.
-    pub fn unsandboxed(&self, session: u32) -> bool {
-        lock(&self.open)
-            .get(&session)
-            .is_some_and(|one| one.chat.unsandboxed)
     }
 
     /// The handoff `session` was opened by, where one opened it.
@@ -4467,14 +4461,59 @@ impl Chats {
         ))
     }
 
-    /// **Whether chat `session` is open and was started without the sandbox** (#2242): no
-    /// sandbox compiled for it and none holding it, as [`Self::login_asker`] reads it. A chat
-    /// reattached under a sandbox that changed while no window was there (D-2006-11) has no
-    /// compiled sandbox recorded but is still held, so it is not one.
+    /// **Whether chat `session` is open and its run started without the sandbox, by the record
+    /// of how it started** (#2242, #2692), as [`Self::login_asker`] reads it: for a path where a
+    /// chat with no sandbox is allowed more. A run whose record cannot be read is not one, nor is
+    /// a chat reattached under a sandbox that changed while no window was there (D-2006-11),
+    /// which has no compiled sandbox recorded but is still held.
     pub fn started_unsandboxed(&self, session: u32) -> bool {
-        lock(&self.open)
-            .get(&session)
-            .is_some_and(|running| running.confines.is_none() && running.confinement.is_none())
+        lock(&self.open).get(&session).is_some_and(|running| {
+            running.ran == Some(purlis_session_protocol::session::RunSandbox::Off)
+        })
+    }
+
+    /// **Whether chat `session` is open and runs in the sandbox its start compiled, by both
+    /// records** (#2692): the record of how its run started says it is in a sandbox, and this
+    /// window holds what that sandbox was compiled to. For a path where a sandboxed chat is
+    /// allowed more than one with no sandbox (dispatching to another persona, a handoff's
+    /// crossing, a dispatch while you are away, the network record), so it fails closed there:
+    /// a run whose record cannot be read, one recorded off, and one whose compile this window
+    /// does not hold (a chat its host composed, or one reattached under a sandbox that changed,
+    /// D-2006-11) each count as unsandboxed.
+    pub fn runs_sandboxed(&self, session: u32) -> bool {
+        lock(&self.open).get(&session).is_some_and(|running| {
+            running.confines.is_some()
+                && matches!(
+                    running.ran,
+                    Some(purlis_session_protocol::session::RunSandbox::By(_))
+                )
+        })
+    }
+
+    /// Chat `session` as though its start had compiled `confines` and its run were recorded as
+    /// `ran`, for a test of a path that reads them (#2692).
+    #[cfg(test)]
+    pub(crate) fn runs_as_recorded(
+        &self,
+        session: u32,
+        confines: Option<purlis_core::sandbox::Confines>,
+        ran: Option<purlis_session_protocol::session::RunSandbox>,
+    ) {
+        if let Some(running) = lock(&self.open).get_mut(&session) {
+            running.confines = confines;
+            running.ran = ran;
+        }
+    }
+
+    /// **Whether chat `session` is open and runs in a sandbox its host composed for it** (#2692):
+    /// a runner's chat whose run the runner's record does not say is off. Its sandbox, and the
+    /// tools it armed, are the runner's, so this window holds no record of them, and a restart
+    /// would not give it one.
+    pub fn sandboxed_by_its_host(&self, session: u32) -> bool {
+        lock(&self.open).get(&session).is_some_and(|running| {
+            running.composed_by_its_host
+                && running.ran != Some(purlis_session_protocol::session::RunSandbox::Off)
+        })
     }
 
     /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:
