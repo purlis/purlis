@@ -390,7 +390,7 @@ impl Found {
             ),
             None => (Value::Null, Value::Null),
         };
-        json!({
+        let mut summary = json!({
             "id": self.id,
             "name": name,
             "appearances": appearances,
@@ -399,7 +399,12 @@ impl Found {
             "level": self.from.level(),
             "from": self.from.json(),
             "refused": self.refused,
-        })
+        });
+        // A built-in theme says whether it ships as a preview (#2336); no other theme has the key.
+        if matches!(self.from, From::BuiltIn) {
+            summary["preview"] = Value::from(theme::is_preview(&self.id));
+        }
+        summary
     }
 }
 
@@ -961,8 +966,7 @@ fn extensions(config: &Path) -> Vec<Found> {
 }
 
 /// The theme `asked` names: Purlis by its id, Purlis Classic by its id or any id its appearances
-/// have had, the
-/// person's own, a level's theme folder by `<level>:<folder>`, an extension's by
+/// have had, the person's own, a level's theme folder by `<level>:<folder>`, an extension's by
 /// `<extension>/<theme>`, or else a theme file or a theme folder by its path. `Err` when there
 /// is none, with what reading a level had to say.
 fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {

@@ -330,12 +330,13 @@ rewrites the file; the next pick made in Settings writes the new id.
 **Purlis** (#2336) is the second built-in theme, built from the designer's foundation
 (`docs/design/foundation/README.md`): a lavender accent on cool dark neutrals, in IBM Plex Sans
 for the interface and JetBrains Mono for code, paths and the terminal, with Lucide's icons. Its
-folder is `crates/purlis-core/src/theme/built-in/purlis/`, compiled into the core and read by the
-same reader as any theme folder, its fonts and icon set included (`theme::purlis`). A pick names
-it `purlis`; no theme folder takes that id, and a theme may `extend` it. It ships as a
+folder is `crates/purlis-core/src/theme/built-in/purlis/`, compiled into the core and read by
+the same reader as any theme folder, its fonts and icon set included (`theme::purlis`). A pick
+names it `purlis`; no theme folder takes that id, and a theme may `extend` it. It ships as a
 **preview**: the gallery marks its card Preview, `purlis theme list` names it "Purlis
-(preview)", and Purlis Classic stays the theme the window comes up in until the switch-over
-(#2338).
+(preview)", each built-in theme's entry in `purlis theme list --json` has `"preview"` (true for
+Purlis, false for Purlis Classic, absent on every other theme), and Purlis Classic stays the
+theme the window comes up in until the switch-over (#2338).
 
 It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
 naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
@@ -357,9 +358,10 @@ it so (`purlis_tests.rs`). Where its values come from:
   `text.muted` is the record's `#a09eab`, the grey it names as the nearest, because its
   quieter `#8a8896` measures 4.44 on a card; `#8a8896` is the placeholder.
 - **Geometry is the foundation's where a core token draws the same thing**: controls' corners
-  7, menus' and dialogs' 10, panels' 12, a control 26 high and a chrome row 24, body text at a
-  line height of 1.55, and no shadow under a raised surface. The type sizes and the spacing the
-  record uses are core's already.
+  7, menus' and dialogs' 10, a control 26 high and a chrome row 24, body text at a line height
+  of 1.55, and no shadow under a raised surface. `radius.xl` is 12, the record's largest card
+  corner: it draws the Welcome screen's doors. Panels' 12 has no token yet. The type sizes and
+  the spacing the record uses are core's already.
 - **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
   the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its

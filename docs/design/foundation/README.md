@@ -244,14 +244,16 @@ The other glyphs are text, not icons: `×`, `+`, `⌄`, `›`, `•`, `↓`, `·
 ## Fonts and icons
 
 The operator decided on 2026-10-17: Purlis uses IBM Plex Sans and JetBrains Mono, approved for
-bundling under the SIL Open Font License (#2336). The icons stay pending their licence
-decision; nothing here bundles them.
+bundling under the SIL Open Font License (#2336), and draws its icons from Lucide (ISC) at the
+frame's 24 px and 2 px round stroke in place of Untitled UI Icons (#2337). Both are bundled in
+the Purlis theme folder, `crates/purlis-core/src/theme/built-in/purlis/`, with their licences
+in its `LICENSE`.
 
 | asset             | what the frame uses                     | used for       | status                          |
 | ----------------- | --------------------------------------- | -------------- | ------------------------------- |
-| IBM Plex Sans     | Regular 400, Medium 500, SemiBold 600   | the interface  | approved for bundling, OFL      |
-| JetBrains Mono    | Regular 400                             | code and paths | approved for bundling, OFL      |
-| Untitled UI Icons | eleven icons, by name                   | the rails      | pending the licence decision    |
+| IBM Plex Sans     | Regular 400, Medium 500, SemiBold 600   | the interface  | bundled, OFL (#2336)            |
+| JetBrains Mono    | Regular 400                             | code and paths | bundled, OFL (#2336)            |
+| Untitled UI Icons | eleven icons, by name                   | the rails      | not bundled: Lucide (ISC) draws the rails instead (#2337) |
 
 ## The frame and the tables agree
 

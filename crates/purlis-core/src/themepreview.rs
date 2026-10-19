@@ -20,9 +20,10 @@
 //!
 //! **Today a theme is named by id**: Purlis Classic (`purlis-classic`) or Purlis (`purlis`,
 //! #2336) in either appearance, or one of Purlis Classic's appearances by its own id
-//! (`purlis-dark`, `purlis-light`, and the ids they had before the rename). The ask carries a name and an appearance and nothing else, so the theme
-//! folders at every level, option values and drafts are fields added beside them, each resolved
-//! by the theme engine, without changing what is already said.
+//! (`purlis-dark`, `purlis-light`, and the ids they had before the rename). The ask carries a
+//! name and an appearance and nothing else, so the theme folders at every level, option values
+//! and drafts are fields added beside them, each resolved by the theme engine, without changing
+//! what is already said.
 
 use serde_json::{Map, Value, json};
 

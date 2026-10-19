@@ -245,12 +245,16 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
                 { "id": "light", "appearance": "light", "high_contrast": false }
             ],
             "options": [], "combinations": 2, "level": "built-in",
-            "from": { "kind": "built-in" }, "refused": null
+            "from": { "kind": "built-in" }, "refused": null, "preview": false
         })
     );
     assert_eq!(themes[1]["id"], "purlis");
     assert_eq!(themes[1]["name"], "Purlis");
     assert_eq!(themes[1]["combinations"], 3);
+    // A built-in theme says whether it ships as a preview (#2336); no other theme has the key.
+    assert_eq!(themes[1]["preview"], true);
+    assert!(themes[2].get("preview").is_none(), "{themes}");
+    assert!(themes[3].get("preview").is_none(), "{themes}");
     assert_eq!(themes[2]["id"], "mine");
     assert_eq!(themes[2]["from"]["kind"], "mine");
     assert_eq!(themes[2]["name"], serde_json::Value::Null);
@@ -286,6 +290,20 @@ fn purlis_classic_checks_clean_in_both_appearances_and_exits_zero() {
          consent floors: none held in 2 combinations\n\
          hard floors: not checked by this purlis yet\n"
     );
+}
+
+#[test]
+fn purlis_checks_clean_as_json_with_no_error_note_warning_or_floor_held() {
+    let rig = Rig::new();
+
+    let ran = rig.run(&["check", "purlis", "--json"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let json = ran.json();
+    for key in ["errors", "notes", "warnings", "held"] {
+        assert_eq!(json[key], serde_json::json!([]), "{key}: {json}");
+    }
+    assert_eq!(json["clean"], true, "{json}");
 }
 
 #[test]

@@ -214,3 +214,151 @@ fn the_gallery_shows_it_beside_purlis_classic_as_a_preview() {
     assert!(purlis.warnings.is_empty() && purlis.floors.is_empty());
     assert!(purlis.duplicable && !purlis.folder);
 }
+
+/// **The light appearance's rule, re-derived** (D-2336-12), so a change to dark cannot leave
+/// light behind: each colour's OKLCH lightness reflected about the foundation's deepest colour,
+/// hue, chroma and alpha kept (chroma given up in steps of 0.001 until it fits sRGB); the scrim,
+/// the shadow and the scrollbar's track kept as they are; and a reflected colour that misses a
+/// floor of the check stepped darker by 0.01 until it clears it.
+mod light_rule {
+    fn to_linear(c: f64) -> f64 {
+        let c = c / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn to_srgb(c: f64) -> f64 {
+        let c = if c <= 0.003_130_8 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        };
+        c * 255.0
+    }
+
+    fn rgb(hex: &str) -> [f64; 3] {
+        let byte = |at: usize| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap());
+        [byte(1), byte(3), byte(5)]
+    }
+
+    fn hex([r, g, b]: [f64; 3]) -> String {
+        let one = |v: f64| (v + 0.5).floor().clamp(0.0, 255.0) as u8;
+        format!("#{:02x}{:02x}{:02x}", one(r), one(g), one(b))
+    }
+
+    fn cbrt(v: f64) -> f64 {
+        v.abs().powf(1.0 / 3.0).copysign(v)
+    }
+
+    /// `hex` as OKLCH: lightness, chroma, hue in degrees.
+    pub(super) fn oklch_of(hex: &str) -> (f64, f64, f64) {
+        let [r, g, b] = rgb(hex).map(to_linear);
+        let l = cbrt(0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b);
+        let m = cbrt(0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b);
+        let s = cbrt(0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b);
+        let lightness = 0.210_454_255_3 * l + 0.793_617_785_0 * m - 0.004_072_046_8 * s;
+        let a = 1.977_998_495_1 * l - 2.428_592_205_0 * m + 0.450_593_709_9 * s;
+        let b = 0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766_0 * s;
+        (
+            lightness,
+            a.hypot(b),
+            b.atan2(a).to_degrees().rem_euclid(360.0),
+        )
+    }
+
+    /// The colour of OKLCH `lightness`, `chroma` and `hue`, chroma given up until it fits sRGB.
+    pub(super) fn oklch(lightness: f64, mut chroma: f64, hue: f64) -> String {
+        loop {
+            let (a, b) = (
+                chroma * hue.to_radians().cos(),
+                chroma * hue.to_radians().sin(),
+            );
+            let l = (lightness + 0.396_337_777_4 * a + 0.215_803_757_3 * b).powi(3);
+            let m = (lightness - 0.105_561_345_8 * a - 0.063_854_172_8 * b).powi(3);
+            let s = (lightness - 0.089_484_177_5 * a - 1.291_485_548_0 * b).powi(3);
+            let linear = [
+                4.076_741_662_1 * l - 3.307_711_591_3 * m + 0.230_969_929_2 * s,
+                -1.268_438_004_6 * l + 2.609_757_401_1 * m - 0.341_319_396_5 * s,
+                -0.004_196_086_3 * l - 0.703_418_614_7 * m + 1.707_614_701_0 * s,
+            ];
+            if linear.iter().all(|v| (-1e-6..=1.0 + 1e-6).contains(v)) || chroma <= 0.0 {
+                return hex(linear.map(|v| to_srgb(v.clamp(0.0, 1.0))));
+            }
+            chroma = (chroma - 0.001).max(0.0);
+        }
+    }
+
+    fn luminance(hex: &str) -> f64 {
+        let [r, g, b] = rgb(hex).map(to_linear);
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    pub(super) fn contrast(a: &str, b: &str) -> f64 {
+        let (x, y) = (luminance(a), luminance(b));
+        let (light, dark) = if x >= y { (x, y) } else { (y, x) };
+        let ratio = (light + 0.05) / (dark + 0.05);
+        (ratio * 100.0).round() / 100.0
+    }
+
+    /// `value` reflected about lightness `deepest`, its alpha kept; a value that is not a colour
+    /// as it is.
+    pub(super) fn reflect(value: &str, deepest: f64) -> String {
+        if !value.starts_with('#') {
+            return value.to_owned();
+        }
+        let (body, alpha) = value.split_at(7);
+        let (lightness, chroma, hue) = oklch_of(body);
+        format!("{}{alpha}", oklch(1.0 - (lightness - deepest), chroma, hue))
+    }
+
+    /// `value` stepped darker by 0.01 of lightness until it clears `floor` on `ground`.
+    pub(super) fn cleared(mut value: String, ground: &str, floor: f64) -> String {
+        let (mut lightness, chroma, hue) = oklch_of(&value);
+        while contrast(&value, ground) < floor {
+            lightness -= 0.01;
+            value = oklch(lightness, chroma, hue);
+        }
+        value
+    }
+}
+
+#[test]
+fn light_is_dark_reflected_by_its_one_rule() {
+    let theme = purlis();
+    let dark = theme.of(Appearance::Dark).unwrap();
+    let light = theme.of(Appearance::Light).unwrap();
+    // The foundation's deepest colour: what the window is drawn on, behind everything.
+    let deepest = light_rule::oklch_of(dark.value("window.background")).0;
+    let kept = ["overlay.scrim", "overlay.shadow", "scrollbar.track"];
+    // The pairs a reflected colour missed, and the ground it is stepped away from (#2700).
+    let stepped = [
+        ("syntax.comment", "surface.hover", 3.0),
+        ("syntax.punctuation", "surface.hover", 3.0),
+    ];
+    let mut derived: std::collections::BTreeMap<&str, String> = dark
+        .values
+        .iter()
+        .map(|(token, value)| {
+            let value = if kept.contains(token) {
+                value.clone()
+            } else {
+                light_rule::reflect(value, deepest)
+            };
+            (*token, value)
+        })
+        .collect();
+    for (token, ground, floor) in stepped {
+        let ground = derived[ground].clone();
+        let value = derived[token].clone();
+        derived.insert(token, light_rule::cleared(value, &ground, floor));
+    }
+    for (token, value) in &light.values {
+        assert_eq!(value, &derived[token], "{token}");
+    }
+    assert_eq!(light.typed, dark.typed);
+    assert_eq!(light.geometry, dark.geometry);
+    assert_eq!(light.motion, dark.motion);
+}
