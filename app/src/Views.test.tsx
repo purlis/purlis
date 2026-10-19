@@ -387,6 +387,16 @@ describe("an extension's view", () => {
     expect(bars[0].closest("[aria-hidden='true']")).not.toBeNull();
   });
 
+  it("draws each point as its own series, the chart palette in turn", async () => {
+    core(() => CHARTED);
+    draw(THE_PLANE_S_STATISTICS, { title: "Statistics" });
+
+    const chart = await screen.findByTestId("chart");
+    const bars = chart.querySelectorAll<HTMLElement>(".chart-bar");
+
+    expect([...bars].map((bar) => bar.dataset.series)).toEqual(["1", "2"]);
+  });
+
   it("draws the executor's refusal in its own words rather than an empty chart", async () => {
     core(
       () =>

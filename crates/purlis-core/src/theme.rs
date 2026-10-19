@@ -99,7 +99,7 @@ pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
     export, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage, unpack,
 };
-pub use check::{Finding, PAIRS, Pair, Report};
+pub use check::{FITS, Finding, Fit, PAIRS, Pair, Report};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
     CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
@@ -962,8 +962,9 @@ impl TheirsKept {
 }
 
 /// **Checks one appearance of a theme**: every contrast pair, the terminal's ANSI floors and the
-/// selected row kept apart, as it is and tinted by every colour a workspace can name. An
-/// appearance with no findings can be read.
+/// selected row kept apart, as it is and tinted by every colour a workspace can name, and every
+/// line of words fitting the box it is drawn in, in both densities. An appearance with no
+/// findings can be read.
 pub fn check(theme: &ResolvedTheme) -> Report {
     check::check(theme)
 }

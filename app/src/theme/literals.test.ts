@@ -485,25 +485,8 @@ describe("the stylesheet and the vocabulary agree", () => {
   it("every token the window has is drawn with", () => {
     // A token nobody reads is a promise to a theme author that charter does not keep.
     const terminal = (token: Token) => token.startsWith("terminal.");
-    /** The chart palette past its first colour: a chart draws one series today, in `chart.1`,
-     *  and the rest are for a chart with more than one (#2327), which no view draws yet. */
-    const further: readonly Token[] = [
-      "chart.2",
-      "chart.3",
-      "chart.4",
-      "chart.5",
-      "chart.6",
-      "chart.7",
-      "chart.8",
-    ];
-    const unread = TOKENS.filter(
-      (token) => !terminal(token) && !further.includes(token) && !used.has(property(token)),
-    );
+    const unread = TOKENS.filter((token) => !terminal(token) && !used.has(property(token)));
     expect(unread).toEqual([]);
-    expect(
-      further.filter((token) => used.has(property(token))),
-      "drawn now: not exempt",
-    ).toEqual([]);
   });
 
   it("every motion token the window has is moved with", () => {

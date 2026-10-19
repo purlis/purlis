@@ -57,6 +57,13 @@ const LOOK_BEFORE: &[(&str, &str, bool, bool)] = &[
     ("punctuation", "terminal.foreground", false, false),
 ];
 
+/// The roles Purlis Classic light draws a shade darker than the colour the editor borrowed, so
+/// they read on the editor's current line (#2522), and the colour each is drawn in.
+const LIGHT_DARKER: &[(&str, &str)] = &[
+    ("syntax.property", "#1283ff"),
+    ("syntax.attribute", "#1283ff"),
+];
+
 // ---------------------------------------------------------------------------------------
 // Purlis Classic draws as it did
 // ---------------------------------------------------------------------------------------
@@ -66,7 +73,13 @@ fn purlis_classic_draws_its_code_in_the_colours_the_editor_borrowed_from_the_ter
     for theme in [dark(), light()] {
         for (role, borrowed, italic, bold) in LOOK_BEFORE {
             let token = format!("syntax.{role}");
-            assert_eq!(theme.value(&token), theme.value(borrowed), "{token}");
+            let darker = LIGHT_DARKER
+                .iter()
+                .find(|(it, _)| *it == token && theme.appearance == Appearance::Light);
+            match darker {
+                Some((_, colour)) => assert_eq!(theme.value(&token), *colour, "{token}"),
+                None => assert_eq!(theme.value(&token), theme.value(borrowed), "{token}"),
+            }
             assert_eq!(
                 theme.typed.flag(&format!("{token}.italic")),
                 *italic,

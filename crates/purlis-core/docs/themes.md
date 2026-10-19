@@ -168,8 +168,13 @@ appearance it was found in, and its `options` the value of each option it was dr
 for a theme with none), in the theme's order of its options. Its `kind` is `contrast` (a `pair`,
 its `ratio`, and `under` when the back is a wash laid over another token), `ansi` (a terminal
 colour too close to the terminal's background: `token`, `ratio`, `floor`) or
-`selected-not-apart` (the selected row drawn exactly as `other`). `tint` is the workspace colour
-it was found in, or `null` for the theme as it is. `held` has one entry for each combination
+`selected-not-apart` (the selected row drawn exactly as `other`), `selection-text-alone` (a
+colour for selected text on a selection left to the platform) or `line-does-not-fit` (a line of
+words taller than the box it is drawn in: its `density`, the `fit` it breaks, a `size`, a
+`line_height` and a `height` token, and the `line` and the `room` it has, in px at the default
+text size). A control holds the window's words (`font-size.base`) and a strip a tab's title
+(`font-size.md`), each on the body line (`line-height.body`), in both densities. `tint` is the
+workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
 in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
 `floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
 as purlis's own. `hard_floors` is `null` until purlis checks them. `clean` is true with no

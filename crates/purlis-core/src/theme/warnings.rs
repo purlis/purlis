@@ -8,7 +8,7 @@
 //! words. A chat reads the findings as the engine reports them (`purlis theme check --json`).
 
 use super::check::Finding;
-use super::{Checked, PALETTE, Theme};
+use super::{Checked, Density, PALETTE, Theme};
 use crate::shown;
 
 /// **Every warning the check found in `checked`**, each a line: a combination is named at the
@@ -133,6 +133,26 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 "selection.text is a colour while selection.background is \"platform\", so it \
                  is never drawn"
                     .to_owned(),
+                None,
+                None,
+                None,
+            ),
+            Finding::LineDoesNotFit {
+                density,
+                fit,
+                line,
+                room,
+            } => (
+                format!(
+                    "{} × {} is a {line}px line, taller than {}'s {room}px ({})",
+                    fit.size,
+                    fit.line_height,
+                    fit.height,
+                    match density {
+                        Density::Comfortable => "comfortable",
+                        Density::Compact => "compact",
+                    }
+                ),
                 None,
                 None,
                 None,
