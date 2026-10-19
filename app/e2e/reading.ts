@@ -79,3 +79,67 @@ export async function bandNotice(cause: string): Promise<BandNotice> {
     return { state: "opening" };
   }, cause);
 }
+
+/** The workspace strip as the window draws it now, for a failure that says what it found. */
+export type StripSeen = {
+  /** Each workspace tab's drawn name, in strip order. */
+  names: string[];
+  /** The same tabs' names as the markup holds them, drawn or not. */
+  held: string[];
+  /** The project tab in front, by its title. */
+  project: string | null;
+  /** The tab in front on the Tabs strip, by its drawn text. */
+  tab: string | null;
+  /** The window's inner size, `width×height`. */
+  size: string;
+};
+
+/** What the workspace strip draws now, read in one pass. */
+export async function stripSeen(): Promise<StripSeen> {
+  return browser.execute(() => {
+    const tabs = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-strip="Workspaces"] [role="tab"] .workspace-name',
+      ),
+    ];
+    const selected = (strip: string) =>
+      document.querySelector<HTMLElement>(
+        `[data-strip="${strip}"] [role="tab"][aria-selected="true"]`,
+      );
+    return {
+      names: tabs.map((one) => one.innerText.trim()),
+      held: tabs.map((one) => (one.textContent ?? "").trim()),
+      project: selected("Projects")?.getAttribute("title") ?? null,
+      tab: selected("Tabs")?.innerText.trim() ?? null,
+      size: `${window.innerWidth}×${window.innerHeight}`,
+    };
+  });
+}
+
+/**
+ * **Waits until the workspace strip draws exactly `names`**, in order, and fails saying what it
+ * drew instead: the names, the project and tab in front, and the window's size. One app process
+ * serves the whole scenario run, so a strip that is not the fixture plane's is a spec before this
+ * one that left the window elsewhere, and the failure names where.
+ */
+export async function untilTheStripLists(
+  names: readonly string[],
+  timeout = 30_000,
+): Promise<void> {
+  let last: StripSeen | undefined;
+  const wanted = names.join(",");
+  await browser
+    .waitUntil(
+      async () => {
+        last = await stripSeen();
+        return last.names.join(",") === wanted;
+      },
+      { timeout, interval: 250 },
+    )
+    .catch(() => {
+      throw new Error(
+        `the strip never listed the fixture plane (${wanted}); it drew ` +
+          JSON.stringify(last ?? "nothing it could read"),
+      );
+    });
+}
