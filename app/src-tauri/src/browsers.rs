@@ -475,10 +475,11 @@ mod hosted {
             root: &Path,
             reach: Option<BrowserReach>,
         ) -> Result<String, String> {
-            self.open_reaching(root, reach, None).map_err(|not| match not {
-                NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
-                NotStarted::Failed(why) => why,
-            })
+            self.open_reaching(root, reach, None)
+                .map_err(|not| match not {
+                    NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
+                    NotStarted::Failed(why) => why,
+                })
         }
 
         /// Starts a browser in the project at `root` reaching `reach` (#2013), or with none,
