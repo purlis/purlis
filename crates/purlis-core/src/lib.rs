@@ -67,6 +67,7 @@ pub use purlis_terminal::engine;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browsers;
+pub mod browsersatquit;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;

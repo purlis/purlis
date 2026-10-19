@@ -697,6 +697,19 @@ export const commands = {
 	 */
 	chatBrowsers: (plane: PlaneId) => typedError<ChatBrowser[], string>(__TAURI_INVOKE("chat_browsers", { plane })),
 	/**
+	 *  **The person pins chat `session`'s browser `program`, or unpins it** (#2022): pinned, it
+	 *  outlives its chat. The window's alone (`ui::WINDOW_ONLY`).
+	 */
+	pinChatBrowser: (plane: PlaneId, session: number, program: string, pinned: boolean) => typedError<null, string>(__TAURI_INVOKE("pin_chat_browser", { plane, session, program, pinned })),
+	/**
+	 *  **The addresses project `plane`'s browsers were at when purlis last quit** (#2022): offered
+	 *  at this start, each a button, nothing loaded by itself. The window's alone
+	 *  (`ui::WINDOW_ONLY`).
+	 */
+	browsersAtQuit: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("browsers_at_quit", { plane })),
+	/**  **The person put away the browsers of the last quit** (#2022): they are offered no more. */
+	putAwayBrowsersAtQuit: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("put_away_browsers_at_quit", { plane })),
+	/**
 	 *  **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
 	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
 	 *  Window-only.
@@ -1170,6 +1183,13 @@ export const commands = {
 	 *  which ends with its chat (#2024).
 	 */
 	closeBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("close_browser", { program })),
+	/**
+	 *  **The person hands browser `program` to chat `session` of project `plane`** (#2022): one
+	 *  pinned there whose chat closed, or one they opened there that no chat uses. Its chat's browser
+	 *  tools use it from their next call; answers what the chat calls it. The window's alone
+	 *  (`ui::WINDOW_ONLY`): only the person gives a chat a browser.
+	 */
+	handBrowserToChat: (plane: PlaneId, program: string, session: number) => typedError<string, string>(__TAURI_INVOKE("hand_browser_to_chat", { plane, program, session })),
 	/**
 	 *  The person takes browser `program` over (#2014): its chat's browser tools are refused in
 	 *  words until [`hand_back_browser`], and a call in flight is cut.
@@ -4467,6 +4487,15 @@ export type ChatBrowser = {
 	 *  purlis keeps trying, and Stop all ends it now.
 	 */
 	unended: boolean,
+	/**  The person pinned it (#2022): it outlives its chat. */
+	pinned: boolean,
+	/**
+	 *  Where its chat has closed, what that chat was called: it is pinned, no chat uses it, and
+	 *  it runs until the person stops it, Stop all, or the app quits (#2022).
+	 */
+	was: string | null,
+	/**  The login purlis performed in it, where it holds one (#2022). */
+	login: string | null,
 };
 
 /**

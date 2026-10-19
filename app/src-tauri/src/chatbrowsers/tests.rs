@@ -10,7 +10,9 @@ use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, LogIn, Secre
 
 use purlis_core::sandbox::persona::Browser;
 
-use super::{AsPersona, ChatBrowsers, Driver, Ended, NotStarted, Posture, Refused};
+use super::{
+    AsPersona, ChatBrowsers, Driver, Ended, HandOver, HeldLogin, NotStarted, Posture, Refused,
+};
 
 /// A driver that stands in for the session host: it starts numbered browsers, answers every
 /// act settled, and keeps what it was asked.
@@ -32,6 +34,11 @@ struct Hosted {
     /// How many closes, and how many stops by id, fail from now.
     closes_fail: Mutex<u32>,
     stops_fail: Mutex<u32>,
+    /// How many reads of a browser's pages, and how many logins, fail from now (#2022).
+    pages_fail: Mutex<u32>,
+    login_fails: Mutex<u32>,
+    /// Where the page each act answers is, if anywhere (#2022).
+    at: Mutex<Option<String>>,
     /// The device's budget, where the host says it is reached.
     full: Mutex<Option<usize>>,
     /// The browsers the host lists with a driver (#2023), and whether its list fails.
@@ -101,19 +108,37 @@ impl Driver for Hosted {
         if self.ended.lock().unwrap().iter().any(|one| one == program) {
             return Err(Refused::Gone);
         }
+        let pages = matches!(act, Act::Pages);
         self.acts
             .lock()
             .unwrap()
             .push((program.to_owned(), call_id.to_owned(), act));
+        // The host takes the act's reach before it acts, as the session host does.
         self.reached.lock().unwrap().push(reach);
+        if pages && fails(&self.pages_fail) {
+            return Err(Refused::Said("the page did not answer in time".into()));
+        }
         Ok(Browsed {
             settled: true,
             asked: self.asks.lock().unwrap().clone(),
+            page: self.at.lock().unwrap().clone().map(|address| {
+                purlis_session_protocol::browsing::PageSaid {
+                    page: "p1".into(),
+                    address,
+                    title: "A page".into(),
+                    current: true,
+                }
+            }),
             ..Browsed::default()
         })
     }
 
     fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused> {
+        if fails(&self.login_fails) {
+            return Err(Refused::Said(
+                "the password field did not go within the time allowed".into(),
+            ));
+        }
         self.logins
             .lock()
             .unwrap()
@@ -568,7 +593,7 @@ fn closing_a_chat_ends_its_browsers_and_forgets_its_answer() {
     answered(&browsers, &hosted, &ask(3, Browsing::New));
 
     let driver: Arc<dyn Driver> = hosted.clone();
-    browsers.forget(Some(&driver), 3);
+    browsers.forget(Some(&driver), 3, "Chat 3");
 
     assert_eq!(*hosted.closed.lock().unwrap(), ["program-1", "program-2"]);
     assert_eq!(browsers.posture(3), Posture::Unasked);
@@ -994,7 +1019,7 @@ fn listed(chat: u32, name: &str, program: &str) -> super::ChatBrowser {
         session: chat,
         name: name.into(),
         program: program.into(),
-        unended: false,
+        ..super::ChatBrowser::default()
     }
 }
 
@@ -1035,7 +1060,7 @@ fn the_listing_moves_when_a_browser_starts_or_ends_and_not_on_an_act() {
     let narrowed = browsers.listing();
     allowed_and_acting(&browsers, &hosted, 4);
     let before_forget = browsers.listing();
-    browsers.forget(Some(&driver), 4);
+    browsers.forget(Some(&driver), 4, "Chat 4");
 
     assert_ne!(started, at_first);
     assert_eq!(acted, started, "an act starts and ends nothing");
@@ -1648,4 +1673,478 @@ fn the_projects_browser_sites_are_listed_for_its_browser_at_the_projects_layer()
             layer: Layer::Project,
         }]
     );
+}
+
+#[test]
+fn a_pinned_browser_outlives_its_chat_and_ends_with_stop_all() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+
+    assert!(hosted.closed.lock().unwrap().is_empty(), "it runs on");
+    assert_eq!(
+        browsers.listed(),
+        [super::ChatBrowser {
+            pinned: true,
+            was: Some("Fix the login".into()),
+            ..listed(3, "b1", "program-1")
+        }]
+    );
+    assert!(
+        browsers.is_kept("program-1"),
+        "the window keeps it past a closed tab"
+    );
+    assert!(
+        super::closing_refused([&browsers], "program-1").is_none(),
+        "the person may stop it"
+    );
+    browsers.all_stopped(Some(&driver));
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert!(browsers.listed().is_empty());
+}
+
+#[test]
+fn a_pinned_browser_is_listed_as_pinned_while_its_chat_uses_it_and_unpinned_ends_with_it() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    let before = browsers.listing();
+
+    browsers.pin(3, "program-1", true).unwrap();
+    assert_ne!(browsers.listing(), before, "its row moves");
+    assert_eq!(
+        browsers.listed(),
+        [super::ChatBrowser {
+            pinned: true,
+            ..listed(3, "b1", "program-1")
+        }]
+    );
+    browsers.pin(3, "program-1", false).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+    assert!(browsers.listed().is_empty());
+}
+
+#[test]
+fn only_a_chats_own_browser_is_pinned_by_it() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+
+    let why = browsers.pin(4, "program-1", true).unwrap_err();
+
+    assert!(why.contains("no longer"), "{why}");
+    assert!(browsers.listed().iter().all(|one| !one.pinned));
+}
+
+#[test]
+fn a_pinned_browser_never_stops_for_being_unused() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.pin(3, "program-1", true).unwrap();
+
+    assert!(browsers.idle(Some(&driver), 99_000, &[]).is_empty());
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    assert!(browsers.idle(Some(&driver), 99_000, &[]).is_empty());
+    assert!(hosted.closed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_browser_with_no_chat_is_handed_to_a_chat_which_is_told_and_uses_it() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 4);
+    let before = browsers.listing();
+
+    let name = hand(&browsers, &hosted, "program-person", 4).unwrap();
+
+    assert_eq!(name, "b2");
+    assert_ne!(browsers.listing(), before);
+    assert!(
+        browsers.is_in_use("program-person"),
+        "it ends with its chat now"
+    );
+    let answer = answered_at(&browsers, &hosted, &ask(4, click()), 2001);
+    let Answer::Browsed { browser, browsed } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(browser, "b2", "the browser tools use it from now");
+    let note = browsed.note.unwrap_or_default();
+    assert!(note.contains("the person handed"), "{note}");
+    assert_eq!(
+        hosted.acts.lock().unwrap().last().unwrap().0,
+        "program-person"
+    );
+}
+
+#[test]
+fn a_pinned_browser_whose_chat_closed_is_handed_to_another_chat() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    allowed_and_acting(&browsers, &hosted, 4);
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+
+    hand(&browsers, &hosted, "program-1", 4).unwrap();
+
+    assert_eq!(
+        browsers.listed(),
+        [
+            listed(4, "b1", "program-2"),
+            super::ChatBrowser {
+                pinned: true,
+                ..listed(4, "b2", "program-1")
+            },
+        ]
+    );
+    assert!(!browsers.is_kept("program-1"));
+    browsers.forget(Some(&driver), 4, "Other");
+    assert_eq!(
+        *hosted.closed.lock().unwrap(),
+        ["program-2"],
+        "still pinned"
+    );
+}
+
+#[test]
+fn a_browser_a_chat_uses_or_past_the_projects_limit_is_not_handed_over() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    allowed_and_acting(&browsers, &hosted, 4);
+
+    let why = hand(&browsers, &hosted, "program-1", 4).unwrap_err();
+    assert!(why.contains("another chat"), "{why}");
+
+    answered(&browsers, &hosted, &ask(4, Browsing::New));
+    let why = hand(&browsers, &hosted, "program-person", 4).unwrap_err();
+    assert!(why.contains("3 browsers"), "{why}");
+}
+
+#[test]
+fn a_pinned_browser_the_person_stopped_leaves_the_listing() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    let before = browsers.listing();
+
+    assert!(browsers.stopped_by_the_person("program-1"));
+
+    assert!(browsers.listed().is_empty());
+    assert_ne!(browsers.listing(), before);
+}
+
+#[test]
+fn the_addresses_of_the_open_browsers_are_what_their_last_acts_answered() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    *hosted.at.lock().unwrap() = Some("https://staging.example.test/cart".into());
+    allowed_and_acting(&browsers, &hosted, 3);
+    *hosted.at.lock().unwrap() = Some("https://docs.example.test/".into());
+    allowed_and_acting(&browsers, &hosted, 4);
+    browsers.pin(4, "program-2", true).unwrap();
+    browsers.forget(Some(&driver), 4, "Docs");
+
+    assert_eq!(
+        browsers.open_addresses(),
+        [
+            "https://staging.example.test/cart",
+            "https://docs.example.test/"
+        ]
+    );
+    browsers.narrowed(Some(&driver), 3);
+    assert_eq!(browsers.open_addresses(), ["https://docs.example.test/"]);
+}
+
+#[test]
+fn the_browsers_kept_at_the_last_quit_are_read_once_and_kept_until_the_person_puts_them_away() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path();
+    purlis_core::browsersatquit::keep(root, &["https://shop.example.test/".to_owned()])
+        .expect("kept at quit");
+    let browsers = ChatBrowsers::default();
+
+    assert_eq!(browsers.at_quit(root), ["https://shop.example.test/"]);
+    assert_eq!(
+        browsers.at_quit(root),
+        ["https://shop.example.test/"],
+        "a window drawn again sees them still"
+    );
+    assert!(
+        purlis_core::browsersatquit::take(root).is_empty(),
+        "offered once: the file went"
+    );
+    browsers.put_away_at_quit();
+    assert!(browsers.at_quit(root).is_empty());
+}
+
+/// The reach a chat handed a browser is given: one host of its own, to tell it apart.
+fn handed_reach() -> BrowserReach {
+    BrowserReach {
+        listed: vec![purlis_session_protocol::session::Listed {
+            host: "chat-four.example.test".into(),
+            layer: purlis_session_protocol::session::Layer::Chat,
+        }],
+        ..BrowserReach::default()
+    }
+}
+
+/// Hands `program` to chat `session` at 2000, the chat reaching [`handed_reach`], and any login
+/// one it may log in with.
+fn hand(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    program: &str,
+    session: u32,
+) -> Result<String, String> {
+    hand_checked(browsers, hosted, program, session, &|_| Ok(()))
+}
+
+fn hand_checked(
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    program: &str,
+    session: u32,
+    may_log_in: &dyn Fn(&HeldLogin) -> Result<(), String>,
+) -> Result<String, String> {
+    let driver: Arc<dyn Driver> = hosted.clone();
+    browsers.hand_over(
+        Some(&driver),
+        Path::new("/p"),
+        HandOver {
+            program,
+            session,
+            now: 2000,
+            reach: handed_reach(),
+        },
+        may_log_in,
+    )
+}
+
+/// Chat 3, as persona qa, signed in with shop-login, its browser pinned, and the chat closed.
+fn signed_in_and_kept(browsers: &ChatBrowsers, hosted: &Arc<Hosted>) {
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let qa = as_persona("qa", None, None);
+    answered_as(browsers, hosted, &ask(3, click()), &qa);
+    browsers.allow(3, false);
+    answered_as(browsers, hosted, &ask(3, log_in("shop-login")), &qa);
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+}
+
+#[test]
+fn a_signed_in_browser_is_listed_with_its_login() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+
+    signed_in_and_kept(&browsers, &hosted);
+
+    assert_eq!(browsers.listed()[0].login.as_deref(), Some("shop-login"));
+}
+
+#[test]
+fn a_signed_in_browser_goes_only_to_a_chat_that_may_log_in_with_that_login_now() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    signed_in_and_kept(&browsers, &hosted);
+    allowed_and_acting(&browsers, &hosted, 4);
+    let asked: Mutex<Vec<HeldLogin>> = Mutex::default();
+
+    let why = hand_checked(&browsers, &hosted, "program-1", 4, &|login| {
+        asked.lock().unwrap().push(login.clone());
+        Err("that chat's persona may not log in with it".into())
+    })
+    .unwrap_err();
+
+    assert!(why.contains("shop-login"), "{why}");
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [HeldLogin {
+            persona: Some("qa".into()),
+            login: "shop-login".into(),
+        }]
+    );
+    assert!(browsers.is_kept("program-1"), "it stays with no chat");
+    assert!(!browsers.is_in_use("program-1"));
+
+    hand_checked(&browsers, &hosted, "program-1", 4, &|_| Ok(())).expect("allowed now");
+    assert!(browsers.is_in_use("program-1"));
+}
+
+#[test]
+fn a_handed_browser_reaches_what_its_new_chat_reaches_at_once() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 4);
+
+    hand(&browsers, &hosted, "program-person", 4).expect("handed");
+
+    let (program, _, act) = hosted.acts.lock().unwrap().last().cloned().expect("an act");
+    assert_eq!(program, "program-person");
+    assert!(matches!(act, Act::Pages), "{act:?}");
+    let reached = hosted
+        .reached
+        .lock()
+        .unwrap()
+        .last()
+        .cloned()
+        .expect("a reach");
+    assert!(
+        reached
+            .listed
+            .iter()
+            .any(|one| one.host == "chat-four.example.test"),
+        "{reached:?}"
+    );
+}
+
+#[test]
+fn a_browser_that_cannot_be_given_its_new_chats_reach_is_not_handed_over() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 4);
+    hosted.ended.lock().unwrap().push("program-person".into());
+
+    let why = hand(&browsers, &hosted, "program-person", 4).unwrap_err();
+
+    assert!(why.contains("not handed over"), "{why}");
+    assert!(!browsers.is_in_use("program-person"));
+}
+
+#[test]
+fn a_browser_purlis_is_still_ending_is_not_handed_over() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    allowed_and_acting(&browsers, &hosted, 4);
+    *hosted.closes_fail.lock().unwrap() = u32::MAX;
+    *hosted.stops_fail.lock().unwrap() = u32::MAX;
+    browsers.narrowed(Some(&driver), 3);
+
+    let why = hand(&browsers, &hosted, "program-1", 4).unwrap_err();
+
+    assert!(why.contains("still ending"), "{why}");
+}
+
+#[test]
+fn no_address_is_kept_at_quit_of_a_browser_that_held_a_login_or_the_persons_typing() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    *hosted.at.lock().unwrap() = Some("https://shop.example.test/account".into());
+    signed_in_and_kept(&browsers, &hosted);
+    *hosted.at.lock().unwrap() = Some("https://docs.example.test/".into());
+    allowed_and_acting(&browsers, &hosted, 4);
+    *hosted.at.lock().unwrap() = Some("https://news.example.test/".into());
+    allowed_and_acting(&browsers, &hosted, 5);
+
+    browsers.driven("program-3", true, 3000);
+
+    assert_eq!(browsers.open_addresses(), ["https://docs.example.test/"]);
+}
+
+#[test]
+fn a_login_that_did_not_answer_ok_still_marks_its_browser_signed_in() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let qa = as_persona("qa", None, None);
+    answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+    browsers.allow(3, false);
+    *hosted.login_fails.lock().unwrap() = 1;
+
+    let tried = answered_as(&browsers, &hosted, &ask(3, log_in("shop-login")), &qa);
+
+    assert!(matches!(tried.0, Answer::No { .. }), "{tried:?}");
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    assert_eq!(browsers.listed()[0].login.as_deref(), Some("shop-login"));
+    allowed_and_acting(&browsers, &hosted, 4);
+    let why = hand_checked(&browsers, &hosted, "program-1", 4, &|login| {
+        assert_eq!(login.persona.as_deref(), Some("qa"));
+        Err("that chat runs as another persona".into())
+    })
+    .unwrap_err();
+    assert!(why.contains("shop-login"), "{why}");
+    assert!(browsers.is_kept("program-1"));
+}
+
+#[test]
+fn a_failed_hand_over_gives_the_browser_back_the_reach_it_had() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    allowed_and_acting(&browsers, &hosted, 4);
+    *hosted.pages_fail.lock().unwrap() = 1;
+
+    let why = hand(&browsers, &hosted, "program-1", 4).unwrap_err();
+
+    assert!(why.contains("not handed over"), "{why}");
+    let last = hosted
+        .reached
+        .lock()
+        .unwrap()
+        .last()
+        .cloned()
+        .expect("a reach");
+    assert_eq!(last, reach(), "the reach chat 3 last gave it");
+    assert!(browsers.is_kept("program-1"));
+}
+
+#[test]
+fn a_browser_whose_reach_cannot_be_given_back_is_ended() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    allowed_and_acting(&browsers, &hosted, 4);
+    *hosted.pages_fail.lock().unwrap() = 2;
+
+    let why = hand(&browsers, &hosted, "program-1", 4).unwrap_err();
+
+    assert!(why.contains("ended it"), "{why}");
+    assert!(!browsers.is_kept("program-1"));
+    assert!(
+        hosted
+            .closed
+            .lock()
+            .unwrap()
+            .contains(&"program-1".to_owned())
+    );
+}
+
+#[test]
+fn what_is_recorded_of_a_browser_goes_when_it_ends() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    *hosted.at.lock().unwrap() = Some("https://docs.example.test/".into());
+    let qa = as_persona("qa", None, None);
+    answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+    browsers.allow(3, false);
+    answered_as(&browsers, &hosted, &ask(3, log_in("shop-login")), &qa);
+    browsers.driven("program-1", true, 1000);
+
+    browsers.forget(Some(&driver), 3, "Fix the login");
+
+    assert_eq!(browsers.records_of("program-1"), (false, false, false));
 }
