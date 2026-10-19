@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792435073413,
+  "lastUpdate": 1792435092744,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6572,6 +6572,42 @@ window.BENCHMARK_DATA = {
             "value": 648.8,
             "unit": "MB",
             "extra": "median of 6 samples: 607.6, 641.1, 647.7, 649.8, 650.1, 742.3 MB; window 393.4 MB, session host 255.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "23855fecf4c5607c66f61363ef92e225af663d84",
+          "message": "The theme check holds the remaining pairs and geometry across tokens (#2700)\n\nEvery syntax role is held on the editor's current line, and the window's\nsecondary, muted, accent and state words on a theme's selection while\nselected text is the platform's. A line of words has to fit the control\nor strip it is drawn in, in both densities: the check names the sizes\nof one that does not (`line-does-not-fit`). Each chart point is its own\nseries, the chart palette in turn, so every chart colour is drawn.\nPurlis Classic light's property and attribute colours are a shade\ndarker so they read on the current line.\n\nCloses #2522\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T21:46:47+04:00",
+          "tree_id": "896380d54561775f0fe75f21502dbbf40c0ccf0a",
+          "url": "https://github.com/purlis/purlis/commit/23855fecf4c5607c66f61363ef92e225af663d84"
+        },
+        "date": 1792435090907,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1498.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1379.3, 1498.8, 1623.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 653.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 621.3, 646.8, 650.8, 656.3, 656.5, 745 MB; window 408.1 MB, session host 246.1 MB"
           }
         ]
       }
