@@ -8,6 +8,11 @@
 //! contrast ratio ([`PAIRS`]), the sixteen ANSI colours are held off the terminal's background,
 //! and the selected row is held apart from the pointer's and the tab's.
 //!
+//! **Geometry is held across tokens too** ([`FITS`]): a line of the window's words, its size
+//! times its line height, fits inside the control or the strip it is drawn in, in both densities.
+//! A theme may set each of the numbers within its own bounds and still make a line taller than
+//! the box it sits in; the check names the sizes when it does.
+//!
 //! **WCAG 2.1 AA is 4.5:1 for body text and 3:1 for large text and for a control's outline.**
 //! The window's text is 14px, so body text is held to 4.5. Marks (a dot, a chip, an icon) are held
 //! to 3, the ratio the standard gives a non-text thing that has to be told apart. This is a
@@ -22,8 +27,13 @@
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
+use super::geometry::Geometry;
 use super::vocabulary::{TOKENS, is_platform};
-use super::{ResolvedTheme, tint};
+use super::{Density, ResolvedTheme, tint};
+
+#[cfg(test)]
+#[path = "check_tests.rs"]
+mod tests;
 
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
@@ -36,7 +46,9 @@ const STANDS_IN: &[(&str, &str)] = &[
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
 /// a `back` that is a wash with alpha. A `front` with alpha is measured laid over the `back`.
 /// `fade` is the opacity a stylesheet draws `front` at, for words drawn faded: the front is
-/// measured laid over the `back` at that opacity.
+/// measured laid over the `back` at that opacity. `selected` marks words drawn selected in their
+/// own colour: a theme that colours selected text draws them all in `selection.text`, which its
+/// own pair holds, so a `selected` pair is measured only while selected text is the platform's.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Pair {
     pub front: &'static str,
@@ -46,6 +58,8 @@ pub struct Pair {
     pub under: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fade: Option<f64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub selected: bool,
 }
 
 impl Pair {
@@ -64,6 +78,14 @@ impl Pair {
             ..self
         }
     }
+
+    /// The same pair, as words selected in their own colour.
+    const fn selected(self) -> Self {
+        Self {
+            selected: true,
+            ..self
+        }
+    }
 }
 
 const fn p(front: &'static str, back: &'static str, floor: f64) -> Pair {
@@ -73,6 +95,7 @@ const fn p(front: &'static str, back: &'static str, floor: f64) -> Pair {
         floor,
         under: None,
         fade: None,
+        selected: false,
     }
 }
 
@@ -296,6 +319,23 @@ pub const PAIRS: &[Pair] = &[
     p("syntax.variable", "terminal.background", 3.0),
     p("syntax.operator", "terminal.background", 3.0),
     p("syntax.punctuation", "terminal.background", 3.0),
+    // - The editor's current line (`.cm-activeLine`, #2522) is `surface.hover` over the editor's
+    //   ground, and every role is drawn on it at the same floor.
+    p("syntax.keyword", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.string", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.number", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.constant", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.comment", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.function", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.type", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.property", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.attribute", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.tag", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.heading", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.invalid", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.variable", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.operator", "surface.hover", 3.0).over("terminal.background"),
+    p("syntax.punctuation", "surface.hover", 3.0).over("terminal.background"),
     // - A markdown render's link, code, quote and heading (`.release-notes`), words on the
     //   window, a pane and a dialog.
     p("markdown.link", "surface.base", TEXT),
@@ -323,11 +363,39 @@ pub const PAIRS: &[Pair] = &[
     //   left to the platform is not measured (`PLATFORM_DRAWN`); selected text left to it keeps
     //   its own colour, measured as the window's words.
     p("selection.text", "selection.background", TEXT).over("surface.base"),
+    // - Words selected in their own colour (#2522): while selected text is the platform's, the
+    //   window's secondary, muted, accent and state words keep their colours on a theme's
+    //   selection, beside its primary words above.
+    p("text.secondary", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("text.muted", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("accent.base", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("state.running", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("state.waiting", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("state.failed", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("state.success", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("state.unreadable", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
     p("placeholder", "surface.sunken", TEXT),
     p("caret", "surface.sunken", 3.0),
     // - A scrollbar's thumb on its track, laid over the window: a hairline's floor.
     p("scrollbar.thumb", "scrollbar.track", 1.2).over("surface.base"),
-    // - A chart's bars, on the track they are drawn in: marks.
+    // - A chart's bars, on the track they are drawn in: marks. Each point is its own series,
+    //   the palette in turn (#2522).
     p("chart.1", "surface.sunken", 3.0),
     p("chart.2", "surface.sunken", 3.0),
     p("chart.3", "surface.sunken", 3.0),
@@ -366,6 +434,34 @@ fn ansi_floor(token: &str) -> f64 {
         3.0
     }
 }
+
+/// **A line of words and the box it is drawn in** (#2522): a line `size` × `line_height` tall
+/// fits inside `height`, in both densities.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct Fit {
+    /// The words' size, a `font-size.*` token.
+    pub size: &'static str,
+    /// Their line height, a `line-height.*` token.
+    pub line_height: &'static str,
+    /// The box's height, a `size.*` token.
+    pub height: &'static str,
+}
+
+/// **Every line that has to fit in its box.** A control's label and a field's text are the
+/// window's words (`font-size.base`) on its own line (`line-height.body`, the `:root`'s); a strip's
+/// largest words are a tab's title (`font-size.md`, `.tabs [role="tab"]`) on the same line.
+pub const FITS: &[Fit] = &[
+    Fit {
+        size: "font-size.base",
+        line_height: "line-height.body",
+        height: "size.control",
+    },
+    Fit {
+        size: "font-size.md",
+        line_height: "line-height.body",
+        height: "size.chrome",
+    },
+];
 
 /// The tokens the selected row (`list.selected`) must never equal: the pointer's row, the tab
 /// you are on, and the window (#1672).
@@ -420,6 +516,14 @@ pub enum Finding {
     /// A colour for selected text with the selection left to the platform (#2327): the window
     /// draws selected text only on a selection the theme colours too, so this one is never drawn.
     SelectionTextAlone,
+    /// A line of [`FITS`] taller than the box it is drawn in, in `density`: `line` is the
+    /// line's height and `room` the box's, in px at the default text size (to two places).
+    LineDoesNotFit {
+        density: Density,
+        fit: Fit,
+        line: f64,
+        room: f64,
+    },
 }
 
 /// The check, as [`super::check`] describes it.
@@ -430,6 +534,9 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
     if platform("selection.background") && !platform("selection.text") {
         findings.push(Finding::SelectionTextAlone);
     }
+    // A tint turns colours only, so the geometry is checked once.
+    fits(Density::Comfortable, &theme.geometry, &mut findings);
+    fits(Density::Compact, &theme.compact, &mut findings);
     // A theme a workspace's colour does not tint is only ever drawn as it is.
     if !theme.tint.tabs().is_empty() {
         for one in &theme.tint.hues {
@@ -477,10 +584,35 @@ fn check_one(theme: &ResolvedTheme, tint: Option<&'static str>, findings: &mut V
     }
 }
 
+/// Each line of [`FITS`] that is taller than its box in `geometry`. Every length here grows with
+/// the text-size setting alike, so what fits at the default text size fits at every one.
+fn fits(density: Density, geometry: &Geometry, findings: &mut Vec<Finding>) {
+    let value = |token: &str| {
+        geometry
+            .get(token)
+            .copied()
+            .or_else(|| super::geometry::step_of(token).map(|step| step.classic))
+            .unwrap_or_default()
+    };
+    for fit in FITS {
+        let line = two_places(value(fit.size) * value(fit.line_height));
+        let room = two_places(value(fit.height));
+        if line > room {
+            findings.push(Finding::LineDoesNotFit {
+                density,
+                fit: *fit,
+                line,
+                room,
+            });
+        }
+    }
+}
+
 /// **The contrast `pair` has in `theme`**, to two places, as it is drawn: `back` laid over
 /// `under` when it names one, and a see-through `front` laid over that. `None` when the platform
 /// draws one of them ([`super::vocabulary::PLATFORM_DRAWN`]); a front left to the platform that
-/// keeps the words' own colour is measured as those words ([`STANDS_IN`]).
+/// keeps the words' own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is
+/// not measured while the theme colours selected text.
 pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
     let (front, back) = measured(theme, pair)?;
     let back = theme.value(back);
@@ -497,10 +629,11 @@ pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
 }
 
 /// The tokens `pair` is measured between in `theme`: its own, a platform-drawn front's stand-in,
-/// or `None` when the platform draws one of them.
+/// or `None` when the platform draws one of them, or when the pair is of words selected in their
+/// own colour and the theme colours selected text.
 fn measured(theme: &ResolvedTheme, pair: &Pair) -> Option<(&'static str, &'static str)> {
     let unset = |token: &str| is_platform(token, theme.value(token));
-    if unset(pair.back) {
+    if unset(pair.back) || (pair.selected && !unset("selection.text")) {
         return None;
     }
     if !unset(pair.front) {
