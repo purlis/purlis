@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792379734755,
+  "lastUpdate": 1792379752086,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6288,6 +6288,42 @@ window.BENCHMARK_DATA = {
             "value": 649.7,
             "unit": "MB",
             "extra": "median of 6 samples: 614.4, 636.8, 648.4, 651, 652.7, 742.5 MB; window 405.4 MB, session host 244.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f454c0ea985727e1c369438c4263d00e13f765e6",
+          "message": "Sandbox: a chat is judged sandboxed or not by the record of how its run started (#2688)\n\n* The session host records how each run is sandboxed\n\nThe host reads it from what it starts, never from the start: the program\nthat wraps it (Seatbelt, purlis's Linux wrap, Claude Code's own sandbox\nin its settings) and whether a confinement holds it. A confined run never\nreads as off. It is kept per program, on the host record's started line,\nand answered by programs_of (session protocol 1.28, sandbox).\n\nPart of #2636\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* WIP: the window judges a run by the record of how it started\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A chat is judged by the record of how its run started\n\nThe window keeps how each run is sandboxed: its own record for a run it\nstarts, the session host's for one it reattaches. A browser login reads\nit. A run recorded as off is reattached with no sandbox of now standing\nin for it; a run with no record is taken as sandboxed and offered a\nrestart. ADR 0068 amendment, plane-format's host record row, and a\nchangelog fragment.\n\nCloses #2636\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A runner chat started without the sandbox keeps its logins; only logins read the record\n\nA harness chat on a runner that the person started without the sandbox,\nwhich the runner composed with no confinement, is recorded off, so its\nbrowser logins are its persona's. Logins are the one path that reads the\nrecord of how a run started; the paths that grant a sandboxed chat more\nkeep the window's compiled record. A composed Claude Code line is read as\nits own sandbox.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T06:30:34+04:00",
+          "tree_id": "6a3f62c5b47289e21c2301e42822fef812023ecd",
+          "url": "https://github.com/purlis/purlis/commit/f454c0ea985727e1c369438c4263d00e13f765e6"
+        },
+        "date": 1792379750236,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1523.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1278.9, 1523.5, 1551.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 635.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 596.4, 622.2, 634.8, 636.8, 637.5, 736.1 MB; window 389.4 MB, session host 246.4 MB"
           }
         ]
       }
