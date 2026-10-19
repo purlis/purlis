@@ -60,7 +60,10 @@ use super::choices::{self, Choices};
 pub(crate) use super::folders::plane_fonts;
 pub use super::folders::{Folders, Found, FoundFolder, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
-use super::{Appearance, Complaint, Contrast, Theme, Values, built_in, classic, default_theme};
+use super::{
+    Appearance, Complaint, Contrast, PURLIS, Theme, Values, built_in, classic, default_theme,
+    shipped,
+};
 use crate::extension::project::theme::{Pick, SYSTEM, Said, is_appearance};
 use crate::settings::Source;
 
@@ -177,11 +180,15 @@ impl Choice {
 
     /// **What the window is told this choice draws**, as `project_theme_drawn` answers: a pick
     /// the window can draw in the same frame (an appearance of Purlis Classic, by the id a pick
-    /// names it by) or any other theme's id, which the window asks the engine to resolve.
+    /// names it by) or any other theme's id, Purlis's included, which the window asks the engine
+    /// to resolve.
     pub fn told(&self) -> String {
         let Some(Pick::BuiltIn(id)) = Pick::parse(&self.theme) else {
             return self.theme.clone();
         };
+        if id == PURLIS {
+            return self.theme.clone();
+        }
         match self.appearance.as_deref() {
             None => id.to_owned(),
             Some(SYSTEM) => SYSTEM.to_owned(),
@@ -441,9 +448,11 @@ fn drawn_for(
                 ..drawn
             }
         }
+        // Purlis Classic by an id one of its appearances has had draws that appearance; Purlis,
+        // and either by an appearance chosen, are drawn as any theme is.
         Some(Pick::BuiltIn(id)) => match appearance {
             // An appearance of Purlis Classic by the id a pick names it by.
-            None => {
+            None if id != PURLIS => {
                 let (theme, left_out) = classic().with(&choice.options);
                 let drawn = match built_in(id) {
                     Some(one) => Drawn::of(
@@ -460,7 +469,7 @@ fn drawn_for(
                     ..drawn
                 }
             }
-            Some(_) => valued(classic(), Vec::new()),
+            _ => valued(shipped(id).unwrap_or_else(classic), Vec::new()),
         },
         Some(Pick::Extension { id, name }) => {
             let offered = offered();

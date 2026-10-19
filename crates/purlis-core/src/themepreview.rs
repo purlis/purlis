@@ -18,9 +18,9 @@
 //! ([`crate::hookwire::Ask::ThemePreview`]) and the pictures back as images on the framed
 //! stream.
 //!
-//! **Today a theme is named by id**: Purlis Classic (`purlis-classic`) in either appearance, or
-//! one of its appearances by its own id (`purlis-dark`, `purlis-light`, and the ids they had
-//! before the rename). The ask carries a name and an appearance and nothing else, so the theme
+//! **Today a theme is named by id**: Purlis Classic (`purlis-classic`) or Purlis (`purlis`,
+//! #2336) in either appearance, or one of Purlis Classic's appearances by its own id
+//! (`purlis-dark`, `purlis-light`, and the ids they had before the rename). The ask carries a name and an appearance and nothing else, so the theme
 //! folders at every level, option values and drafts are fields added beside them, each resolved
 //! by the theme engine, without changing what is already said.
 
@@ -90,8 +90,8 @@ fn choice_properties() -> Value {
     json!({
         "theme": {
             "type": "string",
-            "description": "The theme's id: purlis-classic, or one of its appearances by id \
-                            (purlis-dark, purlis-light).",
+            "description": "The theme's id: purlis-classic or purlis, or one of Purlis \
+                            Classic's appearances by id (purlis-dark, purlis-light).",
         },
         "appearance": {
             "type": "string",
@@ -191,17 +191,21 @@ fn appearance(given: Option<&Value>) -> Result<Option<Appearance>, String> {
 /// The themes a specimen may be drawn in today, as a sentence's end.
 fn known() -> String {
     let ids: Vec<&str> = theme::built_ins().iter().map(|t| t.name.as_str()).collect();
-    format!("{PURLIS_CLASSIC} (dark or light), or {}", ids.join(" or "))
+    format!(
+        "{PURLIS_CLASSIC} or {} (dark or light), or {}",
+        theme::PURLIS,
+        ids.join(" or ")
+    )
 }
 
 /// **The resolved theme `specimen` is drawn in**, by the theme engine, or why there is none.
 pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
-    if specimen.theme == PURLIS_CLASSIC {
-        let classic = theme::classic();
+    if specimen.theme == PURLIS_CLASSIC || specimen.theme == theme::PURLIS {
+        let shipped = theme::shipped(&specimen.theme).unwrap_or_else(theme::classic);
         return Ok(specimen
             .appearance
-            .and_then(|asked| classic.of(asked))
-            .unwrap_or_else(|| classic.first()));
+            .and_then(|asked| shipped.of(asked))
+            .unwrap_or_else(|| shipped.first()));
     }
     let Some(found) = theme::built_in(&specimen.theme) else {
         return Err(format!(
