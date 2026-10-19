@@ -43,7 +43,8 @@
 //! word: a client's `take_back` is refused.
 //!
 //! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
-//! client, so a vault's value never reaches another host this way.
+//! client, so a vault's value never reaches another host this way; nor is a browser's start
+//! from kept logins (#2021), which stay on this device.
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
@@ -971,7 +972,10 @@ async fn push_on(
 fn the_windows_alone(command: &Command) -> bool {
     match command {
         Command::StartProgram(start) => {
-            start.launch.is_some() || start.without_sandbox || start.confinement.is_some()
+            start.launch.is_some()
+                || start.without_sandbox
+                || start.confinement.is_some()
+                || !start.alone.is_empty()
         }
         command => the_windows_power(command.power()),
     }
@@ -1022,11 +1026,21 @@ impl session::Host for Relay {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         // A login's values never leave this host (#2016): not for any client, the window's
         // included.
-        if command.power() == Power::LogIn {
+        let kept = matches!(&command, Command::StartProgram(start) if start.kept.is_some());
+        if command.power() == Power::LogIn || kept {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "a browser on another host is logged in to nothing: a login's values are \
                       not sent to another host"
+                    .into(),
+            });
+        }
+        // A runner is unpaired by the desktop that removes it, on a link of its own (#2525):
+        // never sent on for a client.
+        if command == Command::Unpair {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a runner is unpaired as purlis removes it, never through a relaying host"
                     .into(),
             });
         }

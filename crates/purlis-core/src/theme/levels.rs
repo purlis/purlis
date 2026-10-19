@@ -363,6 +363,7 @@ fn drawn_for(
                 )),
                 Some(one) if one.theme.refused => Drawn {
                     complaints: one.theme.complaints.clone(),
+                    refused: true,
                     ..Drawn::of(default_theme())
                 },
                 Some(one) => {
@@ -380,6 +381,7 @@ fn drawn_for(
             Found::Missing(said) => return Err(said),
             Found::Read(resolved) if resolved.refused => Drawn {
                 complaints: resolved.complaints,
+                refused: true,
                 ..Drawn::of(default_theme())
             },
             Found::Read(resolved) => {
@@ -404,8 +406,9 @@ fn cannot(why: String) -> Drawn {
 
 /// `theme` in `appearance`: its first with none, following the system with `system`, else the
 /// appearance of that id; one it does not have draws its first, and says so. With more
-/// `contrast` asked for, its first and following the system draw the appearance of their tag
-/// tagged high contrast, when it has one; an appearance chosen by its id is drawn as chosen.
+/// `contrast` asked for, its first (also in place of an id it does not have) and following the
+/// system draw the appearance of their tag tagged high contrast, when it has one; an appearance
+/// chosen by its id is drawn as chosen.
 pub(super) fn appear(
     theme: &Theme,
     appearance: Option<&str>,
@@ -422,7 +425,7 @@ pub(super) fn appear(
                     "{} has no appearance called {id}, so its first is drawn",
                     theme.name
                 ))],
-                ..Drawn::of(theme.first())
+                ..Drawn::of(theme.first_for(contrast))
             },
         },
     }

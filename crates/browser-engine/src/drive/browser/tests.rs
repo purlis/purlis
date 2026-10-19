@@ -20,6 +20,7 @@ use crate::drive::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, Ref, Refusal, Settled,
 };
 
+mod aim;
 mod drawn;
 mod login;
 mod reach;
@@ -53,6 +54,8 @@ struct Model {
     active: String,
     pages: u32,
     pixel_ratio: f64,
+    /// How many nodes the page's process holds, as `Memory.getDOMCounters` counts them (#2564).
+    nodes: u64,
     /// What each session's documents draw, as `DOMSnapshot.captureSnapshot` answers (#2303);
     /// a session with none draws nothing.
     drawn: HashMap<String, Value>,
@@ -315,6 +318,9 @@ impl Engine {
             "Page.captureScreenshot" => Ok(json!({
                 "data": base64::engine::general_purpose::STANDARD.encode(&super::lock(&self.model).screenshot)
             })),
+            "Memory.getDOMCounters" => Ok(
+                json!({"documents": 1, "nodes": super::lock(&self.model).nodes, "jsEventListeners": 0}),
+            ),
             "Page.getLayoutMetrics" => {
                 let ratio = super::lock(&self.model).pixel_ratio;
                 Ok(json!({
@@ -506,6 +512,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             select: json!({"picked":["Blue"]}),
             pages: 1,
             pixel_ratio: 1.0,
+            nodes: 120,
             value: String::new(),
             active: String::new(),
             drawn: HashMap::new(),
@@ -630,6 +637,72 @@ fn a_snapshot_marks_what_is_on_the_page_but_out_of_view() {
     assert!(
         matches!(&found.content, Content::Text(t) if t.contains("\"Below the fold\" [") && t.contains("(out of view)")),
         "{found:?}"
+    );
+}
+
+#[test]
+fn a_snapshot_marks_what_a_scrolling_box_in_view_does_not_show() {
+    // #2564: "Read more" (node 12) is placed inside the viewport, but the engine lays it out
+    // below the bottom of the list that scrolls it.
+    let (browser, engine) = browser();
+    lays_read_more_out_below_a_list(&engine);
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} in\n{text}"))
+            .to_owned()
+    };
+    assert!(line("Read more").ends_with(" (out of view)"), "{text}");
+    assert!(line("Below the fold").ends_with(" (out of view)"), "{text}");
+    assert!(!line("Remember me").contains("out of view"), "{text}");
+}
+
+#[test]
+fn a_page_too_heavy_to_read_whole_is_not_read_for_what_its_boxes_cut_off() {
+    // #2564: past the bound the layout is never asked for, nothing is said to be cut off, and
+    // the browser goes on answering.
+    let (browser, engine) = browser();
+    lays_read_more_out_below_a_list(&engine);
+    super::lock(&engine.model).nodes = super::view::MOST_NODES_READ + 1;
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} in\n{text}"))
+            .to_owned()
+    };
+    assert!(!line("Read more").contains("out of view"), "{text}");
+    // What the viewport alone shows is still marked.
+    assert!(line("Below the fold").ends_with(" (out of view)"), "{text}");
+    assert!(
+        !super::lock(&engine.sent)
+            .iter()
+            .any(|sent| sent.method == "DOMSnapshot.captureSnapshot"),
+        "the layout was read"
+    );
+    assert!(snapshot(&browser, 2).contains("Read more"));
+}
+
+/// The stand-in's page lays "Read more" (node 12) out below the bottom of a list that scrolls.
+fn lays_read_more_out_below_a_list(engine: &Engine) {
+    super::lock(&engine.model).drawn.insert(
+        "S-PAGE-1".to_owned(),
+        json!({
+            "strings": ["#document", "HTML", "BODY", "DIV", "A", "visible", "static", "auto", "block", "0px", "inline"],
+            "documents": [{
+                "nodes": {
+                    "parentIndex": [-1, 0, 1, 2, 3],
+                    "nodeName": [0, 1, 2, 3, 4],
+                    "backendNodeId": [1, 2, 3, 4, 12],
+                },
+                "layout": {
+                    "nodeIndex": [1, 2, 3, 4],
+                    "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 100, 30], [40, 40, 20, 10]],
+                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 10, 9]],
+                },
+            }],
+        }),
     );
 }
 

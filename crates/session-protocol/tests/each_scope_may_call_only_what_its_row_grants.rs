@@ -295,6 +295,8 @@ fn every_command() -> Vec<Command> {
             project: "01J9PRJCT00000000000000000".into(),
         },
         Command::Quit,
+        // The desktop taken out of a runner's peers (1.25, #2525).
+        Command::Unpair,
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -328,8 +330,20 @@ fn every_command() -> Vec<Command> {
                 address: "https://shop.example.test/login".into(),
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
+                keep: None,
             },
         },
+        // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.
+        Command::StartProgram(Box::new(session::StartProgram {
+            kept: Some(purlis_session_protocol::browsing::KeptLogin {
+                profile: "claude".into(),
+                persona: "steward".into(),
+                login: "shop-login".into(),
+                identity: "0123456789abcdef0123456789abcdef".into(),
+                address: "https://shop.example.test/login".into(),
+            }),
+            ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Browser)
+        })),
         // A relaying host names the window a link is for, and is named again the confinements
         // of the chats that window started (1.22, #2511): over the link between hosts alone.
         Command::TakeBack {
@@ -389,6 +403,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "size_browser",
             "hand_back",
             "log_in",
+            "start_program", // a browser opened from kept logins
         ],
         Scope::Terminal => &[
             "list",
@@ -440,6 +455,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
+            // The desktop removing the runner (1.25, #2525).
+            "unpair",
             "take_back",
         ],
         Scope::FleetMcp => &[

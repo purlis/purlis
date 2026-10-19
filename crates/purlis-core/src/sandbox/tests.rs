@@ -1097,10 +1097,13 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/purlis/charterd"),
             // A runner's one peer (ADR 0078 §8, #2044).
             std::path::PathBuf::from("/home/op/.config/purlis/peers.json"),
+            // The runners this desktop pinned (#2525).
+            std::path::PathBuf::from("/home/op/.config/purlis/runners.json"),
             std::path::PathBuf::from("/home/op/.config/purlis/forge-etags"),
             std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/peers.json"),
+            std::path::PathBuf::from("/home/op/.config/charter/runners.json"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
             // This machine's profiles' folders (#2034).
             Homes::charter_data(&machine(Os::Linux))
@@ -1110,6 +1113,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::datahome::BROWSERS),
+            // The browser logins this device keeps (#2021).
+            Homes::charter_data(&machine(Os::Linux))
+                .expect("a data home")
+                .join(crate::browserlogins::DIR),
             // The session host's socket folder (#1997), where the host itself takes it.
             crate::hostsocket::socket_for(None)
                 .parent()
@@ -1172,6 +1179,53 @@ fn no_chat_reads_or_writes_the_data_folders_of_the_browsers_the_session_host_run
     let browsers = Homes::charter_data(&machine(Os::MacOs))
         .expect("a data home")
         .join(crate::datahome::BROWSERS);
+    let (_plane, denied) = denied_with(None, Os::MacOs);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&browsers),
+        "{:?}",
+        denied.paths
+    );
+    let named = super::real(&browsers).display().to_string();
+    let settings = claude::settings(&compiled(denied.clone(), Os::MacOs)).expect("compiles");
+    for key in ["denyRead", "denyWrite"] {
+        assert!(
+            settings.sandbox["filesystem"][key]
+                .as_array()
+                .is_some_and(|all| all.iter().any(|p| p == named.as_str())),
+            "{key}: {}",
+            settings.sandbox["filesystem"][key]
+        );
+    }
+    for (harness, wrapped) in [
+        (
+            "codex",
+            codex::wrap(&compiled(denied.clone(), Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+        (
+            "opencode",
+            opencode::wrap(&compiled(denied, Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+    ] {
+        assert!(
+            wrapped
+                .iter()
+                .any(|it| it.path == browsers && it.access == Access::ReadWrite),
+            "{harness}: {wrapped:?}"
+        );
+    }
+}
+
+#[test]
+fn no_chat_reads_or_writes_the_browser_logins_this_device_keeps() {
+    // A kept browser login is a signed-in browser's own data, sealed (#2021): a chat neither
+    // reads nor writes it, so none takes, swaps or puts an older copy back.
+    let browsers = Homes::charter_data(&machine(Os::MacOs))
+        .expect("a data home")
+        .join(crate::browserlogins::DIR);
     let (_plane, denied) = denied_with(None, Os::MacOs);
     assert!(
         paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&browsers),

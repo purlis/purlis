@@ -12,15 +12,18 @@
 //! browser over (#2014), 1.15's reach Asks (#2018), 1.16's window hearing a chat its host
 //! composed (#2407), 1.17's relaying host telling its client its link is down and back
 //! (#2496), 1.18's logins purlis performs (#2016), 1.21's changes of a browser's page (#2137),
-//! and 1.22's window taking back its runner chats' sandboxes after a re-link (#2511). Each must
-//! read back as it was recorded, by this build and so by every later one, which is what lets a
-//! client and a host one version apart talk. A frame kind added without being recorded fails
-//! here, so the promise grows on purpose. The UI RPC is not in it: it is private to one build
-//! of the app, and excluded from this promise (V7).
+//! 1.22's window taking back its runner chats' sandboxes after a re-link (#2511), 1.23's
+//! services a host left out of a plan made elsewhere (#2510), 1.25's desktop removing a runner
+//! (#2525), 1.26's services the window allowed a chat its host composes alone (#2590),
+//! 1.27's kept browser logins (#2021), and 1.28's record of how a hosted program's run is
+//! sandboxed (#2636). Each must read back as it was recorded, by this build and so by every
+//! later one, which is what lets a client and a host one version apart talk. A frame kind added
+//! without being recorded fails here, so the promise grows on purpose. The UI RPC is not in it:
+//! it is private to one build of the app, and excluded from this promise (V7).
 //!
-//! And a host reads a later minor's frames the way the promise says: a field it does not know
-//! is ignored, a command it does not know is refused with `unknown_command` and the link
-//! carries on, and a frame kind it does not know is passed over.
+//! And a host reads a later minor's frames the way the promise says: a field it does not know is
+//! ignored, a command it does not know is refused with `unknown_command` and the link carries on,
+//! and a frame kind it does not know is passed over.
 
 use std::collections::BTreeSet;
 

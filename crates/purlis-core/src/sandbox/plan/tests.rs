@@ -39,6 +39,54 @@ fn a_plan_whose_given_port_purlis_listens_on_now_starts_nothing() {
     localport::release(50811);
 }
 
+/// #2590: a plan the host composed for a chat it starts by its names, started leaving out a
+/// service the window allowed the chat alone, asks about that service when the chat reaches for
+/// it, by its loopback address, and holds the connection meanwhile.
+#[test]
+fn a_composed_plan_started_leaving_a_service_out_asks_about_it() {
+    use std::io::Write;
+    let asks = Arc::new(crate::sandbox::asks::Asks::timed(
+        Arc::new(|_| {}),
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(20),
+    ));
+    let routes = tempfile::tempdir().expect("a folder");
+    let composed = Plan {
+        beside: Beside::ProxyOnly {
+            routes: routes.path().into(),
+        },
+        ..plan(Vec::new())
+    };
+
+    let confinement = composed
+        .start_leaving_out(
+            super::Telling {
+                asks: Some(Arc::clone(&asks)),
+                ..super::Telling::default()
+            },
+            vec![5432],
+        )
+        .expect("started");
+    let mut client =
+        std::net::TcpStream::connect(("127.0.0.1", confinement.placed().http)).expect("its proxy");
+    client
+        .write_all(b"CONNECT localhost:5432 HTTP/1.1\r\nHost: localhost:5432\r\n\r\n")
+        .expect("asked");
+    for _ in 0..1000 {
+        if asks.holding() == 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert_eq!(
+        asks.holding(),
+        1,
+        "the connection is held while the person is asked"
+    );
+    assert_eq!(asks.asked(), ["127.0.0.1:5432"]);
+}
+
 /// What the session host holds of a chat's proxy, as the window reaches it.
 #[derive(Debug, Default)]
 struct Holder {
@@ -70,6 +118,8 @@ fn placed(http: u16, socks: u16, tmp: Option<&std::path::Path>) -> Placed {
         tmp: tmp.map(std::path::Path::to_path_buf),
         routed: None,
         ssh: None,
+        left_out: Vec::new(),
+        host_name: None,
     }
 }
 
@@ -102,6 +152,70 @@ fn a_proxy_held_elsewhere_on_a_port_a_chat_was_given_is_refused() {
 
     assert!(held.is_err());
     assert!(!localport::is_own(50832), "nothing is kept of a refusal");
+}
+
+/// What holds a proxy elsewhere whose proxy asks live.
+#[derive(Debug)]
+struct Asking;
+
+impl HeldElsewhere for Asking {
+    fn id(&self) -> &str {
+        "01HOSTED"
+    }
+
+    fn withdraw_port(&self, _port: u16) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn board(&self) -> Option<Arc<dyn Board>> {
+        Some(Arc::new(crate::sandbox::asks::Asks::new(Arc::new(|_| {}))))
+    }
+}
+
+#[test]
+fn a_proxy_held_elsewhere_says_which_services_its_runner_left_out_and_what_comes_of_it() {
+    let asking = Confinement::held_elsewhere(
+        Placed {
+            left_out: vec![5432],
+            host_name: Some("runner-7".into()),
+            ..placed(50851, 50852, None)
+        },
+        Box::new(Asking),
+    )
+    .expect("held");
+    assert_eq!(asking.left_out(), [5432]);
+    assert_eq!(asking.runner(), Some("runner-7"));
+    assert_eq!(
+        asking.said_of_what_was_left_out().as_deref(),
+        Some(
+            "The runner runner-7 does not give this chat the service on port 5432 that you \
+             allowed for it alone. You are asked when the chat reaches for it there."
+        )
+    );
+
+    let silent = Confinement::held_elsewhere(
+        Placed {
+            left_out: vec![5432, 6379],
+            ..placed(50853, 50854, None)
+        },
+        Box::new(Holding(Arc::default())),
+    )
+    .expect("held");
+    assert_eq!(
+        silent.said_of_what_was_left_out().as_deref(),
+        Some(
+            "The runner this chat runs on does not give this chat the services on ports 5432 \
+             and 6379 that you allowed for it alone. The chat cannot reach them there."
+        )
+    );
+
+    let alone = Confinement::held_elsewhere(
+        placed(50855, 50856, None),
+        Box::new(Holding(Arc::default())),
+    )
+    .expect("held");
+    assert!(alone.left_out().is_empty());
+    assert_eq!(alone.said_of_what_was_left_out(), None);
 }
 
 /// **A proxy on another machine listens on that machine's ports** (#2446): a runner's ports
@@ -183,7 +297,7 @@ mod made_elsewhere {
 
     use super::super::{Beside, Here, Plan};
     use super::plan;
-    use crate::sandbox::hosts::{Host, Network};
+    use crate::sandbox::hosts::Network;
     use crate::sandbox::internal::Internal;
     use crate::sandbox::reach::{By, Reach};
 
@@ -208,7 +322,7 @@ mod made_elsewhere {
         Internal::listing(
             hosts
                 .iter()
-                .map(|host| Host::parse(host).expect("a host"))
+                .map(|host| crate::sandbox::internal::Entry::parse(host).expect("an entry"))
                 .collect(),
         )
     }
@@ -374,6 +488,110 @@ mod made_elsewhere {
         .fits(&here(&[], &[]));
 
         assert_eq!(fits, Ok(()));
+    }
+
+    /// A plan giving the service on `port` as the window gives one the person allowed for this
+    /// chat alone: its port, and the loopback entries for it, at the chat's layer.
+    fn for_this_chat_alone(port: u16, given: Vec<u16>) -> Plan {
+        let mut listed = vec![("api.anthropic.com".to_owned(), By::Open)];
+        listed.extend(
+            crate::sandbox::localport::reach_entries(port)
+                .into_iter()
+                .map(|entry| (entry, By::Chat)),
+        );
+        Plan {
+            reach: Reach::of(listed).written(),
+            ..plan(given)
+        }
+    }
+
+    #[test]
+    fn a_plan_giving_a_service_allowed_for_this_chat_alone_fits() {
+        let fits = for_this_chat_alone(5432, vec![5432]).fits(&here(&[6379], &[]));
+
+        assert_eq!(fits, Ok(()));
+    }
+
+    #[test]
+    fn the_runner_starts_a_plan_without_the_services_allowed_for_this_chat_alone() {
+        let planned = Plan {
+            given: vec![5432, 6379],
+            reach: Reach::of(vec![
+                ("api.anthropic.com".to_owned(), By::Open),
+                ("127.0.0.1:5432".to_owned(), By::Chat),
+                ("[::1]:5432".to_owned(), By::Chat),
+                ("localhost:5432".to_owned(), By::Chat),
+                ("127.0.0.1:6379".to_owned(), By::You),
+            ])
+            .written(),
+            ..plan(Vec::new())
+        };
+
+        let (started, left_out) = planned.as_the_runner_starts_it(&[6379]);
+
+        assert_eq!(left_out, [5432]);
+        assert_eq!(started.given, [6379]);
+        assert_eq!(
+            started.reach.listed,
+            [
+                ("api.anthropic.com".to_owned(), By::Open),
+                ("127.0.0.1:6379".to_owned(), By::You),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_services_a_plan_gives_for_this_chat_alone_are_those_listed_at_its_layer_alone() {
+        let mut planned = for_this_chat_alone(5432, vec![5432, 6379, 8080]);
+        planned.reach.listed.extend(
+            crate::sandbox::localport::reach_entries(6379)
+                .into_iter()
+                .map(|entry| (entry, By::You)),
+        );
+
+        assert_eq!(planned.given_for_this_chat_alone(), [5432]);
+        assert!(plan(vec![5432]).given_for_this_chat_alone().is_empty());
+    }
+
+    #[test]
+    fn a_service_the_runner_gives_is_kept_whatever_layer_gives_it() {
+        let planned = for_this_chat_alone(5432, vec![5432]);
+
+        let (started, left_out) = planned.as_the_runner_starts_it(&[5432]);
+
+        assert!(left_out.is_empty());
+        assert_eq!(started, planned);
+    }
+
+    #[test]
+    fn a_service_given_at_another_layer_as_well_still_does_not_fit() {
+        let mut planned = for_this_chat_alone(5432, vec![5432]);
+        planned
+            .reach
+            .listed
+            .push(("127.0.0.1:5432".to_owned(), By::You));
+
+        let refused = planned.fits(&here(&[], &[])).expect_err("refused");
+
+        assert!(refused.contains("5432"), "{refused}");
+        assert!(planned.as_the_runner_starts_it(&[]).1.is_empty());
+    }
+
+    #[test]
+    fn a_service_given_with_no_entry_of_the_chats_still_does_not_fit() {
+        let refused = plan(vec![5432]).fits(&here(&[], &[])).expect_err("refused");
+
+        assert!(refused.contains("5432"), "{refused}");
+        assert!(plan(vec![5432]).as_the_runner_starts_it(&[]).1.is_empty());
+    }
+
+    #[test]
+    fn a_chat_entry_on_a_port_the_plan_does_not_give_still_does_not_fit() {
+        let planned = for_this_chat_alone(5432, Vec::new());
+
+        let refused = planned.fits(&here(&[], &[])).expect_err("refused");
+
+        assert!(refused.contains("5432"), "{refused}");
     }
 
     /// What a session host holds a relayed plan to: the project's own folder for ssh routes on

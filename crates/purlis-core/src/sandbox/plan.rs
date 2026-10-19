@@ -20,7 +20,7 @@ use super::asks::Asks;
 use super::egress;
 use super::internal::Internal;
 use super::localport;
-use super::reach::{Reach, Written};
+use super::reach::{By, Reach, Written};
 use super::{Confinement, tunnel};
 
 /// **A chat's confinement, planned** (module docs).
@@ -193,7 +193,15 @@ impl Plan {
     ///   listed only where the runner's policy lists it ([`super::internal`]), and so is a name
     ///   that resolves to one there. A name under `*.` resolves to nothing here, and is held to
     ///   the same rule at every connect.
+    ///
+    /// A service the plan gives for this chat alone, which the runner does not give, is not
+    /// held to it: the runner starts the plan without it ([`Self::as_the_runner_starts_it`]).
     pub fn fits(&self, here: &Here<'_>) -> Result<(), String> {
+        self.as_the_runner_starts_it(here.given).0.fitting(here)
+    }
+
+    /// [`Self::fits`], for the plan as the runner starts it.
+    fn fitting(&self, here: &Here<'_>) -> Result<(), String> {
         if let Beside::ProxyOnly { routes } = &self.beside
             && routes != here.routes
         {
@@ -215,6 +223,59 @@ impl Plan {
             .try_for_each(|(entry, _)| fits_here(entry, here))
     }
 
+    /// **This plan as the runner starts it, and the services of the runner it leaves out**
+    /// (#2510): each service the plan gives for this chat alone ([`Self::for_this_chat_alone`])
+    /// that the runner's sandbox for the project, `given_here`, does not give is taken out, its
+    /// port and its loopback entries, so the chat does not reach it there. Everything else is
+    /// as planned.
+    pub fn as_the_runner_starts_it(&self, given_here: &[u16]) -> (Plan, Vec<u16>) {
+        let left_out: Vec<u16> = self
+            .given_for_this_chat_alone()
+            .into_iter()
+            .filter(|port| !given_here.contains(port))
+            .collect();
+        if left_out.is_empty() {
+            return (self.clone(), left_out);
+        }
+        let entries: Vec<String> = left_out
+            .iter()
+            .flat_map(|port| localport::reach_entries(*port))
+            .collect();
+        let mut plan = self.clone();
+        plan.given.retain(|port| !left_out.contains(port));
+        plan.reach
+            .listed
+            .retain(|(entry, by)| !(*by == By::Chat && entries.contains(entry)));
+        (plan, left_out)
+    }
+
+    /// **The services of this machine the plan gives for this chat alone** (#2590): each port it
+    /// gives whose loopback entries it lists at the chat's layer and at no other, as the window
+    /// plans a service the person allowed for one chat. What the window tells a runner that
+    /// composes the chat, which leaves out those its own sandbox does not give.
+    pub fn given_for_this_chat_alone(&self) -> Vec<u16> {
+        self.given
+            .iter()
+            .copied()
+            .filter(|port| self.for_this_chat_alone(*port))
+            .collect()
+    }
+
+    /// Whether the plan gives the service on `port` for this chat alone, as the window plans a
+    /// service the person allowed for one chat: it lists the port's loopback entries, at the
+    /// chat's layer and at no other.
+    fn for_this_chat_alone(&self, port: u16) -> bool {
+        let entries = localport::reach_entries(port);
+        let mut layers = self
+            .reach
+            .listed
+            .iter()
+            .filter(|(entry, _)| entries.contains(entry))
+            .map(|(_, by)| *by)
+            .peekable();
+        layers.peek().is_some() && layers.all(|by| by == By::Chat)
+    }
+
     /// What the proxy serves: this plan, told to `telling`.
     pub fn serving(&self, reach: Reach, telling: Telling) -> egress::Serving {
         egress::Serving {
@@ -232,21 +293,46 @@ impl Plan {
     /// Refused where a port the chat was given is one purlis listens on now in this process,
     /// so no proxy and no chat ever share a port, and where the reach does not read back.
     pub fn start(&self, telling: Telling) -> std::io::Result<Confinement> {
-        self.starting(telling, None)
+        self.starting(telling, None, Vec::new())
     }
 
     /// [`Self::start`], for a plan made on another machine (#2445): its proxy carries an
     /// internal address only where `internal`, the runner's policy, lists it, checked at every
-    /// connect ([`super::internal`]).
-    pub fn start_held(&self, telling: Telling, internal: Internal) -> std::io::Result<Confinement> {
-        self.starting(telling, Some(internal))
+    /// connect ([`super::internal`]). A service of the runner in `left_out`, one the plan gave
+    /// the chat for it alone and the runner left out ([`Self::as_the_runner_starts_it`]), is
+    /// asked about where the proxy asks live, and carried once the person allows it for this
+    /// chat (#2510).
+    pub fn start_held(
+        &self,
+        telling: Telling,
+        internal: Internal,
+        left_out: Vec<u16>,
+    ) -> std::io::Result<Confinement> {
+        self.starting(telling, Some(internal), left_out)
+    }
+
+    /// [`Self::start`], for a plan the host composed for a chat it starts by its names (#2590):
+    /// a service of this machine in `left_out`, one the window allowed for that chat alone and
+    /// the plan does not give, is asked about where the proxy asks live, and carried once the
+    /// person allows it for this chat, as for a plan made elsewhere.
+    pub fn start_leaving_out(
+        &self,
+        telling: Telling,
+        left_out: Vec<u16>,
+    ) -> std::io::Result<Confinement> {
+        self.starting(telling, None, left_out)
     }
 
     fn starting(
         &self,
         telling: Telling,
         internal: Option<Internal>,
+        left_out: Vec<u16>,
     ) -> std::io::Result<Confinement> {
+        // Only a plan made on another machine, or one the host composed for a chat it starts
+        // by its names, leaves a service out, to be asked about there
+        // ([`egress::Serving::left_out`]): [`Self::start`], a plan the window made here, never
+        // does, so its proxy never asks about a port of its machine.
         let admitted = localport::still_ports(&self.given);
         if self.given.iter().any(|port| !admitted.contains(port)) {
             return Err(std::io::Error::other(
@@ -256,6 +342,7 @@ impl Plan {
         let reach = Reach::from_written(&self.reach).map_err(std::io::Error::other)?;
         let serving = egress::Serving {
             internal,
+            left_out,
             ..self.serving(reach, telling)
         };
         match &self.beside {
@@ -273,16 +360,21 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
     }
     let Ok(ip) = name.parse::<IpAddr>() else {
         // A name: what it resolves to on the runner, held as the address would be.
-        let listed = here.internal.lists_entry(entry);
+        let listed = here.internal.lists_entry(entry, Some(here.own));
         return match (here.resolve)(name, port.unwrap_or(HTTPS))
             .into_iter()
             .find(|ip| {
-                super::internal::held(*ip, Some(here.own))
-                    && (!listed || super::hosts::metadata_address(*ip))
+                here.internal.holds(*ip, Some(here.own))
+                    && (!listed
+                        || here.internal.metadata(*ip)
+                        || here.internal.is_own(*ip, Some(here.own)))
             }) {
-            Some(ip) => Err(format!(
-                "it lets the chat reach {entry}, which the runner resolves to {ip}, an internal \
-                 address its policy does not list"
+            Some(ip) => Err(not_taken_said(
+                format!(
+                    "it lets the chat reach {entry}, which the runner resolves to {ip}, an \
+                     internal address its policy does not list"
+                ),
+                here,
             )),
             None => Ok(()),
         };
@@ -297,12 +389,31 @@ fn fits_here(entry: &str, here: &Here<'_>) -> Result<(), String> {
             )),
         };
     }
-    if super::internal::held(ip, Some(here.own)) && !here.internal.lists_entry(entry) {
-        return Err(format!(
-            "it lets the chat reach {entry}, an internal address the runner's policy does not list"
+    if here.internal.holds(ip, Some(here.own)) && !here.internal.lists_entry(entry, Some(here.own))
+    {
+        return Err(not_taken_said(
+            format!(
+                "it lets the chat reach {entry}, an internal address the runner's policy does not \
+                 list"
+            ),
+            here,
         ));
     }
     Ok(())
+}
+
+/// `why`, and each entry of the runner's `relayed-internal` it does not take, each in its own
+/// sentence (#2530).
+fn not_taken_said(why: String, here: &Here<'_>) -> String {
+    let not_taken = here.internal.not_taken();
+    if not_taken.is_empty() {
+        return why;
+    }
+    format!(
+        "{why}. Some entries in the runner's policy's relayed-internal are not taken, so relayed \
+         chats reach nothing through them: {}",
+        not_taken.join(" ")
+    )
 }
 
 /// The port a listed name without one is resolved on: the name's addresses are the same on any.

@@ -168,9 +168,10 @@ enum Command {
         verb: Option<GuardCommand>,
     },
 
-    /// The browser lane: purlis's plugin ships the credential bridge (the `browser` skill),
-    /// Playwright ships the page-driving surface.
-    #[command(subcommand)]
+    // Retired (#2575): the words are still taken and answered with what to use instead
+    // (`purlis_core::personaverbs::retired::BROWSER_INSTALL`), before a plane is looked for.
+    /// A chat drives a browser with purlis's own browser tools, which the `browser` skill teaches.
+    #[command(subcommand, hide = true)]
     Browser(BrowserCommand),
 
     /// Add what the plane's forges list to inventory/repos.json, then regenerate docs.
@@ -813,6 +814,15 @@ fn serve() -> ExitCode {
         let config = config.clone();
         std::sync::Arc::new(move || purlis_core::runnerlink::answering(&config))
     };
+    // The desktop it is paired with takes itself out of its peers as it removes the runner
+    // (#2525).
+    let pairing = purlis_host::Pairing {
+        answering,
+        unpairing: {
+            let config = config.clone();
+            std::sync::Arc::new(move |desktop| purlis_core::runnerlink::unpair(&config, desktop))
+        },
+    };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(
             &place,
@@ -835,7 +845,7 @@ fn serve() -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone())),
                 )
             },
-            answering,
+            pairing,
         ))
         .unwrap_or(1),
     )
@@ -929,8 +939,10 @@ impl purlis_host::Confine for Confines {
             confining.confine,
             match confining.planned {
                 purlis_host::Planned::Here => purlis_core::sandbox::hosted::Planned::Here,
+                purlis_host::Planned::Composed => purlis_core::sandbox::hosted::Planned::Composed,
                 purlis_host::Planned::Elsewhere => purlis_core::sandbox::hosted::Planned::Elsewhere,
             },
+            confining.alone,
             tell,
             askable,
         )
@@ -1037,13 +1049,14 @@ fn place() -> Result<purlis_core::plane::Place, String> {
 
 #[derive(Subcommand)]
 enum BrowserCommand {
-    /// Generate Playwright's driving-surface skill into this plane's .claude/skills/, from the
-    /// tool that owns it (purlis vendors none of it — Apache-2.0, and it ships far more
-    /// often than purlis does).
+    // Retired (#2575): every word after it, `--help` included, is taken and not read, so it
+    // always answers with what to use instead.
+    /// A chat drives a browser with purlis's own browser tools, which the `browser` skill teaches.
+    #[command(hide = true, disable_help_flag = true)]
     Install {
-        /// @playwright/cli version, exactly (default: the one purlis is known to work with).
-        #[arg(long)]
-        version: Option<String>,
+        /// What the retired command was given. Taken and not read.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+        given: Vec<String>,
     },
 }
 
@@ -3206,17 +3219,8 @@ fn run(command: Command) -> Result<u8, String> {
             print!("{said}");
             return Ok(code);
         }
-        Command::Browser(BrowserCommand::Install { version }) => {
-            let path = std::env::var_os("PATH");
-            let mut sink = speak;
-            return Ok(purlis_core::browser::install(
-                here.plane.root(),
-                version.as_deref(),
-                purlis_core::browser::npx_on(path.as_deref()),
-                &mut purlis_core::browser::Npx,
-                &mut sink,
-            ));
-        }
+        // Answered in `main` before a plane is even looked for.
+        Command::Browser(BrowserCommand::Install { .. }) => unreachable!("answered before run"),
         Command::Harness(HarnessCommand::List) => {
             let root = here.plane.root().to_path_buf();
             // The git check runs HERE because a person typed this command; it never runs on
@@ -4159,6 +4163,15 @@ fn main() -> ExitCode {
         Command::Persona(memory::PersonaCommand::SyncAgents { .. })
     ) {
         voice::err(purlis_core::personaverbs::retired::SYNC_AGENTS);
+        return ExitCode::FAILURE;
+    }
+    // `browser install` is retired (#2575): taken and refused by name, with what replaced it,
+    // wherever it is run from.
+    if matches!(
+        &cli.command,
+        Command::Browser(BrowserCommand::Install { .. })
+    ) {
+        voice::err(purlis_core::personaverbs::retired::BROWSER_INSTALL);
         return ExitCode::FAILURE;
     }
     // A project this charter cannot write is read-only to it (FR-24, V37a,

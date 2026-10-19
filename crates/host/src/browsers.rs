@@ -40,7 +40,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::StreamExt;
-use purlis_session_protocol::browsing::{Act, Aim, Browsed, BrowserReach, Driver, Input, LogIn};
+use purlis_session_protocol::browsing::{
+    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn,
+};
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
 use purlis_session_protocol::view::frames::{JPEG, aimed, frame};
 use purlis_session_protocol::view::{Attachment, Source};
@@ -150,8 +152,13 @@ pub trait Browsers: Send + Sync + 'static {
     fn data_folders(&self) -> Result<PathBuf, String>;
     /// Start a browser whose data folder is `data` (made by the binary, this user's alone),
     /// reaching what `reach` says, or with none, nothing listed and every site new to the
-    /// project refused (#2013).
-    fn start(&self, data: &Path, reach: Option<&BrowserReach>) -> Result<Arc<dyn Screen>, String>;
+    /// project refused (#2013); opened from the kept login `kept`, where one is named (#2021).
+    fn start(
+        &self,
+        data: &Path,
+        reach: Option<&BrowserReach>,
+        kept: Option<&KeptLogin>,
+    ) -> Result<Arc<dyn Screen>, String>;
 }
 
 /// A host whose binary starts no browser: every start of one is refused with a sentence.
@@ -166,6 +173,7 @@ impl Browsers for NoBrowsers {
         &self,
         _data: &Path,
         _reach: Option<&BrowserReach>,
+        _kept: Option<&KeptLogin>,
     ) -> Result<Arc<dyn Screen>, String> {
         Err("this session host was not given a way to start a browser".into())
     }

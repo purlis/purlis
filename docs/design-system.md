@@ -103,7 +103,14 @@ defaults.
 window, the traffic lights, the menus and the dialogs, are drawn dark or light with the drawn
 appearance's tag, and the window's own colour is its `window.background`, opaque. Each window is
 created in both for the theme its first frame draws, so nothing of another colour shows before
-it, and the page hands both over again whenever it draws another theme
+it. That theme is the one the levels choose for the project and the workspace the window opens
+on, resolved once as the window is created (#2602): the creation script, the native window and
+the page's first frame take that one answer, and the window's later ask of what is in force
+answers it again, so nothing is repainted. The system's contrast is read natively at creation
+where purlis can (#2582): Increase contrast on macOS, the desktop portal's `contrast` on Linux.
+Where nothing is read, the
+page picks with `prefers-contrast` among the frames it is handed for both. The page
+hands both over again whenever it draws another theme
 (`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the
 system leaves the native parts to the system. On macOS and Linux the platform keeps one
 appearance for the app, so the focused window's is the one drawn. The tray and the app icon
@@ -618,6 +625,18 @@ the person's choice where that file holds none, and are copied into it once, wit
 LIVE workspace's pick is its committed default; where it now comes before the person's choice
 for the project, which the local file's pick used to beat, the Notice says so once. A theme
 pick in a manifest is a proposed change when a chat makes it (ADR 0098 §4).
+
+**Saving a theme folder repaints the window** (#2324, ADR 0098): the core watches the theme
+folders the window's theme is read from — each level's `themes/`, its theme folders and the
+folders directly inside them, and the folders of an extension that contributes only themes —
+each non-recursively and never through a link, at most 128 for a window, found from the roots
+the window's levels already hold (`purlis_core::theme::reload`). A save tells the window to ask
+for its theme again, the one way it is ever drawn, so the consent floors and a project's font
+approvals hold on a reload as they hold at launch. A burst of saves is one redraw, and redraws
+are at least 400 ms apart, so the window is drawn again within a second of the last save. Where
+the platform will not watch a folder, the core looks at it every two seconds instead. A theme
+the engine refuses on a reload draws Purlis, with a Notice saying why; a project's font file
+that changed since the project was approved is refused until the project is approved again.
 
 **A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
 with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a
@@ -1272,12 +1291,9 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), a
   **scroll margin or padding** (`scroll-margin*`, `scroll-padding*`, read as a margin or a
   padding) and the grid's names for a gap (`grid-gap`, `grid-row-gap`, `grid-column-gap`), in
-  any stylesheet but `theme/geometry.css`; in a component's or a script's style: an inline
-  `style` (`{{ … }}` or `{ … } as CSSProperties`), a style object held in a variable
-  (`const held = { … }; style={held}`, or one typed or cast as `CSSProperties`),
-  `Object.assign(el.style, { … })`, an assignment (`el.style.padding = "7px"`), `el.style.cssText`
-  or a `style` attribute set as text, and a `setProperty(…)` call (`el.style?.setProperty(…)`
-  too); or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
+  any stylesheet but `theme/geometry.css`; in a component's or a script's style, followed
+  wherever the file hands it on ([what the guards read in script](#what-the-guards-read-in-script));
+  or as a Tailwind class (`scroll-mt-*` and `scroll-p-*` among them), read
   past its variants (`md:`, `data-[open]:`, `[&>*]:`): off the core scale (`p-5`, `start-5`,
   `text-2xl`, `rounded-2xl`), with a value of its own (`p-[7px]`, `text-[13px]`,
   `rounded-[5px]`) or as an arbitrary property (`[padding:7px]`). A custom property that holds
@@ -1381,6 +1397,62 @@ goes to the smaller), and a px literal may become a rem token. Three more rules 
 
 Each snap is listed with its change in px in the pull request, and the window is looked at
 before and after.
+
+### What the guards read in script
+
+The geometry and type guards read a component's or a script's style through one reader,
+`styleEntries` in `guards.testkit.ts`, and the controls guard reads a control's `style` through
+the same one (`tagStyleKeys`), so the three see a style the same way (#2498, #2566). The reader
+starts where a style is handed: a `style={…}` expression, a spread in a style object, the
+objects `Object.assign` writes onto an element's style, and a style object typed or cast as
+`CSSProperties`. From there it follows the style wherever the file hands it on:
+
+- an object written there (`{{ … }}`, `{ … } as CSSProperties`), and each object it spreads;
+- a variable that holds it (`style={held}`), and a variable that holds that one;
+- a member of a local object, by name or by a written key (`style={styles.box}`,
+  `style={styles["box"]}`), or of a destructuring (`const { box } = styles; style={box}`);
+- each branch of a ternary (`style={on ? held : undefined}`), each side of `||` and `??`, the
+  last of `&&`, and what is in parentheses or before `as`, `satisfies` or `!`;
+- what a local function returns, a declared function's every `return` (past a return type
+  such as `: { padding: string }`) or an arrow's expression (`style={boxStyle(on)}`), what
+  `useMemo` returns, and what a function `useCallback` holds returns when it is called;
+- what a relative import gives (`import { box }`, `import * as styles` and its members, a
+  default export, an object or a function), what an imported function returns, one called on a
+  `* as` import among them (`s.make()`), and what that file re-exports (`export { box as panel }`,
+  `export * from`). A relative import is the file TypeScript resolves it to: `./s`, `./s.ts`
+  and `./s.js` are `s.ts` or `s.tsx`, and a folder is its `index`. Each imported file is read
+  and parsed once in a guard's pass.
+
+In script it reads an element's style however the file holds it: `el.style` and `el["style"]`
+themselves and a name declared to hold one (`const st = el.style`, `const st = (el.style)`,
+`const st = el.style as CSSStyleDeclaration`, `const { style } = el`, `const { style: s } = el`,
+and a name that holds one of those). An
+assignment to one of its properties (`st.padding = "7px"`, `st["padding-top"]`,
+``st[`padding`]``), its CSS text set or added to (`st.cssText = "…"`, `st.cssText += "…"`), a
+`style` attribute set as text, and every `setProperty(…)` call are read, each declaration in
+CSS text on its own. A value is read where it is written out, and where a ternary picks
+between values written out.
+
+**The reader fails closed.** A style it cannot finish following fails the guard with a
+sentence that names the file and the style, and is never passed over:
+
+- a style handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it is used;
+- a style that comes from a relative import the guard cannot open: one above `src`, one whose
+  file is not found, or one in a file that is not script (`./box.css`).
+
+What they do not read: a value held in a variable on its own (`const pad = "7px"`, then
+`padding: pad`), or any other value worked out; a member reached by a computed key
+(`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
+`useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
+in a prop with another name (`boxStyle={…}`) or under an object's `style` key
+(`createElement("div", { style })`); an element's style handed to a function as a parameter
+(`g(el.style)`), or held by a name assigned after it is declared (`let st; st = el.style`);
+an import from a package or through a path alias; CSS text assigned from a variable, or a
+template literal with `${…}` in it. A cycle (`const a = b; const b = a`) holds nothing to read
+and is not a failure. The controls
+guard reads a control's `style` attribute only, not an assignment to an element's style in
+script, which names no control. The colour and motion guard (`theme/literals.test.ts`) reads
+every string a script writes, wherever it is handed, so it needs no reader of its own.
 
 ## Text roles
 

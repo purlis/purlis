@@ -1571,6 +1571,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::PEERS_FILE),
                 Access::ReadWrite,
             );
+            // The runners this desktop pinned (ADR 0078 §8, #2525): denied to chats.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::RUNNERS_FILE),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).
@@ -1595,6 +1601,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(
             Class::HumanPowers,
             data.join(crate::datahome::BROWSERS),
+            Access::ReadWrite,
+        );
+        // The browser logins this device keeps sealed (#2021, the person's ruling of
+        // 2026-10-18): a chat neither reads nor writes any of them.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::browserlogins::DIR),
             Access::ReadWrite,
         );
     }
@@ -2222,7 +2235,8 @@ pub struct HeldGrant {
 /// folder, socket and service you allowed for this project, then each socket and service you
 /// allowed for every project, that [`policy::Locks::holds_kept`] says reaches no chat, then
 /// each host an Allow kept for you or for the project at a scope left out ([`host_held`]),
-/// with why. What Doctor counts; Settings' Allowed list marks each row by the same judgement. The
+/// with why, and each socket or service of the system's name lookup kept here
+/// ([`services::name_lookup_refused`]). What Doctor counts; Settings' Allowed list marks each row by the same judgement. The
 /// certificate check's service is never listed: one an older build kept is no grant (R1).
 pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
     use grant::{Level, What};
@@ -2247,8 +2261,10 @@ pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
     let mut out: Vec<HeldGrant> = yours
         .chain(everywhere)
         .filter_map(|(what, level)| {
-            locks
-                .holds_kept(&what, level)
+            // The system's name lookup reaches no chat whatever was kept for it (#2657).
+            services::name_lookup_refused(&what)
+                .map(str::to_owned)
+                .or_else(|| locks.holds_kept(&what, level))
                 .map(|why| HeldGrant { what, level, why })
         })
         .collect();
@@ -3782,6 +3798,8 @@ struct Elsewhere {
     http: u16,
     socks: u16,
     held: Box<dyn HeldElsewhere>,
+    left_out: Vec<u16>,
+    host_name: Option<String>,
     /// Whether it listens on this machine, whose ports it holds as purlis's own: a runner's
     /// listens on the runner's (#2446).
     on_this_machine: bool,
@@ -3827,6 +3845,13 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     fn forget(&self, host: &hosts::Host, by: reach::By);
     /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
     fn allowed_live(&self) -> Vec<(String, reach::By)>;
+    /// The person allowed the service on `port` of the machine its proxy runs on, left out of
+    /// the chat's plan, for this chat ([`asks::Asks::allow_left_out`], #2510): the targets held
+    /// connections gave up on before it, which the chat is told to retry; or why the host that
+    /// holds the proxy did not take it.
+    fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String>;
+    /// The person kept that service blocked ([`asks::Asks::keep_left_out_blocked`], #2510).
+    fn keep_left_out_blocked(&self, port: u16);
 }
 
 impl Board for asks::Asks {
@@ -3848,6 +3873,14 @@ impl Board for asks::Asks {
 
     fn allowed_live(&self) -> Vec<(String, reach::By)> {
         asks::Asks::allowed_live(self)
+    }
+
+    fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String> {
+        Ok(asks::Asks::allow_left_out(self, port))
+    }
+
+    fn keep_left_out_blocked(&self, port: u16) {
+        asks::Asks::keep_left_out_blocked(self, port);
     }
 }
 
@@ -3876,6 +3909,11 @@ pub struct Placed {
     pub routed: Option<PathBuf>,
     /// The ssh route's folder.
     pub ssh: Option<PathBuf>,
+    /// The services the chat was planned to reach on the host's machine for it alone, which
+    /// that host started it without (#2510).
+    pub left_out: Vec<u16>,
+    /// The name of the host's machine, where it left a service out (#2510).
+    pub host_name: Option<String>,
 }
 
 impl Placed {
@@ -3887,6 +3925,13 @@ impl Placed {
             tmp: confined.tmp.as_ref().map(PathBuf::from),
             routed: confined.routed.as_ref().map(PathBuf::from),
             ssh: confined.ssh.as_ref().map(PathBuf::from),
+            left_out: confined.left_out.clone(),
+            // Said in the window: held to a name's own characters, whatever the host sent.
+            host_name: confined
+                .host_name
+                .as_deref()
+                .map(crate::dispatch::host_of)
+                .filter(|name| name != "unknown"),
         }
     }
 }
@@ -3985,6 +4030,8 @@ impl Confinement {
                 http: placed.http,
                 socks: placed.socks,
                 held,
+                left_out: placed.left_out,
+                host_name: placed.host_name,
                 on_this_machine,
             }),
             tmp: placed.tmp.map(Folder::Theirs),
@@ -4003,7 +4050,58 @@ impl Confinement {
             tmp: self.tmp().map(Path::to_path_buf),
             routed: self.routed.as_ref().map(|dir| dir.path().to_path_buf()),
             ssh: self.ssh.as_ref().map(|route| route.dir().to_path_buf()),
+            left_out: self.left_out().to_vec(),
+            host_name: self.runner().map(str::to_owned),
         }
+    }
+
+    /// The name of the machine the host holding its proxy runs on, where that host left a
+    /// service out ([`Self::left_out`], #2510).
+    pub fn runner(&self) -> Option<&str> {
+        match &self.proxy {
+            Proxied::Here(_) => None,
+            Proxied::Elsewhere(elsewhere) => elsewhere.host_name.as_deref(),
+        }
+    }
+
+    /// **The services the chat was planned to reach that the host holding its proxy started it
+    /// without** (#2510): those the person allowed for this chat alone on this machine, which a
+    /// runner's own sandbox does not give. None for a proxy that runs here.
+    pub fn left_out(&self) -> &[u16] {
+        match &self.proxy {
+            Proxied::Here(_) => &[],
+            Proxied::Elsewhere(elsewhere) => &elsewhere.left_out,
+        }
+    }
+
+    /// **What the window says of the services left out** ([`Self::left_out`]), for the chat's
+    /// tab: what the runner did not give, then what comes of it, by whether its proxy asks
+    /// live. `None` where none was.
+    pub fn said_of_what_was_left_out(&self) -> Option<String> {
+        let (last, rest) = self.left_out().split_last()?;
+        let ports = match rest {
+            [] => format!("the service on port {last}"),
+            _ => format!(
+                "the services on ports {} and {last}",
+                rest.iter()
+                    .map(u16::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        let runner = match self.runner() {
+            Some(name) => format!("The runner {name}"),
+            None => "The runner this chat runs on".to_owned(),
+        };
+        let it = if rest.is_empty() { "it" } else { "them" };
+        let then = if self.asks.is_some() {
+            format!("You are asked when the chat reaches for {it} there.")
+        } else {
+            format!("The chat cannot reach {it} there.")
+        };
+        Some(format!(
+            "{runner} does not give this chat {ports} that you allowed for it alone. {then}"
+        ))
     }
 
     /// What holds this one in another process calls it ([`HeldElsewhere::id`]); `None` for one
@@ -6074,6 +6172,7 @@ pub mod internal;
 pub mod kubeconfig;
 pub mod local;
 pub mod localport;
+pub mod nat64;
 pub mod opencode;
 pub mod persona;
 pub mod personal;
@@ -6091,8 +6190,6 @@ pub mod tools;
 pub mod tunnel;
 pub mod wrapper;
 
-#[cfg(test)]
-mod asks_tests;
 #[cfg(test)]
 mod claude_tests;
 #[cfg(test)]

@@ -2049,6 +2049,81 @@ impl Chats {
         live
     }
 
+    /// The service on `port` left out of chat `session`'s plan by the runner it runs on
+    /// (#2510): its confinement's board, where its proxy asks live and the port is one it left
+    /// out. `None` for any other chat or port.
+    fn left_out_board(
+        &self,
+        session: u32,
+        port: u16,
+    ) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
+        let open = lock(&self.open);
+        let confinement = open.get(&session)?.confinement.as_ref()?;
+        confinement
+            .left_out()
+            .contains(&port)
+            .then(|| confinement.asks().cloned())
+            .flatten()
+    }
+
+    /// Whether the runner chat `session` runs on asks about the service on `port`, which it left
+    /// out of the chat's plan (#2510).
+    pub fn runner_asks_about(&self, session: u32, port: u16) -> bool {
+        self.left_out_board(session, port).is_some()
+    }
+
+    /// The name of the runner chat `session` runs on, where its runner left a service out of
+    /// its plan (#2510).
+    pub fn runner_of(&self, session: u32) -> Option<String> {
+        lock(&self.open)
+            .get(&session)?
+            .confinement
+            .as_ref()?
+            .runner()
+            .map(str::to_owned)
+    }
+
+    /// **The person allowed the service on `port` the runner chat `session` runs on asked
+    /// about, from the window** (#2510, ruled 2026-10-18): that chat alone takes it now, on that
+    /// runner, while its confinement runs. No other chat is reached, and nothing is kept on
+    /// this machine. Whether it reached the chat, and whether a held connection of it had given
+    /// up and the chat is told to retry; or why the runner did not take it.
+    pub fn allow_left_out_live(&self, session: u32, port: u16) -> Result<Live, String> {
+        let Some(board) = self.left_out_board(session, port) else {
+            return Ok(Live::default());
+        };
+        let mut live = Live {
+            reached: vec![session],
+            told_to_retry: Vec::new(),
+        };
+        if !board.allow_left_out(port)?.is_empty() {
+            self.tell_outcome(
+                session,
+                purlis_core::askoutcome::Outcome {
+                    about: purlis_core::askoutcome::About::Port {
+                        port: port.to_string(),
+                    },
+                    answer: purlis_core::askoutcome::Answer::Allowed {
+                        scope: purlis_core::askoutcome::Scope::live(
+                            purlis_core::sandbox::grant::Level::Chat,
+                        ),
+                    },
+                },
+            );
+            live.told_to_retry.push(session);
+        }
+        Ok(live)
+    }
+
+    /// **The person kept the service on `port` the runner chat `session` runs on asked about
+    /// blocked** (#2510): what its proxy holds on it is refused now, and every later connection
+    /// to it, until an Allow.
+    pub fn keep_left_out_blocked_live(&self, session: u32, port: u16) {
+        if let Some(board) = self.left_out_board(session, port) {
+            board.keep_left_out_blocked(port);
+        }
+    }
+
     /// **An Allow of `host` at `level` was removed**, from the window (#1666): what it allowed
     /// live reaches nothing again in the chats it reached: the chat whose id is `chat`, and at a
     /// one-chat level (once, this chat) no chat where none is named; every open chat at the
@@ -2838,6 +2913,13 @@ impl Chats {
             && !operator_shell
             && harness.is_some()
             && self.sessions.composes_its_harness_chats();
+        // The services of this machine the person allowed it alone, which the runner is told
+        // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
+        let alone = sandbox
+            .filter(|_| on_the_runner)
+            .and_then(purlis_core::sandbox::Applied::plan)
+            .map(|plan| plan.given_for_this_chat_alone())
+            .unwrap_or_default();
         let sandbox = sandbox.filter(|_| !on_the_runner);
         // What it is armed with, never written by it, and never where it writes. A chat
         // reattached is not started, so it is never refused here: it is compared with the
@@ -3165,6 +3247,13 @@ impl Chats {
             })?),
             None => None,
         };
+        // A runner starts the chat without the services you allowed for this chat alone on this
+        // machine, and the tab says so, and whether the chat is asked about them there (#2510).
+        late.extend(
+            confinement
+                .as_ref()
+                .and_then(purlis_core::sandbox::Confinement::said_of_what_was_left_out),
+        );
         // Under a sandbox, the sandbox decides the line: a flag of the harness's own in the
         // chat's own words can outrank it, so such a chat is refused here, where every chat
         // opens, and flags it rides on go last among the flags. A harness charter wraps runs as
@@ -3296,6 +3385,7 @@ impl Chats {
                         // A person's own opt-out, which a runner takes from no link but its own
                         // window's: such a start is refused there, never run sandboxed silently.
                         without_sandbox: runner_without_sandbox,
+                        alone,
                         size,
                     },
                     composed_hearing.unwrap_or_default(),
@@ -4292,6 +4382,19 @@ impl Chats {
         if changed {
             self.write_it_down();
         }
+    }
+
+    /// **The profile chat `session` runs on** (#2021): the one its record names, else its
+    /// harness's built-in, whose name an adopted profile keeps. None for a chat this app does
+    /// not have open, or one that runs no harness.
+    pub fn profile_of(&self, session: u32) -> Option<String> {
+        let open = lock(&self.open);
+        let running = open.get(&session)?;
+        running
+            .chat
+            .profile
+            .clone()
+            .or_else(|| running.harness.map(|harness| harness.name().to_owned()))
     }
 
     /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
@@ -5408,7 +5511,7 @@ struct Asking {
 /// nothing a chat sends reaches the board.
 fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::plan::Asking {
     use purlis_core::sandbox::asks::Heard;
-    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    use purlis_core::sandboxblock::{Block, Operation};
     let Asking {
         hear,
         reached,
@@ -5459,11 +5562,12 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                     let Some(raise) = lock(&hear).clone() else {
                         continue;
                     };
+                    let (kind, target) = asked_as(target);
                     let block = purlis_core::hookwire::SandboxBlocked {
                         chat,
                         sandbox_blocked: Block {
                             operation: Operation::Connect,
-                            kind: Kind::Host,
+                            kind,
                             ours: false,
                         },
                         harness: harness.map(|harness| harness.name().to_owned()),
@@ -5505,16 +5609,34 @@ fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) ->
     true
 }
 
-/// The block a live ask about `target`, a host and port, is held as: none for what a grant
-/// cannot name.
+/// **What a live ask about `target`, a host and port, is raised as**: a host, or, for a port
+/// of the loopback interface, a service of the runner the chat runs on, by its port (#2510).
+/// Only a runner's proxy asks about a loopback port, for one it left out of the chat's plan
+/// (`purlis_core::sandbox::egress`'s `left_out_at`, the one way a proxy asks about one); never a
+/// service on this Mac, so no answer to it grants anything on this machine.
+fn asked_as(target: String) -> (purlis_core::sandboxblock::Kind, String) {
+    use purlis_core::sandboxblock::Kind;
+    match purlis_core::sandbox::localport::named_port(&target) {
+        Some(port) => (Kind::RunnerService, port.to_string()),
+        None => (Kind::Host, target),
+    }
+}
+
+/// The block a live ask about `target`, a host and port, is held as ([`asked_as`]): none for
+/// what a grant cannot name.
 fn live_block(target: &str) -> Option<crate::taskblocks::HeldBlock> {
     use purlis_core::sandboxblock::{Kind, Operation};
-    let what = crate::sandboxing::GrantWhat::Host;
+    let (kind, target) = asked_as(target.to_owned());
+    let what = if kind == Kind::RunnerService {
+        crate::sandboxing::GrantWhat::Port
+    } else {
+        crate::sandboxing::GrantWhat::Host
+    };
     Some(crate::taskblocks::HeldBlock {
         operation: Operation::Connect.word().to_owned(),
-        kind: Kind::Host.word().to_owned(),
+        kind: kind.word().to_owned(),
         what,
-        target: crate::taskblocks::normalised(what, target)?,
+        target: crate::taskblocks::normalised(what, &target)?,
     })
 }
 

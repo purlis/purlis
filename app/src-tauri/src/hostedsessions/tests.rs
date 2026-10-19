@@ -1643,6 +1643,7 @@ fn by_its_names() -> Named {
         resume: None,
         first_message: None,
         without_sandbox: false,
+        alone: Vec::new(),
         size: SIZE,
     }
 }
@@ -1764,6 +1765,50 @@ fn a_chat_started_by_its_names_with_a_hearing_that_asks_nobody_names_nothing_to_
 
     assert!(confinement.is_none());
     assert!(!confines.seen()[0].confine.asks);
+}
+
+/// **A chat started by its names tells the host the services the person allowed it alone**
+/// (#2590), where the host's confinement asks this window about each it leaves out; and none
+/// where nobody would be asked.
+#[test]
+fn a_chat_started_by_its_names_tells_the_host_what_was_allowed_it_alone_where_it_asks_the_window() {
+    use purlis_core::sandbox::plan::{Asking, Hearing};
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let confines = purlis_host::standin::StandInConfines::default();
+    let hosting = Hosting::confining(ComposesConfined, confines.clone(), StandIns::default());
+    let (connection, _link) = in_memory(hosting, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    let alone = Named {
+        alone: vec![6379],
+        ..by_its_names()
+    };
+    let asking = || Hearing {
+        asks: Some(Asking {
+            tell: Arc::new(|_| {}),
+            askable: Arc::new(|| true),
+            known: Arc::new(|_| None),
+        }),
+        ..Hearing::default()
+    };
+
+    let (_id, confinement) = sessions
+        .open_named(None, &alone, asking(), &|_| {})
+        .expect("composed in the host");
+    let (_unheard, unasked) = sessions
+        .open_named(None, &alone, Hearing::default(), &|_| {})
+        .expect("composed in the host");
+
+    assert!(confinement.is_some());
+    assert!(unasked.is_none());
+    let seen = confines.seen();
+    assert_eq!(seen[0].planned, purlis_host::Planned::Composed);
+    assert_eq!(seen[0].alone, [6379]);
+    assert!(seen[1].alone.is_empty(), "nobody would be asked about it");
 }
 
 /// A `local-ui` link to `hosting` over a line `lines` can cut.

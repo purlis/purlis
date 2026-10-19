@@ -818,6 +818,7 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
         resume: None,
         first_message: Some(first_message.to_owned()),
         without_sandbox,
+        alone: Vec::new(),
         size: SIZE,
     }
 }

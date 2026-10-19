@@ -14,6 +14,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { extensionsChanged } from "./extensionsOn";
+import { listen } from "./here";
 import { Choice, SettingActions } from "./settings/components";
 import { plainLine } from "./settings/iconsPick";
 import { iconThemeComplaints, offeredIconThemes, projectThemeChanged } from "./projectTheme";
@@ -138,8 +139,9 @@ export function Extensions({ onClose }: { onClose: () => void }) {
     const read = await commands.installExtension(picked.data);
     if (read.status === "error") return setWent(read.error);
     // The core wrote it into the record, unapproved: listed as it is now, whatever the answer.
+    // One that contributes only themes is a set of theme folders, and asks nothing (ADR 0098).
     await reread();
-    setAsking(read.data);
+    if (read.data !== null) setAsking(read.data);
   };
 
   const approve = async (ask: ExtensionAsk) => {
@@ -402,6 +404,7 @@ export function themeTroubleSaid({ name, complaints, refused }: ThemeTrouble): s
 /** What a standing says, in the words to put in front of the operator. */
 function standingReads(standing: string): string {
   if (standing === "approved") return "approved";
+  if (standing === "themes") return "themes only — needs no approval";
   if (standing === "changed") return "changed since you approved it — contributing nothing";
   return "not approved — contributing nothing";
 }
@@ -511,6 +514,8 @@ export function forgetExtensionThemes() {
   unfollowSystem = undefined;
   unfollowContrast?.();
   unfollowContrast = undefined;
+  unfollowFolders?.();
+  unfollowFolders = undefined;
   forgetTheirTheme();
   forgetNativeWindow();
 }
@@ -548,19 +553,72 @@ function followContrast() {
   unfollowContrast = () => query.removeEventListener("change", changed);
 }
 
+/** The event the core sends this window when a theme folder it draws from changed on disk
+ *  (`themewatch.rs`, #2324). */
+export const THEME_FOLDERS_CHANGED = "theme-folders-changed";
+
+/** How to stop hearing the theme folders change. */
+let unfollowFolders: (() => void) | undefined;
+
+/**
+ * **Draws again when a theme folder the window draws from changes on disk** (#2324): the core
+ * watches the folders `theme_in_force` reads, and says when one changed; the window asks again,
+ * the one way it ever asks, so the floors and the font approvals hold on a reload as at launch.
+ * What a level chooses may name a folder just made, so the picks are asked again too. One
+ * listener for the life of the window, started by the first draw.
+ */
+function followThemeFolders() {
+  if (unfollowFolders !== undefined) return;
+  let gone = false;
+  const unfollow = () => {
+    gone = true;
+    void stop.then((off) => off?.()).catch(() => undefined);
+  };
+  const stop = listen<{ survey?: unknown }>(THEME_FOLDERS_CHANGED, (said) => {
+    if (gone) return;
+    projectThemeChanged();
+    void drawWhatIsInForce({ reread: said.payload?.survey === true });
+  }).catch(() => {
+    // Not heard this time: the next draw listens again.
+    if (unfollowFolders === unfollow) unfollowFolders = undefined;
+    return undefined;
+  });
+  unfollowFolders = unfollow;
+}
+
+/**
+ * Says, or takes back, that the theme chosen is not drawn and why (#2324): the engine refused
+ * it — a save that is not a theme, a value out of its bounds, or a project's font file that
+ * changed since the project was approved — and Purlis is drawn in its place.
+ */
+function sayTheRefused(refused: ThemeTrouble | null | undefined) {
+  if (refused == null) {
+    sayAboutThisMachine("theme refused", undefined);
+    return;
+  }
+  sayAboutThisMachine("theme refused", {
+    severity: "warn",
+    detail: themeTroubleSaid(refused),
+    remedy:
+      "fix it in its theme folder, and it is drawn again when you save; a project's font file is drawn once you approve the project again",
+  });
+}
+
 /** Whether the theme in force follows the system's appearance, as the core last said. */
 let following = false;
 
 /**
  * **What a project switch draws without asking**: a built-in the project picked (by its id or
- * an id it had before), or, with no pick, the person's own theme — both resolved by the core and
- * handed to the window as it was created, and both what the engine answers for those picks
- * (`purlis_core::theme::resolve`). So the switch repaints in the frame it happens in, with no
- * frame of the last project's theme while the core is asked. Anything else is the core's to say.
+ * an id it had before), or the person's own theme where the core said no level of the project in
+ * front chooses — both resolved by the core and handed to the window as it was created, and both
+ * what the engine answers for those picks (`purlis_core::theme::resolve_levels`). So the switch
+ * repaints in the frame it happens in, with no frame of the last project's theme while the core
+ * is asked. Anything else is the core's to say: with no project in front, the person's machine
+ * default may choose a theme folder (#2602), so the core is asked.
  */
 function handedFor(pick: string | null): Theme | undefined {
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
-  if (pick === null) return theirThemeOnce();
+  if (pick === null) return where === null ? undefined : theirThemeOnce();
   if (pick === CLASSIC) return DEFAULT_THEME;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
@@ -600,10 +658,12 @@ function draw(theme: Theme) {
 export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> {
   const mine = ++drawing;
   followContrast();
+  followThemeFolders();
   if (reread) surveyAgain = true;
   const handed = handedFor(picked);
   if (handed !== undefined) {
     following = false;
+    sayTheRefused(null);
     // The person's own theme was drawn with the floors held as the window was created; a
     // built-in clears them.
     const theirs = atCreation().theme;
@@ -635,8 +695,14 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   if (mine !== drawing) return;
   following = given.follows_system === true;
   if (following) followSystem();
+  sayTheRefused(given.refused);
   if (given.theme) {
-    sayTheFloors(typeof given.floors === "string" ? given.floors : null);
-    draw(given.theme as unknown as Theme);
+    const theme = given.theme as unknown as Theme;
+    // The person's own theme file, drawn (no level chose): its way out is Use built-in.
+    const mine = theirThemeOnce();
+    const path = atCreation().theme.path;
+    const theirs = mine !== undefined && sameTheme(theme, mine) && path ? path : undefined;
+    sayTheFloors(typeof given.floors === "string" ? given.floors : null, { theirs });
+    draw(theme);
   }
 }

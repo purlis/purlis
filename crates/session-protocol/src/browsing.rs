@@ -287,6 +287,23 @@ pub struct LogIn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<Secret>,
     pub password: Secret,
+    /// The kept login this browser keeps once it ends, where it is to keep one (1.27, #2021).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<KeptLogin>,
+}
+
+/// **A kept login** (1.27, #2021, the person's rulings of 2026-10-18): a profile, the persona
+/// whose declared browser login it is, the login's name and its identity (a digest of the
+/// persona, the project and the login's declaration as allowed), whose browser data this device
+/// keeps sealed between browsers; and the login's page, whose site a browser opened from it is
+/// held to. Names and a digest, never a value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeptLogin {
+    pub profile: String,
+    pub persona: String,
+    pub login: String,
+    pub identity: String,
+    pub address: String,
 }
 
 /// Who drives a browser (1.14): the agent, through its acts, or the person who took it over.

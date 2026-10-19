@@ -73,6 +73,75 @@ fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_thi
 }
 
 #[test]
+fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
+    let args = runner().create_args();
+    assert!(args.iter().any(|a| a == "--read-only"), "{args:?}");
+    assert!(
+        has_pair(&args, "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=1024m"),
+        "{args:?}"
+    );
+}
+
+#[test]
+fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
+    let args = runner().create_args();
+    for (flag, value) in [
+        ("--cpus", "2"),
+        ("--memory", "4096m"),
+        ("--memory-swap", "4096m"),
+        ("--pids-limit", "1024"),
+    ] {
+        assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
+    }
+    let limits = Limits::new(1500, 8192, 256, 512).unwrap();
+    let limited = runner().limited(limits);
+    let args = limited.create_args();
+    for (flag, value) in [
+        ("--cpus", "1.500"),
+        ("--memory", "8192m"),
+        ("--memory-swap", "8192m"),
+        ("--pids-limit", "256"),
+        ("--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m"),
+    ] {
+        assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
+    }
+    // The check holds the container to the limits it was made with.
+    let made = Made {
+        container: ContainerId::new(ID).unwrap(),
+        runner: limited,
+    };
+    assert!(check(&inspected(), &made).is_err());
+    let held = with(|c| {
+        c["HostConfig"]["NanoCpus"] = 1_500_000_000u64.into();
+        c["HostConfig"]["Memory"] = 8_589_934_592u64.into();
+        c["HostConfig"]["MemorySwap"] = 8_589_934_592u64.into();
+        c["HostConfig"]["PidsLimit"] = 256.into();
+        c["HostConfig"]["Tmpfs"] =
+            serde_json::json!({ "/tmp": "rw,nosuid,nodev,noexec,size=512m" });
+    });
+    assert_eq!(check(&held, &made), Ok(()));
+}
+
+#[test]
+fn a_pools_limits_leave_a_runner_room_to_start_a_chat() {
+    assert!(Limits::new(2000, 4096, 1024, 1024).is_ok());
+    assert!(Limits::new(10, 512, 64, 512).is_ok(), "the least of each");
+    for (cpus, memory, pids, tmp) in [
+        (0, 4096, 1024, 1024),
+        (9, 4096, 1024, 1024),
+        (2000, 256, 1024, 128),
+        (2000, 4096, 8, 1024),
+        (2000, 4096, 1024, 0),
+        (2000, 4096, 1024, 8192),
+    ] {
+        assert!(
+            Limits::new(cpus, memory, pids, tmp).is_err(),
+            "{cpus} {memory} {pids} {tmp} was taken"
+        );
+    }
+}
+
+#[test]
 fn a_runner_container_is_named_and_labelled_as_the_pools() {
     let args = runner().create_args();
     assert!(has_pair(&args, "--name", "purlis-runner-first"), "{args:?}");
@@ -147,9 +216,9 @@ fn a_home_that_is_not_an_absolute_plain_path_is_refused() {
     }
 }
 
-const ID: &str = "bedaed78395a1217511b3b656d2e4d5d3b9f279c0c7270290596f86688c01fe4";
+pub(crate) const ID: &str = "bedaed78395a1217511b3b656d2e4d5d3b9f279c0c7270290596f86688c01fe4";
 
-fn made() -> Made {
+pub(crate) fn made() -> Made {
     Made {
         container: ContainerId::new(ID).unwrap(),
         runner: runner(),
@@ -157,8 +226,9 @@ fn made() -> Made {
 }
 
 /// What `docker inspect` printed for a container made by [`Runner::create_args`] (Docker
-/// 29.8, 2026-10-17), cut to the fields the check reads and a few beside them.
-fn inspected() -> serde_json::Value {
+/// 29.8, 2026-10-17; the limits, read-only root and `/tmp` measured 2026-10-18), cut to the
+/// fields the check reads and a few beside them.
+pub(crate) fn inspected() -> serde_json::Value {
     serde_json::json!([{
         "Id": ID,
         "State": { "Running": true },
@@ -179,7 +249,13 @@ fn inspected() -> serde_json::Value {
             "DeviceRequests": null,
             "Binds": null,
             "VolumesFrom": null,
-            "ReadonlyRootfs": false,
+            "ReadonlyRootfs": true,
+            "Tmpfs": { "/tmp": "rw,nosuid,nodev,noexec,size=1024m" },
+            "NanoCpus": 2_000_000_000u64,
+            "Memory": 4_294_967_296u64,
+            "MemorySwap": 4_294_967_296u64,
+            "PidsLimit": 1024,
+            "OomKillDisable": null,
             "Runtime": "runc",
             "PortBindings": {},
             "PublishAllPorts": false
@@ -407,6 +483,58 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::json!({ "/run": "" })),
         ),
         (
+            "a memory-backed folder beside its /tmp",
+            Box::new(|c| {
+                c["HostConfig"]["Tmpfs"] =
+                    serde_json::json!({ "/tmp": "rw,nosuid,nodev,noexec,size=1024m", "/run": "" })
+            }),
+        ),
+        (
+            "a /tmp that may run programs",
+            Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::json!({ "/tmp": "rw,size=1024m" })),
+        ),
+        (
+            "no /tmp of its own",
+            Box::new(|c| c["HostConfig"]["Tmpfs"] = serde_json::Value::Null),
+        ),
+        (
+            "a writable root",
+            Box::new(|c| c["HostConfig"]["ReadonlyRootfs"] = false.into()),
+        ),
+        (
+            "no CPU limit",
+            Box::new(|c| c["HostConfig"]["NanoCpus"] = 0.into()),
+        ),
+        (
+            "no memory limit",
+            Box::new(|c| c["HostConfig"]["Memory"] = 0.into()),
+        ),
+        (
+            "swap without end",
+            Box::new(|c| c["HostConfig"]["MemorySwap"] = (-1).into()),
+        ),
+        (
+            "no process limit",
+            Box::new(|c| c["HostConfig"]["PidsLimit"] = serde_json::Value::Null),
+        ),
+        (
+            "a process limit of none",
+            Box::new(|c| c["HostConfig"]["PidsLimit"] = 0.into()),
+        ),
+        (
+            "the out-of-memory killer turned off",
+            Box::new(|c| c["HostConfig"]["OomKillDisable"] = true.into()),
+        ),
+        (
+            "no word of the out-of-memory killer",
+            Box::new(|c| {
+                c["HostConfig"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("OomKillDisable");
+            }),
+        ),
+        (
             "a kernel setting",
             Box::new(|c| {
                 c["HostConfig"]["Sysctls"] = serde_json::json!({ "net.ipv4.ip_forward": "1" })
@@ -480,14 +608,15 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
 /// A stand-in for `docker`: a script that logs each call's words and answers from the files
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
-/// `exec` with `paired`, after keeping its standard input. `rm` exits with what `rm-fails`
-/// holds, 0 when there is none.
-struct FakeDocker {
+/// `exec` with `paired`, after keeping its standard input, and `container ls` with
+/// `containers`. `container rm` and `volume rm` exit with what `rm-fails-container` or
+/// `rm-fails-volume` holds, else what `rm-fails` holds, 0 when there is none.
+pub(crate) struct FakeDocker {
     dir: tempfile::TempDir,
 }
 
 impl FakeDocker {
-    fn new(inspect: &serde_json::Value) -> FakeDocker {
+    pub(crate) fn new(inspect: &serde_json::Value) -> FakeDocker {
         let dir = tempfile::tempdir().unwrap();
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
@@ -499,7 +628,8 @@ impl FakeDocker {
              'info '*) cat '{info}' ;;\n  \
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
-             *' rm') exit $(cat '{rm_fails}' 2>/dev/null || echo 0) ;;\nesac\n",
+             'container ls') cat '{containers}' 2>/dev/null || true ;;\n  \
+             *' rm') exit $(cat '{rm_fails}'-\"$1\" 2>/dev/null || cat '{rm_fails}' 2>/dev/null || echo 0) ;;\nesac\n",
             log = at("log"),
             id = at("id"),
             inspect = at("inspect"),
@@ -510,6 +640,7 @@ impl FakeDocker {
             input = at("input"),
             paired = at("paired"),
             rm_fails = at("rm-fails"),
+            containers = at("containers"),
         );
         stand_in::program(dir.path(), "docker", &script);
         let fake = FakeDocker { dir };
@@ -526,15 +657,15 @@ impl FakeDocker {
         fake
     }
 
-    fn docker(&self) -> Docker {
+    pub(crate) fn docker(&self) -> Docker {
         Docker(self.dir.path().join("docker"))
     }
 
-    fn file(&self, name: &str) -> String {
+    pub(crate) fn file(&self, name: &str) -> String {
         std::fs::read_to_string(self.dir.path().join(name)).unwrap_or_default()
     }
 
-    fn set(&self, name: &str, text: &str) {
+    pub(crate) fn set(&self, name: &str, text: &str) {
         std::fs::write(self.dir.path().join(name), text).unwrap();
     }
 }
@@ -766,4 +897,56 @@ fn the_user_and_home_a_runner_is_made_with_are_the_images_own() {
             "{user} {env} was taken"
         );
     }
+}
+
+#[test]
+fn removing_a_runner_removes_its_container_and_then_its_home_volume() {
+    let fake = FakeDocker::new(&inspected());
+    let (container, volume) = fake.docker().remove_each(&made());
+    assert_eq!((container, volume), (Ok(()), Ok(())));
+    let log = fake.file("log");
+    let container_at = log.find(&format!("container rm --force --volumes {ID}"));
+    let volume_at = log.find("volume rm --force purlis-runner-first-home");
+    assert!(container_at.is_some() && container_at < volume_at, "{log}");
+}
+
+#[test]
+fn a_container_or_volume_already_gone_is_removed() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("rm-fails", "1");
+    // Neither is listed any more: whatever state it was in, it is gone.
+    assert_eq!(fake.docker().remove_each(&made()), (Ok(()), Ok(())));
+}
+
+#[test]
+fn a_part_that_could_not_be_removed_is_said_with_the_command_that_removes_it() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("rm-fails-volume", "1");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    let (container, volume) = fake.docker().remove_each(&made());
+    assert_eq!(container, Ok(()));
+    let left = volume.unwrap_err().0;
+    assert!(
+        left.contains("home volume purlis-runner-first-home"),
+        "{left}"
+    );
+    assert!(
+        left.contains("`docker volume rm --force purlis-runner-first-home`"),
+        "{left}"
+    );
+
+    let fake = FakeDocker::new(&inspected());
+    fake.set("rm-fails-container", "1");
+    fake.set("containers", &format!("{ID}\n"));
+    let (container, volume) = fake.docker().remove_each(&made());
+    let left = container.unwrap_err().0;
+    assert!(
+        left.contains(&format!("`docker container rm --force {ID}`")),
+        "{left}"
+    );
+    assert_eq!(
+        volume,
+        Ok(()),
+        "the volume is tried whatever the container did"
+    );
 }

@@ -394,6 +394,9 @@ export const commands = {
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
+	pinChatBrowser: __WINDOW_ONLY_RESULT,
+	browsersAtQuit: __WINDOW_ONLY_RESULT,
+	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
@@ -560,6 +563,7 @@ export const commands = {
 	openBrowser: __WINDOW_ONLY_RESULT,
 	unwatchBrowser: __WINDOW_ONLY_RESULT,
 	closeBrowser: __WINDOW_ONLY_RESULT,
+	handBrowserToChat: __WINDOW_ONLY_RESULT,
 	takeOverBrowser: __WINDOW_ONLY_RESULT,
 	handBackBrowser: __WINDOW_ONLY_RESULT,
 	browserInput: __WINDOW_ONLY_RESULT,
@@ -1227,6 +1231,8 @@ export const commands = {
 	/**  Which channel this machine takes charter from: `stable` or `dev`. */
 	updateChannel: () => __TAURI_INVOKE<string>("update_channel"),
 	setUpdateChannel: __WINDOW_ONLY_RESULT,
+	browserLimits: __WINDOW_ONLY_RESULT,
+	setBrowserLimit: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -1264,6 +1270,10 @@ export const commands = {
 	 *  every extension's files, so it is taken only when the answer needs one and kept until
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
+	 * 
+	 *  **And the theme folders it is read from are watched for this window** (#2324,
+	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
+	 *  the window or a chat names. A save in one tells the window to ask again.
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
@@ -1323,6 +1333,12 @@ export const commands = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light, moreContrast })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,
@@ -2629,6 +2645,29 @@ export type BrowserFrame = {
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
 
+/**  Which limit a row sets. */
+export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
+
+/**  One limit, as its row draws it. */
+export type BrowserLimitShown = {
+	/**  What is in force now. */
+	value: number,
+	/**  What purlis's default is here: for the device's budget, what its memory gives. */
+	default: number,
+	/**  Whether the person set it, so a reset is on offer. */
+	set: boolean,
+	least: number,
+	most: number,
+};
+
+/**  What the Browsers group draws. */
+export type BrowserLimitsShown = {
+	per_project: BrowserLimitShown,
+	on_this_device: BrowserLimitShown,
+	/**  `0` is never. */
+	idle_minutes: BrowserLimitShown,
+};
+
 /**
  *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
  *  spelled as the sandbox writes a host.
@@ -2898,6 +2937,15 @@ export type ChatBrowser = {
 	 *  purlis keeps trying, and Stop all ends it now.
 	 */
 	unended: boolean,
+	/**  The person pinned it (#2022): it outlives its chat. */
+	pinned: boolean,
+	/**
+	 *  Where its chat has closed, what that chat was called: it is pinned, no chat uses it, and
+	 *  it runs until the person stops it, Stop all, or the app quits (#2022).
+	 */
+	was: string | null,
+	/**  The login purlis performed in it, where it holds one (#2022). */
+	login: string | null,
 };
 
 /**
@@ -8767,6 +8815,12 @@ export type ThemeInForce = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

@@ -1229,7 +1229,72 @@ pub fn login_for(
     name: &str,
     unconfined: bool,
 ) -> Result<purlis_session_protocol::browsing::LogIn, String> {
+    login_and_identity_for(asker, name, unconfined).map(|(login, _)| login)
+}
+
+/// **[`login_for`], and the login's identity** (#2021): a digest of the persona, the project
+/// and the login as declared and allowed, which its kept store is bound to
+/// ([`crate::browserlogins::identity_of`]), so a login of the same name of another persona or
+/// project, or declared otherwise since, never opens it.
+pub fn login_and_identity_for(
+    asker: &Asker,
+    name: &str,
+    unconfined: bool,
+) -> Result<(purlis_session_protocol::browsing::LogIn, String), String> {
     use purlis_session_protocol::browsing::{LogIn, Secret};
+    let (ready, ctx) = login_ready(asker, name, unconfined)?;
+    let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
+    else {
+        return Err(format!("{name} is not a browser login"));
+    };
+    let vault = &ready.tool.vault;
+    let v = cmd::provider(&ctx, vault).map_err(|e| e.message)?;
+    let read = |key: &str| {
+        cmd::get_value(&ctx, &v, key).map(Secret::new).map_err(|e| {
+            format!(
+                "vault '{vault}' did not give {name}'s login, so nothing was filled ({})",
+                e.message
+            )
+        })
+    };
+    let project = crate::scaffold::planefile::id_to_hold_by(&asker.root)
+        .unwrap_or_else(|_| asker.root.display().to_string());
+    let identity = crate::browserlogins::identity_of(
+        asker.persona.as_deref().unwrap_or_default(),
+        &project,
+        &crate::browserlogins::Declared {
+            vault,
+            user_key,
+            password_key: pass_key,
+            page: &login.url,
+        },
+    );
+    Ok((
+        LogIn {
+            address: login.url.clone(),
+            user: user_key.map(read).transpose()?,
+            password: read(pass_key)?,
+            keep: None,
+        },
+        identity,
+    ))
+}
+
+/// **Whether chat `asker` may log in with its browser login `name` now** (#2022): every check
+/// [`login_for`] makes, its vault's grant included, and no value read. What a browser signed in
+/// with that login is handed to a chat by.
+pub fn login_allowed(asker: &Asker, name: &str, unconfined: bool) -> Result<(), String> {
+    login_ready(asker, name, unconfined).map(|_| ())
+}
+
+/// [`login_for`]'s checks, short of reading a value: the login declared and allowed for the
+/// chat, and its vault one the persona may use. Answers the tool and the context its values are
+/// read in.
+fn login_ready(
+    asker: &Asker,
+    name: &str,
+    unconfined: bool,
+) -> Result<(crate::sandbox::tools::Ready, Ctx), String> {
     let persona = asker.persona.as_deref().unwrap_or_default();
     let not_a_login = || {
         format!(
@@ -1292,10 +1357,9 @@ pub fn login_for(
         tool,
         program: PathBuf::new(),
     };
-    let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
-    else {
+    if ready.tool.login.is_none() || ready.tool.login_keys().is_none() {
         return Err(not_a_login());
-    };
+    }
     let ctx = match &asker.confines {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
@@ -1303,21 +1367,7 @@ pub fn login_for(
         None => Ctx::new(&asker.root, asker.env.clone()),
     };
     authorise(&ctx, asker.persona.as_deref(), &ready.tool.vault)?;
-    let vault = &ready.tool.vault;
-    let v = cmd::provider(&ctx, vault).map_err(|e| e.message)?;
-    let read = |key: &str| {
-        cmd::get_value(&ctx, &v, key).map(Secret::new).map_err(|e| {
-            format!(
-                "vault '{vault}' did not give {name}'s login, so nothing was filled ({})",
-                e.message
-            )
-        })
-    };
-    Ok(LogIn {
-        address: login.url.clone(),
-        user: user_key.map(read).transpose()?,
-        password: read(pass_key)?,
-    })
+    Ok((ready, ctx))
 }
 
 /// What a persona's browser login run as a command is refused with (#2016): purlis performs

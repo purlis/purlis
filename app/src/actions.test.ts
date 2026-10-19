@@ -146,6 +146,18 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`forgetTodo:${workspace},${slug}`);
       return { ok: true as const };
     }),
+    pinBrowser: vi.fn(async (program: string, session: number, pinned: boolean) => {
+      calls.push(`pinBrowser:${program},${session},${pinned}`);
+      return { ok: true as const };
+    }),
+    handBrowser: vi.fn(async (program: string, session: number) => {
+      calls.push(`handBrowser:${program},${session}`);
+      return { ok: true as const };
+    }),
+    stopBrowser: vi.fn(async (program: string) => {
+      calls.push(`stopBrowser:${program}`);
+      return { ok: true as const };
+    }),
     ignoreNeedsYou: vi.fn(async (session: number) => {
       calls.push(`ignoreNeedsYou:${session}`);
       return { ok: true as const };
@@ -647,6 +659,7 @@ describe("the one list of actions", () => {
       "Your settings: Chats list",
       "Your settings: Notifications",
       "Your settings: This machine",
+      "Your settings: Browsers",
       "Your settings: Accounts",
       "Your settings: Profiles",
     ]);
@@ -2395,8 +2408,9 @@ describe("the palette at fifty chats", () => {
     // 910 since #2034: Your settings: Profiles.
     // This window has no todos loaded, so no `todo.` rows.
     // 911 since #2326: Your settings: Density and fonts.
-    // 914 since #2331: Settings › Theme at You, Project and Workspace.
-    expect(offers).toHaveLength(914);
+    // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
+    // settings: Browsers.
+    expect(offers).toHaveLength(915);
   });
 
   /**

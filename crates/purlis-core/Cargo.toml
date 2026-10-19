@@ -161,6 +161,10 @@ graphql_client = "0.16"
 # already in this workspace's lockfile through `secrecy` and the app.
 secrecy = "0.10"
 zeroize = "1"
+# Kept browser logins (#2021) are sealed at rest with an AEAD: `ring`'s, which the browser
+# engine already links, and archived with `tar`, already in the tree. Neither adds a crate.
+ring = "0.17"
+tar = { version = "0.4", default-features = false }
 # A browser login's host written in another script is compared in its ASCII spelling, as the
 # engine records a page's address (#2016). Already in the tree through `url`.
 idna = "1"
@@ -249,3 +253,6 @@ nix = { version = "0.31", default-features = false, features = ["signal", "net"]
 # Keychain's dialogs off, so a write it may not make fails instead of asking, and reads the
 # Keychain's own error code. Already in this workspace's lockfile through `keyring`.
 security-framework = "3"
+# Kept browser logins are left out of this Mac's backups (#2021) by the extended attribute
+# `tmutil addexclusion` sets. Already in this workspace's lockfile through `tar`.
+xattr = "1.6"

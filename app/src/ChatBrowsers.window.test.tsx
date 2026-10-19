@@ -124,6 +124,8 @@ function core(browsers: ChatBrowser[]) {
     if (cmd === "workspace_repos")
       return { workspace: a.workspace, repos: [], cache_refused: null };
     if (cmd === "browser_input") return { outcome: "taken" };
+    if (cmd === "hand_browser_to_chat") return "b2";
+    if (cmd === "browsers_at_quit") return atQuit;
     if (cmd === "finished_tasks") return [];
     if (cmd === "stopping_chats") return [];
     if (cmd === "chat_states") return [];
@@ -153,8 +155,29 @@ function core(browsers: ChatBrowser[]) {
   };
 }
 
-const B7: ChatBrowser = { session: 1, name: "b1", program: "B7", unended: false };
-const B8: ChatBrowser = { session: 1, name: "b2", program: "B8", unended: false };
+const B7: ChatBrowser = {
+  session: 1,
+  name: "b1",
+  program: "B7",
+  unended: false,
+  pinned: false,
+  was: null,
+  login: null,
+};
+const B8: ChatBrowser = { ...B7, name: "b2", program: "B8" };
+/** A browser pinned by chat 9, which has closed (#2022). */
+const B9: ChatBrowser = {
+  session: 9,
+  name: "b1",
+  program: "B9",
+  unended: false,
+  pinned: true,
+  was: "Fix the login",
+  login: null,
+};
+
+/** Where the project's browsers were at the last quit, as the core says (#2022). */
+let atQuit: string[] = [];
 
 const tabNames = () =>
   within(stripNamed("Tabs"))
@@ -171,6 +194,7 @@ async function fromThePalette(row: string) {
 }
 
 beforeEach(() => {
+  atQuit = [];
   globalThis.localStorage.clear();
   forgetThisLaunch();
   painted.length = 0;
@@ -447,5 +471,130 @@ describe("the setting that opens a chat's browser beside it", () => {
 
     await screen.findByRole("button", { name: "Open browser b1 of steward 1" });
     expect(screen.queryByLabelText("The browser's page")).toBeNull();
+  });
+});
+
+describe("pinning a chat's browser (#2022)", () => {
+  it("is a row of the palette and of the browser's menu, and its row says it is pinned", async () => {
+    const host = core([B7]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+
+    await fromThePalette("Pin browser b1 of steward 1");
+
+    await waitFor(() =>
+      expect(host.asked("pin_chat_browser")).toEqual([
+        { plane: PLANE, session: 1, program: "B7", pinned: true },
+      ]),
+    );
+    host.listed([{ ...B7, pinned: true }]);
+    const browsers = within(await chatsTree()).getByRole("group", {
+      name: "Browsers of steward 1",
+    });
+    await waitFor(() =>
+      expect(within(browsers).getByRole("button", { name: /Browser b1/ })).toHaveTextContent(
+        "pinned",
+      ),
+    );
+    await fromThePalette("Unpin browser b1 of steward 1");
+    await waitFor(() =>
+      expect(host.asked("pin_chat_browser")).toContainEqual({
+        plane: PLANE,
+        session: 1,
+        program: "B7",
+        pinned: false,
+      }),
+    );
+  });
+});
+
+describe("a pinned browser whose chat closed (#2022)", () => {
+  it("is a row of its own under Pinned browsers, by what its chat was called", async () => {
+    core([B9]);
+    await opened();
+
+    const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
+    expect(within(pinned).getByRole("button", { name: /Browser b1/ })).toHaveTextContent(
+      "Fix the login",
+    );
+  });
+
+  it("is handed to an open chat from the palette", async () => {
+    const host = core([B9]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Pinned browsers" });
+
+    await fromThePalette("Hand browser b1 of Fix the login to steward 2");
+
+    await waitFor(() =>
+      expect(host.asked("hand_browser_to_chat")).toEqual([
+        { plane: PLANE, program: "B9", session: 2 },
+      ]),
+    );
+  });
+
+  it("is stopped by the person, and only then", async () => {
+    const host = core([B9]);
+    await opened();
+    const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
+    await userEvent.click(within(pinned).getByRole("button", { name: /Browser b1/ }));
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of Fix the login"));
+    await fromThePalette("Close this view");
+    await waitFor(() => expect(tabNames()).not.toContain("Browser b1 of Fix the login"));
+    expect(host.asked("close_browser")).toEqual([]);
+
+    await fromThePalette("Stop browser b1 of Fix the login");
+
+    await waitFor(() => expect(host.asked("close_browser")).toEqual([{ program: "B9" }]));
+  });
+});
+
+describe("the browsers open when purlis last quit (#2022)", () => {
+  it("are offered once, each address a button, and nothing is loaded", async () => {
+    atQuit = ["https://staging.example.test/cart", "http://127.0.0.1:5173/"];
+    const host = core([]);
+    await opened();
+
+    const notice = await screen.findByText(/When purlis last quit/);
+    expect(notice).toHaveTextContent("https://staging.example.test/cart");
+    expect(screen.getByRole("button", { name: "Copy staging.example.test" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy 127.0.0.1:5173" })).toBeInTheDocument();
+    expect(host.asked("open_browser")).toEqual([]);
+  });
+
+  it("are put away for good by Dismiss", async () => {
+    atQuit = ["https://staging.example.test/cart"];
+    const host = core([]);
+    await opened();
+    const notice = (await screen.findByText(/When purlis last quit/)).closest("[data-cause]");
+    if (!(notice instanceof HTMLElement)) throw new Error("no Notice");
+
+    await userEvent.click(within(notice).getByRole("button", { name: /Dismiss/ }));
+
+    await waitFor(() =>
+      expect(host.asked("put_away_browsers_at_quit")).toEqual([{ plane: PLANE }]),
+    );
+    expect(screen.queryByText(/When purlis last quit/)).toBeNull();
+  });
+});
+
+describe("a pinned browser signed in with a login (#2022)", () => {
+  it("says so on its row, and its hand-over row names the login", async () => {
+    const host = core([{ ...B9, login: "shop-login" }]);
+    await opened();
+    const pinned = within(await chatsTree()).getByRole("group", { name: "Pinned browsers" });
+    expect(within(pinned).getByRole("button", { name: /Browser b1/ })).toHaveTextContent(
+      "signed in",
+    );
+
+    await fromThePalette(
+      "Hand browser b1 of Fix the login, signed in with shop-login, to steward 2",
+    );
+
+    await waitFor(() =>
+      expect(host.asked("hand_browser_to_chat")).toEqual([
+        { plane: PLANE, program: "B9", session: 2 },
+      ]),
+    );
   });
 });

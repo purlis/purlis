@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Who you are</title></head>
+<body>
+  <h1 id="who">Signed out</h1>
+  <script>
+    // What the site's own cookie says, as a page behind a sign-in would.
+    if (document.cookie.split('; ').includes('kept=fixture-session')) {
+      document.getElementById('who').textContent = 'Signed in from kept logins';
+    }
+  </script>
+</body></html>

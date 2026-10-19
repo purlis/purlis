@@ -314,3 +314,8 @@ operator:
 - **Below 1.0, every release counts as a minor update and follows**, as Semantic Versioning
   numbers it (`0.147.0` to `0.148.0` keeps major version 0): a harness that releases weekly below
   1.0 (Codex) would otherwise ask the person to Update the pin every week.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0095/`](0095/), one per
+amendment, each named by its date.

@@ -165,6 +165,28 @@ use crate::view::{Limits, Views};
 /// names that window, and is answered `taken_back` with the confinements of the chats that
 /// window started over the links before, which the host names to this link.
 ///
+/// 1.23 added what a host leaves out of a plan made on another machine (#2510): `confined` may
+/// name the services of the host's machine the plan gave the chat for it alone, which the host
+/// started it without (`left_out`), and the name of that machine (`host_name`).
+///
+/// 1.24 is unused: the change it was kept for needed no new word on the wire.
+///
+/// 1.25 added a desktop removing a runner (#2525, ADR 0078 §3): `unpair`, sent by the desktop
+/// on its link to the runner, takes it out of the runner's peers. A host before 1.25 refuses
+/// it `unknown_command`, and the runner's container and home, where its peers are, are
+/// removed all the same.
+///
+/// 1.26 added what the window allowed a chat alone, for a chat its host composes by its names
+/// (#2590): a start that names its `confinement` may name those services of the host's machine
+/// (`alone`), which the host leaves out of the confinement it composes where its own sandbox
+/// does not give them, names in `left_out`, and asks about.
+///
+/// 1.27 added kept browser logins (#2021, the person's rulings of 2026-10-18): a browser's
+/// start may name the kept login it opens from (`kept`), and `log_in` the kept login the browser
+/// keeps once it ends (`keep`) ([`crate::browsing::KeptLogin`]). Both name a profile and a login,
+/// never a value, and are the window's alone ([`crate::grants::Power::LogIn`]): no relayed link
+/// sends either.
+///
 /// 1.28 added how a hosted program's run is sandboxed (#2636): each program `programs` answers
 /// says how its host applied the sandbox to its run (`sandbox`), read by the host from what it
 /// started, never from the start.
@@ -433,6 +455,12 @@ pub enum Command {
     /// crash, after which the host keeps its programs for the grace period. The window's alone
     /// ([`crate::grants::Power::Quit`]).
     Quit,
+    /// The desktop on this link is removing the runner (1.25, #2525, ADR 0078 §3): the runner's
+    /// host takes it out of its peers, so no later link from it is admitted, and answers
+    /// [`Answer::Done`]. Only a runner's host, on the link between hosts from the desktop it is
+    /// paired with, carries it out; every other host refuses it [`NOT_ALLOWED`]
+    /// ([`crate::grants::Power::Unpair`]).
+    Unpair,
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -573,6 +601,15 @@ pub struct Confined {
     pub routed: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<String>,
+    /// The services of the host's machine, by port, that the plan gave the chat for it alone and
+    /// the host started it without, since the host's own sandbox for the project does not give
+    /// them (1.23, #2510).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<u16>,
+    /// The name of the machine the host runs on, as its system names it, where it left a
+    /// service out (1.23, #2510): what the window names the runner by when it asks about one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_name: Option<String>,
 }
 
 /// What a confinement's board of live asks holds now (1.4).
@@ -688,6 +725,19 @@ pub struct StartProgram {
     /// asks nobody.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confinement: Option<String>,
+    /// For a start that names its `confinement`, the services of the host's machine, by port,
+    /// the person allowed this chat for it alone where the chat was planned (1.26, #2590): the
+    /// host leaves out of the confinement it composes each one its own sandbox does not give,
+    /// names them in that confinement's `left_out` ([`Confined::left_out`]), and its proxy asks
+    /// the link it is named to about each. Taken from a link that may confine alone
+    /// ([`crate::grants::Power::Confine`]), and only beside a `confinement`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alone: Vec<u16>,
+    /// For a [`ProgramKind::Browser`], the kept login it opens from (1.27, #2021): it starts
+    /// signed in from that login's store, held to the login's site from its first moment. The
+    /// window's alone ([`crate::grants::Power::LogIn`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept: Option<crate::browsing::KeptLogin>,
 }
 
 impl StartProgram {
@@ -711,6 +761,8 @@ impl StartProgram {
             launch: None,
             reach: None,
             confinement: None,
+            alone: Vec::new(),
+            kept: None,
         }
     }
 }
@@ -1151,6 +1203,7 @@ wire_words!(Command {
     SizeBrowser => "size_browser",
     LogIn => "log_in",
     TakeBack => "take_back",
+    Unpair => "unpair",
 });
 
 impl Command {
@@ -1195,6 +1248,7 @@ impl Command {
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
+            Command::Unpair => Power::Unpair,
         }
     }
 }
@@ -1658,7 +1712,8 @@ impl Lane {
             | Command::KillSwitch
             | Command::MidTurn { .. }
             | Command::Quit
-            | Command::TakeBack { .. } => None,
+            | Command::TakeBack { .. }
+            | Command::Unpair => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -1795,6 +1850,19 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         Command::AttachView { kind, .. } => *kind == ViewKind::Browser,
         _ => false,
     };
+    // A kept login is the window's alone, as a login is (1.27).
+    if let Command::StartProgram(start) = command
+        && start.kept.is_some()
+        && !scope.may(Power::LogIn)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "a browser opens from kept logins from purlis's window only, and this link is \
+                 `{scope}`"
+            ),
+        });
+    }
     if a_browser && !scope.may(Power::Browser) {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),
@@ -1832,7 +1900,7 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
         });
     }
     if let Command::StartProgram(start) = command
-        && start.confinement.is_some()
+        && (start.confinement.is_some() || !start.alone.is_empty())
         && !scope.may(Power::Confine)
     {
         return Some(Refusal {
@@ -2229,6 +2297,12 @@ impl Client {
     /// The window is quitting: the host ends every program as a quit and stops (1.13).
     pub async fn quit(&self) -> Result<(), CallError> {
         self.done(Command::Quit).await
+    }
+
+    /// Take this link's desktop out of the runner's peers (1.25, #2525): no later link from it
+    /// is admitted. Refused by every host but a runner's, on its link from that desktop.
+    pub async fn unpair(&self) -> Result<(), CallError> {
+        self.done(Command::Unpair).await
     }
 
     /// Throw the kill switch: every program the host runs ends, and none starts until the

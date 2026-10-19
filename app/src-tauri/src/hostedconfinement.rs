@@ -65,8 +65,10 @@ impl purlis_host::Confine for ConfinesHere {
             confining.confine,
             match confining.planned {
                 purlis_host::Planned::Here => purlis_core::sandbox::hosted::Planned::Here,
+                purlis_host::Planned::Composed => purlis_core::sandbox::hosted::Planned::Composed,
                 purlis_host::Planned::Elsewhere => purlis_core::sandbox::hosted::Planned::Elsewhere,
             },
+            confining.alone,
             tell,
             askable,
         )
@@ -278,6 +280,27 @@ impl Board for HostBoard {
         });
     }
 
+    /// Sent as an Allow of the port at the host's loopback, which the host takes only for a
+    /// service it left out of the chat's plan (#2510): its refusal, or a link that cannot carry
+    /// it, is said, never taken as an Allow.
+    fn allow_left_out(&self, port: u16) -> Result<Vec<String>, String> {
+        change(
+            &self.link,
+            &self.id,
+            ReachChange::Allow {
+                host: left_out_at(port),
+                layer: layer_of(By::Chat),
+            },
+        )
+    }
+
+    /// Sent as a Keep blocked of the port at the host's loopback (#2510).
+    fn keep_left_out_blocked(&self, port: u16) {
+        self.change(ReachChange::KeepBlocked {
+            host: left_out_at(port),
+        });
+    }
+
     fn allowed_live(&self) -> Vec<(String, By)> {
         self.now()
             .allowed_live
@@ -285,6 +308,12 @@ impl Board for HostBoard {
             .map(|listed| (listed.host, by_of(listed.layer)))
             .collect()
     }
+}
+
+/// How a service on `port` the host left out of a chat's plan is named to it: its loopback
+/// address, as its proxy asked about it (#2510).
+fn left_out_at(port: u16) -> String {
+    format!("{}:{port}", purlis_core::sandbox::tunnel::LOOPBACK)
 }
 
 /// Sends `change` to confinement `id`, and waits for the hosts it tells to retry.

@@ -31,6 +31,7 @@ mod autosave;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browserlimits;
 mod browserneedsyou;
 mod browsers;
 mod changes;
@@ -132,11 +133,13 @@ mod smartclose;
 mod specimen;
 mod staleclones;
 mod stopping;
+mod syscontrast;
 mod taskblocks;
 mod taskbrief;
 mod taskchanges;
 mod tasksused;
 mod themegallery;
+mod themewatch;
 mod thismachine;
 mod todos;
 mod unstarted;
@@ -3293,6 +3296,8 @@ pub fn run() {
                     if let Some(watch) = window.try_state::<branchwatch::BranchWatch>() {
                         watch.forget(window.label());
                     }
+                    // Nor the theme folders it draws from (#2324).
+                    themewatch::forget(window.label());
                     // And its ⌘⇧F searches stop (FM-8).
                     if let Some(searches) =
                         window.try_state::<std::sync::Arc<searchfiles::FileSearches>>()
@@ -3423,8 +3428,11 @@ pub fn run() {
                 // about it (#2385).
                 let window = app.handle().clone();
                 app.manage(std::sync::Arc::new(
-                    browsers::WindowBrowsers::new(host.connection()).telling_ended(
-                        std::sync::Arc::new(move |program: String| {
+                    browsers::WindowBrowsers::new(host.connection())
+                        .budgeted_by(std::sync::Arc::new(|| {
+                            purlis_core::browserlimits::Limits::here().on_this_device
+                        }))
+                        .telling_ended(std::sync::Arc::new(move |program: String| {
                             let window = window.clone();
                             // The link's thread tells it: what follows is done off it.
                             tauri::async_runtime::spawn_blocking(move || {
@@ -3432,8 +3440,7 @@ pub fn run() {
                                     chatbrowsers::engine_ended(&planes.every_held(), &program);
                                 }
                             });
-                        }),
-                    ),
+                        })),
                 ));
                 app.manage(host);
             }
@@ -3478,11 +3485,25 @@ pub fn run() {
                 .cloned()
                 .ok_or("tauri.conf.json declares no main window")?;
             let config_root = purlis_core::machine::config_root();
+            // The working directory, resolved ONCE (`planes::at_launch` below takes this
+            // answer): the plane it names is the one the window opens on, and its theme levels
+            // are what the first frame draws (#2602).
+            let cwd = std::env::current_dir();
+            let launch_root = planes::launch_root(&cwd);
+            let created = windowprefs::at_creation(
+                config_root.as_deref(),
+                windowprefs::CreatedOn::main(
+                    config_root.as_deref(),
+                    launch_root.as_ref().and_then(|root| root.as_deref().ok()),
+                )
+                .as_ref(),
+            );
             nativewindow::dressed(
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?,
-                windowprefs::native_at_creation(config_root.as_deref()),
+                created.native,
+                created.follows_system,
             )
-            .initialization_script(windowprefs::creation_script(config_root.as_deref()))
+            .initialization_script(created.script)
             .on_new_window(navguard::no_new_window)
             .build()?;
             reached("the window is built");
@@ -3960,6 +3981,8 @@ pub fn run() {
                         if let Some(watch) = app.try_state::<branchwatch::BranchWatch>() {
                             watch.let_go_of_plane(root);
                         }
+                        // Nor its theme folders, for any window (#2324).
+                        themewatch::let_go_of_plane(root);
                     })
                 })
                 // A plane closed, by whoever asked: every window drawing it takes its tab out,
@@ -3996,7 +4019,7 @@ pub fn run() {
             // opens. Everything after this names its plane; nothing asks the working
             // directory again. A launch that finds no plane leaves the app holding none,
             // which is a state and not a failure.
-            let launch = planes::at_launch(&app.state::<Planes>(), std::env::current_dir());
+            let launch = planes::at_launch(&app.state::<Planes>(), cwd, launch_root);
             // Whether this launch puts the last quit's window set back. Read from THIS
             // process's arguments, once: a second launch's `--no-restore` would be about a
             // restore that happened hours ago, so the single-instance closure never reaches

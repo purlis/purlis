@@ -10,8 +10,11 @@ import { listen } from "./here";
  * each chat in the Chats list, live on its chat's tab, and in a browser view tab once opened.
  *
  * A chat's browser runs in the session host from the chat's first allowed browser call
- * (`chatbrowsers.rs`, #2013), and ends with its chat. The core says when a project's chats'
- * browsers come or go (`chat-browsers-listed`), and the window reads them again.
+ * (`chatbrowsers.rs`, #2013), and ends with its chat, unless the person pinned it (#2022): then
+ * it outlives its chat, listed apart under Pinned browsers by what its chat was called, until
+ * the person stops it, hands it to another chat, or Stop all or a quit ends it. The core says
+ * when a project's chats' browsers come or go (`chat-browsers-listed`), and the window reads
+ * them again.
  */
 
 /** The event a project's chats' browsers are said to have come or gone on. */
@@ -23,23 +26,37 @@ export type ByChat = ReadonlyMap<number, readonly ChatBrowser[]>;
 /** No chat has a browser. */
 export const NO_BROWSERS: ByChat = new Map();
 
-/** `listed`, by chat. */
+/** `listed`, by chat: those a chat uses. A pinned one whose chat closed is {@link keptOf}'s. */
 export function byChat(listed: readonly ChatBrowser[]): ByChat {
   const by = new Map<number, ChatBrowser[]>();
-  for (const one of listed) by.set(one.session, [...(by.get(one.session) ?? []), one]);
+  for (const one of listed)
+    if (one.was === null) by.set(one.session, [...(by.get(one.session) ?? []), one]);
   return by;
 }
 
+/** The pinned browsers of `listed` whose chat has closed (#2022): the person's to stop. */
+export function keptOf(listed: readonly ChatBrowser[]): readonly ChatBrowser[] {
+  return listed.filter((one) => one.was !== null);
+}
+
+/** No pinned browser outlived its chat. */
+export const NONE_KEPT: readonly ChatBrowser[] = [];
+
 /**
- * Every program the chats of `browsers` use: those end with their chats. One that could not be
- * ended yet is no chat's, and closing a tab that shows it may end it.
+ * Every program closing a tab must not end: those the chats of `browsers` use, which end with
+ * their chats, and each of `kept`, pinned past its chat, which ends when the person stops it.
+ * One that could not be ended yet is no chat's, and closing a tab that shows it may end it.
  */
-export function programsOf(browsers: ByChat): Set<string> {
-  return new Set(
-    [...browsers.values()].flatMap((list) =>
+export function programsOf(
+  browsers: ByChat,
+  kept: readonly ChatBrowser[] = NONE_KEPT,
+): Set<string> {
+  return new Set([
+    ...[...browsers.values()].flatMap((list) =>
       list.flatMap((one) => (one.unended ? [] : [one.program])),
     ),
-  );
+    ...kept.map((one) => one.program),
+  ]);
 }
 
 /**
@@ -47,10 +64,20 @@ export function programsOf(browsers: ByChat): Set<string> {
  * core says they came or went. `read` is false until the first reading is in, so what was
  * running before the window looked is told apart from what starts after.
  */
-export function useChatBrowsers(plane: string): { browsers: ByChat; read: boolean } {
-  const [held, setHeld] = useState<{ plane: string; browsers: ByChat; read: boolean }>({
+export function useChatBrowsers(plane: string): {
+  browsers: ByChat;
+  kept: readonly ChatBrowser[];
+  read: boolean;
+} {
+  const [held, setHeld] = useState<{
+    plane: string;
+    browsers: ByChat;
+    kept: readonly ChatBrowser[];
+    read: boolean;
+  }>({
     plane,
     browsers: NO_BROWSERS,
+    kept: NONE_KEPT,
     read: false,
   });
   useEffect(() => {
@@ -66,7 +93,7 @@ export function useChatBrowsers(plane: string): { browsers: ByChat; read: boolea
         .then((answer) => {
           if (gone || mine !== asked || answer.status === "error") return;
           const listed = Array.isArray(answer.data) ? answer.data : [];
-          setHeld({ plane, browsers: byChat(listed), read: true });
+          setHeld({ plane, browsers: byChat(listed), kept: keptOf(listed), read: true });
         })
         // A window whose core cannot list them draws none, and draws everything else.
         .catch(() => undefined);
@@ -89,6 +116,6 @@ export function useChatBrowsers(plane: string): { browsers: ByChat; read: boolea
     };
   }, [plane]);
   return held.plane === plane
-    ? { browsers: held.browsers, read: held.read }
-    : { browsers: NO_BROWSERS, read: false };
+    ? { browsers: held.browsers, kept: held.kept, read: held.read }
+    : { browsers: NO_BROWSERS, kept: NONE_KEPT, read: false };
 }

@@ -8,8 +8,8 @@ time). Each records the change as an amendment of its own, in [`0041/`](0041/) a
 [`0053/`](0053/). It builds on [ADR 0097](0097-a-theme-is-bounded-data-and-may-set-every-token.md):
 a theme is bounded data.
 
-**Built by #2324** (theme folders need no approval) and #2332 (theme drafts). Until then, an
-extension, its themes included, is approved as today.
+**Built by #2324** (theme folders need no approval, and the window repaints on save) and #2332
+(theme drafts).
 
 ## Where purlis was
 

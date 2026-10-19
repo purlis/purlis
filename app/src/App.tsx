@@ -1244,15 +1244,18 @@ function App() {
   // on and what they picked — and every approved extension's with no project in front, which is
   // what the window drew before projects had a say (ADR 0048). After the first frame, like every
   // extension theme (`Extensions.tsx`). A project or workspace switch redraws it, and
-  // `theme.onDrawn` hands it to every terminal on screen (#216).
+  // `theme.onDrawn` hands it to every terminal on screen (#216). **Not while the launch is still
+  // putting its projects back**: the first frame drew the levels of the project it opens on
+  // (#2602), and drawing the window with no project in front meanwhile would repaint it twice.
   useEffect(() => {
-    if (inFront === undefined) void drawThemeFor("every");
-    else if (onInFront !== undefined && pickInFront !== undefined)
+    if (inFront === undefined) {
+      if (!restoring) void drawThemeFor("every");
+    } else if (onInFront !== undefined && pickInFront !== undefined)
       void drawThemeFor(onInFront, pickInFront, {
         plane: inFront,
         workspace: workspaceInFront,
       });
-  }, [inFront, onInFront, pickInFront, workspaceInFront]);
+  }, [inFront, onInFront, pickInFront, workspaceInFront, restoring]);
   // And the workspace in front's colour on the window's accent and focus ring (charter-app#281),
   // live on every switch. The terminal is not told: nothing it draws is tinted.
   const colourInFront = saying?.colour ?? null;
@@ -1478,6 +1481,10 @@ function App() {
       editPersona: async () => nowhere(),
       closeTodo: async () => nowhere(),
       forgetTodo: async () => nowhere(),
+      // No plane, no browsers of its chats (#2022).
+      pinBrowser: async () => nowhere(),
+      handBrowser: async () => nowhere(),
+      stopBrowser: async () => nowhere(),
       pinTab: async () => nowhere(),
       pinWorkspace: async () => nowhere(),
       pinProject: windowDoes.pinProject,

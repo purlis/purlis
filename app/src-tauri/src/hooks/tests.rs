@@ -2553,6 +2553,39 @@ fn a_printed_port_is_only_ever_a_suggestion_on_a_notice_that_asks_for_one() {
     assert_eq!(claude.suggested.as_deref(), Some("50795"));
 }
 
+/// #2510: a service the runner a chat runs on asks about is offered by its port, once or for
+/// this chat alone, and its Notice names the runner, never this Mac's service.
+#[test]
+fn a_runners_service_is_offered_once_or_for_this_chat_and_named_by_its_runner() {
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let plane: PlaneId = serde_json::from_value(serde_json::json!(project.path())).unwrap();
+    let block = Block {
+        operation: Operation::Connect,
+        kind: Kind::RunnerService,
+        ours: false,
+    };
+    let told = blocked_on(&plane, 3, &block, None, Some("5432"), false);
+    assert_eq!(told.offer, BlockOffer::Port);
+    assert_eq!(told.target.as_deref(), Some("5432"));
+    assert_eq!(
+        told.levels,
+        [
+            crate::sandboxing::GrantLevel::Once,
+            crate::sandboxing::GrantLevel::Chat
+        ]
+    );
+    assert_eq!(
+        told.said,
+        "a connection to a service on the runner this chat runs on"
+    );
+
+    let named = on_its_runner(told, Some("runner-7"));
+    let route = named.route.expect("what allowing it means");
+    assert!(route.contains("port 5432 of the runner runner-7"));
+    assert!(route.contains("nothing on this Mac"));
+}
+
 /// Lines the host handed on before the window took its board are heard before any it hands on
 /// while they are heard (#2571): a secret exec that waited reads the input that comes for it
 /// then, to its end, rather than having it dropped as for no exec.
@@ -2778,4 +2811,49 @@ fn a_linux_supervisor_s_block_gets_the_notice_macos_s_kernel_line_of_it_gets() {
     assert_eq!(service.offer, BlockOffer::Port);
     assert_eq!(service.target.as_deref(), Some("5432"));
     assert!(!service.levels.is_empty(), "{:?}", service.levels);
+}
+
+/// #2657: a block's Notice for the system's name lookup offers no Allow, only the chat
+/// without the sandbox: for each of its sockets, and on macOS saying why in the grant's own
+/// words, and for the Mac's own lookup service.
+#[test]
+fn a_notice_for_the_systems_name_lookup_offers_no_allow() {
+    use purlis_core::sandbox::services::{
+        NAME_LOOKUP_REFUSED, NAME_LOOKUP_SERVICES, NAME_LOOKUP_SOCKETS,
+    };
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let told = |operation, kind, target: &str| {
+        blocked(
+            &plane,
+            &purlis_core::hookwire::SandboxBlocked {
+                chat: 3,
+                sandbox_blocked: Block {
+                    operation,
+                    kind,
+                    ours: false,
+                },
+                harness: None,
+                target: Some(target.to_owned()),
+                read_back: false,
+                suggested: None,
+            }
+            .into(),
+        )
+    };
+    for lookup in NAME_LOOKUP_SOCKETS {
+        let said = told(Operation::Connect, Kind::LocalSocket, lookup);
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
+        if cfg!(target_os = "macos") {
+            assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
+        }
+    }
+    for lookup in NAME_LOOKUP_SERVICES {
+        let said = told(Operation::Lookup, Kind::SystemService, lookup);
+        assert_eq!(said.offer, BlockOffer::Unsandboxed, "{lookup}");
+        assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
+    }
 }

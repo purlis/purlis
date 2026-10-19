@@ -1323,6 +1323,16 @@ impl Hosting {
             };
             // The confinement a start the host composes is to have, named to this link (#2407):
             // never one beside the window's own launch, nor an id the host already holds.
+            // What the window allowed it alone is left out of the confinement composed for it,
+            // and asked about over the link that confinement is named to (#2590).
+            if !start.alone.is_empty() && (start.confinement.is_none() || start.launch.is_some()) {
+                return Err(Refusal {
+                    code: session::MALFORMED.into(),
+                    why: "a start names what the window allowed the chat alone only beside the \
+                          confinement the host composes for it"
+                        .into(),
+                });
+            }
             if let Some(named) = &start.confinement {
                 if start.launch.is_some() {
                     return Err(Refusal {
@@ -1413,6 +1423,7 @@ impl Hosting {
                         confinement,
                         link,
                         window,
+                        alone: start.alone.clone(),
                     })),
                 };
                 hosting.inner.compose.compose(&ToCompose {
@@ -1621,9 +1632,14 @@ impl Hosting {
         let hosting = self.clone();
         let named = program.clone();
         let reach = start.reach.clone();
+        let kept = start.kept.clone();
         let started = tokio::task::spawn_blocking(move || {
             let data = hosting.inner.browsers.data_folders()?.join(&named);
-            match hosting.inner.browsers.start(&data, reach.as_ref()) {
+            match hosting
+                .inner
+                .browsers
+                .start(&data, reach.as_ref(), kept.as_ref())
+            {
                 Ok(screen) => Ok((screen, data)),
                 Err(why) => {
                     let _ = std::fs::remove_dir_all(&data);
@@ -2022,6 +2038,7 @@ impl Hosting {
                 project_path: &path,
                 confine: &confine,
                 planned,
+                alone: &[],
             };
             if planned == Planned::Elsewhere {
                 hosting
@@ -2210,12 +2227,13 @@ struct ForTheProgram {
     named: Mutex<Option<NamedTo>>,
 }
 
-/// The id a start gave the confinement composed for it, the link it is named to (#2407), and
-/// the relayed window that link is for (#2511).
+/// The id a start gave the confinement composed for it, the link it is named to (#2407), the
+/// relayed window that link is for (#2511), and what the window allowed the chat alone (#2590).
 struct NamedTo {
     confinement: String,
     link: u64,
     window: Option<String>,
+    alone: Vec<u16>,
 }
 
 impl Beside for ForTheProgram {
@@ -2225,14 +2243,20 @@ impl Beside for ForTheProgram {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        let (id, mut named_to, window) = match taken {
+        let (id, mut named_to, window, alone) = match taken {
             Some(NamedTo {
                 confinement,
                 link,
                 window,
-            }) => (confinement, HashSet::from([link]), window),
+                alone,
+            }) => (confinement, HashSet::from([link]), window, alone),
             // Named to no link: the host made it, for a chat it composed (#2444).
-            None => (ulid::Ulid::generate().to_string(), HashSet::new(), None),
+            None => (
+                ulid::Ulid::generate().to_string(),
+                HashSet::new(),
+                None,
+                Vec::new(),
+            ),
         };
         let (tell, askable) = self.hosting.heard_as(&id);
         let confining = self.hosting.inner.confine.confine(
@@ -2245,7 +2269,8 @@ impl Beside for ForTheProgram {
                     // It asks the link it is named to; one named to none refuses instead.
                     asks: !named_to.is_empty(),
                 },
-                planned: Planned::Here,
+                planned: Planned::Composed,
+                alone: &alone,
             },
             tell,
             askable,
@@ -2642,6 +2667,14 @@ impl session::Host for Hosting {
             }),
             // `serve` keeps these: 1.0's words come as the hosted-program ones, and the
             // subscription is the link's.
+            // A runner's host carries it out on its link from the desktop it is paired with
+            // (`serving`), before this host hears of it (1.25, #2525).
+            Command::Unpair => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so there is nothing to \
+                      unpair"
+                    .into(),
+            }),
             Command::Start(_)
             | Command::Attach { .. }
             | Command::Detach { .. }

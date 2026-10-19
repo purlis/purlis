@@ -113,7 +113,9 @@ impl Default for Opening {
 /// **A chat by what it is named, for the session host to compose** (#2171): its profile and
 /// persona, its workspace, the conversation it carries on, its first message, and whether the
 /// person opted it out of the sandbox. And who it is and the run this start begins (ADR 0066),
-/// where the window knows them: a start that names none is given new ones.
+/// where the window knows them: a start that names none is given new ones. And the services of
+/// the machine it runs on the person allowed it alone, which a host that composes it leaves out
+/// where its own sandbox does not give them, and asks about (#2590).
 #[derive(Debug, Clone)]
 pub struct Named {
     pub chat: Option<String>,
@@ -124,6 +126,7 @@ pub struct Named {
     pub resume: Option<String>,
     pub first_message: Option<String>,
     pub without_sandbox: bool,
+    pub alone: Vec<u16>,
     pub size: Size,
 }
 

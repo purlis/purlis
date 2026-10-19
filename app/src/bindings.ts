@@ -697,6 +697,19 @@ export const commands = {
 	 */
 	chatBrowsers: (plane: PlaneId) => typedError<ChatBrowser[], string>(__TAURI_INVOKE("chat_browsers", { plane })),
 	/**
+	 *  **The person pins chat `session`'s browser `program`, or unpins it** (#2022): pinned, it
+	 *  outlives its chat. The window's alone (`ui::WINDOW_ONLY`).
+	 */
+	pinChatBrowser: (plane: PlaneId, session: number, program: string, pinned: boolean) => typedError<null, string>(__TAURI_INVOKE("pin_chat_browser", { plane, session, program, pinned })),
+	/**
+	 *  **The addresses project `plane`'s browsers were at when purlis last quit** (#2022): offered
+	 *  at this start, each a button, nothing loaded by itself. The window's alone
+	 *  (`ui::WINDOW_ONLY`).
+	 */
+	browsersAtQuit: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("browsers_at_quit", { plane })),
+	/**  **The person put away the browsers of the last quit** (#2022): they are offered no more. */
+	putAwayBrowsersAtQuit: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("put_away_browsers_at_quit", { plane })),
+	/**
 	 *  **Apply** on a proposed change (PC-3): written exactly as the window showed it, as the
 	 *  person, only while the file is still what it was proposed against; audited first (PC-4).
 	 *  Window-only.
@@ -1170,6 +1183,13 @@ export const commands = {
 	 *  which ends with its chat (#2024).
 	 */
 	closeBrowser: (program: string) => typedError<null, string>(__TAURI_INVOKE("close_browser", { program })),
+	/**
+	 *  **The person hands browser `program` to chat `session` of project `plane`** (#2022): one
+	 *  pinned there whose chat closed, or one they opened there that no chat uses. Its chat's browser
+	 *  tools use it from their next call; answers what the chat calls it. The window's alone
+	 *  (`ui::WINDOW_ONLY`): only the person gives a chat a browser.
+	 */
+	handBrowserToChat: (plane: PlaneId, program: string, session: number) => typedError<string, string>(__TAURI_INVOKE("hand_browser_to_chat", { plane, program, session })),
 	/**
 	 *  The person takes browser `program` over (#2014): its chat's browser tools are refused in
 	 *  words until [`hand_back_browser`], and a call in flight is cut.
@@ -2326,6 +2346,13 @@ export const commands = {
 	updateChannel: () => __TAURI_INVOKE<string>("update_channel"),
 	/**  Put this machine on a channel. A word charter does not know is refused, not guessed at. */
 	setUpdateChannel: (channel: string) => typedError<null, string>(__TAURI_INVOKE("set_update_channel", { channel })),
+	/**  **The browser limits in force on this machine**, and their defaults here. */
+	browserLimits: () => typedError<BrowserLimitsShown, string>(__TAURI_INVOKE("browser_limits")),
+	/**
+	 *  **Sets one browser limit on this machine**, or with no `to`, puts it back to purlis's
+	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
+	 */
+	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -2379,12 +2406,52 @@ export const commands = {
 	pickExtension: () => typedError<string | null, string>(__TAURI_INVOKE("pick_extension")),
 	/**
 	 *  Read the extension at `path`, write it into the record **unapproved**, and hand back the
-	 *  question to ask about it.
+	 *  question to ask about it — none for an extension that contributes only themes, which is a set
+	 *  of theme folders and needs no approval (ADR 0098 §3).
 	 * 
 	 *  An extension charter cannot read is an error here rather than a silent nothing: the
 	 *  operator pointed at a directory and is owed the reason it is not one.
 	 */
-	installExtension: (path: string) => typedError<ExtensionAsk, string>(__TAURI_INVOKE("install_extension", { path })),
+	installExtension: (path: string) => typedError<{
+	/**  The id the record is keyed by, and the id the yes is recorded against. */
+	id: string,
+	/**  What to call it, as its own manifest does. */
+	name: string,
+	/**
+	 *  Where it is. Shown and not merely carried: an extension is approved at a path, and one
+	 *  re-installed from another directory is a different question.
+	 */
+	path: string,
+	/**  Every contribution it declares, in charter's own words, one line each. */
+	declares: string[],
+	/**
+	 *  The fingerprint of the bytes that were read to build this question. It goes back to
+	 *  [`approve_extension`] untouched, so the yes is for what was shown.
+	 */
+	fingerprint: string,
+	/**  Whether this is a first ask rather than a re-ask. */
+	first: boolean,
+	/**
+	 *  `extension::RUNS_AS_YOU` — that a plugin runs with the operator's own access and that
+	 *  the list above is a declaration, not a limit.
+	 */
+	runs_as_you: string,
+	/**
+	 *  `extension::FINGERPRINTED` — that the fingerprint catches a change and is not a
+	 *  boundary.
+	 */
+	fingerprint_note: string,
+	/**
+	 *  `extension::state_note` — which one directory charter does NOT read, when this
+	 *  extension declares one, and `null` when it declares none (charter-app#152).
+	 * 
+	 *  It travels for the same reason the other two do. The fingerprint note says charter read
+	 *  every file in the directory; the exception to that sentence belongs on the same screen
+	 *  as the sentence, in the core's words, or the wording has the defect #152 was opened over
+	 *  one carve-out later.
+	 */
+	state_note: string | null,
+} | null, string>(__TAURI_INVOKE("install_extension", { path })),
 	/**
 	 *  The operator's answer to [`ExtensionAsk`]: yes.
 	 * 
@@ -2427,6 +2494,10 @@ export const commands = {
 	 *  every extension's files, so it is taken only when the answer needs one and kept until
 	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
 	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
+	 * 
+	 *  **And the theme folders it is read from are watched for this window** (#2324,
+	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
+	 *  the window or a chat names. A save in one tells the window to ask again.
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
@@ -2516,6 +2587,12 @@ export const commands = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, appearance, light, moreContrast })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
@@ -4118,6 +4195,29 @@ export type BrowserFrame = {
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number };
 
+/**  Which limit a row sets. */
+export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
+
+/**  One limit, as its row draws it. */
+export type BrowserLimitShown = {
+	/**  What is in force now. */
+	value: number,
+	/**  What purlis's default is here: for the device's budget, what its memory gives. */
+	default: number,
+	/**  Whether the person set it, so a reset is on offer. */
+	set: boolean,
+	least: number,
+	most: number,
+};
+
+/**  What the Browsers group draws. */
+export type BrowserLimitsShown = {
+	per_project: BrowserLimitShown,
+	on_this_device: BrowserLimitShown,
+	/**  `0` is never. */
+	idle_minutes: BrowserLimitShown,
+};
+
 /**
  *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
  *  spelled as the sandbox writes a host.
@@ -4387,6 +4487,15 @@ export type ChatBrowser = {
 	 *  purlis keeps trying, and Stop all ends it now.
 	 */
 	unended: boolean,
+	/**  The person pinned it (#2022): it outlives its chat. */
+	pinned: boolean,
+	/**
+	 *  Where its chat has closed, what that chat was called: it is pinned, no chat uses it, and
+	 *  it runs until the person stops it, Stop all, or the app quits (#2022).
+	 */
+	was: string | null,
+	/**  The login purlis performed in it, where it holds one (#2022). */
+	login: string | null,
 };
 
 /**
@@ -10256,6 +10365,12 @@ export type ThemeInForce = {
 	 *  a theme with none.
 	 */
 	options: WindowOption[],
+	/**
+	 *  The theme chosen, when the engine refused it and Purlis is drawn in its place, with why
+	 *  (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
+	 *  font file changed since it was approved, is never a silent fallback.
+	 */
+	refused: ThemeTrouble | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

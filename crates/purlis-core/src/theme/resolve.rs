@@ -130,6 +130,9 @@ pub struct Drawn {
     /// Which level of the precedence chose it ([`super::resolve_levels`], #2323); `None` from
     /// [`resolve`], which knows no levels.
     pub level: Option<super::Level>,
+    /// Whether the theme chosen was refused, so Purlis is drawn in its place and
+    /// [`Self::complaints`] say why (#2324): what a reload says in a Notice.
+    pub refused: bool,
 }
 
 impl Drawn {
@@ -143,6 +146,7 @@ impl Drawn {
             note: None,
             held,
             level: None,
+            refused: false,
         }
     }
 
@@ -240,6 +244,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         None => Drawn::of(default_theme()),
         Some(resolved) => Drawn {
             complaints: resolved.complaints.clone(),
+            refused: resolved.refused,
             ..Drawn::of(resolved.theme.first_for(inputs.contrast))
         },
     }

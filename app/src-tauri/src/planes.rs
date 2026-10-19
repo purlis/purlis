@@ -1044,9 +1044,16 @@ impl Held {
         self.brokered.forget(session);
         self.vault_refusals.forget(session);
         self.removal_asks.forget(session);
-        // Its browsers end with it (#2013), and leave its rows and its tab (#2024).
+        // Its browsers end with it (#2013), and leave its rows and its tab (#2024); a pinned
+        // one runs on, listed by what the chat was called (#2022).
+        let was = self
+            .chats
+            .recorded_chat(session)
+            .map(|chat| chat.name)
+            .unwrap_or_default();
         let listing = self.browsers.listing();
-        self.browsers.forget(self.browser_driver.as_ref(), session);
+        self.browsers
+            .forget(self.browser_driver.as_ref(), session, &was);
         self.browsers_listed_since(listing);
         self.proposals.forget(session);
         self.mcp_failures.forget(session);
@@ -2767,6 +2774,18 @@ impl Planes {
                 }
             });
         }
+        // Its chats' browsers gone unused stop (#2023): looked at on a thread of the project's
+        // own, which ends with the project. Weak for the handoff's reason.
+        {
+            let held = Arc::downgrade(&held);
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(crate::chatbrowsers::IDLE_LOOKED_AT_EVERY);
+                    let Some(held) = held.upgrade() else { break };
+                    crate::chatbrowsers::idle_swept(&held, crate::sandboxing::now_secs());
+                }
+            });
+        }
         // A brokered `secret exec` from one of this plane's chats is run by this plane, which
         // holds the chat's record: its persona and its folder (#1407). Weak for the handoff's
         // reason.
@@ -2924,6 +2943,11 @@ impl Planes {
                     .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
                 let mut told = hooks::blocked_holding(&plane, &block, has_check);
                 if let Some(strong) = strong {
+                    // A runner's service is said with that runner's name (#2510).
+                    told = hooks::on_its_runner(
+                        told,
+                        strong.chats().runner_of(block.line.chat).as_deref(),
+                    );
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());
@@ -4091,7 +4115,8 @@ impl Planes {
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
-                .telling(Arc::clone(&browsers_listed)),
+                .telling(Arc::clone(&browsers_listed))
+                .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),
             browsers_listed,
             proposals: crate::proposals::Proposals::default(),
@@ -4300,6 +4325,10 @@ impl Planes {
             .iter()
             .map(|held| (held.root.clone(), held.mid_turn_everywhere()))
             .collect();
+        // Where each project's browsers are, before they end with its chats (#2022).
+        for held in &all {
+            crate::chatbrowsers::kept_at_quit(held);
+        }
         for held in all {
             held.let_go(to_update);
             (self.released)(&held.root);
@@ -4849,10 +4878,24 @@ pub struct Launch {
 ///
 /// After this, the working directory is never consulted again: a plane is named explicitly
 /// from here on.
-pub fn at_launch(planes: &Planes, cwd: std::io::Result<PathBuf>) -> Launch {
+///
+/// `root` is [`launch_root`] of `cwd`, resolved before the window was built so the window opens
+/// on the plane it names (#2602): resolved once, and taken here as it was answered.
+pub fn at_launch(
+    planes: &Planes,
+    cwd: std::io::Result<PathBuf>,
+    root: Option<Result<PathBuf, String>>,
+) -> Launch {
     resolving_with(planes, cwd, |cwd| {
-        purlis_core::plane::resolve(cwd).map_err(|why| why.to_string())
+        root.unwrap_or_else(|| purlis_core::plane::resolve(cwd).map_err(|why| why.to_string()))
     })
+}
+
+/// **The plane the launch's working directory `cwd` is in**, by the one resolver
+/// (`purlis_core::plane::resolve`), or why none; `None` when the directory could not be read.
+pub fn launch_root(cwd: &std::io::Result<PathBuf>) -> Option<Result<PathBuf, String>> {
+    let cwd = cwd.as_ref().ok()?;
+    Some(purlis_core::plane::resolve(cwd).map_err(|why| why.to_string()))
 }
 
 /// [`at_launch`], with the resolver named — so a test can drive the three states without

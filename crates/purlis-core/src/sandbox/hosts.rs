@@ -190,7 +190,7 @@ fn port_refusal() -> String {
     "The port must be a number from 1 to 65535.".to_owned()
 }
 
-fn port_of(typed: &str) -> Result<u16, String> {
+pub(super) fn port_of(typed: &str) -> Result<u16, String> {
     if typed.is_empty() || !typed.bytes().all(|b| b.is_ascii_digit()) {
         return Err(port_refusal());
     }
@@ -337,6 +337,14 @@ fn metadata_v4(ip: Ipv4Addr) -> bool {
     METADATA_V4.contains(&ip)
 }
 
+/// The IPv6 cloud metadata addresses as ranges: AWS's `fd00:ec2::/32`, and each of
+/// [`METADATA_V6`] alone.
+pub(super) fn metadata_v6_ranges() -> Vec<(Ipv6Addr, u8)> {
+    let mut ranges = vec![(Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0), 32)];
+    ranges.extend(METADATA_V6.iter().map(|ip| (*ip, 128)));
+    ranges
+}
+
 fn metadata_v6(ip: Ipv6Addr) -> bool {
     let [first, second, ..] = ip.segments();
     (first == 0xfd00 && second == 0x0ec2) || METADATA_V6.contains(&ip)
@@ -349,7 +357,10 @@ pub(super) fn metadata_address(ip: IpAddr) -> bool {
     let v4 = |ip: Ipv4Addr| metadata_v4(ip) || METADATA_LINK_LOCAL.contains(&ip);
     match ip {
         IpAddr::V4(ip) => v4(ip),
-        IpAddr::V6(ip) => embedded_v4(ip).map_or_else(|| metadata_v6(ip), v4),
+        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
+            [] => metadata_v6(ip),
+            carried => carried.iter().any(|one| v4(*one)),
+        },
     }
 }
 
@@ -383,15 +394,17 @@ pub fn refused_address(ip: IpAddr, own: &[IpAddr]) -> bool {
                 || ip.is_broadcast()
                 || metadata_v4(ip)
         }
-        IpAddr::V6(ip) => match embedded_v4(ip) {
-            Some(carried) => refused_address(IpAddr::V4(carried), own),
-            None => {
+        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
+            [] => {
                 ip.is_loopback()
                     || ip.is_unspecified()
                     || ip.is_unicast_link_local()
                     || ip.is_multicast()
                     || metadata_v6(ip)
             }
+            carried => carried
+                .iter()
+                .any(|one| refused_address(IpAddr::V4(*one), own)),
         },
     }
 }
@@ -422,16 +435,7 @@ pub fn own_networks_read() -> Option<Vec<Network>> {
                             .or_else(|| at.as_sockaddr_in6().map(|v6| IpAddr::V6(v6.ip())))
                     };
                     let address = ip(one.address.as_ref()?)?;
-                    let prefix = one
-                        .netmask
-                        .as_ref()
-                        .and_then(ip)
-                        .filter(|mask| mask.is_ipv4() == address.is_ipv4())
-                        .map(prefix_of);
-                    Some(match prefix {
-                        Some(prefix) => Network::of(address, prefix),
-                        None => Network::host(address),
-                    })
+                    Some(network_of(address, one.netmask.as_ref().and_then(ip)))
                 })
                 .collect(),
         )
@@ -440,8 +444,18 @@ pub fn own_networks_read() -> Option<Vec<Network>> {
     None
 }
 
+/// **The network an interface at `address` with netmask `mask` is on**: the address alone where
+/// it has no mask, or one of the other family ([`Network::of`] for a mask too short).
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(super) fn network_of(address: IpAddr, mask: Option<IpAddr>) -> Network {
+    match mask.filter(|mask| mask.is_ipv4() == address.is_ipv4()) {
+        Some(mask) => Network::of(address, prefix_of(mask)),
+        None => Network::host(address),
+    }
+}
+
 /// The length of the prefix netmask `mask` writes, its leading ones.
-#[cfg(unix)]
+#[cfg_attr(not(unix), allow(dead_code))]
 fn prefix_of(mask: IpAddr) -> u8 {
     let ones = match mask {
         IpAddr::V4(mask) => u32::from(mask).leading_ones(),
@@ -518,11 +532,21 @@ fn v4(ip: Ipv4Addr) -> Result<Ipv4Addr, String> {
     Ok(ip)
 }
 
+/// **The IPv4 addresses an IPv6 address may carry**: the one of each form [`embedded_v4`]
+/// decodes, or each NAT64's local-use prefix may carry at the lengths it may be used at
+/// ([`super::nat64::local_use`], #2530). An address that carries one reaches it, so it is
+/// judged as each of them.
+pub(super) fn carried_v4(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
+    match embedded_v4(ip) {
+        Some(carried) => vec![carried],
+        None => super::nat64::local_use(ip),
+    }
+}
+
 /// The IPv4 address an IPv6 address carries, in each form Claude Code's sandbox runtime
 /// decodes (2.1.291): IPv4-mapped `::ffff:0:0/96`, SIIT `::ffff:0:0:0/96`, NAT64
-/// `64:ff9b::/96`, IPv4-compatible `::/96` (not `::` or `::1`), and 6to4 `2002::/16`; and NAT64's
-/// local-use `64:ff9b:1::/48` as a /96 in it carries one (#2445).
-pub(super) fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+/// `64:ff9b::/96`, IPv4-compatible `::/96` (not `::` or `::1`), and 6to4 `2002::/16`.
+fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     let s = ip.segments();
     let of = |hi: u16, lo: u16| {
         let ([a, b], [c, d]) = (hi.to_be_bytes(), lo.to_be_bytes());
@@ -535,8 +559,6 @@ pub(super) fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     match s {
         [0, 0, 0, 0, 0xffff, 0, _, _] => Some(low()),
         [0x64, 0xff9b, 0, 0, 0, 0, _, _] => Some(low()),
-        // NAT64's local-use prefix (RFC 8215), as a /96 carries an address: its last 32 bits.
-        [0x64, 0xff9b, 1, ..] => Some(low()),
         [0, 0, 0, 0, 0, 0, _, _] if !ip.is_unspecified() && !ip.is_loopback() => Some(low()),
         [0x2002, hi, lo, ..] => Some(of(hi, lo)),
         _ => None,
@@ -550,7 +572,7 @@ fn v6(ip: Ipv6Addr) -> Result<Ipv6Addr, String> {
         ));
     }
     // An address that carries an IPv4 one reaches it, so it is judged as that one.
-    if let Some(carried) = embedded_v4(ip) {
+    for carried in carried_v4(ip) {
         v4(carried).map_err(|why| format!("[{ip}] carries the IPv4 address {carried}. {why}"))?;
     }
     if ip.is_loopback() || ip.is_unspecified() {

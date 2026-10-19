@@ -37,6 +37,28 @@ pub struct ReachProxy(pub SocketAddr);
 /// The size of a browser's page, in CSS pixels: what its frames are painted at (#2012).
 pub const PAGE_SIZE: (u16, u16) = (1280, 800);
 
+/// **What of a browser's data folder is not its state** (#2021): what the engine caches, the
+/// home and the log purlis gives it, and the locks of a running engine. Whatever else is in the
+/// folder (its cookies, storage and settings) is what a kept login keeps.
+pub const NOT_KEPT: &[&str] = &[
+    "home",
+    "engine.log",
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+    "GrShaderCache",
+    "GraphiteDawnCache",
+    "ShaderCache",
+    "component_crx_cache",
+    "Crashpad",
+    "SingletonLock",
+    "SingletonSocket",
+    "SingletonCookie",
+];
+
 /// One engine's start.
 #[derive(Debug, Clone)]
 pub struct Launch {

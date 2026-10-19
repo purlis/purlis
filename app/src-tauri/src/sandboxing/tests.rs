@@ -571,6 +571,140 @@ fn an_allow_keeps_only_what_stands_as_the_question_drew_it() {
     assert!(sandbox::local::granted_sockets(root).is_empty());
 }
 
+/// **A folder of yours that no chat may write, for a real socket** (#2626): under your home,
+/// where `SocketGround` refuses neither, and short, as a socket's whole path must fit the
+/// kernel's 104 bytes (`sun_path` on macOS). The temp folder is a chat's to write, so a socket
+/// there is refused by design, and a checkout's path is often too long. On CI
+/// (`GITHUB_ACTIONS=true`) a home that cannot hold it fails the test; anywhere else, a sandboxed
+/// agent's home among them, the test says why it did not run and passes.
+#[cfg(unix)]
+fn a_folder_of_yours_no_chat_writes() -> Option<tempfile::TempDir> {
+    let on_ci = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true");
+    let made = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .ok_or_else(|| std::io::Error::other("HOME is not set"))
+        .and_then(|home| {
+            tempfile::Builder::new()
+                .prefix(".socket-check-")
+                .tempdir_in(home)
+        });
+    match made {
+        Ok(folder) if folder.path().join("b.sock").as_os_str().len() < 100 => Some(folder),
+        Ok(folder) => {
+            assert!(
+                !on_ci,
+                "{} is too long for a socket",
+                folder.path().display()
+            );
+            println!(
+                "not run: {} is too long for a socket",
+                folder.path().display()
+            );
+            None
+        }
+        Err(err) => {
+            assert!(!on_ci, "CI runs this in the runner's home: {err}");
+            println!(
+                "not run: no folder of yours can be made in your home here ({err}); CI runs it"
+            );
+            None
+        }
+    }
+}
+
+/// **#2626, against real sockets** (ADR 0093, #1923, #1936): a project declares a path that is
+/// a link to socket A. The up-front Notice names A, the socket an Allow would keep, beside the
+/// path as written. The link moves to socket B: an Allow pressed for what was drawn keeps
+/// nothing, audits nothing and says it changed; the question is asked again, after a "Not
+/// now", naming B; and an Allow for B as drawn then keeps B.
+#[cfg(unix)]
+#[test]
+fn a_declared_link_to_a_real_socket_is_named_and_kept_only_as_the_notice_drew_it() {
+    use std::os::unix::net::UnixListener;
+    let Some(mine) = a_folder_of_yours_no_chat_writes() else {
+        return;
+    };
+    let (a, b) = (mine.path().join("a.sock"), mine.path().join("b.sock"));
+    let _a = UnixListener::bind(&a).expect("socket A");
+    let _b = UnixListener::bind(&b).expect("socket B");
+    let a = a.canonicalize().expect("A as the kernel names it");
+    let b = b.canonicalize().expect("B as the kernel names it");
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    // The link is in the project, a folder a chat may write: what it leads to can change.
+    let link = root.join("dev.sock");
+    std::os::unix::fs::symlink(&a, &link).expect("the link to A");
+    let written = link.display().to_string();
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("[sandbox]\nmode = \"on\"\nexpects = [\"{written}\"]\n"),
+    )
+    .expect("toml");
+    let chats = crate::chats::Chats::new();
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        seen.lock().unwrap().push(audited.target.to_owned());
+        Ok(())
+    };
+    let named = |expects: &ProjectExpects| -> Vec<(String, String, Option<String>)> {
+        expects
+            .items
+            .iter()
+            .map(|item| {
+                (
+                    item.target.clone(),
+                    item.named.clone(),
+                    item.refused.clone(),
+                )
+            })
+            .collect()
+    };
+    let path = |socket: &std::path::Path| socket.display().to_string();
+
+    // The Notice, up front: socket A, the one an Allow would keep, beside the path as written.
+    let drawn = state_of(root).expects.expect("asked up front");
+    assert!(drawn.asked);
+    assert_eq!(named(&drawn), [(written.clone(), path(&a), None)]);
+    let as_drawn = |expects: &ProjectExpects| -> Vec<ExpectedShown> {
+        expects
+            .items
+            .iter()
+            .map(|item| ExpectedShown {
+                target: item.target.clone(),
+                named: Some(item.named.clone()),
+            })
+            .collect()
+    };
+    let shown = as_drawn(&drawn);
+    let declined = decline_expects(root, &shown)
+        .expect("Not now")
+        .expects
+        .expect("still awaited");
+    assert!(!declined.asked, "answered for A");
+
+    // The link moves to socket B.
+    std::fs::remove_file(&link).expect("the link goes");
+    std::os::unix::fs::symlink(&b, &link).expect("the link to B");
+
+    // An Allow pressed for what was drawn (A) keeps nothing, audits nothing, and says so.
+    let refused = allow_expects(root, &chats, &shown, &audit, 100)
+        .expect_err("the path no longer names what was drawn");
+    assert_eq!(refused, EXPECTS_CHANGED);
+    assert!(seen.lock().unwrap().is_empty());
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+
+    // The question is asked again, naming B.
+    let again = state_of(root).expects.expect("asked again");
+    assert!(again.asked, "B was never answered");
+    assert_eq!(named(&again), [(written.clone(), path(&b), None)]);
+
+    // An Allow for B as drawn keeps B, and nothing waits after it.
+    allow_expects(root, &chats, &as_drawn(&again), &audit, 101).expect("B is kept");
+    assert_eq!(*seen.lock().unwrap(), [path(&b)]);
+    assert_eq!(sandbox::local::granted_sockets(root), [b]);
+    assert_eq!(state_of(root).expects, None);
+}
+
 /// ADR 0093, ruling 2: what a project declares it expects is asked about up front and
 /// grants nothing by itself. Each state: declared and not allowed (asked, with each item's
 /// own words); "Not now" (remembered here, still offered in Settings); a new declared item
@@ -2834,6 +2968,107 @@ fn an_allow_for_the_chat_is_kept_by_the_run_a_restart_began_while_it_was_audited
     assert!(chats.grants_a_start_of(ran.get()).services.is_empty());
 }
 
+/// #2510, ruled 2026-10-18: a service of the runner a chat runs on is allowed once or for that
+/// chat alone, and only where its runner asks about it; nothing is audited or kept on this
+/// machine for one refused, so the chat's next start plans it as before.
+#[test]
+fn a_runners_service_is_never_allowed_past_its_chat_nor_kept_on_this_machine() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let audited = std::cell::Cell::new(0);
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+        audited.set(audited.get() + 1);
+        Ok(())
+    };
+    for level in [GrantLevel::You, GrantLevel::Project, GrantLevel::Machine] {
+        assert_eq!(
+            allow_on_its_runner(&chats, 3, ("5432", level), &audit),
+            Err(RUNNER_SERVICE_SCOPES.to_owned()),
+            "{level:?}"
+        );
+    }
+    let not_asked = allow_on_its_runner(&chats, 3, ("5432", GrantLevel::Chat), &audit)
+        .expect_err("its runner does not ask about it");
+    assert!(not_asked.contains("5432"), "{not_asked}");
+    assert_eq!(audited.get(), 0, "nothing audited");
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+}
+
+/// #2510: an Allow the runner did not take is audited as taken back and refused in words, so
+/// the audit never holds an Allow that did not reach the runner.
+#[test]
+fn a_runners_service_its_runner_did_not_take_is_audited_back_and_refused() {
+    let audited = std::cell::RefCell::new(Vec::new());
+    let audit = |_: Option<u32>, one: &sandbox::grant::Audited<'_>| {
+        audited
+            .borrow_mut()
+            .push((one.granted, one.target.to_owned()));
+        Ok(())
+    };
+    let refused = allowed_on_its_runner(4, ("5432", GrantLevel::Chat), &audit, &|_| true, &|_| {
+        Err("the runner refused it".to_owned())
+    })
+    .expect_err("refused");
+    assert!(refused.contains("the runner refused it"), "{refused}");
+    assert_eq!(
+        *audited.borrow(),
+        [(true, "5432".to_owned()), (false, "5432".to_owned())]
+    );
+
+    audited.borrow_mut().clear();
+    let allowed = allowed_on_its_runner(4, ("5432", GrantLevel::Once), &audit, &|_| true, &|_| {
+        Ok(crate::chats::Live {
+            reached: vec![4],
+            told_to_retry: Vec::new(),
+        })
+    })
+    .expect("allowed");
+    assert!(allowed.live);
+    assert_eq!(*audited.borrow(), [(true, "5432".to_owned())]);
+}
+
+/// #2510: a block on a runner's service, answered with Allow for you in a project, grants
+/// nothing in that project on this machine; the same Allow of a service on this Mac does, so
+/// the project's granted ports are where such a grant would land.
+#[test]
+fn allow_for_you_on_a_runners_service_grants_nothing_in_the_project_here() {
+    use crate::taskblocks::HeldBlock;
+    let project = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let audit = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| Ok(());
+    let block = |kind: &str| HeldBlock {
+        operation: "connect".to_owned(),
+        kind: kind.to_owned(),
+        what: GrantWhat::Port,
+        target: "5432".to_owned(),
+    };
+
+    let refused = allow_held(
+        project.path(),
+        &machine(),
+        &chats,
+        (3, &block("runner-service")),
+        GrantLevel::You,
+        &audit,
+        100,
+    )
+    .expect_err("refused");
+    assert_eq!(refused.to_string(), RUNNER_SERVICE_SCOPES);
+    assert!(sandbox::local::granted_ports(project.path()).is_empty());
+
+    allow_held(
+        project.path(),
+        &machine(),
+        &chats,
+        (3, &block("local-service")),
+        GrantLevel::You,
+        &audit,
+        100,
+    )
+    .expect("a service on this Mac is allowed for you");
+    assert_eq!(sandbox::local::granted_ports(project.path()), [5432]);
+}
+
 /// #2653: **a host allowed for me is removed from my hosts**: Remove on its row takes it out of
 /// the personal hosts file, audited at "for me". A chat is named only for a one-chat grant,
 /// so a for-me revoke that names a chat, or a one-chat revoke that names none, removes nothing
@@ -2877,4 +3112,270 @@ fn a_host_allowed_for_me_is_removed_from_my_hosts_and_a_chat_named_with_it_remov
     revoke(root, &chats, &id, &audit).expect("removed");
     assert!(sandbox::hosts::personal(root).is_empty());
     assert_eq!(*heard.lock().unwrap(), [(None, false, "you")]);
+}
+
+/// Every level an Allow may name, as the window names it.
+const EVERY_LEVEL: [GrantLevel; 5] = [
+    GrantLevel::Once,
+    GrantLevel::Chat,
+    GrantLevel::You,
+    GrantLevel::Machine,
+    GrantLevel::Project,
+];
+
+/// Every socket and service of the system's name lookup (#2657), as a block or a file names it.
+fn name_lookups() -> Vec<(GrantWhat, &'static str)> {
+    sandbox::services::NAME_LOOKUP_SOCKETS
+        .iter()
+        .map(|path| (GrantWhat::Socket, *path))
+        .chain(
+            sandbox::services::NAME_LOOKUP_SERVICES
+                .iter()
+                .map(|name| (GrantWhat::Service, *name)),
+        )
+        .collect()
+}
+
+/// How many times an audit was told.
+type Count = std::sync::Arc<std::sync::Mutex<usize>>;
+
+/// An audit that counts what it was told, and the count.
+fn counted() -> (
+    Count,
+    impl Fn(Option<u32>, &sandbox::grant::Audited<'_>) -> Result<(), String>,
+) {
+    let count = std::sync::Arc::new(std::sync::Mutex::new(0));
+    let audit = {
+        let count = std::sync::Arc::clone(&count);
+        move |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+            *count.lock().unwrap() += 1;
+            Ok(())
+        }
+    };
+    (count, audit)
+}
+
+/// #2657: **a grant never names the system's name lookup**, from a block's Notice, at any
+/// level: each of its sockets and services is refused before anything is audited or kept, in
+/// purlis's own words (a grant for everyone in the project is refused for every socket and
+/// service, as it always is).
+#[test]
+fn a_notice_never_allows_the_systems_name_lookup_at_any_level() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    let (audited, audit) = counted();
+    for (what, target) in name_lookups() {
+        for level in EVERY_LEVEL {
+            let refused = allow(
+                root,
+                &machine(),
+                &chats,
+                3,
+                (what, target, level),
+                &audit,
+                100,
+            )
+            .expect_err("refused")
+            .to_string();
+            if level == GrantLevel::Project {
+                assert!(refused.contains("everyone in the project"), "{refused}");
+            } else {
+                assert_eq!(
+                    refused,
+                    sandbox::services::NAME_LOOKUP_REFUSED,
+                    "{target} {level:?}"
+                );
+            }
+        }
+    }
+    assert_eq!(*audited.lock().unwrap(), 0, "nothing audited");
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+    assert!(sandbox::local::granted_services(root).is_empty());
+}
+
+/// #2657: what a project expects is never allowed for the system's name lookup from Settings
+/// or its Notice: each of its sockets is drawn as one that cannot be allowed, saying why, and
+/// its service is not taken as declared; an Allow keeps nothing however the window drew it,
+/// and the one keep refuses each at every level it keeps at.
+#[test]
+fn settings_never_allow_the_systems_name_lookup_a_project_expects() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let lookups = name_lookups();
+    let expects: Vec<String> = lookups
+        .iter()
+        .map(|(_, target)| format!("\"{target}\""))
+        .collect();
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        format!(
+            "[sandbox]\nmode = \"on\"\nexpects = [{}]\n",
+            expects.join(", ")
+        ),
+    )
+    .expect("charter.toml");
+    let awaiting = sandbox::services::awaiting(root, &sandbox::Machine::this()).expect("it waits");
+    // A service no grant names is never taken as declared, so it is never asked about.
+    assert_eq!(
+        awaiting
+            .items
+            .iter()
+            .map(|item| item.written.as_str())
+            .collect::<Vec<_>>(),
+        sandbox::services::NAME_LOOKUP_SOCKETS
+    );
+    for item in &awaiting.items {
+        assert_eq!(
+            item.refused.as_deref(),
+            Some(sandbox::services::NAME_LOOKUP_REFUSED),
+            "{}",
+            item.written
+        );
+    }
+    let chats = crate::chats::Chats::new();
+    let (audited, audit) = counted();
+    for (_, target) in &lookups {
+        for named in [None, Some((*target).to_owned())] {
+            let shown = [ExpectedShown {
+                target: (*target).to_owned(),
+                named,
+            }];
+            assert!(
+                allow_expects(root, &chats, &shown, &audit, 100).is_err(),
+                "{target}"
+            );
+        }
+    }
+    let every: Vec<ExpectedShown> = lookups
+        .iter()
+        .map(|(_, target)| ExpectedShown {
+            target: (*target).to_owned(),
+            named: Some((*target).to_owned()),
+        })
+        .collect();
+    assert!(allow_expects(root, &chats, &every, &audit, 100).is_err());
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+    assert!(sandbox::local::granted_services(root).is_empty());
+    for (what, target) in &lookups {
+        let what = match what {
+            GrantWhat::Socket => sandbox::grant::What::Socket((*target).into()),
+            _ => sandbox::grant::What::Service((*target).to_owned()),
+        };
+        for level in [
+            sandbox::grant::Level::Once,
+            sandbox::grant::Level::Chat,
+            sandbox::grant::Level::You,
+            sandbox::grant::Level::Machine,
+        ] {
+            let refused =
+                kept_for(root, &chats, Some(3), (&what, level), &audit, 100).expect_err("refused");
+            assert_eq!(
+                refused,
+                sandbox::services::NAME_LOOKUP_REFUSED,
+                "{target} {level:?}"
+            );
+        }
+    }
+    assert_eq!(*audited.lock().unwrap(), 0, "nothing audited");
+}
+
+/// #2657: the Granted list says each socket and service of the system's name lookup kept on
+/// this machine, for this project or for every project, reaches no chat, and why, and still
+/// removes it.
+#[test]
+fn the_granted_list_says_a_kept_name_lookup_reaches_no_chat() {
+    let everywhere = tempfile::tempdir().expect("a config home");
+    sandbox::local::everywhere_for_this_test(Some(
+        everywhere.path().join(sandbox::local::EVERY_PROJECT),
+    ));
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let lookups = name_lookups();
+    for (what, target) in &lookups {
+        match what {
+            GrantWhat::Socket => {
+                sandbox::local::grant_socket(root, std::path::Path::new(target)).expect("written");
+                sandbox::local::grant_socket_everywhere(std::path::Path::new(target), None)
+                    .expect("written");
+            }
+            _ => {
+                sandbox::local::grant_service(root, target).expect("written");
+                sandbox::local::grant_service_everywhere(target, None).expect("written");
+            }
+        }
+    }
+    let chats = crate::chats::Chats::new();
+    let rows: Vec<SandboxGrant> =
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
+            .into_iter()
+            .filter(|one| matches!(one.what, GrantWhat::Socket | GrantWhat::Service))
+            .collect();
+    for level in [GrantLevel::You, GrantLevel::Machine] {
+        for (what, target) in &lookups {
+            let row = rows
+                .iter()
+                .find(|one| one.what == *what && one.target == *target && one.level == level)
+                .unwrap_or_else(|| panic!("{target} {level:?} listed"));
+            assert_eq!(
+                row.locked.as_deref(),
+                Some(sandbox::services::NAME_LOOKUP_REFUSED),
+                "{target} {level:?}"
+            );
+        }
+    }
+    for row in &rows {
+        revoke(root, &chats, &row.id, &|_, _| Ok(())).expect("removed");
+    }
+    assert!(sandbox::local::granted_sockets(root).is_empty());
+    assert!(sandbox::local::granted_services(root).is_empty());
+    assert!(sandbox::local::sockets_everywhere().is_empty());
+    assert!(sandbox::local::services_everywhere().is_empty());
+    sandbox::local::everywhere_for_this_test(None);
+}
+
+/// #2657: every name of the Mac's lookup socket is refused: one kept under its name on the
+/// data volume is listed as reaching no chat, and a Notice refuses it.
+#[cfg(target_os = "macos")]
+#[test]
+fn every_name_of_the_macs_lookup_socket_is_refused_and_listed_as_reaching_no_chat() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let chats = crate::chats::Chats::new();
+    for spelling in [
+        "/System/Volumes/Data/private/var/run/mDNSResponder",
+        "/private/var/run/mDNSResponder",
+    ] {
+        let refused = allow(
+            root,
+            &machine(),
+            &chats,
+            3,
+            (GrantWhat::Socket, spelling, GrantLevel::You),
+            &|_, _| Ok(()),
+            100,
+        )
+        .expect_err("refused")
+        .to_string();
+        assert_eq!(
+            refused,
+            sandbox::services::NAME_LOOKUP_REFUSED,
+            "{spelling}"
+        );
+        sandbox::local::grant_socket(root, std::path::Path::new(spelling)).expect("written");
+    }
+    let rows: Vec<SandboxGrant> =
+        grants_of(root, &chats, &crate::chatbrowsers::ChatBrowsers::default())
+            .into_iter()
+            .filter(|one| one.what == GrantWhat::Socket)
+            .collect();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert_eq!(
+            row.locked.as_deref(),
+            Some(sandbox::services::NAME_LOOKUP_REFUSED),
+            "{}",
+            row.target
+        );
+    }
 }
