@@ -30,6 +30,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
+use purlis_core::counts::counted;
 use purlis_core::theme::reload::{LOOK_EVERY, Look, Pace, QUIET_FOR, Reload, ThemesOnly, Watched};
 
 /// The event a window is sent when its theme is to be read again.
@@ -60,6 +61,29 @@ pub(crate) struct Target {
 }
 
 impl Target {
+    /// `path` relative to the root of this target it is under, for a log line that names no
+    /// folder of the person's: `config:…`, `plane:…`, or `elsewhere:` and its name alone.
+    fn relative(&self, path: &Path) -> String {
+        let below = |root: &Path| {
+            [Some(root.to_path_buf()), root.canonicalize().ok()]
+                .into_iter()
+                .flatten()
+                .find_map(|one| path.strip_prefix(&one).ok().map(Path::to_path_buf))
+        };
+        if let Some(inside) = below(&self.config) {
+            return format!("config:{}", inside.display());
+        }
+        if let Some(inside) = self.plane.as_deref().and_then(below) {
+            return format!("plane:{}", inside.display());
+        }
+        format!(
+            "elsewhere:{}",
+            path.file_name()
+                .map(|one| one.to_string_lossy())
+                .unwrap_or_default()
+        )
+    }
+
     /// What to watch for it now.
     fn watched(&self) -> Watched {
         let folders = purlis_core::theme::Folders::of(
@@ -105,10 +129,10 @@ impl<W: notify::Watcher> Inner<W> {
             None => wanted,
         };
         tracing::info!(
-            "purlis: theme folders: {} watched, {} looked at instead, for {} window(s)",
+            "purlis: theme folders: {} watched, {} looked at instead, for {}",
             self.watching.len(),
             self.refused.len(),
-            self.windows.len()
+            counted(self.windows.len(), "window", "windows")
         );
     }
 
@@ -129,16 +153,27 @@ impl<W: notify::Watcher> Inner<W> {
 
     fn heard(&mut self, paths: &HashSet<PathBuf>, everything: bool) -> bool {
         let mut again = everything;
-        for (label, (_, watched)) in &self.windows {
+        for (label, (target, watched)) in &self.windows {
             let asked = watched.decide(paths.iter().map(PathBuf::as_path), everything);
+            let why = match asked {
+                Reload::Nothing => ": none of them is inside a themes/ it holds",
+                Reload::Redraw { .. } => "",
+            };
+            let named: Vec<String> = paths
+                .iter()
+                .take(3)
+                .map(|path| target.relative(path))
+                .collect();
             tracing::info!(
-                "purlis: theme folders: a burst of {} change(s){} asks {asked:?} of window {label}",
-                paths.len(),
+                "purlis: theme folders: a burst of {}{} asks {asked:?} of window {label}{why}; \
+                 among them {}",
+                counted(paths.len(), "change", "changes"),
                 if everything {
                     " (anything may have moved)"
                 } else {
                     ""
                 },
+                named.join(", ")
             );
             again |= asked != Reload::Nothing;
             self.paces.entry(label.clone()).or_default().heard(asked);
@@ -214,9 +249,11 @@ impl<W: notify::Watcher + Send + 'static> ThemeWatch<W> {
                 purlis_core::theme::reload::MOST_WATCHED
             );
         }
+        let held: Vec<String> = watched.levels().map(|one| target.relative(one)).collect();
         tracing::info!(
-            "purlis: theme folders: window {label} draws from {} folder(s)",
-            watched.folders().count()
+            "purlis: theme folders: window {label} watches {}, and redraws for a change inside {}",
+            counted(watched.folders().count(), "folder", "folders"),
+            held.join(", ")
         );
         inner.windows.insert(label.to_owned(), (target, watched));
         inner.looks.remove(label);
@@ -599,6 +636,73 @@ mod tests {
         }
         drop(watch);
         *INJECT.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// What the window would draw for `config` now, as `theme_in_force` answers it.
+    fn surface_drawn(config: &Path) -> Option<String> {
+        use purlis_core::theme;
+        let levels = theme::Levels::read(Some(config), None, None);
+        let folders = theme::Folders::of(Some(config), None, None);
+        let drawn = crate::extensions::theme_in_force_of(
+            &levels,
+            &folders,
+            None,
+            None,
+            false,
+            theme::Contrast::Standard,
+            || Arc::from(Vec::new()),
+        );
+        drawn
+            .theme
+            .and_then(|one| one.values.get("surface.base").cloned())
+    }
+
+    fn put_surface(folder: &Path, surface: &str) {
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::write(
+            folder.join("theme.json"),
+            format!(
+                r#"{{"name":"Live","appearances":[{{"id":"dark","appearance":"dark","tokens":{{"surface.base":"{surface}"}}}}]}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_machine_theme_folder_chosen_and_saved_is_drawn_again_as_saved() {
+        use purlis_core::theme::{Choice, choices};
+        // The chain the scenario runs, without the window: a machine theme folder chosen, the
+        // watch on it, a save, the window told, and what `theme_in_force` answers then. Each
+        // surface is one Classic's text and marks clear, so no consent floor stands in for it.
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join("config");
+        let machine = purlis_core::machine::dir(&config);
+        let folder = machine.join("themes/live");
+        put_surface(&folder, "#171710");
+        choices::set(&config, choices::Slot::Machine, Choice::new("live", None)).unwrap();
+        assert_eq!(surface_drawn(&config).as_deref(), Some("#171710"));
+        let told = Arc::new(Told::default());
+        let watch = ThemeWatch::<notify::PollWatcher>::start(told.tell());
+        watch.set(
+            "main",
+            Target {
+                config: config.clone(),
+                plane: None,
+                workspace: None,
+            },
+        );
+        assert!(watching(&watch).contains(&folder), "{:?}", watching(&watch));
+        for (n, surface) in ["#181810", "#191910"].into_iter().enumerate() {
+            // The poller tells a file changed by its time to the second, and these saves are of
+            // one size: each comes in a second of its own.
+            std::thread::sleep(Duration::from_millis(1100));
+            put_surface(&folder, surface);
+            assert!(
+                told.until(n + 1, Duration::from_secs(10)),
+                "the save of {surface} was never told"
+            );
+            assert_eq!(surface_drawn(&config).as_deref(), Some(surface));
+        }
     }
 
     #[test]

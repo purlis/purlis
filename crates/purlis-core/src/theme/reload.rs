@@ -149,6 +149,11 @@ impl Watched {
         self.folders.keys().map(PathBuf::as_path)
     }
 
+    /// Each level's `themes/` a change anywhere inside of redraws, in every spelling.
+    pub fn levels(&self) -> impl Iterator<Item = &Path> {
+        self.levels.iter().map(PathBuf::as_path)
+    }
+
     /// How many folders were not watched, past [`MOST_WATCHED`].
     pub fn left_out(&self) -> usize {
         self.left_out

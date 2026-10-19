@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { $$, browser, expect } from "@wdio/globals";
 import { focusWorkspace, projectRoot } from "../acting.js";
@@ -32,8 +32,13 @@ async function untilTheStripIsRead(): Promise<void> {
   );
 }
 
-/** The folder the person's own theme folders are kept in on this run's machine: beside their
- *  `theme.json`, as the window was handed it. */
+/**
+ * The folder the person's own theme folders are kept in on this run's machine, **as the core
+ * reads it now**: the config home the window was handed its theme file from, and in it the
+ * `purlis` folder when there is one, else `charter` (`names::CONFIG_HOME`: the purlis spelling
+ * wins once it is there). Asked at each use, since an earlier spec may have made the `purlis`
+ * folder after the window was created.
+ */
 async function machineFolder(): Promise<string> {
   const path = await browser.execute(() => {
     const handed = (window as unknown as Record<string, unknown>).__CHARTER_AT_CREATION__ as {
@@ -42,7 +47,29 @@ async function machineFolder(): Promise<string> {
     return handed?.theme?.path ?? "";
   });
   expect(path).not.toBe("");
-  return dirname(path);
+  const home = dirname(dirname(path));
+  const purlis = join(home, "purlis");
+  return existsSync(purlis) && statSync(purlis).isDirectory() ? purlis : join(home, "charter");
+}
+
+/** What happened at each step, for a failure's message. */
+const steps: string[] = [];
+
+/** Records `step`: the colour drawn, and what the core says the window draws there. */
+async function note(step: string, plane: string): Promise<void> {
+  let said: string;
+  try {
+    const theme = await ask<{ drawn?: unknown; level?: unknown; folders?: unknown }>(
+      "project_theme",
+      { plane, workspace: WORKSPACE },
+    );
+    said = JSON.stringify({ drawn: theme.drawn, level: theme.level, folders: theme.folders });
+  } catch (why) {
+    said = `project_theme refused: ${String(why)}`;
+  }
+  const line = `${step}: draws ${await surfaceDrawn()}; the core says ${said}`;
+  steps.push(line);
+  console.log(`theme-live-reload: ${line}`);
 }
 
 /** The workspace in front by the name its tab draws, or `null` at the plane root. */
@@ -73,6 +100,15 @@ async function focusThePlaneRoot(): Promise<void> {
   );
 }
 
+/**
+ * The surface the `save`th save of the `level`th level draws: a dark grey beside Purlis
+ * Classic's own, which its text, its marks and its asks all clear, so no consent floor draws
+ * purlis's own surface in its place. Each level and each save its own.
+ */
+function surfaceOf(level: number, save: number): string {
+  return `#1${7 + save}1${7 + save}1${level}`;
+}
+
 /** What the window draws `surface.base` in now. */
 async function surfaceDrawn(): Promise<string> {
   return browser.execute(() =>
@@ -93,7 +129,7 @@ function save(folder: string, surface: string): void {
 }
 
 /** Saves `surface` into `folder` and waits for the window to draw it; answers how long it took. */
-async function savedAndDrawn(folder: string, surface: string): Promise<number> {
+async function savedAndDrawn(folder: string, surface: string, plane: string): Promise<number> {
   const from = Date.now();
   save(folder, surface);
   await browser
@@ -102,10 +138,12 @@ async function savedAndDrawn(folder: string, surface: string): Promise<number> {
       interval: 50,
     })
     .catch(async () => {
+      await note(`never drew ${surface}`, plane);
       throw new Error(
-        `the window never drew ${surface} after ${folder} was saved; it draws ${await surfaceDrawn()}`,
+        `the window never drew ${surface} after ${folder} was saved; it draws ${await surfaceDrawn()}. Steps: ${steps.join(" | ")}`,
       );
     });
+  await note(`drew ${surface}`, plane);
   return Date.now() - from;
 }
 
@@ -127,12 +165,14 @@ describe("a theme folder in use", () => {
         const name = `live-reload-${level}`;
         const folder = join(themes, name);
         made.push(folder);
-        save(folder, `#0${n}1020`);
+        save(folder, surfaceOf(n, 0));
+        await note(`${level}: ${name} written`, plane);
         // The person's choice for this workspace on this machine reaches a folder of every
         // level. A save then tells the window to ask again, and the choice with it.
         await ask("theme_choose", { plane, workspace: WORKSPACE, theme: name, appearance: null });
-        const first = await savedAndDrawn(folder, `#0${n}2030`);
-        const again = await savedAndDrawn(folder, `#0${n}3040`);
+        await note(`${level}: ${name} chosen`, plane);
+        const first = await savedAndDrawn(folder, surfaceOf(n, 1), plane);
+        const again = await savedAndDrawn(folder, surfaceOf(n, 2), plane);
         console.log(`theme-live-reload: ${level} saved and drawn in ${first} ms, then ${again} ms`);
       }
       expect(await browser.getWindowHandles()).toEqual(windows);
