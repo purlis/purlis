@@ -8,7 +8,7 @@ implementation, to be confirmed* (D-2539-1, D-2539-2).
    home.** `purlis bridge --pair` mints it in the machine store
    (`purlis_core::machine::mint_device_id`) before it makes the link key, and pairing is refused
    when the store already holds one, whichever desktop asks, before anything is made: *"this
-   runner's home came with a device id this runner did not mint …"*. So two runners started from
+   runner's home came with a device id, or one was minted in it before this pairing …"*. So two runners started from
    one image never pair with one id, as each has a key of its own (item 3). A runner's host
    never mints a device id itself: a link that arrives before the pairing is answered by nobody
    and leaves the store as it was. A paired runner whose store keeps no device id links nobody.

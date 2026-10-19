@@ -809,7 +809,7 @@ fn a_reset_that_destroys_an_unpushed_commit_is_refused_and_one_that_does_not_is_
         f.root
     )));
     assert!(reset(&f, "git zzwipe origin/main").is_some());
-    assert_eq!(reset(&f, "git reset --soft origin/main"), None);
+    assert!(reset(&f, "git reset --soft origin/main").is_some());
     assert_eq!(reset(&f, "git reset --hard HEAD"), None);
     assert_eq!(reset(&f, "git reset --hard"), None);
     assert_eq!(reset(&f, "git reset --hard origin/main -- README"), None);
@@ -1405,9 +1405,11 @@ fn an_alias_or_a_variable_git_after_a_substitution_is_followed(linked: bool) {
             let said = plane_root_branch_reason(&cmd, &s.clone, root).expect(&cmd);
             assert!(said.starts_with(unnamed), "{cmd:?}: {said}");
         }
-        // An alias that resolves to no branch move stays allowed.
+        // An alias that resolves to no branch move is still refused: the substitution is not
+        // quoted.
         let st = format!("git -c alias.st=status -C {echo} st");
-        assert_eq!(plane_root_branch_reason(&st, &s.clone, root), None);
+        let said = plane_root_branch_reason(&st, &s.clone, root).expect(&st);
+        assert!(said.contains("is not quoted"), "{said}");
     }
     for cmd in [
         "G=git; $G checkout -b x",
@@ -1583,9 +1585,10 @@ fn aliases_after_substitutions_are_read_once_per_line() {
         &["config", "alias.st", "status"],
     );
     let one = format!("git -C $(echo {root}) {}", "st ".repeat(40));
+    // Unquoted, the substitution is refused, and the line is answered in time all the same.
     let cmd = vec![one; 200].join("; ");
     let started = std::time::Instant::now();
-    assert_eq!(plane_root_branch_reason(&cmd, &s.clone, root), None);
+    assert!(plane_root_branch_reason(&cmd, &s.clone, root).is_some());
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(3), "{took:?}");
     // Past the budget of different aliases to follow, what git runs is unread, and refused.
@@ -1660,7 +1663,7 @@ fn many_inline_aliases_after_a_substitution_are_read_in_time() {
         "-c alias.zz=status zz ".repeat(6000)
     );
     let started = std::time::Instant::now();
-    assert_eq!(plane_root_branch_reason(&cmd, &s.clone, &s.root), None);
+    assert!(plane_root_branch_reason(&cmd, &s.clone, &s.root).is_some());
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(3), "{took:?}");
 }
@@ -2235,6 +2238,185 @@ fn a_git_behind_more_directories_than_are_spelt_is_one_the_guard_cannot_name() {
     assert_eq!(read.elsewhere[0].dirs, [format!("{root}/clone")]);
 }
 
+/// [`fixture`] with its one unpushed commit pushed: every reset there measures nothing lost.
+fn pushed_fixture() -> Fixture {
+    let f = fixture();
+    git(std::path::Path::new(&f.root), &["push", "-q"]);
+    f
+}
+
+/// A git command word, or one of git's own options, that the shell fills in — a variable, a
+/// quoted substitution, a function's arguments — is a word the guard cannot read: the command is
+/// refused as unknown, and a branch move or reset among the words after it is judged as written.
+/// A function's body is read where the shell may call it from: anywhere.
+#[test]
+fn a_git_command_or_option_the_shell_fills_in_is_read_as_unknown() {
+    let f = fixture();
+    for cmd in [
+        "A=checkout; git $A feature",
+        "git $UNSET checkout feature",
+        "git ${SUB} feature",
+        "git \"$SUB\" feature",
+        "f(){ git \"$@\"; }; f checkout feature",
+        "f(){ git checkout feature; }; f",
+        "function f { git checkout feature; }; f",
+        "git \"`echo checkout`\" feature",
+        "M=reset; git $M --hard HEAD~1",
+        "git --$OPT checkout feature",
+    ] {
+        assert!(branch(&f, cmd).is_some(), "{cmd:?}");
+    }
+    // What the shell fills in after the command is its arguments, read as before.
+    for cmd in [
+        "git status",
+        "git log $REV",
+        "git show HEAD:$FILE",
+        "git -C \"$PWD\" status",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
+    }
+}
+
+/// An alias used after an earlier command on the line that may change git's configuration is
+/// read as unknown: the configuration the guard reads is the one from before the line ran.
+#[test]
+fn an_alias_after_a_command_that_may_change_configuration_is_read_as_unknown() {
+    let f = fixture();
+    for cmd in [
+        "git config alias.zzlater 'reset --hard HEAD~1'; git zzlater",
+        "git config alias.zzlater checkout && git zzlater feature",
+        "printf x >> notes && git zzlater feature",
+        "git config alias.zzlater checkout && git -C $(pwd) zzlater feature",
+        "git config alias.zzlater checkout && G=git && $G zzlater feature",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.starts_with("cannot tell what"), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "git zzlater feature",
+        "git config user.name x && git status",
+        "git add README && git log --oneline",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
+    }
+}
+
+/// An earlier git command on the line that changes the repository makes the guards judge the
+/// commands after it as unknown where their answer rests on what the repository holds: whether
+/// a word is a file or a branch, and how many commits a reset would take off the branch. Run on
+/// its own, the command is measured as before.
+#[test]
+fn an_earlier_git_command_that_changes_the_repository_makes_later_ones_unknown() {
+    let f = fixture();
+    assert_eq!(branch(&f, "git checkout README"), None);
+    assert_eq!(branch(&f, "git status && git checkout README"), None);
+    assert_eq!(branch(&f, "git add README && git checkout -- README"), None);
+    let said = branch(&f, "git branch README HEAD~1 && git checkout README").expect("refused");
+    assert!(said.contains("as a command of its own"), "{said}");
+
+    let p = pushed_fixture();
+    assert_eq!(reset(&p, "git reset --hard HEAD~1"), None);
+    for cmd in [
+        "git commit --allow-empty -m x && git reset --hard HEAD~1",
+        "git checkout main && git reset --hard origin/main",
+        "git fetch && git reset --soft HEAD~1",
+        "git commit --allow-empty -m x && git update-ref refs/heads/main HEAD~1",
+    ] {
+        let said = reset(&p, cmd).expect(cmd);
+        assert!(said.contains("as a command of its own"), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "git status && git reset --hard HEAD~1",
+        "git commit --allow-empty -m x && git reset --hard",
+        "git add README && git reset --hard HEAD",
+    ] {
+        assert_eq!(reset(&p, cmd), None, "{cmd:?}");
+    }
+}
+
+/// A reset in any mode, or a ref update of the branch the root is on, that would take commits
+/// no upstream has off that branch is refused: the working tree may keep their files, but the
+/// commits are left with the reflog as their only copy.
+#[test]
+fn taking_unpushed_commits_off_the_roots_branch_is_refused_in_any_mode() {
+    let f = fixture();
+    for cmd in [
+        "git reset --soft origin/main",
+        "git reset --mixed origin/main",
+        "git reset origin/main",
+        "git reset -q @{u}",
+        "git update-ref refs/heads/main origin/main",
+        "git update-ref HEAD origin/main",
+        "git update-ref -m why refs/heads/main origin/main",
+        "git update-ref -d refs/heads/main",
+        "git update-ref --stdin",
+    ] {
+        assert!(reset(&f, cmd).is_some(), "{cmd:?}");
+    }
+    for cmd in [
+        "git reset",
+        "git reset --soft HEAD",
+        "git reset README",
+        "git reset HEAD README",
+        "git reset origin/main README",
+        "git reset origin/main -- README",
+        "git reset -p origin/main",
+        "git update-ref refs/heads/main HEAD",
+        "git update-ref refs/heads/feature origin/main",
+        "git update-ref refs/heads/zznew HEAD",
+    ] {
+        assert_eq!(reset(&f, cmd), None, "{cmd:?}");
+    }
+}
+
+/// An unquoted command substitution among git's own options is split into words git reads as
+/// options and as its command: refused, saying to quote it. Quoted, it is one word, and the
+/// command after it is read as written.
+#[test]
+fn an_unquoted_substitution_among_gits_options_is_refused_and_a_quoted_one_is_read() {
+    let f = fixture();
+    for cmd in [
+        "git -C $(git rev-parse --show-toplevel) status",
+        "git -C $(pwd)",
+        "git -C `pwd` log --oneline",
+        "git --git-dir=$(pwd)/.git log",
+        "git -c x.y=$(echo 1) status",
+        "git -C $(printf '%s\\x20che%s' \"$PWD\" ckout) status",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.contains("`git -C \"$(…)\" …`"), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "git -C \"$(git rev-parse --show-toplevel)\" status",
+        "git -C \"$(pwd)\" log --oneline",
+        "git --git-dir=\"$(pwd)/.git\" log",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
+    }
+}
+
+/// `git symbolic-ref HEAD <ref>` moves the root to another branch as a checkout does, without
+/// touching a file: refused. Reading a symbolic ref, or setting one other than HEAD, is not.
+#[test]
+fn pointing_head_at_another_branch_is_a_branch_move() {
+    let f = fixture();
+    for cmd in [
+        "git symbolic-ref HEAD refs/heads/feature",
+        "git symbolic-ref -m why HEAD refs/heads/feature",
+        "git symbolic-ref $REF refs/heads/feature",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.contains("PLANE ROOT"), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "git symbolic-ref HEAD",
+        "git symbolic-ref --short HEAD",
+        "git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
+    }
+}
+
 /// How many times git was asked exactly `question` in `root` since `before` questions there.
 fn times_asked(root: &str, before: usize, question: &[&str]) -> usize {
     crate::worktree::git::tally::asked(std::path::Path::new(root))[before..]
@@ -2465,4 +2647,52 @@ fn an_alias_an_early_export_defines_is_still_unread_at_the_end_of_a_long_line() 
             None
         );
     }
+}
+
+/// When the shell fills in git's command word, a word after it that reads as a command may be
+/// an option or an operand of another: the command is refused as unknown, not judged as that
+/// word.
+#[test]
+fn a_word_after_a_command_word_the_shell_fills_in_is_not_taken_for_the_command() {
+    let f = fixture();
+    for cmd in [
+        "S=checkout; git $S -b reset",
+        "S=update-ref; git $S -m reset refs/heads/main HEAD~1",
+        "G=git; S=checkout; $G $S -b reset",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(said.starts_with("cannot tell what"), "{cmd:?}: {said}");
+    }
+    assert_eq!(branch(&f, "G=git; $G status"), None);
+}
+
+/// A git that sets configuration for itself, or after a line that points git at configuration,
+/// is not taken to only put files back: configuration can run a program as it does.
+#[test]
+fn a_git_that_sets_configuration_is_not_taken_to_only_put_files_back() {
+    let p = pushed_fixture();
+    assert_eq!(reset(&p, "git add README && git reset --hard HEAD~1"), None);
+    for cmd in [
+        "git -c core.fsmonitor=x add README && git reset --hard HEAD~1",
+        "git --config-env=core.fsmonitor=X add README && git reset --hard HEAD~1",
+        "GIT_CONFIG_PARAMETERS=\"'core.fsmonitor'='x'\" git add README && git reset --hard HEAD~1",
+        "export HOME=/tmp/elsewhere; git add README && git reset --hard HEAD~1",
+    ] {
+        let said = reset(&p, cmd).expect(cmd);
+        assert!(said.contains("as a command of its own"), "{cmd:?}: {said}");
+    }
+}
+
+/// A ref named in another case is read as the root's own where the volume folds case, as
+/// macOS's does by default: `refs/heads/MAIN` is `main`, and `head` is `HEAD`.
+#[test]
+fn a_ref_named_in_another_case_is_the_roots_own() {
+    let f = fixture();
+    for cmd in [
+        "git update-ref refs/heads/MAIN origin/main",
+        "git update-ref head origin/main",
+    ] {
+        assert!(reset(&f, cmd).is_some(), "{cmd:?}");
+    }
+    assert!(branch(&f, "git symbolic-ref head refs/heads/feature").is_some());
 }

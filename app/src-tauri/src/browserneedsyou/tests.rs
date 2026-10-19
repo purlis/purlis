@@ -21,7 +21,11 @@ struct Host {
 }
 
 impl Driver for Host {
-    fn start(&self, _root: &Path, _reach: BrowserReach) -> Result<String, String> {
+    fn start(
+        &self,
+        _root: &Path,
+        _reach: BrowserReach,
+    ) -> Result<String, crate::chatbrowsers::NotStarted> {
         let mut started = self.started.lock().unwrap();
         *started += 1;
         Ok(format!("program-{started}"))
@@ -58,6 +62,10 @@ impl Driver for Host {
 
     fn stop(&self, _program: &str) -> Result<(), String> {
         Ok(())
+    }
+
+    fn driven(&self) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
     }
 }
 

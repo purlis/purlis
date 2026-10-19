@@ -64,10 +64,11 @@ pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
             if held.path().join(KEY_FILE).exists() || store.path().join(PEERS_FILE).exists() {
                 return made_already("a pairing");
             }
-            "this runner's home came with a device id this runner did not mint, from its image \
-             or from a runner before it, so it is not paired: a runner mints its device id at \
-             its pairing. Build the image without purlis's machine store in its home, then \
-             remove the runner and make a new one"
+            "this runner's home came with a device id, or one was minted in it before this \
+             pairing (by its image's build, by a purlis command run in it first, or by a \
+             pairing that did not finish), so it is not paired: a runner mints its device id \
+             at its pairing. Remove the runner and make a new one, from an image whose home \
+             holds no purlis machine store"
                 .to_owned()
         })?;
     let key = LinkKey::generate().map_err(|why| why.to_string())?;
@@ -123,6 +124,28 @@ pub fn answering(config_root: &Path) -> Result<Option<(Identity, Pinned)>, Strin
         "this runner is paired but keeps no link key; remove the runner and add it again".to_owned()
     })?;
     Ok(Some((Identity { device, key }, desktop)))
+}
+
+/// Take `desktop` out of this runner's peers, as it removes the runner (`unpair`, #2525): its
+/// peers file is removed, so no later link is admitted, and the runner is not paired again (its
+/// key stays). Nothing is done where no peer is kept; a peer that is another desktop's is
+/// refused and kept.
+pub fn unpair(config_root: &Path, desktop: &Pinned) -> Result<(), String> {
+    match peer(config_root)? {
+        None => Ok(()),
+        Some(kept) if &kept == desktop => {
+            let store = purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config_root))
+                .map_err(|why| format!("the machine store could not be opened: {why}"))?;
+            match std::fs::remove_file(store.path().join(PEERS_FILE)) {
+                Ok(()) => Ok(()),
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(why) => Err(format!(
+                    "the desktop could not be taken out of this runner's peers: {why}"
+                )),
+            }
+        }
+        Some(_) => Err("this runner is paired with another desktop, which stays its peer".into()),
+    }
 }
 
 /// A device id and public link key as one line: `{"device":"<id>","key":"<64 hex>"}`.
@@ -230,7 +253,7 @@ pub fn is_lower_hex(text: &str, len: usize) -> bool {
     text.len() == len && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-fn hex_of(bytes: &[u8]) -> String {
+pub(crate) fn hex_of(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 

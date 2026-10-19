@@ -70,6 +70,20 @@ pub const RISK: &str = "lets this chat connect to whatever listens on that port 
                         you; a container engine's or a cluster's port can reach much of your \
                         machine";
 
+/// **What allowing the service on `port` of the runner a chat runs on means** (#2510), named
+/// `runner` where its name is known: for that chat alone, as long as it runs there, never this
+/// machine's.
+pub fn on_the_runner_said(port: u16, runner: Option<&str>) -> String {
+    let runner = match runner {
+        Some(name) => format!("the runner {name}"),
+        None => "the runner this chat runs on".to_owned(),
+    };
+    format!(
+        "Allowing it lets this chat alone connect to whatever listens on port {port} of {runner}, \
+         while the chat runs there. It allows nothing on this Mac."
+    )
+}
+
 /// **Which loopback ports are whose, in this process**, under one lock: the ports purlis itself
 /// listens on (each chat's proxy and each tunnel), and the ports a chat's sandbox was started
 /// with as a service on this Mac. A port is never in both: a start gives a chat only a port
@@ -228,6 +242,18 @@ pub fn reach_entries(port: u16) -> [String; 3] {
 /// (`localhost` in a Seatbelt address is the loopback interface, IPv4 and IPv6).
 pub fn seatbelt_rule(port: u16) -> String {
     format!("(allow network-outbound (remote ip \"localhost:{port}\"))")
+}
+
+/// **Whether `host` on `port` is that port of this machine's loopback**, by any name
+/// [`loopback_port`] reads one by: what a service left out of a plan made elsewhere is asked
+/// about and carried by (#2510).
+pub fn names_loopback(host: &str, port: u16) -> bool {
+    let target = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    loopback_port(&target) == Some(port)
 }
 
 /// **The port of a service on this Mac that `target` names**, where it names one on the

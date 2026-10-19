@@ -61,6 +61,7 @@ describe("filtering the Settings tab by name", () => {
       "Chats list",
       "Notifications",
       "This machine",
+      "Browsers",
       "Accounts",
       "Profiles",
     ]);
@@ -146,6 +147,7 @@ describe("filtering the Settings tab by name", () => {
       "Chats list",
       "Notifications",
       "This machine",
+      "Browsers",
       "Accounts",
       "Profiles",
     ]);
@@ -167,6 +169,7 @@ describe("filtering the Settings tab by name", () => {
       "Chats list",
       "Notifications",
       "This machine",
+      "Browsers",
       "Accounts",
       "Profiles",
     ]);

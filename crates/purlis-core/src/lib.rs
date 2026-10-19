@@ -14,7 +14,6 @@ pub mod autosave;
 pub mod awareness;
 pub mod briefing;
 pub mod brokered;
-pub mod browser;
 pub mod browsertools;
 pub mod change;
 pub mod chatenv;
@@ -65,6 +64,7 @@ pub mod doctor;
 pub mod doing;
 /// The terminal engine, from the crate that holds it without the rest of the core (#1995).
 pub use purlis_terminal::engine;
+pub mod browserlimits;
 #[cfg(unix)]
 pub mod browsers;
 pub mod envvar;
@@ -188,6 +188,8 @@ pub mod roster;
 pub mod rulespelling;
 #[cfg(unix)]
 pub mod runnerlink;
+#[cfg(unix)]
+pub mod runners;
 pub mod sandbox;
 pub mod sandboxblock;
 pub mod savefix;

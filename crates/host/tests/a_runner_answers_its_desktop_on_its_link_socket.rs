@@ -14,7 +14,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use purlis_host::{Answering, ComposesNothing, HostError, Hosting, Place, serve_answering};
+use purlis_host::{
+    Answering, ComposesNothing, HostError, Hosting, Pairing, Place, Unpairing, serve_answering,
+};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::Link;
 use tokio::net::UnixStream;
@@ -69,6 +71,22 @@ fn answering(paired: &Paired) -> Answering {
     })
 }
 
+/// Takes the desktop out of the runner's peers, as `runnerlink::unpair` does: only the one
+/// it is paired with.
+fn unpairing(paired: &Paired) -> Unpairing {
+    let paired = Arc::clone(paired);
+    Arc::new(move |desktop: &Pinned| {
+        let mut paired = paired.lock().unwrap();
+        match &*paired {
+            Ok(Some((_, kept))) if kept == desktop => {
+                *paired = Ok(None);
+                Ok(())
+            }
+            _ => Err("not this runner's peer".into()),
+        }
+    })
+}
+
 async fn hosting(
     place: &Place,
     paired: &Paired,
@@ -78,13 +96,19 @@ async fn hosting(
 ) {
     let (stop, stopped) = oneshot::channel::<()>();
     let (ready, is_ready) = oneshot::channel::<()>();
-    let (place, answering) = (place.clone(), answering(paired));
+    let (place, pairing) = (
+        place.clone(),
+        Pairing {
+            answering: answering(paired),
+            unpairing: unpairing(paired),
+        },
+    );
     let host = tokio::spawn(async move {
         serve_answering(
             &place,
             None,
             Hosting::new(ComposesNothing),
-            Some(answering),
+            Some(pairing),
             move || {
                 let _ = ready.send(());
             },
@@ -116,7 +140,11 @@ async fn link(place: &Place, desktop: &Identity, runner: &Pinned) -> Result<Link
 }
 
 async fn list(link: &mut Link) -> serde_json::Value {
-    let call = serde_json::json!({ "call": { "id": 1, "command": "list" } });
+    called(link, "list").await
+}
+
+async fn called(link: &mut Link, command: &str) -> serde_json::Value {
+    let call = serde_json::json!({ "call": { "id": 1, "command": command } });
     link.control()
         .send(bytes::Bytes::from(serde_json::to_vec(&call).unwrap()))
         .await
@@ -205,4 +233,29 @@ async fn the_link_socket_is_this_users_alone_and_goes_when_the_host_ends() {
     stop.send(()).unwrap();
     host.await.unwrap().unwrap();
     assert!(!place.link().exists());
+}
+
+#[tokio::test]
+async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let (_stop, _host) = hosting(&place, &paired).await;
+
+    let mut linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    assert_eq!(
+        called(&mut linked, "unpair").await,
+        serde_json::json!({ "reply": { "re": 1, "ok": "done" } })
+    );
+    assert!(matches!(*paired.lock().unwrap(), Ok(None)));
+    // The runner ends the link it answered on, though the desktop keeps it open.
+    let ended = tokio::time::timeout(std::time::Duration::from_secs(10), linked.control().next())
+        .await
+        .expect("the link ends after the unpairing");
+    assert!(!matches!(ended, Some(Ok(_))), "{ended:?}");
+    assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 }
