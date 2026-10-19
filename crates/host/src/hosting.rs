@@ -1565,7 +1565,7 @@ impl Hosting {
                 process,
                 process_started: running.process_started(),
                 boot: crate::hostrecord::this_boot(),
-                sandbox: Some(sandbox),
+                sandbox: Some(sandbox.clone()),
             });
         }
         // A stop thrown while this one was being started: it is listed by now, so either the
@@ -1632,11 +1632,14 @@ impl Hosting {
                     ..held.confining.confined()
                 })
         });
+        // How it runs sandboxed, as recorded above: what a window that started it by its names
+        // judges it by (1.29, #2692).
         Ok(Answer::ProgramStarted {
             program,
             number: Some(number),
             process,
             confined,
+            sandbox: Some(sandbox),
         })
     }
 
@@ -1735,6 +1738,7 @@ impl Hosting {
             number: None,
             process,
             confined: None,
+            sandbox: Some(session::RunSandbox::Off),
         })
     }
 

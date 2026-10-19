@@ -65,6 +65,7 @@ impl Host for OneProgram {
                 number: None,
                 process: None,
                 confined: None,
+                sandbox: None,
             }),
             Command::AttachView {
                 program,
