@@ -3,7 +3,8 @@
 
 //! A click, a hover or a drag the agent aims at an element inside a frame from another site
 //! lands where the element is drawn, however the page lays the frame out: turned and scaled, or
-//! zoomed, or taller than the page's window so that the element is below the fold (#2557).
+//! zoomed, or taller than the page's window so that the element is below the fold (#2557), or
+//! nested in a frame from a third site below the fold of the frame around it (#2690).
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -90,4 +91,9 @@ fn a_drag_in_a_frame_the_page_turns_and_scales_starts_and_ends_on_its_elements()
 #[test]
 fn a_drag_in_a_frame_the_page_zooms_starts_and_ends_on_its_elements() {
     assert!(the_drag_lands("zoomed-pad.html"));
+}
+
+#[test]
+fn a_click_in_a_cross_site_frame_nested_below_a_middle_frames_fold_presses_the_button() {
+    assert!(the_click_counts("nested-pad.html"));
 }

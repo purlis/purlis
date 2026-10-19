@@ -1784,7 +1784,28 @@ impl Browser {
     /// The page point at the centre of `at`, brought into view first when `scroll`: the
     /// element in its own document, then, outermost first, each frame between around the point
     /// where the element is in it. Where the frames are drawn is read again after those scrolls.
+    /// Where the element is not shown through every frame on the first read, each frame element
+    /// is scrolled into view, outermost first, and read again before it is answered "not shown"
+    /// (#2690). The point is only ever one the page's own window shows.
     fn point(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
+        let point = self.aimed(target, at, scroll)?;
+        if self.in_window(&at.page_session, point) {
+            Ok(point)
+        } else {
+            Err(Refusal::NotShown(target.clone()))
+        }
+    }
+
+    /// Whether `point`, in CSS pixels of the page on `session`, lies inside what the page's own
+    /// window shows of it, at least half a pixel in from every edge: the viewport events are
+    /// dispatched in. Unknown is not inside.
+    fn in_window(&self, session: &str, (x, y): (f64, f64)) -> bool {
+        self.viewport_of(session, true)
+            .is_some_and(|window| shown(x, y, (window.width, window.height)))
+    }
+
+    /// [`Browser::point`], before it is held to the page's window.
+    fn aimed(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
         if scroll {
             let _ = self.gated(|| {
                 self.devtools().call(
@@ -1794,11 +1815,26 @@ impl Browser {
                 )
             })?;
         }
-        let (place, centre) = self.placed_centre(target, at)?;
+        let (mut place, mut centre) = self.placed_centre(target, at)?;
         if !scroll || at.boundaries.is_empty() {
             return place
                 .drawn_at(centre)
                 .ok_or_else(|| Refusal::NotShown(target.clone()));
+        }
+        if place.through(centre).is_none() {
+            // A frame below the fold of the frame around it hides the element until it is
+            // scrolled to: each frame element is brought into view, outermost first, and the
+            // frames read again.
+            for (owner, (_, parent_session)) in place.owners.iter().zip(&at.boundaries) {
+                let _ = self.gated(|| {
+                    self.devtools().call(
+                        "DOM.scrollIntoViewIfNeeded",
+                        json!({ "backendNodeId": owner }),
+                        Some(parent_session),
+                    )
+                })?;
+            }
+            (place, centre) = self.placed_centre(target, at)?;
         }
         let (_, boxes) = place
             .through(centre)
