@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792370306513,
+  "lastUpdate": 1792371907719,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -17850,6 +17850,48 @@ window.BENCHMARK_DATA = {
             "value": 100.5786405,
             "unit": "ms",
             "extra": "median of 5 runs: 100.014, 100.383, 100.579, 101.656, 101.711 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0868e4a874183291e6485f43bbf13118e6b87bb5",
+          "message": "Live reload, and theme folders need no approval (#2682)\n\n* Saving a theme folder repaints the window, and an extension of themes alone needs no approval (#2324)\n\nThe theme engine names the folders the window's theme is read from\n(theme::reload): each level's themes/, its theme folders and the folders\ndirectly in them, and the folders of an extension that contributes only\nthemes, each found from its level's root through handles refusing a link.\nThe app watches them and tells the window, which asks theme_in_force again,\nso a reload is drawn through Folders::of, resolve_levels and Drawn::of as\nevery draw is. A burst of saves is one redraw, redraws are at least 400 ms\napart, and where the platform will not watch, the core looks every 2 s.\n\nA theme the engine refuses on a reload draws Purlis with a Notice in the\nengine's words. A project's font file changed since the approval stays\nrefused until the project is approved again.\n\nAn extension that asks for no capability, names no program and contributes\nonly themes and icon themes stands as theme folders (Standing::Themes): no\nquestion on install, nothing asked when its themes are edited. Anything\nelse it adds puts it back under its fingerprint.\n\nPart of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme watch compiles, the bindings carry it, and the app's extension tests keep a panel (#2324)\n\nThe approval tests in the app use an extension with a panel, so they stay\nabout the fingerprint; a theme-only row is listed as themes with nothing to\nask. The bindings and the UI RPC client are regenerated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Format the window's live-reload tests (#2324)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The gallery reads again on a save, a closed project is not watched, and themes alone is only what purlis knows (#2324)\n\n- Settings › Theme's gallery asks for every level it shows again when the\n  window is told a theme folder changed, and a card's preview carries the\n  refusal as the window's theme does.\n- A plane let go of is no longer watched for any window; the person's own\n  folders still are.\n- An extension counts as themes alone only when its manifest names no key\n  but version, id, name and contributes, and contributes themes and icon\n  themes alone.\n- The refused Notice is one bounded line, whatever a theme's file says.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A look's stamp holds a stat's size and times on every platform, and the watch wakes to look (#2324)\n\nA stat's size and times are signed on one platform and unsigned on another,\nso each is widened to an i128, which holds either exactly. The watch's thread\nwakes at least every look interval, so a window whose folders the platform\nrefused is looked at within that interval of being set, and its test waits\nfor the first look before it saves.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The Extensions dialog's spec asks about an extension with a panel, and the theme watch says what it does (#2324)\n\n- extensions-dialog.e2e.ts: the extension it asks about brings a theme and a\n  panel, so it is approved by its fingerprint as before; a second extension\n  of themes alone is added with no question and listed as needing no\n  approval.\n- The theme watch logs what it watches, what each burst asks of each window,\n  and each reload it sends. A test holds that a theme folder made where a\n  level had none is heard, and every save after it.\n- theme-live-reload.e2e.ts says what the window draws when a save is not\n  drawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A change anywhere in a level's themes/ redraws, and the watch is found again at every ask (#2324)\n\nThe decision compared a change's folder with the folders the watch was set\nwith, so a theme folder made after that (and every save in it) asked for\nnothing until the watch was found again. A change anywhere inside a level's\nthemes/, there or not yet, in either spelling of its root, now redraws; an\neditor's scratch file alone does not. A window's folders are found again at\neach ask, so a stale watch is put right by the next draw.\n\nThe engine test feeds every shape of a save notify reports (a write, a\nscratch file renamed onto theme.json, a create, a metadata change) in both\nspellings, for a folder made after the watch was set. The app's test injects\nthe platform's events instead of waiting on a watcher.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The live-reload scenario saves colours the consent floors keep, and the watch logs its evidence (#2324)\n\nThe scenario's surfaces broke a consent floor, so the window rightly drew\nPurlis Classic's own surface in their place. It now saves dark greys\nbeside Classic's, which every floor clears, and records at each step the\ncolour drawn and what the core says is drawn there, which a failure carries.\nThe machine level's folder is found as the core finds it, the purlis\nspelling first.\n\nThe watch logs each burst's paths, at most three and relative to the roots\nit holds, each themes/ a change inside of redraws, and why a burst asks for\nnothing, counted as the count guard asks. A test runs the whole chain\nwithout the window: a machine theme folder chosen, watched, saved, told,\nand drawn as saved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T05:03:37+04:00",
+          "tree_id": "94533ca2ffe5ba7585737fbc52cd7c5f025bb3d0",
+          "url": "https://github.com/purlis/purlis/commit/0868e4a874183291e6485f43bbf13118e6b87bb5"
+        },
+        "date": 1792371906039,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5488999999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.537, 0.545, 0.549, 0.554, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.099197,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.264, 16.448, 17.099, 17.333, 17.600 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.007117,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.370, 103.598, 104.007, 104.927, 105.904 ms"
           }
         ]
       }
