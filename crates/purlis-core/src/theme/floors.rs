@@ -282,7 +282,7 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
 /// tokens, and the pair's colours are mixed as they are drawn (words on a wash, faded words, or a
 /// colour written see-through), or a turned shade is read against a colour on its own side of the
 /// middle and no farther from it, so rounding the shade away from the middle brings it nearer.
-fn moves_with_hue(theme: &ResolvedTheme, pair: &Pair) -> bool {
+pub(super) fn moves_with_hue(theme: &ResolvedTheme, pair: &Pair) -> bool {
     let turned = |token: &str| theme.tint.tabs().contains(&token);
     let tokens = [Some(pair.front), Some(pair.back), pair.under];
     if !tokens.into_iter().flatten().any(turned) {
