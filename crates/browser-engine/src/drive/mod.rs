@@ -531,6 +531,13 @@ pub enum Refusal {
     IdReused(String),
     #[error("the engine refused: {0}")]
     Engine(String),
+    /// What the engine answered was too large to read, and only this call failed (#2694).
+    #[error(
+        "the page's answer to this call was too large for purlis to read, so this call failed; \
+         the browser still answers: read a part of the page (a snapshot within an element), or \
+         go on with another call"
+    )]
+    TooLarge,
     #[error("the browser has ended: open a new one")]
     Ended,
     #[error(
