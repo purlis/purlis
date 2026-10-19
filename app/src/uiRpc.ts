@@ -1347,9 +1347,11 @@ export const commands = {
 	/**
 	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
 	 *  of the project's or a workspace's theme folder that this machine's approval does not
-	 *  hold. The refused Notice then offers Review and allow (`review_plane`).
+	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `null` otherwise.
 	 */
-	review: boolean,
+	review: ThemeReview | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
 	themeChooseOption: __WINDOW_ONLY_RESULT,
@@ -8858,9 +8860,11 @@ export type ThemeInForce = {
 	/**
 	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
 	 *  of the project's or a workspace's theme folder that this machine's approval does not
-	 *  hold. The refused Notice then offers Review and allow (`review_plane`).
+	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `null` otherwise.
 	 */
-	review: boolean,
+	review: ThemeReview | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
@@ -8870,6 +8874,13 @@ export type ThemeOption = {
 	/**  What the select shows. */
 	label: string,
 };
+
+/**  What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]). */
+export type ThemeReview = 
+/**  The project asks again about font files alone: Review and allow. */
+"fonts" | 
+/**  It asks for more than font files: no button, and where it is reviewed instead. */
+"more";
 
 /**
  *  What is wrong with one colour theme an extension is contributing (#2321), in the theme

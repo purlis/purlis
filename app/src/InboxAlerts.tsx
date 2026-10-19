@@ -439,7 +439,8 @@ function ThemeFolderOffer({ alert }: { alert: MachineAlert }) {
  * in place** (#2647). Review and allow asks the core for the project's trust ask as it stands
  * now (`review_plane`) and draws it in the one dialog every approval is given in
  * (`ApprovePlane`, ADR 0035): what changed first, then what it contributes, its font files
- * grouped by theme folder. The yes is `approve_plane`, the one path an approval takes, with
+ * grouped by theme folder. It is offered only when what the project asks for again is font
+ * files alone (D-2647-10); the core refuses the review otherwise. The yes is `approve_plane`, the one path an approval takes, with
  * what the dialog showed; the core refuses it if the project changed in between. Then the theme
  * is drawn again, and the Notice goes once it draws. A no answers nothing, and the theme stays
  * refused.
@@ -502,7 +503,7 @@ function RefusedThemeReview({ alert, plane }: { alert: MachineAlert; plane: Plan
       {asking !== undefined && (
         <ApprovePlane
           ask={asking}
-          yes="Allow"
+          yes="Allow these fonts"
           onApprove={allow}
           onCancel={() => setAsking(undefined)}
         />

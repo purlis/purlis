@@ -12,6 +12,7 @@ use std::sync::Arc;
 use purlis_core::theme;
 
 use super::*;
+use crate::extensions::ThemeReview;
 
 const PROJECT: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
 
@@ -57,6 +58,7 @@ fn drawn(config: &Path, root: &Path) -> crate::extensions::ThemeInForce {
         false,
         theme::Contrast::Standard,
         || Arc::from(Vec::new()),
+        || crate::planes::theme_review(config, root),
     )
 }
 
@@ -104,8 +106,9 @@ fn refused() -> Refused {
     std::fs::write(&face, woff2(2)).expect("the face, saved again");
     let refusal = drawn(&config, &first.root);
     assert!(refusal.refused.is_some(), "a changed face is refused");
-    assert!(
+    assert_eq!(
         refusal.review,
+        Some(ThemeReview::Fonts),
         "and the refusal offers the project's trust ask"
     );
     Refused {
@@ -151,7 +154,7 @@ fn review_shows_the_project_s_trust_ask_with_the_change_and_a_yes_draws_the_face
     );
     let now = drawn(&at.config, &at.root);
     assert!(now.refused.is_none(), "{:?}", now.refused);
-    assert!(!now.review);
+    assert_eq!(now.review, None);
     assert_eq!(now.theme.expect("a theme").name, "Typed");
     assert!(at.planes.review(&at.plane).expect("held").is_none());
 }
@@ -166,7 +169,7 @@ fn with_no_yes_the_theme_stays_refused_and_nothing_is_recorded() {
 
     let now = drawn(&at.config, &at.root);
     assert!(now.refused.is_some());
-    assert!(now.review);
+    assert_eq!(now.review, Some(ThemeReview::Fonts));
     assert!(
         at.planes.review(&at.plane).expect("held").is_some(),
         "a no recorded nothing, so the next press asks again"
@@ -188,7 +191,7 @@ fn a_face_changed_between_the_ask_and_the_yes_approves_nothing() {
     assert!(why.contains("changed while you were reading it"), "{why}");
     let now = drawn(&at.config, &at.root);
     assert!(now.refused.is_some(), "neither face is drawn");
-    assert!(now.review);
+    assert_eq!(now.review, Some(ThemeReview::Fonts));
     let again = at
         .planes
         .review(&at.plane)
@@ -208,4 +211,41 @@ fn a_plane_this_process_does_not_hold_is_not_reviewed() {
     let planes = planes_keeping(&config);
     // Review is about a project already open: one never opened is opened through the gate.
     assert!(planes.review(&PlaneId::of(&root)).is_err());
+}
+
+#[test]
+fn a_face_changed_with_a_settings_change_is_not_offered_from_the_theme() {
+    // D-2647-10: a chat that can change a face at will must not be able to raise the whole
+    // trust ask from a theme. A face and a plugin changed together offer no review.
+    let at = refused();
+    let claude = at.root.join(".claude");
+    std::fs::create_dir_all(&claude).expect("the project's .claude");
+    std::fs::write(
+        claude.join("settings.json"),
+        r#"{"enabledPlugins": {"stranger@market": true}}"#,
+    )
+    .expect("the project's settings");
+
+    let now = drawn(&at.config, &at.root);
+
+    assert!(now.refused.is_some(), "the face is still refused");
+    assert_eq!(
+        now.review,
+        Some(ThemeReview::More),
+        "and no review is offered"
+    );
+    let why = at
+        .planes
+        .review(&at.plane)
+        .err()
+        .expect("the review is refused, not asked");
+    assert_eq!(why, MORE_THAN_FONTS);
+}
+
+#[test]
+fn a_font_only_change_is_offered_from_the_theme() {
+    let at = refused();
+    assert_eq!(drawn(&at.config, &at.root).review, Some(ThemeReview::Fonts));
+    let asked = at.planes.review(&at.plane).expect("held").expect("it asks");
+    assert!(asked.consent.grew_in_fonts_alone());
 }

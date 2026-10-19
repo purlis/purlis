@@ -503,7 +503,7 @@ describe("a theme refused for a project's font file, reviewed and allowed in pla
     expect(said).toContain("workspaces/alpha/themes/typed");
     expect(calls("approve_plane")).toHaveLength(0);
 
-    await userEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Allow these fonts" }));
 
     await waitFor(() => expect(calls("approve_plane")).toHaveLength(1));
     // What was shown goes back untouched, so the core approves only that.
@@ -542,7 +542,7 @@ describe("a theme refused for a project's font file, reviewed and allowed in pla
     );
     const dialog = await screen.findByRole("dialog");
 
-    await userEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Allow these fonts" }));
 
     await waitFor(() =>
       expect(refusedRow()).toHaveTextContent("changed while you were reading it"),
